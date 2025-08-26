@@ -13,8 +13,8 @@ langchain-google-genai
 langchain-core
 
 # 📊 База данных и память
-sqlite3
-asyncio
+# sqlite3 - встроен в Python
+# asyncio - встроен в Python
 
 # 🔧 Утилиты
 python-dotenv
