@@ -76,7 +76,16 @@ jobs:
           docker info --format "table"
           echo "✅ Docker working"
 
-      - name: Simple Container App Deploy
+      - name: Check Container Registry nexy1
+        run: |
+          echo "🔍 Checking Container Registry nexy1..."
+          az acr show --name nexy1 --resource-group Nexy --output table || echo "❌ Container Registry nexy1 not found in resource group Nexy"
+          echo "🔍 Checking all Container Registries in subscription..."
+          az acr list --output table || echo "⚠️ No Container Registries found in subscription"
+          echo "🔍 Testing ACR login..."
+          az acr login --name nexy1 || echo "⚠️ Cannot login to ACR nexy1"
+
+      - name: Deploy with Container Registry nexy1
         uses: azure/container-apps-deploy-action@v2
         with:
           appSourcePath: ${{ github.workspace }}
@@ -87,6 +96,8 @@ jobs:
           targetPort: 80
           imageToBuild: nexy:${{ github.sha }}
           disableTelemetry: true
+          # Используем существующий Container Registry nexy1
+          acrName: nexy1
 
       - name: Success Message
         run: |
