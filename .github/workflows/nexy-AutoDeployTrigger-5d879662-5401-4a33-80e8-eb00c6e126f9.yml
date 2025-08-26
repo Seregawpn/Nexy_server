@@ -85,6 +85,16 @@ jobs:
           echo "🔍 Testing ACR login..."
           az acr login --name nexy1 || echo "⚠️ Cannot login to ACR nexy1"
 
+      - name: Debug Container App Configuration
+        run: |
+          echo "🔍 Debugging Container App 'nexy' configuration..."
+          echo "--- Container App details ---"
+          az containerapp show --name nexy --resource-group Nexy --query "properties.template.containers[0].image" -o tsv || echo "No image found"
+          echo "--- Container App full config ---"
+          az containerapp show --name nexy --resource-group Nexy --query "properties.template.containers[0]" -o json || echo "No container config found"
+          echo "--- Environment details ---"
+          az containerapp env show --name managedEnvironment-Nexy-b374 --resource-group Nexy --query "properties.appLogsConfiguration" -o json || echo "No environment config found"
+
       - name: Get ACR credentials
         run: |
           echo "🔍 Getting ACR credentials..."
@@ -96,7 +106,20 @@ jobs:
           echo "::set-output name=password::$ACR_PASSWORD"
         id: acr-credentials
 
-      - name: Deploy with explicit Container Registry
+      - name: Force update Container App registry
+        run: |
+          echo "🔧 Force updating Container App registry configuration..."
+          # Принудительно обновляем Container App с правильным Container Registry
+          az containerapp update \
+            --name nexy \
+            --resource-group Nexy \
+            --image nexy1.azurecr.io/nexy:${{ github.sha }} \
+            --registry-server nexy1.azurecr.io \
+            --registry-username ${{ steps.acr-credentials.outputs.username }} \
+            --registry-password ${{ steps.acr-credentials.outputs.password }} \
+            --output none || echo "⚠️ Failed to force update registry"
+
+      - name: Deploy with minimal configuration
         uses: azure/container-apps-deploy-action@v2
         with:
           appSourcePath: ${{ github.workspace }}
@@ -107,10 +130,7 @@ jobs:
           targetPort: 80
           imageToBuild: nexy:${{ github.sha }}
           disableTelemetry: true
-          # Используем полученные credentials из ACR
-          registryUrl: nexy1.azurecr.io
-          registryUsername: ${{ steps.acr-credentials.outputs.username }}
-          registryPassword: ${{ steps.acr-credentials.outputs.password }}
+          # Минимальная конфигурация без Container Registry
 
       - name: Success Message
         run: |
