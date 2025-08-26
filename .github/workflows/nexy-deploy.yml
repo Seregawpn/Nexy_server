@@ -8,7 +8,7 @@ on:
       [ main ]
     paths:
     - '**'
-    - '.github/workflows/nexy-AutoDeployTrigger-5d879662-5401-4a33-80e8-eb00c6e126f9.yml'
+    - '.github/workflows/nexy-deploy.yml'
 
   # Allow manual trigger 
   workflow_dispatch:      
@@ -41,18 +41,26 @@ jobs:
       - name: Check Azure credentials
         run: |
           echo "🔍 Checking Azure credentials..."
-          if [ -z "${{ secrets.NEXY_AZURE_CLIENT_ID }}" ]; then
-            echo "❌ NEXY_AZURE_CLIENT_ID is missing"
+          echo "📋 Required secrets:"
+          echo "   - NEXY_AZURE_CLIENT_ID: ${{ secrets.NEXY_AZURE_CLIENT_ID != '' && '✅ Set' || '❌ Missing' }}"
+          echo "   - NEXY_AZURE_TENANT_ID: ${{ secrets.NEXY_AZURE_TENANT_ID != '' && '✅ Set' || '❌ Missing' }}"
+          echo "   - NEXY_AZURE_SUBSCRIPTION_ID: ${{ secrets.NEXY_AZURE_SUBSCRIPTION_ID != '' && '✅ Set' || '❌ Missing' }}"
+          
+          if [ -z "${{ secrets.NEXY_AZURE_CLIENT_ID }}" ] || [ -z "${{ secrets.NEXY_AZURE_TENANT_ID }}" ] || [ -z "${{ secrets.NEXY_AZURE_SUBSCRIPTION_ID }}" ]; then
+            echo ""
+            echo "🚨 MISSING AZURE SECRETS!"
+            echo "Please add the following secrets in your GitHub repository:"
+            echo "   Settings → Secrets and variables → Actions"
+            echo ""
+            echo "Required secrets:"
+            echo "   - NEXY_AZURE_CLIENT_ID"
+            echo "   - NEXY_AZURE_TENANT_ID"
+            echo "   - NEXY_AZURE_SUBSCRIPTION_ID"
+            echo ""
+            echo "These can be obtained from your Azure App Registration."
             exit 1
           fi
-          if [ -z "${{ secrets.NEXY_AZURE_TENANT_ID }}" ]; then
-            echo "❌ NEXY_AZURE_TENANT_ID is missing"
-            exit 1
-          fi
-          if [ -z "${{ secrets.NEXY_AZURE_SUBSCRIPTION_ID }}" ]; then
-            echo "❌ NEXY_AZURE_SUBSCRIPTION_ID is missing"
-            exit 1
-          fi
+          
           echo "✅ All Azure credentials are present"
 
       - name: Azure Login with OIDC
@@ -140,7 +148,15 @@ jobs:
           
           # Проверяем, что образ создался
           echo "🔍 Checking built image..."
-          docker images | grep nexy
+          if docker images | grep -q "nexy1.azurecr.io/nexy"; then
+            echo "✅ Docker image built successfully"
+            docker images | grep "nexy1.azurecr.io/nexy"
+          else
+            echo "❌ Docker image build failed!"
+            echo "🔍 Available images:"
+            docker images
+            exit 1
+          fi
           
           # Пушим в ACR
           echo "🔍 Pushing image to ACR..."
