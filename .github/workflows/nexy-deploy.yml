@@ -115,16 +115,60 @@ jobs:
       - name: Build and push to ACR
         run: |
           echo "🔧 Building and pushing Docker image to ACR..."
+          echo "🔍 Current directory: $(pwd)"
+          echo "🔍 Files in directory:"
+          ls -la
+          
           # Логинимся в ACR
+          echo "🔍 Logging into ACR nexy1..."
           az acr login --name nexy1
           
+          # Проверяем Dockerfile
+          echo "🔍 Checking Dockerfile..."
+          if [ -f "Dockerfile" ]; then
+            echo "✅ Dockerfile found"
+            cat Dockerfile
+          else
+            echo "❌ Dockerfile not found!"
+            exit 1
+          fi
+          
           # Собираем образ
+          echo "🔍 Building Docker image..."
+          echo "Image tag: nexy1.azurecr.io/nexy:${{ github.sha }}"
           docker build -t nexy1.azurecr.io/nexy:${{ github.sha }} .
           
+          # Проверяем, что образ создался
+          echo "🔍 Checking built image..."
+          docker images | grep nexy
+          
           # Пушим в ACR
+          echo "🔍 Pushing image to ACR..."
           docker push nexy1.azurecr.io/nexy:${{ github.sha }}
           
+          # Проверяем, что образ появился в ACR
+          echo "🔍 Verifying image in ACR..."
+          az acr repository show --name nexy1 --image nexy:${{ github.sha }} || echo "⚠️ Image not found in ACR"
+          
           echo "✅ Image built and pushed to ACR"
+
+      - name: Verify image exists before deployment
+        run: |
+          echo "🔍 Verifying image exists in ACR before deployment..."
+          IMAGE_TAG="nexy:${{ github.sha }}"
+          echo "Checking for image: $IMAGE_TAG"
+          
+          # Проверяем, что образ существует в ACR
+          if az acr repository show --name nexy1 --image "$IMAGE_TAG" >/dev/null 2>&1; then
+            echo "✅ Image $IMAGE_TAG found in ACR nexy1"
+          else
+            echo "❌ Image $IMAGE_TAG NOT found in ACR nexy1!"
+            echo "🔍 Available images in ACR:"
+            az acr repository list --name nexy1
+            echo "🔍 Available tags for nexy repository:"
+            az acr repository show-tags --name nexy1 --repository nexy
+            exit 1
+          fi
 
       - name: Deploy Container App
         run: |
