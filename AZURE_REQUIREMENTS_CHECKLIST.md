@@ -49,26 +49,44 @@
 
 ### **2. GitHub Actions workflow:**
 - ✅ Исправили Bash синтаксис
-- ✅ Добавили проверки `GITHUB_SHA`
-- ✅ Добавили диагностику переменных
+- ✅ Добавили fallback для `GITHUB_SHA`
+- ✅ Упростили диагностику
 - ✅ Добавили верификацию образов
+
+### **3. Azure Secrets (ТРЕБУЕТ НАСТРОЙКИ):**
+- ❌ **NEXY_AZURE_CLIENT_ID** - нужно добавить в GitHub Secrets
+- ❌ **NEXY_AZURE_TENANT_ID** - нужно добавить в GitHub Secrets  
+- ❌ **NEXY_AZURE_SUBSCRIPTION_ID** - нужно добавить в GitHub Secrets
 
 ## 🎯 **СЛЕДУЮЩИЕ ШАГИ**
 
-### **1. Тестирование локально:**
+### **1. НАСТРОЙКА AZURE SECRETS (ОБЯЗАТЕЛЬНО):**
+```bash
+# Перейдите в GitHub репозиторий:
+# Settings → Secrets and variables → Actions
+
+# Добавьте следующие secrets:
+NEXY_AZURE_CLIENT_ID=your_client_id_here
+NEXY_AZURE_TENANT_ID=your_tenant_id_here  
+NEXY_AZURE_SUBSCRIPTION_ID=your_subscription_id_here
+```
+
+**📖 Подробная инструкция:** См. файл `AZURE_SECRETS_SETUP.md`
+
+### **2. Тестирование локально:**
 ```bash
 cd server
 pip install -r requirements.txt
 python main.py
 ```
 
-### **2. Тестирование Docker:**
+### **3. Тестирование Docker:**
 ```bash
 docker build -t nexy:test .
 docker run -p 80:80 nexy:test
 ```
 
-### **3. Проверка endpoints:**
+### **4. Проверка endpoints:**
 ```bash
 curl http://localhost/health    # Должен вернуть "OK"
 curl http://localhost/status    # Должен вернуть JSON
