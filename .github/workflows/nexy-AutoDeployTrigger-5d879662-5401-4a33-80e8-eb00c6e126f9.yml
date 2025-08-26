@@ -102,14 +102,28 @@ jobs:
           ACR_PASSWORD=$(az acr credential show --name nexy1 --query "passwords[0].value" -o tsv)
           echo "ACR Username: $ACR_USERNAME"
           echo "ACR Password: ${ACR_PASSWORD:0:10}..." # Показываем только первые 10 символов
-          echo "::set-output name=username::$ACR_USERNAME"
-          echo "::set-output name=password::$ACR_PASSWORD"
+          echo "username=$ACR_USERNAME" >> $GITHUB_OUTPUT
+          echo "password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
         id: acr-credentials
 
-      - name: Force update Container App registry
+      - name: Build and push to ACR
         run: |
-          echo "🔧 Force updating Container App registry configuration..."
-          # Принудительно обновляем Container App с правильным Container Registry
+          echo "🔧 Building and pushing Docker image to ACR..."
+          # Логинимся в ACR
+          az acr login --name nexy1
+          
+          # Собираем образ
+          docker build -t nexy1.azurecr.io/nexy:${{ github.sha }} .
+          
+          # Пушим в ACR
+          docker push nexy1.azurecr.io/nexy:${{ github.sha }}
+          
+          echo "✅ Image built and pushed to ACR"
+
+      - name: Deploy Container App
+        run: |
+          echo "🚀 Deploying Container App..."
+          # Деплоим Container App с готовым образом
           az containerapp update \
             --name nexy \
             --resource-group Nexy \
@@ -117,20 +131,9 @@ jobs:
             --registry-server nexy1.azurecr.io \
             --registry-username ${{ steps.acr-credentials.outputs.username }} \
             --registry-password ${{ steps.acr-credentials.outputs.password }} \
-            --output none || echo "⚠️ Failed to force update registry"
-
-      - name: Deploy with minimal configuration
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          appSourcePath: ${{ github.workspace }}
-          dockerfilePath: ./Dockerfile
-          containerAppName: nexy
-          resourceGroup: Nexy
-          runtimeStack: python
-          targetPort: 80
-          imageToBuild: nexy:${{ github.sha }}
-          disableTelemetry: true
-          # Минимальная конфигурация без Container Registry
+            --output none
+          
+          echo "✅ Container App deployed successfully"
 
       - name: Success Message
         run: |
