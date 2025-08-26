@@ -1,0 +1,47 @@
+# =====================================================
+# ЗАВИСИМОСТИ ДЛЯ СЕРВЕРА
+# =====================================================
+
+# 🚀 Gemini Live API (основной)
+google-genai
+
+# 🔄 LangChain + Google Gemini (fallback)
+langchain-google-genai
+langchain-core
+
+# 📊 База данных и память
+sqlite3
+asyncio
+
+# 🔧 Утилиты
+python-dotenv
+
+# gRPC и Protocol Buffers
+grpcio
+grpcio-tools
+protobuf
+
+# Google Gemini Live API
+google-genai
+
+# 🚨 НОВЫЕ ЗАВИСИМОСТИ: LangChain + Google Gemini
+langchain
+langchain-google-genai
+langchain-core
+
+# Обработка изображений
+Pillow
+
+# Edge TTS
+edge-tts
+
+# База данных
+psycopg2-binary
+
+# Аудио обработка
+numpy
+sounddevice
+pydub
+
+# Логирование и утилиты
+rich
