@@ -28,19 +28,24 @@ jobs:
         run: |
           echo "🔍 Debug Environment Info:"
           echo "GitHub Workspace: ${{ github.workspace }}"
-          echo "GitHub SHA: '${{ github.sha }}' (length: ${#{{ github.sha }})"
-          echo "GitHub Ref: '${{ github.ref }}'"
+          
+          # Присваиваем GitHub переменные в Bash переменные
+          GITHUB_SHA="${{ github.sha }}"
+          GITHUB_REF="${{ github.ref }}"
+          
+          echo "GitHub SHA: '${GITHUB_SHA}' (length: ${#GITHUB_SHA})"
+          echo "GitHub Ref: '${GITHUB_REF}'"
           echo "Runner OS: ${{ runner.os }}"
           echo "Runner Architecture: ${{ runner.arch }}"
           
           # Проверяем критически важные переменные
-          if [ -z "${{ github.sha }}" ]; then
+          if [ -z "${GITHUB_SHA}" ]; then
             echo "❌ CRITICAL ERROR: github.sha is empty!"
             exit 1
           fi
           
-          if [ ${#{{ github.sha }} -lt 10 ]; then
-            echo "❌ CRITICAL ERROR: github.sha too short: '${{ github.sha }}'"
+          if [ ${#GITHUB_SHA} -lt 10 ]; then
+            echo "❌ CRITICAL ERROR: github.sha too short: '${GITHUB_SHA}'"
             exit 1
           fi
           
@@ -138,6 +143,10 @@ jobs:
           echo "🔧 Building and pushing Docker image to ACR..."
           echo "🔍 Current directory: $(pwd)"
           echo "🔍 Files in directory:"
+          
+          # Присваиваем GitHub переменные в Bash переменные
+          GITHUB_SHA="${{ github.sha }}"
+          
           ls -la
           
           # Логинимся в ACR
@@ -156,8 +165,8 @@ jobs:
           
           # Собираем образ
           echo "🔍 Building Docker image..."
-          echo "Image tag: nexy1.azurecr.io/nexy:${{ github.sha }}"
-          docker build -t nexy1.azurecr.io/nexy:${{ github.sha }} .
+          echo "Image tag: nexy1.azurecr.io/nexy:${GITHUB_SHA}"
+          docker build -t nexy1.azurecr.io/nexy:${GITHUB_SHA} .
           
           # Проверяем, что образ создался
           echo "🔍 Checking built image..."
@@ -173,11 +182,11 @@ jobs:
           
           # Пушим в ACR
           echo "🔍 Pushing image to ACR..."
-          docker push nexy1.azurecr.io/nexy:${{ github.sha }}
+          docker push nexy1.azurecr.io/nexy:${GITHUB_SHA}
           
           # Проверяем, что образ появился в ACR
           echo "🔍 Verifying image in ACR..."
-          az acr repository show --name nexy1 --image nexy:${{ github.sha }} || echo "⚠️ Image not found in ACR"
+          az acr repository show --name nexy1 --image nexy:${GITHUB_SHA} || echo "⚠️ Image not found in ACR"
           
           echo "✅ Image built and pushed to ACR"
 
@@ -185,30 +194,35 @@ jobs:
         run: |
           echo "🔍 Verifying variables and image before deployment..."
           
+          # Присваиваем GitHub переменные в Bash переменные
+          GITHUB_SHA="${{ github.sha }}"
+          GITHUB_REF="${{ github.ref }}"
+          GITHUB_WORKFLOW="${{ github.workflow }}"
+          
           # Проверяем github.sha
-          if [ -z "${{ github.sha }}" ]; then
+          if [ -z "${GITHUB_SHA}" ]; then
             echo "❌ ERROR: github.sha is empty!"
             echo "🔍 GitHub context variables:"
-            echo "   - github.sha: '${{ github.sha }}'"
-            echo "   - github.ref: '${{ github.ref }}'"
-            echo "   - github.workflow: '${{ github.workflow }}'"
+            echo "   - github.sha: '${GITHUB_SHA}'"
+            echo "   - github.ref: '${GITHUB_REF}'"
+            echo "   - github.workflow: '${GITHUB_WORKFLOW}'"
             exit 1
           fi
           
           # Проверяем, что github.sha не слишком короткий (должен быть 40 символов)
-          if [ ${#{{ github.sha }} -lt 10 ]; then
-            echo "❌ ERROR: github.sha seems too short: '${{ github.sha }}'"
+          if [ ${#GITHUB_SHA} -lt 10 ]; then
+            echo "❌ ERROR: github.sha seems too short: '${GITHUB_SHA}'"
             exit 1
           fi
           
-          echo "✅ github.sha is valid: ${{ github.sha }}"
+          echo "✅ github.sha is valid: ${GITHUB_SHA}"
           
           # Формируем полный путь к образу
-          FULL_IMAGE_PATH="nexy1.azurecr.io/nexy:${{ github.sha }}"
+          FULL_IMAGE_PATH="nexy1.azurecr.io/nexy:${GITHUB_SHA}"
           echo "🔍 Full image path: $FULL_IMAGE_PATH"
           
           # Проверяем, что образ существует в ACR
-          IMAGE_TAG="nexy:${{ github.sha }}"
+          IMAGE_TAG="nexy:${GITHUB_SHA}"
           echo "🔍 Checking for image: $IMAGE_TAG"
           
           if az acr repository show --name nexy1 --image "$IMAGE_TAG" >/dev/null 2>&1; then
@@ -229,7 +243,7 @@ jobs:
           az containerapp update \
             --name nexy \
             --resource-group Nexy \
-            --image nexy1.azurecr.io/nexy:${{ github.sha }} \
+            --image nexy1.azurecr.io/nexy:${GITHUB_SHA} \
             --output none
           
           echo "✅ Container App deployed successfully"
@@ -240,9 +254,9 @@ jobs:
           # Проверяем, что Container App обновился
           CURRENT_IMAGE=$(az containerapp show --name nexy --resource-group Nexy --query "properties.template.containers[0].image" -o tsv)
           echo "Current image: $CURRENT_IMAGE"
-          echo "Expected image: nexy1.azurecr.io/nexy:${{ github.sha }}"
+          echo "Expected image: nexy1.azurecr.io/nexy:${GITHUB_SHA}"
           
-          if [[ "$CURRENT_IMAGE" == "nexy1.azurecr.io/nexy:${{ github.sha }}" ]]; then
+          if [[ "$CURRENT_IMAGE" == "nexy1.azurecr.io/nexy:${GITHUB_SHA}" ]]; then
             echo "✅ Deployment verified successfully!"
           else
             echo "⚠️ Image mismatch - deployment may have failed"
@@ -253,6 +267,6 @@ jobs:
           echo "🎉 Deployment completed successfully!"
           echo "🌐 Container App: nexy"
           echo "📁 Resource Group: Nexy"
-          echo "🐳 Image: nexy:${{ github.sha }}"
+          echo "🐳 Image: nexy:${GITHUB_SHA}"
 
 
