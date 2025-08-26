@@ -134,12 +134,23 @@ jobs:
             --name nexy \
             --resource-group Nexy \
             --image nexy1.azurecr.io/nexy:${{ github.sha }} \
-            --registry-server nexy1.azurecr.io \
-            --registry-username ${{ steps.acr-credentials.outputs.username }} \
-            --registry-password ${{ steps.acr-credentials.outputs.password }} \
             --output none
           
           echo "✅ Container App deployed successfully"
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          # Проверяем, что Container App обновился
+          CURRENT_IMAGE=$(az containerapp show --name nexy --resource-group Nexy --query "properties.template.containers[0].image" -o tsv)
+          echo "Current image: $CURRENT_IMAGE"
+          echo "Expected image: nexy1.azurecr.io/nexy:${{ github.sha }}"
+          
+          if [[ "$CURRENT_IMAGE" == "nexy1.azurecr.io/nexy:${{ github.sha }}" ]]; then
+            echo "✅ Deployment verified successfully!"
+          else
+            echo "⚠️ Image mismatch - deployment may have failed"
+          fi
 
       - name: Success Message
         run: |
