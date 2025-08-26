@@ -147,6 +147,24 @@ jobs:
           # Присваиваем GitHub переменные в Bash переменные
           GITHUB_SHA="${{ github.sha }}"
           
+          # Строгая проверка GITHUB_SHA
+          echo "🔍 Verifying GITHUB_SHA before build..."
+          echo "GITHUB_SHA: '${GITHUB_SHA}' (length: ${#GITHUB_SHA})"
+          
+          if [ -z "${GITHUB_SHA}" ]; then
+            echo "❌ CRITICAL ERROR: GITHUB_SHA is empty!"
+            exit 1
+          fi
+          
+          if [ ${#GITHUB_SHA} -ne 40 ]; then
+            echo "❌ CRITICAL ERROR: GITHUB_SHA must be exactly 40 characters (full commit SHA)"
+            echo "Current length: ${#GITHUB_SHA}"
+            echo "Expected: 40 characters"
+            exit 1
+          fi
+          
+          echo "✅ GITHUB_SHA is valid: ${GITHUB_SHA}"
+          
           ls -la
           
           # Логинимся в ACR
@@ -209,9 +227,11 @@ jobs:
             exit 1
           fi
           
-          # Проверяем, что github.sha не слишком короткий (должен быть 40 символов)
-          if [ ${#GITHUB_SHA} -lt 10 ]; then
-            echo "❌ ERROR: github.sha seems too short: '${GITHUB_SHA}'"
+          # Проверяем, что github.sha точно 40 символов (полный commit SHA)
+          if [ ${#GITHUB_SHA} -ne 40 ]; then
+            echo "❌ ERROR: github.sha must be exactly 40 characters (full commit SHA)"
+            echo "Current length: ${#GITHUB_SHA}"
+            echo "Expected: 40 characters"
             exit 1
           fi
           
@@ -239,6 +259,26 @@ jobs:
       - name: Deploy Container App
         run: |
           echo "🚀 Deploying Container App..."
+          
+          # Присваиваем GitHub переменные в Bash переменные (на всякий случай)
+          GITHUB_SHA="${{ github.sha }}"
+          
+          # Финальная проверка перед деплоем
+          echo "🔍 Final verification before deployment..."
+          echo "GITHUB_SHA: '${GITHUB_SHA}' (length: ${#GITHUB_SHA})"
+          echo "Full image path: nexy1.azurecr.io/nexy:${GITHUB_SHA}"
+          
+          if [ -z "${GITHUB_SHA}" ]; then
+            echo "❌ CRITICAL ERROR: GITHUB_SHA is empty before deployment!"
+            exit 1
+          fi
+          
+          if [ ${#GITHUB_SHA} -ne 40 ]; then
+            echo "❌ CRITICAL ERROR: GITHUB_SHA must be exactly 40 characters before deployment!"
+            echo "Current length: ${#GITHUB_SHA}"
+            exit 1
+          fi
+          
           # Деплоим Container App с готовым образом
           az containerapp update \
             --name nexy \
@@ -251,15 +291,24 @@ jobs:
       - name: Verify deployment
         run: |
           echo "🔍 Verifying deployment..."
+          
+          # Присваиваем GitHub переменные в Bash переменные (на всякий случай)
+          GITHUB_SHA="${{ github.sha }}"
+          
           # Проверяем, что Container App обновился
           CURRENT_IMAGE=$(az containerapp show --name nexy --resource-group Nexy --query "properties.template.containers[0].image" -o tsv)
           echo "Current image: $CURRENT_IMAGE"
           echo "Expected image: nexy1.azurecr.io/nexy:${GITHUB_SHA}"
+          echo "GITHUB_SHA used: '${GITHUB_SHA}' (length: ${#GITHUB_SHA})"
           
           if [[ "$CURRENT_IMAGE" == "nexy1.azurecr.io/nexy:${GITHUB_SHA}" ]]; then
             echo "✅ Deployment verified successfully!"
           else
             echo "⚠️ Image mismatch - deployment may have failed"
+            echo "🔍 Debug info:"
+            echo "   Current: '$CURRENT_IMAGE'"
+            echo "   Expected: 'nexy1.azurecr.io/nexy:${GITHUB_SHA}'"
+            echo "   GITHUB_SHA: '${GITHUB_SHA}'"
           fi
 
       - name: Success Message
