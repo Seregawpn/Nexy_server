@@ -24,6 +24,20 @@ jobs:
       - name: Checkout to the branch
         uses: actions/checkout@v4
 
+      - name: Debug Environment
+        run: |
+          echo "🔍 Debug Environment Info:"
+          echo "GitHub Workspace: ${{ github.workspace }}"
+          echo "GitHub SHA: ${{ github.sha }}"
+          echo "GitHub Ref: ${{ github.ref }}"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Runner Architecture: ${{ runner.arch }}"
+          ls -la
+          echo "--- Dockerfile content ---"
+          cat Dockerfile || echo "Dockerfile not found"
+          echo "--- requirements.txt content ---"
+          cat requirements.txt || echo "requirements.txt not found"
+
       - name: Check Azure credentials
         run: |
           echo "🔍 Checking Azure credentials..."
@@ -41,26 +55,28 @@ jobs:
           fi
           echo "✅ All Azure credentials are present"
 
-      - name: Azure Login
+      - name: Azure Login with OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.NEXY_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.NEXY_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.NEXY_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Verify Azure connection
+      - name: Test Azure CLI
         run: |
-          echo "🔍 Verifying Azure connection..."
-          az account show
-          az group show --name Nexy || echo "⚠️ Resource group 'Nexy' not found"
+          echo "🔍 Testing Azure CLI..."
+          az --version
+          az account show --output table
+          echo "✅ Azure CLI working"
 
-      - name: Check Docker
+      - name: Test Docker
         run: |
-          echo "🔍 Checking Docker..."
+          echo "🔍 Testing Docker..."
           docker --version
-          docker info
+          docker info --format "table"
+          echo "✅ Docker working"
 
-      - name: Build and push container image to registry
+      - name: Simple Container App Deploy
         uses: azure/container-apps-deploy-action@v2
         with:
           appSourcePath: ${{ github.workspace }}
@@ -72,10 +88,9 @@ jobs:
           imageToBuild: nexy:${{ github.sha }}
           disableTelemetry: true
 
-      - name: Check deployment status
+      - name: Success Message
         run: |
-          echo "🔍 Checking deployment status..."
-          echo "✅ Deployment completed successfully!"
+          echo "🎉 Deployment completed successfully!"
           echo "🌐 Container App: nexy"
           echo "📁 Resource Group: Nexy"
           echo "🐳 Image: nexy:${{ github.sha }}"
