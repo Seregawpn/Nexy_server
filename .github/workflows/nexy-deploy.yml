@@ -28,10 +28,23 @@ jobs:
         run: |
           echo "🔍 Debug Environment Info:"
           echo "GitHub Workspace: ${{ github.workspace }}"
-          echo "GitHub SHA: ${{ github.sha }}"
-          echo "GitHub Ref: ${{ github.ref }}"
+          echo "GitHub SHA: '${{ github.sha }}' (length: ${#{{ github.sha }})"
+          echo "GitHub Ref: '${{ github.ref }}'"
           echo "Runner OS: ${{ runner.os }}"
           echo "Runner Architecture: ${{ runner.arch }}"
+          
+          # Проверяем критически важные переменные
+          if [ -z "${{ github.sha }}" ]; then
+            echo "❌ CRITICAL ERROR: github.sha is empty!"
+            exit 1
+          fi
+          
+          if [ ${#{{ github.sha }} -lt 10 ]; then
+            echo "❌ CRITICAL ERROR: github.sha too short: '${{ github.sha }}'"
+            exit 1
+          fi
+          
+          echo "✅ GitHub variables are valid"
           ls -la
           echo "--- Dockerfile content ---"
           cat Dockerfile || echo "Dockerfile not found"
@@ -168,13 +181,36 @@ jobs:
           
           echo "✅ Image built and pushed to ACR"
 
-      - name: Verify image exists before deployment
+      - name: Verify variables and image before deployment
         run: |
-          echo "🔍 Verifying image exists in ACR before deployment..."
-          IMAGE_TAG="nexy:${{ github.sha }}"
-          echo "Checking for image: $IMAGE_TAG"
+          echo "🔍 Verifying variables and image before deployment..."
+          
+          # Проверяем github.sha
+          if [ -z "${{ github.sha }}" ]; then
+            echo "❌ ERROR: github.sha is empty!"
+            echo "🔍 GitHub context variables:"
+            echo "   - github.sha: '${{ github.sha }}'"
+            echo "   - github.ref: '${{ github.ref }}'"
+            echo "   - github.workflow: '${{ github.workflow }}'"
+            exit 1
+          fi
+          
+          # Проверяем, что github.sha не слишком короткий (должен быть 40 символов)
+          if [ ${#{{ github.sha }} -lt 10 ]; then
+            echo "❌ ERROR: github.sha seems too short: '${{ github.sha }}'"
+            exit 1
+          fi
+          
+          echo "✅ github.sha is valid: ${{ github.sha }}"
+          
+          # Формируем полный путь к образу
+          FULL_IMAGE_PATH="nexy1.azurecr.io/nexy:${{ github.sha }}"
+          echo "🔍 Full image path: $FULL_IMAGE_PATH"
           
           # Проверяем, что образ существует в ACR
+          IMAGE_TAG="nexy:${{ github.sha }}"
+          echo "🔍 Checking for image: $IMAGE_TAG"
+          
           if az acr repository show --name nexy1 --image "$IMAGE_TAG" >/dev/null 2>&1; then
             echo "✅ Image $IMAGE_TAG found in ACR nexy1"
           else
