@@ -53,25 +53,31 @@
 - ✅ Упростили диагностику
 - ✅ Добавили верификацию образов
 
-### **3. Azure Secrets (ТРЕБУЕТ НАСТРОЙКИ):**
-- ❌ **NEXY_AZURE_CLIENT_ID** - нужно добавить в GitHub Secrets
-- ❌ **NEXY_AZURE_TENANT_ID** - нужно добавить в GitHub Secrets  
-- ❌ **NEXY_AZURE_SUBSCRIPTION_ID** - нужно добавить в GitHub Secrets
+### **3. Azure Secrets (НАСТРОЕНЫ):**
+- ✅ **NEXY_AZURE_CLIENT_ID** - добавлен в GitHub Secrets
+- ✅ **NEXY_AZURE_TENANT_ID** - добавлен в GitHub Secrets  
+- ✅ **NEXY_AZURE_SUBSCRIPTION_ID** - добавлен в GitHub Secrets
+
+### **4. Federated Identity Credentials (ТРЕБУЕТ НАСТРОЙКИ):**
+- ❌ **GitHub Actions OIDC** - нужно настроить в Azure App Registration
+- ❌ **Repository:** `Seregawpn/Nexy_server`
+- ❌ **Branch:** `main`
 
 ## 🎯 **СЛЕДУЮЩИЕ ШАГИ**
 
-### **1. НАСТРОЙКА AZURE SECRETS (ОБЯЗАТЕЛЬНО):**
+### **1. НАСТРОЙКА FEDERATED IDENTITY CREDENTIALS (ОБЯЗАТЕЛЬНО):**
 ```bash
-# Перейдите в GitHub репозиторий:
-# Settings → Secrets and variables → Actions
+# Перейдите в Azure Portal:
+# App registrations → Nexy → Certificates & secrets → Federated credentials
 
-# Добавьте следующие secrets:
-NEXY_AZURE_CLIENT_ID=your_client_id_here
-NEXY_AZURE_TENANT_ID=your_tenant_id_here  
-NEXY_AZURE_SUBSCRIPTION_ID=your_subscription_id_here
+# Добавьте GitHub Actions credential:
+Source: GitHub Actions
+Organization: Seregawpn
+Repository: Nexy_server
+Branch: main
 ```
 
-**📖 Подробная инструкция:** См. файл `AZURE_SECRETS_SETUP.md`
+**📖 Подробная инструкция:** См. файл `AZURE_FEDERATED_CREDENTIALS_SETUP.md`
 
 ### **2. Тестирование локально:**
 ```bash
