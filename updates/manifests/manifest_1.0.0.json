@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "build": 10000,
+  "release_date": "2025-10-04T14:00:00.000000Z",
+  "artifact": {
+    "type": "pkg",
+    "url": "http://20.151.51.172:8081/downloads/Nexy-1.0.0.pkg",
+    "size": 0,
+    "sha256": "",
+    "arch": "universal2",
+    "min_os": "11.0",
+    "ed25519": ""
+  },
+  "critical": false,
+  "auto_install": false,
+  "notes_url": "http://20.151.51.172:8081/downloads/release-notes.txt"
+}
