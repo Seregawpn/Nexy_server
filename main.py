@@ -1,100 +1,124 @@
+"""
+Nexy AI Assistant - Главный файл приложения
+Только точка входа и инициализация SimpleModuleCoordinator
+"""
+
 import asyncio
 import logging
-from aiohttp import web
-from modules.grpc_service.core.grpc_server import run_server as serve
-from dotenv import load_dotenv
+import os
+import sys
+from pathlib import Path
 
-# 🚀 Тест автоматического деплоя - 30 сентября 2025
+# Добавляем пути к модулям (централизованно)
+CLIENT_ROOT = Path(__file__).parent
+sys.path.insert(0, str(CLIENT_ROOT))
+sys.path.insert(0, str(CLIENT_ROOT / "modules"))
+sys.path.insert(0, str(CLIENT_ROOT / "integration"))
 
-# Загружаем config.env
-load_dotenv('config.env')
+# --- Ранняя инициализация pydub/ffmpeg (до любых вызовов pydub) ---
+def init_ffmpeg_for_pydub():
+    """Настраивает путь к встроенному ffmpeg для pydub.
 
-# Импорт системы обновлений
+    Порядок поиска:
+    1) PyInstaller onefile: sys._MEIPASS/resources/ffmpeg/ffmpeg
+    2) PyInstaller bundle:  Contents/Resources/resources/ffmpeg/ffmpeg
+    3) Dev-режим:           resources/ffmpeg/ffmpeg (в корне проекта)
+    """
+    try:
+        from pydub import AudioSegment  # noqa: F401
+    except Exception:
+        return
+
+    ffmpeg_path = None
+    # 1) onefile (временная распаковка)
+    if hasattr(sys, "_MEIPASS"):
+        cand = Path(getattr(sys, "_MEIPASS")) / "resources" / "ffmpeg" / "ffmpeg"
+        if cand.exists():
+            ffmpeg_path = cand
+    # 2) bundle (.app): .../Contents/MacOS/main.py -> ../Resources/resources/ffmpeg/ffmpeg
+    if ffmpeg_path is None:
+        macos_dir = Path(__file__).resolve().parent
+        resources_ffmpeg = macos_dir.parent / "Resources" / "resources" / "ffmpeg" / "ffmpeg"
+        if resources_ffmpeg.exists():
+            ffmpeg_path = resources_ffmpeg
+        else:
+            # Проверяем альтернативное расположение в Frameworks (PyInstaller иногда кладет туда)
+            frameworks_ffmpeg = macos_dir.parent / "Frameworks" / "resources" / "ffmpeg" / "ffmpeg"
+            if frameworks_ffmpeg.exists():
+                ffmpeg_path = frameworks_ffmpeg
+    # 3) dev-режим (репозиторий)
+    if ffmpeg_path is None:
+        dev_ffmpeg = Path(__file__).resolve().parent / "resources" / "ffmpeg" / "ffmpeg"
+        if dev_ffmpeg.exists():
+            ffmpeg_path = dev_ffmpeg
+
+    if ffmpeg_path and ffmpeg_path.exists():
+        try:
+            from pydub import AudioSegment
+            os.environ["FFMPEG_BINARY"] = str(ffmpeg_path)
+            AudioSegment.converter = str(ffmpeg_path)
+        except Exception:
+            pass
+
+# Выполняем инициализацию до импортов модулей, использующих pydub
+init_ffmpeg_for_pydub()
+
+# --- Фикс PyObjC для macOS (до импорта rumps) ---
+# ВАЖНО: Должен быть выполнен ДО импорта любых модулей, использующих rumps
+# Исправляет проблему "dlsym cannot find symbol NSMakeRect in CFBundle"
 try:
-    from modules.update.core.update_manager import UpdateManager
-    from modules.update.config import UpdateConfig
-    UPDATE_SERVER_AVAILABLE = True
-    print("✅ Update Server модуль найден")
-except ImportError as e:
-    print(f"⚠️ Update Server не найден: {e}")
-    UPDATE_SERVER_AVAILABLE = False
+    import AppKit
+    import Foundation
+    # Копируем NSMakeRect и другие символы из AppKit в Foundation
+    if not hasattr(Foundation, "NSMakeRect"):
+        Foundation.NSMakeRect = getattr(AppKit, "NSMakeRect", None)
+    if not hasattr(Foundation, "NSMakePoint"):
+        Foundation.NSMakePoint = getattr(AppKit, "NSMakePoint", None)
+    if not hasattr(Foundation, "NSMakeSize"):
+        Foundation.NSMakeSize = getattr(AppKit, "NSMakeSize", None)
+    if not hasattr(Foundation, "NSMakeRange"):
+        Foundation.NSMakeRange = getattr(AppKit, "NSMakeRange", None)
+except Exception:
+    # Если PyObjC недоступен или ошибка - продолжаем
+    pass
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
- 
-async def health_handler(request):
-    """Health check для Container Apps"""
-    return web.Response(text="OK", status=200)
-
-async def root_handler(request):
-    """Корневой endpoint"""
-    return web.Response(text="Voice Assistant Server is running!", status=200)
-
-async def status_handler(request):
-    """Статус сервера"""
-    return web.json_response({
-        "status": "running",
-        "service": "voice-assistant",
-        "version": "1.0.0",
-        "update_server": "enabled" if UPDATE_SERVER_AVAILABLE else "disabled",
-        "endpoints": {
-            "health": "/health",
-            "status": "/status",
-            "grpc": "port 50051",
-            "updates": "port 8081" if UPDATE_SERVER_AVAILABLE else "disabled"
-        }
-    })
 
 async def main():
-    """Запуск HTTP, gRPC и Update серверов одновременно"""
-    logger.info("🚀 Запуск Voice Assistant Server с системой обновлений...")                               
-    
-    # HTTP сервер для health checks (порт 8080)
-    app = web.Application()
-    app.router.add_get('/health', health_handler)
-    app.router.add_get('/', root_handler)
-    app.router.add_get('/status', status_handler)
-    
-    # Запускаем HTTP сервер на порту 8080
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
-    await site.start()
-    
-    logger.info("✅ HTTP сервер запущен на порту 8080")
-    logger.info("   - Health check: http://localhost:8080/health")
-    logger.info("   - Status: http://localhost:8080/status")
-    logger.info("   - Root: http://localhost:8080/")
-    
-    # Запускаем сервер обновлений на порту 8081
-    update_manager = None
-    if UPDATE_SERVER_AVAILABLE:
-        logger.info("🔄 Запуск сервера обновлений на порту 8081...")
-        try:
-            config = UpdateConfig()
-            update_manager = UpdateManager(config)
-            await update_manager.initialize()
-            await update_manager.start()
-            logger.info("✅ Сервер обновлений запущен")
-            logger.info("   - AppCast: http://localhost:8081/appcast.xml")
-            logger.info("   - Downloads: http://localhost:8081/downloads/")
-            logger.info("   - Health: http://localhost:8081/health")
-        except Exception as e:
-            logger.error(f"❌ Ошибка запуска сервера обновлений: {e}")
-            update_manager = None
-    else:
-        logger.warning("⚠️ Сервер обновлений недоступен")
-    
-    # Запускаем gRPC сервер на порту 50051
-    logger.info("🚀 Запускаю gRPC сервер на порту 50051...")
-    await serve()
+    """Главная функция"""
+    try:
+        # Импортируем SimpleModuleCoordinator
+        from integration.core.simple_module_coordinator import SimpleModuleCoordinator
+        
+        # Создаем координатор
+        coordinator = SimpleModuleCoordinator()
+        
+        # Запускаем (run() сам вызовет initialize() и проверку дублирования)
+        await coordinator.run()                                                         
+        
+    except Exception as e:
+        print(f"💥 Критическая ошибка: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
+    # Создаем новый event loop для главного потока
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     try:
-        asyncio.run(main())
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
-        logger.info("Получен сигнал остановки, завершаю работу...")
-    except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
-        raise
+        print("\n⏹️ Приложение прервано пользователем")
+    finally:
+        loop.close()
+
+
+
+                                                                                                 
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
