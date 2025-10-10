@@ -3,10 +3,13 @@
 """
 
 import yaml
-import os
 from pathlib import Path
 from typing import Dict, Any
+
+from integration.utils.resource_path import get_resource_path
+
 from .types import ScreenshotConfig, ScreenshotFormat, ScreenshotQuality, ScreenshotRegion
+
 
 class ScreenshotConfigManager:
     """Менеджер конфигурации для скриншотов"""
@@ -18,15 +21,11 @@ class ScreenshotConfigManager:
         Args:
             config_path: Путь к файлу конфигурации
         """
-        self.config_path = config_path or self._get_default_config_path()
+        if config_path:
+            self.config_path = Path(config_path).expanduser()
+        else:
+            self.config_path = Path(get_resource_path("config/unified_config.yaml"))
         self._config_cache = None
-    
-    def _get_default_config_path(self) -> str:
-        """Получает путь к конфигурации по умолчанию"""
-        # Ищем конфигурацию в корне проекта
-        project_root = Path(__file__).parent.parent.parent
-        config_path = project_root / "config" / "app_config.yaml"
-        return str(config_path)
     
     def load_config(self) -> Dict[str, Any]:
         """Загружает конфигурацию из файла"""
@@ -34,8 +33,8 @@ class ScreenshotConfigManager:
             return self._config_cache
         
         try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r', encoding='utf-8') as f:
+            if self.config_path.exists():
+                with self.config_path.open('r', encoding='utf-8') as f:
                     config = yaml.safe_load(f)
                     self._config_cache = config
                     return config

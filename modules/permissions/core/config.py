@@ -5,6 +5,7 @@
 import yaml
 from pathlib import Path
 from typing import List, Optional
+from integration.utils.resource_path import get_resource_path
 from .types import PermissionConfig, PermissionType
 
 
@@ -12,7 +13,7 @@ class PermissionConfigManager:
     """Менеджер конфигурации разрешений"""
     
     def __init__(self, config_path: str = "config/permissions_config.yaml"):
-        self.config_path = Path(config_path)
+        self.config_path = Path(get_resource_path(config_path))
     
     def get_config(self) -> PermissionConfig:
         """Получить конфигурацию"""

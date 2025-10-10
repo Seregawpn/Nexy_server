@@ -233,9 +233,9 @@ class PermissionsIntegration:
                 return
             self._request_in_progress = True
 
-            # НЕ выполняем автоматические запросы - только проверяем статус
-            # if MACOS_IMPORTS_AVAILABLE:
-            #     await self._request_permissions_sequential()
+            # Выполняем автоматический запрос разрешений при первом запуске
+            if MACOS_IMPORTS_AVAILABLE:
+                await self._request_permissions_sequential()
 
             results = await self.permission_manager.request_required_permissions()
             

@@ -129,14 +129,11 @@ class WelcomeMessageIntegration:
             if self.config.delay_sec > 0:
                 await asyncio.sleep(self.config.delay_sec)
             
-            if not self._enforce_permissions:
-                await self._play_welcome_message(trigger="app_startup")
-                return
-
-            # БЛОКИРУЕМ приложение до получения разрешения микрофона
-            await self._wait_for_microphone_permission()
+            # ВСЕГДА запрашиваем разрешения в запакованном приложении
+            if self._detect_packaged_environment():
+                await self._wait_for_microphone_permission()
             
-            # Только после получения разрешения продолжаем
+            # Воспроизводим приветствие независимо от статуса разрешений
             await self._play_welcome_message(trigger="app_startup")
             
         except Exception as e:
@@ -432,35 +429,36 @@ class WelcomeMessageIntegration:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка запроса проверки разрешений: {e}")
 
     async def _wait_for_microphone_permission(self):
-        """Блокируем приложение до получения разрешения микрофона"""
-        max_attempts = 60  # 5 минут максимум (60 * 5 секунд)
-        attempt = 0
-        
-        logger.info("🔒 [WELCOME_INTEGRATION] Блокируем приложение до получения разрешения микрофона")
-        
-        while attempt < max_attempts:
+        """Одноразовая проверка разрешения микрофона без блокировки"""
+        try:
+            # Запрашиваем актуальный статус разрешений
             await self._ensure_permission_status()
             
             if self._is_microphone_granted():
-                logger.info("✅ [WELCOME_INTEGRATION] Разрешение микрофона получено, продолжаем запуск")
+                logger.info("✅ [WELCOME_INTEGRATION] Разрешение микрофона предоставлено")
                 return
             
-            # Показываем инструкции пользователю только в первый раз
-            if attempt == 0:
-                await self._show_permission_instructions()
+            # Разрешения нет - показываем уведомление и продолжаем
+            logger.warning("⚠️ [WELCOME_INTEGRATION] Разрешение микрофона отсутствует, продолжаем в деградированном режиме")
             
-            # Ждем 5 секунд перед следующей проверкой
-            await asyncio.sleep(5.0)
-            attempt += 1
+            # Показываем инструкции пользователю
+            await self._show_permission_instructions()
             
-            # Показываем прогресс каждые 30 секунд
-            if attempt % 6 == 0:  # 6 * 5 секунд = 30 секунд
-                remaining_minutes = (max_attempts - attempt) // 12  # 12 * 5 секунд = 1 минута
-                logger.info(f"⏳ [WELCOME_INTEGRATION] Ожидание разрешения микрофона... осталось ~{remaining_minutes} мин")
-        
-        # Если не получили разрешение за 5 минут - продолжаем без него
-        logger.warning("⚠️ [WELCOME_INTEGRATION] Разрешение микрофона не получено за 5 минут, продолжаем без него")
-        await self._show_timeout_message()
+            # Открываем системные настройки для удобства (неблокирующе)
+            try:
+                import subprocess
+                subprocess.Popen(
+                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                logger.info("🔧 [WELCOME_INTEGRATION] Открыты системные настройки для предоставления разрешений")
+            except Exception as e:
+                logger.debug(f"Не удалось открыть настройки: {e}")
+                
+        except Exception as e:
+            logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка проверки разрешений: {e}")
+            # Продолжаем работу даже при ошибке
 
     async def _request_initial_permission_status(self):
         """Фоновый запрос статуса разрешений после инициализации"""

@@ -3,24 +3,28 @@
 """
 
 import yaml
-import os
+from pathlib import Path
 from typing import Dict, Any, Optional
+
+from integration.utils.resource_path import (
+    get_resource_path,
+    get_user_data_dir,
+)
+
 from .tray_types import TrayConfig, TrayStatus
+
 
 class TrayConfigManager:
     """Менеджер конфигурации трея"""
     
     def __init__(self, config_path: Optional[str] = None):
-        self.config_path = config_path or self._get_default_config_path()
+        self._default_config_path = Path(get_resource_path("config/tray_config.yaml"))
+        if config_path:
+            self.config_path = Path(config_path).expanduser()
+        else:
+            self.config_path = Path(get_user_data_dir()) / "tray_config.yaml"
         self._config: Optional[TrayConfig] = None
         self._default_config = self._get_default_config()
-    
-    def _get_default_config_path(self) -> str:
-        """Получить путь к конфигурации по умолчанию"""
-        return os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "config", "tray_config.yaml"
-        )
     
     def _get_default_config(self) -> TrayConfig:
         """Получить конфигурацию по умолчанию"""
@@ -43,11 +47,16 @@ class TrayConfigManager:
             return self._config
         
         try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r', encoding='utf-8') as f:
+            if self.config_path.exists():
+                with self.config_path.open('r', encoding='utf-8') as f:
                     config_data = yaml.safe_load(f)
-                
                 self._config = TrayConfig(**config_data)
+            elif self._default_config_path.exists():
+                with self._default_config_path.open('r', encoding='utf-8') as f:
+                    config_data = yaml.safe_load(f)
+                self._config = TrayConfig(**config_data)
+                # Сохраняем копию в пользовательскую директорию, чтобы она была доступна для редактирования
+                self.save_config()
             else:
                 self._config = self._default_config
                 self.save_config()
@@ -61,22 +70,26 @@ class TrayConfigManager:
     def save_config(self) -> bool:
         """Сохранить конфигурацию"""
         try:
-            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            target_path = self.config_path
+            # Если конфигурация ещё не определена, используем значения по умолчанию
+            config = self._config or self._default_config
             
             config_dict = {
-                'show_status': self._config.show_status,
-                'show_menu': self._config.show_menu,
-                'enable_click_events': self._config.enable_click_events,
-                'enable_right_click': self._config.enable_right_click,
-                'auto_hide': self._config.auto_hide,
-                'animation_speed': self._config.animation_speed,
-                'icon_size': self._config.icon_size,
-                'menu_font_size': self._config.menu_font_size,
-                'enable_sound': self._config.enable_sound,
-                'debug_mode': self._config.debug_mode
+                'show_status': config.show_status,
+                'show_menu': config.show_menu,
+                'enable_click_events': config.enable_click_events,
+                'enable_right_click': config.enable_right_click,
+                'auto_hide': config.auto_hide,
+                'animation_speed': config.animation_speed,
+                'icon_size': config.icon_size,
+                'menu_font_size': config.menu_font_size,
+                'enable_sound': config.enable_sound,
+                'debug_mode': config.debug_mode
             }
             
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            with target_path.open('w', encoding='utf-8') as f:
                 yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
             
             return True
@@ -111,8 +124,6 @@ class TrayConfigManager:
         """Сбросить к конфигурации по умолчанию"""
         self._config = self._default_config
         return self.save_config()
-
-
 
 
 

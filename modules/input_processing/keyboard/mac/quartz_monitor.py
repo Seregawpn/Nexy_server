@@ -115,12 +115,18 @@ class QuartzKeyboardMonitor:
             # Создаем Event Tap
             def _tap_callback(proxy, event_type, event, refcon):
                 try:
+                    logger.debug(f"🔍 Quartz tap вызван: event_type={event_type}")
+
                     if event_type not in (kCGEventKeyDown, kCGEventKeyUp):
                         return event
 
                     keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+                    logger.debug(f"🔍 Keycode={keycode}, target={self._target_keycode}")
+
                     if keycode != self._target_keycode:
                         return event
+
+                    logger.info(f"✅ Целевая клавиша обнаружена! keycode={keycode}")
 
                     now = time.time()
 
@@ -129,7 +135,7 @@ class QuartzKeyboardMonitor:
                         return event
 
                     if event_type == kCGEventKeyDown:
-                        logger.debug("Quartz tap: keyDown detected for target key")
+                        logger.info("🔽 Quartz tap: keyDown detected for target key")
                         with self.state_lock:
                             if self.key_pressed:
                                 # игнорируем авто-повтор
@@ -281,16 +287,19 @@ class QuartzKeyboardMonitor:
         try:
             import inspect
             if inspect.iscoroutinefunction(callback):
-                # Выполняем корутину напрямую в отдельном временном loop
-                # Это гарантирует выполнение даже если основной loop заблокирован rumps
-                try:
+                # ИСПРАВЛЕНО: Всегда используем основной loop через run_coroutine_threadsafe
+                # Это гарантирует, что события попадут в правильный EventBus
+                if self._loop:
+                    try:
+                        future = asyncio.run_coroutine_threadsafe(callback(event), self._loop)
+                        # Опционально: можно дождаться выполнения с таймаутом
+                        # future.result(timeout=5.0)
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка постинга async callback в loop: {e}")
+                else:
+                    # Fallback: если loop не установлен, пытаемся выполнить в новом loop
+                    logger.warning("⚠️ Loop не установлен, создаем временный (события могут не дойти до EventBus)")
                     asyncio.run(callback(event))
-                except RuntimeError:
-                    # На случай конфликтов с текущим loop используем thread-safe постинг
-                    if self._loop:
-                        asyncio.run_coroutine_threadsafe(callback(event), self._loop)
-                    else:
-                        raise
             else:
                 callback(event)
         except Exception as e:

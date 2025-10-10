@@ -84,6 +84,23 @@ class SpeechRecognizer:
         """Подбирает стабильное входное устройство. Предпочтение: встроенный микрофон."""
         try:
             devices = sd.query_devices()
+            input_devices = [
+                (idx, dev)
+                for idx, dev in enumerate(devices)
+                if dev.get('max_input_channels', 0) > 0
+            ]
+            logger.debug(
+                "🎛️ Доступные входные устройства: %s",
+                [
+                    {
+                        "index": idx,
+                        "name": dev.get("name"),
+                        "default_rate": dev.get("default_samplerate"),
+                        "channels": dev.get("max_input_channels"),
+                    }
+                    for idx, dev in input_devices
+                ],
+            )
             # Популярные названия встроенного микрофона на macOS
             builtin_keywords = [
                 'built-in microphone', 'macbook', 'internal microphone',
@@ -93,6 +110,7 @@ class SpeechRecognizer:
             for i, d in enumerate(devices):
                 name = str(d.get('name', '')).lower()
                 if d.get('max_input_channels', 0) > 0 and any(k in name for k in builtin_keywords):
+                    logger.info("🎚️ Выбран встроенный микрофон: %s (index=%s)", d.get('name'), i)
                     return i
             # Если не нашли — берем девайс с наибольшим числом входных каналов, избегая bluetooth-headset
             candidates = []
@@ -105,9 +123,17 @@ class SpeechRecognizer:
             if candidates:
                 # Сортируем: non-bt приоритетнее, затем по каналам
                 candidates.sort(key=lambda x: (x[2], x[1]), reverse=True)
-                return candidates[0][0]
-        except Exception:
-            pass
+                selected = candidates[0][0]
+                dev = devices[selected]
+                logger.info(
+                    "🎚️ Выбрано альтернативное устройство: %s (index=%s, channels=%s)",
+                    dev.get('name'),
+                    selected,
+                    dev.get('max_input_channels'),
+                )
+                return selected
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось определить входное устройство: {e}")
         return None
 
     async def start_listening(self) -> bool:
@@ -125,6 +151,13 @@ class SpeechRecognizer:
             # Уведомляем о начале прослушивания
             await self._notify_state_change(RecognitionState.LISTENING)
             await self._notify_event(RecognitionEventType.LISTENING_START)
+            logger.debug(
+                "🎤 Параметры прослушивания: target_rate=%sHz, channels=%s, chunk=%s, dtype=%s",
+                self.config.sample_rate,
+                self.config.channels,
+                self.config.chunk_size,
+                self.config.dtype,
+            )
             
             # Запускаем поток прослушивания
             self.listen_thread = threading.Thread(
@@ -161,9 +194,15 @@ class SpeechRecognizer:
             
             # Ждем завершения потока прослушивания
             if self.listen_thread and self.listen_thread.is_alive():
+                logger.debug("⏳ Ожидаем завершение потока записи...")
                 self.listen_thread.join(timeout=5.0)
             
             # Распознаем речь
+            logger.debug(
+                "🎧 Завершаем запись: chunks=%s, thread_alive=%s",
+                len(self.audio_data),
+                self.listen_thread.is_alive() if self.listen_thread else False,
+            )
             result = await self._recognize_audio()
             
             # Обновляем метрики
@@ -190,6 +229,10 @@ class SpeechRecognizer:
         try:
             # Подбираем устройство
             self.input_device_index = self._pick_input_device()
+            logger.info(
+                "🎛️ Используем устройство ввода: index=%s",
+                self.input_device_index if self.input_device_index is not None else "default",
+            )
             device_param = self.input_device_index if self.input_device_index is not None else None
             # Пробуем с желаемой частотой
             try:
@@ -213,6 +256,10 @@ class SpeechRecognizer:
                         dev_info = sd.query_devices(None, 'input')
                     fallback_rate = int(dev_info.get('default_samplerate') or 16000)
                     self.actual_input_rate = fallback_rate
+                    logger.info(
+                        "🔁 Переходим на fallback частоту: %s Hz (device default)",
+                        fallback_rate,
+                    )
                     stream = sd.InputStream(
                         device=device_param,
                         samplerate=fallback_rate,
@@ -229,9 +276,13 @@ class SpeechRecognizer:
 
             with stream:
                 self.listen_start_time = time.time()
+                logger.debug("⏱️ Поток записи запущен (actual_rate=%s)", self.actual_input_rate)
                 
                 while self.is_listening and not self.stop_event.is_set():
                     time.sleep(0.1)
+                
+                duration = time.time() - self.listen_start_time if self.listen_start_time else 0
+                logger.debug("🛑 Поток записи остановлен, длительность=%.2fs", duration)
                     
         except Exception as e:
             logger.error(f"❌ Ошибка прослушивания микрофона: {e}")
@@ -246,6 +297,12 @@ class SpeechRecognizer:
             if self.is_listening:
                 with self.audio_lock:
                     self.audio_data.append(indata.copy())
+                    if len(self.audio_data) == 1:
+                        logger.debug(
+                            "🔊 Первый чанк получен: frames=%s, dtype=%s",
+                            frames,
+                            indata.dtype,
+                        )
                     
         except Exception as e:
             logger.error(f"❌ Ошибка в audio callback: {e}")
@@ -260,6 +317,20 @@ class SpeechRecognizer:
             # Объединяем аудио чанки
             with self.audio_lock:
                 audio_data = np.concatenate(self.audio_data, axis=0)
+            sample_count = audio_data.shape[0]
+            duration_sec = sample_count / float(self.actual_input_rate or self.config.sample_rate)
+            peak = float(np.max(np.abs(audio_data)))
+            rms = float(np.sqrt(np.mean(audio_data.astype(np.float64) ** 2)))
+            logger.info(
+                "📈 Статистика аудио: chunks=%s, samples=%s, duration=%.2fs, peak=%.0f, rms=%.1f, actual_rate=%s, target_rate=%s",
+                len(self.audio_data),
+                sample_count,
+                duration_sec,
+                peak,
+                rms,
+                self.actual_input_rate,
+                self.config.sample_rate,
+            )
                 
             # Конвертируем в формат для распознавания
             if self.config.channels > 1:
@@ -269,6 +340,11 @@ class SpeechRecognizer:
             try:
                 if self.actual_input_rate != self.config.sample_rate:
                     from modules.voice_recognition.utils.audio_utils import resample_audio
+                    logger.debug(
+                        "🔄 Выполняем ресемплинг: %s → %s",
+                        self.actual_input_rate,
+                        self.config.sample_rate,
+                    )
                     audio_data = resample_audio(audio_data, self.actual_input_rate, self.config.sample_rate)
             except Exception as re:
                 logger.debug(f"Resample skipped: {re}")
@@ -297,17 +373,33 @@ class SpeechRecognizer:
                 )
                 
                 await self._notify_event(RecognitionEventType.RECOGNITION_COMPLETE, result=result)
+                logger.info(
+                    "✅ Распознавание завершено: text_length=%s, duration=%.2fs, language=%s",
+                    len(text),
+                    duration,
+                    self.config.language,
+                )
                 return result
                 
             except sr.UnknownValueError:
-                logger.warning("⚠️ Речь не распознана")
+                logger.warning(
+                    "⚠️ Google Speech Recognition не распознал аудио (duration=%.2fs, rms=%.1f, peak=%.0f)",
+                    duration_sec,
+                    rms,
+                    peak,
+                )
                 return RecognitionResult(text="", error="Speech not recognized")
             except sr.RequestError as e:
-                logger.error(f"❌ Ошибка сервиса распознавания: {e}")
+                logger.error(
+                    "❌ Ошибка сервиса распознавания (language=%s, duration=%.2fs): %s",
+                    self.config.language,
+                    duration_sec,
+                    e,
+                )
                 return RecognitionResult(text="", error=str(e))
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка распознавания аудио: {e}")
+            logger.error(f"❌ Ошибка распознавания аудио: {e}", exc_info=True)
             return RecognitionResult(text="", error=str(e))
             
     async def _recognize_with_engine(self, audio_data: sr.AudioData) -> str:

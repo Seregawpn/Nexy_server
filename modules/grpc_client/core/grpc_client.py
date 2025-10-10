@@ -12,6 +12,8 @@ from datetime import datetime
 
 import numpy as np
 
+from integration.utils.resource_path import get_resource_path
+
 from .types import ServerConfig, RetryConfig, HealthCheckConfig, RetryStrategy
 from .retry_manager import RetryManager
 from .connection_manager import ConnectionManager
@@ -47,7 +49,8 @@ class GrpcClient:
         try:
             # Загружаем конфигурацию из unified_config.yaml
             import yaml
-            with open('config/unified_config.yaml', 'r') as f:
+            config_path = get_resource_path('config/unified_config.yaml')
+            with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
             
             grpc_data = config.get('grpc', {})
@@ -131,7 +134,8 @@ class GrpcClient:
         try:
             # Пытаемся получить сервер из unified_config.yaml
             import yaml
-            with open('config/unified_config.yaml', 'r') as f:
+            config_path = get_resource_path('config/unified_config.yaml')
+            with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
             
             # Получаем настройки gRPC клиента из секции integrations

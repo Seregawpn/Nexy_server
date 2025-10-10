@@ -8,6 +8,9 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+from integration.utils.resource_path import get_user_data_dir
+
 from .types import HardwareIdConfig
 
 logger = logging.getLogger(__name__)
@@ -22,14 +25,16 @@ class HardwareIdConfigManager:
     
     def _get_default_config_file(self) -> str:
         """Получает путь к файлу конфигурации по умолчанию"""
-        return os.path.join(os.path.expanduser("~"), ".voice_assistant", "hardware_id_config.json")
+        data_dir = get_user_data_dir("Nexy")
+        return str(data_dir / "hardware_id_config.json")
     
     def _get_default_config(self) -> Dict[str, Any]:
         """Возвращает конфигурацию по умолчанию"""
+        cache_path = get_user_data_dir("Nexy") / "hardware_id_cache.json"
         return {
             "hardware_id": {
                 "cache_enabled": True,
-                "cache_file_path": "~/.voice_assistant/hardware_id_cache.json",
+                "cache_file_path": str(cache_path),
                 "cache_ttl_seconds": 86400 * 30,  # 30 дней
                 "system_profiler_timeout": 5,
                 "validate_uuid_format": True,

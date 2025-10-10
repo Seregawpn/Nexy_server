@@ -7,6 +7,7 @@ import fcntl
 import time
 import json
 import psutil
+import tempfile
 from typing import Optional
 from pathlib import Path
 
@@ -22,8 +23,10 @@ class InstanceManager:
         self.pid_check = config.pid_check
         self.lock_fd = None
         
-    async def check_single_instance(self) -> InstanceStatus:
+    async def check_single_instance(self, retry_count: int = 0) -> InstanceStatus:
         """Проверка на дублирование экземпляров с усиленной очисткой."""
+        MAX_RETRIES = 2  # Максимум 2 попытки для защиты от рекурсии
+        
         try:
             # Создаем директорию если не существует
             lock_dir = os.path.dirname(self.lock_file)
@@ -36,7 +39,11 @@ class InstanceManager:
                     return InstanceStatus.DUPLICATE
                 else:
                     # Lock невалиден - очищаем
-                    await self._cleanup_invalid_lock()
+                    cleaned = await self._cleanup_invalid_lock()
+                    if not cleaned:
+                        if retry_count < MAX_RETRIES and self._switch_to_fallback_lock():
+                            return await self.check_single_instance(retry_count + 1)
+                        return InstanceStatus.ERROR
             
             return InstanceStatus.SINGLE
             
@@ -44,8 +51,10 @@ class InstanceManager:
             print(f"❌ Ошибка проверки дублирования: {e}")
             return InstanceStatus.ERROR
     
-    async def acquire_lock(self) -> bool:
+    async def acquire_lock(self, retry_count: int = 0) -> bool:
         """Захват блокировки с TOCTOU защитой."""
+        MAX_RETRIES = 2  # Максимум 2 попытки для защиты от рекурсии
+        
         try:
             # TOCTOU защита: O_CREAT | O_EXCL
             self.lock_fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -70,8 +79,12 @@ class InstanceManager:
                 return False  # Дублирование обнаружено
             else:
                 # Очищаем невалидный lock и пробуем снова
-                await self._cleanup_invalid_lock()
-                return await self.acquire_lock()
+                cleaned = await self._cleanup_invalid_lock()
+                if cleaned and retry_count < MAX_RETRIES:
+                    return await self.acquire_lock(retry_count + 1)
+                if retry_count < MAX_RETRIES and self._switch_to_fallback_lock():
+                    return await self.acquire_lock(retry_count + 1)
+                return False
                 
         except (OSError, IOError) as e:
             print(f"❌ Ошибка захвата блокировки: {e}")
@@ -153,11 +166,38 @@ class InstanceManager:
         """Очистка невалидной блокировки."""
         try:
             if os.path.exists(self.lock_file):
+                try:
+                    os.chmod(self.lock_file, 0o600)
+                except Exception:
+                    pass
                 os.remove(self.lock_file)
             print("🧹 Невалидная блокировка очищена")
             return True
+        except PermissionError as e:
+            print(f"❌ Ошибка очистки невалидной блокировки (нет доступа): {e}")
+            print(f"👉 Удалите файл вручную: {self.lock_file}")
+            return False
         except Exception as e:
             print(f"❌ Ошибка очистки невалидной блокировки: {e}")
+            return False
+
+    def _switch_to_fallback_lock(self) -> bool:
+        """Переключается на запасной путь lock-файла в каталоге /tmp."""
+        try:
+            tmp_dir = Path(tempfile.gettempdir()) / "nexy"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            fallback_path = tmp_dir / "nexy.lock"
+            if fallback_path.exists():
+                try:
+                    fallback_path.unlink()
+                except Exception:
+                    pass
+            print(f"⚠️ Переключаем lock-файл на резервный путь: {fallback_path}")
+            self.lock_file = str(fallback_path)
+            self.lock_fd = None
+            return True
+        except Exception as e:
+            print(f"❌ Не удалось переключить lock-файл на резервный путь: {e}")
             return False
     
     async def get_lock_info(self) -> Optional[dict]:

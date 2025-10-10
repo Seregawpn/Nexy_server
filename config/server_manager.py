@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
+from integration.utils.resource_path import get_resource_path
+
 
 @dataclass
 class ServerInfo:
@@ -28,7 +30,8 @@ class ServerManager:
     """Централизованный менеджер серверов"""
     
     def __init__(self, config_path: str = "config/unified_config.yaml"):
-        self.config_path = config_path
+        resource_path = get_resource_path(config_path)
+        self.config_path = resource_path
         self._config = None
         self._load_config()
     
