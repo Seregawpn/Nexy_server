@@ -287,8 +287,10 @@ class SimpleModuleCoordinator:
                     simulate_max_delay_sec=vrec_cfg_raw.get('simulate_max_delay_sec', 3.0),
                     language=language,
                 )
-            except Exception:
+                logger.debug(f"Voice config: simulate={vrec_config.simulate}, language={language}")
+            except Exception as e:
                 # Fallback с централизованным языком
+                logger.error(f"Voice config error: {e}, using fallback")
                 vrec_config = VoiceRecognitionConfig(language=self.config.get_stt_language("en-US"))
 
             self.integrations['voice_recognition'] = VoiceRecognitionIntegration(

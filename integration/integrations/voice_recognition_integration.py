@@ -133,6 +133,7 @@ class VoiceRecognitionIntegration:
             # Если используем реальный движок — начинаем прослушивание
             if not self.config.simulate and self._recognizer is not None:
                 try:
+                    logger.debug(f"Starting real speech recognition for session {session_id}")
                     await self._recognizer.start_listening()
                     # Для единообразия сигнализируем старт распознавания и открытие микрофона
                     await self.event_bus.publish("voice.recognition_started", {

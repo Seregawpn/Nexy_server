@@ -1,6 +1,6 @@
 """
-Обработчик разрешений Accessibility и Input Monitoring для macOS
-Проверяет доступность и открывает системные настройки
+Accessibility and Input Monitoring permissions helper for macOS.
+Checks current status and opens System Settings when needed.
 """
 
 import logging
@@ -10,23 +10,21 @@ from typing import Dict, Any
 logger = logging.getLogger(__name__)
 
 class AccessibilityHandler:
-    """Обработчик разрешений Accessibility для macOS"""
+    """Accessibility permissions helper for macOS."""
     
     def __init__(self):
         self.bundle_id = "com.nexy.assistant"
     
     def check_accessibility_permission(self) -> bool:
-        """
-        Проверяет разрешение Accessibility
-        
-        Returns:
-            bool: True если разрешение предоставлено
-        """
+        """Check whether the app is trusted for Accessibility."""
         try:
             # Проверяем через tccutil
-            result = subprocess.run([
-                'tccutil', 'check', 'Accessibility', self.bundle_id
-            ], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(
+                ['tccutil', 'check', 'Accessibility', self.bundle_id],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
             
             granted = result.returncode == 0
             
@@ -42,17 +40,15 @@ class AccessibilityHandler:
             return False
     
     def check_input_monitoring_permission(self) -> bool:
-        """
-        Проверяет разрешение Input Monitoring
-        
-        Returns:
-            bool: True если разрешение предоставлено
-        """
+        """Check whether the app is trusted for Input Monitoring."""
         try:
             # Проверяем через tccutil
-            result = subprocess.run([
-                'tccutil', 'check', 'ListenEvent', self.bundle_id
-            ], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(
+                ['tccutil', 'check', 'ListenEvent', self.bundle_id],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
             
             granted = result.returncode == 0
             
@@ -68,46 +64,32 @@ class AccessibilityHandler:
             return False
     
     def open_accessibility_settings(self) -> bool:
-        """
-        Открывает настройки Accessibility
-        
-        Returns:
-            bool: True если настройки открыты
-        """
+        """Open System Settings on the Accessibility pane."""
         try:
-            subprocess.run([
-                'open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
-            ], check=True)
-            logger.info("✅ Opened Accessibility settings")
+            subprocess.run(
+                ['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'],
+                check=True,
+            )
+            logger.info("✅ Accessibility settings opened")
             return True
         except Exception as e:
             logger.error(f"❌ Error opening Accessibility settings: {e}")
             return False
     
     def open_input_monitoring_settings(self) -> bool:
-        """
-        Открывает настройки Input Monitoring
-        
-        Returns:
-            bool: True если настройки открыты
-        """
+        """Open System Settings on the Input Monitoring pane."""
         try:
-            subprocess.run([
-                'open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent'
-            ], check=True)
-            logger.info("✅ Opened Input Monitoring settings")
+            subprocess.run(
+                ['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent'],
+                check=True,
+            )
+            logger.info("✅ Input Monitoring settings opened")
             return True
         except Exception as e:
             logger.error(f"❌ Error opening Input Monitoring settings: {e}")
             return False
     
     def get_permission_status(self) -> Dict[str, Any]:
-        """
-        Получает статус всех разрешений
-        
-        Returns:
-            dict: Статус разрешений
-        """
         return {
             'accessibility': self.check_accessibility_permission(),
             'input_monitoring': self.check_input_monitoring_permission(),
@@ -115,28 +97,20 @@ class AccessibilityHandler:
         }
     
     def get_instructions(self) -> str:
-        """
-        Получает инструкции по настройке разрешений
-        
-        Returns:
-            str: Инструкции
-        """
-        return """
-🔧 РАЗРЕШЕНИЯ ДОСТУПНОСТИ И ВВОДА
-
-1. Accessibility (для мониторинга клавиатуры):
-   - Откройте 'Системные настройки'
-   - Перейдите в 'Конфиденциальность и безопасность'
-   - Выберите 'Универсальный доступ'
-   - Включите переключатель для Nexy AI Assistant
-
-2. Input Monitoring (для мониторинга ввода):
-   - Откройте 'Системные настройки'
-   - Перейдите в 'Конфиденциальность и безопасность'
-   - Выберите 'Мониторинг ввода'
-   - Включите переключатель для Nexy AI Assistant
-
-Или используйте команды:
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
-        """
+        """Return human-readable instructions for granting permissions."""
+        return (
+            "🔧 ACCESSIBILITY & INPUT MONITORING PERMISSIONS\n\n"
+            "1. Accessibility (required to monitor the keyboard):\n"
+            "   - Open System Settings\n"
+            "   - Go to Privacy & Security\n"
+            "   - Select Accessibility\n"
+            "   - Enable the toggle for Nexy AI Assistant\n\n"
+            "2. Input Monitoring (required to capture key presses):\n"
+            "   - Open System Settings\n"
+            "   - Go to Privacy & Security\n"
+            "   - Select Input Monitoring\n"
+            "   - Enable the toggle for Nexy AI Assistant\n\n"
+            "Quick links:\n"
+            'open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"\n'
+            'open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"\n'
+        )

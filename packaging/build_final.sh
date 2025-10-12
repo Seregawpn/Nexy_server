@@ -109,6 +109,76 @@ fix_python_framework() {
     fi
 }
 
+# Функция для очистки AppleDouble из PKG
+clean_appledouble_from_pkg() {
+    local pkg_path="$1"
+    local pkg_name=$(basename "$pkg_path")
+    
+    log "Очищаем AppleDouble файлы из PKG..."
+    
+    # Распаковываем PKG
+    local tmp_pkg_dir="/tmp/pkg_appledouble_clean_$$"
+    rm -rf "$tmp_pkg_dir"
+    pkgutil --expand "$pkg_path" "$tmp_pkg_dir"
+    
+    # Находим вложенный component PKG
+    local nested_pkg=$(find "$tmp_pkg_dir" -maxdepth 2 -type d -name "*.pkg" | head -1)
+    
+    if [ -z "$nested_pkg" ]; then
+        warn "Вложенный PKG не найден, пропускаем очистку AppleDouble"
+        rm -rf "$tmp_pkg_dir"
+        return 0
+    fi
+    
+    # Проверяем наличие Payload
+    if [ ! -f "$nested_pkg/Payload" ]; then
+        warn "Payload не найден в component PKG, пропускаем очистку"
+        rm -rf "$tmp_pkg_dir"
+        return 0
+    fi
+    
+    # Распаковываем Payload (формат: gzip + cpio)
+    local tmp_payload_dir="/tmp/payload_clean_$$"
+    mkdir -p "$tmp_payload_dir"
+    
+    echo "  ✓ Распаковываем Payload (cpio)..."
+    (cd "$tmp_payload_dir" && gzip -dc "$nested_pkg/Payload" | cpio -idm 2>/dev/null) || {
+        warn "Не удалось распаковать Payload, пропускаем очистку"
+        rm -rf "$tmp_pkg_dir" "$tmp_payload_dir"
+        return 0
+    }
+    
+    # Подсчитываем AppleDouble ДО очистки
+    local apple_before=$(find "$tmp_payload_dir" -name '._*' -type f 2>/dev/null | wc -l | tr -d ' ')
+    echo "  ✓ AppleDouble файлов до очистки: $apple_before"
+    
+    # Удаляем AppleDouble файлы и .DS_Store
+    find "$tmp_payload_dir" -name '._*' -type f -delete 2>/dev/null || true
+    find "$tmp_payload_dir" -name '.DS_Store' -type f -delete 2>/dev/null || true
+    
+    local apple_after=$(find "$tmp_payload_dir" -name '._*' -type f 2>/dev/null | wc -l | tr -d ' ')
+    echo "  ✓ AppleDouble файлов после очистки: $apple_after"
+    
+    # Пересоздаём Payload с COPYFILE_DISABLE (формат: cpio + gzip)
+    export COPYFILE_DISABLE=1
+    echo "  ✓ Пересоздаём Payload (cpio)..."
+    (cd "$tmp_payload_dir" && find . -print | cpio -o --format odc 2>/dev/null | gzip > "$nested_pkg/Payload") || {
+        error "Не удалось пересоздать Payload"
+    }
+    
+    # Пересобираем PKG
+    local temp_pkg="$pkg_path.temp"
+    pkgutil --flatten "$tmp_pkg_dir" "$temp_pkg" || {
+        error "Не удалось пересобрать PKG"
+    }
+    mv "$temp_pkg" "$pkg_path"
+    
+    # Очистка
+    rm -rf "$tmp_pkg_dir" "$tmp_payload_dir"
+    
+    log "AppleDouble очищены из $pkg_name ($apple_before → $apple_after файлов)"
+}
+
 # Функция для проверки команд
 check_command() {
     if ! command -v "$1" &> /dev/null; then
@@ -347,6 +417,16 @@ productsign --sign "$INSTALLER_IDENTITY" \
     "$DIST_DIR/$APP_NAME-distribution.pkg" \
     "$DIST_DIR/$APP_NAME.pkg"
 
+# КРИТИЧНО: Очищаем AppleDouble файлы из PKG (могут появиться при productbuild/productsign)
+clean_appledouble_from_pkg "$DIST_DIR/$APP_NAME.pkg"
+
+# Переподписываем PKG после очистки AppleDouble
+log "Переподписываем PKG после очистки..."
+productsign --sign "$INSTALLER_IDENTITY" \
+    "$DIST_DIR/$APP_NAME.pkg" \
+    "$DIST_DIR/$APP_NAME-final-signed.pkg"
+mv "$DIST_DIR/$APP_NAME-final-signed.pkg" "$DIST_DIR/$APP_NAME.pkg"
+
 # Шаг 9: Нотаризация PKG
 echo -e "${BLUE}📤 Шаг 9: Нотаризация PKG${NC}"
 
@@ -470,6 +550,7 @@ echo -e "${BLUE}🧹 Чистим лишние артефакты, оставл�
 rm -f "$DIST_DIR/$APP_NAME-app-for-notarization.zip" 2>/dev/null || true
 rm -f "$DIST_DIR/$APP_NAME-raw.pkg" 2>/dev/null || true
 rm -f "$DIST_DIR/$APP_NAME-distribution.pkg" 2>/dev/null || true
+rm -f "$DIST_DIR/$APP_NAME-final-signed.pkg" 2>/dev/null || true
 rm -rf "$DIST_DIR/$APP_NAME-final.app" 2>/dev/null || true
 rm -rf "$DIST_DIR/$APP_NAME.app" 2>/dev/null || true
 

@@ -1,30 +1,30 @@
 """
-macOS Permission Handler
+macOS permission handler utilities.
 """
 
 import asyncio
 import subprocess
 from typing import Dict, Optional
 from ..core.types import PermissionType, PermissionStatus, PermissionResult
+from .accessibility_handler import AccessibilityHandler
 
 
 class MacOSPermissionHandler:
-    """Обработчик разрешений для macOS"""
+    """macOS-specific permission utilities."""
     
     def __init__(self):
-        pass
+        self.bundle_id = "com.nexy.assistant"
+        self.accessibility_handler = AccessibilityHandler()
     
     async def check_microphone_permission(self) -> PermissionResult:
-        """Проверить разрешение микрофона"""
+        """Check the Microphone permission via tccutil."""
         try:
-            # Реальная проверка TCC для Microphone
-            import subprocess
+            # Query TCC directly via tccutil.
             result = subprocess.run([
                 'tccutil', 'check', 'Microphone', 'com.nexy.assistant'
             ], capture_output=True, text=True, timeout=5)
             
             if result.returncode == 0:
-                # Разрешение предоставлено
                 return PermissionResult(
                     success=True,
                     permission=PermissionType.MICROPHONE,
@@ -32,7 +32,6 @@ class MacOSPermissionHandler:
                     message="Microphone permission granted"
                 )
             else:
-                # Разрешение не предоставлено
                 return PermissionResult(
                     success=False,
                     permission=PermissionType.MICROPHONE,
@@ -51,14 +50,12 @@ class MacOSPermissionHandler:
     async def check_screen_capture_permission(self) -> PermissionResult:
         """Проверить разрешение захвата экрана"""
         try:
-            # Реальная проверка TCC для Screen Capture
-            import subprocess
+            # Query TCC directly via tccutil.
             result = subprocess.run([
                 'tccutil', 'check', 'ScreenCapture', 'com.nexy.assistant'
             ], capture_output=True, text=True, timeout=5)
             
             if result.returncode == 0:
-                # Разрешение предоставлено
                 return PermissionResult(
                     success=True,
                     permission=PermissionType.SCREEN_CAPTURE,
@@ -66,7 +63,6 @@ class MacOSPermissionHandler:
                     message="Screen capture permission granted"
                 )
             else:
-                # Разрешение не предоставлено
                 return PermissionResult(
                     success=False,
                     permission=PermissionType.SCREEN_CAPTURE,
@@ -83,7 +79,7 @@ class MacOSPermissionHandler:
             )
     
     async def check_camera_permission(self) -> PermissionResult:
-        """Проверить разрешение камеры"""
+        """Camera permission is assumed granted (no explicit prompt)."""
         try:
             return PermissionResult(
                 success=True,
@@ -101,7 +97,7 @@ class MacOSPermissionHandler:
             )
     
     async def check_network_permission(self) -> PermissionResult:
-        """Проверить разрешение сети"""
+        """Network permission is always available on macOS."""
         try:
             return PermissionResult(
                 success=True,
@@ -117,9 +113,47 @@ class MacOSPermissionHandler:
                 message=f"Error checking network: {e}",
                 error=e
             )
+
+    async def check_accessibility_permission(self) -> PermissionResult:
+        """Check the Accessibility permission using AccessibilityHandler."""
+        try:
+            granted = self.accessibility_handler.check_accessibility_permission()
+            return PermissionResult(
+                success=True,
+                permission=PermissionType.ACCESSIBILITY,
+                status=PermissionStatus.GRANTED if granted else PermissionStatus.DENIED,
+                message="Accessibility permission granted" if granted else "Accessibility permission denied"
+            )
+        except Exception as e:
+            return PermissionResult(
+                success=False,
+                permission=PermissionType.ACCESSIBILITY,
+                status=PermissionStatus.ERROR,
+                message=f"Error checking accessibility: {e}",
+                error=e
+            )
+
+    async def check_input_monitoring_permission(self) -> PermissionResult:
+        """Check the Input Monitoring permission using AccessibilityHandler."""
+        try:
+            granted = self.accessibility_handler.check_input_monitoring_permission()
+            return PermissionResult(
+                success=True,
+                permission=PermissionType.INPUT_MONITORING,
+                status=PermissionStatus.GRANTED if granted else PermissionStatus.DENIED,
+                message="Input Monitoring permission granted" if granted else "Input Monitoring permission denied"
+            )
+        except Exception as e:
+            return PermissionResult(
+                success=False,
+                permission=PermissionType.INPUT_MONITORING,
+                status=PermissionStatus.ERROR,
+                message=f"Error checking input monitoring: {e}",
+                error=e
+            )
     
     async def check_notifications_permission(self) -> PermissionResult:
-        """Проверить разрешение уведомлений"""
+        """Notifications permission is assumed granted."""
         try:
             return PermissionResult(
                 success=True,
@@ -137,67 +171,73 @@ class MacOSPermissionHandler:
             )
     
     def get_permission_instructions(self, permission_type: PermissionType) -> str:
-        """Получить инструкции для разрешения"""
+        """Return human-readable instructions for a permission."""
         instructions = {
-            PermissionType.MICROPHONE: """
-🎤 РАЗРЕШЕНИЕ МИКРОФОНА
-
-1. Откройте 'Системные настройки'
-2. Перейдите в 'Конфиденциальность и безопасность'
-3. Выберите 'Микрофон'
-4. Включите переключатель для Nexy AI Assistant
-
-Или используйте команду:
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-            """,
-            PermissionType.SCREEN_CAPTURE: """
-📺 РАЗРЕШЕНИЕ ЗАХВАТА ЭКРАНА
-
-1. Откройте 'Системные настройки'
-2. Перейдите в 'Конфиденциальность и безопасность'
-3. Выберите 'Запись экрана'
-4. Включите переключатель для Nexy AI Assistant
-
-Или используйте команду:
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-            """,
-            PermissionType.CAMERA: """
-📹 РАЗРЕШЕНИЕ КАМЕРЫ
-
-1. Откройте 'Системные настройки'
-2. Перейдите в 'Конфиденциальность и безопасность'
-3. Выберите 'Камера'
-4. Включите переключатель для Nexy AI Assistant
-
-Или используйте команду:
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
-            """,
-            PermissionType.NETWORK: """
-🌐 РАЗРЕШЕНИЕ СЕТИ
-
-Обычно разрешается автоматически.
-Проверьте подключение к интернету.
-            """,
-            PermissionType.NOTIFICATIONS: """
-🔔 РАЗРЕШЕНИЕ УВЕДОМЛЕНИЙ
-
-1. Откройте 'Системные настройки'
-2. Перейдите в 'Уведомления'
-3. Найдите Nexy AI Assistant
-4. Включите уведомления
-            """
+            PermissionType.MICROPHONE: (
+                "🎤 MICROPHONE PERMISSION\n\n"
+                "1. Open System Settings\n"
+                "2. Go to Privacy & Security\n"
+                "3. Select Microphone\n"
+                "4. Enable Nexy AI Assistant\n\n"
+                'Shortcut: open "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"\n'
+            ),
+            PermissionType.SCREEN_CAPTURE: (
+                "📺 SCREEN RECORDING PERMISSION\n\n"
+                "1. Open System Settings\n"
+                "2. Go to Privacy & Security\n"
+                "3. Select Screen Recording\n"
+                "4. Enable Nexy AI Assistant\n\n"
+                'Shortcut: open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"\n'
+            ),
+            PermissionType.CAMERA: (
+                "📹 CAMERA PERMISSION\n\n"
+                "1. Open System Settings\n"
+                "2. Go to Privacy & Security\n"
+                "3. Select Camera\n"
+                "4. Enable Nexy AI Assistant\n\n"
+                'Shortcut: open "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"\n'
+            ),
+            PermissionType.NETWORK: (
+                "🌐 NETWORK PERMISSION\n\n"
+                "No additional action is required. Verify network connectivity if issues persist.\n"
+            ),
+            PermissionType.NOTIFICATIONS: (
+                "🔔 NOTIFICATIONS PERMISSION\n\n"
+                "1. Open System Settings\n"
+                "2. Go to Notifications\n"
+                "3. Select Nexy AI Assistant\n"
+                "4. Enable notifications\n"
+            ),
+            PermissionType.ACCESSIBILITY: (
+                "♿ ACCESSIBILITY PERMISSION\n\n"
+                "1. Open System Settings\n"
+                "2. Go to Privacy & Security\n"
+                "3. Select Accessibility\n"
+                "4. Enable Nexy AI Assistant\n\n"
+                'Shortcut: open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"\n'
+            ),
+            PermissionType.INPUT_MONITORING: (
+                "⌨️ INPUT MONITORING PERMISSION\n\n"
+                "1. Open System Settings\n"
+                "2. Go to Privacy & Security\n"
+                "3. Select Input Monitoring\n"
+                "4. Enable Nexy AI Assistant\n\n"
+                'Shortcut: open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"\n'
+            ),
         }
         
         return instructions.get(permission_type, "Инструкции недоступны")
     
     async def open_privacy_preferences(self, permission_type: PermissionType):
-        """Открыть настройки конфиденциальности"""
+        """Open the relevant System Settings pane."""
         try:
             urls = {
                 PermissionType.MICROPHONE: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
                 PermissionType.SCREEN_CAPTURE: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
                 PermissionType.CAMERA: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
-                PermissionType.NOTIFICATIONS: "x-apple.systempreferences:com.apple.preference.notifications"
+                PermissionType.NOTIFICATIONS: "x-apple.systempreferences:com.apple.preference.notifications",
+                PermissionType.ACCESSIBILITY: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                PermissionType.INPUT_MONITORING: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
             }
             
             url = urls.get(permission_type)

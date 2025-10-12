@@ -15,7 +15,8 @@ class PermissionType(Enum):
     CAMERA = "camera"
     NETWORK = "network"
     NOTIFICATIONS = "notifications"
-    ACCESSIBILITY = "accessibility"  # Добавлено для Accessibility
+    ACCESSIBILITY = "accessibility"
+    INPUT_MONITORING = "input_monitoring"
 
 
 class PermissionStatus(Enum):
@@ -115,7 +116,8 @@ class PermissionConfig:
             self.required_permissions = [
                 PermissionType.MICROPHONE,
                 PermissionType.SCREEN_CAPTURE,
-                PermissionType.ACCESSIBILITY,  # Добавлено
+                PermissionType.ACCESSIBILITY,
+                PermissionType.INPUT_MONITORING,
             ]
 
 

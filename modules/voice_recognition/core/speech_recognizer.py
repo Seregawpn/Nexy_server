@@ -142,7 +142,7 @@ class SpeechRecognizer:
             if self.state != RecognitionState.IDLE:
                 logger.warning(f"⚠️ Невозможно начать прослушивание в состоянии {self.state.value}")
                 return False
-                
+
             self.state = RecognitionState.LISTENING
             self.is_listening = True
             self.audio_data = []
@@ -229,8 +229,8 @@ class SpeechRecognizer:
         try:
             # Подбираем устройство
             self.input_device_index = self._pick_input_device()
-            logger.info(
-                "🎛️ Используем устройство ввода: index=%s",
+            logger.debug(
+                "Using audio device: index=%s",
                 self.input_device_index if self.input_device_index is not None else "default",
             )
             device_param = self.input_device_index if self.input_device_index is not None else None
@@ -276,7 +276,7 @@ class SpeechRecognizer:
 
             with stream:
                 self.listen_start_time = time.time()
-                logger.debug("⏱️ Поток записи запущен (actual_rate=%s)", self.actual_input_rate)
+                logger.debug(f"Audio stream started: rate={self.actual_input_rate}Hz")
                 
                 while self.is_listening and not self.stop_event.is_set():
                     time.sleep(0.1)

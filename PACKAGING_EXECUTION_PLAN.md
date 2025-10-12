@@ -665,7 +665,33 @@ EOF
    - ✅ Нотаризация: Accepted
    - ✅ Stapling: успешно
 
-3. **Финальная проверка:**
+3. **Очистка AppleDouble и повторная подпись PKG (ОБЯЗАТЕЛЬНО!):**
+   ```bash
+   # Распаковка дистрибутива
+   pkgutil --expand dist/Nexy.pkg /tmp/pkg_clean
+
+   # Распаковка Payload component-пакета (gzip+cpio, не tar!)
+   nested_pkg=$(find /tmp/pkg_clean -maxdepth 2 -type d -name "*.pkg" | head -1)
+   mkdir -p /tmp/pkg_payload
+   (cd /tmp/pkg_payload && gzip -dc "$nested_pkg/Payload" | cpio -idm)
+
+   # Очистка AppleDouble/DS_Store
+   find /tmp/pkg_payload -name '._*' -delete
+   find /tmp/pkg_payload -name '.DS_Store' -delete
+
+   # Пересборка Payload и PKG
+   (cd /tmp/pkg_payload && find . | cpio -o --format odc | gzip > "$nested_pkg/Payload")
+   pkgutil --flatten /tmp/pkg_clean dist/Nexy.pkg
+
+   # Повторная подпись после очистки
+   productsign --sign "Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)" \
+     dist/Nexy.pkg dist/Nexy-signed.pkg
+   mv dist/Nexy-signed.pkg dist/Nexy.pkg
+   ```
+   - ✅ AppleDouble файлов: 0
+   - ✅ PKG повторно подписан после очистки
+
+4. **Финальная проверка:**
    ```bash
    # Проверка подписей
    codesign --verify --deep --strict dist/Nexy.app ✅
@@ -683,7 +709,7 @@ EOF
 **Финальные артефакты:**
 - ✅ `dist/Nexy.app` - подписан, нотаризован
 - ✅ `dist/Nexy.dmg` - подписан, нотаризован, stapled (93 MB)
-- ✅ `dist/Nexy.pkg` - подписан, нотаризован, stapled (93 MB)
+- ✅ `dist/Nexy.pkg` - подписан, очищен от AppleDouble, повторно подписан, нотаризован (93 MB)
 
 **Результат:** 🎉 Все артефакты готовы к распространению!
 

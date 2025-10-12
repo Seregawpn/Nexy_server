@@ -126,7 +126,7 @@ class QuartzKeyboardMonitor:
                     if keycode != self._target_keycode:
                         return event
 
-                    logger.info(f"✅ Целевая клавиша обнаружена! keycode={keycode}")
+                    logger.debug(f"🔑 Целевая клавиша обнаружена! keycode={keycode}")
 
                     now = time.time()
 

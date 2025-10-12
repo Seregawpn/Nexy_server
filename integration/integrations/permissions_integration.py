@@ -5,6 +5,7 @@ Permissions Integration
 
 import asyncio
 import logging
+import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
@@ -23,15 +24,28 @@ from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCat
 logger = logging.getLogger(__name__)
 
 # macOS системные импорты для триггеров разрешений
+MACOS_IMPORTS_AVAILABLE = False
 try:
     from AppKit import NSBundle
-    from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+    logger.debug("✅ AppKit.NSBundle импортирован")
+    
+    # Accessibility API находится в ApplicationServices, а не в Quartz
+    from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+    logger.debug("✅ ApplicationServices.AXIsProcessTrustedWithOptions импортирован")
+    
     from AVFoundation import AVCaptureDevice, AVMediaTypeAudio
+    logger.debug("✅ AVFoundation импортирован")
+    
     from PyObjCTools import AppHelper
+    logger.debug("✅ PyObjCTools.AppHelper импортирован")
+    
     MACOS_IMPORTS_AVAILABLE = True
-except ImportError:
+    logger.info("✅ Все macOS системные импорты успешно загружены")
+except ImportError as e:
     MACOS_IMPORTS_AVAILABLE = False
-    logger.warning("macOS системные импорты недоступны - триггеры разрешений отключены")
+    logger.warning(f"macOS системные импорты недоступны - триггеры разрешений отключены: {e}")
+    import traceback
+    logger.debug(f"Детали ошибки импорта:\n{traceback.format_exc()}")
 
 # Убираем дублированную конфигурацию - используем PermissionConfig из модуля
 
@@ -74,12 +88,19 @@ class PermissionsIntegration:
         # Кэш статусов разрешений
         self.permission_statuses: Dict[PermissionType, PermissionStatus] = {}
         
-        # Критичные разрешения для работы приложения (ПОЛНОСТЬЮ ОТКЛЮЧЕНЫ - НЕ БЛОКИРУЕМ НИЧЕГО)
-        self.critical_permissions = set()  # Пустое множество - НЕ блокируем приложение даже без разрешений
+        # Критичные разрешения для работы приложения
+        # ВАЖНО: Эти разрешения будут запрошены автоматически при старте
+        self.critical_permissions = {
+            PermissionType.MICROPHONE,       # Обязательно для записи голоса
+            PermissionType.ACCESSIBILITY,    # Обязательно для мониторинга клавиатуры
+            PermissionType.INPUT_MONITORING, # Обязательно для отслеживания нажатий
+        }
         # Текущее состояние блокировки приложения (для устранения дублей событий)
         self._app_blocked: Optional[bool] = None
         # Флаг, чтобы не запускать параллельные запросы прав
         self._request_in_progress: bool = False
+        # Флаг для Input Monitoring - чтобы не открывать System Settings повторно
+        self._input_monitoring_prompted: bool = False
     
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -126,12 +147,11 @@ class PermissionsIntegration:
             
             logger.info("🚀 Запуск PermissionsIntegration...")
             
-            # Проверяем все разрешения (только статус, без запросов)
+            # Проверяем права и запускаем автоматический запрос разрешений
             await self._check_all_permissions()
-            
-            # НЕ запрашиваем разрешения автоматически - пользователь должен сделать это вручную
-            # if self.config.auto_open_preferences and not self._request_in_progress:
-            #     await self._request_required_permissions()
+            # ВСЕГДА запрашиваем разрешения при старте (диалоги появятся только если не выданы)
+            logger.info("🔐 Запускаем запрос разрешений...")
+            await self._request_required_permissions()
             
             # Запускаем мониторинг
             await self.permission_manager.start_monitoring()
@@ -268,26 +288,32 @@ class PermissionsIntegration:
 
             logger.info("🔔 Старт последовательного запроса прав...")
 
-            # 1) Microphone (completion handler, UI thread)
-            mic_future: asyncio.Future = asyncio.get_event_loop().create_future()
+            # 1) Microphone (completion handler called from background thread)
+            # CRITICAL: Capture running loop BEFORE defining handler (callback runs in different thread)
+            loop = asyncio.get_running_loop()
+            mic_future: asyncio.Future = loop.create_future()
 
-            def _mic_request():
+            def mic_handler(granted):
+                # Called from PyObjC background thread - use captured loop via closure
                 try:
-                    def mic_handler(granted):
-                        try:
-                            if not mic_future.done():
-                                mic_future.set_result(bool(granted))
-                        except Exception as e:
-                            if not mic_future.done():
-                                mic_future.set_exception(e)
-                    AVCaptureDevice.requestAccessForMediaType_completionHandler_(AVMediaTypeAudio, mic_handler)
+                    if not mic_future.done():
+                        loop.call_soon_threadsafe(mic_future.set_result, bool(granted))
                 except Exception as e:
                     if not mic_future.done():
-                        mic_future.set_exception(e)
+                        loop.call_soon_threadsafe(mic_future.set_exception, e)
 
-            AppHelper.callAfter(_mic_request)
-            mic_granted = await mic_future
-            logger.info(f"🎤 Microphone: {'granted' if mic_granted else 'denied'}")
+            # Прямой вызов без AppHelper.callAfter (tray-only app, no GUI runloop)
+            try:
+                AVCaptureDevice.requestAccessForMediaType_completionHandler_(AVMediaTypeAudio, mic_handler)
+                mic_granted = await asyncio.wait_for(mic_future, timeout=30.0)
+                logger.info(f"🎤 Microphone: {'granted' if mic_granted else 'denied'}")
+            except asyncio.TimeoutError:
+                logger.error("🎤 Microphone request timeout (30s)")
+                mic_granted = False
+            except Exception as e:
+                logger.error(f"🎤 Microphone request error: {e}")
+                mic_granted = False
+            
             # НЕ открываем настройки автоматически
             # if not mic_granted:
             #     subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"], check=False)
@@ -311,32 +337,163 @@ class PermissionsIntegration:
                     # if not sc_granted:
                     #     subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"], check=False)
 
-            # 3) Accessibility (prompt, no completion)
+            # 3) Accessibility (prompt only if not already granted)
             try:
                 logger.info("♿ Проверка Accessibility...")
-                trusted = bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: False}))  # НЕ показываем prompt
-                # НЕ открываем настройки автоматически
-                # if not trusted:
-                #     subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"], check=False)
-                #     subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"], check=False)
+                # Сначала проверяем БЕЗ prompt
+                trusted = bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: False}))
+                
+                if not trusted:
+                    logger.info("⚠️ Accessibility не выдано, запрашиваем диалог...")
+                    # Только если не выдано - показываем системный диалог
+                    trusted = bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True}))
+                    if not trusted:
+                        logger.warning("⚠️ Accessibility разрешение не выдано после запроса")
+                        # Открываем настройки для ручного включения
+                        subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"], check=False)
+                    else:
+                        logger.info("✅ Accessibility разрешение выдано")
+                else:
+                    logger.info("✅ Accessibility уже выдано")
             except Exception as e:
                 logger.warning(f"Accessibility request error: {e}")
+
+            # 4) Input Monitoring - используем IOHID API как источник истины
+            # Проверяем статус и запрашиваем через системный API
+            try:
+                logger.info("⌨️ Проверка Input Monitoring...")
+                
+                has_input_monitoring = False
+                input_monitoring_status = PermissionStatus.UNKNOWN
+                
+                # IOHID API - единственный надёжный способ узнать статус TCC
+                try:
+                    import ctypes
+                    IOHID_LISTEN_EVENT = 1  # kIOHIDRequestTypeListenEvent
+
+                    if not hasattr(self, "_iokit"):
+                        self._iokit = ctypes.CDLL("/System/Library/Frameworks/IOKit.framework/IOKit")
+                        self._IOHIDCheckAccess = self._iokit.IOHIDCheckAccess
+                        self._IOHIDCheckAccess.argtypes = [ctypes.c_uint32]
+                        self._IOHIDCheckAccess.restype = ctypes.c_bool
+                        self._IOHIDRequestAccess = self._iokit.IOHIDRequestAccess
+                        self._IOHIDRequestAccess.argtypes = [ctypes.c_uint32]
+                        self._IOHIDRequestAccess.restype = ctypes.c_int32
+
+                    check_result = self._IOHIDCheckAccess(ctypes.c_uint32(IOHID_LISTEN_EVENT))
+                    has_input_monitoring = bool(check_result)
+                    logger.debug(f"IOHIDCheckAccess результат (ctypes): {check_result}")
+
+                    if not has_input_monitoring and not self._input_monitoring_prompted:
+                        logger.info("⚠️ Input Monitoring не выдано, запрашиваем через IOHID API (ctypes)...")
+                        request_result = self._IOHIDRequestAccess(ctypes.c_uint32(IOHID_LISTEN_EVENT))
+                        logger.debug(f"IOHIDRequestAccess результат (ctypes): {request_result}")
+
+                        if request_result == 0:  # kIOReturnSuccess
+                            has_input_monitoring = True
+                            logger.info("✅ Input Monitoring разрешение выдано через диалог (ctypes)")
+                        else:
+                            logger.warning(f"⚠️ Input Monitoring разрешение не выдано после запроса (код: {request_result})")
+                            logger.info("ℹ️ Открываем System Settings для ручного включения...")
+                            subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"], check=False)
+
+                        self._input_monitoring_prompted = True
+                    elif has_input_monitoring:
+                        logger.info("✅ Input Monitoring уже выдано")
+                    elif self._input_monitoring_prompted:
+                        logger.debug("Input Monitoring уже проверялся, пропускаем повторный запрос")
+
+                    # Определяем статус для EventBus
+                    input_monitoring_status = PermissionStatus.GRANTED if has_input_monitoring else PermissionStatus.DENIED
+
+                except Exception as import_err:
+                    # Fallback: IOHID API недоступен (старый рантайм)
+                    logger.debug(f"IOHID API недоступен (ctypes): {import_err}, используем fallback к TCC.db")
+                    import sqlite3
+                    bundle_id = NSBundle.mainBundle().bundleIdentifier() or "com.nexy.assistant"
+                    
+                    user_tcc_db = os.path.expanduser("~/Library/Application Support/com.apple.TCC/TCC.db")
+                    system_tcc_db = "/Library/Application Support/com.apple.TCC/TCC.db"
+                    
+                    def check_tcc_db(db_path):
+                        """Проверяет TCC.db, возвращает True/False/None (неизвестно)"""
+                        try:
+                            conn = sqlite3.connect(db_path)
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "SELECT allowed FROM access WHERE service='kTCCServiceListenEvent' AND client=?",
+                                (bundle_id,)
+                            )
+                            result = cursor.fetchone()
+                            conn.close()
+                            return result[0] == 1 if result else None
+                        except (sqlite3.Error, PermissionError) as e:
+                            # Трактуем ошибки как "неизвестно", а не "нет прав"
+                            logger.debug(f"Не удалось прочитать {db_path}: {e}")
+                            return None
+                    
+                    # Проверяем сначала user, затем system
+                    user_result = check_tcc_db(user_tcc_db)
+                    if user_result is True:
+                        has_input_monitoring = True
+                        input_monitoring_status = PermissionStatus.GRANTED
+                    elif user_result is None:
+                        # Пробуем системную базу
+                        system_result = check_tcc_db(system_tcc_db)
+                        if system_result is True:
+                            has_input_monitoring = True
+                            input_monitoring_status = PermissionStatus.GRANTED
+                        elif system_result is False:
+                            input_monitoring_status = PermissionStatus.DENIED
+                        else:
+                            # Не смогли определить - оставляем UNKNOWN
+                            input_monitoring_status = PermissionStatus.UNKNOWN
+                    else:
+                        input_monitoring_status = PermissionStatus.DENIED
+                    
+                    # Если нет разрешения и ещё не открывали - открываем Settings
+                    if not has_input_monitoring and not self._input_monitoring_prompted:
+                        logger.info("⚠️ Input Monitoring не выдано (fallback режим)")
+                        logger.info("ℹ️ Откройте вручную: System Settings → Privacy & Security → Input Monitoring")
+                        subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"], check=False)
+                        self._input_monitoring_prompted = True
+                    elif has_input_monitoring:
+                        logger.info("✅ Input Monitoring выдано (fallback режим)")
+                
+                # Обновляем статус в permission_statuses
+                self.permission_statuses[PermissionType.INPUT_MONITORING] = input_monitoring_status
+                
+                # Отправляем событие на EventBus
+                await self.event_bus.publish(
+                    "permissions.status_changed",
+                    {
+                        "permission_type": PermissionType.INPUT_MONITORING.value,
+                        "status": input_monitoring_status.value,
+                        "granted": has_input_monitoring
+                    }
+                )
+                
+            except Exception as e:
+                logger.error(f"❌ Ошибка проверки Input Monitoring: {e}")
+                # При ошибке оставляем статус UNKNOWN
+                self.permission_statuses[PermissionType.INPUT_MONITORING] = PermissionStatus.UNKNOWN
 
             logger.info("✅ Последовательный запрос прав завершен")
 
         except Exception as e:
             logger.error(f"❌ Ошибка последовательного запроса прав: {e}")
     
+    async def _are_critical_permissions_granted(self) -> bool:
+        """Проверить, выданы ли все критичные разрешения."""
+        return all(
+            self.permission_statuses.get(perm, PermissionStatus.NOT_DETERMINED) == PermissionStatus.GRANTED
+            for perm in self.critical_permissions
+        )
+    
     async def _check_critical_permissions(self):
         """Проверить критичные разрешения"""
         try:
-            critical_granted = True
-            
-            for perm_type in self.critical_permissions:
-                status = self.permission_statuses.get(perm_type, PermissionStatus.NOT_DETERMINED)
-                if status != PermissionStatus.GRANTED:
-                    critical_granted = False
-                    break
+            critical_granted = await self._are_critical_permissions_granted()
             
             # Публикуем событие о статусе критичных разрешений
             await self.event_bus.publish("permissions.critical_status", {
@@ -379,6 +536,9 @@ class PermissionsIntegration:
                     for perm in self.critical_permissions
                 }
             })
+            
+            # Автоматически инициируем запрос разрешений
+            await self._request_required_permissions()
             
         except Exception as e:
             logger.error(f"❌ Ошибка блокировки приложения: {e}")

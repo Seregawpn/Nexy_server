@@ -44,6 +44,7 @@ cp -R /Volumes/Nexy/Nexy.app /Applications/
 - ✅ Подписан: Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)
 - ✅ Нотаризован: Apple Notary Service (Accepted)
 - ✅ Stapled: Ticket прикреплён
+- ✅ AppleDouble: удалены (Payload очищен и упакован заново через `cpio`)
 - ✅ Certificate Chain:
   ```
   Developer ID Installer → Developer ID CA → Apple Root CA
@@ -112,6 +113,7 @@ Runtime Version=15.4.0
 - [x] DMG корректен (`hdiutil verify`)
 - [x] PKG принят Gatekeeper (`spctl --assess --type install`)
 - [x] Stapler tickets прикреплены (DMG и PKG)
+- [x] AppleDouble (._*) отсутствуют в PKG (`find /tmp/pkg_payload -name '._*' → 0`)
 - [x] Все бинарники arm64 (ffmpeg, FLAC, SwitchAudioSource)
 - [x] Конфиги загружаются из правильных путей
 - [x] Python.framework удалён (избыточен)

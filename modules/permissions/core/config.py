@@ -45,6 +45,8 @@ class PermissionConfigManager:
             required_permissions=[
                 PermissionType.MICROPHONE,
                 PermissionType.SCREEN_CAPTURE,
+                PermissionType.ACCESSIBILITY,
+                PermissionType.INPUT_MONITORING,
                 PermissionType.NETWORK
             ],
             check_interval=30,
