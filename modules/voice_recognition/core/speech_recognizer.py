@@ -49,6 +49,10 @@ class SpeechRecognizer:
         # Инициализируем распознаватель
         self._init_recognizer()
         
+        # Информация о выбранном INPUT устройстве (получается через EventBus)
+        self._selected_input_device = None
+        self._portaudio_index = None
+        
     def _init_recognizer(self):
         """Инициализирует распознаватель речи"""
         try:
@@ -79,62 +83,106 @@ class SpeechRecognizer:
             logger.warning(f"⚠️ Ошибка инициализации распознавателя (продолжаем работу): {e}")
             # НЕ устанавливаем ERROR - позволяем работать в degraded режиме
             self.state = RecognitionState.IDLE
+    
+    def set_event_bus(self, event_bus):
+        """Установка EventBus для подписки на события"""
+        self.event_bus = event_bus
+        self._subscribe_to_events()
+        logger.debug("🔍 [AUDIO_DEBUG] EventBus установлен в SpeechRecognizer")
+    
+    def _subscribe_to_events(self):
+        """Подписка на события выбора INPUT устройств"""
+        if self.event_bus:
+            # Создаем задачу для асинхронной подписки
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Используем asyncio.create_task для немедленной подписки
+                    asyncio.create_task(self._async_subscribe_to_events())
+                else:
+                    # Если loop не запущен, запускаем синхронно
+                    loop.run_until_complete(self._async_subscribe_to_events())
+            except Exception as e:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] Не удалось подписаться на события: {e}")
+            logger.debug("🔍 [AUDIO_DEBUG] SpeechRecognizer подписан на audio.input_device_selected и audio.unified_device_selected")
+    
+    async def _async_subscribe_to_events(self):
+        """Асинхронная подписка на события"""
+        try:
+            await self.event_bus.subscribe("audio.input_device_selected", self._on_input_device_selected)
+            await self.event_bus.subscribe("audio.unified_device_selected", self._on_unified_device_selected)
+            logger.debug("🔍 [AUDIO_DEBUG] Подписка на события завершена")
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка асинхронной подписки: {e}")
+    
+    async def _on_input_device_selected(self, event_data):
+        """Обработка события выбора INPUT устройства"""
+        try:
+            logger.info(f"🔍 [AUDIO_DEBUG] SpeechRecognizer получил событие выбора INPUT устройства: {event_data}")
+            
+            # Извлекаем данные устройства из события
+            device_data = event_data.get("data", event_data)
+            
+            # Сохраняем информацию об устройстве
+            self._selected_input_device = device_data
+            
+            # Получаем portaudio_index из события (должен приходить от AudioDeviceManager)
+            portaudio_index = device_data.get("portaudio_index")
+            if portaudio_index is not None:
+                self._portaudio_index = portaudio_index
+                self.input_device_index = portaudio_index  # Устанавливаем input_device_index
+                logger.info(f"✅ [AUDIO_SUCCESS] SpeechRecognizer настроен на устройство: {device_data.get('name')} (index={portaudio_index})")
+                logger.info(f"🔍 [AUDIO_DEBUG] input_device_index установлен в: {self.input_device_index}")
+            else:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] portaudio_index не предоставлен в событии для устройства: {device_data.get('name')}")
+                logger.warning(f"⚠️ [AUDIO_DEBUG] Содержимое события: {event_data}")
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка обработки события выбора INPUT устройства: {e}")
+    
+    async def _on_unified_device_selected(self, event_data):
+        """Обработка события выбора унифицированного устройства"""
+        try:
+            logger.debug(f"🔍 [AUDIO_DEBUG] SpeechRecognizer получил событие выбора унифицированного устройства: {event_data}")
+            
+            # Извлекаем данные устройства
+            device_data = event_data.get("data", event_data)
+            
+            # Получаем portaudio_index из основного события или из input_device
+            portaudio_index = device_data.get("portaudio_index")
+            if portaudio_index is None and "input_device" in device_data:
+                portaudio_index = device_data["input_device"].get("portaudio_index")
+            
+            if portaudio_index is not None:
+                self._portaudio_index = portaudio_index
+                self.input_device_index = portaudio_index  # Устанавливаем input_device_index
+                logger.info(f"✅ [AUDIO_SUCCESS] SpeechRecognizer настроен на унифицированное устройство: {device_data.get('name')} (index={portaudio_index})")
+            else:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] portaudio_index не предоставлен в событии унифицированного устройства: {device_data.get('name')}")
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка обработки события выбора унифицированного устройства: {e}")
+    
+# УДАЛЕНО: _find_portaudio_index() - используйте EventBus для получения portaudio_index
             
     def _pick_input_device(self) -> Optional[int]:
-        """Подбирает стабильное входное устройство. Предпочтение: встроенный микрофон."""
+        """Получает INPUT устройство, выбранное через EventBus"""
         try:
-            devices = sd.query_devices()
-            input_devices = [
-                (idx, dev)
-                for idx, dev in enumerate(devices)
-                if dev.get('max_input_channels', 0) > 0
-            ]
-            logger.debug(
-                "🎛️ Доступные входные устройства: %s",
-                [
-                    {
-                        "index": idx,
-                        "name": dev.get("name"),
-                        "default_rate": dev.get("default_samplerate"),
-                        "channels": dev.get("max_input_channels"),
-                    }
-                    for idx, dev in input_devices
-                ],
-            )
-            # Популярные названия встроенного микрофона на macOS
-            builtin_keywords = [
-                'built-in microphone', 'macbook', 'internal microphone',
-                'microphone (built-in)', 'default - built-in'
-            ]
-            # Ищем по имени
-            for i, d in enumerate(devices):
-                name = str(d.get('name', '')).lower()
-                if d.get('max_input_channels', 0) > 0 and any(k in name for k in builtin_keywords):
-                    logger.info("🎚️ Выбран встроенный микрофон: %s (index=%s)", d.get('name'), i)
-                    return i
-            # Если не нашли — берем девайс с наибольшим числом входных каналов, избегая bluetooth-headset
-            candidates = []
-            for i, d in enumerate(devices):
-                ch = d.get('max_input_channels', 0)
-                if ch > 0:
-                    name = str(d.get('name', '')).lower()
-                    is_bt_headset = ('airpods' in name) or ('headset' in name) or ('hands-free' in name)
-                    candidates.append((i, ch, 0 if is_bt_headset else 1))
-            if candidates:
-                # Сортируем: non-bt приоритетнее, затем по каналам
-                candidates.sort(key=lambda x: (x[2], x[1]), reverse=True)
-                selected = candidates[0][0]
-                dev = devices[selected]
-                logger.info(
-                    "🎚️ Выбрано альтернативное устройство: %s (index=%s, channels=%s)",
-                    dev.get('name'),
-                    selected,
-                    dev.get('max_input_channels'),
-                )
-                return selected
+            # Если у нас есть выбранное устройство через EventBus, используем его
+            if self._portaudio_index is not None:
+                logger.debug(f"🔍 [AUDIO_DEBUG] Используем выбранное через EventBus устройство: index={self._portaudio_index}")
+                return self._portaudio_index
+            
+            # БЕЗ FALLBACK: требуем устройство через EventBus
+            logger.error("❌ [AUDIO_ERROR] EventBus не настроен или устройство не выбрано через события!")
+            logger.error("❌ [AUDIO_ERROR] SpeechRecognizer требует настройки через AudioDeviceIntegration")
+            return None
+            
         except Exception as e:
-            logger.warning(f"⚠️ Не удалось определить входное устройство: {e}")
-        return None
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка получения INPUT устройства: {e}")
+            return None
+    
 
     async def start_listening(self) -> bool:
         """Начинает прослушивание микрофона"""
@@ -229,50 +277,64 @@ class SpeechRecognizer:
         try:
             # Подбираем устройство
             self.input_device_index = self._pick_input_device()
-            logger.debug(
-                "Using audio device: index=%s",
-                self.input_device_index if self.input_device_index is not None else "default",
-            )
-            device_param = self.input_device_index if self.input_device_index is not None else None
-            # Пробуем с желаемой частотой
+            
+            # Проверяем, что устройство выбрано
+            if self.input_device_index is None:
+                logger.error("❌ [AUDIO_ERROR] Не удалось выбрать INPUT устройство!")
+                logger.error("❌ [AUDIO_ERROR] SpeechRecognizer требует настройки через AudioDeviceIntegration")
+                self.state = RecognitionState.ERROR
+                return
+            
+            logger.info(f"🎤 Прослушивание микрофона начато")
+            logger.debug(f"🔍 [AUDIO_DEBUG] Используем устройство: index={self.input_device_index}")
+            device_param = self.input_device_index
+            preferred_rates = []
+            device_default_rate = None
             try:
-                self.actual_input_rate = self.config.sample_rate
-                stream = sd.InputStream(
-                    device=device_param,
-                    samplerate=self.config.sample_rate,
-                    channels=self.config.channels,
-                    dtype=self.config.dtype,
-                    blocksize=self.config.chunk_size,
-                    callback=self._audio_callback
-                )
-                stream.start()
-            except Exception as e1:
-                logger.warning(f"⚠️ Не удалось открыть InputStream с {self.config.sample_rate} Hz: {e1}")
-                # Пробуем с дефолтной частотой устройства
+                dev_info = sd.query_devices(device_param, 'input') if device_param is not None else sd.query_devices(None, 'input')
+                device_default_rate = dev_info.get('default_samplerate')
+                if device_default_rate:
+                    preferred_rates.append(int(device_default_rate))
+            except Exception as info_err:
+                logger.debug(f"🎛️ Не удалось получить default samplerate устройства: {info_err}")
+            if self.config.sample_rate not in preferred_rates:
+                preferred_rates.append(self.config.sample_rate)
+            preferred_rates.append(None)  # Позволяем PortAudio выбрать автоматически
+
+            stream = None
+            last_error = None
+            for rate in preferred_rates:
                 try:
-                    if device_param is not None:
-                        dev_info = sd.query_devices(device_param)
-                    else:
-                        dev_info = sd.query_devices(None, 'input')
-                    fallback_rate = int(dev_info.get('default_samplerate') or 16000)
-                    self.actual_input_rate = fallback_rate
-                    logger.info(
-                        "🔁 Переходим на fallback частоту: %s Hz (device default)",
-                        fallback_rate,
-                    )
+                    target_rate = rate if rate else self.config.sample_rate
                     stream = sd.InputStream(
                         device=device_param,
-                        samplerate=fallback_rate,
+                        samplerate=target_rate if rate else None,
                         channels=self.config.channels,
                         dtype=self.config.dtype,
                         blocksize=self.config.chunk_size,
                         callback=self._audio_callback
                     )
                     stream.start()
-                except Exception as e2:
-                    logger.error(f"❌ Ошибка открытия InputStream даже с дефолтной частотой: {e2}")
-                    self.state = RecognitionState.ERROR
-                    return
+                    if rate:
+                        self.actual_input_rate = target_rate
+                        logger.info("🎛️ Audio stream запущен с частотой %s Hz (preferred)", target_rate)
+                    else:
+                        # Stream выбрал частоту автоматически
+                        self.actual_input_rate = int(stream.samplerate)
+                        logger.info("🎛️ Audio stream запущен с автоматической частотой %s Hz", self.actual_input_rate)
+                    break
+                except Exception as e_rate:
+                    last_error = e_rate
+                    if rate:
+                        logger.warning(f"⚠️ Не удалось открыть InputStream с частотой {rate} Hz: {e_rate}")
+                    else:
+                        logger.error(f"❌ Ошибка открытия InputStream (auto samplerate): {e_rate}")
+                    stream = None
+
+            if stream is None:
+                logger.error(f"❌ Не удалось открыть InputStream для устройства {device_param}, последняя ошибка: {last_error}")
+                self.state = RecognitionState.ERROR
+                return
 
             with stream:
                 self.listen_start_time = time.time()

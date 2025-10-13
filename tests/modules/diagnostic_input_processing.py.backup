@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""
+Диагностический тест для Input Processing модуля
+"""
+
+import asyncio
+import logging
+import sys
+import os
+from typing import Dict, List, Any, Optional
+
+# Добавляем путь к модулям
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+
+from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
+from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
+from config.unified_config_loader import UnifiedConfigLoader
+
+logger = logging.getLogger(__name__)
+
+class InputProcessingDiagnostic:
+    """Диагностика Input Processing модуля"""
+    
+    def __init__(self):
+        self.results = []
+        
+    async def run_diagnostic(self) -> Dict[str, Any]:
+        """Запуск диагностики Input Processing"""
+        logger.info("🔍 Диагностика Input Processing...")
+        
+        # 1. Тест инициализации
+        await self._test_initialization()
+        
+        # 2. Тест конфигурации
+        await self._test_configuration()
+        
+        # 3. Тест keyboard listener
+        await self._test_keyboard_listener()
+        
+        # 4. Тест обработки событий
+        await self._test_event_processing()
+        
+        # 5. Тест разрешений
+        await self._test_permissions()
+        
+        return self._analyze_results()
+    
+    async def _test_initialization(self):
+        """Тест инициализации Input Processing"""
+        logger.info("1️⃣ Тест инициализации...")
+        
+        try:
+            # Загружаем конфигурацию
+            config_loader = UnifiedConfigLoader()
+            config = config_loader._load_config()
+            input_config = config.get('input_processing', {})
+            
+            # Создаем KeyboardMonitor
+            self.keyboard_monitor = KeyboardMonitor(input_config)
+            
+            # Инициализируем
+            result = await self.keyboard_monitor.initialize()
+            
+            if result:
+                self._add_result("initialization", True, "Input Processing инициализирован", 
+                               "Инициализация прошла успешно", "Продолжить", {})
+            else:
+                self._add_result("initialization", False, "Ошибка инициализации Input Processing",
+                               "Проблема с инициализацией", "Проверить конфигурацию и зависимости", {})
+            
+        except Exception as e:
+            self._add_result("initialization", False, f"Ошибка инициализации: {e}",
+                           "Проблема с конфигурацией или зависимостями",
+                           "Проверить Input Processing конфигурацию и зависимости", {"error": str(e)})
+    
+    async def _test_configuration(self):
+        """Тест конфигурации Input Processing"""
+        logger.info("2️⃣ Тест конфигурации...")
+        
+        if not hasattr(self, 'keyboard_monitor'):
+            self._add_result("configuration", False, "Input Processing не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем основные параметры конфигурации
+            config = self.keyboard_monitor.config
+            
+            required_params = [
+                ('long_press_duration', 'Длительность долгого нажатия'),
+                ('key_combination_timeout', 'Таймаут комбинации клавиш'),
+                ('enable_global_hotkeys', 'Глобальные горячие клавиши'),
+                ('enable_key_logging', 'Логирование клавиш')
+            ]
+            
+            for param_name, description in required_params:
+                if hasattr(config, param_name):
+                    value = getattr(config, param_name)
+                    self._add_result(f"config_{param_name}", True, f"{description}: {value}",
+                                   "Параметр настроен", "Продолжить", {"parameter": param_name, "value": value})
+                else:
+                    self._add_result(f"config_{param_name}", False, f"{description} не настроен",
+                                   "Параметр отсутствует", f"Настроить {param_name} в конфигурации", 
+                                   {"parameter": param_name})
+            
+        except Exception as e:
+            self._add_result("configuration", False, f"Ошибка проверки конфигурации: {e}",
+                           "Проблема с доступом к конфигурации", "Проверить структуру конфигурации", 
+                           {"error": str(e)})
+    
+    async def _test_keyboard_listener(self):
+        """Тест keyboard listener"""
+        logger.info("3️⃣ Тест keyboard listener...")
+        
+        if not hasattr(self, 'keyboard_monitor'):
+            self._add_result("keyboard_listener", False, "Input Processing не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем состояние listener
+            is_running = getattr(self.keyboard_monitor, 'is_running', False)
+            
+            if is_running:
+                self._add_result("keyboard_listener", True, "Keyboard listener запущен",
+                               "Listener работает", "Продолжить", {})
+            else:
+                self._add_result("keyboard_listener", False, "Keyboard listener не запущен",
+                               "Listener не работает", "Проверить запуск listener", {})
+            
+            # Проверяем callback функции
+            callbacks = getattr(self.keyboard_monitor, 'callbacks', {})
+            if callbacks:
+                self._add_result("keyboard_callbacks", True, f"Найдено {len(callbacks)} callback функций",
+                               "Callback функции настроены", "Продолжить", {"callback_count": len(callbacks)})
+            else:
+                self._add_result("keyboard_callbacks", False, "Callback функции не настроены",
+                               "Нет callback функций", "Настроить callback функции", {})
+            
+        except Exception as e:
+            self._add_result("keyboard_listener", False, f"Ошибка тестирования listener: {e}",
+                           "Проблема с keyboard listener", "Проверить keyboard listener", 
+                           {"error": str(e)})
+    
+    async def _test_event_processing(self):
+        """Тест обработки событий"""
+        logger.info("4️⃣ Тест обработки событий...")
+        
+        if not hasattr(self, 'keyboard_monitor'):
+            self._add_result("event_processing", False, "Input Processing не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Создаем тестовое событие
+            test_event = KeyEvent(
+                key_code=49,  # Space key
+                event_type=KeyEventType.PRESS,
+                timestamp=1234567890
+            )
+            
+            # Тестируем обработку события
+            result = await self.keyboard_monitor._process_key_event(test_event)
+            
+            if result is not None:
+                self._add_result("event_processing", True, "Обработка событий работает",
+                               "События обрабатываются корректно", "Продолжить", {})
+            else:
+                self._add_result("event_processing", False, "Обработка событий не работает",
+                               "События не обрабатываются", "Проверить логику обработки событий", {})
+            
+        except Exception as e:
+            self._add_result("event_processing", False, f"Ошибка обработки событий: {e}",
+                           "Проблема с обработкой событий", "Проверить обработку событий", 
+                           {"error": str(e)})
+    
+    async def _test_permissions(self):
+        """Тест разрешений"""
+        logger.info("5️⃣ Тест разрешений...")
+        
+        if not hasattr(self, 'keyboard_monitor'):
+            self._add_result("permissions", False, "Input Processing не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем разрешения на доступ к клавиатуре
+            has_permissions = await self.keyboard_monitor._check_accessibility_permissions()
+            
+            if has_permissions:
+                self._add_result("accessibility_permissions", True, "Разрешения на доступность получены",
+                               "Разрешения настроены", "Продолжить", {})
+            else:
+                self._add_result("accessibility_permissions", False, "Разрешения на доступность не получены",
+                               "Нет разрешений на доступность", "Предоставить разрешения в настройках", {})
+            
+            # Проверяем разрешения на мониторинг ввода
+            has_input_monitoring = await self.keyboard_monitor._check_input_monitoring_permissions()
+            
+            if has_input_monitoring:
+                self._add_result("input_monitoring_permissions", True, "Разрешения на мониторинг ввода получены",
+                               "Разрешения настроены", "Продолжить", {})
+            else:
+                self._add_result("input_monitoring_permissions", False, "Разрешения на мониторинг ввода не получены",
+                               "Нет разрешений на мониторинг ввода", "Предоставить разрешения в настройках", {})
+            
+        except Exception as e:
+            self._add_result("permissions", False, f"Ошибка проверки разрешений: {e}",
+                           "Проблема с проверкой разрешений", "Проверить разрешения системы", 
+                           {"error": str(e)})
+    
+    def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
+        """Добавление результата теста"""
+        self.results.append({
+            "test": test_name,
+            "success": success,
+            "problem": problem,
+            "cause": cause,
+            "solution": solution,
+            "details": details
+        })
+    
+    def _analyze_results(self) -> Dict[str, Any]:
+        """Анализ результатов"""
+        total_tests = len(self.results)
+        successful_tests = len([r for r in self.results if r["success"]])
+        failed_tests = total_tests - successful_tests
+        
+        print(f"\n📊 РЕЗУЛЬТАТЫ ДИАГНОСТИКИ INPUT_PROCESSING:")
+        print(f"   Всего тестов: {total_tests}")
+        print(f"   ✅ Успешных: {successful_tests}")
+        print(f"   ❌ Неудачных: {failed_tests}")
+        
+        if failed_tests > 0:
+            print(f"\n❌ ПРОБЛЕМЫ:")
+            for result in self.results:
+                if not result["success"]:
+                    print(f"   • {result['test']}: {result['problem']}")
+                    print(f"     Причина: {result['cause']}")
+                    print(f"     Решение: {result['solution']}")
+        
+        return {
+            "total_tests": total_tests,
+            "successful_tests": successful_tests,
+            "failed_tests": failed_tests,
+            "success_rate": (successful_tests / total_tests * 100) if total_tests > 0 else 0,
+            "results": self.results
+        }
+
+async def main():
+    """Основная функция"""
+    diagnostic = InputProcessingDiagnostic()
+    results = await diagnostic.run_diagnostic()
+    
+    # Возвращаем код выхода
+    return 1 if results["failed_tests"] > 0 else 0
+
+if __name__ == "__main__":
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)

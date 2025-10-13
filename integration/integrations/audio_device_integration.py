@@ -6,7 +6,9 @@ AudioDeviceIntegration - Интеграция AudioDeviceManager с EventBus
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set, Tuple
+
+# import sounddevice as sd  # УДАЛЕНО: больше не используем sounddevice напрямую
 
 # Пути уже добавлены в main.py - не дублируем
 
@@ -54,7 +56,6 @@ class AudioDeviceIntegration:
                 auto_switch_enabled=integration_cfg.get('auto_switch_enabled', (config_data.get('audio') or {}).get('auto_switch', True)),
                 monitoring_interval=integration_cfg.get('monitoring_interval', audio_cfg.get('monitoring_interval', 3.0)),
                 switch_delay=integration_cfg.get('switch_delay', (config_data.get('audio') or {}).get('switch_delay', 0.5)),
-                device_priorities=audio_cfg.get('device_priorities', {}),
                 user_preferences=None,  # Будет заполнено в __post_init__
                 macos_settings=None     # Будет заполнено в __post_init__
             )
@@ -75,6 +76,8 @@ class AudioDeviceIntegration:
         self._initialized = False
         self._running = False
         self._current_mode: Optional[AppMode] = None
+        self._current_input_device_index: Optional[int] = None
+        self._current_input_device_name: Optional[str] = None
         
         logger.info("AudioDeviceIntegration created")
     
@@ -106,6 +109,8 @@ class AudioDeviceIntegration:
             await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.MEDIUM)
             await self.event_bus.subscribe("app.state_changed", self._on_app_state_changed, EventPriority.HIGH)
             await self.event_bus.subscribe("app.mode_changed", self._on_app_mode_changed, EventPriority.HIGH)
+            await self.event_bus.subscribe("audio.request_current_input_device", self._on_request_current_input_device, EventPriority.HIGH)
+            await self.event_bus.subscribe("audio.request_unified_device", self._on_request_unified_device, EventPriority.HIGH)
 
             # VoiceOver подписки перенесены в VoiceOverDuckingIntegration
             
@@ -153,6 +158,22 @@ class AudioDeviceIntegration:
             # Получаем текущий режим и настраиваем микрофон
             current_mode = self.state_manager.get_current_mode()
             await self._handle_mode_change(None, current_mode)
+            
+            # Инициализация устройств при старте через централизованный метод
+            logger.debug("🔍 [AUDIO_DEBUG] Инициализация аудио устройств при старте...")
+            best_input_device = await self._manager.get_best_input_device()
+            best_output_device = await self._manager.get_best_output_device()
+            
+            # Небольшая задержка для завершения подписок на события
+            await asyncio.sleep(0.1)
+            
+            # Публикуем события через централизованный метод
+            await self._publish_device_events(
+                input_device=best_input_device,
+                output_device=best_output_device,
+                reason="app_startup",
+                source="AudioDeviceManager"
+            )
             
             logger.info("AudioDeviceIntegration started successfully")
             return True
@@ -222,6 +243,19 @@ class AudioDeviceIntegration:
                     "device_type": current_device.type.value if current_device else "unknown",
                     "is_available": current_device.is_available if current_device else False
                 })
+
+            # Инициализация устройств при старте через централизованный метод
+            logger.debug("🔍 [AUDIO_DEBUG] Инициализация аудио устройств при старте...")
+            best_input_device = await self._manager.get_best_input_device()
+            best_output_device = await self._manager.get_best_output_device()
+            
+            # Публикуем события через централизованный метод
+            await self._publish_device_events(
+                input_device=best_input_device,
+                output_device=best_output_device,
+                reason="app_startup",
+                source="AudioDeviceManager"
+            )
             
         except Exception as e:
             if hasattr(self.error_handler, 'handle_error'):
@@ -322,16 +356,43 @@ class AudioDeviceIntegration:
                 logger.error(f"Error in AudioDeviceIntegration.mode_change: {e}")
     
     async def _enable_microphone(self):
-        """Включение микрофона"""
+        """Включение микрофона через AudioDeviceManager"""
         try:
             if not self._manager:
+                logger.warning("⚠️ [AUDIO_DEBUG] AudioDeviceManager не инициализирован")
                 return
             
-            logger.info("Enabling microphone...")
+            logger.info("🔄 [AUDIO_SWITCH] Enabling microphone through AudioDeviceManager...")
+
+            # Получаем лучшее INPUT устройство через AudioDeviceManager
+            best_input_device = await self._manager.get_best_input_device()
+            if not best_input_device:
+                logger.warning("⚠️ [AUDIO_DEBUG] Нет доступных INPUT устройств")
+                await self.event_bus.publish("audio.microphone_error", {
+                    "error": "no_input_devices_available",
+                    "context": "enable_microphone"
+                })
+                return
             
-            # ЛОГИЧЕСКОЕ включение микрофона - НЕ переключаем физические устройства
-            # Просто публикуем событие что микрофон "включен" для записи
-            logger.info("✅ Microphone logically enabled for recording")
+            # Переключаемся на лучшее INPUT устройство
+            success = await self._manager.switch_to_input_device(best_input_device.id)
+            if not success:
+                logger.warning("⚠️ [AUDIO_ERROR] Не удалось переключиться на INPUT устройство")
+                await self.event_bus.publish("audio.microphone_error", {
+                    "error": "input_device_switch_failed",
+                    "context": "enable_microphone"
+                })
+                return
+            
+            # Публикуем событие audio.input_device_selected с правильным portaudio_index
+            await self._publish_device_events(
+                input_device=best_input_device,
+                output_device=None,
+                reason="microphone_enabled",
+                source="AudioDeviceIntegration"
+            )
+            
+            logger.info(f"✅ [AUDIO_SUCCESS] Microphone enabled: {best_input_device.name}")
             
             # Публикуем событие включения микрофона (без физического переключения)
             await self.event_bus.publish("audio.microphone_enabled", {
@@ -342,7 +403,6 @@ class AudioDeviceIntegration:
             })
             
             logger.info("🎤 Microphone enabled for voice recording (logical mode)")
-            # НЕ проверяем физические устройства - просто логически включаем
             
         except Exception as e:
             logger.error(f"Error enabling microphone: {e}")
@@ -377,6 +437,19 @@ class AudioDeviceIntegration:
                 "error": str(e),
                 "context": "disable_microphone"
             })
+
+    # УДАЛЕНО: _ensure_input_device_selected()
+    # Теперь используем AudioDeviceManager.get_best_input_device() и switch_to_input_device()
+    
+    # УДАЛЕНО: Дублирующие методы для работы с sounddevice
+    # Теперь используем AudioDeviceManager для управления устройствами
+    # 
+    # Удаленные методы:
+    # - _get_sounddevice_defaults()
+    # - _apply_sounddevice_input_default()
+    # - _probe_input_device()
+    # - _select_input_device_index()
+    # - _reinitialize_portaudio()
 
     # VoiceOver методы перенесены в VoiceOverDuckingIntegration
 
@@ -419,7 +492,12 @@ class AudioDeviceIntegration:
                 "device_type": to_device.type.value,
                 "is_available": to_device.is_available
             })
+            # События audio.input_device_selected и audio.output_device_selected 
+            # будут опубликованы в _on_app_mode_changed после успешного переключения
             
+            # События audio.input_device_selected и audio.output_device_selected 
+            # будут опубликованы в _on_app_mode_changed после успешного переключения
+
         except Exception as e:
             if hasattr(self.error_handler, 'handle_error'):
                 await self.error_handler.handle_error(
@@ -500,18 +578,193 @@ class AudioDeviceIntegration:
             return False
     
     async def _check_audio_permissions(self):
-        """Проверить разрешения для аудио системы"""
+        """Проверить разрешения для аудио системы через AudioDeviceManager"""
         try:
-            # Пробуем доступ к микрофону через короткий probe без Bundle ID
-            import sounddevice as sd
-            stream = sd.InputStream(channels=1)
-            try:
-                stream.start()
-                stream.stop()
-                logger.info("✅ Microphone accessible (audio probe)")
-            finally:
-                stream.close()
+            logger.debug("🔍 [AUDIO_DEBUG] Проверка разрешений через AudioDeviceManager...")
+            
+            # Проверяем доступность INPUT устройств через AudioDeviceManager
+            best_input_device = await self._manager.get_best_input_device()
+            if best_input_device:
+                logger.info(f"✅ [AUDIO_SUCCESS] Microphone accessible: {best_input_device.name}")
+                return True
+            else:
+                logger.info("ℹ️ [AUDIO_DEBUG] No INPUT devices available")
+                return False
                 
         except Exception as e:
-            logger.info(f"ℹ️ Audio input not accessible or probe failed: {e}")
+            logger.info(f"ℹ️ [AUDIO_DEBUG] Audio input check failed: {e}")
             # Не блокируем запуск, просто информируем
+            return False
+    
+    async def _on_request_current_input_device(self, event_data: dict):
+        """Обработка запроса текущего INPUT устройства"""
+        try:
+            source = event_data.get("source", "unknown")
+            reason = event_data.get("reason", "unknown")
+            
+            logger.debug(f"🔍 [AUDIO_DEBUG] Запрос текущего INPUT устройства от {source} (причина: {reason})")
+            
+            # Получаем текущее лучшее INPUT устройство
+            best_input_device = await self._manager.get_best_input_device()
+            
+            if best_input_device:
+                # Публикуем событие с текущим INPUT устройством
+                await self.event_bus.publish("audio.input_device_selected", {
+                    "device_id": best_input_device.id,
+                    "name": best_input_device.name,
+                    "type": best_input_device.type.value,
+                    "channels": best_input_device.channels,
+                    "priority": self._manager._get_input_priority(best_input_device),
+                    "status": best_input_device.status.value,
+                    "portaudio_index": best_input_device.portaudio_index,
+                    "reason": f"requested_by_{source}",
+                    "source": "AudioDeviceIntegration"
+                })
+                logger.info(f"✅ [AUDIO_SUCCESS] INPUT устройство отправлено в {source}: {best_input_device.name} (portaudio_index: {best_input_device.portaudio_index})")
+            else:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] Нет доступных INPUT устройств для отправки в {source}")
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка обработки запроса текущего INPUT устройства: {e}")
+            if hasattr(self.error_handler, 'handle_error'):
+                await self.error_handler.handle_error(
+                    severity="error",
+                    category="audio",
+                    message=f"Ошибка обработки запроса текущего INPUT устройства: {e}",
+                    context={"where": "audio.request_current_input_device"}
+                )
+
+    async def _on_request_unified_device(self, event_data: dict):
+        """Обработка запроса унифицированного аудио устройства"""
+        try:
+            source = event_data.get("source", "unknown")
+            reason = event_data.get("reason", "unknown")
+            
+            logger.debug(f"🔍 [AUDIO_DEBUG] Запрос унифицированного устройства от {source} (причина: {reason})")
+            
+            # Получаем унифицированное устройство
+            unified_result = await self._manager.get_unified_audio_device()
+            
+            if unified_result["unified"]:
+                # Одно устройство для обеих функций
+                device = unified_result["input"]  # input и output одинаковые
+                await self.event_bus.publish("audio.unified_device_selected", {
+                    "device_id": device.id,
+                    "name": device.name,
+                    "type": device.type.value,
+                    "channels": device.channels,
+                    "priority": self._manager._get_input_priority(device),
+                    "status": device.status.value,
+                    "portaudio_index": device.portaudio_index,
+                    "unified": True,
+                    "input_device": {
+                        "id": device.id,
+                        "name": device.name,
+                        "type": device.type.value,
+                        "portaudio_index": device.portaudio_index
+                    },
+                    "output_device": {
+                        "id": device.id,
+                        "name": device.name,
+                        "type": device.type.value,
+                        "portaudio_index": device.portaudio_index
+                    },
+                    "reason": f"unified_requested_by_{source}",
+                    "source": "AudioDeviceIntegration"
+                })
+                logger.info(f"✅ [AUDIO_SUCCESS] Унифицированное устройство отправлено в {source}: {device.name}")
+            else:
+                # Раздельные устройства
+                input_device = unified_result["input"]
+                output_device = unified_result["output"]
+                
+                await self.event_bus.publish("audio.unified_device_selected", {
+                    "device_id": input_device.id if input_device else None,
+                    "name": input_device.name if input_device else "None",
+                    "type": input_device.type.value if input_device else "None",
+                    "channels": input_device.channels if input_device else 0,
+                    "priority": self._manager._get_input_priority(input_device) if input_device else 999,
+                    "status": input_device.status.value if input_device else "None",
+                    "portaudio_index": input_device.portaudio_index if input_device else None,
+                    "unified": False,
+                    "input_device": {
+                        "id": input_device.id if input_device else None,
+                        "name": input_device.name if input_device else "None",
+                        "type": input_device.type.value if input_device else "None",
+                        "portaudio_index": input_device.portaudio_index if input_device else None
+                    },
+                    "output_device": {
+                        "id": output_device.id if output_device else None,
+                        "name": output_device.name if output_device else "None",
+                        "type": output_device.type.value if output_device else "None",
+                        "portaudio_index": output_device.portaudio_index if output_device else None
+                    },
+                    "reason": f"separate_requested_by_{source}",
+                    "source": "AudioDeviceIntegration"
+                })
+                logger.info(f"✅ [AUDIO_SUCCESS] Раздельные устройства отправлены в {source}: INPUT={input_device.name if input_device else 'None'}, OUTPUT={output_device.name if output_device else 'None'}")
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка обработки запроса унифицированного устройства: {e}")
+            if hasattr(self.error_handler, 'handle_error'):
+                await self.error_handler.handle_error(
+                    severity="error",
+                    category="audio",
+                    message=f"Ошибка обработки запроса унифицированного устройства: {e}",
+                    context={"where": "audio.request_unified_device"}
+                )
+
+    async def _publish_device_events(self, input_device=None, output_device=None, reason="unknown", source="AudioDeviceManager"):
+        """
+        Централизованная публикация событий выбора аудио устройств.
+        
+        Args:
+            input_device: AudioDevice для INPUT функции
+            output_device: AudioDevice для OUTPUT функции  
+            reason: Причина публикации события
+            source: Источник события
+        """
+        try:
+            # Публикуем событие INPUT устройства
+            if input_device:
+                portaudio_index = getattr(input_device, 'portaudio_index', None)
+                logger.debug(f"🔍 [AUDIO_DEBUG] Публикация INPUT устройства: {input_device.name}, portaudio_index: {portaudio_index}")
+                await self.event_bus.publish("audio.input_device_selected", {
+                    "device_id": input_device.id,
+                    "name": input_device.name,
+                    "type": input_device.type.value,
+                    "channels": input_device.channels,
+                    "priority": input_device.priority.value,
+                    "status": input_device.status.value,
+                    "reason": reason,
+                    "source": source,
+                    "portaudio_index": portaudio_index
+                })
+                logger.info(f"✅ [AUDIO_SUCCESS] INPUT устройство опубликовано: {input_device.name} (reason: {reason}, portaudio_index: {portaudio_index})")
+            
+            # Публикуем событие OUTPUT устройства
+            if output_device:
+                portaudio_index = getattr(output_device, 'portaudio_index', None)
+                logger.debug(f"🔍 [AUDIO_DEBUG] Публикация OUTPUT устройства: {output_device.name}, portaudio_index: {portaudio_index}")
+                await self.event_bus.publish("audio.output_device_selected", {
+                    "device_id": output_device.id,
+                    "name": output_device.name,
+                    "type": output_device.type.value,
+                    "channels": output_device.channels,
+                    "priority": output_device.priority.value,
+                    "status": output_device.status.value,
+                    "reason": reason,
+                    "source": source,
+                    "portaudio_index": portaudio_index
+                })
+                logger.info(f"✅ [AUDIO_SUCCESS] OUTPUT устройство опубликовано: {output_device.name} (reason: {reason}, portaudio_index: {portaudio_index})")
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка публикации событий устройств: {e}")
+            if hasattr(self.error_handler, 'handle_error'):
+                await self.error_handler.handle_error(
+                    severity="error",
+                    category="audio",
+                    message=f"Ошибка публикации событий устройств: {e}",
+                    context={"where": "_publish_device_events", "reason": reason}
+                )

@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""
+Диагностический тест для GRPC Client модуля
+"""
+
+import asyncio
+import logging
+import sys
+import os
+from typing import Dict, List, Any, Optional
+
+# Добавляем путь к модулям
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+
+from modules.grpc_client.core.grpc_client import GrpcClient
+from modules.grpc_client.core.connection_manager import ConnectionManager
+from modules.grpc_client.core.health_checker import HealthChecker
+from modules.grpc_client.core.retry_manager import RetryManager
+from config.unified_config_loader import UnifiedConfigLoader
+
+logger = logging.getLogger(__name__)
+
+class GrpcClientDiagnostic:
+    """Диагностика GRPC Client модуля"""
+    
+    def __init__(self):
+        self.results = []
+        
+    async def run_diagnostic(self) -> Dict[str, Any]:
+        """Запуск диагностики GRPC Client"""
+        logger.info("🔍 Диагностика GRPC Client...")
+        
+        # 1. Тест инициализации
+        await self._test_initialization()
+        
+        # 2. Тест конфигурации
+        await self._test_configuration()
+        
+        # 3. Тест подключения
+        await self._test_connection()
+        
+        # 4. Тест health check
+        await self._test_health_check()
+        
+        # 5. Тест retry механизма
+        await self._test_retry_mechanism()
+        
+        return self._analyze_results()
+    
+    async def _test_initialization(self):
+        """Тест инициализации GRPC Client"""
+        logger.info("1️⃣ Тест инициализации...")
+        
+        try:
+            # Загружаем конфигурацию
+            config_loader = UnifiedConfigLoader()
+            config = config_loader._load_config()
+            grpc_config = config.get('grpc', {})
+            
+            # Создаем GRPC Client
+            self.grpc_client = GrpcClient(grpc_config)
+            
+            # Инициализируем
+            result = await self.grpc_client.initialize()
+            
+            if result:
+                self._add_result("initialization", True, "GRPC Client инициализирован", 
+                               "Инициализация прошла успешно", "Продолжить", {})
+            else:
+                self._add_result("initialization", False, "Ошибка инициализации GRPC Client",
+                               "Проблема с инициализацией", "Проверить конфигурацию и зависимости", {})
+            
+        except Exception as e:
+            self._add_result("initialization", False, f"Ошибка инициализации: {e}",
+                           "Проблема с конфигурацией или зависимостями",
+                           "Проверить GRPC конфигурацию и зависимости", {"error": str(e)})
+    
+    async def _test_configuration(self):
+        """Тест конфигурации GRPC Client"""
+        logger.info("2️⃣ Тест конфигурации...")
+        
+        if not hasattr(self, 'grpc_client'):
+            self._add_result("configuration", False, "GRPC Client не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем основные параметры конфигурации
+            config = self.grpc_client.config
+            
+            required_params = [
+                ('server_host', 'Хост сервера'),
+                ('server_port', 'Порт сервера'),
+                ('use_tls', 'Использование TLS'),
+                ('timeout', 'Таймаут подключения')
+            ]
+            
+            for param_name, description in required_params:
+                if hasattr(config, param_name):
+                    value = getattr(config, param_name)
+                    self._add_result(f"config_{param_name}", True, f"{description}: {value}",
+                                   "Параметр настроен", "Продолжить", {"parameter": param_name, "value": value})
+                else:
+                    self._add_result(f"config_{param_name}", False, f"{description} не настроен",
+                                   "Параметр отсутствует", f"Настроить {param_name} в конфигурации", 
+                                   {"parameter": param_name})
+            
+        except Exception as e:
+            self._add_result("configuration", False, f"Ошибка проверки конфигурации: {e}",
+                           "Проблема с доступом к конфигурации", "Проверить структуру конфигурации", 
+                           {"error": str(e)})
+    
+    async def _test_connection(self):
+        """Тест подключения к серверу"""
+        logger.info("3️⃣ Тест подключения...")
+        
+        if not hasattr(self, 'grpc_client'):
+            self._add_result("connection", False, "GRPC Client не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Пытаемся подключиться к серверу
+            connection_result = await self.grpc_client.connect()
+            
+            if connection_result:
+                self._add_result("connection", True, "Подключение к серверу успешно",
+                               "Сетевое подключение работает", "Продолжить", {})
+            else:
+                self._add_result("connection", False, "Не удалось подключиться к серверу",
+                               "Проблема с сетевым подключением", "Проверить доступность сервера", {})
+            
+        except Exception as e:
+            self._add_result("connection", False, f"Ошибка подключения: {e}",
+                           "Проблема с сетевым подключением", "Проверить сеть и сервер", 
+                           {"error": str(e)})
+    
+    async def _test_health_check(self):
+        """Тест health check"""
+        logger.info("4️⃣ Тест health check...")
+        
+        if not hasattr(self, 'grpc_client'):
+            self._add_result("health_check", False, "GRPC Client не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем health check
+            health_result = await self.grpc_client.health_check()
+            
+            if health_result:
+                self._add_result("health_check", True, "Health check прошел успешно",
+                               "Сервер отвечает на health check", "Продолжить", {})
+            else:
+                self._add_result("health_check", False, "Health check не прошел",
+                               "Сервер не отвечает на health check", "Проверить состояние сервера", {})
+            
+        except Exception as e:
+            self._add_result("health_check", False, f"Ошибка health check: {e}",
+                           "Проблема с health check", "Проверить health check endpoint", 
+                           {"error": str(e)})
+    
+    async def _test_retry_mechanism(self):
+        """Тест retry механизма"""
+        logger.info("5️⃣ Тест retry механизма...")
+        
+        if not hasattr(self, 'grpc_client'):
+            self._add_result("retry_mechanism", False, "GRPC Client не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем retry manager
+            retry_manager = getattr(self.grpc_client, 'retry_manager', None)
+            
+            if retry_manager:
+                self._add_result("retry_manager", True, "Retry manager инициализирован",
+                               "Retry механизм настроен", "Продолжить", {})
+                
+                # Проверяем параметры retry
+                max_retries = getattr(retry_manager, 'max_retries', None)
+                if max_retries is not None:
+                    self._add_result("retry_max_retries", True, f"Максимум попыток: {max_retries}",
+                                   "Параметр retry настроен", "Продолжить", {"max_retries": max_retries})
+                else:
+                    self._add_result("retry_max_retries", False, "Максимум попыток не настроен",
+                                   "Параметр retry отсутствует", "Настроить max_retries", {})
+            else:
+                self._add_result("retry_manager", False, "Retry manager не инициализирован",
+                               "Retry механизм отсутствует", "Проверить инициализацию retry manager", {})
+            
+        except Exception as e:
+            self._add_result("retry_mechanism", False, f"Ошибка тестирования retry: {e}",
+                           "Проблема с retry механизмом", "Проверить retry manager", 
+                           {"error": str(e)})
+    
+    def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
+        """Добавление результата теста"""
+        self.results.append({
+            "test": test_name,
+            "success": success,
+            "problem": problem,
+            "cause": cause,
+            "solution": solution,
+            "details": details
+        })
+    
+    def _analyze_results(self) -> Dict[str, Any]:
+        """Анализ результатов"""
+        total_tests = len(self.results)
+        successful_tests = len([r for r in self.results if r["success"]])
+        failed_tests = total_tests - successful_tests
+        
+        print(f"\n📊 РЕЗУЛЬТАТЫ ДИАГНОСТИКИ GRPC_CLIENT:")
+        print(f"   Всего тестов: {total_tests}")
+        print(f"   ✅ Успешных: {successful_tests}")
+        print(f"   ❌ Неудачных: {failed_tests}")
+        
+        if failed_tests > 0:
+            print(f"\n❌ ПРОБЛЕМЫ:")
+            for result in self.results:
+                if not result["success"]:
+                    print(f"   • {result['test']}: {result['problem']}")
+                    print(f"     Причина: {result['cause']}")
+                    print(f"     Решение: {result['solution']}")
+        
+        return {
+            "total_tests": total_tests,
+            "successful_tests": successful_tests,
+            "failed_tests": failed_tests,
+            "success_rate": (successful_tests / total_tests * 100) if total_tests > 0 else 0,
+            "results": self.results
+        }
+
+async def main():
+    """Основная функция"""
+    diagnostic = GrpcClientDiagnostic()
+    results = await diagnostic.run_diagnostic()
+    
+    # Возвращаем код выхода
+    return 1 if results["failed_tests"] > 0 else 0
+
+if __name__ == "__main__":
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)

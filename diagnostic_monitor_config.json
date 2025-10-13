@@ -1,0 +1,51 @@
+{
+  "monitoring_interval": 300,
+  "alert_email": null,
+  "alert_webhook": null,
+  "log_file": "diagnostic_monitor.log",
+  "history_file": "diagnostic_history.json",
+  "enabled_modules": [
+    "audio_device_manager",
+    "speech_recognizer",
+    "grpc_client",
+    "input_processing",
+    "speech_playback",
+    "permissions",
+    "network_manager",
+    "mode_management",
+    "audio_device_integration",
+    "unified_config"
+  ],
+  "alert_thresholds": {
+    "success_rate": 80.0,
+    "failed_tests": 10,
+    "response_time": 300
+  },
+  "notifications": {
+    "email": {
+      "enabled": false,
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "username": "",
+      "password": "",
+      "to_addresses": []
+    },
+    "webhook": {
+      "enabled": false,
+      "url": "",
+      "headers": {},
+      "timeout": 30
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "",
+      "channel": "#diagnostics"
+    }
+  },
+  "reporting": {
+    "daily_report": true,
+    "weekly_report": true,
+    "monthly_report": true,
+    "report_recipients": []
+  }
+}

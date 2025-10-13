@@ -13,6 +13,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Callable
 from ..core.types import AudioDevice, DeviceType, DeviceStatus, DevicePriority
 
+# Импорт sounddevice для маппинга
+try:
+    import sounddevice as sd
+    _SOUNDDEVICE_AVAILABLE = True
+except ImportError:
+    _SOUNDDEVICE_AVAILABLE = False
+    logger.warning("⚠️ [AUDIO_DEBUG] sounddevice не доступен - portaudio_index будет None")
+
 logger = logging.getLogger(__name__)
 
 class SwitchAudioBridge:
@@ -148,29 +156,38 @@ class SwitchAudioBridge:
         except Exception as e:
             logger.error(f"❌ Ошибка в monitor_devices: {e}")
     
-    async def get_available_devices(self) -> List[AudioDevice]:
-        """Получение списка доступных аудио устройств через switchaudio"""
+    async def get_available_devices(self, device_type: Optional[str] = None) -> List[AudioDevice]:
+        """Получение списка доступных аудио устройств через switchaudio с поддержкой типов"""
         try:
+            logger.debug(f"🔍 [AUDIO_DEBUG] Запрос устройств типа: {device_type or 'all'}")
+            
             # Используем switchaudio для получения списка устройств
-            devices = await self._get_devices_from_switchaudio()
+            devices = await self._get_devices_from_switchaudio(device_type)
             
             # Сортируем по приоритету (меньшее значение = выше приоритет)
             devices.sort(key=lambda x: x.priority.value)
             
+            logger.info(f"📊 [AUDIO_STATS] Получено {len(devices)} устройств типа {device_type or 'all'}")
             return devices
             
         except Exception as e:
-            logger.error(f"❌ Ошибка получения устройств: {e}")
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка получения устройств: {e}")
             return []
     
-    async def _get_devices_from_switchaudio(self) -> List[AudioDevice]:
-        """Получение устройств через switchaudio"""
+    async def _get_devices_from_switchaudio(self, device_type: Optional[str] = None) -> List[AudioDevice]:
+        """Получение устройств через switchaudio с поддержкой INPUT/OUTPUT"""
         try:
+            logger.debug(f"🔍 [AUDIO_DEBUG] Выполнение команды: switchaudio -a -t {device_type or 'all'}")
+            
             # Получаем путь к бинарнику и запускаем
             switchaudio_cmd = self._get_switchaudio_path()
-            result = subprocess.run([
-                switchaudio_cmd, '-a'
-            ], capture_output=True, text=True, timeout=10)
+            cmd = [switchaudio_cmd, '-a']
+            
+            # Добавляем тип устройства если указан
+            if device_type:
+                cmd.extend(['-t', device_type])
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             
             if result.returncode != 0:
                 logger.warning("⚠️ switchaudio недоступен, возвращаем пустой список")
@@ -182,23 +199,24 @@ class SwitchAudioBridge:
             
             for line in lines:
                 if line.strip():
-                    device = await self._parse_switchaudio_line(line)
+                    device = await self._parse_switchaudio_line(line, device_type)
                     if device:
                         devices.append(device)
             
             # Если не нашли устройств, возвращаем пустой список
             if not devices:
-                logger.info("ℹ️ Устройства не найдены через switchaudio")
+                logger.info(f"ℹ️ Устройства типа {device_type or 'all'} не найдены через switchaudio")
                 return []
             
+            logger.info(f"📊 [AUDIO_STATS] SwitchAudio вернул {len(devices)} устройств типа {device_type or 'all'}")
             return devices
             
         except Exception as e:
             logger.error(f"❌ Ошибка получения устройств через switchaudio: {e}")
             return []
     
-    async def _parse_switchaudio_line(self, line: str) -> Optional[AudioDevice]:
-        """Парсинг строки вывода switchaudio"""
+    async def _parse_switchaudio_line(self, line: str, device_type: Optional[str] = None) -> Optional[AudioDevice]:
+        """Парсинг строки вывода switchaudio с поддержкой стабильных ID"""
         try:
             # Пример строки: "MacBook Air Speakers (Built-in Output)"
             # Или: "AirPods Pro (Bluetooth)"
@@ -213,11 +231,12 @@ class SwitchAudioBridge:
                 name = name_match.group(1).strip()
                 device_type_str = name_match.group(2).strip()
             
-            # Создаем ID устройства
-            device_id = str(hash(name))
+            # Создаем стабильный ID устройства (вместо hash)
+            device_id = f"device_{name.replace(' ', '_').replace('(', '').replace(')', '').lower()}"
+            logger.debug(f"🔍 [AUDIO_DEBUG] Генерация стабильного ID для: {name} -> {device_id}")
             
-            # Определяем тип устройства
-            device_type = await self._detect_device_type(name, device_type_str)
+            # Определяем тип устройства с учетом переданного типа
+            detected_type = await self._detect_device_type(name, device_type_str, device_type)
             
             # Определяем количество каналов
             channels = await self._get_device_channels(name)
@@ -228,11 +247,11 @@ class SwitchAudioBridge:
             is_builtin = 'built-in' in device_type_str.lower() or 'internal' in device_type_str.lower()
             
             # Определяем приоритет на основе типа устройства и канальности
-            if is_bluetooth and device_type == DeviceType.OUTPUT:
+            if is_bluetooth and detected_type == DeviceType.OUTPUT:
                 priority = DevicePriority.HIGHEST  # Bluetooth наушники - высший приоритет
-            elif device_type == DeviceType.OUTPUT and channels == 2 and not is_builtin:
+            elif detected_type == DeviceType.OUTPUT and channels == 2 and not is_builtin:
                 priority = DevicePriority.HIGH  # Двухканальные внешние устройства (наушники)
-            elif device_type == DeviceType.OUTPUT and channels == 1 and is_builtin:
+            elif detected_type == DeviceType.OUTPUT and channels == 1 and is_builtin:
                 priority = DevicePriority.LOWEST  # Одноканальные встроенные устройства
             elif is_builtin:
                 priority = DevicePriority.LOWEST  # Встроенные устройства
@@ -240,13 +259,17 @@ class SwitchAudioBridge:
                 priority = DevicePriority.NORMAL  # Остальные устройства
             
             # Создаем объект устройства
+            # Получаем portaudio_index для устройства
+            portaudio_index = self._map_to_portaudio_index(name)
+            
             device = AudioDevice(
                 id=device_id,
                 name=name,
-                type=device_type,
+                type=detected_type,
                 status=DeviceStatus.AVAILABLE,
                 channels=channels,
-                priority=priority
+                priority=priority,
+                portaudio_index=portaudio_index
             )
             
             return device
@@ -255,11 +278,20 @@ class SwitchAudioBridge:
             logger.error(f"❌ Ошибка парсинга строки switchaudio: {e}")
             return None
     
-    async def _detect_device_type(self, name: str, device_type_str: str) -> DeviceType:
-        """Определение типа устройства по имени и типу"""
+    async def _detect_device_type(self, name: str, device_type_str: str, requested_type: Optional[str] = None) -> DeviceType:
+        """Определение типа устройства по имени и типу с поддержкой INPUT/OUTPUT"""
         try:
             name_lower = name.lower()
             type_lower = device_type_str.lower()
+            
+            # Если запрошен конкретный тип, используем его
+            if requested_type:
+                if requested_type.lower() == 'input':
+                    logger.debug(f"🔍 [AUDIO_DEBUG] Принудительно определяем как INPUT: {name}")
+                    return DeviceType.INPUT
+                elif requested_type.lower() == 'output':
+                    logger.debug(f"🔍 [AUDIO_DEBUG] Принудительно определяем как OUTPUT: {name}")
+                    return DeviceType.OUTPUT
             
             # Ключевые слова для наушников
             headphone_keywords = [
@@ -280,22 +312,32 @@ class SwitchAudioBridge:
                 'microphone', 'mic', 'input', 'вход', 'микрофон'
             ]
             
-            # Проверяем на микрофоны (исключаем из переключения)
-            if (any(keyword in name_lower for keyword in microphone_keywords) or
-                any(keyword in type_lower for keyword in microphone_keywords)):
-                return DeviceType.INPUT  # Микрофоны - это INPUT
-            
-            # Проверяем на наушники
+            # Проверяем на гарнитуры/наушники (поддерживают И INPUT И OUTPUT)
             if (any(keyword in name_lower for keyword in headphone_keywords) or
                 any(keyword in type_lower for keyword in headphone_keywords)):
-                return DeviceType.OUTPUT  # Наушники - это OUTPUT
+                # Если это Bluetooth наушники или гарнитуры, они поддерживают И микрофон И динамики
+                if ('bluetooth' in name_lower or 'wireless' in name_lower or 
+                    'headset' in name_lower or 'airpod' in name_lower):
+                    logger.debug(f"🔍 [AUDIO_DEBUG] Определяем как BOTH (гарнитура): {name}")
+                    return DeviceType.BOTH
+                else:
+                    logger.debug(f"🔍 [AUDIO_DEBUG] Определяем как OUTPUT (наушники): {name}")
+                    return DeviceType.OUTPUT
             
-            # Проверяем на динамики
+            # Проверяем на микрофоны (только INPUT)
+            if (any(keyword in name_lower for keyword in microphone_keywords) or
+                any(keyword in type_lower for keyword in microphone_keywords)):
+                logger.debug(f"🔍 [AUDIO_DEBUG] Определяем как INPUT (микрофон): {name}")
+                return DeviceType.INPUT
+            
+            # Проверяем на динамики (только OUTPUT)
             if (any(keyword in name_lower for keyword in speaker_keywords) or
                 any(keyword in type_lower for keyword in speaker_keywords)):
-                return DeviceType.OUTPUT  # Динамики - это OUTPUT
+                logger.debug(f"🔍 [AUDIO_DEBUG] Определяем как OUTPUT (динамики): {name}")
+                return DeviceType.OUTPUT
             
             # По умолчанию считаем OUTPUT
+            logger.debug(f"🔍 [AUDIO_DEBUG] Определяем как OUTPUT (по умолчанию): {name}")
             return DeviceType.OUTPUT
             
         except Exception as e:
@@ -336,7 +378,8 @@ class SwitchAudioBridge:
                     type=DeviceType.OUTPUT,
                     status=DeviceStatus.AVAILABLE,
                     channels=2,
-                    priority=DevicePriority.LOWEST
+                    priority=DevicePriority.LOWEST,
+                    portaudio_index=self._map_to_portaudio_index("MacBook Air Speakers")
                 ),
                 AudioDevice(
                     id="builtin_microphone",
@@ -344,7 +387,8 @@ class SwitchAudioBridge:
                     type=DeviceType.INPUT,
                     status=DeviceStatus.AVAILABLE,
                     channels=1,
-                    priority=DevicePriority.LOWEST
+                    priority=DevicePriority.LOWEST,
+                    portaudio_index=self._map_to_portaudio_index("MacBook Air Microphone")
                 )
             ]
             
@@ -401,7 +445,42 @@ class SwitchAudioBridge:
                 return await self._try_alternative_switch(target_device)
             
         except Exception as e:
-            logger.error(f"❌ Ошибка установки устройства по умолчанию: {e}")
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка установки устройства по умолчанию: {e}")
+            return False
+    
+    async def set_default_input_device(self, device_id: str) -> bool:
+        """Установка устройства ввода по умолчанию через switchaudio"""
+        try:
+            # Находим устройство по ID
+            devices = await self.get_available_devices()
+            target_device = next((d for d in devices if d.id == device_id), None)
+            
+            if not target_device:
+                logger.error(f"❌ [AUDIO_ERROR] Устройство с ID {device_id} не найдено")
+                return False
+            
+            # Проверяем, что это устройство поддерживает INPUT функцию
+            if target_device.type not in [DeviceType.INPUT, DeviceType.BOTH]:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] Устройство не поддерживает INPUT функцию: {target_device.name}")
+                return False
+            
+            logger.info(f"🔄 [AUDIO_SWITCH] Попытка переключения на INPUT: {target_device.name} (тип: {target_device.type.value})")
+            
+            # Получаем путь к бинарнику и используем SwitchAudioSource для переключения INPUT
+            switchaudio_cmd = self._get_switchaudio_path()
+            result = subprocess.run([
+                switchaudio_cmd, '-t', 'input', '-s', target_device.name
+            ], capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                logger.info(f"✅ [AUDIO_SUCCESS] Переключено на INPUT устройство: {target_device.name}")
+                return True
+            else:
+                logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения INPUT устройства: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка установки устройства ввода: {e}")
             return False
     
     async def _try_alternative_switch(self, target_device: AudioDevice) -> bool:
@@ -439,6 +518,46 @@ class SwitchAudioBridge:
         except Exception as e:
             logger.error(f"❌ Ошибка альтернативного переключения: {e}")
             return False
+    
+    def _map_to_portaudio_index(self, device_name: str) -> Optional[int]:
+        """
+        Маппинг имени устройства switchaudio в portaudio_index для sounddevice.
+        
+        Args:
+            device_name: Имя устройства из switchaudio
+            
+        Returns:
+            portaudio_index для sounddevice или None если не найден
+        """
+        if not _SOUNDDEVICE_AVAILABLE:
+            logger.warning(f"⚠️ [AUDIO_DEBUG] sounddevice недоступен - portaudio_index будет None для {device_name}")
+            return None
+            
+        try:
+            logger.debug(f"🔍 [AUDIO_DEBUG] Маппинг устройства '{device_name}' в portaudio_index")
+            
+            # Получаем список всех устройств sounddevice
+            devices = sd.query_devices()
+            logger.debug(f"🔍 [AUDIO_DEBUG] Найдено {len(devices)} устройств в sounddevice")
+            
+            # Ищем точное совпадение имени
+            for i, dev in enumerate(devices):
+                if dev['name'] == device_name:
+                    logger.debug(f"✅ [AUDIO_SUCCESS] Устройство найдено: '{device_name}' -> portaudio_index {i}")
+                    return i
+            
+            # Если точного совпадения нет, ищем частичное совпадение
+            for i, dev in enumerate(devices):
+                if device_name.lower() in dev['name'].lower() or dev['name'].lower() in device_name.lower():
+                    logger.debug(f"✅ [AUDIO_SUCCESS] Устройство найдено (частичное): '{device_name}' -> '{dev['name']}' -> portaudio_index {i}")
+                    return i
+            
+            logger.warning(f"⚠️ [AUDIO_DEBUG] Устройство '{device_name}' не найдено в sounddevice")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка маппинга устройства '{device_name}' в portaudio_index: {e}")
+            return None
 
 
 

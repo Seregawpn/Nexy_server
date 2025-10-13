@@ -12,7 +12,6 @@ from .tray_controller_integration import TrayControllerIntegration
 from .hardware_id_integration import HardwareIdIntegration, HardwareIdIntegrationConfig
 from .grpc_client_integration import GrpcClientIntegration, GrpcClientIntegrationConfig
 from .speech_playback_integration import SpeechPlaybackIntegration
-from .permissions_integration import PermissionsIntegration
 from .network_manager_integration import NetworkManagerIntegration
 from .updater_integration import UpdaterIntegration
 from .audio_device_integration import AudioDeviceIntegration
@@ -32,7 +31,6 @@ __all__ = [
     'GrpcClientIntegration',
     'GrpcClientIntegrationConfig',
     'SpeechPlaybackIntegration',
-    'PermissionsIntegration',
     'NetworkManagerIntegration',
     'UpdaterIntegration',
     'AudioDeviceIntegration',

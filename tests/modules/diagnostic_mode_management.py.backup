@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""
+Диагностический тест для Mode Management модуля
+"""
+
+import asyncio
+import logging
+import sys
+import os
+from typing import Dict, List, Any, Optional
+
+# Добавляем путь к модулям
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+
+from modules.mode_management.core.mode_controller import ModeController
+from modules.mode_management.core.types import AppMode
+from config.unified_config_loader import UnifiedConfigLoader
+
+logger = logging.getLogger(__name__)
+
+class ModeManagementDiagnostic:
+    """Диагностика Mode Management модуля"""
+    
+    def __init__(self):
+        self.results = []
+        
+    async def run_diagnostic(self) -> Dict[str, Any]:
+        """Запуск диагностики Mode Management"""
+        logger.info("🔍 Диагностика Mode Management...")
+        
+        # 1. Тест инициализации
+        await self._test_initialization()
+        
+        # 2. Тест конфигурации
+        await self._test_configuration()
+        
+        # 3. Тест режимов
+        await self._test_modes()
+        
+        # 4. Тест переходов между режимами
+        await self._test_mode_transitions()
+        
+        # 5. Тест состояния режима
+        await self._test_mode_state()
+        
+        return self._analyze_results()
+    
+    async def _test_initialization(self):
+        """Тест инициализации Mode Management"""
+        logger.info("1️⃣ Тест инициализации...")
+        
+        try:
+            # Загружаем конфигурацию
+            config_loader = UnifiedConfigLoader()
+            config = config_loader._load_config()
+            mode_config = config.get('mode_management', {})
+            
+            # Создаем ModeController
+            self.mode_controller = ModeController(mode_config)
+            
+            # Инициализируем
+            result = await self.mode_controller.initialize()
+            
+            if result:
+                self._add_result("initialization", True, "Mode Management инициализирован", 
+                               "Инициализация прошла успешно", "Продолжить", {})
+            else:
+                self._add_result("initialization", False, "Ошибка инициализации Mode Management",
+                               "Проблема с инициализацией", "Проверить конфигурацию и зависимости", {})
+            
+        except Exception as e:
+            self._add_result("initialization", False, f"Ошибка инициализации: {e}",
+                           "Проблема с конфигурацией или зависимостями",
+                           "Проверить Mode Management конфигурацию и зависимости", {"error": str(e)})
+    
+    async def _test_configuration(self):
+        """Тест конфигурации Mode Management"""
+        logger.info("2️⃣ Тест конфигурации...")
+        
+        if not hasattr(self, 'mode_controller'):
+            self._add_result("configuration", False, "Mode Management не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем основные параметры конфигурации
+            config = self.mode_controller.config
+            
+            required_params = [
+                ('default_mode', 'Режим по умолчанию'),
+                ('transition_timeout', 'Таймаут перехода'),
+                ('enable_auto_transition', 'Автоматический переход'),
+                ('mode_validation', 'Валидация режима')
+            ]
+            
+            for param_name, description in required_params:
+                if hasattr(config, param_name):
+                    value = getattr(config, param_name)
+                    self._add_result(f"config_{param_name}", True, f"{description}: {value}",
+                                   "Параметр настроен", "Продолжить", {"parameter": param_name, "value": value})
+                else:
+                    self._add_result(f"config_{param_name}", False, f"{description} не настроен",
+                                   "Параметр отсутствует", f"Настроить {param_name} в конфигурации", 
+                                   {"parameter": param_name})
+            
+        except Exception as e:
+            self._add_result("configuration", False, f"Ошибка проверки конфигурации: {e}",
+                           "Проблема с доступом к конфигурации", "Проверить структуру конфигурации", 
+                           {"error": str(e)})
+    
+    async def _test_modes(self):
+        """Тест режимов"""
+        logger.info("3️⃣ Тест режимов...")
+        
+        if not hasattr(self, 'mode_controller'):
+            self._add_result("modes", False, "Mode Management не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем доступные режимы
+            available_modes = getattr(self.mode_controller, 'available_modes', [])
+            
+            if available_modes:
+                self._add_result("available_modes", True, f"Доступно {len(available_modes)} режимов",
+                               "Режимы доступны", "Продолжить", {"modes": available_modes})
+            else:
+                self._add_result("available_modes", False, "Режимы не доступны",
+                               "Нет доступных режимов", "Проверить доступные режимы", {})
+            
+            # Проверяем режим по умолчанию
+            default_mode = getattr(self.mode_controller, 'default_mode', None)
+            if default_mode:
+                self._add_result("default_mode", True, f"Режим по умолчанию: {default_mode}",
+                               "Режим по умолчанию настроен", "Продолжить", {"mode": default_mode})
+            else:
+                self._add_result("default_mode", False, "Режим по умолчанию не настроен",
+                               "Нет режима по умолчанию", "Настроить режим по умолчанию", {})
+            
+        except Exception as e:
+            self._add_result("modes", False, f"Ошибка тестирования режимов: {e}",
+                           "Проблема с режимами", "Проверить режимы", 
+                           {"error": str(e)})
+    
+    async def _test_mode_transitions(self):
+        """Тест переходов между режимами"""
+        logger.info("4️⃣ Тест переходов между режимами...")
+        
+        if not hasattr(self, 'mode_controller'):
+            self._add_result("mode_transitions", False, "Mode Management не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Тестируем переход в режим LISTENING
+            listening_result = await self.mode_controller.switch_to_mode(AppMode.LISTENING)
+            
+            if listening_result:
+                self._add_result("transition_to_listening", True, "Переход в режим LISTENING успешен",
+                               "Переход работает", "Продолжить", {})
+            else:
+                self._add_result("transition_to_listening", False, "Переход в режим LISTENING неуспешен",
+                               "Переход не работает", "Проверить переход в режим LISTENING", {})
+            
+            # Тестируем переход в режим PROCESSING
+            processing_result = await self.mode_controller.switch_to_mode(AppMode.PROCESSING)
+            
+            if processing_result:
+                self._add_result("transition_to_processing", True, "Переход в режим PROCESSING успешен",
+                               "Переход работает", "Продолжить", {})
+            else:
+                self._add_result("transition_to_processing", False, "Переход в режим PROCESSING неуспешен",
+                               "Переход не работает", "Проверить переход в режим PROCESSING", {})
+            
+            # Тестируем переход в режим SLEEPING
+            sleeping_result = await self.mode_controller.switch_to_mode(AppMode.SLEEPING)
+            
+            if sleeping_result:
+                self._add_result("transition_to_sleeping", True, "Переход в режим SLEEPING успешен",
+                               "Переход работает", "Продолжить", {})
+            else:
+                self._add_result("transition_to_sleeping", False, "Переход в режим SLEEPING неуспешен",
+                               "Переход не работает", "Проверить переход в режим SLEEPING", {})
+            
+        except Exception as e:
+            self._add_result("mode_transitions", False, f"Ошибка тестирования переходов: {e}",
+                           "Проблема с переходами между режимами", "Проверить переходы между режимами", 
+                           {"error": str(e)})
+    
+    async def _test_mode_state(self):
+        """Тест состояния режима"""
+        logger.info("5️⃣ Тест состояния режима...")
+        
+        if not hasattr(self, 'mode_controller'):
+            self._add_result("mode_state", False, "Mode Management не инициализирован",
+                           "Предыдущий тест не прошел", "Сначала исправить инициализацию", {})
+            return
+        
+        try:
+            # Проверяем текущий режим
+            current_mode = await self.mode_controller.get_current_mode()
+            
+            if current_mode:
+                self._add_result("current_mode", True, f"Текущий режим: {current_mode}",
+                               "Текущий режим получен", "Продолжить", {"mode": current_mode})
+            else:
+                self._add_result("current_mode", False, "Текущий режим не получен",
+                               "Текущий режим недоступен", "Проверить текущий режим", {})
+            
+            # Проверяем историю режимов
+            mode_history = getattr(self.mode_controller, 'mode_history', [])
+            if mode_history:
+                self._add_result("mode_history", True, f"История режимов: {len(mode_history)} записей",
+                               "История режимов доступна", "Продолжить", {"history_count": len(mode_history)})
+            else:
+                self._add_result("mode_history", False, "История режимов недоступна",
+                               "Нет истории режимов", "Проверить историю режимов", {})
+            
+        except Exception as e:
+            self._add_result("mode_state", False, f"Ошибка тестирования состояния режима: {e}",
+                           "Проблема с состоянием режима", "Проверить состояние режима", 
+                           {"error": str(e)})
+    
+    def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
+        """Добавление результата теста"""
+        self.results.append({
+            "test": test_name,
+            "success": success,
+            "problem": problem,
+            "cause": cause,
+            "solution": solution,
+            "details": details
+        })
+    
+    def _analyze_results(self) -> Dict[str, Any]:
+        """Анализ результатов"""
+        total_tests = len(self.results)
+        successful_tests = len([r for r in self.results if r["success"]])
+        failed_tests = total_tests - successful_tests
+        
+        print(f"\n📊 РЕЗУЛЬТАТЫ ДИАГНОСТИКИ MODE_MANAGEMENT:")
+        print(f"   Всего тестов: {total_tests}")
+        print(f"   ✅ Успешных: {successful_tests}")
+        print(f"   ❌ Неудачных: {failed_tests}")
+        
+        if failed_tests > 0:
+            print(f"\n❌ ПРОБЛЕМЫ:")
+            for result in self.results:
+                if not result["success"]:
+                    print(f"   • {result['test']}: {result['problem']}")
+                    print(f"     Причина: {result['cause']}")
+                    print(f"     Решение: {result['solution']}")
+        
+        return {
+            "total_tests": total_tests,
+            "successful_tests": successful_tests,
+            "failed_tests": failed_tests,
+            "success_rate": (successful_tests / total_tests * 100) if total_tests > 0 else 0,
+            "results": self.results
+        }
+
+async def main():
+    """Основная функция"""
+    diagnostic = ModeManagementDiagnostic()
+    results = await diagnostic.run_diagnostic()
+    
+    # Возвращаем код выхода
+    return 1 if results["failed_tests"] > 0 else 0
+
+if __name__ == "__main__":
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)

@@ -32,6 +32,7 @@ class WelcomeConfig:
     use_server: bool = True
     server_timeout_sec: float = 30.0
     ignore_microphone_permission: bool = False
+    force_permission_checks: bool = False
     
 
 

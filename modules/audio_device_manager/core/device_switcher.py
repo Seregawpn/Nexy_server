@@ -130,51 +130,160 @@ class DeviceSwitcher:
             logger.error(f"❌ Ошибка обновления текущего устройства: {e}")
     
     def _find_best_device(self, devices: List[AudioDevice]) -> Optional[AudioDevice]:
-        """Поиск лучшего устройства по приоритету"""
+        """Поиск лучшего устройства по приоритету (OUTPUT функция)"""
         try:
             if not devices:
                 return None
             
-            # Фильтруем только подключенные устройства вывода (исключаем микрофоны)
+            # Фильтруем только подключенные устройства с OUTPUT функцией
             connected_devices = [
                 d for d in devices 
-                if d.status.value == "available" and d.type == DeviceType.OUTPUT
+                if d.status.value == "available" and d.type in [DeviceType.OUTPUT, DeviceType.BOTH]
             ]
             
             if not connected_devices:
-                logger.warning("⚠️ Нет подходящих устройств для переключения")
+                logger.warning("⚠️ Нет подходящих устройств с OUTPUT функцией для переключения")
                 return None
             
             # Сортируем по приоритету (меньшее значение = выше приоритет)
             sorted_devices = sorted(connected_devices, key=lambda x: x.priority.value)
             
             best_device = sorted_devices[0]
-            logger.info(f"🏆 Лучшее устройство: {best_device.name} (тип: {best_device.type.value}, приоритет: {best_device.priority})")
+            logger.info(f"🏆 [AUDIO_SWITCH] Лучшее OUTPUT устройство: {best_device.name} (тип: {best_device.type.value}, приоритет: {best_device.priority})")
             
             return best_device
             
         except Exception as e:
-            logger.error(f"❌ Ошибка поиска лучшего устройства: {e}")
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка поиска лучшего OUTPUT устройства: {e}")
+            return None
+    
+    def _find_best_input_device(self, devices: List[AudioDevice]) -> Optional[AudioDevice]:
+        """Поиск лучшего устройства с INPUT функцией по приоритету"""
+        try:
+            if not devices:
+                return None
+            
+            # Фильтруем только подключенные устройства с INPUT функцией
+            connected_devices = [
+                d for d in devices 
+                if d.status.value == "available" and d.type in [DeviceType.INPUT, DeviceType.BOTH]
+            ]
+            
+            if not connected_devices:
+                logger.warning("⚠️ [AUDIO_DEBUG] Нет подходящих устройств с INPUT функцией для переключения")
+                return None
+            
+            # Сортируем по приоритету (меньшее значение = выше приоритет)
+            sorted_devices = sorted(connected_devices, key=lambda x: x.priority.value)
+            
+            best_device = sorted_devices[0]
+            logger.info(f"🏆 [AUDIO_SWITCH] Лучшее INPUT устройство: {best_device.name} (тип: {best_device.type.value}, приоритет: {best_device.priority})")
+            
+            return best_device
+            
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка поиска лучшего INPUT устройства: {e}")
+            return None
+    
+    def _find_best_output_device(self, devices: List[AudioDevice]) -> Optional[AudioDevice]:
+        """Поиск лучшего устройства с OUTPUT функцией по приоритету"""
+        try:
+            if not devices:
+                return None
+            
+            # Фильтруем только подключенные устройства с OUTPUT функцией
+            connected_devices = [
+                d for d in devices 
+                if d.status.value == "available" and d.type in [DeviceType.OUTPUT, DeviceType.BOTH]
+            ]
+            
+            if not connected_devices:
+                logger.warning("⚠️ [AUDIO_DEBUG] Нет подходящих устройств с OUTPUT функцией для переключения")
+                return None
+            
+            # Сортируем по приоритету (меньшее значение = выше приоритет)
+            sorted_devices = sorted(connected_devices, key=lambda x: x.priority.value)
+            
+            best_device = sorted_devices[0]
+            logger.info(f"🏆 [AUDIO_SWITCH] Лучшее OUTPUT устройство: {best_device.name} (тип: {best_device.type.value}, приоритет: {best_device.priority})")
+            
+            return best_device
+            
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка поиска лучшего OUTPUT устройства: {e}")
             return None
     
     async def _switch_to_device(self, device: AudioDevice):
-        """Переключение на указанное устройство"""
+        """Переключение на указанное устройство (OUTPUT функция)"""
         try:
-            logger.info(f"🔄 Переключение на устройство: {device.name} ({device.type.value})")
+            logger.info(f"🔄 [AUDIO_SWITCH] Переключение на OUTPUT устройство: {device.name} ({device.type.value})")
             
-            # Устанавливаем устройство по умолчанию
-            success = await self.device_monitor.set_default_device(device.id)
+            # Устанавливаем устройство по умолчанию (OUTPUT)
+            success = await self.device_monitor.set_default_output_device(device.id)
             if success:
                 self.current_device = device
-                logger.info(f"✅ Успешно переключено на: {device.name}")
+                logger.info(f"✅ [AUDIO_SUCCESS] Успешно переключено на OUTPUT: {device.name}")
                 
                 # Логируем информацию об устройстве
                 self._log_device_info(device)
             else:
-                logger.error(f"❌ Не удалось переключиться на: {device.name}")
+                logger.error(f"❌ [AUDIO_ERROR] Не удалось переключиться на OUTPUT: {device.name}")
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка переключения на устройство {device.name}: {e}")
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения на OUTPUT устройство {device.name}: {e}")
+    
+    async def _switch_to_input_device(self, device: AudioDevice):
+        """Переключение на указанное устройство (INPUT функция)"""
+        try:
+            logger.info(f"🔄 [AUDIO_SWITCH] Переключение на INPUT устройство: {device.name} ({device.type.value})")
+            
+            # Проверяем, что устройство поддерживает INPUT функцию
+            if device.type not in [DeviceType.INPUT, DeviceType.BOTH]:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] Устройство не поддерживает INPUT функцию: {device.name}")
+                return False
+            
+            # Устанавливаем устройство по умолчанию (INPUT)
+            success = await self.device_monitor.set_default_input_device(device.id)
+            if success:
+                logger.info(f"✅ [AUDIO_SUCCESS] Успешно переключено на INPUT: {device.name}")
+                
+                # Логируем информацию об устройстве
+                self._log_device_info(device)
+                return True
+            else:
+                logger.error(f"❌ [AUDIO_ERROR] Не удалось переключиться на INPUT: {device.name}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения на INPUT устройство {device.name}: {e}")
+            return False
+    
+    async def _switch_to_output_device(self, device: AudioDevice):
+        """Переключение на указанное устройство (OUTPUT функция)"""
+        try:
+            logger.info(f"🔄 [AUDIO_SWITCH] Переключение на OUTPUT устройство: {device.name} ({device.type.value})")
+            
+            # Проверяем, что устройство поддерживает OUTPUT функцию
+            if device.type not in [DeviceType.OUTPUT, DeviceType.BOTH]:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] Устройство не поддерживает OUTPUT функцию: {device.name}")
+                return False
+            
+            # Устанавливаем устройство по умолчанию (OUTPUT)
+            success = await self.device_monitor.set_default_output_device(device.id)
+            if success:
+                self.current_device = device
+                logger.info(f"✅ [AUDIO_SUCCESS] Успешно переключено на OUTPUT: {device.name}")
+                
+                # Логируем информацию об устройстве
+                self._log_device_info(device)
+                return True
+            else:
+                logger.error(f"❌ [AUDIO_ERROR] Не удалось переключиться на OUTPUT: {device.name}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения на OUTPUT устройство {device.name}: {e}")
+            return False
     
     def _log_device_info(self, device: AudioDevice):
         """Логирование информации об устройстве"""
@@ -233,6 +342,52 @@ class DeviceSwitcher:
                 
         except Exception as e:
             logger.error(f"❌ Ошибка переключения на тип устройства {device_type.value}: {e}")
+            return False
+    
+    async def switch_to_best_input_device(self) -> bool:
+        """Переключение на лучшее доступное INPUT устройство"""
+        try:
+            logger.debug(f"🔍 [AUDIO_DEBUG] Поиск лучшего INPUT устройства...")
+            devices = await self.device_monitor.get_current_devices()
+            best_input_device = self._find_best_input_device(devices)
+            
+            if best_input_device:
+                success = await self._switch_to_input_device(best_input_device)
+                if success:
+                    logger.info(f"✅ [AUDIO_SUCCESS] Переключено на лучшее INPUT устройство: {best_input_device.name}")
+                    return True
+                else:
+                    logger.error(f"❌ [AUDIO_ERROR] Не удалось переключиться на INPUT устройство: {best_input_device.name}")
+                    return False
+            else:
+                logger.warning("⚠️ [AUDIO_DEBUG] Нет доступных INPUT устройств для переключения")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения на лучшее INPUT устройство: {e}")
+            return False
+    
+    async def switch_to_best_output_device(self) -> bool:
+        """Переключение на лучшее доступное OUTPUT устройство"""
+        try:
+            logger.debug(f"🔍 [AUDIO_DEBUG] Поиск лучшего OUTPUT устройства...")
+            devices = await self.device_monitor.get_current_devices()
+            best_output_device = self._find_best_output_device(devices)
+            
+            if best_output_device:
+                success = await self._switch_to_output_device(best_output_device)
+                if success:
+                    logger.info(f"✅ [AUDIO_SUCCESS] Переключено на лучшее OUTPUT устройство: {best_output_device.name}")
+                    return True
+                else:
+                    logger.error(f"❌ [AUDIO_ERROR] Не удалось переключиться на OUTPUT устройство: {best_output_device.name}")
+                    return False
+            else:
+                logger.warning("⚠️ [AUDIO_DEBUG] Нет доступных OUTPUT устройств для переключения")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения на лучшее OUTPUT устройство: {e}")
             return False
     
     def enable_auto_switch(self):

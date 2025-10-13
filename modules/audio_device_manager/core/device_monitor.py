@@ -122,12 +122,30 @@ class DeviceMonitor:
             return None
     
     async def set_default_device(self, device_id: str) -> bool:
-        """Установка устройства по умолчанию"""
+        """Установка устройства по умолчанию (OUTPUT)"""
         try:
             return await self._core_audio_bridge.set_default_output_device(device_id)
             
         except Exception as e:
             logger.error(f"❌ Ошибка установки устройства по умолчанию: {e}")
+            return False
+    
+    async def set_default_output_device(self, device_id: str) -> bool:
+        """Установка OUTPUT устройства по умолчанию"""
+        try:
+            return await self._core_audio_bridge.set_default_output_device(device_id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка установки OUTPUT устройства по умолчанию: {e}")
+            return False
+    
+    async def set_default_input_device(self, device_id: str) -> bool:
+        """Установка INPUT устройства по умолчанию"""
+        try:
+            return await self._core_audio_bridge.set_default_input_device(device_id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка установки INPUT устройства по умолчанию: {e}")
             return False
     
     async def _on_device_changed(self, changes: DeviceChange):

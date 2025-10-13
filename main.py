@@ -84,7 +84,7 @@ except Exception:
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -107,6 +107,12 @@ async def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
+    if "--diagnostics" in sys.argv or os.getenv("NEXY_DIAG") == "voice":
+        from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration
+
+        VoiceRecognitionIntegration.run_dependency_check()
+        sys.exit(0)
+
     # Создаем новый event loop для главного потока
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -122,3 +128,4 @@ if __name__ == "__main__":
 
                                                                                                  
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+                                                                                                              

@@ -72,6 +72,14 @@ class SpeechPlaybackIntegration:
                 auto_device_selection=self.config['auto_device_selection'],
             )
             self._player = SequentialSpeechPlayer(pc)
+            
+            # НАСТРАИВАЕМ EventBus в SequentialSpeechPlayer для получения событий выбора устройств
+            if hasattr(self._player, 'set_event_bus'):
+                self._player.set_event_bus(self.event_bus)
+                logger.debug("🔍 [AUDIO_DEBUG] EventBus настроен в SequentialSpeechPlayer")
+            else:
+                logger.warning("⚠️ [AUDIO_DEBUG] SequentialSpeechPlayer не поддерживает set_event_bus")
+            
             # Коллбек завершения воспроизведения — сигнализируем в EventBus
             try:
                 self._player.set_callbacks(on_playback_completed=self._on_player_completed)
