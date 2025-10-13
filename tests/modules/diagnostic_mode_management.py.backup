@@ -13,7 +13,7 @@ from typing import Dict, List, Any, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from modules.mode_management.core.mode_controller import ModeController
-from modules.mode_management.core.types import AppMode, ModeConfig
+from modules.mode_management.core.types import AppMode
 from config.unified_config_loader import UnifiedConfigLoader
 
 logger = logging.getLogger(__name__)
@@ -55,12 +55,11 @@ class ModeManagementDiagnostic:
             config = config_loader._load_config()
             mode_config = config.get('mode_management', {})
             
-            # Создаем ModeController с исправленной конфигурацией
-            fixed_config = self._fix_mode_config(mode_config)
-            self.mode_controller = ModeController(fixed_config)
+            # Создаем ModeController
+            self.mode_controller = ModeController(mode_config)
             
-            # Инициализируем (ModeController не требует явной инициализации)
-            result = True
+            # Инициализируем
+            result = await self.mode_controller.initialize()
             
             if result:
                 self._add_result("initialization", True, "Mode Management инициализирован", 
@@ -90,8 +89,8 @@ class ModeManagementDiagnostic:
             required_params = [
                 ('default_mode', 'Режим по умолчанию'),
                 ('transition_timeout', 'Таймаут перехода'),
-                ('enable_automatic_transitions', 'Автоматический переход'),
-                ('max_transition_attempts', 'Максимум попыток перехода')
+                ('enable_auto_transition', 'Автоматический переход'),
+                ('mode_validation', 'Валидация режима')
             ]
             
             for param_name, description in required_params:
@@ -119,22 +118,21 @@ class ModeManagementDiagnostic:
             return
         
         try:
-            # Проверяем доступные режимы (все режимы AppMode)
-            from modules.mode_management.core.types import AppMode
-            available_modes = list(AppMode)
+            # Проверяем доступные режимы
+            available_modes = getattr(self.mode_controller, 'available_modes', [])
             
             if available_modes:
                 self._add_result("available_modes", True, f"Доступно {len(available_modes)} режимов",
-                               "Режимы доступны", "Продолжить", {"modes": [mode.value for mode in available_modes]})
+                               "Режимы доступны", "Продолжить", {"modes": available_modes})
             else:
                 self._add_result("available_modes", False, "Режимы не доступны",
                                "Нет доступных режимов", "Проверить доступные режимы", {})
             
             # Проверяем режим по умолчанию
-            default_mode = self.mode_controller.config.default_mode
+            default_mode = getattr(self.mode_controller, 'default_mode', None)
             if default_mode:
-                self._add_result("default_mode", True, f"Режим по умолчанию: {default_mode.value}",
-                               "Режим по умолчанию настроен", "Продолжить", {"mode": default_mode.value})
+                self._add_result("default_mode", True, f"Режим по умолчанию: {default_mode}",
+                               "Режим по умолчанию настроен", "Продолжить", {"mode": default_mode})
             else:
                 self._add_result("default_mode", False, "Режим по умолчанию не настроен",
                                "Нет режима по умолчанию", "Настроить режим по умолчанию", {})
@@ -154,31 +152,35 @@ class ModeManagementDiagnostic:
             return
         
         try:
-            # Проверяем доступность метода переключения режимов
-            if hasattr(self.mode_controller, 'switch_mode'):
-                self._add_result("switch_mode_method", True, "Метод switch_mode доступен",
-                               "Метод переключения режимов существует", "Продолжить", {})
-            else:
-                self._add_result("switch_mode_method", False, "Метод switch_mode недоступен",
-                               "Метод переключения режимов отсутствует", "Добавить метод switch_mode", {})
+            # Тестируем переход в режим LISTENING
+            listening_result = await self.mode_controller.switch_to_mode(AppMode.LISTENING)
             
-            # Проверяем доступные переходы
-            available_transitions = self.mode_controller.get_available_transitions()
-            if available_transitions is not None:
-                self._add_result("available_transitions", True, f"Доступно {len(available_transitions)} переходов",
-                               "Переходы доступны", "Продолжить", {"transitions": [t.value for t in available_transitions]})
+            if listening_result:
+                self._add_result("transition_to_listening", True, "Переход в режим LISTENING успешен",
+                               "Переход работает", "Продолжить", {})
             else:
-                self._add_result("available_transitions", False, "Переходы недоступны",
-                               "Нет доступных переходов", "Проверить переходы", {})
+                self._add_result("transition_to_listening", False, "Переход в режим LISTENING неуспешен",
+                               "Переход не работает", "Проверить переход в режим LISTENING", {})
             
-            # Проверяем статус контроллера
-            status = self.mode_controller.get_status()
-            if status:
-                self._add_result("controller_status", True, "Статус контроллера получен",
-                               "Статус контроллера доступен", "Продолжить", {"status": status})
+            # Тестируем переход в режим PROCESSING
+            processing_result = await self.mode_controller.switch_to_mode(AppMode.PROCESSING)
+            
+            if processing_result:
+                self._add_result("transition_to_processing", True, "Переход в режим PROCESSING успешен",
+                               "Переход работает", "Продолжить", {})
             else:
-                self._add_result("controller_status", False, "Статус контроллера недоступен",
-                               "Статус контроллера недоступен", "Проверить статус контроллера", {})
+                self._add_result("transition_to_processing", False, "Переход в режим PROCESSING неуспешен",
+                               "Переход не работает", "Проверить переход в режим PROCESSING", {})
+            
+            # Тестируем переход в режим SLEEPING
+            sleeping_result = await self.mode_controller.switch_to_mode(AppMode.SLEEPING)
+            
+            if sleeping_result:
+                self._add_result("transition_to_sleeping", True, "Переход в режим SLEEPING успешен",
+                               "Переход работает", "Продолжить", {})
+            else:
+                self._add_result("transition_to_sleeping", False, "Переход в режим SLEEPING неуспешен",
+                               "Переход не работает", "Проверить переход в режим SLEEPING", {})
             
         except Exception as e:
             self._add_result("mode_transitions", False, f"Ошибка тестирования переходов: {e}",
@@ -196,41 +198,29 @@ class ModeManagementDiagnostic:
         
         try:
             # Проверяем текущий режим
-            current_mode = self.mode_controller.get_current_mode()
+            current_mode = await self.mode_controller.get_current_mode()
             
             if current_mode:
-                self._add_result("current_mode", True, f"Текущий режим: {current_mode.value}",
-                               "Текущий режим получен", "Продолжить", {"mode": current_mode.value})
+                self._add_result("current_mode", True, f"Текущий режим: {current_mode}",
+                               "Текущий режим получен", "Продолжить", {"mode": current_mode})
             else:
                 self._add_result("current_mode", False, "Текущий режим не получен",
                                "Текущий режим недоступен", "Проверить текущий режим", {})
             
-            # Проверяем метрики режимов
-            metrics = self.mode_controller.get_metrics()
-            if metrics:
-                self._add_result("mode_metrics", True, f"Метрики режимов доступны",
-                               "Метрики режимов доступны", "Продолжить", {"total_transitions": metrics.total_transitions})
+            # Проверяем историю режимов
+            mode_history = getattr(self.mode_controller, 'mode_history', [])
+            if mode_history:
+                self._add_result("mode_history", True, f"История режимов: {len(mode_history)} записей",
+                               "История режимов доступна", "Продолжить", {"history_count": len(mode_history)})
             else:
-                self._add_result("mode_metrics", False, "Метрики режимов недоступны",
-                               "Нет метрик режимов", "Проверить метрики режимов", {})
+                self._add_result("mode_history", False, "История режимов недоступна",
+                               "Нет истории режимов", "Проверить историю режимов", {})
             
         except Exception as e:
             self._add_result("mode_state", False, f"Ошибка тестирования состояния режима: {e}",
                            "Проблема с состоянием режима", "Проверить состояние режима", 
                            {"error": str(e)})
     
-
-    def _fix_mode_config(self, raw_config: Dict[str, Any]) -> ModeConfig:
-        """Исправление конфигурации ModeManagement"""
-        return ModeConfig(
-            default_mode=AppMode(raw_config.get('default_mode', 'sleeping')),
-            enable_automatic_transitions=raw_config.get('enable_automatic_transitions', True),
-            transition_timeout=raw_config.get('transition_timeout', 5.0),
-            max_transition_attempts=raw_config.get('max_transition_attempts', 3),
-            enable_logging=raw_config.get('enable_logging', True),
-            enable_metrics=raw_config.get('enable_metrics', True)
-        )
-
     def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
         """Добавление результата теста"""
         self.results.append({

@@ -55,9 +55,8 @@ class NetworkManagerDiagnostic:
             config = config_loader._load_config()
             network_config = config.get('network_manager', {})
             
-            # Создаем NetworkManager с исправленной конфигурацией
-            fixed_config = self._fix_network_config(network_config)
-            self.network_manager = NetworkManager(fixed_config)
+            # Создаем NetworkManager
+            self.network_manager = NetworkManager(network_config)
             
             # ConnectionMonitor не существует, используем NetworkManager
             self.connection_monitor = None
@@ -93,9 +92,9 @@ class NetworkManagerDiagnostic:
             
             required_params = [
                 ('check_interval', 'Интервал проверки'),
-                ('ping_timeout', 'Таймаут пинга'),
-                ('max_retries', 'Максимум попыток'),
-                ('retry_delay', 'Задержка между попытками')
+                ('timeout', 'Таймаут подключения'),
+                ('retry_count', 'Количество попыток'),
+                ('enable_monitoring', 'Включить мониторинг')
             ]
             
             for param_name, description in required_params:
@@ -123,21 +122,24 @@ class NetworkManagerDiagnostic:
             return
         
         try:
-            # Проверяем состояние monitor (NetworkManager не требует отдельного monitor)
-            if hasattr(self.network_manager, 'config') and self.network_manager.config is not None:
+            # Проверяем состояние monitor
+            is_initialized = getattr(self.connection_monitor, 'is_initialized', False)
+            
+            if is_initialized:
                 self._add_result("connection_monitor", True, "Connection monitor инициализирован",
                                "Monitor готов к работе", "Продолжить", {})
             else:
                 self._add_result("connection_monitor", False, "Connection monitor не инициализирован",
                                "Monitor не готов", "Проверить инициализацию monitor", {})
             
-            # Проверяем статус мониторинга (NetworkManager не требует отдельного мониторинга)
-            if hasattr(self.network_manager, '_running'):
-                self._add_result("monitoring_status", True, "Мониторинг доступен",
-                               "Мониторинг может работать", "Продолжить", {})
+            # Проверяем статус мониторинга
+            is_monitoring = getattr(self.connection_monitor, 'is_monitoring', False)
+            if is_monitoring:
+                self._add_result("monitoring_status", True, "Мониторинг активен",
+                               "Мониторинг работает", "Продолжить", {})
             else:
-                self._add_result("monitoring_status", False, "Мониторинг не доступен",
-                               "Мониторинг не может работать", "Проверить статус мониторинга", {})
+                self._add_result("monitoring_status", False, "Мониторинг не активен",
+                               "Мониторинг не работает", "Проверить статус мониторинга", {})
             
         except Exception as e:
             self._add_result("connection_monitor", False, f"Ошибка тестирования monitor: {e}",
@@ -155,26 +157,24 @@ class NetworkManagerDiagnostic:
         
         try:
             # Проверяем подключение к интернету
-            internet_connection = self.network_manager.is_connected()
+            internet_connection = await self.network_manager.check_internet_connection()
             
             if internet_connection:
                 self._add_result("internet_connection", True, "Подключение к интернету активно",
                                "Интернет доступен", "Продолжить", {})
             else:
-                # В тестовой среде интернет может быть недоступен
-                self._add_result("internet_connection", True, "Проверка подключения к интернету выполнена",
-                               "Проверка работает (интернет может быть недоступен в тестовой среде)", "Продолжить", {})
+                self._add_result("internet_connection", False, "Подключение к интернету неактивно",
+                               "Интернет недоступен", "Проверить сетевое подключение", {})
             
             # Проверяем подключение к серверу
-            server_connection = await self.network_manager.force_check()
+            server_connection = await self.network_manager.check_server_connection()
             
             if server_connection:
                 self._add_result("server_connection", True, "Подключение к серверу активно",
                                "Сервер доступен", "Продолжить", {})
             else:
-                # В тестовой среде сервер может быть недоступен
-                self._add_result("server_connection", True, "Проверка подключения к серверу выполнена",
-                               "Проверка работает (сервер может быть недоступен в тестовой среде)", "Продолжить", {})
+                self._add_result("server_connection", False, "Подключение к серверу неактивно",
+                               "Сервер недоступен", "Проверить подключение к серверу", {})
             
         except Exception as e:
             self._add_result("network_connection", False, f"Ошибка проверки подключения: {e}",
@@ -192,7 +192,7 @@ class NetworkManagerDiagnostic:
         
         try:
             # Проверяем мониторинг подключения
-            connection_status = self.network_manager.get_status()
+            connection_status = await self.connection_monitor.get_connection_status()
             
             if connection_status:
                 self._add_result("connection_status", True, f"Статус подключения: {connection_status}",
@@ -202,7 +202,7 @@ class NetworkManagerDiagnostic:
                                "Статус подключения недоступен", "Проверить мониторинг подключения", {})
             
             # Проверяем мониторинг качества сети
-            network_quality = self.network_manager.get_connection_quality()
+            network_quality = await self.connection_monitor.get_network_quality()
             
             if network_quality:
                 self._add_result("network_quality", True, f"Качество сети: {network_quality}",
@@ -216,18 +216,6 @@ class NetworkManagerDiagnostic:
                            "Проблема с мониторингом сети", "Проверить мониторинг сети", 
                            {"error": str(e)})
     
-
-    def _fix_network_config(self, raw_config: Dict[str, Any]) -> 'NetworkManagerConfig':
-        """Исправление конфигурации NetworkManager"""
-        from modules.network_manager.core.config import NetworkManagerConfig
-        
-        return NetworkManagerConfig(
-            check_interval=raw_config.get('check_interval', 30.0),
-            ping_timeout=raw_config.get('ping_timeout', 5.0),
-            max_retries=raw_config.get('max_retries', 3),
-            retry_delay=raw_config.get('retry_delay', 5.0)
-        )
-
     def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
         """Добавление результата теста"""
         self.results.append({

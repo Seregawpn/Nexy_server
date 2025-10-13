@@ -39,6 +39,7 @@ class ScreenshotCaptureIntegrationConfig:
     max_height: int = 1080
     quality: int = 85
     region: str = "full_screen"  # full_screen|primary_monitor|custom
+    enforce_permissions: bool = False
 
 
 class ScreenshotCaptureIntegration:
@@ -68,7 +69,8 @@ class ScreenshotCaptureIntegration:
         self._config = self._load_config()
         self._prepared_screens: Dict[float, Dict[str, Any]] = {}
         self._prepare_tasks: Dict[float, asyncio.Task] = {}
-        self._enforce_permissions = self._detect_packaged_environment()
+        # Принудительная проверка разрешений отключена без централизованного менеджера
+        self._enforce_permissions = False
 
     def _load_config(self) -> ScreenshotCaptureIntegrationConfig:
         try:
@@ -80,6 +82,7 @@ class ScreenshotCaptureIntegration:
                 max_height=int(cfg.get("max_height", 1080)),
                 quality=int(cfg.get("quality", 85)),
                 region=str(cfg.get("region", "full_screen")).lower() if isinstance(cfg.get("region", "full_screen"), str) else "full_screen",
+                enforce_permissions=bool(cfg.get("enforce_permissions", False)),
             )
         except Exception:
             return ScreenshotCaptureIntegrationConfig()
@@ -635,17 +638,18 @@ class ScreenshotCaptureIntegration:
             return False
 
     async def _check_screen_capture_permissions(self):
-        """Проверить разрешения Screen Capture"""
+        """Проверить доступность Screen Capture через системные API"""
         try:
             if not self._enforce_permissions:
                 return
-            # Пробуем системный preflight API, без Bundle ID
+            
+            granted = False
+            # Используем только fallback проверку
             try:
                 from Quartz import CGPreflightScreenCaptureAccess  # type: ignore
             except Exception:
                 CGPreflightScreenCaptureAccess = None
 
-            granted = False
             if CGPreflightScreenCaptureAccess is not None:
                 try:
                     granted = bool(CGPreflightScreenCaptureAccess())
@@ -667,10 +671,10 @@ class ScreenshotCaptureIntegration:
                 self._update_screen_permission_status("denied", source="probe")
                 logger.info("🔄 ScreenshotCapture disabled due to missing Screen Capture access")
             else:
-                logger.info("✅ Screen Capture accessible (preflight/probe succeeded)")
+                logger.info("✅ Screen Capture accessible")
                 self._update_screen_permission_status("granted", source="probe")
                 
         except Exception as e:
-            logger.info(f"ℹ️ Screen Capture probe failed: {e}")
+            logger.warning(f"⚠️ Screen Capture probe failed: {e}")
             self._capture = None
             self._update_screen_permission_status("unknown", source="probe_error")

@@ -57,12 +57,11 @@ class GrpcClientDiagnostic:
             config = config_loader._load_config()
             grpc_config = config.get('grpc', {})
             
-            # Создаем GRPC Client с исправленной конфигурацией
-            fixed_config = self._fix_grpc_config(grpc_config)
-            self.grpc_client = GrpcClient(fixed_config)
+            # Создаем GRPC Client
+            self.grpc_client = GrpcClient(grpc_config)
             
-            # GrpcClient инициализируется в конструкторе
-            result = True
+            # Инициализируем
+            result = await self.grpc_client.initialize()
             
             if result:
                 self._add_result("initialization", True, "GRPC Client инициализирован", 
@@ -89,27 +88,22 @@ class GrpcClientDiagnostic:
             # Проверяем основные параметры конфигурации
             config = self.grpc_client.config
             
-            # Проверяем основные параметры конфигурации
-            if isinstance(config, dict):
-                required_params = [
-                    ('servers', 'Серверы'),
-                    ('connection_timeout', 'Таймаут подключения'),
-                    ('max_retry_attempts', 'Максимум попыток'),
-                    ('retry_strategy', 'Стратегия повторов')
-                ]
-                
-                for param_name, description in required_params:
-                    if param_name in config:
-                        value = config[param_name]
-                        self._add_result(f"config_{param_name}", True, f"{description}: {value}",
-                                       "Параметр настроен", "Продолжить", {"parameter": param_name, "value": str(value)})
-                    else:
-                        self._add_result(f"config_{param_name}", False, f"{description} не настроен",
-                                       "Параметр отсутствует", f"Настроить {param_name} в конфигурации", 
-                                       {"parameter": param_name})
-            else:
-                self._add_result("config_structure", False, "Конфигурация не является словарем",
-                               "Неправильная структура конфигурации", "Проверить структуру конфигурации", {})
+            required_params = [
+                ('server_host', 'Хост сервера'),
+                ('server_port', 'Порт сервера'),
+                ('use_tls', 'Использование TLS'),
+                ('timeout', 'Таймаут подключения')
+            ]
+            
+            for param_name, description in required_params:
+                if hasattr(config, param_name):
+                    value = getattr(config, param_name)
+                    self._add_result(f"config_{param_name}", True, f"{description}: {value}",
+                                   "Параметр настроен", "Продолжить", {"parameter": param_name, "value": value})
+                else:
+                    self._add_result(f"config_{param_name}", False, f"{description} не настроен",
+                                   "Параметр отсутствует", f"Настроить {param_name} в конфигурации", 
+                                   {"parameter": param_name})
             
         except Exception as e:
             self._add_result("configuration", False, f"Ошибка проверки конфигурации: {e}",
@@ -126,25 +120,15 @@ class GrpcClientDiagnostic:
             return
         
         try:
-            # Проверяем connection manager
-            connection_manager = getattr(self.grpc_client, 'connection_manager', None)
+            # Пытаемся подключиться к серверу
+            connection_result = await self.grpc_client.connect()
             
-            if connection_manager:
-                self._add_result("connection_manager", True, "Connection manager инициализирован",
-                               "Менеджер соединений настроен", "Продолжить", {})
-                
-                # Проверяем доступные серверы (может быть пустым из-за ошибки инициализации)
-                servers = getattr(connection_manager, 'servers', {})
-                if servers:
-                    self._add_result("available_servers", True, f"Доступно {len(servers)} серверов",
-                                   "Серверы настроены", "Продолжить", {"server_count": len(servers)})
-                else:
-                    # Это нормально в тестовой среде, где сервер может быть недоступен
-                    self._add_result("available_servers", True, "Серверы не настроены (нормально для тестов)",
-                                   "Серверы не настроены в тестовой среде", "Продолжить", {"server_count": 0})
+            if connection_result:
+                self._add_result("connection", True, "Подключение к серверу успешно",
+                               "Сетевое подключение работает", "Продолжить", {})
             else:
-                self._add_result("connection_manager", False, "Connection manager не инициализирован",
-                               "Менеджер соединений отсутствует", "Проверить инициализацию connection manager", {})
+                self._add_result("connection", False, "Не удалось подключиться к серверу",
+                               "Проблема с сетевым подключением", "Проверить доступность сервера", {})
             
         except Exception as e:
             self._add_result("connection", False, f"Ошибка подключения: {e}",
@@ -161,20 +145,15 @@ class GrpcClientDiagnostic:
             return
         
         try:
-            # Проверяем health checker
-            connection_manager = getattr(self.grpc_client, 'connection_manager', None)
-            if connection_manager:
-                health_checker = getattr(connection_manager, 'health_checker', None)
-                
-                if health_checker:
-                    self._add_result("health_checker", True, "Health checker инициализирован",
-                                   "Health check система настроена", "Продолжить", {})
-                else:
-                    self._add_result("health_checker", False, "Health checker не инициализирован",
-                                   "Health check система отсутствует", "Проверить инициализацию health checker", {})
+            # Проверяем health check
+            health_result = await self.grpc_client.health_check()
+            
+            if health_result:
+                self._add_result("health_check", True, "Health check прошел успешно",
+                               "Сервер отвечает на health check", "Продолжить", {})
             else:
-                self._add_result("health_checker", False, "Connection manager недоступен",
-                               "Нельзя проверить health checker", "Сначала исправить connection manager", {})
+                self._add_result("health_check", False, "Health check не прошел",
+                               "Сервер не отвечает на health check", "Проверить состояние сервера", {})
             
         except Exception as e:
             self._add_result("health_check", False, f"Ошибка health check: {e}",
@@ -199,18 +178,13 @@ class GrpcClientDiagnostic:
                                "Retry механизм настроен", "Продолжить", {})
                 
                 # Проверяем параметры retry
-                config = getattr(retry_manager, 'config', None)
-                if config:
-                    max_attempts = getattr(config, 'max_attempts', None)
-                    if max_attempts is not None:
-                        self._add_result("retry_max_retries", True, f"Максимум попыток: {max_attempts}",
-                                       "Параметр retry настроен", "Продолжить", {"max_retries": max_attempts})
-                    else:
-                        self._add_result("retry_max_retries", False, "Максимум попыток не настроен",
-                                       "Параметр retry отсутствует", "Настроить max_attempts", {})
+                max_retries = getattr(retry_manager, 'max_retries', None)
+                if max_retries is not None:
+                    self._add_result("retry_max_retries", True, f"Максимум попыток: {max_retries}",
+                                   "Параметр retry настроен", "Продолжить", {"max_retries": max_retries})
                 else:
-                    self._add_result("retry_config", False, "Конфигурация retry недоступна",
-                                   "Конфигурация retry отсутствует", "Проверить конфигурацию retry", {})
+                    self._add_result("retry_max_retries", False, "Максимум попыток не настроен",
+                                   "Параметр retry отсутствует", "Настроить max_retries", {})
             else:
                 self._add_result("retry_manager", False, "Retry manager не инициализирован",
                                "Retry механизм отсутствует", "Проверить инициализацию retry manager", {})
@@ -220,27 +194,6 @@ class GrpcClientDiagnostic:
                            "Проблема с retry механизмом", "Проверить retry manager", 
                            {"error": str(e)})
     
-
-    def _fix_grpc_config(self, raw_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Исправление конфигурации GrpcClient"""
-        return {
-            'servers': raw_config.get('servers', {
-                'local': {
-                    'address': '127.0.0.1',
-                    'port': 50051,
-                    'use_ssl': False,
-                    'timeout': 30,
-                    'retry_attempts': 3,
-                    'retry_delay': 1.0
-                }
-            }),
-            'connection_timeout': raw_config.get('connection_timeout', 30),
-            'max_retry_attempts': raw_config.get('max_retry_attempts', 3),
-            'retry_strategy': raw_config.get('retry_strategy', 'exponential'),
-            'auto_fallback': raw_config.get('auto_fallback', True),
-            'health_check_interval': raw_config.get('health_check_interval', 30)
-        }
-
     def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
         """Добавление результата теста"""
         self.results.append({

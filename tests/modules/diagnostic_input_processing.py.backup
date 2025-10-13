@@ -55,19 +55,11 @@ class InputProcessingDiagnostic:
             config = config_loader._load_config()
             input_config = config.get('input_processing', {})
             
-            # Создаем KeyboardMonitor с исправленной конфигурацией
-            fixed_config = self._fix_input_config(input_config)
-            self.keyboard_monitor = KeyboardMonitor(fixed_config)
+            # Создаем KeyboardMonitor
+            self.keyboard_monitor = KeyboardMonitor(input_config)
             
-            # Регистрируем тестовый callback
-            def test_callback(event):
-                pass
-            
-            self.keyboard_monitor.register_callback(KeyEventType.PRESS, test_callback)
-            
-            # Запускаем мониторинг
-            self.keyboard_monitor.start_monitoring()
-            result = True  # start_monitoring не возвращает значение
+            # Инициализируем
+            result = await self.keyboard_monitor.initialize()
             
             if result:
                 self._add_result("initialization", True, "Input Processing инициализирован", 
@@ -95,10 +87,10 @@ class InputProcessingDiagnostic:
             config = self.keyboard_monitor.config
             
             required_params = [
-                ('key_to_monitor', 'Клавиша для мониторинга'),
-                ('short_press_threshold', 'Порог короткого нажатия'),
-                ('long_press_threshold', 'Порог долгого нажатия'),
-                ('event_cooldown', 'Задержка между событиями')
+                ('long_press_duration', 'Длительность долгого нажатия'),
+                ('key_combination_timeout', 'Таймаут комбинации клавиш'),
+                ('enable_global_hotkeys', 'Глобальные горячие клавиши'),
+                ('enable_key_logging', 'Логирование клавиш')
             ]
             
             for param_name, description in required_params:
@@ -127,9 +119,9 @@ class InputProcessingDiagnostic:
         
         try:
             # Проверяем состояние listener
-            is_monitoring = getattr(self.keyboard_monitor, 'is_monitoring', False)
+            is_running = getattr(self.keyboard_monitor, 'is_running', False)
             
-            if is_monitoring:
+            if is_running:
                 self._add_result("keyboard_listener", True, "Keyboard listener запущен",
                                "Listener работает", "Продолжить", {})
             else:
@@ -137,7 +129,7 @@ class InputProcessingDiagnostic:
                                "Listener не работает", "Проверить запуск listener", {})
             
             # Проверяем callback функции
-            callbacks = getattr(self.keyboard_monitor, 'event_callbacks', {})
+            callbacks = getattr(self.keyboard_monitor, 'callbacks', {})
             if callbacks:
                 self._add_result("keyboard_callbacks", True, f"Найдено {len(callbacks)} callback функций",
                                "Callback функции настроены", "Продолжить", {"callback_count": len(callbacks)})
@@ -162,20 +154,20 @@ class InputProcessingDiagnostic:
         try:
             # Создаем тестовое событие
             test_event = KeyEvent(
-                key="space",
+                key_code=49,  # Space key
                 event_type=KeyEventType.PRESS,
-                timestamp=1234567890,
-                duration=0.1
+                timestamp=1234567890
             )
             
-            # Проверяем, что KeyboardMonitor может создавать события
-            # (это означает, что обработка событий работает)
-            if hasattr(self.keyboard_monitor, 'event_callbacks'):
-                self._add_result("event_processing", True, "Обработка событий настроена",
-                               "События могут обрабатываться", "Продолжить", {})
+            # Тестируем обработку события
+            result = await self.keyboard_monitor._process_key_event(test_event)
+            
+            if result is not None:
+                self._add_result("event_processing", True, "Обработка событий работает",
+                               "События обрабатываются корректно", "Продолжить", {})
             else:
-                self._add_result("event_processing", False, "Обработка событий не настроена",
-                               "События не могут обрабатываться", "Проверить обработку событий", {})
+                self._add_result("event_processing", False, "Обработка событий не работает",
+                               "События не обрабатываются", "Проверить логику обработки событий", {})
             
         except Exception as e:
             self._add_result("event_processing", False, f"Ошибка обработки событий: {e}",
@@ -192,33 +184,31 @@ class InputProcessingDiagnostic:
             return
         
         try:
-            # Проверяем, что мониторинг запущен (это означает, что разрешения есть)
-            if self.keyboard_monitor.is_monitoring:
-                self._add_result("permissions", True, "Разрешения получены (мониторинг работает)",
-                               "Разрешения настроены корректно", "Продолжить", {})
+            # Проверяем разрешения на доступ к клавиатуре
+            has_permissions = await self.keyboard_monitor._check_accessibility_permissions()
+            
+            if has_permissions:
+                self._add_result("accessibility_permissions", True, "Разрешения на доступность получены",
+                               "Разрешения настроены", "Продолжить", {})
             else:
-                self._add_result("permissions", False, "Мониторинг не работает",
-                               "Возможно проблема с разрешениями", "Проверить разрешения системы", {})
+                self._add_result("accessibility_permissions", False, "Разрешения на доступность не получены",
+                               "Нет разрешений на доступность", "Предоставить разрешения в настройках", {})
+            
+            # Проверяем разрешения на мониторинг ввода
+            has_input_monitoring = await self.keyboard_monitor._check_input_monitoring_permissions()
+            
+            if has_input_monitoring:
+                self._add_result("input_monitoring_permissions", True, "Разрешения на мониторинг ввода получены",
+                               "Разрешения настроены", "Продолжить", {})
+            else:
+                self._add_result("input_monitoring_permissions", False, "Разрешения на мониторинг ввода не получены",
+                               "Нет разрешений на мониторинг ввода", "Предоставить разрешения в настройках", {})
             
         except Exception as e:
             self._add_result("permissions", False, f"Ошибка проверки разрешений: {e}",
                            "Проблема с проверкой разрешений", "Проверить разрешения системы", 
                            {"error": str(e)})
     
-
-    def _fix_input_config(self, raw_config: Dict[str, Any]) -> 'KeyboardConfig':
-        """Исправление конфигурации InputProcessing"""
-        from modules.input_processing.keyboard.types import KeyboardConfig
-        
-        return KeyboardConfig(
-            key_to_monitor=raw_config.get('key_to_monitor', 'space'),
-            short_press_threshold=raw_config.get('short_press_threshold', 0.6),
-            long_press_threshold=raw_config.get('long_press_threshold', 1.0),
-            event_cooldown=raw_config.get('event_cooldown', 0.1),
-            hold_check_interval=raw_config.get('hold_check_interval', 0.05),
-            debounce_time=raw_config.get('debounce_time', 0.1)
-        )
-
     def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
         """Добавление результата теста"""
         self.results.append({

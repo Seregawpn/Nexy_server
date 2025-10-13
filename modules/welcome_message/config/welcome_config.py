@@ -42,7 +42,8 @@ class WelcomeConfigLoader:
                 bit_depth=int(welcome_config.get('bit_depth', 16)),
                 use_server=welcome_config.get('use_server', True),
                 server_timeout_sec=float(welcome_config.get('server_timeout_sec', 30.0)),
-                ignore_microphone_permission=welcome_config.get('ignore_microphone_permission', False)
+                ignore_microphone_permission=welcome_config.get('ignore_microphone_permission', False),
+                force_permission_checks=welcome_config.get('force_permission_checks', False),
             )
             
             logger.info(f"✅ [WELCOME_CONFIG] Конфигурация загружена: enabled={config.enabled}, text='{config.text[:30]}...'")

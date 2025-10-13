@@ -68,10 +68,13 @@ class WelcomeMessageIntegration:
         self._pending_welcome = False
         self._permission_prompted = False
         self._permission_recheck_task: Optional[asyncio.Task] = None
-        self._enforce_permissions = self._detect_packaged_environment()
-        if getattr(self.config, "ignore_microphone_permission", False) and self._enforce_permissions:
-            logger.info("🎙️ [WELCOME_INTEGRATION] Игнорируем статус разрешения микрофона для приветствия")
-            self._enforce_permissions = False
+
+        # Блокировки по разрешениям отключены по умолчанию
+        self._enforce_permissions = bool(
+            getattr(self.config, "force_permission_checks", False)
+        )
+        if self._enforce_permissions:
+            logger.info("🎙️ [WELCOME_INTEGRATION] Принудительная проверка микрофона включена конфигурацией")
     
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -323,7 +326,7 @@ class WelcomeMessageIntegration:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка обработки события разрешений: {e}")
 
     async def _on_permissions_ready(self, event: Dict[str, Any]):
-        """Получение начального статуса от PermissionsIntegration"""
+        """Получение начального статуса разрешений микрофона"""
         try:
             data = (event or {}).get("data") or {}
             permissions_map = data.get("permissions")
@@ -418,7 +421,7 @@ class WelcomeMessageIntegration:
         self._schedule_permission_recheck()
 
     async def _ensure_permission_status(self):
-        """Уточняет статус микрофона через PermissionsIntegration"""
+        """Уточняет статус микрофона через системные события"""
         if not self._enforce_permissions:
             return
         try:

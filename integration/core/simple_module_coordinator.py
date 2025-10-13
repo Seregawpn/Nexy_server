@@ -23,8 +23,6 @@ from integration.integrations.speech_playback_integration import SpeechPlaybackI
 from modules.tray_controller.core.tray_types import TrayConfig
 from integration.integrations.input_processing_integration import InputProcessingIntegration, InputProcessingConfig
 from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration, VoiceRecognitionConfig
-from integration.integrations.permissions_integration import PermissionsIntegration
-from modules.permissions.core.types import PermissionConfig
 from integration.integrations.updater_integration import UpdaterIntegration
 from integration.integrations.network_manager_integration import NetworkManagerIntegration
 from modules.network_manager.core.config import NetworkManagerConfig
@@ -199,21 +197,10 @@ class SimpleModuleCoordinator:
                     event_bus=self.event_bus,
                     state_manager=self.state_manager,
                     error_handler=self.error_handler,
-                    config=input_config
+                    config=input_config,
                 )
             else:
                 logger.warning("Keyboard integration config not found; skipping input integration")
-            
-            # Permissions Integration - используем конфигурацию модуля
-            # Конфигурация будет загружена внутри PermissionsIntegration
-            permissions_config = None  # Будет создана автоматически из unified_config.yaml
-            
-            self.integrations['permissions'] = PermissionsIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
-                config=permissions_config
-            )
             
             # Updater Integration - новая система обновлений
             updater_cfg = config_data.get('updater', {})
@@ -377,7 +364,7 @@ class SimpleModuleCoordinator:
                 config=voiceover_config
             )
 
-            print("✅ Интеграции созданы: instance_manager, hardware_id, tray, input, permissions, updater, network, audio, interrupt, voice_recognition, screenshot_capture, grpc, speech_playback, signals, autostart_manager, welcome_message, voiceover_ducking")
+            print("✅ Интеграции созданы: instance_manager, hardware_id, tray, input, updater, network, audio, interrupt, voice_recognition, screenshot_capture, grpc, speech_playback, signals, autostart_manager, welcome_message, voiceover_ducking")
             
             # 3. Создаем Workflows (координаторы режимов)
             print("🔧 Создание Workflows...")
@@ -401,25 +388,8 @@ class SimpleModuleCoordinator:
     async def _initialize_integrations(self):
         """Инициализация всех интеграций"""
         try:
-            # КРИТИЧНО: Сначала инициализируем PermissionsIntegration
-            # чтобы централизованно запросить все разрешения
-            if 'permissions' in self.integrations:
-                print(f"🔧 Инициализация permissions (ПРИОРИТЕТ)...")
-                success = await self.integrations['permissions'].initialize()
-                if not success:
-                    print(f"❌ Ошибка инициализации permissions")
-                    raise Exception(f"Failed to initialize permissions")
-                print(f"✅ permissions инициализирован")
-                
-                # Ждем завершения запроса разрешений
-                print("⏳ Ожидание завершения запроса разрешений...")
-                await asyncio.sleep(3)  # Даем время на обработку TCC запросов
-            
             # Затем инициализируем остальные интеграции
             for name, integration in self.integrations.items():
-                if name == 'permissions':  # Уже инициализирован
-                    continue
-                    
                 print(f"🔧 Инициализация {name}...")
                 success = await integration.initialize()
                 if not success:
@@ -489,22 +459,21 @@ class SimpleModuleCoordinator:
             
             # Запускаем интеграции в правильном порядке (с учетом зависимостей)
             startup_order = [
-                'permissions',        # 1. Сначала разрешения - КРИТИЧНО!
-                'hardware_id',        # 2. Получить уникальный ID
-                'tray',               # 3. GUI и меню-бар
-                'voiceover_ducking',  # 4. VoiceOver Ducking (зависит от permissions)
-                'audio',              # 5. Аудио система (после разрешений)
-                'voice_recognition',  # 6. Распознавание речи (зависит от audio)
-                'screenshot_capture', # 7. Захват экрана (зависит от permissions)
-                'network',            # 8. Сетевая система
-                'updater',            # 9. Система обновлений
-                'interrupt',          # 10. Управление прерываниями
-                'grpc',               # 11. gRPC клиент (зависит от hardware_id)
-                'speech_playback',    # 12. Воспроизведение речи (зависит от grpc)
-                'signals',            # 13. Аудио сигналы
-                'welcome_message',    # 14. Приветственное сообщение (зависит от speech_playback)
-                'autostart_manager',  # 15. Автозапуск
-                'instance_manager',   # 16. Управление экземплярами (последний)
+                'hardware_id',        # 1. Получить уникальный ID
+                'tray',               # 2. GUI и меню-бар
+                'voiceover_ducking',  # 3. VoiceOver Ducking
+                'audio',              # 4. Аудио система
+                'voice_recognition',  # 5. Распознавание речи (зависит от audio)
+                'screenshot_capture', # 6. Захват экрана
+                'network',            # 7. Сетевая система
+                'updater',            # 8. Система обновлений
+                'interrupt',          # 9. Управление прерываниями
+                'grpc',               # 10. gRPC клиент (зависит от hardware_id)
+                'speech_playback',    # 11. Воспроизведение речи (зависит от grpc)
+                'signals',            # 12. Аудио сигналы
+                'welcome_message',    # 13. Приветственное сообщение (зависит от speech_playback)
+                'autostart_manager',  # 14. Автозапуск
+                'instance_manager',   # 15. Управление экземплярами (последний)
             ]
             
             # Запускаем в правильном порядке

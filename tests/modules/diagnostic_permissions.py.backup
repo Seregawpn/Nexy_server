@@ -56,14 +56,14 @@ class PermissionsDiagnostic:
             permissions_config = config.get('permissions', {})
             
             # Создаем PermissionManager
-            self.permissions_manager = PermissionManager("config/permissions_config.yaml")
+            self.permissions_manager = PermissionManager()
             
-            # Создаем MacOSPermissionHandler (не требует конфигурации)
+            # Создаем MacOSPermissionHandler
             self.permission_handler = MacOSPermissionHandler()
             
             # Инициализируем
             manager_result = await self.permissions_manager.initialize()
-            handler_result = True  # MacOSPermissionHandler не требует инициализации
+            handler_result = await self.permission_handler.initialize()
             
             if manager_result and handler_result:
                 self._add_result("initialization", True, "Permissions инициализирован", 
@@ -91,10 +91,10 @@ class PermissionsDiagnostic:
             config = self.permissions_manager.config
             
             required_params = [
-                ('auto_open_preferences', 'Автоматическое открытие настроек'),
-                ('check_interval', 'Интервал проверки'),
-                ('required_permissions', 'Обязательные разрешения'),
-                ('retry_attempts', 'Количество попыток')
+                ('microphone_permission', 'Разрешение на микрофон'),
+                ('accessibility_permission', 'Разрешение на доступность'),
+                ('input_monitoring_permission', 'Разрешение на мониторинг ввода'),
+                ('screen_recording_permission', 'Разрешение на запись экрана')
             ]
             
             for param_name, description in required_params:
@@ -122,8 +122,10 @@ class PermissionsDiagnostic:
             return
         
         try:
-            # Проверяем состояние handler (MacOSPermissionHandler не требует инициализации)
-            if hasattr(self.permission_handler, 'bundle_id') and self.permission_handler.bundle_id:
+            # Проверяем состояние handler
+            is_initialized = getattr(self.permission_handler, 'is_initialized', False)
+            
+            if is_initialized:
                 self._add_result("permission_handler", True, "Permission handler инициализирован",
                                "Handler готов к работе", "Продолжить", {})
             else:
@@ -131,10 +133,10 @@ class PermissionsDiagnostic:
                                "Handler не готов", "Проверить инициализацию handler", {})
             
             # Проверяем доступные разрешения
-            # Проверяем доступные разрешения (MacOSPermissionHandler имеет методы для проверки)
-            if hasattr(self.permission_handler, 'check_microphone_permission'):
-                self._add_result("available_permissions", True, "Разрешения доступны для проверки",
-                               "Разрешения доступны", "Продолжить", {})
+            available_permissions = getattr(self.permission_handler, 'available_permissions', [])
+            if available_permissions:
+                self._add_result("available_permissions", True, f"Доступно {len(available_permissions)} разрешений",
+                               "Разрешения доступны", "Продолжить", {"permissions": available_permissions})
             else:
                 self._add_result("available_permissions", False, "Разрешения не доступны",
                                "Нет доступных разрешений", "Проверить доступные разрешения", {})
@@ -200,7 +202,7 @@ class PermissionsDiagnostic:
         
         try:
             # Тестируем запрос разрешения на микрофон
-            microphone_request = await self.permission_handler.check_microphone_permission()
+            microphone_request = await self.permission_handler.request_microphone_permission()
             
             if microphone_request:
                 self._add_result("microphone_request", True, "Запрос разрешения на микрофон выполнен",
@@ -210,7 +212,7 @@ class PermissionsDiagnostic:
                                "Запрос разрешения не работает", "Проверить запрос разрешения", {})
             
             # Тестируем запрос разрешения на доступность
-            accessibility_request = await self.permission_handler.check_accessibility_permission()
+            accessibility_request = await self.permission_handler.request_accessibility_permission()
             
             if accessibility_request:
                 self._add_result("accessibility_request", True, "Запрос разрешения на доступность выполнен",
@@ -224,16 +226,6 @@ class PermissionsDiagnostic:
                            "Проблема с запросом разрешений", "Проверить запрос разрешений", 
                            {"error": str(e)})
     
-
-    def _fix_permissions_config(self, raw_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Исправление конфигурации Permissions"""
-        return {
-            'microphone_permission': raw_config.get('microphone_permission', True),
-            'accessibility_permission': raw_config.get('accessibility_permission', True),
-            'input_monitoring_permission': raw_config.get('input_monitoring_permission', True),
-            'screen_recording_permission': raw_config.get('screen_recording_permission', True)
-        }
-
     def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
         """Добавление результата теста"""
         self.results.append({

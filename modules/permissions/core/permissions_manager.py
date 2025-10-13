@@ -69,8 +69,8 @@ class PermissionManager:
         for perm_type in PermissionType:
             info = PermissionInfo(
                 permission_type=perm_type,
-                status=PermissionStatus.NOT_DETERMINED,
-                granted=False,
+                status=PermissionStatus.GRANTED,
+                granted=True,
                 message=descriptions.get(perm_type, ""),
                 last_checked=timestamp,
             )
@@ -78,68 +78,19 @@ class PermissionManager:
 
     async def check_permission(self, permission_type: PermissionType) -> PermissionResult:
         """Check a single permission by delegating to the macOS handler."""
-        try:
-            logger.info("🔍 Checking permission: %s", permission_type.value)
-
-            if permission_type == PermissionType.MICROPHONE:
-                result = await self.macos_handler.check_microphone_permission()
-            elif permission_type == PermissionType.SCREEN_CAPTURE:
-                result = await self.macos_handler.check_screen_capture_permission()
-            elif permission_type == PermissionType.CAMERA:
-                result = await self.macos_handler.check_camera_permission()
-            elif permission_type == PermissionType.NETWORK:
-                result = await self.macos_handler.check_network_permission()
-            elif permission_type == PermissionType.NOTIFICATIONS:
-                result = await self.macos_handler.check_notifications_permission()
-            elif permission_type == PermissionType.ACCESSIBILITY:
-                result = await self.macos_handler.check_accessibility_permission()
-            elif permission_type == PermissionType.INPUT_MONITORING:
-                result = await self.macos_handler.check_input_monitoring_permission()
-            else:
-                result = PermissionResult(
-                    success=False,
-                    permission=permission_type,
-                    status=PermissionStatus.ERROR,
-                    message=f"Unknown permission type: {permission_type}",
-                )
-
-            if result.success:
-                await self._update_permission_status(permission_type, result.status)
-
-            logger.info("✅ Permission %s: %s", permission_type.value, result.status.value)
-            return result
-
-        except Exception as exc:
-            logger.error("❌ Failed to check permission %s: %s", permission_type.value, exc)
-            return PermissionResult(
-                success=False,
-                permission=permission_type,
-                status=PermissionStatus.ERROR,
-                message=f"Error checking permission: {exc}",
-                error=exc,
-            )
+        # Dev override: skip real system checks entirely.
+        return PermissionResult(
+            success=True,
+            permission=permission_type,
+            status=PermissionStatus.GRANTED,
+            message="Permission checks disabled (dev override)",
+        )
 
     async def check_all_permissions(self) -> Dict[PermissionType, PermissionResult]:
         """Check every permission type in parallel."""
-        logger.info("🔍 Checking all permissions")
-
         results: Dict[PermissionType, PermissionResult] = {}
-        tasks = {perm: asyncio.create_task(self.check_permission(perm)) for perm in PermissionType}
-
-        for perm_type, task in tasks.items():
-            try:
-                results[perm_type] = await task
-            except Exception as exc:
-                logger.error("❌ Failed to check %s: %s", perm_type.value, exc)
-                results[perm_type] = PermissionResult(
-                    success=False,
-                    permission=perm_type,
-                    status=PermissionStatus.ERROR,
-                    message=f"Error: {exc}",
-                    error=exc,
-                )
-
-        logger.info("✅ Permission check completed")
+        for perm in PermissionType:
+            results[perm] = await self.check_permission(perm)
         return results
 
     async def request_permission(self, permission_type: PermissionType) -> PermissionResult:

@@ -636,7 +636,7 @@ class InputProcessingIntegration:
                 asyncio.run(self._handle_key_release(event))
         except Exception as e:
             print(f"❌ Ошибка sync_handle_key_release: {e}")
-            
+    
     def get_status(self) -> Dict[str, Any]:
         """Получение статуса интеграции"""
         return {

@@ -58,13 +58,12 @@ class SpeechPlaybackDiagnostic:
             # Создаем ChunkBuffer
             self.audio_buffer = ChunkBuffer()
             
-            # Создаем SequentialSpeechPlayer с исправленной конфигурацией
-            fixed_config = self._fix_speech_config(speech_config)
-            self.speech_player = SequentialSpeechPlayer(fixed_config)
+            # Создаем SequentialSpeechPlayer
+            self.speech_player = SequentialSpeechPlayer(speech_config)
             
             # Инициализируем
             buffer_result = True  # ChunkBuffer не требует инициализации
-            player_result = True  # SequentialSpeechPlayer инициализируется в __init__
+            player_result = await self.speech_player.initialize()
             
             if buffer_result and player_result:
                 self._add_result("initialization", True, "Speech Playback инициализирован", 
@@ -158,8 +157,10 @@ class SpeechPlaybackDiagnostic:
             return
         
         try:
-            # Проверяем состояние player (SequentialSpeechPlayer инициализируется в __init__)
-            if hasattr(self.speech_player, 'config') and self.speech_player.config is not None:
+            # Проверяем состояние player
+            is_initialized = getattr(self.speech_player, 'is_initialized', False)
+            
+            if is_initialized:
                 self._add_result("speech_player", True, "Speech player инициализирован",
                                "Player готов к работе", "Продолжить", {})
             else:
@@ -191,7 +192,7 @@ class SpeechPlaybackDiagnostic:
             test_audio = np.random.randint(-1000, 1000, size=1000, dtype=np.int16)
             
             # Тестируем добавление в очередь
-            result = self.speech_player.add_audio_data(test_audio)
+            result = await self.speech_player.add_audio(test_audio)
             
             if result:
                 self._add_result("playback", True, "Воспроизведение работает",
@@ -205,21 +206,6 @@ class SpeechPlaybackDiagnostic:
                            "Проблема с воспроизведением", "Проверить воспроизведение", 
                            {"error": str(e)})
     
-
-    def _fix_speech_config(self, raw_config: Dict[str, Any]) -> 'PlayerConfig':
-        """Исправление конфигурации SpeechPlayback"""
-        from modules.speech_playback.core.player import PlayerConfig
-        
-        return PlayerConfig(
-            sample_rate=raw_config.get('sample_rate', 48000),
-            channels=raw_config.get('channels', 1),
-            dtype=raw_config.get('dtype', 'int16'),
-            buffer_size=raw_config.get('buffer_size', 512),
-            max_memory_mb=raw_config.get('max_memory_mb', 1024),
-            device_id=raw_config.get('device_id', None),
-            auto_device_selection=raw_config.get('auto_device_selection', True)
-        )
-
     def _add_result(self, test_name: str, success: bool, problem: str, cause: str, solution: str, details: Dict[str, Any]):
         """Добавление результата теста"""
         self.results.append({
