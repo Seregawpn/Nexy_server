@@ -35,17 +35,18 @@ audio:
     auto_switch_to_headphones: true
     cache_timeout: 5.0
     device_priorities:
-      airpods: 100
-      beats: 95
-      bluetooth_headphones: 90
-      bluetooth_speakers: 70
-      built_in: 20
-      microphone: 5
-      other: 10
-      system_speakers: 40
-      usb_audio: 60
-      usb_headphones: 85
-      virtual_device: 1
+      airpods: 1
+      beats: 2
+      bluetooth_headphones: 3
+      bluetooth_speakers: 4
+      usb_headphones: 5
+      usb_audio: 6
+      built_in: 7
+      system_speakers: 8
+      microphone: 9
+      iphone_microphone: 10
+      other: 15
+      virtual_device: 20
     enabled: true
     exclude_virtual_devices: true
     monitoring_interval: 3.0

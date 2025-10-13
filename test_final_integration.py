@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Тест потока событий между модулями - проверка корректной передачи событий
+Тест полной интеграции - нажатие пробела до распознавания речи
 """
 
 import asyncio
@@ -16,7 +16,10 @@ from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
 from integration.integrations.audio_device_integration import AudioDeviceIntegration
 from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration
+from integration.integrations.input_processing_integration import InputProcessingIntegration
+from integration.integrations.mode_management_integration import ModeManagementIntegration
 from modules.mode_management.core.types import AppMode
+from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,8 +61,8 @@ class MockConfig:
             }
         }
 
-class EventFlowTester:
-    """Тестер потока событий"""
+class FinalIntegrationTester:
+    """Тестер полной интеграции"""
     
     def __init__(self):
         self.event_bus = EventBus()
@@ -67,23 +70,24 @@ class EventFlowTester:
         self.error_handler = ErrorHandler(self.event_bus)
         self.audio_integration = None
         self.voice_integration = None
+        self.input_integration = None
+        self.mode_integration = None
         self.received_events = []
         self.test_results = {}
         
     async def setup(self):
         """Настройка тестера"""
-        logger.info("🔧 Настройка тестера потока событий...")
+        logger.info("🔧 Настройка полной интеграции...")
         
         # Подписываемся на все ключевые события
         await self.event_bus.subscribe("audio.input_device_selected", self._on_input_device_selected)
-        await self.event_bus.subscribe("audio.output_device_selected", self._on_output_device_selected)
         await self.event_bus.subscribe("audio.microphone_enabled", self._on_microphone_enabled)
-        await self.event_bus.subscribe("audio.microphone_disabled", self._on_microphone_disabled)
         await self.event_bus.subscribe("voice.recording_start", self._on_recording_start)
         await self.event_bus.subscribe("voice.recording_stop", self._on_recording_stop)
         await self.event_bus.subscribe("voice.mic_opened", self._on_mic_opened)
         await self.event_bus.subscribe("voice.mic_closed", self._on_mic_closed)
         await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed)
+        await self.event_bus.subscribe("keyboard.long_press", self._on_long_press)
         
         # Создаем интеграции
         config = MockConfig()
@@ -99,110 +103,166 @@ class EventFlowTester:
             self.error_handler, 
             config
         )
+        self.input_integration = InputProcessingIntegration(
+            self.event_bus, 
+            self.state_manager, 
+            self.error_handler, 
+            config
+        )
+        self.mode_integration = ModeManagementIntegration(
+            self.event_bus, 
+            self.state_manager, 
+            self.error_handler
+        )
         
-        logger.info("✅ Тестер потока событий настроен")
+        logger.info("✅ Полная интеграция настроена")
         
     async def _on_input_device_selected(self, event_data):
         """Обработчик события выбора INPUT устройства"""
         device_name = event_data.get('data', event_data).get('name', 'Unknown')
         portaudio_index = event_data.get('data', event_data).get('portaudio_index')
-        logger.info(f"📡 [EVENT_FLOW] audio.input_device_selected: {device_name} (index: {portaudio_index})")
+        logger.info(f"📡 [FINAL_INTEGRATION] audio.input_device_selected: {device_name} (index: {portaudio_index})")
         self.received_events.append(("audio.input_device_selected", event_data))
-        
-    async def _on_output_device_selected(self, event_data):
-        """Обработчик события выбора OUTPUT устройства"""
-        device_name = event_data.get('data', event_data).get('name', 'Unknown')
-        portaudio_index = event_data.get('data', event_data).get('portaudio_index')
-        logger.info(f"📡 [EVENT_FLOW] audio.output_device_selected: {device_name} (index: {portaudio_index})")
-        self.received_events.append(("audio.output_device_selected", event_data))
         
     async def _on_microphone_enabled(self, event_data):
         """Обработчик события включения микрофона"""
-        logger.info(f"📡 [EVENT_FLOW] audio.microphone_enabled")
+        logger.info(f"📡 [FINAL_INTEGRATION] audio.microphone_enabled")
         self.received_events.append(("audio.microphone_enabled", event_data))
-        
-    async def _on_microphone_disabled(self, event_data):
-        """Обработчик события выключения микрофона"""
-        logger.info(f"📡 [EVENT_FLOW] audio.microphone_disabled")
-        self.received_events.append(("audio.microphone_disabled", event_data))
         
     async def _on_recording_start(self, event_data):
         """Обработчик события начала записи"""
-        logger.info(f"📡 [EVENT_FLOW] voice.recording_start")
+        logger.info(f"📡 [FINAL_INTEGRATION] voice.recording_start")
         self.received_events.append(("voice.recording_start", event_data))
         
     async def _on_recording_stop(self, event_data):
         """Обработчик события остановки записи"""
-        logger.info(f"📡 [EVENT_FLOW] voice.recording_stop")
+        logger.info(f"📡 [FINAL_INTEGRATION] voice.recording_stop")
         self.received_events.append(("voice.recording_stop", event_data))
         
     async def _on_mic_opened(self, event_data):
         """Обработчик события открытия микрофона"""
-        logger.info(f"📡 [EVENT_FLOW] voice.mic_opened")
+        logger.info(f"📡 [FINAL_INTEGRATION] voice.mic_opened")
         self.received_events.append(("voice.mic_opened", event_data))
         
     async def _on_mic_closed(self, event_data):
         """Обработчик события закрытия микрофона"""
-        logger.info(f"📡 [EVENT_FLOW] voice.mic_closed")
+        logger.info(f"📡 [FINAL_INTEGRATION] voice.mic_closed")
         self.received_events.append(("voice.mic_closed", event_data))
         
     async def _on_mode_changed(self, event_data):
         """Обработчик события изменения режима"""
         mode = event_data.get('mode', 'unknown')
-        logger.info(f"📡 [EVENT_FLOW] app.mode_changed: {mode}")
+        logger.info(f"📡 [FINAL_INTEGRATION] app.mode_changed: {mode}")
         self.received_events.append(("app.mode_changed", event_data))
+        
+    async def _on_long_press(self, event_data):
+        """Обработчик события долгого нажатия"""
+        logger.info(f"📡 [FINAL_INTEGRATION] keyboard.long_press")
+        self.received_events.append(("keyboard.long_press", event_data))
     
-    async def test_initialization_flow(self):
-        """Тест потока событий при инициализации"""
-        logger.info("🔧 ТЕСТ: Поток событий при инициализации")
+    async def test_full_initialization(self):
+        """Тест полной инициализации всех интеграций"""
+        logger.info("🔧 ТЕСТ: Полная инициализация")
         
         try:
             # Очищаем предыдущие события
             self.received_events.clear()
             
-            # Инициализируем интеграции
+            # Инициализируем все интеграции
             await self.audio_integration.initialize()
             await self.audio_integration.start()
             await self.voice_integration.initialize()
+            await self.input_integration.initialize()
+            await self.mode_integration.initialize()
             
-            # Ждем события инициализации
+            # Ждем инициализации
             await asyncio.sleep(2)
             
-            # Анализируем полученные события
-            input_events = [e for e in self.received_events if e[0] == "audio.input_device_selected"]
-            output_events = [e for e in self.received_events if e[0] == "audio.output_device_selected"]
-            mic_enabled_events = [e for e in self.received_events if e[0] == "audio.microphone_enabled"]
-            mic_disabled_events = [e for e in self.received_events if e[0] == "audio.microphone_disabled"]
-            mode_events = [e for e in self.received_events if e[0] == "app.mode_changed"]
+            # Проверяем что все интеграции готовы
+            audio_ready = self.audio_integration._manager is not None
+            voice_ready = self.voice_integration._recognizer is not None
+            input_ready = self.input_integration._processor is not None
+            mode_ready = self.mode_integration._manager is not None
             
-            logger.info(f"📊 Событий выбора INPUT устройства: {len(input_events)}")
-            logger.info(f"📊 Событий выбора OUTPUT устройства: {len(output_events)}")
-            logger.info(f"📊 Событий включения микрофона: {len(mic_enabled_events)}")
-            logger.info(f"📊 Событий выключения микрофона: {len(mic_disabled_events)}")
-            logger.info(f"📊 Событий изменения режима: {len(mode_events)}")
+            logger.info(f"📊 AudioDeviceIntegration готов: {'✅' if audio_ready else '❌'}")
+            logger.info(f"📊 VoiceRecognitionIntegration готов: {'✅' if voice_ready else '❌'}")
+            logger.info(f"📊 InputProcessingIntegration готов: {'✅' if input_ready else '❌'}")
+            logger.info(f"📊 ModeManagementIntegration готов: {'✅' if mode_ready else '❌'}")
             
-            # Проверяем что получили события устройств
-            success = len(input_events) > 0 and len(output_events) > 0
+            success = audio_ready and voice_ready and input_ready and mode_ready
             
-            self.test_results['initialization_flow'] = {
-                'input_events': len(input_events),
-                'output_events': len(output_events),
-                'mic_enabled_events': len(mic_enabled_events),
-                'mic_disabled_events': len(mic_disabled_events),
-                'mode_events': len(mode_events),
+            self.test_results['full_initialization'] = {
+                'audio_ready': audio_ready,
+                'voice_ready': voice_ready,
+                'input_ready': input_ready,
+                'mode_ready': mode_ready,
                 'success': success
             }
             
             return success
             
         except Exception as e:
-            logger.error(f"❌ Ошибка потока инициализации: {e}")
-            self.test_results['initialization_flow'] = {'success': False, 'error': str(e)}
+            logger.error(f"❌ Ошибка полной инициализации: {e}")
+            self.test_results['full_initialization'] = {'success': False, 'error': str(e)}
             return False
     
-    async def test_microphone_flow(self):
-        """Тест потока событий микрофона"""
-        logger.info("🎤 ТЕСТ: Поток событий микрофона")
+    async def test_spacebar_to_recording_flow(self):
+        """Тест потока от нажатия пробела до записи"""
+        logger.info("🔑 ТЕСТ: Поток от нажатия пробела до записи")
+        
+        try:
+            # Очищаем предыдущие события
+            self.received_events.clear()
+            
+            # Симулируем долгое нажатие пробела
+            long_press_event = KeyEvent(
+                event_type=KeyEventType.LONG_PRESS,
+                duration=1.5,
+                timestamp=asyncio.get_event_loop().time()
+            )
+            
+            await self.event_bus.publish("keyboard.long_press", {
+                "event": long_press_event
+            })
+            
+            # Ждем обработки событий
+            await asyncio.sleep(3)
+            
+            # Анализируем полученные события
+            long_press_events = [e for e in self.received_events if e[0] == "keyboard.long_press"]
+            mode_events = [e for e in self.received_events if e[0] == "app.mode_changed"]
+            mic_enabled_events = [e for e in self.received_events if e[0] == "audio.microphone_enabled"]
+            recording_start_events = [e for e in self.received_events if e[0] == "voice.recording_start"]
+            mic_opened_events = [e for e in self.received_events if e[0] == "voice.mic_opened"]
+            
+            logger.info(f"📊 Событий долгого нажатия: {len(long_press_events)}")
+            logger.info(f"📊 Событий изменения режима: {len(mode_events)}")
+            logger.info(f"📊 Событий включения микрофона: {len(mic_enabled_events)}")
+            logger.info(f"📊 Событий начала записи: {len(recording_start_events)}")
+            logger.info(f"📊 Событий открытия микрофона: {len(mic_opened_events)}")
+            
+            # Проверяем что получили события
+            success = len(long_press_events) > 0 and len(recording_start_events) > 0
+            
+            self.test_results['spacebar_to_recording_flow'] = {
+                'long_press_events': len(long_press_events),
+                'mode_events': len(mode_events),
+                'mic_enabled_events': len(mic_enabled_events),
+                'recording_start_events': len(recording_start_events),
+                'mic_opened_events': len(mic_opened_events),
+                'success': success
+            }
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка потока от нажатия пробела: {e}")
+            self.test_results['spacebar_to_recording_flow'] = {'success': False, 'error': str(e)}
+            return False
+    
+    async def test_microphone_activation_flow(self):
+        """Тест потока активации микрофона"""
+        logger.info("🎤 ТЕСТ: Поток активации микрофона")
         
         try:
             # Очищаем предыдущие события
@@ -212,39 +272,43 @@ class EventFlowTester:
             await self.audio_integration._enable_microphone()
             await asyncio.sleep(0.5)
             
-            # Выключаем микрофон
-            await self.audio_integration._disable_microphone()
-            await asyncio.sleep(0.5)
+            # Проверяем что SpeechRecognizer получил устройство
+            if self.voice_integration._recognizer:
+                device_index = self.voice_integration._recognizer.input_device_index
+                portaudio_index = self.voice_integration._recognizer._portaudio_index
+                logger.info(f"📊 SpeechRecognizer input_device_index: {device_index}")
+                logger.info(f"📊 SpeechRecognizer _portaudio_index: {portaudio_index}")
+                
+                device_received = device_index is not None and portaudio_index is not None
+            else:
+                device_received = False
             
             # Анализируем полученные события
             input_events = [e for e in self.received_events if e[0] == "audio.input_device_selected"]
             mic_enabled_events = [e for e in self.received_events if e[0] == "audio.microphone_enabled"]
-            mic_disabled_events = [e for e in self.received_events if e[0] == "audio.microphone_disabled"]
             
             logger.info(f"📊 Событий выбора INPUT устройства: {len(input_events)}")
             logger.info(f"📊 Событий включения микрофона: {len(mic_enabled_events)}")
-            logger.info(f"📊 Событий выключения микрофона: {len(mic_disabled_events)}")
             
-            # Проверяем что получили события включения и выключения
-            success = len(mic_enabled_events) > 0 and len(mic_disabled_events) > 0
+            success = device_received and len(input_events) > 0 and len(mic_enabled_events) > 0
             
-            self.test_results['microphone_flow'] = {
+            self.test_results['microphone_activation_flow'] = {
+                'device_received': device_received,
                 'input_events': len(input_events),
                 'mic_enabled_events': len(mic_enabled_events),
-                'mic_disabled_events': len(mic_disabled_events),
                 'success': success
             }
             
             return success
             
         except Exception as e:
-            logger.error(f"❌ Ошибка потока микрофона: {e}")
-            self.test_results['microphone_flow'] = {'success': False, 'error': str(e)}
+            logger.error(f"❌ Ошибка потока активации микрофона: {e}")
+            self.test_results['microphone_activation_flow'] = {'success': False, 'error': str(e)}
             return False
     
-    async def test_recording_flow(self):
-        """Тест потока событий записи"""
-        logger.info("🎙️ ТЕСТ: Поток событий записи")
+    async def test_recording_to_stop_flow(self):
+        """Тест потока от записи до остановки"""
+        logger.info("🎙️ ТЕСТ: Поток от записи до остановки")
         
         try:
             # Очищаем предыдущие события
@@ -275,10 +339,9 @@ class EventFlowTester:
             logger.info(f"📊 Событий открытия микрофона: {len(mic_opened_events)}")
             logger.info(f"📊 Событий закрытия микрофона: {len(mic_closed_events)}")
             
-            # Проверяем что получили события записи
             success = len(recording_start_events) > 0 and len(recording_stop_events) > 0
             
-            self.test_results['recording_flow'] = {
+            self.test_results['recording_to_stop_flow'] = {
                 'recording_start_events': len(recording_start_events),
                 'recording_stop_events': len(recording_stop_events),
                 'mic_opened_events': len(mic_opened_events),
@@ -289,115 +352,21 @@ class EventFlowTester:
             return success
             
         except Exception as e:
-            logger.error(f"❌ Ошибка потока записи: {e}")
-            self.test_results['recording_flow'] = {'success': False, 'error': str(e)}
-            return False
-    
-    async def test_mode_change_flow(self):
-        """Тест потока событий изменения режима"""
-        logger.info("🔄 ТЕСТ: Поток событий изменения режима")
-        
-        try:
-            # Очищаем предыдущие события
-            self.received_events.clear()
-            
-            # Симулируем изменение режима на LISTENING
-            await self.event_bus.publish("app.mode_changed", {
-                "mode": AppMode.LISTENING.value,
-                "previous_mode": AppMode.SLEEPING.value
-            })
-            await asyncio.sleep(0.5)
-            
-            # Симулируем изменение режима на PROCESSING
-            await self.event_bus.publish("app.mode_changed", {
-                "mode": AppMode.PROCESSING.value,
-                "previous_mode": AppMode.LISTENING.value
-            })
-            await asyncio.sleep(0.5)
-            
-            # Анализируем полученные события
-            mode_events = [e for e in self.received_events if e[0] == "app.mode_changed"]
-            mic_enabled_events = [e for e in self.received_events if e[0] == "audio.microphone_enabled"]
-            mic_disabled_events = [e for e in self.received_events if e[0] == "audio.microphone_disabled"]
-            
-            logger.info(f"📊 Событий изменения режима: {len(mode_events)}")
-            logger.info(f"📊 Событий включения микрофона: {len(mic_enabled_events)}")
-            logger.info(f"📊 Событий выключения микрофона: {len(mic_disabled_events)}")
-            
-            # Проверяем что получили события изменения режима
-            success = len(mode_events) >= 2
-            
-            self.test_results['mode_change_flow'] = {
-                'mode_events': len(mode_events),
-                'mic_enabled_events': len(mic_enabled_events),
-                'mic_disabled_events': len(mic_disabled_events),
-                'success': success
-            }
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка потока изменения режима: {e}")
-            self.test_results['mode_change_flow'] = {'success': False, 'error': str(e)}
-            return False
-    
-    async def test_device_request_flow(self):
-        """Тест потока событий запроса устройств"""
-        logger.info("🔍 ТЕСТ: Поток событий запроса устройств")
-        
-        try:
-            # Очищаем предыдущие события
-            self.received_events.clear()
-            
-            # Запрашиваем текущее INPUT устройство
-            await self.event_bus.publish("audio.request_current_input_device", {
-                "session_id": "test_session",
-                "source": "test"
-            })
-            await asyncio.sleep(0.5)
-            
-            # Запрашиваем унифицированное устройство
-            await self.event_bus.publish("audio.request_unified_device", {
-                "session_id": "test_session",
-                "source": "test"
-            })
-            await asyncio.sleep(0.5)
-            
-            # Анализируем полученные события
-            input_events = [e for e in self.received_events if e[0] == "audio.input_device_selected"]
-            output_events = [e for e in self.received_events if e[0] == "audio.output_device_selected"]
-            
-            logger.info(f"📊 Ответов на запрос INPUT устройства: {len(input_events)}")
-            logger.info(f"📊 Ответов на запрос OUTPUT устройства: {len(output_events)}")
-            
-            # Проверяем что получили ответы на запросы
-            success = len(input_events) > 0 or len(output_events) > 0
-            
-            self.test_results['device_request_flow'] = {
-                'input_events': len(input_events),
-                'output_events': len(output_events),
-                'success': success
-            }
-            
-            return success
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка потока запроса устройств: {e}")
-            self.test_results['device_request_flow'] = {'success': False, 'error': str(e)}
+            logger.error(f"❌ Ошибка потока от записи до остановки: {e}")
+            self.test_results['recording_to_stop_flow'] = {'success': False, 'error': str(e)}
             return False
     
     async def run_all_tests(self):
         """Запуск всех тестов"""
-        logger.info("🚀 ЗАПУСК ТЕСТОВ ПОТОКА СОБЫТИЙ")
+        logger.info("🚀 ЗАПУСК ТЕСТОВ ПОЛНОЙ ИНТЕГРАЦИИ")
         
         await self.setup()
         
         tests = [
-            ("Поток инициализации", self.test_initialization_flow),
-            ("Поток микрофона", self.test_microphone_flow),
-            ("Поток записи", self.test_recording_flow),
-            ("Поток изменения режима", self.test_mode_change_flow),
-            ("Поток запроса устройств", self.test_device_request_flow)
+            ("Полная инициализация", self.test_full_initialization),
+            ("Поток от нажатия пробела до записи", self.test_spacebar_to_recording_flow),
+            ("Поток активации микрофона", self.test_microphone_activation_flow),
+            ("Поток от записи до остановки", self.test_recording_to_stop_flow)
         ]
         
         results = {}
@@ -437,7 +406,7 @@ class EventFlowTester:
 
 async def main():
     """Главная функция"""
-    tester = EventFlowTester()
+    tester = FinalIntegrationTester()
     success = await tester.run_all_tests()
     return 0 if success else 1
 

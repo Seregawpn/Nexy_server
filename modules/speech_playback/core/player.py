@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from .state import StateManager, PlaybackState, ChunkState
 from .buffer import ChunkBuffer, ChunkInfo
 from ..utils.audio_utils import resample_audio, convert_channels
-from ..utils.device_utils import get_best_audio_device
+from modules.audio_device_manager.core.types import AudioDevice, DeviceType
 from ..macos.core_audio import CoreAudioManager
 from ..macos.performance import PerformanceMonitor
 
@@ -118,47 +118,88 @@ class SequentialSpeechPlayer:
         self._on_playback_completed: Optional[Callable[[], None]] = None
         self._on_error: Optional[Callable[[Exception], None]] = None
         
+        # EventBus для получения событий выбора устройств
+        self.event_bus = None
+        self._selected_output_device = None
+        self._portaudio_index = None
+        
         logger.info("🔧 SequentialSpeechPlayer инициализирован")
+    
+    def set_event_bus(self, event_bus):
+        """Установка EventBus для подписки на события выбора OUTPUT устройств"""
+        self.event_bus = event_bus
+        self._subscribe_to_events()
+        logger.debug("🔍 [AUDIO_DEBUG] EventBus установлен в SequentialSpeechPlayer")
+    
+    def _subscribe_to_events(self):
+        """Подписка на события выбора OUTPUT устройств"""
+        if self.event_bus:
+            # Создаем задачу для асинхронной подписки
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self.event_bus.subscribe("audio.output_device_selected", self._on_output_device_selected))
+                else:
+                    loop.run_until_complete(self.event_bus.subscribe("audio.output_device_selected", self._on_output_device_selected))
+            except Exception as e:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] Не удалось подписаться на события: {e}")
+            logger.debug("🔍 [AUDIO_DEBUG] SequentialSpeechPlayer подписан на audio.output_device_selected")
+    
+    async def _on_output_device_selected(self, event_data):
+        """Обработка события выбора OUTPUT устройства"""
+        try:
+            logger.debug(f"🔍 [AUDIO_DEBUG] SequentialSpeechPlayer получил событие выбора OUTPUT устройства: {event_data}")
+            
+            # Сохраняем информацию об устройстве
+            self._selected_output_device = event_data
+            
+            # Получаем portaudio_index из события (должен приходить от AudioDeviceManager)
+            portaudio_index = event_data.get("portaudio_index")
+            if portaudio_index is not None:
+                self._portaudio_index = portaudio_index
+                logger.info(f"✅ [AUDIO_SUCCESS] SequentialSpeechPlayer настроен на устройство: {event_data.get('name')} (index={portaudio_index})")
+            else:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] portaudio_index не предоставлен в событии для устройства: {event_data.get('name')}")
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка обработки события выбора OUTPUT устройства: {e}")
+    
+# УДАЛЕНО: _find_portaudio_index() - используйте EventBus для получения portaudio_index
     
     def initialize(self) -> bool:
         """Инициализация плеера"""
         try:
+            logger.info("🎯 [AUDIO_REFACTOR] Начало инициализации Sequential Speech Player...")
             # Инициализация macOS компонентов
+            logger.debug(f"🔍 [AUDIO_DEBUG] Инициализация Core Audio Manager...")
             if not self._core_audio_manager.initialize():
-                logger.error("❌ Ошибка инициализации Core Audio")
+                logger.error("❌ [AUDIO_ERROR] Ошибка инициализации Core Audio")
                 return False
+            logger.info("✅ [AUDIO_SUCCESS] Core Audio Manager инициализирован")
             
             # Выбор аудио устройства
             if self.config.auto_device_selection:
-                device = get_best_audio_device()
-                if device:
-                    self.config.device_id = device.portaudio_index
-                    # ✅ ИСПРАВЛЕНИЕ: Не переопределяем каналы автоматически
-                    # Используем конфигурацию как есть, устройство поддерживает и моно, и стерео
-                    # target_channels = 1 if device.channels <= 1 else 2
-                    # if target_channels != self.config.channels:
-                    #     self.config.channels = target_channels
-                    logger.info(f"🎵 Используем каналы из конфигурации: {self.config.channels} (устройство поддерживает: {device.channels})")
-                    # Синхронизируем буфер под новое число каналов
-                    try:
-                        self.chunk_buffer.set_channels(self.config.channels)
-                    except Exception:
-                        pass
-                    logger.info(f"🎵 Выбрано устройство: {device.name} (channels: {device.channels}, sample_rate: {device.sample_rate})")
-                else:
-                    logger.warning("⚠️ Не удалось выбрать аудио устройство")
+                # Пока используем системное устройство по умолчанию
+                # В Этапе 7 добавим dependency injection для AudioDeviceManager
+                logger.info("🎯 [AUDIO_REFACTOR] Используем системное устройство по умолчанию (dependency injection будет в Этапе 7)")
+                # Синхронизируем буфер под новое число каналов
+                try:
+                    self.chunk_buffer.set_channels(self.config.channels)
+                except Exception:
+                    pass
             
             # Логируем конфигурацию плеера для отладки
-            logger.info(f"🎵 Конфигурация плеера: sample_rate={self.config.sample_rate}Hz, channels={self.config.channels}, dtype={self.config.dtype}")
+            logger.info(f"📊 [AUDIO_STATS] Конфигурация плеера: sample_rate={self.config.sample_rate}Hz, channels={self.config.channels}, dtype={self.config.dtype}")
             
             # Инициализация мониторинга производительности
             self._performance_monitor.start()
             
-            logger.info("✅ Плеер инициализирован успешно")
+            logger.info("✅ [AUDIO_SUCCESS] Sequential Speech Player инициализирован успешно")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Ошибка инициализации плеера: {e}")
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка инициализации плеера: {e}")
             self.state_manager.set_state(PlaybackState.ERROR)
             return False
     
@@ -613,3 +654,40 @@ class SequentialSpeechPlayer:
             "sample_rate": self.config.sample_rate,
             "channels": self.config.channels
         }
+    
+    async def _select_audio_device(self) -> Optional[int]:
+        """Получение аудио устройства через EventBus"""
+        logger.debug(f"🔍 [AUDIO_DEBUG] Начало выбора аудио устройства")
+        try:
+            # Получаем AudioDeviceManager через EventBus
+            logger.debug(f"🔍 [AUDIO_DEBUG] Получение AudioDeviceManager через EventBus")
+            audio_manager = await self._get_audio_manager_via_eventbus()
+            if audio_manager:
+                logger.debug(f"🔍 [AUDIO_DEBUG] AudioDeviceManager получен, запрос лучшего OUTPUT устройства")
+                best_output = await audio_manager.get_best_device(DeviceType.OUTPUT)
+                if best_output:
+                    logger.debug(f"🔍 [AUDIO_DEBUG] Лучшее OUTPUT устройство найдено: {best_output.name}")
+                    # Конвертируем в portaudio index
+                    device_index = self._convert_to_portaudio_index(best_output)
+                    if device_index is not None:
+                        logger.info(f"✅ [AUDIO_SUCCESS] Выбрано аудио устройство: {best_output.name} (index: {device_index})")
+                    else:
+                        logger.warning(f"⚠️ [AUDIO_DEBUG] Не удалось конвертировать устройство {best_output.name} в portaudio index")
+                    return device_index
+                else:
+                    logger.warning(f"⚠️ [AUDIO_DEBUG] Лучшее OUTPUT устройство не найдено")
+            else:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] AudioDeviceManager недоступен")
+            return None
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка выбора аудио устройства: {e}")
+            return None
+
+    async def _get_audio_manager_via_eventbus(self):
+        """Получение AudioDeviceManager через EventBus"""
+        logger.debug(f"🔍 [AUDIO_DEBUG] Запрос AudioDeviceManager через EventBus (dependency injection будет в Этапе 7)")
+        # Это будет реализовано в Этапе 7 (dependency injection)
+        # Пока возвращаем None, чтобы не ломать существующую функциональность
+        return None
+
+# УДАЛЕНО: _convert_to_portaudio_index() - используйте EventBus для получения portaudio_index

@@ -21,7 +21,9 @@ class AudioDeviceManager:
     """Главный менеджер аудио устройств"""
     
     def __init__(self, config: Optional[AudioDeviceManagerConfig] = None):
+        logger.info("🎯 [AUDIO_REFACTOR] Начало инициализации AudioDeviceManager...")
         self.config = config or AudioDeviceManagerConfig()
+        logger.debug(f"🔍 [AUDIO_DEBUG] Загрузка конфигурации: separate_input_output={self.config.separate_input_output_management}")
         
         # Компоненты модуля
         self.device_monitor = DeviceMonitor()
@@ -32,6 +34,12 @@ class AudioDeviceManager:
         self.current_device: Optional[AudioDevice] = None
         self.metrics = DeviceMetrics()
         
+        # Новые поля для поддержки INPUT/OUTPUT
+        self.current_input_device: Optional[AudioDevice] = None
+        self.current_output_device: Optional[AudioDevice] = None
+        self.input_devices: Dict[str, AudioDevice] = {}
+        self.output_devices: Dict[str, AudioDevice] = {}
+        
         # Callbacks
         self.on_device_changed: Optional[DeviceChangeCallback] = None
         self.on_device_switched: Optional[DeviceSwitchCallback] = None
@@ -40,6 +48,7 @@ class AudioDeviceManager:
         
         # Настройка компонентов
         self._setup_components()
+        logger.info("✅ [AUDIO_SUCCESS] AudioDeviceManager инициализирован")
     
     def _setup_components(self):
         """Настройка компонентов"""
@@ -73,6 +82,9 @@ class AudioDeviceManager:
             self.metrics.available_devices = len([d for d in devices if d.is_available])
             self.metrics.unavailable_devices = len([d for d in devices if not d.is_available])
             
+            # Разделяем устройства по типам
+            await self._categorize_devices(devices)
+            
             # Определяем текущее устройство
             self.current_device = self._find_current_device(devices)
             
@@ -82,6 +94,7 @@ class AudioDeviceManager:
             
             self.is_running = True
             logger.info(f"✅ AudioDeviceManager запущен, найдено {len(devices)} устройств")
+            logger.info(f"📊 [AUDIO_STATS] INPUT устройств: {len(self.input_devices)}, OUTPUT устройств: {len(self.output_devices)}")
             
             # Уведомляем о метриках
             self._notify_metrics_updated()
@@ -220,14 +233,34 @@ class AudioDeviceManager:
         self.device_switcher.auto_switch_enabled = enabled
         logger.info(f"🔄 Автоматическое переключение: {'включено' if enabled else 'отключено'}")
     
-    def set_device_priority(self, device_id: str, priority: int):
-        """Установка приоритета устройства"""
+    def set_device_priority(self, device_id: str, priority: int, device_type: str = "input"):
+        """
+        Установка приоритета устройства.
+        УСТАРЕЛО: используйте set_input_device_priority или set_output_device_priority
+        """
+        logger.warning(f"⚠️ [AUDIO_DEBUG] set_device_priority устарел - используйте set_{device_type}_device_priority")
+        if device_type == "input":
+            self.set_input_device_priority(device_id, priority)
+        elif device_type == "output":
+            self.set_output_device_priority(device_id, priority)
+    
+    def set_input_device_priority(self, device_id: str, priority: int):
+        """Установка приоритета INPUT устройства"""
         try:
-            self.config.device_priorities[device_id] = priority
-            logger.info(f"📊 Приоритет устройства {device_id} установлен: {priority}")
+            self.config.input_device_priorities[device_id] = priority
+            logger.info(f"📊 Приоритет INPUT устройства {device_id} установлен: {priority}")
         except Exception as e:
-            logger.error(f"❌ Ошибка установки приоритета: {e}")
-            self._notify_error(e, "set_device_priority")
+            logger.error(f"❌ Ошибка установки приоритета INPUT устройства: {e}")
+            self._notify_error(e, "set_input_device_priority")
+    
+    def set_output_device_priority(self, device_id: str, priority: int):
+        """Установка приоритета OUTPUT устройства"""
+        try:
+            self.config.output_device_priorities[device_id] = priority
+            logger.info(f"📊 Приоритет OUTPUT устройства {device_id} установлен: {priority}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка установки приоритета OUTPUT устройства: {e}")
+            self._notify_error(e, "set_output_device_priority")
     
     # Callback методы
     def set_device_changed_callback(self, callback: DeviceChangeCallback):
@@ -256,11 +289,12 @@ class AudioDeviceManager:
                 return default_devices[0]
             
             # Если нет устройства по умолчанию, ищем лучшее доступное устройство вывода
-            output_devices = [d for d in devices if d.type == DeviceType.OUTPUT and d.is_available]
+            output_devices = [d for d in devices if d.type in [DeviceType.OUTPUT, DeviceType.BOTH] and d.is_available]
             if output_devices:
                 # Сортируем по приоритету (меньшее число = выше приоритет)
-                best_device = min(output_devices, key=lambda x: x.priority.value)
-                logger.info(f"🎯 Найдено лучшее устройство: {best_device.name} (приоритет: {best_device.priority.value})")
+                best_device = min(output_devices, key=lambda x: self._get_output_priority(x))
+                priority = self._get_output_priority(best_device)
+                logger.info(f"🎯 Найдено лучшее устройство: {best_device.name} (приоритет: {priority})")
                 return best_device
             
             return None
@@ -284,7 +318,7 @@ class AudioDeviceManager:
             
             # Переключаемся на лучшее устройство
             logger.info(f"🔄 Автоматическое переключение на: {best_device.name}")
-            success = await self.device_switcher.switch_to_device_type(DeviceType.OUTPUT)
+            success = await self.device_switcher.switch_to_best_output_device()
             
             if success:
                 self.current_device = best_device
@@ -424,6 +458,236 @@ class AudioDeviceManager:
             except Exception as e:
                 logger.error(f"❌ Ошибка в metrics callback: {e}")
     
+    async def _categorize_devices(self, devices: List[AudioDevice]):
+        """Разделение устройств по функциям INPUT/OUTPUT (одно устройство может быть в обеих категориях)"""
+        logger.debug(f"🔍 [AUDIO_DEBUG] Категоризация {len(devices)} устройств по функциям...")
+        
+        self.input_devices.clear()
+        self.output_devices.clear()
+        
+        for device in devices:
+            # Устройство может поддерживать INPUT функцию
+            if device.type in [DeviceType.INPUT, DeviceType.BOTH]:
+                self.input_devices[device.id] = device
+                logger.debug(f"🔍 [AUDIO_DEBUG] Устройство поддерживает INPUT: {device.name}")
+            
+            # Устройство может поддерживать OUTPUT функцию
+            if device.type in [DeviceType.OUTPUT, DeviceType.BOTH]:
+                self.output_devices[device.id] = device
+                logger.debug(f"🔍 [AUDIO_DEBUG] Устройство поддерживает OUTPUT: {device.name}")
+        
+        logger.info(f"📊 [AUDIO_STATS] Категоризация завершена: {len(self.input_devices)} устройств с INPUT, {len(self.output_devices)} устройств с OUTPUT")
+        logger.info(f"🔍 [AUDIO_DEBUG] Пример: AirPods будут в обеих категориях (INPUT и OUTPUT функции)")
+    
+    async def get_best_input_device(self) -> Optional[AudioDevice]:
+        """Получение лучшего устройства для INPUT функции (микрофон)"""
+        logger.debug(f"🔍 [AUDIO_DEBUG] Запрос лучшего устройства для INPUT функции...")
+        
+        if not self.input_devices:
+            logger.warning(f"⚠️ [AUDIO_DEBUG] Нет устройств с INPUT функцией")
+            return None
+        
+        # Ищем устройство с наивысшим приоритетом для INPUT функции
+        best_device = None
+        best_priority = float('inf')
+        
+        for device in self.input_devices.values():
+            priority = self._get_input_priority(device)
+            if priority < best_priority:
+                best_priority = priority
+                best_device = device
+        
+        if best_device:
+            logger.info(f"✅ [AUDIO_SUCCESS] Лучшее устройство для INPUT: {best_device.name} (приоритет: {best_priority})")
+        else:
+            logger.warning(f"⚠️ [AUDIO_DEBUG] Не удалось найти лучшее устройство для INPUT")
+        
+        return best_device
+    
+    async def get_best_output_device(self) -> Optional[AudioDevice]:
+        """Получение лучшего устройства для OUTPUT функции (динамики)"""
+        logger.debug(f"🔍 [AUDIO_DEBUG] Запрос лучшего устройства для OUTPUT функции...")
+        
+        if not self.output_devices:
+            logger.warning(f"⚠️ [AUDIO_DEBUG] Нет устройств с OUTPUT функцией")
+            return None
+        
+        # Ищем устройство с наивысшим приоритетом для OUTPUT функции
+        best_device = None
+        best_priority = float('inf')
+        
+        for device in self.output_devices.values():
+            priority = self._get_output_priority(device)
+            if priority < best_priority:
+                best_priority = priority
+                best_device = device
+        
+        if best_device:
+            logger.info(f"✅ [AUDIO_SUCCESS] Лучшее устройство для OUTPUT: {best_device.name} (приоритет: {best_priority})")
+        else:
+            logger.warning(f"⚠️ [AUDIO_DEBUG] Не удалось найти лучшее устройство для OUTPUT")
+        
+        return best_device
+
+    async def get_unified_audio_device(self) -> Dict[str, Optional[AudioDevice]]:
+        """
+        Получение унифицированного аудио устройства.
+        Приоритет: OUTPUT устройство, затем проверка поддержки INPUT.
+        """
+        logger.debug("🔍 [AUDIO_DEBUG] Запрос унифицированного аудио устройства...")
+        
+        # 1. Получаем лучшее OUTPUT устройство
+        best_output = await self.get_best_output_device()
+        
+        if not best_output:
+            logger.warning("⚠️ [AUDIO_DEBUG] Нет доступных OUTPUT устройств")
+            return {
+                "input": None,
+                "output": None,
+                "unified": False
+            }
+        
+        # 2. Проверяем, поддерживает ли оно INPUT
+        if best_output.type == DeviceType.BOTH:
+            # Используем одно устройство для обеих функций
+            logger.info(f"✅ [AUDIO_SUCCESS] Унифицированное устройство: {best_output.name} (INPUT + OUTPUT)")
+            return {
+                "input": best_output,
+                "output": best_output,
+                "unified": True
+            }
+        
+        # 3. Если нет - выбираем отдельно
+        best_input = await self.get_best_input_device()
+        logger.info(f"🔍 [AUDIO_DEBUG] Раздельные устройства: INPUT={best_input.name if best_input else 'None'}, OUTPUT={best_output.name}")
+        
+        return {
+            "input": best_input,
+            "output": best_output,
+            "unified": False
+        }
+    
+    async def switch_to_input_device(self, device_id: str) -> bool:
+        """Переключение на INPUT функцию устройства (например, микрофон AirPods)"""
+        try:
+            # Находим устройство по ID
+            device = self.input_devices.get(device_id)
+            if not device:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] INPUT устройство с ID {device_id} не найдено")
+                return False
+            
+            logger.info(f"🔄 [AUDIO_SWITCH] Переключение на INPUT функцию устройства: {device.name}")
+            
+            success = await self.device_switcher._switch_to_input_device(device)
+            if success:
+                self.current_input_device = device
+                logger.info(f"✅ [AUDIO_SUCCESS] Переключено на INPUT функцию: {device.name}")
+            else:
+                logger.error(f"❌ [AUDIO_ERROR] Не удалось переключиться на INPUT функцию: {device.name}")
+            
+            return success
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения INPUT функции: {e}")
+            return False
+    
+    async def switch_to_output_device(self, device_id: str) -> bool:
+        """Переключение на OUTPUT функцию устройства (например, динамики AirPods)"""
+        try:
+            # Находим устройство по ID
+            device = self.output_devices.get(device_id)
+            if not device:
+                logger.warning(f"⚠️ [AUDIO_DEBUG] OUTPUT устройство с ID {device_id} не найдено")
+                return False
+            
+            logger.info(f"🔄 [AUDIO_SWITCH] Переключение на OUTPUT функцию устройства: {device.name}")
+            
+            success = await self.device_switcher._switch_to_output_device(device)
+            if success:
+                self.current_output_device = device
+                logger.info(f"✅ [AUDIO_SUCCESS] Переключено на OUTPUT функцию: {device.name}")
+            else:
+                logger.error(f"❌ [AUDIO_ERROR] Не удалось переключиться на OUTPUT функцию: {device.name}")
+            
+            return success
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения OUTPUT функции: {e}")
+            return False
+    
+    def _get_input_priority(self, device: AudioDevice) -> int:
+        """Получение приоритета INPUT устройства"""
+        device_name_lower = device.name.lower()
+        
+        # Проверяем приоритеты из конфигурации в порядке важности
+        for keyword, priority in self.config.input_device_priorities.items():
+            if keyword in device_name_lower:
+                logger.debug(f"🔍 [AUDIO_DEBUG] Устройство {device.name} соответствует ключевому слову '{keyword}' -> приоритет {priority}")
+                return priority
+        
+        # Специальная обработка для iPhone Microphone (низкий приоритет)
+        if 'iphone' in device_name_lower and 'microphone' in device_name_lower:
+            logger.debug(f"🔍 [AUDIO_DEBUG] iPhone Microphone обнаружен: {device.name} -> приоритет 10")
+            return 10
+        
+        # Специальная обработка для AirPods (высший приоритет)
+        if 'airpods' in device_name_lower:
+            logger.debug(f"🔍 [AUDIO_DEBUG] AirPods обнаружены: {device.name} -> приоритет 1")
+            return 1
+        
+        # Специальная обработка для Beats (высокий приоритет)
+        if 'beats' in device_name_lower:
+            logger.debug(f"🔍 [AUDIO_DEBUG] Beats обнаружены: {device.name} -> приоритет 2")
+            return 2
+        
+        # Специальная обработка для Bluetooth устройств
+        if 'bluetooth' in device_name_lower:
+            if 'microphone' in device_name_lower or 'headphones' in device_name_lower:
+                logger.debug(f"🔍 [AUDIO_DEBUG] Bluetooth устройство обнаружено: {device.name} -> приоритет 3")
+                return 3
+        
+        # Специальная обработка для встроенного микрофона MacBook (средний приоритет)
+        if ('macbook' in device_name_lower or 'built-in' in device_name_lower or 'builtin' in device_name_lower):
+            if 'microphone' in device_name_lower or 'input' in device_name_lower:
+                logger.debug(f"🔍 [AUDIO_DEBUG] Встроенный микрофон обнаружен: {device.name} -> приоритет 7")
+                return 7
+        
+        logger.debug(f"🔍 [AUDIO_DEBUG] Устройство {device.name} не соответствует ни одному ключевому слову -> приоритет 15")
+        return 15  # Приоритет по умолчанию
+    
+    def _get_output_priority(self, device: AudioDevice) -> int:
+        """Получение приоритета OUTPUT устройства"""
+        device_name_lower = device.name.lower()
+        
+        # Проверяем приоритеты из конфигурации в порядке важности
+        for keyword, priority in self.config.output_device_priorities.items():
+            if keyword in device_name_lower:
+                logger.debug(f"🔍 [AUDIO_DEBUG] Устройство {device.name} соответствует ключевому слову '{keyword}' -> приоритет {priority}")
+                return priority
+        
+        # Специальная обработка для AirPods (высший приоритет)
+        if 'airpods' in device_name_lower:
+            logger.debug(f"🔍 [AUDIO_DEBUG] AirPods обнаружены: {device.name} -> приоритет 1")
+            return 1
+        
+        # Специальная обработка для Beats (высокий приоритет)
+        if 'beats' in device_name_lower:
+            logger.debug(f"🔍 [AUDIO_DEBUG] Beats обнаружены: {device.name} -> приоритет 2")
+            return 2
+        
+        # Специальная обработка для Bluetooth устройств
+        if 'bluetooth' in device_name_lower:
+            if 'headphones' in device_name_lower or 'speakers' in device_name_lower:
+                logger.debug(f"🔍 [AUDIO_DEBUG] Bluetooth устройство обнаружено: {device.name} -> приоритет 3")
+                return 3
+        
+        # Специальная обработка для встроенных динамиков MacBook (низкий приоритет)
+        if ('macbook' in device_name_lower or 'built-in' in device_name_lower or 'builtin' in device_name_lower):
+            if 'speakers' in device_name_lower or 'output' in device_name_lower:
+                logger.debug(f"🔍 [AUDIO_DEBUG] Встроенные динамики обнаружены: {device.name} -> приоритет 8")
+                return 8
+        
+        logger.debug(f"🔍 [AUDIO_DEBUG] Устройство {device.name} не соответствует ни одному ключевому слову -> приоритет 15")
+        return 15  # Приоритет по умолчанию
+
     async def cleanup(self):
         """Очистка ресурсов"""
         try:

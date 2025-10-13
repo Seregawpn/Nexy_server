@@ -19,7 +19,6 @@ from .core.player import SequentialSpeechPlayer, PlayerConfig
 from .core.buffer import ChunkBuffer, ChunkInfo
 from .core.state import PlaybackState, ChunkState
 from .utils.audio_utils import resample_audio, convert_channels
-from .utils.device_utils import get_best_audio_device
 from .macos.core_audio import CoreAudioManager
 from .macos.security import SecurityManager
 from .macos.performance import PerformanceMonitor
@@ -37,7 +36,6 @@ __all__ = [
     'ChunkState',
     'resample_audio',
     'convert_channels',
-    'get_best_audio_device',
     'CoreAudioManager',
     'SecurityManager',
     'PerformanceMonitor'

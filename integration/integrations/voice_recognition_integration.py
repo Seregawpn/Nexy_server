@@ -13,22 +13,24 @@ from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode
 from integration.core.error_handler import ErrorHandler
 
+logger = logging.getLogger(__name__)
+
 # Опциональная реальная реализация распознавания
 try:
     from modules.voice_recognition import SpeechRecognizer, DEFAULT_RECOGNITION_CONFIG, RecognitionResult
     _REAL_VOICE_AVAILABLE = True
-except Exception:
+    logger.debug("🔍 [AUDIO_DEBUG] SpeechRecognizer импортирован успешно")
+except Exception as e:
     # Зависимости могут отсутствовать; в этом случае используем только симуляцию
     _REAL_VOICE_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ [AUDIO_DEBUG] Ошибка импорта SpeechRecognizer: {e}")
 
 
 @dataclass
 class VoiceRecognitionConfig:
     """Конфигурация распознавания речи"""
     timeout_sec: float = 10.0
-    simulate: bool = True
+    simulate: bool = False
     simulate_success_rate: float = 0.7  # 70% успеха по умолчанию
     simulate_min_delay_sec: float = 1.0
     simulate_max_delay_sec: float = 3.0
@@ -64,17 +66,31 @@ class VoiceRecognitionIntegration:
             # Подписки на события записи/прерывания
             await self.event_bus.subscribe("voice.recording_start", self._on_recording_start, EventPriority.HIGH)
             await self.event_bus.subscribe("voice.recording_stop", self._on_recording_stop, EventPriority.HIGH)
+            await self.event_bus.subscribe("audio.unified_device_selected", self._on_unified_device_selected, EventPriority.HIGH)
             await self.event_bus.subscribe("keyboard.short_press", self._on_cancel_request, EventPriority.CRITICAL)
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
             # Гарантированно закрываем прослушивание при выходе из LISTENING
             await self.event_bus.subscribe("app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM)
 
             # Инициализация реального распознавателя, если симуляция отключена
+            logger.debug(f"🔍 [AUDIO_DEBUG] Условия создания SpeechRecognizer: simulate={self.config.simulate}, _REAL_VOICE_AVAILABLE={_REAL_VOICE_AVAILABLE}")
             if not self.config.simulate and _REAL_VOICE_AVAILABLE:
                 try:
                     # ИСПОЛЬЗУЕМ ГОТОВУЮ КОНФИГУРАЦИЮ ИЗ МОДУЛЯ - тонкая интеграция
                     self._recognizer = SpeechRecognizer(DEFAULT_RECOGNITION_CONFIG)
-                    logger.info("VoiceRecognitionIntegration: real SpeechRecognizer initialized")
+                    
+                    # НАСТРАИВАЕМ EventBus в SpeechRecognizer для получения событий выбора устройств
+                    if hasattr(self._recognizer, 'set_event_bus'):
+                        self._recognizer.set_event_bus(self.event_bus)
+                        logger.debug("🔍 [AUDIO_DEBUG] EventBus настроен в SpeechRecognizer")
+                        
+                        # Запрашиваем текущее INPUT устройство после настройки EventBus
+                        await self._request_current_input_device()
+                        logger.debug("🔍 [AUDIO_DEBUG] Запрошено текущее INPUT устройство")
+                    else:
+                        logger.warning("⚠️ [AUDIO_DEBUG] SpeechRecognizer не поддерживает set_event_bus")
+                    
+                    logger.info("VoiceRecognitionIntegration: real SpeechRecognizer initialized with EventBus")
                 except Exception as e:
                     logger.warning(f"VoiceRecognitionIntegration: failed to init real recognizer, fallback to simulate. Error: {e}")
                     self.config.simulate = True
@@ -93,6 +109,30 @@ class VoiceRecognitionIntegration:
             else:
                 logger.error(f"Error initializing VoiceRecognitionIntegration: {e}")
             return False
+    
+    async def _request_current_input_device(self):
+        """Запрос текущего INPUT устройства у AudioDeviceIntegration"""
+        try:
+            # Публикуем событие запроса текущего устройства
+            await self.event_bus.publish("audio.request_current_input_device", {
+                "source": "VoiceRecognitionIntegration",
+                "reason": "initialization"
+            })
+            logger.debug("🔍 [AUDIO_DEBUG] Запрос текущего INPUT устройства отправлен")
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка запроса текущего INPUT устройства: {e}")
+
+    async def _request_unified_device(self):
+        """Запрос унифицированного аудио устройства у AudioDeviceIntegration"""
+        try:
+            # Публикуем событие запроса унифицированного устройства
+            await self.event_bus.publish("audio.request_unified_device", {
+                "source": "VoiceRecognitionIntegration",
+                "reason": "recording_start"
+            })
+            logger.debug("🔍 [AUDIO_DEBUG] Запрос унифицированного устройства отправлен")
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка запроса унифицированного устройства: {e}")
 
     async def start(self) -> bool:
         if not self._initialized:
@@ -133,6 +173,14 @@ class VoiceRecognitionIntegration:
             # Если используем реальный движок — начинаем прослушивание
             if not self.config.simulate and self._recognizer is not None:
                 try:
+                    # ЗАПРАШИВАЕМ унифицированное устройство при первом запуске записи
+                    # Это гарантирует, что AudioDeviceManager уже готов
+                    try:
+                        await self._request_unified_device()
+                        logger.debug("🔍 [AUDIO_DEBUG] Запрос унифицированного устройства при запуске записи")
+                    except Exception as e:
+                        logger.warning(f"⚠️ [AUDIO_DEBUG] Не удалось запросить унифицированное устройство при запуске записи: {e}")
+                    
                     logger.debug(f"Starting real speech recognition for session {session_id}")
                     await self._recognizer.start_listening()
                     # Для единообразия сигнализируем старт распознавания и открытие микрофона
@@ -154,6 +202,21 @@ class VoiceRecognitionIntegration:
                     })
         except Exception as e:
             logger.error(f"VOICE: error in recording_start handler: {e}")
+
+    async def _on_unified_device_selected(self, event_data: dict):
+        """Обработка события выбора унифицированного аудио устройства"""
+        try:
+            logger.debug(f"🔍 [AUDIO_DEBUG] VoiceRecognitionIntegration получил унифицированное устройство: {event_data}")
+            
+            # Передаем информацию об INPUT устройстве в SpeechRecognizer
+            if self._recognizer and hasattr(self._recognizer, '_on_input_device_selected'):
+                await self._recognizer._on_input_device_selected(event_data)
+                logger.info(f"✅ [AUDIO_SUCCESS] Унифицированное устройство передано в SpeechRecognizer: {event_data.get('name', 'Unknown')}")
+            else:
+                logger.warning("⚠️ [AUDIO_DEBUG] SpeechRecognizer не готов для получения устройства")
+                
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_ERROR] Ошибка обработки унифицированного устройства: {e}")
 
     async def _on_recording_stop(self, event: Dict[str, Any]):
         try:
@@ -336,20 +399,22 @@ class VoiceRecognitionIntegration:
         }
     
     async def _check_microphone_permissions(self):
-        """Проверить разрешения микрофона"""
+        """Проверить разрешения микрофона через AudioDeviceManager"""
         try:
-            # Пробуем открыть краткий входной аудиопоток без привязки к Bundle ID
-            import sounddevice as sd
-            stream = sd.InputStream(channels=1)
+            # Используем запрос через EventBus для проверки доступности INPUT устройств
+            # Это более надежно, чем прямое обращение к sounddevice
             try:
-                stream.start()
-                stream.stop()
-                logger.info("✅ Microphone accessible (probe succeeded)")
-            finally:
-                stream.close()
+                # Запрашиваем лучшее INPUT устройство через EventBus
+                await self._request_current_input_device()
+                logger.info("✅ Microphone permission check via EventBus completed")
+                return True
+            except Exception as e:
+                logger.warning(f"⚠️ EventBus microphone check failed: {e}")
+                return False
             
         except Exception as e:
-            logger.info(f"ℹ️ Microphone not accessible or probe failed: {e}")
+            logger.info(f"ℹ️ Microphone permission check failed: {e}")
             # В случае ошибки/отказа доступа — мягко переходим в симуляцию
             self.config.simulate = True
             logger.info("🔄 Switching to simulation mode due to microphone probe failure")
+            return False

@@ -3,7 +3,7 @@
 """
 
 import numpy as np
-import sounddevice as sd
+# import sounddevice as sd  # УДАЛЕНО: больше не используется после удаления дублирующих функций
 from typing import List, Tuple, Optional
 import logging
 
@@ -46,13 +46,20 @@ def resample_audio(audio_data: np.ndarray, original_rate: int, target_rate: int)
         if original_rate == target_rate:
             return audio_data
             
+        # Убеждаемся что audio_data одномерный
+        if len(audio_data.shape) > 1:
+            audio_data = audio_data.flatten()
+            
         # Простое изменение частоты дискретизации
         ratio = target_rate / original_rate
         new_length = int(len(audio_data) * ratio)
         
         # Линейная интерполяция
         indices = np.linspace(0, len(audio_data) - 1, new_length)
-        return np.interp(indices, np.arange(len(audio_data)), audio_data).astype(audio_data.dtype)
+        resampled = np.interp(indices, np.arange(len(audio_data)), audio_data)
+        
+        # Возвращаем в том же типе данных
+        return resampled.astype(audio_data.dtype)
         
     except Exception as e:
         logger.error(f"❌ Ошибка изменения частоты дискретизации: {e}")
@@ -166,42 +173,5 @@ def get_audio_info(audio_data: np.ndarray, sample_rate: int) -> dict:
         logger.error(f"❌ Ошибка получения информации об аудио: {e}")
         return {}
 
-def list_audio_devices() -> List[dict]:
-    """Возвращает список доступных аудио устройств"""
-    try:
-        devices = sd.query_devices()
-        device_list = []
-        
-        for i, device in enumerate(devices):
-            device_info = {
-                "index": i,
-                "name": device["name"],
-                "channels": device["max_input_channels"],
-                "sample_rate": device["default_samplerate"],
-                "is_input": device["max_input_channels"] > 0,
-                "is_output": device["max_output_channels"] > 0
-            }
-            device_list.append(device_info)
-            
-        return device_list
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка получения списка устройств: {e}")
-        return []
-
-def find_best_microphone() -> Optional[int]:
-    """Находит лучшее микрофонное устройство"""
-    try:
-        devices = list_audio_devices()
-        input_devices = [d for d in devices if d["is_input"]]
-        
-        if not input_devices:
-            return None
-            
-        # Ищем устройство с наибольшим количеством каналов
-        best_device = max(input_devices, key=lambda x: x["channels"])
-        return best_device["index"]
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка поиска лучшего микрофона: {e}")
-        return None
+# УДАЛЕНО: list_audio_devices() и find_best_microphone() 
+# Используйте AudioDeviceManager.get_available_devices() и get_best_input_device() вместо этого

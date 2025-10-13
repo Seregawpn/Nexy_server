@@ -13,8 +13,7 @@ from .config.default_config import (
 )
 from .utils.audio_utils import (
     normalize_audio, resample_audio, convert_channels,
-    detect_silence, trim_silence, get_audio_info,
-    list_audio_devices, find_best_microphone
+    detect_silence, trim_silence, get_audio_info
 )
 
 __all__ = [
@@ -35,9 +34,7 @@ __all__ = [
     'convert_channels',
     'detect_silence',
     'trim_silence',
-    'get_audio_info',
-    'list_audio_devices',
-    'find_best_microphone'
+    'get_audio_info'
 ]
 
 __version__ = "1.0.0"

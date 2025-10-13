@@ -48,6 +48,7 @@ class AudioDevice:
     sample_rate: Optional[int] = None
     channels: Optional[int] = None
     last_seen: Optional[datetime] = None
+    portaudio_index: Optional[int] = None  # Индекс для sounddevice/PortAudio
     
     def __str__(self) -> str:
         return f"{self.name} ({self.type.value})"
@@ -89,23 +90,15 @@ class AudioDeviceManagerConfig:
     auto_switch_enabled: bool = True
     monitoring_interval: float = 1.0
     switch_delay: float = 0.5
-    device_priorities: Dict[str, int] = None
     user_preferences: Dict[str, Any] = None
     macos_settings: Dict[str, Any] = None
     
+    # Поля для поддержки INPUT/OUTPUT (заменяют device_priorities)
+    separate_input_output_management: bool = True
+    input_device_priorities: Dict[str, int] = None
+    output_device_priorities: Dict[str, int] = None
+    
     def __post_init__(self):
-        if self.device_priorities is None:
-            self.device_priorities = {
-                'bluetooth_headphones': 1,
-                'usb_headset': 2,
-                'wireless_headphones': 3,
-                'external_speakers': 4,
-                'usb_audio': 5,
-                'dock_station': 6,
-                'builtin_speakers': 7,
-                'builtin_microphone': 8,
-                'default_device': 9
-            }
         
         if self.user_preferences is None:
             self.user_preferences = {
@@ -121,6 +114,34 @@ class AudioDeviceManagerConfig:
                 'switchaudio_path': '/usr/local/bin/SwitchAudioSource',
                 'core_audio_timeout': 5.0,
                 'enable_notifications': True
+            }
+        
+        # Инициализация приоритетов для INPUT/OUTPUT
+        if self.input_device_priorities is None:
+            self.input_device_priorities = {
+                'airpods': 1,                 # AirPods - высший приоритет
+                'beats': 2,                   # Beats наушники
+                'bluetooth_microphone': 3,    # Bluetooth микрофоны
+                'bluetooth_headphones': 4,    # Bluetooth наушники
+                'usb_headphones': 5,          # USB наушники
+                'usb_microphone': 6,          # USB микрофоны
+                'builtin_microphone': 7,      # Встроенный микрофон компьютера
+                'wireless_microphone': 8,     # Беспроводные микрофоны
+                'external_microphone': 9,     # Внешние микрофоны
+                'iphone_microphone': 10,      # iPhone Microphone - низкий приоритет
+                'default_input': 11
+            }
+        
+        if self.output_device_priorities is None:
+            self.output_device_priorities = {
+                'bluetooth_headphones': 1,
+                'usb_headset': 2,
+                'wireless_headphones': 3,
+                'external_speakers': 4,
+                'usb_audio': 5,
+                'dock_station': 6,
+                'builtin_speakers': 7,
+                'default_output': 8
             }
 
 
