@@ -318,6 +318,13 @@ voice_recognition:
   max_alternatives: 3
   phrase_timeout: 0.3
   silence_timeout: 0.8
+
+# Настройки STT (Speech-to-Text)
+stt:
+  sample_rate: 24000  # Оптимальная частота для AirPods
+  channels: 1
+  chunk_size: 1024
+  dtype: 'int16'
   simulate: false
   timeout: 5.0
   use_google: true

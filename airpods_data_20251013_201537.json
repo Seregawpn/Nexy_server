@@ -1,0 +1,138 @@
+{
+  "system_info": {
+    "timestamp": "2025-10-13T20:15:20.766825",
+    "system": {
+      "platform": "macOS-26.0.1-arm64-arm-64bit-Mach-O",
+      "macos_version": "26.0.1",
+      "python_version": "3.13.7",
+      "sounddevice_version": "0.5.2"
+    }
+  },
+  "bluetooth_info": {
+    "system_profiler": {
+      "SPBluetoothDataType": [
+        {
+          "controller_properties": {
+            "controller_address": "A0:9A:8E:0D:58:86",
+            "controller_chipset": "BCM_4388C2",
+            "controller_discoverable": "attrib_off",
+            "controller_firmwareVersion": "23.1.206.1173",
+            "controller_productID": "0x4A41",
+            "controller_state": "attrib_on",
+            "controller_supportedServices": "0x392039 < HFP AVRCP A2DP HID Braille LEA AACP GATT SerialPort >",
+            "controller_transport": "PCIe",
+            "controller_vendorID": "0x004C (Apple)"
+          },
+          "device_connected": [
+            {
+              "Sergiy’s AirPods": {
+                "device_address": "1C:77:54:18:C8:A3",
+                "device_batteryLevelCase": "67%",
+                "device_batteryLevelLeft": "41%",
+                "device_batteryLevelRight": "51%",
+                "device_caseVersion": "8A358",
+                "device_firmwareVersion": "8A358",
+                "device_minorType": "Headphones",
+                "device_productID": "0x201B",
+                "device_rssi": "-48",
+                "device_serialNumber": "D4VKFKGLQP",
+                "device_serialNumberLeft": "J5MHH6000J60000B2Z",
+                "device_serialNumberRight": "J5MHH60025R0000B31",
+                "device_services": "0x980019 < HFP AVRCP A2DP AACP GATT ACL >",
+                "device_vendorID": "0x004C"
+              }
+            }
+          ],
+          "device_not_connected": [
+            {
+              "iPhone ": {
+                "device_address": "88:20:0D:45:06:51",
+                "device_rssi": "-44"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "airpods_info": {
+      "device_address": "1C:77:54:18:C8:A3",
+      "device_batteryLevelCase": "67%",
+      "device_batteryLevelLeft": "41%",
+      "device_batteryLevelRight": "51%",
+      "device_caseVersion": "8A358",
+      "device_firmwareVersion": "8A358",
+      "device_minorType": "Headphones",
+      "device_productID": "0x201B",
+      "device_rssi": "-48",
+      "device_serialNumber": "D4VKFKGLQP",
+      "device_serialNumberLeft": "J5MHH6000J60000B2Z",
+      "device_serialNumberRight": "J5MHH60025R0000B31",
+      "device_services": "0x980019 < HFP AVRCP A2DP AACP GATT ACL >",
+      "device_vendorID": "0x004C"
+    }
+  },
+  "audio_devices": {
+    "sounddevice_devices": [
+      {
+        "index": 0,
+        "name": "Sergiy’s AirPods",
+        "hostapi": 0,
+        "max_input_channels": 1,
+        "max_output_channels": 0,
+        "default_low_input_latency": 0.012666666666666666,
+        "default_low_output_latency": 0.01,
+        "default_high_input_latency": 0.03,
+        "default_high_output_latency": 0.1,
+        "default_samplerate": 24000.0
+      },
+      {
+        "index": 1,
+        "name": "Sergiy’s AirPods",
+        "hostapi": 0,
+        "max_input_channels": 0,
+        "max_output_channels": 2,
+        "default_low_input_latency": 0.01,
+        "default_low_output_latency": 0.16133333333333333,
+        "default_high_input_latency": 0.1,
+        "default_high_output_latency": 0.17066666666666666,
+        "default_samplerate": 48000.0
+      },
+      {
+        "index": 2,
+        "name": "iPhone  Microphone",
+        "hostapi": 0,
+        "max_input_channels": 1,
+        "max_output_channels": 0,
+        "default_low_input_latency": 0.12841666666666668,
+        "default_low_output_latency": 0.01,
+        "default_high_input_latency": 0.13775,
+        "default_high_output_latency": 0.1,
+        "default_samplerate": 48000.0
+      },
+      {
+        "index": 3,
+        "name": "MacBook Air Microphone",
+        "hostapi": 0,
+        "max_input_channels": 1,
+        "max_output_channels": 0,
+        "default_low_input_latency": 0.05235416666666667,
+        "default_low_output_latency": 0.01,
+        "default_high_input_latency": 0.0616875,
+        "default_high_output_latency": 0.1,
+        "default_samplerate": 48000.0
+      },
+      {
+        "index": 4,
+        "name": "MacBook Air Speakers",
+        "hostapi": 0,
+        "max_input_channels": 0,
+        "max_output_channels": 2,
+        "default_low_input_latency": 0.01,
+        "default_low_output_latency": 0.015166666666666667,
+        "default_high_input_latency": 0.1,
+        "default_high_output_latency": 0.0245,
+        "default_samplerate": 48000.0
+      }
+    ],
+    "current_settings": {
+      "default_device": 
