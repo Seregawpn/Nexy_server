@@ -14,7 +14,7 @@ from typing import Dict, Any, List
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '.'))
 
 # Импортируем диагностические модули
-from diagnostic_suite import DiagnosticSuite
+# DiagnosticSuite теперь встроен в этот файл
 
 # Добавляем путь к тестам
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tests/modules'))
@@ -30,6 +30,22 @@ from diagnostic_permissions import PermissionsDiagnostic
 from diagnostic_network_manager import NetworkManagerDiagnostic
 from diagnostic_mode_management import ModeManagementDiagnostic
 from diagnostic_audio_device_integration import AudioDeviceIntegrationDiagnostic
+from diagnostic_grpc_client_integration import GrpcClientIntegrationDiagnostic
+from diagnostic_mode_management_integration import ModeManagementIntegrationDiagnostic
+from diagnostic_input_processing_integration import InputProcessingIntegrationDiagnostic
+from diagnostic_autostart_manager_integration import AutostartManagerIntegrationDiagnostic
+from diagnostic_hardware_id_integration import HardwareIdIntegrationDiagnostic
+from diagnostic_instance_manager_integration import InstanceManagerIntegrationDiagnostic
+from diagnostic_speech_playback_integration import SpeechPlaybackIntegrationDiagnostic
+from diagnostic_voice_recognition_integration import VoiceRecognitionIntegrationDiagnostic
+from diagnostic_tray_controller_integration import TrayControllerIntegrationDiagnostic
+from diagnostic_interrupt_management_integration import InterruptManagementIntegrationDiagnostic
+from diagnostic_network_manager_integration import NetworkManagerIntegrationDiagnostic
+from diagnostic_screenshot_capture_integration import ScreenshotCaptureIntegrationDiagnostic
+from diagnostic_signal_integration import SignalIntegrationDiagnostic
+from diagnostic_updater_integration import UpdaterIntegrationDiagnostic
+from diagnostic_voiceover_ducking_integration import VoiceOverDuckingIntegrationDiagnostic
+from diagnostic_welcome_message_integration import WelcomeMessageIntegrationDiagnostic
 from diagnostic_unified_config import UnifiedConfigDiagnostic
 
 # Настройка логирования
@@ -55,8 +71,8 @@ class MasterDiagnostic:
         logger.info("1️⃣ ОБЩИЙ ДИАГНОСТИЧЕСКИЙ ПАКЕТ")
         logger.info("="*60)
         try:
-            general_diagnostic = DiagnosticSuite()
-            self.results['general'] = await general_diagnostic.run_full_diagnostic()
+            general_diagnostic = MasterDiagnostic()
+            self.results['general'] = await general_diagnostic.run_all_diagnostics()
         except Exception as e:
             logger.error(f"❌ Ошибка общего диагностического пакета: {e}")
             self.results['general'] = {"error": str(e), "success": False}
@@ -168,6 +184,150 @@ class MasterDiagnostic:
             logger.error(f"❌ Ошибка тестирования AudioDeviceIntegration: {e}")
             self.results['audio_device_integration'] = {"error": str(e), "success": False}
         
+        # GrpcClientIntegration
+        logger.info("\n🌐 Тестирование GrpcClientIntegration...")
+        try:
+            grpc_integration_diagnostic = GrpcClientIntegrationDiagnostic()
+            self.results['grpc_client_integration'] = await grpc_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования GrpcClientIntegration: {e}")
+            self.results['grpc_client_integration'] = {"error": str(e), "success": False}
+        
+        # ModeManagementIntegration
+        logger.info("\n🔄 Тестирование ModeManagementIntegration...")
+        try:
+            mode_integration_diagnostic = ModeManagementIntegrationDiagnostic()
+            self.results['mode_management_integration'] = await mode_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования ModeManagementIntegration: {e}")
+            self.results['mode_management_integration'] = {"error": str(e), "success": False}
+        
+        # InputProcessingIntegration
+        logger.info("\n⌨️ Тестирование InputProcessingIntegration...")
+        try:
+            input_integration_diagnostic = InputProcessingIntegrationDiagnostic()
+            self.results['input_processing_integration'] = await input_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования InputProcessingIntegration: {e}")
+            self.results['input_processing_integration'] = {"error": str(e), "success": False}
+        
+        # AutostartManagerIntegration
+        logger.info("\n🚀 Тестирование AutostartManagerIntegration...")
+        try:
+            autostart_integration_diagnostic = AutostartManagerIntegrationDiagnostic()
+            self.results['autostart_manager_integration'] = await autostart_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования AutostartManagerIntegration: {e}")
+            self.results['autostart_manager_integration'] = {"error": str(e), "success": False}
+        
+        # HardwareIdIntegration
+        logger.info("\n🆔 Тестирование HardwareIdIntegration...")
+        try:
+            hardware_integration_diagnostic = HardwareIdIntegrationDiagnostic()
+            self.results['hardware_id_integration'] = await hardware_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования HardwareIdIntegration: {e}")
+            self.results['hardware_id_integration'] = {"error": str(e), "success": False}
+        
+        # InstanceManagerIntegration
+        logger.info("\n📦 Тестирование InstanceManagerIntegration...")
+        try:
+            instance_integration_diagnostic = InstanceManagerIntegrationDiagnostic()
+            self.results['instance_manager_integration'] = await instance_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования InstanceManagerIntegration: {e}")
+            self.results['instance_manager_integration'] = {"error": str(e), "success": False}
+        
+        # SpeechPlaybackIntegration
+        logger.info("\n🔊 Тестирование SpeechPlaybackIntegration...")
+        try:
+            speech_integration_diagnostic = SpeechPlaybackIntegrationDiagnostic()
+            self.results['speech_playback_integration'] = await speech_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования SpeechPlaybackIntegration: {e}")
+            self.results['speech_playback_integration'] = {"error": str(e), "success": False}
+        
+        # VoiceRecognitionIntegration
+        logger.info("\n🎤 Тестирование VoiceRecognitionIntegration...")
+        try:
+            voice_integration_diagnostic = VoiceRecognitionIntegrationDiagnostic()
+            self.results['voice_recognition_integration'] = await voice_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования VoiceRecognitionIntegration: {e}")
+            self.results['voice_recognition_integration'] = {"error": str(e), "success": False}
+        
+        # TrayControllerIntegration
+        logger.info("\n📋 Тестирование TrayControllerIntegration...")
+        try:
+            tray_integration_diagnostic = TrayControllerIntegrationDiagnostic()
+            self.results['tray_controller_integration'] = await tray_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования TrayControllerIntegration: {e}")
+            self.results['tray_controller_integration'] = {"error": str(e), "success": False}
+        
+        # InterruptManagementIntegration
+        logger.info("\n⚠️ Тестирование InterruptManagementIntegration...")
+        try:
+            interrupt_integration_diagnostic = InterruptManagementIntegrationDiagnostic()
+            self.results['interrupt_management_integration'] = await interrupt_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования InterruptManagementIntegration: {e}")
+            self.results['interrupt_management_integration'] = {"error": str(e), "success": False}
+        
+        # NetworkManagerIntegration
+        logger.info("\n🌐 Тестирование NetworkManagerIntegration...")
+        try:
+            network_integration_diagnostic = NetworkManagerIntegrationDiagnostic()
+            self.results['network_manager_integration'] = await network_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования NetworkManagerIntegration: {e}")
+            self.results['network_manager_integration'] = {"error": str(e), "success": False}
+        
+        # ScreenshotCaptureIntegration
+        logger.info("\n📸 Тестирование ScreenshotCaptureIntegration...")
+        try:
+            screenshot_integration_diagnostic = ScreenshotCaptureIntegrationDiagnostic()
+            self.results['screenshot_capture_integration'] = await screenshot_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования ScreenshotCaptureIntegration: {e}")
+            self.results['screenshot_capture_integration'] = {"error": str(e), "success": False}
+        
+        # SignalIntegration
+        logger.info("\n📡 Тестирование SignalIntegration...")
+        try:
+            signal_integration_diagnostic = SignalIntegrationDiagnostic()
+            self.results['signal_integration'] = await signal_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования SignalIntegration: {e}")
+            self.results['signal_integration'] = {"error": str(e), "success": False}
+        
+        # UpdaterIntegration
+        logger.info("\n🔄 Тестирование UpdaterIntegration...")
+        try:
+            updater_integration_diagnostic = UpdaterIntegrationDiagnostic()
+            self.results['updater_integration'] = await updater_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования UpdaterIntegration: {e}")
+            self.results['updater_integration'] = {"error": str(e), "success": False}
+        
+        # VoiceoverDuckingIntegration
+        logger.info("\n🔊 Тестирование VoiceoverDuckingIntegration...")
+        try:
+            voiceover_integration_diagnostic = VoiceOverDuckingIntegrationDiagnostic()
+            self.results['voiceover_ducking_integration'] = await voiceover_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования VoiceoverDuckingIntegration: {e}")
+            self.results['voiceover_ducking_integration'] = {"error": str(e), "success": False}
+        
+        # WelcomeMessageIntegration
+        logger.info("\n👋 Тестирование WelcomeMessageIntegration...")
+        try:
+            welcome_integration_diagnostic = WelcomeMessageIntegrationDiagnostic()
+            self.results['welcome_message_integration'] = await welcome_integration_diagnostic.run_diagnostic()
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования WelcomeMessageIntegration: {e}")
+            self.results['welcome_message_integration'] = {"error": str(e), "success": False}
+        
         # 4. Тесты конфигурации
         logger.info("\n" + "="*60)
         logger.info("4️⃣ ТЕСТЫ КОНФИГУРАЦИИ")
@@ -246,9 +406,9 @@ class MasterDiagnostic:
                 print(f"   {status} {category.upper()}: {category_successful}/{category_tests} ({success_rate:.1f}%)")
                 
                 # Показываем ключевые результаты для каждой категории
-                if 'results' in results and results['results']:
+                if 'results' in results and isinstance(results['results'], list) and results['results']:
                     key_results = []
-                    for result in results['results'][:3]:  # Показываем первые 3 результата
+                    for result in list(results['results'])[:3]:  # Показываем первые 3 результата
                         if result.get('success') and result.get('details'):
                             details = result['details']
                             if 'count' in details:

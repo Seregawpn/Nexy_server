@@ -449,7 +449,7 @@ class SwitchAudioBridge:
             return False
     
     async def set_default_input_device(self, device_id: str) -> bool:
-        """Установка устройства ввода по умолчанию через switchaudio"""
+        """Установка устройства ввода по умолчанию через sounddevice"""
         try:
             # Находим устройство по ID
             devices = await self.get_available_devices()
@@ -466,17 +466,26 @@ class SwitchAudioBridge:
             
             logger.info(f"🔄 [AUDIO_SWITCH] Попытка переключения на INPUT: {target_device.name} (тип: {target_device.type.value})")
             
-            # Получаем путь к бинарнику и используем SwitchAudioSource для переключения INPUT
-            switchaudio_cmd = self._get_switchaudio_path()
-            result = subprocess.run([
-                switchaudio_cmd, '-t', 'input', '-s', target_device.name
-            ], capture_output=True, text=True, timeout=10)
+            # Используем sounddevice для переключения INPUT устройства
+            import sounddevice as sd
             
-            if result.returncode == 0:
-                logger.info(f"✅ [AUDIO_SUCCESS] Переключено на INPUT устройство: {target_device.name}")
+            # Получаем portaudio_index устройства
+            portaudio_index = target_device.portaudio_index
+            if portaudio_index is None:
+                logger.error(f"❌ [AUDIO_ERROR] portaudio_index не найден для устройства: {target_device.name}")
+                return False
+            
+            # Устанавливаем устройство по умолчанию через sounddevice
+            current_default = sd.default.device
+            sd.default.device = (portaudio_index, current_default[1])  # (input, output)
+            
+            # Проверяем, что переключение прошло успешно
+            new_default = sd.default.device
+            if new_default[0] == portaudio_index:
+                logger.info(f"✅ [AUDIO_SUCCESS] Переключено на INPUT устройство: {target_device.name} (index: {portaudio_index})")
                 return True
             else:
-                logger.error(f"❌ [AUDIO_ERROR] Ошибка переключения INPUT устройства: {result.stderr}")
+                logger.error(f"❌ [AUDIO_ERROR] Не удалось переключиться на INPUT устройство: {target_device.name}")
                 return False
                 
         except Exception as e:

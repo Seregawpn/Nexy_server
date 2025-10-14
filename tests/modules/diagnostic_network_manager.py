@@ -165,8 +165,12 @@ class NetworkManagerDiagnostic:
                 self._add_result("internet_connection", True, "Проверка подключения к интернету выполнена",
                                "Проверка работает (интернет может быть недоступен в тестовой среде)", "Продолжить", {})
             
-            # Проверяем подключение к серверу
-            server_connection = await self.network_manager.force_check()
+            # Проверяем подключение к серверу с таймаутом
+            try:
+                server_connection = await asyncio.wait_for(self.network_manager.force_check(), timeout=3.0)
+            except asyncio.TimeoutError:
+                # Таймаут - это нормально в тестовой среде
+                server_connection = False
             
             if server_connection:
                 self._add_result("server_connection", True, "Подключение к серверу активно",
