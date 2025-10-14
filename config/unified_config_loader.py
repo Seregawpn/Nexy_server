@@ -197,37 +197,15 @@ class UnifiedConfigLoader:
     # ДРУГИЕ НАСТРОЙКИ
     # =====================================================
     
-    def get_audio_config(self) -> Dict[str, Any]:
-        """Получает настройки аудио"""
+    def get_default_audio_config(self) -> Dict[str, Any]:
+        """Получает настройки default_audio"""
         config = self._load_config()
-        audio_config = config['audio']
-        
-        # Добавляем приоритеты устройств из device_manager
-        device_manager = audio_config.get('device_manager', {})
-        device_priorities = device_manager.get('device_priorities', {})
-        
-        # Создаем input_device_priorities и output_device_priorities
-        input_device_priorities = {}
-        output_device_priorities = {}
-        
-        for device_type, priority in device_priorities.items():
-            # Для устройств типа BOTH добавляем в обе категории
-            if device_type in ['airpods', 'beats', 'bluetooth_headphones', 'usb_headphones']:
-                input_device_priorities[device_type] = priority
-                output_device_priorities[device_type] = priority
-            elif device_type in ['bluetooth_speakers', 'system_speakers']:
-                output_device_priorities[device_type] = priority
-            elif device_type in ['microphone', 'built_in', 'iphone_microphone']:
-                input_device_priorities[device_type] = priority
-            else:
-                # Для остальных добавляем в обе категории
-                input_device_priorities[device_type] = priority
-                output_device_priorities[device_type] = priority
-        
-        audio_config['input_device_priorities'] = input_device_priorities
-        audio_config['output_device_priorities'] = output_device_priorities
-        
-        return audio_config
+        return config.get('default_audio', {})
+    
+    def get_audio_config(self) -> Dict[str, Any]:
+        """Получает настройки аудио (legacy - для совместимости)"""
+        # Возвращаем default_audio конфигурацию
+        return self.get_default_audio_config()
     
     def get_speech_playback_config(self) -> Dict[str, Any]:
         """Получает настройки воспроизведения речи"""

@@ -26,41 +26,28 @@ app:
   name: Nexy
   team_id: 5NKLL2CLB9
   version: 1.71.0
-audio:
-  bluetooth_policy: auto
-  channels: 1
+# Новая конфигурация аудио - используем системные дефолты
+default_audio:
+  input_sample_rate: 16000
+  output_sample_rate: 48000
+  input_channels: 1
+  output_channels: 1
+  dtype: "int16"
   chunk_size: 1024
-  device_manager:
-    auto_switch_to_best: true
-    auto_switch_to_headphones: true
-    cache_timeout: 5.0
-    device_priorities:
-      airpods: 1
-      beats: 2
-      bluetooth_headphones: 3
-      bluetooth_speakers: 4
-      usb_headphones: 5
-      usb_audio: 6
-      built_in: 7
-      system_speakers: 8
-      microphone: 9
-      iphone_microphone: 10
-      other: 15
-      virtual_device: 20
-    enabled: true
-    exclude_virtual_devices: true
-    monitoring_interval: 3.0
-    switch_cooldown: 2.0
-    virtual_device_keywords:
-    - blackhole
-    - soundflower
-    - loopback
-    - virtual
-    - aggregate
-    - multi-output
-    - sound source
-    - audio hijack
-  follow_system_default: false
+  
+  health_check_interval: 1.0
+  health_check_duration: 0.3
+  rms_threshold: 1e-4
+  silent_threshold: 1e-6
+  
+  auto_reopen_on_error: true
+  max_retry_attempts: 3
+  retry_delay: 0.5
+  error_cooldown: 2.0
+  
+  enable_debug_logging: false
+  log_health_checks: true
+  log_stream_events: true
   format: int16
   preflush_on_switch: false
   retries: 2

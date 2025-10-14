@@ -42,8 +42,7 @@ class SpeechRecognizer:
         # Метрики
         self.metrics = RecognitionMetrics()
 
-        # Параметры входного устройства
-        self.input_device_index: Optional[int] = None
+        # Параметры входного устройства - используем системные дефолты
         self.actual_input_rate: int = self.config.sample_rate
         
         # Инициализируем распознаватель
@@ -275,19 +274,10 @@ class SpeechRecognizer:
     def _run_listening(self):
         """Запускает прослушивание микрофона"""
         try:
-            # Подбираем устройство
-            self.input_device_index = self._pick_input_device()
-            
-            # Проверяем, что устройство выбрано
-            if self.input_device_index is None:
-                logger.error("❌ [AUDIO_ERROR] Не удалось выбрать INPUT устройство!")
-                logger.error("❌ [AUDIO_ERROR] SpeechRecognizer требует настройки через AudioDeviceIntegration")
-                self.state = RecognitionState.ERROR
-                return
-            
-            logger.info(f"🎤 Прослушивание микрофона начато")
-            logger.debug(f"🔍 [AUDIO_DEBUG] Используем устройство: index={self.input_device_index}")
-            device_param = self.input_device_index
+            # Используем системные дефолты - device=None
+            logger.info(f"🎤 Прослушивание микрофона начато (системные дефолты)")
+            logger.debug(f"🔍 [AUDIO_DEBUG] Используем системные дефолты для INPUT устройства")
+            device_param = None  # Системные дефолты
             preferred_rates = []
             device_default_rate = None
             try:

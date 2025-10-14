@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from .state import StateManager, PlaybackState, ChunkState
 from .buffer import ChunkBuffer, ChunkInfo
 from ..utils.audio_utils import resample_audio, convert_channels
-from modules.audio_device_manager.core.types import AudioDevice, DeviceType
+# AudioDeviceManager удален - используем системные дефолты
 from ..macos.core_audio import CoreAudioManager
 from ..macos.performance import PerformanceMonitor
 

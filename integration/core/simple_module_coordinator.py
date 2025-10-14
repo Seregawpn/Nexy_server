@@ -26,8 +26,7 @@ from integration.integrations.voice_recognition_integration import VoiceRecognit
 from integration.integrations.updater_integration import UpdaterIntegration
 from integration.integrations.network_manager_integration import NetworkManagerIntegration
 from modules.network_manager.core.config import NetworkManagerConfig
-from integration.integrations.audio_device_integration import AudioDeviceIntegration
-from modules.audio_device_manager.core.types import AudioDeviceManagerConfig
+from integration.integrations.default_audio_integration import DefaultAudioIntegration, DefaultAudioIntegrationConfig
 from integration.integrations.interrupt_management_integration import InterruptManagementIntegration, InterruptManagementIntegrationConfig
 from modules.input_processing.keyboard.types import KeyboardConfig
 from integration.integrations.screenshot_capture_integration import ScreenshotCaptureIntegration
@@ -222,15 +221,20 @@ class SimpleModuleCoordinator:
                 config=network_config
             )
             
-            # Audio Device Integration - используем конфигурацию модуля
-            # Конфигурация будет загружена внутри AudioDeviceIntegration
-            audio_config = None  # Будет создана автоматически из unified_config.yaml
+            # Default Audio Integration - используем системные дефолты
+            audio_integration_config = DefaultAudioIntegrationConfig(
+                enabled=True,
+                auto_start=False,  # НЕ запускаем автоматически - только при LISTENING
+                publish_health_events=True,
+                publish_stream_events=True,
+                publish_metrics_events=True
+            )
             
-            self.integrations['audio'] = AudioDeviceIntegration(
+            self.integrations['audio'] = DefaultAudioIntegration(
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
                 error_handler=self.error_handler,
-                config=audio_config
+                config=audio_integration_config
             )
             
             # Interrupt Management Integration - загружаем из конфигурации
