@@ -19,7 +19,6 @@ mode_management/
 - `speech_recognizer` - для режима прослушивания
 - `grpc_client` - для режима обработки
 - `state_manager` - для управления состоянием
-- `audio_device_manager` - для управления аудио
 
 ## 🔗 Интеграция с модулями
 
@@ -32,7 +31,7 @@ from speech_recognition import SpeechRecognizer
 
 # Создание компонентов
 speech_recognizer = SpeechRecognizer()
-listening_mode = ListeningMode(speech_recognizer, audio_device_manager)
+listening_mode = ListeningMode(speech_recognizer)
 controller = ModeController()
 
 # Регистрация обработчика
@@ -105,26 +104,9 @@ controller.register_mode_change_callback(on_mode_change)
 state_manager.set_current_mode("listening")  # Может быть несинхронизировано
 ```
 
-### 4. Интеграция с audio_device_manager
+### 4. Работа с аудио
 
-#### ✅ Правильная интеграция:
-```python
-from mode_management import ListeningMode
-from audio_device_manager import AudioDeviceManager
-
-# Создание компонентов
-audio_manager = AudioDeviceManager()
-listening_mode = ListeningMode(speech_recognizer, audio_manager)
-
-# Автоматическое переключение аудио устройств
-await controller.switch_mode(AppMode.LISTENING)
-```
-
-#### ❌ Неправильная интеграция:
-```python
-# НЕ ДЕЛАЙТЕ ТАК - ручное управление аудио
-audio_manager.switch_to_best_device()  # Может конфликтовать с режимами
-```
+macOS сама выбирает активное устройство ввода/вывода. Рекомендуется полагаться на системные дефолты и не внедрять дополнительные переключатели в `mode_management`.
 
 ## 🔄 Жизненный цикл интеграции
 
@@ -138,7 +120,7 @@ async def initialize_mode_management():
     # Создание режимов
     sleeping_mode = SleepingMode()
     processing_mode = ProcessingMode(grpc_client, state_manager)
-    listening_mode = ListeningMode(speech_recognizer, audio_manager)
+    listening_mode = ListeningMode(speech_recognizer)
     
     # Регистрация обработчиков
     controller.register_mode_handler(AppMode.SLEEPING, sleeping_mode.enter_mode)

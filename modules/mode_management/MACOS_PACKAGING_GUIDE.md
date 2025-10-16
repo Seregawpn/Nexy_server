@@ -68,7 +68,7 @@ cp -r client/mode_management "${APP_NAME}.app/Contents/Resources/"
 # Копирование других модулей
 cp -r client/grpc_client "${APP_NAME}.app/Contents/Resources/"
 # state_management удален - не требуется
-cp -r client/audio_device_manager "${APP_NAME}.app/Contents/Resources/"
+# audio_device_manager больше не используется — macOS управляет аудио устройствами самостоятельно
 ```
 
 ### 2. Создание Info.plist
@@ -124,7 +124,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Resources'))
 from mode_management import ModeController, AppMode, ModeConfig
 from grpc_client import GrpcClient
 # state_management удален - используйте основной StateManager из main.py
-from audio_device_manager import AudioDeviceManager
 
 class NexyApp:
     def __init__(self):
@@ -155,10 +154,9 @@ class NexyApp:
             # Инициализация зависимостей
             grpc_client = GrpcClient()
             state_manager = StateManager()
-            audio_manager = AudioDeviceManager()
             
             # Регистрация режимов
-            await self.register_modes(grpc_client, state_manager, audio_manager)
+            await self.register_modes(grpc_client, state_manager)
             
             # Регистрация переходов
             self.register_transitions()
@@ -170,14 +168,14 @@ class NexyApp:
             logging.error(f"Ошибка инициализации: {e}")
             return False
     
-    async def register_modes(self, grpc_client, state_manager, audio_manager):
+    async def register_modes(self, grpc_client, state_manager):
         """Регистрация режимов"""
         from mode_management import SleepingMode, ProcessingMode, ListeningMode
         
         # Создание режимов
         sleeping_mode = SleepingMode()
         processing_mode = ProcessingMode(grpc_client, state_manager)
-        listening_mode = ListeningMode(None, audio_manager)  # speech_recognizer будет добавлен позже
+        listening_mode = ListeningMode(None)  # speech_recognizer будет добавлен позже
         
         # Регистрация обработчиков
         self.controller.register_mode_handler(AppMode.SLEEPING, sleeping_mode.enter_mode)

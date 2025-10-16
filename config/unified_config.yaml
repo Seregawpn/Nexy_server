@@ -26,42 +26,45 @@ app:
   name: Nexy
   team_id: 5NKLL2CLB9
   version: 1.71.0
-# Новая конфигурация аудио - используем системные дефолты
+# Авто-всё конфигурация аудио - автоматическое определение параметров устройства
 default_audio:
-  input_sample_rate: 16000
-  output_sample_rate: 48000
-  input_channels: 1
-  output_channels: 1
-  dtype: "int16"
-  chunk_size: 1024
+  # Только целевые параметры для STT (что ожидает движок распознавания)
+  target_sample_rate: 16000   # стандарт для ASR
+  target_channels: 1          # mono
+  target_dtype: "int16"       # формат для ASR
   
-  health_check_interval: 1.0
-  health_check_duration: 0.3
-  rms_threshold: 1e-4
-  silent_threshold: 1e-6
+  # Автоматические параметры (не настраиваются пользователем)
+  auto_detect_device: true
+  auto_detect_sample_rate: true
+  auto_detect_channels: true
+  auto_detect_dtype: true
   
-  auto_reopen_on_error: true
+  # Настройки автовосстановления и устойчивости
+  silent_window_seconds: 0.3        # окно оценки тишины
+  silent_windows_threshold: 2        # подряд окон тишины до перезапуска
+  reopen_debounce_ms: 600            # пауза перед reopen (CoreAudio/BT стабилизация)
+  device_quarantine_sec: 20          # если девайс флапает — «отлежаться»
+  health_check_interval_sec: 1.0     # период "здоровья"/RMS
+  
+  # Буферизация и производительность
+  read_chunk_sec: 0.2               # размер чанка для чтения
+  chunk_size: 1024                  # размер блока для sounddevice
   max_retry_attempts: 3
   retry_delay: 0.5
   error_cooldown: 2.0
   
+  # Логирование и отладка
   enable_debug_logging: false
   log_health_checks: true
   log_stream_events: true
-  format: int16
-  preflush_on_switch: false
-  retries: 2
-  sample_rate: 48000
-  switch_delay: 0.5
-  timeout: 5.0
-  volume_control: true
-  volume_fade_duration: 0.3
-  volume_fade_steps: 10
-  volume_max: 1.0
-  volume_min: 0.0
-  volume_step: 0.1
-  volume_threshold: 0.01
-  warmup_delay: 0.1
+  log_device_changes: true          # логировать смену устройств
+  
+  # Обратная совместимость (будут удалены в будущих версиях)
+  input_sample_rate: 16000          # DEPRECATED: используйте target_sample_rate
+  output_sample_rate: 48000         # DEPRECATED: определяется автоматически
+  input_channels: 1                 # DEPRECATED: используйте target_channels
+  output_channels: 1                # DEPRECATED: определяется автоматически
+  dtype: "int16"                    # DEPRECATED: используйте target_dtype
 grpc:
   connection_timeout: 30
   enable_compression: true
@@ -104,9 +107,6 @@ grpc:
       retry_delay: 1.0
       description: Резервный сервер
 integrations:
-  audio_device:
-    enabled: true
-    priority: 1
   autostart_manager:
     enabled: true
     priority: 12
@@ -124,11 +124,11 @@ integrations:
     priority: 2
   keyboard:
     key_to_monitor: space
-    short_press_threshold: 0.6
-    long_press_threshold: 2.0
+    short_press_threshold: 0.1
+    long_press_threshold: 0.6
     event_cooldown: 0.1
-    hold_check_interval: 0.03
-    debounce_time: 0.02
+    hold_check_interval: 0.05
+    debounce_time: 0.1
     backend: auto
   input_processing:
     enabled: true
@@ -244,7 +244,7 @@ screenshot_capture:
   save_path: screenshots
   timeout: 5.0
 speech_playback:
-  audio_device: auto
+  # audio_device: auto  # Удалено - используем системные дефолты
   enabled: true
   fade_in_duration: 0.1
   fade_out_duration: 0.1
@@ -308,7 +308,7 @@ voice_recognition:
 
 # Настройки STT (Speech-to-Text)
 stt:
-  sample_rate: 24000  # Оптимальная частота для AirPods
+  # sample_rate: 24000  # Удалено - используем системные дефолты
   channels: 1
   chunk_size: 1024
   dtype: 'int16'

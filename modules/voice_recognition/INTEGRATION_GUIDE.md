@@ -118,28 +118,9 @@ recognizer.start_listening()
 # Нет проверки состояния и остановки
 ```
 
-### 2. Интеграция с audio_device_manager
+### 2. Работа с аудиоустройствами
 
-#### ✅ Правильная интеграция:
-```python
-from voice_recognition import SpeechRecognizer, find_best_microphone
-from audio_device_manager import AudioDeviceManager
-
-class VoiceRecognitionManager:
-    def __init__(self):
-        self.recognizer = SpeechRecognizer(RecognitionConfig())
-        self.audio_manager = AudioDeviceManager()
-        
-    async def setup_audio_devices(self):
-        """Настройка аудио устройств"""
-        # Поиск лучшего микрофона
-        best_mic = find_best_microphone()
-        if best_mic:
-            await self.audio_manager.switch_to_device(best_mic)
-            
-        # Настройка распознавателя
-        self.recognizer.set_audio_device(best_mic)
-```
+macOS самостоятельно управляет активным микрофоном и динамиками, поэтому дополнительная интеграция с менеджером устройств не требуется. Используйте `SpeechRecognizer` напрямую — он автоматически подключится к системному устройству по умолчанию.
 
 ### 3. Интеграция с interrupt_management
 
@@ -208,15 +189,11 @@ config = RecognitionConfig(
 
 #### Проблема: "No microphone found"
 ```python
-# Решение: Проверка доступности микрофона
-from voice_recognition import list_audio_devices
-
-devices = list_audio_devices()
-if not devices:
-    raise RuntimeError("Микрофон не найден")
-
-# Использование первого доступного микрофона
-recognizer.set_audio_device(devices[0])
+# Решение: Проверьте системные настройки macOS
+# 1. Откройте System Settings → Sound → Input.
+# 2. Убедитесь, что нужный микрофон подключён и выбран по умолчанию.
+# 3. Включите доступ приложению в Privacy & Security → Microphone.
+# SpeechRecognizer автоматически использует выбранное системой устройство.
 ```
 
 #### Проблема: "Permission denied for microphone"

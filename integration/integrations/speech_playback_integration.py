@@ -103,12 +103,6 @@ class SpeechPlaybackIntegration:
             # УБРАНО: keyboard.short_press - прерывания только при переходе в LISTENING
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
             await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
-            # Реагируем на смену выходного устройства
-            try:
-                await self.event_bus.subscribe("audio.device_switched", self._on_audio_device_switched, EventPriority.MEDIUM)
-            except Exception:
-                pass
-
             # Сохраняем текущий event loop для последующих thread-safe публикаций
             try:
                 self._loop = asyncio.get_running_loop()
@@ -303,29 +297,6 @@ class SpeechPlaybackIntegration:
 
         except Exception as e:
             await self._handle_error(e, where="speech.on_audio_chunk", severity="warning")
-
-    async def _on_audio_device_switched(self, event):
-        """Мягкое перестроение числа каналов при смене устройства вывода"""
-        try:
-            if not self._player:
-                return
-            # Опрашиваем лучшее устройство и его каналы
-            try:
-                from modules.speech_playback.utils.device_utils import get_best_audio_device
-                dev = get_best_audio_device()
-                if not dev:
-                    return
-                target_ch = 1 if getattr(dev, 'channels', 1) <= 1 else 2
-            except Exception:
-                return
-            # Переинициализируем вывод, если число каналов изменилось
-            try:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, self._player.reconfigure_channels, target_ch)
-            except Exception:
-                pass
-        except Exception as e:
-            await self._handle_error(e, where="speech.on_device_switched", severity="warning")
 
     async def _on_grpc_completed(self, event):
         try:

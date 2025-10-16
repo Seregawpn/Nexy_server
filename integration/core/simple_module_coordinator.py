@@ -26,7 +26,7 @@ from integration.integrations.voice_recognition_integration import VoiceRecognit
 from integration.integrations.updater_integration import UpdaterIntegration
 from integration.integrations.network_manager_integration import NetworkManagerIntegration
 from modules.network_manager.core.config import NetworkManagerConfig
-from integration.integrations.default_audio_integration import DefaultAudioIntegration, DefaultAudioIntegrationConfig
+# DefaultAudioIntegration удален - используем audio_default напрямую
 from integration.integrations.interrupt_management_integration import InterruptManagementIntegration, InterruptManagementIntegrationConfig
 from modules.input_processing.keyboard.types import KeyboardConfig
 from integration.integrations.screenshot_capture_integration import ScreenshotCaptureIntegration
@@ -119,6 +119,11 @@ class SimpleModuleCoordinator:
             await self._setup_coordination()
             print("✅ Координация настроена")
             
+            # 5. Настраиваем связи для авто-всё
+            print("🔧 Настройка авто-всё связей...")
+            await self._setup_auto_audio_connections()
+            print("✅ Авто-всё связи настроены")
+            
             self.is_initialized = True
             
             print("\n" + "="*60)
@@ -171,35 +176,14 @@ class SimpleModuleCoordinator:
                 config=tray_config
             )
             
-            # InputProcessing Integration - загружаем из конфигурации
-            config_data = self.config._load_config()
-            integrations_cfg = (config_data.get('integrations') or {})
-            kbd_cfg = integrations_cfg.get('keyboard')
-            input_cfg = integrations_cfg.get('input_processing') or {}
-
-            if kbd_cfg:
-                keyboard_config = KeyboardConfig(
-                    key_to_monitor=kbd_cfg.get('key_to_monitor', 'space'),
-                    short_press_threshold=kbd_cfg.get('short_press_threshold', 0.1),
-                    long_press_threshold=kbd_cfg.get('long_press_threshold', 0.3),
-                    event_cooldown=kbd_cfg.get('event_cooldown', 0.15),
-                    hold_check_interval=kbd_cfg.get('hold_check_interval', 0.03),
-                    debounce_time=kbd_cfg.get('debounce_time', 0.02)
-                )
-                input_config = InputProcessingConfig(
-                    keyboard_config=keyboard_config,
-                    enable_keyboard_monitoring=input_cfg.get('enable_keyboard_monitoring', True),
-                    auto_start=input_cfg.get('auto_start', True),
-                    keyboard_backend=kbd_cfg.get('backend', 'auto')
-                )
-                self.integrations['input'] = InputProcessingIntegration(
-                    event_bus=self.event_bus,
-                    state_manager=self.state_manager,
-                    error_handler=self.error_handler,
-                    config=input_config,
-                )
-            else:
-                logger.warning("Keyboard integration config not found; skipping input integration")
+            # InputProcessing Integration - используем централизованную конфигурацию
+            input_config = self.config.get_input_processing_config()
+            self.integrations['input'] = InputProcessingIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler,
+                config=input_config
+            )
             
             # Updater Integration - новая система обновлений
             updater_cfg = config_data.get('updater', {})
@@ -221,21 +205,8 @@ class SimpleModuleCoordinator:
                 config=network_config
             )
             
-            # Default Audio Integration - используем системные дефолты
-            audio_integration_config = DefaultAudioIntegrationConfig(
-                enabled=True,
-                auto_start=False,  # НЕ запускаем автоматически - только при LISTENING
-                publish_health_events=True,
-                publish_stream_events=True,
-                publish_metrics_events=True
-            )
-            
-            self.integrations['audio'] = DefaultAudioIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
-                config=audio_integration_config
-            )
+            # Default Audio Integration удален - используем audio_default напрямую
+            # AudioDefault будет интегрирован через VoiceRecognitionIntegration
             
             # Interrupt Management Integration - загружаем из конфигурации
             int_cfg_all = (config_data.get('integrations') or {})
@@ -389,6 +360,20 @@ class SimpleModuleCoordinator:
             print(f"❌ Ошибка создания интеграций: {e}")
             raise
     
+    async def _setup_auto_audio_connections(self):
+        """Настройка связей для авто-всё - теперь через audio_default"""
+        try:
+            # AudioDefault интегрируется напрямую через VoiceRecognitionIntegration
+            voice_recognition_integration = self.integrations.get('voice_recognition')
+            
+            if voice_recognition_integration:
+                print("🔧 [AUTO] VoiceRecognitionIntegration будет использовать audio_default")
+            else:
+                print("⚠️ [AUTO] VoiceRecognitionIntegration не найден")
+                
+        except Exception as e:
+            print(f"❌ [AUTO] Ошибка настройки авто-всё связей: {e}")
+    
     async def _initialize_integrations(self):
         """Инициализация всех интеграций"""
         try:
@@ -423,10 +408,8 @@ class SimpleModuleCoordinator:
             # Подписываемся на события пользовательского завершения
             await self.event_bus.subscribe("tray.quit_clicked", self._on_user_quit, EventPriority.HIGH)
 
-            # Подписываемся на события клавиатуры
-            await self.event_bus.subscribe("keyboard.long_press", self._on_keyboard_event, EventPriority.HIGH)
-            await self.event_bus.subscribe("keyboard.release", self._on_keyboard_event, EventPriority.HIGH)
-            await self.event_bus.subscribe("keyboard.short_press", self._on_keyboard_event, EventPriority.HIGH)
+            # НЕ подписываемся на keyboard.* события - они обрабатываются напрямую
+            # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus)
 
             # Подписываемся на события скриншота для логирования
             try:
@@ -435,13 +418,6 @@ class SimpleModuleCoordinator:
             except Exception:
                 pass
 
-            # Подписываемся на события аудио для явного логирования
-            try:
-                await self.event_bus.subscribe("audio.device_switched", self._on_audio_device_switched, EventPriority.MEDIUM)
-                await self.event_bus.subscribe("audio.device_snapshot", self._on_audio_device_snapshot, EventPriority.MEDIUM)
-            except Exception:
-                pass
-            
             print("✅ Координация настроена")
             
         except Exception as e:
@@ -696,18 +672,8 @@ class SimpleModuleCoordinator:
         except Exception as e:
             print(f"❌ Ошибка обработки смены режима: {e}")
     
-    async def _on_keyboard_event(self, event):
-        """Обработка событий клавиатуры"""
-        try:
-            from integration.core.event_utils import event_type as _etype
-            event_type = _etype(event, "unknown")
-            print(f"⌨️ Координация события клавиатуры: {event_type}")
-            
-            # Делегируем обработку интеграциям
-            # Координатор только координирует, не обрабатывает!
-            
-        except Exception as e:
-            print(f"❌ Ошибка обработки события клавиатуры: {e}")
+    # Метод _on_keyboard_event удален - события клавиатуры обрабатываются напрямую
+    # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus)
             
     async def _on_screenshot_captured(self, event):
         """Логирование результата захвата скриншота"""
@@ -734,28 +700,6 @@ class SimpleModuleCoordinator:
         except Exception as e:
             logger.debug(f"Failed to log screenshot.error: {e}")
 
-    async def _on_audio_device_switched(self, event):
-        """Логирование переключений аудио устройства."""
-        try:
-            data = (event or {}).get("data", {})
-            from_device = data.get("from_device")
-            to_device = data.get("to_device")
-            device_type = data.get("device_type")
-            print(f"🔊 Audio switched: {from_device} → {to_device} [{device_type}]")
-            logger.info(f"Audio switched: {from_device} -> {to_device} type={device_type}")
-        except Exception as e:
-            logger.debug(f"Failed to log audio.device_switched: {e}")
-
-    async def _on_audio_device_snapshot(self, event):
-        """Логирование текущего устройства при запуске."""
-        try:
-            data = (event or {}).get("data", {})
-            current = data.get("current_device")
-            device_type = data.get("device_type")
-            print(f"🔊 Audio device: {current} [{device_type}] (snapshot)")
-            logger.info(f"Audio device snapshot: {current} type={device_type}")
-        except Exception as e:
-            logger.debug(f"Failed to log audio.device_snapshot: {e}")
 
     def get_status(self) -> Dict[str, Any]:
         """Получить статус всех компонентов"""

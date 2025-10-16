@@ -14,7 +14,6 @@ from .grpc_client_integration import GrpcClientIntegration, GrpcClientIntegratio
 from .speech_playback_integration import SpeechPlaybackIntegration
 from .network_manager_integration import NetworkManagerIntegration
 from .updater_integration import UpdaterIntegration
-from .default_audio_integration import DefaultAudioIntegration, DefaultAudioIntegrationConfig
 from .interrupt_management_integration import InterruptManagementIntegration
 from .screenshot_capture_integration import ScreenshotCaptureIntegration
 from .mode_management_integration import ModeManagementIntegration
@@ -33,8 +32,6 @@ __all__ = [
     'SpeechPlaybackIntegration',
     'NetworkManagerIntegration',
     'UpdaterIntegration',
-    'DefaultAudioIntegration',
-    'DefaultAudioIntegrationConfig',
     'InterruptManagementIntegration',
     'ScreenshotCaptureIntegration',
     'ModeManagementIntegration',

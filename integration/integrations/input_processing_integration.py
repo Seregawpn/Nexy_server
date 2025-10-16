@@ -16,16 +16,11 @@ from modules.input_processing.keyboard.types import KeyEvent, KeyEventType, Keyb
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
+from config.unified_config_loader import InputProcessingConfig
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class InputProcessingConfig:
-    """Конфигурация интеграции input_processing (клавиатура)"""
-    keyboard_config: KeyboardConfig
-    enable_keyboard_monitoring: bool = True
-    auto_start: bool = True
-    keyboard_backend: str = "auto"  # auto|quartz|pynput
+# InputProcessingConfig теперь импортируется из unified_config_loader
 
 class InputProcessingIntegration:
     """Интеграция модуля input_processing"""
@@ -53,6 +48,10 @@ class InputProcessingIntegration:
         # Текущее состояние gRPC-потока
         self._session_waiting_grpc: bool = False
         self._active_grpc_session_id: Optional[float] = None
+        # Подготовленная, но ещё не подтверждённая (LONG_PRESS) сессия
+        self._pending_session_id: Optional[float] = None
+        # Последний валидный session_id для отмены текущего gRPC/плеера
+        self._cancel_session_id: Optional[float] = None
         
     async def initialize(self) -> bool:
         """Инициализация input_processing (клавиатура)"""
@@ -94,23 +93,39 @@ class InputProcessingIntegration:
             if is_macos and backend in ("auto", "quartz"):
                 try:
                     from modules.input_processing.keyboard.mac.quartz_monitor import QuartzKeyboardMonitor
-                    self.keyboard_monitor = QuartzKeyboardMonitor(self.config.keyboard_config)
-                    use_quartz = True
-                    self._using_quartz = True
-                    logger.info("✅ Используется QuartzKeyboardMonitor (macOS)")
+                    self.keyboard_monitor = QuartzKeyboardMonitor(self.config.keyboard)
+                    # Тестируем, работает ли Quartz
+                    if self.keyboard_monitor.start_monitoring():
+                        use_quartz = True
+                        self._using_quartz = True
+                        logger.info("✅ Используется QuartzKeyboardMonitor (macOS)")
+                    else:
+                        logger.warning("⚠️ QuartzKeyboardMonitor не запустился (нет прав). Фоллбек на pynput")
+                        self.keyboard_monitor.stop_monitoring()
+                        self.keyboard_monitor = None
                 except Exception as e:
                     logger.warning(f"⚠️ Не удалось инициализировать QuartzKeyboardMonitor: {e}. Фоллбек на pynput")
 
             if not use_quartz:
-                self.keyboard_monitor = KeyboardMonitor(self.config.keyboard_config)
+                self.keyboard_monitor = KeyboardMonitor(self.config.keyboard)
             
             # Регистрация обработчиков: для Quartz можно регистрировать async-методы напрямую,
             # для pynput используем sync wrapper'ы
             if self._using_quartz:
+                logger.info("🔑 Регистрируем Quartz callback'и:")
+                print("🔑 Регистрируем Quartz callback'и:")  # Для отладки
                 self.keyboard_monitor.register_callback(KeyEventType.PRESS, self._handle_press)
+                logger.info("🔑 ✅ PRESS callback зарегистрирован")
+                print("🔑 ✅ PRESS callback зарегистрирован")  # Для отладки
                 self.keyboard_monitor.register_callback(KeyEventType.SHORT_PRESS, self._handle_short_press)
+                logger.info("🔑 ✅ SHORT_PRESS callback зарегистрирован")
+                print("🔑 ✅ SHORT_PRESS callback зарегистрирован")  # Для отладки
                 self.keyboard_monitor.register_callback(KeyEventType.LONG_PRESS, self._handle_long_press)
+                logger.info("🔑 ✅ LONG_PRESS callback зарегистрирован")
+                print("🔑 ✅ LONG_PRESS callback зарегистрирован")  # Для отладки
                 self.keyboard_monitor.register_callback(KeyEventType.RELEASE, self._handle_key_release)
+                logger.info("🔑 ✅ RELEASE callback зарегистрирован")
+                print("🔑 ✅ RELEASE callback зарегистрирован")  # Для отладки
             else:
                 self.keyboard_monitor.register_callback(KeyEventType.PRESS, self._sync_handle_press)
                 self.keyboard_monitor.register_callback(KeyEventType.SHORT_PRESS, self._sync_handle_short_press)
@@ -133,24 +148,28 @@ class InputProcessingIntegration:
             logger.info(f"🔑 PRESS EVENT: {event.timestamp} - начинаем запись")
             logger.debug(f"PRESS: session(before)={self._current_session_id}, recognized={self._session_recognized}")
             print(f"🔑 PRESS EVENT: {event.timestamp} - начинаем запись")  # Для отладки
+            print(f"🔑 PRESS: session(before)={self._current_session_id}, recognized={self._session_recognized}")  # Для отладки
+            print(f"🔑 PRESS: event.key={event.key}, event.duration={getattr(event, 'duration', 'N/A')}")  # Для отладки
             
-            # НЕ ПРЕРЫВАЕМ НА PRESS - только готовим сессию
-            # Прерывание будет только при LONG_PRESS (через секунду)
+            # Запоминаем текущую сессию для возможной отмены (short_press)
+            previous_session = self._active_grpc_session_id or self._current_session_id
+            if previous_session is not None:
+                self._cancel_session_id = previous_session
+                logger.debug("PRESS: сохранён session_id для отмены: %s", previous_session)
 
-            # Создаем сессию и сбрасываем флаг распознавания
-            self._current_session_id = event.timestamp or time.monotonic()
+            # Подготавливаем потенциальный новый session_id, но не активируем его до LONG_PRESS
+            self._pending_session_id = event.timestamp or time.monotonic()
             self._session_recognized = False
             self._recording_started = False
-            self._session_waiting_grpc = False
-            self._active_grpc_session_id = None
-            logger.debug(f"PRESS: session(after)={self._current_session_id}, recognized reset to {self._session_recognized}")
+            logger.debug("PRESS: pending_session_id=%s", self._pending_session_id)
+
             # Публикуем событие press чтобы другие модули (например VoiceOver) могли отреагировать мгновенно
             await self.event_bus.publish(
                 "keyboard.press",
                 {
                     "type": "keyboard.press",
                     "data": {
-                        "timestamp": self._current_session_id,
+                        "timestamp": self._pending_session_id,
                         "key": event.key,
                         "source": "keyboard",
                     },
@@ -220,11 +239,33 @@ class InputProcessingIntegration:
     def _reset_session(self, reason: str):
         """Сбрасывает состояние текущей сессии после завершения gRPC-цепочки."""
         logger.debug(f"SESSION RESET ({reason})")
+        
+        # КРИТИЧНО: Принудительно останавливаем микрофон при сбросе сессии
+        if self._recording_started:
+            logger.warning(f"⚠️ Принудительная остановка микрофона при сбросе сессии: {reason}")
+            # Публикуем событие остановки микрофона (синхронно)
+            try:
+                # Используем asyncio.create_task только если мы не в async контексте
+                if asyncio.iscoroutinefunction(self.event_bus.publish):
+                    asyncio.create_task(self.event_bus.publish(
+                        "voice.recording_stop",
+                        {
+                            "source": "session_reset",
+                            "timestamp": time.time(),
+                            "reason": reason,
+                            "session_id": self._current_session_id,
+                        }
+                    ))
+            except Exception as e:
+                logger.error(f"❌ Ошибка принудительной остановки микрофона: {e}")
+        
         self._current_session_id = None
         self._active_grpc_session_id = None
         self._session_waiting_grpc = False
         self._session_recognized = False
         self._recording_started = False
+        self._pending_session_id = None
+        self._cancel_session_id = None
 
     async def _on_grpc_completed(self, event):
         """Сбрасывает сессию при штатном завершении gRPC."""
@@ -360,17 +401,8 @@ class InputProcessingIntegration:
             if current == AppMode.LISTENING:
                 self._last_short_ts = now
             
-            # Публикация события
-            logger.debug("SHORT_PRESS: публикуем keyboard.short_press")
-            await self.event_bus.publish(
-                "keyboard.short_press",
-                {
-                    "event": event,
-                    "timestamp": event.timestamp,
-                    "duration": event.duration
-                }
-            )
-            logger.debug("SHORT_PRESS: опубликовано")
+            # НЕ публикуем keyboard.short_press - это создает бесконечный цикл!
+            # Событие обрабатывается напрямую от QuartzKeyboardMonitor
 
             # В режиме Quartz SHORT_PRESS генерируется вместо RELEASE.
             # Если запись успели начать (после LONG_PRESS), останавливаем её.
@@ -395,8 +427,9 @@ class InputProcessingIntegration:
 
             # Отменяем активный gRPC поток, если он идёт
             logger.debug("SHORT_PRESS: запрашиваем отмену активного gRPC стрима")
+            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._current_session_id
             await self.event_bus.publish("grpc.request_cancel", {
-                "session_id": self._current_session_id
+                "session_id": cancel_sid
             })
 
             # МГНОВЕННО останавливаем воспроизведение через единый канал прерывания
@@ -428,10 +461,10 @@ class InputProcessingIntegration:
 
             # Прерывание записи (если была)
             self._recording_started = False
+            self._pending_session_id = None
 
-            if not self._session_waiting_grpc:
-                self._reset_session("short_press_idle")
-            else:
+            # Состояние сбросится по событию завершения gRPC/плеера
+            if self._session_waiting_grpc:
                 logger.debug("SHORT_PRESS: удерживаем session_id=%s до завершения gRPC", self._current_session_id)
             
         except Exception as e:
@@ -445,23 +478,39 @@ class InputProcessingIntegration:
     async def _handle_long_press(self, event: KeyEvent):
         """Обработка длинного нажатия пробела"""
         try:
-            logger.debug(f"🔑 LONG_PRESS: {event.duration:.3f}с")
+            logger.info(f"🔑 LONG_PRESS: {event.duration:.3f}с")
+            print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
+            print(f"🔑 LONG_PRESS: event.key={event.key}, event.timestamp={event.timestamp}")  # Для отладки
+            print(f"🔑 LONG_PRESS: _recording_started={self._recording_started}, _current_session_id={self._current_session_id}")  # Для отладки
             
-            # Публикация события
-            logger.debug("LONG_PRESS: публикуем keyboard.long_press")
-            await self.event_bus.publish(
-                "keyboard.long_press",
-                {
-                    "event": event,
-                    "timestamp": event.timestamp,
-                    "duration": event.duration
-                }
-            )
-            logger.debug("LONG_PRESS: опубликовано")
+            # НЕ публикуем keyboard.long_press - это создает бесконечный цикл!
+            # Событие уже пришло к нам через SimpleModuleCoordinator
+
+            # Перед стартом новой записи обязательно прерываем текущую озвучку/стрим
+            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._current_session_id
+            if cancel_sid is not None:
+                logger.debug("LONG_PRESS: запрашиваем отмену gRPC перед открытием микрофона (sid=%s)", cancel_sid)
+                await self.event_bus.publish("grpc.request_cancel", {"session_id": cancel_sid})
+
+            try:
+                current_mode = self.state_manager.get_current_mode()
+            except Exception:
+                current_mode = None
+            if current_mode == AppMode.PROCESSING:
+                logger.debug("LONG_PRESS: публикуем playback.cancelled перед запуском записи")
+                await self.event_bus.publish("playback.cancelled", {
+                    "session_id": cancel_sid,
+                    "reason": "keyboard",
+                    "source": "input_processing"
+                })
 
             # На LONG_PRESS стартуем запись и переходим в LISTENING (push-to-talk)
-            if self._current_session_id is None:
-                self._current_session_id = event.timestamp or time.monotonic()
+            new_session_id = self._pending_session_id or event.timestamp or time.monotonic()
+            # Полностью очищаем предыдущее состояние перед новой записью
+            self._reset_session("long_press_start")
+            self._current_session_id = new_session_id
+            self._pending_session_id = None
+            self._cancel_session_id = None
             if not self._recording_started:
                 await self.event_bus.publish(
                     "voice.recording_start",
@@ -495,18 +544,10 @@ class InputProcessingIntegration:
             logger.info(f"🔑 RELEASE EVENT: {event.duration:.3f}с")
             logger.debug(f"RELEASE: session={self._current_session_id}, recognized={self._session_recognized}")
             print(f"🔑 RELEASE EVENT: {event.duration:.3f}с")  # Для отладки
+            print(f"🔑 RELEASE: session={self._current_session_id}, recognized={self._session_recognized}")  # Для отладки
             
-            # Публикация события
-            logger.debug("RELEASE: публикуем keyboard.release")
-            await self.event_bus.publish(
-                "keyboard.release",
-                {
-                    "event": event,
-                    "timestamp": event.timestamp,
-                    "duration": event.duration
-                }
-            )
-            logger.debug("RELEASE: keyboard.release опубликовано")
+            # НЕ публикуем keyboard.release - это создает бесконечный цикл!
+            # Событие обрабатывается напрямую от QuartzKeyboardMonitor
             
             # Останавливаем запись, только если она была начата (после LONG_PRESS)
             if self._recording_started and self._current_session_id is not None:
@@ -542,8 +583,7 @@ class InputProcessingIntegration:
                 logger.debug("RELEASE: удерживаем session_id=%s до завершения gRPC", self._current_session_id)
             elif self._session_waiting_grpc:
                 logger.debug("RELEASE: session_id=%s уже ожидает завершения gRPC", self._current_session_id)
-            else:
-                self._reset_session("release_no_recording")
+            # НЕ вызываем _reset_session - состояние уже сброшено в _handle_press
         except Exception as e:
             await self.error_handler.handle_error(
                 severity=ErrorSeverity.MEDIUM,
@@ -637,6 +677,9 @@ class InputProcessingIntegration:
         except Exception as e:
             print(f"❌ Ошибка sync_handle_key_release: {e}")
     
+    # Метод _on_keyboard_event удален - события клавиатуры обрабатываются напрямую
+    # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus)
+
     def get_status(self) -> Dict[str, Any]:
         """Получение статуса интеграции"""
         return {

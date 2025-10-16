@@ -28,6 +28,7 @@ class KeyboardMonitor:
         self.key_pressed = False
         self.press_start_time = None
         self.last_event_time = 0
+        self._long_sent = False  # Флаг для предотвращения повторных LONG_PRESS
         
         # Threading
         self.monitor_thread = None
@@ -160,10 +161,12 @@ class KeyboardMonitor:
                     if self.key_pressed and self.press_start_time:
                         duration = time.time() - self.press_start_time
                         
-                        # Проверяем долгое нажатие
-                        if duration >= self.long_press_threshold:
+                        # Проверяем долгое нажатие (только один раз!)
+                        if not self._long_sent and duration >= self.long_press_threshold:
+                            logger.info(f"🔑 HOLD_MONITOR: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}")
+                            print(f"🔑 HOLD_MONITOR: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}")  # Для отладки
                             self._trigger_event(KeyEventType.LONG_PRESS, duration)
-                            self.press_start_time = None  # Сбрасываем, чтобы не повторять
+                            self._long_sent = True  # Предотвращаем повторные срабатывания
                             
                 time.sleep(self.hold_check_interval)
                 
@@ -191,6 +194,7 @@ class KeyboardMonitor:
                     
                 self.key_pressed = True
                 self.press_start_time = current_time
+                self._long_sent = False  # Сбрасываем флаг для нового нажатия
                 
             # Создаем событие нажатия
             event = KeyEvent(

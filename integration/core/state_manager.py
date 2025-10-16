@@ -117,8 +117,8 @@ class ApplicationStateManager:
                             # Не ждём завершения — исключаем блокировку UI-сигналов
                             asyncio.run_coroutine_threadsafe(_publish_changes(), loop)
                         else:
-                            logger.info("🔄 StateManager: публикуем через asyncio.run (fallback)")
-                            asyncio.run(_publish_changes())
+                            logger.info("🔄 StateManager: публикуем через asyncio.create_task (fallback)")
+                            asyncio.create_task(_publish_changes())
                         logger.info("✅ StateManager: события опубликованы успешно")
                     except Exception as e:
                         logger.error(f"❌ StateManager: Не удалось опубликовать события смены режима: {e}")

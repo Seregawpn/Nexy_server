@@ -33,7 +33,7 @@ pyinstaller packaging/Nexy.spec --noconfirm --clean
 - **PyObjC:** все macOS фреймворки (AppKit, Foundation, Quartz, CoreAudio, etc.)
 - **GUI:** `rumps`, `pynput` (keyboard/mouse)
 - **Audio:** `pydub`, `pyaudio`
-- **Все Nexy модули:** 18 подсистем (audio_device_manager, grpc_client, permissions, etc.)
+- **Все Nexy модули:** 17 подсистем (grpc_client, permissions, voice_recognition, и др.; управление аудиоустройствами выполняет macOS)
 
 #### Data Files
 ```python
@@ -162,7 +162,7 @@ find dist/Nexy.app -name "SwitchAudioSource"
 # Найдено 4 копии (аналогично ffmpeg)
 ```
 
-✅ **Корректно:** Достаточно для работы модуля `audio_device_manager`
+✅ **Корректно:** Утилита остаётся как резервный инструмент, хотя основная логика использует системные дефолты macOS
 
 ---
 

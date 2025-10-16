@@ -16,7 +16,12 @@ def _get_base_audio_config():
         # Fallback значения
         return {'sample_rate': 16000, 'channels': 1, 'chunk_size': 1024}
 
-_base_config = _get_base_audio_config()
+_raw_config = _get_base_audio_config() or {}
+_base_config = {
+    'sample_rate': _raw_config.get('sample_rate') or _raw_config.get('target_sample_rate') or 16000,
+    'channels': _raw_config.get('channels') or _raw_config.get('target_channels') or 1,
+    'chunk_size': _raw_config.get('chunk_size') or 1024,
+}
 
 # Конфигурация по умолчанию
 DEFAULT_RECOGNITION_CONFIG = RecognitionConfig(

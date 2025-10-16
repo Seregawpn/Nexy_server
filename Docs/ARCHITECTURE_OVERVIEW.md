@@ -64,7 +64,7 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  │  ├─ state_manager.py       # 🔄 Управление состоянием
 │  │  ├─ simple_module_coordinator.py # 🎯 Главный координатор
 │  │  └─ error_handler.py       # ❌ Обработка ошибок
-│  ├─ integrations/             # 🔗 19 интеграций (ВСЕ ЗАВЕРШЕНЫ)
+│  ├─ integrations/             # 🔗 18 интеграций (ВСЕ ЗАВЕРШЕНЫ)
 │  │  ├─ tray_controller_integration.py
 │  │  ├─ permissions_integration.py
 │  │  ├─ input_processing_integration.py
@@ -75,7 +75,6 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  │  ├─ speech_playback_integration.py
 │  │  ├─ mode_management_integration.py
 │  │  ├─ signal_integration.py
-│  │  ├─ audio_device_integration.py
 │  │  ├─ network_manager_integration.py
 │  │  ├─ updater_integration.py
 │  │  ├─ interrupt_management_integration.py
@@ -91,7 +90,6 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  │  └─ README.md              # 📚 Документация workflows
 │  └─ tests/                    # 🧪 Тесты интеграции
 ├─ modules/                     # 🧩 18 модулей (без знания EventBus)
-│  ├─ audio_device_manager/     # 🔊 Управление аудиоустройствами
 │  ├─ grpc_client/              # 📡 gRPC клиент
 │  ├─ hardware_id/              # 🆔 Идентификация устройства
 │  ├─ input_processing/         # ⌨️ Обработка ввода
@@ -399,7 +397,7 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 
 - Разрешения/Аудио/Сеть/Железо
   - `permissions.app_blocked|app_unblocked{...}`
-  - `audio.device_switched|audio.device_snapshot{...}`
+  - Аудио устройства управляются macOS — отдельные события `audio.device_*` больше не используются
   - `network.status_changed{...}`
   - `hardware.id_obtained{...}`
 
@@ -513,7 +511,7 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 
 ### 🖥️ **КЛИЕНТСКИЕ МОДУЛИ (client/modules)**
 
-- `audio_device_manager` — управление устройствами ввода/вывода, автопереключение, колбэки смены; не знает про EventBus.
+_macOS автоматически управляет активными аудиоустройствами, поэтому отдельный менеджер больше не требуется._
 - `grpc_client` — низкоуровневый gRPC клиент, отправка запросов на сервер, управление соединением/ретраями.
 - `hardware_id` — стабильный аппаратный идентификатор, кэш/TTL, фоновые обновления.
 - `input_processing` — клавиатурные события (Quartz/pynput), детекция LONG/SHORT/RELEASE, конфиг порогов.
@@ -586,11 +584,6 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
   - Подписки: `app.mode_changed`, `voice.recording_stop`, `permissions.*` статусы.
   - Публикует: `screenshot.captured` (jpeg/webp), `screenshot.error`.
 
-- `audio_device_integration.py`
-  - Назначение: автоуправление устройствами/микрофоном по режимам.
-  - Подписки: `app.startup`, `app.shutdown`, `app.state_changed`, `app.mode_changed`.
-  - Публикует: `audio.device_snapshot`, `audio.device_switched`, ошибки аудио.
-
 - `permissions_integration.py`
   - Назначение: проверка обязательных разрешений, блокировка приложения при отсутствии.
   - Подписки: `app.startup`, `app.shutdown`, `app.mode_changed`, внутренние запросы проверки.
@@ -608,7 +601,7 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 
 - `tray_controller_integration.py`
   - Назначение: отображение статуса/меню в трее.
-  - Подписки: `app.mode_changed`, `keyboard.*`, `voice.mic_opened|closed`, `audio.device_*`.
+  - Подписки: `app.mode_changed`, `keyboard.*`, `voice.mic_opened|closed`.
   - Публикует: `tray.status_updated`.
 
 - `updater_integration.py`

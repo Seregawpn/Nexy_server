@@ -33,7 +33,7 @@ from screenshot_capture import ScreenshotCapture, ScreenshotConfig, ScreenshotFo
 
 # Создание компонентов
 screenshot_capture = ScreenshotCapture()
-listening_mode = ListeningMode(speech_recognizer, audio_device_manager)
+listening_mode = ListeningMode(speech_recognizer)
 controller = ModeController()
 
 # Захват скриншота при активации режима прослушивания

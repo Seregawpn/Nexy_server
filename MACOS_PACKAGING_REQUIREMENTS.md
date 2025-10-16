@@ -91,7 +91,7 @@ otool -L resources/ffmpeg/ffmpeg
 - ✅ **Путь в bundle:** `Contents/Resources/resources/audio/SwitchAudioSource`
 - ✅ **Размер:** ~100-500 KB
 - ✅ **Права:** Исполняемый (`chmod +x`)
-- ✅ **Использование:** Модуль `audio_device_manager/macos/switchaudio_bridge.py`
+- ✅ **Использование:** Резервный инструмент для ручного переключения устройств (основной поток использует системные дефолты macOS)
 - ✅ **Code signing:** Обязательна для нотаризации
 
 **Проверка:**

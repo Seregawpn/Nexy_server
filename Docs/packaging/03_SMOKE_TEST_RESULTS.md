@@ -111,7 +111,7 @@ macOS системные импорты недоступны - триггеры 
 ✅ **Критичные фреймворки работают:**
 - AppKit (tray controller)
 - Quartz (keyboard monitor)
-- CoreAudio (audio device manager)
+- CoreAudio (аудио через системные дефолтные устройства)
 - Foundation (все модули)
 
 ### 3.3 Проверка FFmpeg
@@ -133,7 +133,7 @@ find dist/Nexy.app -name "SwitchAudioSource"
 # Contents/Frameworks/resources/audio/SwitchAudioSource
 ```
 
-✅ **Результат:** Бинарник в бандле, доступен для `audio_device_manager`
+✅ **Результат:** Бинарник в бандле, доступен при необходимости ручного переключения устройств
 
 ### 3.5 Проверка разрешений
 **Логи:**

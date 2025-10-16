@@ -97,7 +97,8 @@ class QuartzKeyboardMonitor:
                 logger.warning(f"⚠️ Неизвестный тип события: {event_type}")
                 return
         self.event_callbacks[event_type] = callback
-        logger.debug(f"QuartzMonitor: callback зарегистрирован для {event_type}")
+        logger.info(f"🔑 QuartzMonitor: callback зарегистрирован для {event_type.value}")
+        print(f"🔑 QuartzMonitor: callback зарегистрирован для {event_type.value}")  # Для отладки
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -130,8 +131,9 @@ class QuartzKeyboardMonitor:
 
                     now = time.time()
 
-                    # cooldown
-                    if now - self.last_event_time < self.event_cooldown:
+                    # cooldown работает только для повторных keyDown, keyUp обрабатываем всегда
+                    if event_type == kCGEventKeyDown and (now - self.last_event_time) < self.event_cooldown:
+                        logger.debug("🔒 Quartz: keyDown пропущен из-за cooldown")
                         return event
 
                     if event_type == kCGEventKeyDown:
@@ -139,10 +141,12 @@ class QuartzKeyboardMonitor:
                         with self.state_lock:
                             if self.key_pressed:
                                 # игнорируем авто-повтор
+                                logger.debug("🔒 Quartz: игнорируем авто-повтор keyDown")
                                 return event
                             self.key_pressed = True
                             self.press_start_time = now
-                            self._long_sent = False
+                            self._long_sent = False  # Сбрасываем флаг для нового нажатия
+                            self.last_event_time = now  # Обновляем время последнего события
 
                         # PRESS
                         ev = KeyEvent(
@@ -160,10 +164,13 @@ class QuartzKeyboardMonitor:
                             self.key_pressed = False
                             self.press_start_time = None
                             self.last_event_time = now
-                            # если уже отправили LONG_PRESS — трактуем как RELEASE
+                            # Если уже отправили LONG_PRESS — это RELEASE
+                            # Иначе (короткое нажатие) — это SHORT_PRESS
                             event_type_out = (
-                                KeyEventType.SHORT_PRESS if duration < self.short_press_threshold else KeyEventType.RELEASE
+                                KeyEventType.RELEASE if self._long_sent 
+                                else KeyEventType.SHORT_PRESS
                             )
+                            logger.info(f"🔑 Quartz keyUp: duration={duration:.3f}s, _long_sent={self._long_sent} → {event_type_out.value}")
 
                         ev = KeyEvent(
                             key=self.key_to_monitor,
@@ -252,6 +259,8 @@ class QuartzKeyboardMonitor:
                     if self.key_pressed and self.press_start_time:
                         duration = time.time() - self.press_start_time
                         if not self._long_sent and duration >= self.long_press_threshold:
+                            logger.info(f"🔑 HOLD_MONITOR: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}")
+                            print(f"🔑 HOLD_MONITOR: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}")  # Для отладки
                             ev = KeyEvent(
                                 key=self.key_to_monitor,
                                 event_type=KeyEventType.LONG_PRESS,
@@ -279,18 +288,24 @@ class QuartzKeyboardMonitor:
                 )
 
             threading.Thread(target=lambda: self._run_callback(callback, event), daemon=True).start()
-            logger.debug(f"QuartzMonitor: _trigger_event {event_type.value}, duration={duration:.3f}")
+            logger.info(f"🔑 QuartzMonitor: _trigger_event {event_type.value}, duration={duration:.3f}")
+            print(f"🔑 QuartzMonitor: _trigger_event {event_type.value}, duration={duration:.3f}")  # Для отладки
         except Exception as e:
             logger.error(f"❌ Ошибка запуска события: {e}")
 
     def _run_callback(self, callback: Callable, event: KeyEvent):
         try:
+            logger.info(f"🔑 _run_callback: {event.event_type.value}, callback={callback.__name__ if hasattr(callback, '__name__') else 'unknown'}")
+            print(f"🔑 _run_callback: {event.event_type.value}, callback={callback.__name__ if hasattr(callback, '__name__') else 'unknown'}")  # Для отладки
+            
             import inspect
             if inspect.iscoroutinefunction(callback):
                 # ИСПРАВЛЕНО: Всегда используем основной loop через run_coroutine_threadsafe
                 # Это гарантирует, что события попадут в правильный EventBus
                 if self._loop:
                     try:
+                        logger.info(f"🔑 Выполняем async callback в loop: {event.event_type.value}")
+                        print(f"🔑 Выполняем async callback в loop: {event.event_type.value}")  # Для отладки
                         future = asyncio.run_coroutine_threadsafe(callback(event), self._loop)
                         # Опционально: можно дождаться выполнения с таймаутом
                         # future.result(timeout=5.0)
@@ -301,6 +316,8 @@ class QuartzKeyboardMonitor:
                     logger.warning("⚠️ Loop не установлен, создаем временный (события могут не дойти до EventBus)")
                     asyncio.run(callback(event))
             else:
+                logger.info(f"🔑 Выполняем sync callback: {event.event_type.value}")
+                print(f"🔑 Выполняем sync callback: {event.event_type.value}")  # Для отладки
                 callback(event)
         except Exception as e:
             logger.error(f"❌ Ошибка выполнения callback: {e}")

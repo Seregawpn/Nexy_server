@@ -61,27 +61,29 @@ class InputConfig:
             # }
         }
 
-# Конфигурация по умолчанию
-DEFAULT_INPUT_CONFIG = InputConfig(
-    keyboard=KeyboardConfig(
-        key_to_monitor="space",
-        short_press_threshold=0.6,
-        long_press_threshold=2.0,
-        event_cooldown=0.1,
-        hold_check_interval=0.05,
-        debounce_time=0.1
+def get_default_input_config() -> InputConfig:
+    """Получает конфигурацию по умолчанию из UnifiedConfigLoader"""
+    from config.unified_config_loader import UnifiedConfigLoader
+    
+    config_loader = UnifiedConfigLoader()
+    input_config = config_loader.get_input_processing_config()
+    
+    return InputConfig(
+        keyboard=input_config.keyboard
+        # speech=SpeechConfig(  # Временно отключено
+        #     sample_rate=16000,
+        #     chunk_size=1024,
+        #     channels=1,
+        #     dtype='int16',
+        #     energy_threshold=100,
+        #     dynamic_energy_threshold=True,
+        #     pause_threshold=0.5,
+        #     phrase_threshold=0.3,
+        #     non_speaking_duration=0.3,
+        #     max_duration=30.0,
+        #     auto_start=True
+        # )
     )
-    # speech=SpeechConfig(  # Временно отключено
-    #     sample_rate=16000,
-    #     chunk_size=1024,
-    #     channels=1,
-    #     dtype='int16',
-    #     energy_threshold=100,
-    #     dynamic_energy_threshold=True,
-    #     pause_threshold=0.5,
-    #     phrase_threshold=0.3,
-    #     non_speaking_duration=0.3,
-    #     max_duration=30.0,
-    #     auto_start=True
-    # )
-)
+
+# Для обратной совместимости
+DEFAULT_INPUT_CONFIG = get_default_input_config()

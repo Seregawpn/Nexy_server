@@ -174,4 +174,4 @@ def get_audio_info(audio_data: np.ndarray, sample_rate: int) -> dict:
         return {}
 
 # УДАЛЕНО: list_audio_devices() и find_best_microphone() 
-# Используйте AudioDeviceManager.get_available_devices() и get_best_input_device() вместо этого
+# macOS самостоятельно управляет активными устройствами, используем системные дефолты

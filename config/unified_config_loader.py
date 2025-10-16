@@ -49,6 +49,25 @@ class LoggingConfig:
     format: str
     loggers: Dict[str, str]
 
+@dataclass
+class KeyboardConfig:
+    """Конфигурация клавиатуры - все значения загружаются из unified_config.yaml"""
+    key_to_monitor: str
+    short_press_threshold: float
+    long_press_threshold: float
+    event_cooldown: float
+    hold_check_interval: float
+    debounce_time: float
+    backend: str
+
+@dataclass
+class InputProcessingConfig:
+    """Конфигурация обработки ввода"""
+    keyboard: KeyboardConfig
+    enable_keyboard_monitoring: bool = True
+    auto_start: bool = True
+    keyboard_backend: str = "auto"
+
 class UnifiedConfigLoader:
     """Единый загрузчик конфигурации с автоматической синхронизацией"""
     
@@ -284,6 +303,39 @@ class UnifiedConfigLoader:
         }
         
         return legacy_config
+
+    def get_keyboard_config(self) -> KeyboardConfig:
+        """Получает конфигурацию клавиатуры из unified_config.yaml"""
+        kbd_cfg = self._load_config().get('integrations', {}).get('keyboard', {})
+        
+        # Проверяем, что все обязательные поля присутствуют
+        required_fields = ['key_to_monitor', 'short_press_threshold', 'long_press_threshold', 
+                          'event_cooldown', 'hold_check_interval', 'debounce_time', 'backend']
+        
+        for field in required_fields:
+            if field not in kbd_cfg:
+                raise ValueError(f"Отсутствует обязательное поле '{field}' в конфигурации клавиатуры")
+        
+        return KeyboardConfig(
+            key_to_monitor=kbd_cfg['key_to_monitor'],
+            short_press_threshold=kbd_cfg['short_press_threshold'],
+            long_press_threshold=kbd_cfg['long_press_threshold'],
+            event_cooldown=kbd_cfg['event_cooldown'],
+            hold_check_interval=kbd_cfg['hold_check_interval'],
+            debounce_time=kbd_cfg['debounce_time'],
+            backend=kbd_cfg['backend']
+        )
+
+    def get_input_processing_config(self) -> InputProcessingConfig:
+        """Получает конфигурацию обработки ввода"""
+        input_cfg = self._load_config().get('integrations', {}).get('input_processing', {})
+        kbd_cfg = self._load_config().get('integrations', {}).get('keyboard', {})
+        return InputProcessingConfig(
+            keyboard=self.get_keyboard_config(),
+            enable_keyboard_monitoring=input_cfg.get('enable_keyboard_monitoring', True),
+            auto_start=input_cfg.get('auto_start', True),
+            keyboard_backend=kbd_cfg.get('backend', 'auto')
+        )
 
 # Глобальный экземпляр загрузчика
 unified_config = UnifiedConfigLoader()

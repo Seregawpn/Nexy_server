@@ -12,9 +12,8 @@ logger = logging.getLogger(__name__)
 class ListeningMode:
     """Режим прослушивания - запись и распознавание речи"""
     
-    def __init__(self, speech_recognizer=None, audio_device_manager=None):
+    def __init__(self, speech_recognizer=None):
         self.speech_recognizer = speech_recognizer
-        self.audio_device_manager = audio_device_manager
         self.is_active = False
         self.listening_start_time = None
         self.recognized_text = None
@@ -27,14 +26,6 @@ class ListeningMode:
             self.listening_start_time = time.time()
             self.recognized_text = None
             
-            # Настраиваем аудио устройство
-            if self.audio_device_manager:
-                try:
-                    await self.audio_device_manager.switch_to_best_device()
-                    logger.info("🔊 Переключились на лучшее аудио устройство")
-                except Exception as e:
-                    logger.warning(f"⚠️ Не удалось переключить аудио устройство: {e}")
-                    
             # Начинаем прослушивание
             if self.speech_recognizer:
                 try:
@@ -139,6 +130,5 @@ class ListeningMode:
             "listening_duration": self.get_listening_duration(),
             "recognized_text": self.recognized_text,
             "speech_recognizer_available": self.speech_recognizer is not None,
-            "audio_device_manager_available": self.audio_device_manager is not None,
             "description": "Режим прослушивания и распознавания речи"
         }
