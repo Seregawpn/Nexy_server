@@ -110,8 +110,8 @@ if __name__ == "__main__":
     if "--diagnostics" in sys.argv or os.getenv("NEXY_DIAG") == "voice":
         from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration
 
-        VoiceRecognitionIntegration.run_dependency_check()
-        sys.exit(0)
+        ok = VoiceRecognitionIntegration.run_dependency_check()
+        sys.exit(0 if ok else 1)
 
     # Создаем новый event loop для главного потока
     loop = asyncio.new_event_loop()
