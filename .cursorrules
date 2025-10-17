@@ -19,14 +19,22 @@
 
 ## 3. Архитектурное устройство
 - **Core** (`client/integration/core/`): `EventBus`, `SimpleModuleCoordinator`, `ApplicationStateManager`, `ErrorHandler`.
-- **Модули** (`client/modules/`): ответственны за низкоуровневую логику (audio_device_manager, mode_management, grpc_client и т.д.).
-- **Интеграции** (`client/integration/integrations/`): тонкие обёртки над модулями, все почти завершены, включая `voiceover_ducking_integration.py`.
+- **Модули** (`client/modules/`): ответственны за низкоуровневую логику (17 модулей: autostart_manager, grpc_client, hardware_id, input_processing, instance_manager, interrupt_management, mode_management, network_manager, permissions, screenshot_capture, signals, speech_playback, tray_controller, updater, voice_recognition, voiceover_control, welcome_message).
+- **Интеграции** (`client/integration/integrations/`): тонкие обёртки над модулями, 17 из 18 завершены (отсутствует `permissions_integration.py`).
 - **Workflows** (`client/integration/workflows/`): `ListeningWorkflow`, `ProcessingWorkflow` управляют переходами между режимами.
 - **Режимы** (`AppMode`): SLEEPING → LISTENING → PROCESSING, переходы только через события `mode.request`.
 - **EventBus**: все коммуникации — события, приоритеты задаются через `EventPriority`.
 
 ## 4. Порядок модулей и инициализации
-`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → Tray → ModeManagement → InputProcessing → VoiceRecognition → Permissions → AudioDevice → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → SpeechPlayback → Updater → Signal → WelcomeMessage → VoiceOverDucking. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
+`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → Tray → ModeManagement → InputProcessing → VoiceRecognition → Permissions → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → SpeechPlayback → Updater → Signal → WelcomeMessage → VoiceOverDucking → AutostartManager. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
+
+**АКТУАЛЬНЫЙ СПИСОК МОДУЛЕЙ (17):**
+- autostart_manager, grpc_client, hardware_id, input_processing, instance_manager, interrupt_management, mode_management, network_manager, permissions, screenshot_capture, signals, speech_playback, tray_controller, updater, voice_recognition, voiceover_control, welcome_message
+
+**АКТУАЛЬНЫЙ СПИСОК ИНТЕГРАЦИЙ (17):**
+- autostart_manager_integration, grpc_client_integration, hardware_id_integration, input_processing_integration, instance_manager_integration, interrupt_management_integration, mode_management_integration, network_manager_integration, screenshot_capture_integration, signal_integration, speech_playback_integration, tray_controller_integration, updater_integration, voice_recognition_integration, voiceover_ducking_integration, welcome_message_integration
+
+**ОТСУТСТВУЕТ:** permissions_integration.py (модуль permissions есть, но интеграции нет)
 
 **Политика расширения:** прежде чем изменять структуру или добавлять новую интеграцию, проверь существующие модули и workflows; их допускается расширять конфигом или событиями. Новый модуль/интеграция создаём только если требуемого поведения нет и его нельзя разумно добавить через текущие компоненты. В этом случае документируй причину и зависимостей в `../Docs/CURRENT_STATUS_REPORT.md` и обнови `unified_config.yaml`.
 
@@ -91,4 +99,6 @@
 - Непрожатые события `session_id` делают сложным трекинг цепочек в логах.
 
 ## 13. Напоминание
-Клиентская часть должна оставаться совместимой с уже завершёнными интеграциями (см. список в корневом `.cursorrules`). При сомнениях синхронизируйся с владельцем сервера и UX прежде чем менять контракт или пользовательский поток.
+Клиентская часть должна оставаться совместимой с уже завершёнными интеграциями (17 из 18 завершены). При сомнениях синхронизируйся с владельцем сервера и UX прежде чем менять контракт или пользовательский поток.
+
+**КРИТИЧЕСКАЯ ПРОБЛЕМА:** Отсутствует `permissions_integration.py` - модуль `permissions` существует, но интеграции нет. Это может вызывать проблемы с проверкой разрешений в приложении.

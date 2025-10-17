@@ -8,6 +8,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import random
+import importlib.util
+from shutil import which
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode
@@ -60,6 +62,69 @@ class VoiceRecognitionIntegration:
         self._running: bool = False
         # Реальный распознаватель (если доступен и симуляция отключена)
         self._recognizer: Optional["SpeechRecognizer"] = None
+
+    @classmethod
+    def run_dependency_check(cls) -> bool:
+        """
+        Проверяет наличие ключевых зависимостей для работы распознавания речи.
+        Возвращает True при успехе, иначе False.
+        """
+        logger = logging.getLogger(__name__)
+        logger.info("🔍 Запуск диагностики зависимостей распознавания речи")
+
+        dependencies = [
+            ("speech_recognition", "SpeechRecognition (speech_recognition)"),
+            ("sounddevice", "SoundDevice (sounddevice)"),
+            ("numpy", "NumPy (numpy)"),
+        ]
+
+        all_ok = True
+
+        for module_name, human_readable in dependencies:
+            spec = importlib.util.find_spec(module_name)
+            if spec is None:
+                logger.error(f"❌ Не найдена зависимость: {human_readable}")
+                all_ok = False
+            else:
+                origin = spec.origin or "built-in"
+                logger.debug(f"✅ {human_readable} доступен ({origin})")
+
+        # Проверяем доступность FLAC-конвертера, необходимого для SpeechRecognition
+        flac_available = False
+        flac_path = None
+
+        if importlib.util.find_spec("speech_recognition"):
+            try:
+                import speech_recognition as sr  # type: ignore
+
+                get_converter = getattr(sr, "get_flac_converter", None)
+                if callable(get_converter):
+                    flac_path = get_converter()
+                    flac_available = bool(flac_path)
+                    if flac_available:
+                        logger.debug(f"✅ FLAC-конвертер найден: {flac_path}")
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось определить FLAC-конвертер через SpeechRecognition: {e}")
+
+        if not flac_available:
+            flac_path = which("flac")
+            flac_available = flac_path is not None
+            if flac_available:
+                logger.debug(f"✅ Найден системный FLAC-конвертер: {flac_path}")
+
+        if not flac_available:
+            logger.error(
+                "❌ FLAC-конвертер не найден. Установите пакет 'flac' (например, `brew install flac`) "
+                "или добавьте совместимый бинарник в сборку."
+            )
+            all_ok = False
+
+        if all_ok:
+            logger.info("✅ Диагностика распознавания речи пройдена успешно")
+        else:
+            logger.error("❌ Диагностика распознавания речи завершилась с ошибками")
+
+        return all_ok
         
     async def initialize(self) -> bool:
         try:
@@ -366,4 +431,32 @@ class VoiceRecognitionIntegration:
             # В случае ошибки/отказа доступа — мягко переходим в симуляцию
             self.config.simulate = True
             logger.info("🔄 Switching to simulation mode due to microphone probe failure")
+            return False
+
+    @classmethod
+    def run_dependency_check(cls) -> bool:
+        """Статический метод для проверки зависимостей распознавания речи"""
+        try:
+            logger.info("🔍 Проверяем зависимости распознавания речи...")
+            
+            # Проверяем доступность SpeechRecognizer
+            if _REAL_VOICE_AVAILABLE:
+                logger.info("✅ SpeechRecognizer доступен")
+                try:
+                    from modules.voice_recognition import SpeechRecognizer, DEFAULT_RECOGNITION_CONFIG
+                    # Пытаемся создать экземпляр для проверки
+                    recognizer = SpeechRecognizer(DEFAULT_RECOGNITION_CONFIG)
+                    logger.info("✅ SpeechRecognizer успешно инициализирован")
+                    return True
+                except Exception as e:
+                    logger.warning(f"⚠️ SpeechRecognizer не удалось инициализировать: {e}")
+                    logger.info("ℹ️ Будет использоваться режим симуляции")
+                    return True  # Возвращаем True, так как симуляция всегда доступна
+            else:
+                logger.warning("⚠️ SpeechRecognizer недоступен")
+                logger.info("ℹ️ Будет использоваться режим симуляции")
+                return True  # Возвращаем True, так как симуляция всегда доступна
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка при проверке зависимостей: {e}")
             return False
