@@ -315,7 +315,6 @@ class SpeechRecognizer:
                 dtype='float32',  # работаем во float для кросс-девайс совместимости
                 blocksize=self.config.chunk_size,
                 callback=self._audio_callback,
-                latency='low'  # Низкая латентность для лучшего захвата сигнала
             ):
                 # Ждем пока не остановят прослушивание
                 while self.is_listening and not self.stop_event.is_set():
@@ -382,7 +381,7 @@ class SpeechRecognizer:
             }
 
             logger.info(
-                "📈 Статистика аудио: chunks=%s, samples=%s, duration=%.2fs, peak=%.0f, rms=%.1f, rms_db=%.1f, actual_rate=%s, target_rate=%s, channels=%s",
+                "📈 Статистика аудио: chunks=%s, samples=%s, duration=%.2fs, peak=%.4f, rms=%.4f, rms_db=%.1f, actual_rate=%s, target_rate=%s, channels=%s",
                 len(self.audio_data),
                 sample_count,
                 duration_sec,

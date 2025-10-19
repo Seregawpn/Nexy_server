@@ -107,10 +107,33 @@ class QuartzKeyboardMonitor:
     def start_monitoring(self) -> bool:
         if not self.keyboard_available:
             logger.warning("⚠️ Клавиатурный Quartz-монитор недоступен")
+            print("⚠️ Клавиатурный Quartz-монитор недоступен")
             return False
         if self.is_monitoring:
             logger.warning("⚠️ Мониторинг уже запущен")
             return False
+
+        # КРИТИЧНО: Проверяем разрешения ПЕРЕД созданием event tap
+        logger.info("🔐 Проверяем разрешения для Quartz Event Tap...")
+        print("🔐 Проверяем разрешения для Quartz Event Tap...")
+
+        try:
+            from ApplicationServices import AXIsProcessTrusted
+            has_accessibility = AXIsProcessTrusted()
+            logger.info(f"🔐 Accessibility permission: {has_accessibility}")
+            print(f"🔐 Accessibility permission: {has_accessibility}")
+
+            if not has_accessibility:
+                logger.error("❌ Accessibility разрешения НЕ выданы!")
+                logger.error("❌ Перейдите в: System Settings > Privacy & Security > Accessibility")
+                logger.error("❌ Добавьте Nexy.app и включите переключатель")
+                print("❌ Accessibility разрешения НЕ выданы!")
+                print("❌ Перейдите в: System Settings > Privacy & Security > Accessibility")
+                print("❌ Добавьте Nexy.app и включите переключатель")
+                # Не блокируем создание event tap - позволяем CGEventTapCreate вернуть None
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось проверить Accessibility permissions: {e}")
+            print(f"⚠️ Не удалось проверить Accessibility permissions: {e}")
 
         try:
             # Создаем Event Tap
@@ -196,6 +219,17 @@ class QuartzKeyboardMonitor:
 
             if not self._tap:
                 logger.error("❌ Не удалось создать CGEventTap — проверьте Accessibility/Input Monitoring")
+                logger.error("❌ КРИТИЧНО: CGEventTap вернул None!")
+                logger.error("❌ Это означает, что приложению НЕ выданы разрешения:")
+                logger.error("❌   1. System Settings > Privacy & Security > Accessibility")
+                logger.error("❌   2. System Settings > Privacy & Security > Input Monitoring")
+                logger.error("❌ Добавьте 'Nexy' в оба списка и перезапустите приложение")
+                print("❌ Не удалось создать CGEventTap — проверьте Accessibility/Input Monitoring")
+                print("❌ КРИТИЧНО: CGEventTap вернул None!")
+                print("❌ Это означает, что приложению НЕ выданы разрешения:")
+                print("❌   1. System Settings > Privacy & Security > Accessibility")
+                print("❌   2. System Settings > Privacy & Security > Input Monitoring")
+                print("❌ Добавьте 'Nexy' в оба списка и перезапустите приложение")
                 self.keyboard_available = False
                 return False
 

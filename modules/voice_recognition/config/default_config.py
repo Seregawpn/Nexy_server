@@ -20,7 +20,9 @@ _raw_config = _get_base_audio_config() or {}
 _base_config = {
     'sample_rate': _raw_config.get('sample_rate') or _raw_config.get('target_sample_rate') or 16000,
     'channels': _raw_config.get('channels') or _raw_config.get('target_channels') or 1,
-    'chunk_size': _raw_config.get('chunk_size') or 1024,
+    # В упакованном приложении PyInstaller нагрузка выше, поэтому используем более крупный
+    # размер чанка по умолчанию, чтобы уменьшить риски audio overload.
+    'chunk_size': _raw_config.get('chunk_size') or 2048,
 }
 
 # Конфигурация по умолчанию
@@ -28,7 +30,7 @@ DEFAULT_RECOGNITION_CONFIG = RecognitionConfig(
     # Основные настройки
     language="en-US",  # Только английский
     sample_rate=_base_config['sample_rate'],  # Из централизованной конфигурации
-    chunk_size=_base_config['chunk_size'],    # Из централизованной конфигурации  
+    chunk_size=_base_config['chunk_size'],    # Из централизованной конфигурации
     channels=_base_config['channels'],        # Из централизованной конфигурации
     dtype='int16',  # STT всегда int16
     
@@ -56,7 +58,7 @@ DEFAULT_RECOGNITION_CONFIG = RecognitionConfig(
 HIGH_QUALITY_CONFIG = RecognitionConfig(
     language="en-US",  # Только английский
     sample_rate=_base_config['sample_rate'],  # Из централизованной конфигурации
-    chunk_size=2048,  # Специфично для высокого качества
+    chunk_size=max(2048, _base_config['chunk_size']),  # Специфично для высокого качества
     channels=_base_config['channels'],        # Из централизованной конфигурации
     dtype='int16',  # STT всегда int16
     
@@ -81,7 +83,7 @@ HIGH_QUALITY_CONFIG = RecognitionConfig(
 FAST_CONFIG = RecognitionConfig(
     language="en-US",  # Только английский
     sample_rate=_base_config['sample_rate'],  # Из централизованной конфигурации
-    chunk_size=512,   # Специфично для быстрого распознавания
+    chunk_size=max(1024, _base_config['chunk_size'] // 2),   # Быстрый пресет: меньше, но без экстремально малых блоков
     channels=_base_config['channels'],        # Из централизованной конфигурации
     dtype='int16',  # STT всегда int16
     

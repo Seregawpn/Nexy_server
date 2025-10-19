@@ -55,9 +55,9 @@ default_audio:
   
   # Логирование и отладка
   enable_debug_logging: false
-  log_health_checks: true
-  log_stream_events: true
-  log_device_changes: true          # логировать смену устройств
+  log_health_checks: false
+  log_stream_events: false
+  log_device_changes: false          # логировать смену устройств
   
   # Обратная совместимость (будут удалены в будущих версиях)
   input_sample_rate: 16000          # DEPRECATED: используйте target_sample_rate
