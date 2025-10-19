@@ -19,31 +19,42 @@
 
 ## 3. Архитектурное устройство
 - **Core** (`client/integration/core/`): `EventBus`, `SimpleModuleCoordinator`, `ApplicationStateManager`, `ErrorHandler`.
-- **Модули** (`client/modules/`): ответственны за низкоуровневую логику (17 модулей: autostart_manager, grpc_client, hardware_id, input_processing, instance_manager, interrupt_management, mode_management, network_manager, permissions, screenshot_capture, signals, speech_playback, tray_controller, updater, voice_recognition, voiceover_control, welcome_message).
-- **Интеграции** (`client/integration/integrations/`): тонкие обёртки над модулями, 17 из 18 завершены (отсутствует `permissions_integration.py`).
+- **Модули** (`client/modules/`): ответственны за низкоуровневую логику.
+  - См. полный список: `client/modules/`
+- **Интеграции** (`client/integration/integrations/`): тонкие обёртки над модулями.
+  - См. полный список: `client/integration/integrations/`
+  - **ПРИМЕЧАНИЕ:** Модуль `permissions` существует, но `permissions_integration.py` отсутствует.
 - **Workflows** (`client/integration/workflows/`): `ListeningWorkflow`, `ProcessingWorkflow` управляют переходами между режимами.
 - **Режимы** (`AppMode`): SLEEPING → LISTENING → PROCESSING, переходы только через события `mode.request`.
 - **EventBus**: все коммуникации — события, приоритеты задаются через `EventPriority`.
 
 ## 4. Порядок модулей и инициализации
-`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → Tray → ModeManagement → InputProcessing → VoiceRecognition → Permissions → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → SpeechPlayback → Updater → Signal → WelcomeMessage → VoiceOverDucking → AutostartManager. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
+`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → Tray → InputProcessing → Updater → NetworkManager → InterruptManagement → ScreenshotCapture → VoiceRecognition → ModeManagement → GrpcClient → SpeechPlayback → Signals → AutostartManager → WelcomeMessage → VoiceOverDucking. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
 
-**АКТУАЛЬНЫЙ СПИСОК МОДУЛЕЙ (17):**
-- autostart_manager, grpc_client, hardware_id, input_processing, instance_manager, interrupt_management, mode_management, network_manager, permissions, screenshot_capture, signals, speech_playback, tray_controller, updater, voice_recognition, voiceover_control, welcome_message
+**ПРИМЕЧАНИЕ:** Permissions модуль существует, но permissions_integration.py отсутствует. Аудио управление интегрировано через VoiceRecognitionIntegration.
 
-**АКТУАЛЬНЫЙ СПИСОК ИНТЕГРАЦИЙ (17):**
-- autostart_manager_integration, grpc_client_integration, hardware_id_integration, input_processing_integration, instance_manager_integration, interrupt_management_integration, mode_management_integration, network_manager_integration, screenshot_capture_integration, signal_integration, speech_playback_integration, tray_controller_integration, updater_integration, voice_recognition_integration, voiceover_ducking_integration, welcome_message_integration
-
-**ОТСУТСТВУЕТ:** permissions_integration.py (модуль permissions есть, но интеграции нет)
+**АКТУАЛЬНЫЕ СПИСКИ:**
+- Модули: см. `client/modules/`
+- Интеграции: см. `client/integration/integrations/`
+- Порядок инициализации: см. `SimpleModuleCoordinator._create_integrations()`
 
 **Политика расширения:** прежде чем изменять структуру или добавлять новую интеграцию, проверь существующие модули и workflows; их допускается расширять конфигом или событиями. Новый модуль/интеграция создаём только если требуемого поведения нет и его нельзя разумно добавить через текущие компоненты. В этом случае документируй причину и зависимостей в `../Docs/CURRENT_STATUS_REPORT.md` и обнови `unified_config.yaml`.
 
+**ЗАЩИТА МОДУЛЕЙ ОТ ИЗМЕНЕНИЙ:**
+- **Каждый модуль должен быть изолированным** и иметь четко определенные границы
+- **Изменения в модули возможны только в случае критической необходимости** и только через ADR (Architecture Decision Record)
+- **Интеграция с модулями ТОЛЬКО через отдельные интеграции** в `client/integration/integrations/`
+- **Прямые изменения в модули запрещены** без обоснования в ADR и согласования с владельцем модуля
+- **Новая функциональность добавляется через расширение интеграций** или создание новых интеграций
+- **Модули должны иметь стабильные интерфейсы** - breaking changes требуют создания новой версии модуля
+
 ## 5. Паттерн интеграции
 - Наследуй `BaseIntegration` и подключай существующий модуль.
+- **ОБЯЗАТЕЛЬНО создай контракт EventBus** (см. раздел 16) перед началом разработки.
 - Подписки и публикации только через `event_bus`.
 - Обработка ошибок — через `error_handler.handle_error` с указанием контекста.
 - Все инициирующие события включают `session_id` (строка uuid4).
-- Возвращаемые события именуй `<feature>.<action>`.
+- Возвращаемые события именуй `<feature>.<action>` согласно контракту.
 
 ## 6. Конфигурация
 - Единственный источник правды: `client/config/unified_config.yaml` (загрузка через `UnifiedConfigLoader`).
@@ -57,9 +68,12 @@
 - Сетевые ошибки должны транслироваться через события ошибок и обрабатываться дружелюбно (без падения режима).
 
 ## 8. Логирование и телеметрия
-- Формат: `YYYY-MM-DD HH:MM:SS - Nexy - LEVEL - Message` (см. `client/main.py`).
-- Логируй переходы режимов, сетевые события, ошибки устройств, автообновления.
-- Избегай логирования PII/секретов (микрофонные данные, токены, URL).
+- **Формат**: `YYYY-MM-DD HH:MM:SS - Nexy - LEVEL - [session_id] - Message` (см. `client/main.py`).
+- **Структурированные события**: `module.start|ok|fail` с session_id, duration_ms, контекстом.
+- **Ошибки**: через ErrorHandler с кодами (E_INPUT_INVALID, E_STATE_INVAR, E_DEP_TIMEOUT, E_DEP_UNAVAILABLE, E_RATE_LIMITED, E_UNKNOWN).
+- **Логируй**: переходы режимов, сетевые события, ошибки устройств, автообновления.
+- **Избегай**: PII/секретов (микрофонные данные, токены, URL).
+- **Для DIAG**: добавлять config_hash, build_id, git_sha в контекст.
 
 ## 9. Разрешения и системные интеграции
 - При работе с микрофоном, screen capture или Accessibility выполняй проверки через `permissions` модуль.
@@ -74,6 +88,7 @@
 ## 11. Чеклист изменений
 **Перед началом**
 - Просмотри существующие модули/интеграции, чтобы не дублировать функционал.
+- **Создай контракт EventBus** (см. раздел 16) для новой интеграции.
 - Проверь unified_config и активность нужных интеграций.
 - Определи какие события EventBus потребуются и как они влияют на режимы.
 
@@ -85,8 +100,9 @@
 - Не забывай о `session_id`, `source` в событиях и об обработке ошибок.
 
 **После**
-- Если добавлена новая интеграция/модуль — зафиксируй обоснование в `../Docs/CURRENT_STATUS_REPORT.md` и обнови список в корневом `.cursorrules`.
-- Добавь интеграцию в SimpleModuleCoordinator (если новая) и настрой приоритеты.
+- Если добавлена новая интеграция/модуль — зафиксируй обоснование в `../Docs/CURRENT_STATUS_REPORT.md`.
+- **Проверь контракт EventBus** согласно чек-листу (раздел 16.6).
+- Добавь интеграцию в `SimpleModuleCoordinator._create_integrations()` (если новая) и настрой приоритеты.
 - Обнови `unified_config.yaml`, документацию и при необходимости паковочные гайты.
 - Прогоняй ручные проверки и убедись, что логи чисты от ошибок.
 - Если менялись gRPC контракты — синхронизируй изменения с серверной командой.
@@ -99,6 +115,224 @@
 - Непрожатые события `session_id` делают сложным трекинг цепочек в логах.
 
 ## 13. Напоминание
-Клиентская часть должна оставаться совместимой с уже завершёнными интеграциями (17 из 18 завершены). При сомнениях синхронизируйся с владельцем сервера и UX прежде чем менять контракт или пользовательский поток.
+Клиентская часть должна оставаться совместимой с уже завершёнными интеграциями. При сомнениях синхронизируйся с владельцем сервера и UX прежде чем менять контракт или пользовательский поток.
 
-**КРИТИЧЕСКАЯ ПРОБЛЕМА:** Отсутствует `permissions_integration.py` - модуль `permissions` существует, но интеграции нет. Это может вызывать проблемы с проверкой разрешений в приложении.
+**ИЗВЕСТНАЯ ПРОБЛЕМА:** Отсутствует `permissions_integration.py` - модуль `permissions` существует, но интеграции нет. Проверка разрешений выполняется через другие механизмы (VoiceRecognitionIntegration, ScreenshotCaptureIntegration и т.д.).
+
+## 14. Принципы архитектуры "быстрой диагностики"
+
+### 14.1 Модули и границы (адаптировано под Nexy)
+- **Модуль = изолированная ответственность** + собственная "экосистема" в `client/modules/`
+- **Вход только через интеграции** (`client/integration/integrations/`), выход — через EventBus события
+- **Зависимости строго внутрь** (core → types), core не импортирует platform-specific код
+- **После принятия модуля в "рабочий" режим изменения — только через ADR + тест-план**
+- **Запрет на дублирование**: один capability — один владелец (указан в README модуля)
+
+**Definition of Done (модуль):** README, публичные интерфейсы в types.py, конфигурация, логирование событий, тесты (если есть), диагностические эндпоинты.
+
+### 14.2 Интеграции и контракты (адаптировано под EventBus)
+- **У каждой интеграции есть четкий контракт** через EventBus события + payload схемы
+- **Совместимость**: несовместимые изменения → новая мажорная версия события, совместимые — минор
+- **Интеграция только по "Инструкции модуля"**: входные события валидируются на границе
+
+### 14.3 Конфигурация и состояние (уже реализовано)
+- **Единый источник конфигурации** (`unified_config.yaml`) + схемы конфигурации
+- **Минимум shared state**; глобальные состояния — только в ApplicationStateManager
+- **Конфиг инициализируется один раз на старте** и логируется
+
+### 14.4 Наблюдаемость "по умолчанию" (адаптировано под текущее логирование)
+- **Структурированные логи** с session_id для трекинга цепочек
+- **Таксономия ошибок** через ErrorHandler с кодами и контекстом
+- **Метрики**: error-rate, latency по интеграциям, счетчики событий
+- **Диагностический режим**: расширенные логи, health checks через EventBus
+
+### 14.5 Качество кода и стандарты
+- **Код-стайл и линтеры** — обязательны
+- **Запрет копипаста интерфейсов** (single source of truth — types.py в модулях)
+- **Guards/asserts для инвариантов** домена; Result вместо исключений внутри домена
+
+### 14.6 Тест-стратегия (минимум для Nexy)
+- **Unit тесты** для core логики модулей (<10мс, без IO)
+- **Contract тесты** для интеграций (EventBus события + payload)
+- **Интеграционные тесты** — локальный стенд с реальными модулями
+- **Smoke тесты** — 5–10 happy-path сценариев перед релизом
+- **Ручные проверки** — push-to-talk, переходы режимов, Tray меню
+
+### 14.7 Поставка и изменения
+- **ADR (Architecture Decision Record)** для значимых изменений в модули
+- **Фича-флаги** через unified_config для постепенного rollout
+- **Миграции двунаправленные**; форматы событий — совместимые на время перехода
+- **Если SLO пробит — стоп релизы**, приоритет стабильности
+
+### 14.8 Безопасность и приватность (адаптировано под macOS)
+- **Секреты — из Keychain**; в логах маскировка PII
+- **Лейблы в событиях без чувствительных данных**
+- **Поведенческие лимиты**: rate-limits как часть контракта интеграций
+
+### 14.9 Производительность и бюджет
+- **Для ключевых usecase заданы latency-бюджеты** (p95) через EventBus
+- **"Тяжёлые" пути** — с профилировкой и отдельными метриками
+
+## 15. Мини-спецификации качества
+
+### 15.1 Требования к логированию (каждый модуль)
+- **Формат логов**: `YYYY-MM-DD HH:MM:SS - Nexy - LEVEL - [session_id] - Message`
+- **События**: `module.start|ok|fail` с session_id, duration_ms, ключевым контекстом
+- **Ошибки**: code, reason, module, retries, timeout_ms через ErrorHandler
+- **Лог-уровни**: warn — ожид. аномалии; error — потеря функции. info — бизнес-события
+- **Для DIAG**: добавлять config_hash, build_id, git_sha
+- **Примеры**:
+  - `2024-01-15 10:30:45 - Nexy - INFO - [abc123] - voice_recognition.start - duration_ms=150`
+  - `2024-01-15 10:30:46 - Nexy - ERROR - [abc123] - E_DEP_TIMEOUT - gRPC connection failed`
+
+### 15.2 Таксономия ошибок (адаптированная под Nexy)
+- **Коды ошибок**: E_INPUT_INVALID, E_STATE_INVAR, E_DEP_TIMEOUT, E_DEP_UNAVAILABLE, E_RATE_LIMITED, E_UNKNOWN
+- **Категории ErrorHandler**: INITIALIZATION, RUNTIME, CONFIGURATION, NETWORK, PERMISSION, UNKNOWN
+- **Политики живут в unified_config** (timeouts/retries), код их читает
+- **Маппинг**: коды ошибок → категории ErrorHandler → уровни логирования
+
+### 15.3 Инструкция модуля (README шаблон)
+- **Назначение, владельцы**
+- **Публичные интерфейсы** (types.py) + ссылки на EventBus события
+- **Инварианты и ошибки** (маппинг кодов)
+- **Метрики и ключевые логи**
+- **Диаг-эндпоинты и self-checks**
+- **Примеры сценариев** (fixtures + команда запуска)
+
+### 15.4 Чек-лист "принять модуль"
+- **Контракт EventBus создан** согласно разделу 16 (обязательно!)
+- **Контракты и схемы** лежат в types.py
+- **Валидаторы входа** включены на границе интеграции
+- **Логи/метрики/трейсинг** соответствуют стандарту
+- **Unit/Contract/Integration/Smoke** — зелёные
+- **Diag-режим и health-пробы** работают
+- **ADR на рисковые решения** добавлен
+
+## 16. Руководство по созданию контрактов интеграции
+
+### 16.1 Обязательность контрактов
+- **Каждая интеграция ДОЛЖНА иметь четкий контракт** через EventBus события
+- **Без контракта интеграция не принимается** в production
+- **Контракт документируется** в README модуля и в интеграции
+
+### 16.2 Структура контракта EventBus
+```python
+# Пример контракта для voice_recognition_integration
+CONTRACT = {
+    "module": "voice_recognition",
+    "version": "1.0",
+    "events": {
+        "input": {
+            "voice.recognition.start": {
+                "payload": {
+                    "session_id": "string (uuid4)",
+                    "language": "string (optional, default: en-US)",
+                    "timeout_sec": "float (optional, default: 10.0)"
+                },
+                "required": ["session_id"]
+            },
+            "voice.recognition.stop": {
+                "payload": {
+                    "session_id": "string (uuid4)"
+                },
+                "required": ["session_id"]
+            }
+        },
+        "output": {
+            "voice.recognition.result": {
+                "payload": {
+                    "session_id": "string (uuid4)",
+                    "text": "string",
+                    "confidence": "float (0.0-1.0)",
+                    "language": "string",
+                    "duration_ms": "int"
+                },
+                "required": ["session_id", "text"]
+            },
+            "voice.recognition.error": {
+                "payload": {
+                    "session_id": "string (uuid4)",
+                    "error_code": "string (E_INPUT_INVALID|E_DEP_TIMEOUT|E_UNKNOWN)",
+                    "error_message": "string",
+                    "retry_count": "int (optional)"
+                },
+                "required": ["session_id", "error_code", "error_message"]
+            }
+        }
+    }
+}
+```
+
+### 16.3 Правила именования событий
+- **Формат**: `<module>.<action>` (например: `voice.recognition.start`)
+- **Модуль**: название модуля в snake_case
+- **Действие**: глагол в present tense (start, stop, result, error, request, response)
+- **Версионирование**: мажорные изменения → новое событие `v2` (например: `voice.recognition.start.v2`)
+
+### 16.4 Схемы payload
+- **Обязательные поля**: `session_id` для всех событий
+- **Типы данных**: string, int, float, bool, dict, list
+- **Валидация**: на границе интеграции через pydantic или dataclasses
+- **Документация**: каждый payload документируется с примерами
+
+### 16.5 Версионирование контрактов
+- **Мажорные изменения** (breaking): новая версия события (`module.action.v2`)
+- **Минорные изменения** (совместимые): добавление optional полей
+- **Обратная совместимость**: старые события поддерживаются 2 версии
+- **Миграция**: через unified_config флаги
+
+### 16.6 Чек-лист контракта
+- ✅ **События документированы** с полными payload схемами
+- ✅ **Валидация payload** на границе интеграции
+- ✅ **Обработка ошибок** через ErrorHandler с кодами
+- ✅ **Тесты контракта** (unit + integration)
+- ✅ **Примеры использования** в README
+- ✅ **Версионирование** для breaking changes
+- ✅ **Обратная совместимость** соблюдена
+
+### 16.7 Примеры контрактов
+- **signals**: см. `modules/signals/INTEGRATION_GUIDE.md`
+- **voice_recognition**: события start/stop/result/error
+- **grpc_client**: события request/response/error с session_id
+- **mode_management**: события mode.request/mode.changed
+
+### 16.8 Инструменты для контрактов
+- **Валидация**: pydantic, dataclasses с type hints
+- **Тестирование**: contract tests с фикстурами
+- **Документация**: OpenAPI-подобные схемы в README
+- **Мониторинг**: метрики по событиям и ошибкам
+
+
+## 17. Базовые архитектурные принципы
+
+### 17.1 SOLID принципы
+- **Single Responsibility**: каждый модуль отвечает за одну задачу
+- **Open/Closed**: модули открыты для расширения, закрыты для модификации
+- **Liskov Substitution**: интеграции взаимозаменяемы через BaseIntegration
+- **Interface Segregation**: четкие интерфейсы в types.py
+- **Dependency Inversion**: зависимости через EventBus, не прямые импорты
+
+### 17.2 Dependency Injection
+- **Внедрение через конструктор**: EventBus, StateManager, ErrorHandler
+- **Инверсия зависимостей**: модули не знают о конкретных реализациях
+- **Конфигурация извне**: unified_config.yaml, не хардкод в модулях
+- **Тестируемость**: легко подменить зависимости в тестах
+
+### 17.3 Separation of Concerns
+- **Модули**: бизнес-логика и низкоуровневые операции
+- **Интеграции**: координация и адаптация к EventBus
+- **Core**: инфраструктура (EventBus, StateManager, ErrorHandler)
+- **Workflows**: управление состояниями приложения
+
+### 17.4 Design Patterns
+- **Factory**: создание модулей через SimpleModuleCoordinator
+- **Observer**: подписка на события через EventBus
+- **Strategy**: разные реализации через интеграции
+- **Adapter**: интеграции как адаптеры между модулями и EventBus
+- **Singleton**: ApplicationStateManager, ErrorHandler (один экземпляр)
+
+### 17.5 Принципы качества кода
+- **DRY (Don't Repeat Yourself)**: переиспользование через интеграции
+- **KISS (Keep It Simple)**: простые интерфейсы, сложность в модулях
+- **YAGNI (You Aren't Gonna Need It)**: только необходимая функциональность
+- **Composition over Inheritance**: предпочтение композиции наследованию

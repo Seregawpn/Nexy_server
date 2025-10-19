@@ -256,7 +256,7 @@ class ChunkBuffer:
                     )
                     return result
                 else:
-                    logger.debug(f"🎵 Нет данных, воспроизводим тишину: {frames} фреймов, ch={self._channels}")
+                    # Не логируем - спам в логах
                     return np.zeros((frames, self._channels), dtype=self._dtype)
     
     def mark_chunk_completed(self, chunk_info: ChunkInfo):

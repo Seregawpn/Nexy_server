@@ -15,6 +15,7 @@ from .types import (
     RecognitionConfig, RecognitionResult, RecognitionState, 
     RecognitionEventType, RecognitionMetrics
 )
+from .audio_device_monitor import AudioDeviceMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +54,32 @@ class SpeechRecognizer:
         self.prepared_device_id: Any = None
         self.last_audio_stats: Dict[str, Any] = {}
 
+        # Монитор устройств для стабилизации
+        self.device_monitor = AudioDeviceMonitor(check_interval=0.5)
+        self.device_monitor.set_device_change_callback(self._on_device_changed)
+        self.last_device_change_time = 0.0
+        self.stabilization_delay = 0.3  # 300мс задержка стабилизации
+
+        # Retry параметры для мягкого перезапуска потока
+        self.max_stream_start_retries = 3
+        self.retry_delay = 0.25  # 250мс между попытками
+        self.first_chunk_timeout = 0.5  # 500мс ожидание первого чанка
+
+        # Счётчик пустых чанков для диагностики CoreAudio overload
+        self.empty_chunk_counter = 0
+        self.empty_chunk_threshold = 10  # Предупреждение после 10 пустых подряд
+        self.first_chunk_received = False
+
         # Инициализируем распознаватель
         self._init_recognizer()
+    
+    def __del__(self):
+        """Деструктор для корректной остановки мониторинга"""
+        try:
+            if hasattr(self, 'device_monitor') and self.device_monitor.is_monitoring():
+                self.device_monitor.stop_monitoring()
+        except Exception:
+            pass  # Игнорируем ошибки в деструкторе
         
     def _init_recognizer(self):
         """Инициализирует распознаватель речи"""
@@ -85,15 +110,38 @@ class SpeechRecognizer:
         except Exception as e:
             logger.warning(f"⚠️ Ошибка инициализации распознавателя (продолжаем работу): {e}")
             # НЕ устанавливаем ERROR - позволяем работать в degraded режиме
+    
+    def _on_device_changed(self, old_device: Any, new_device: Any):
+        """Callback для смены аудио устройства"""
+        self.last_device_change_time = time.time()
+        logger.info(f"🔄 Обнаружена смена аудио устройства: {old_device} -> {new_device}")
+        
+        # Если мы сейчас слушаем, нужно будет перезапустить с задержкой
+        if self.state == RecognitionState.LISTENING:
+            logger.info("⏳ Устройство изменилось во время прослушивания - потребуется перезапуск")
             self.state = RecognitionState.IDLE
     
 
     async def start_listening(self) -> bool:
-        """Начинает прослушивание микрофона"""
+        """Начинает прослушивание микрофона с задержкой стабилизации"""
         try:
             if self.state != RecognitionState.IDLE:
                 logger.warning(f"⚠️ Невозможно начать прослушивание в состоянии {self.state.value}")
                 return False
+
+            # Проверяем, не было ли недавней смены устройства
+            current_time = time.time()
+            time_since_device_change = current_time - self.last_device_change_time
+            
+            if time_since_device_change < self.stabilization_delay:
+                remaining_delay = self.stabilization_delay - time_since_device_change
+                logger.info(f"⏳ Ждем стабилизации устройства: {remaining_delay:.3f}с")
+                await asyncio.sleep(remaining_delay)
+
+            # Запускаем мониторинг устройств если еще не запущен
+            if not self.device_monitor.is_monitoring():
+                self.device_monitor.start_monitoring()
+                logger.debug("🚀 Мониторинг устройств запущен")
 
             device_id = self._prepare_input_device()
             if device_id is None:
@@ -146,6 +194,11 @@ class SpeechRecognizer:
             self.state = RecognitionState.PROCESSING
             self.is_listening = False
             self.stop_event.set()
+            
+            # Останавливаем мониторинг устройств
+            if self.device_monitor.is_monitoring():
+                self.device_monitor.stop_monitoring()
+                logger.debug("🛑 Мониторинг устройств остановлен")
             
             # Уведомляем об остановке прослушивания
             await self._notify_event(RecognitionEventType.LISTENING_STOP)
@@ -299,24 +352,77 @@ class SpeechRecognizer:
             raise RuntimeError(f"Ошибка определения входного устройства: {e}")
 
     def _run_listening(self):
-        """Запускает прослушивание микрофона через sounddevice"""
+        """Запускает прослушивание микрофона через sounddevice с мягким retry"""
+        stream = None
+        stream_started = False
+
         try:
             logger.info("🎤 Прослушивание микрофона начато")
-
             self.listen_start_time = time.time()
-
             device_id = self.prepared_device_id or self._prepare_input_device()
 
-            # Открываем аудио поток с СИСТЕМНЫМ дефолтным устройством
-            with sd.InputStream(
-                device=device_id,
-                samplerate=self.actual_input_rate,
-                channels=self.actual_input_channels,
-                dtype='float32',  # работаем во float для кросс-девайс совместимости
-                blocksize=self.config.chunk_size,
-                callback=self._audio_callback,
-            ):
-                # Ждем пока не остановят прослушивание
+            # Мягкий retry: пытаемся стартовать поток с паузами между попытками
+            for attempt in range(self.max_stream_start_retries):
+                try:
+                    # Сбрасываем флаг первого чанка
+                    self.first_chunk_received = False
+
+                    # Создаём поток
+                    stream = sd.InputStream(
+                        device=device_id,
+                        samplerate=self.actual_input_rate,
+                        channels=self.actual_input_channels,
+                        dtype='float32',
+                        blocksize=self.config.chunk_size,
+                        callback=self._audio_callback,
+                    )
+
+                    # Стартуем поток
+                    stream.start()
+                    logger.debug(f"🔄 Попытка {attempt + 1}/{self.max_stream_start_retries}: поток стартовал")
+
+                    # Ждём первый чанк с таймаутом
+                    start_wait = time.time()
+                    while not self.first_chunk_received:
+                        if (time.time() - start_wait) > self.first_chunk_timeout:
+                            raise TimeoutError("Первый чанк не получен за 500ms")
+                        if not self.is_listening or self.stop_event.is_set():
+                            # Пользователь отменил - выходим
+                            return
+                        time.sleep(0.01)
+
+                    # Успех! Первый чанк получен
+                    logger.info("✅ Аудио поток стабилен, первый чанк получен")
+                    stream_started = True
+                    break
+
+                except (sd.PortAudioError, TimeoutError) as e:
+                    logger.warning(f"⚠️ Попытка {attempt + 1}/{self.max_stream_start_retries}: {e}")
+
+                    # Закрываем неудачный поток
+                    if stream:
+                        try:
+                            stream.stop()
+                            stream.close()
+                        except Exception:
+                            pass
+                        stream = None
+
+                    # Если ещё есть попытки - ждём и пробуем снова
+                    if attempt < self.max_stream_start_retries - 1:
+                        time.sleep(self.retry_delay)
+                        continue
+                    else:
+                        # Последняя попытка провалилась - уведомляем пользователя
+                        logger.error("❌ Не удалось стартовать аудио поток после всех попыток")
+                        self._notify_microphone_unstable()
+                        raise
+
+            if not stream_started:
+                raise RuntimeError("Не удалось запустить аудио поток")
+
+            # Поток работает - ждём завершения
+            with stream:
                 while self.is_listening and not self.stop_event.is_set():
                     time.sleep(0.1)
 
@@ -327,24 +433,58 @@ class SpeechRecognizer:
             logger.error(f"❌ Ошибка прослушивания микрофона: {e}")
             self.state = RecognitionState.ERROR
         finally:
+            # Закрываем поток если он всё ещё открыт
+            if stream:
+                try:
+                    stream.stop()
+                    stream.close()
+                except Exception:
+                    pass
             self.prepared_device_id = None
+
+    def _notify_microphone_unstable(self):
+        """Уведомляет пользователя о нестабильности микрофона"""
+        logger.warning("⚠️ Микрофон переключается, попробуйте через пару секунд")
+        # TODO: Добавить визуальное уведомление через EventBus
+        # self.event_bus.publish("notification.show", {
+        #     "title": "Микрофон нестабилен",
+        #     "message": "Устройство переключается, попробуйте через 2-3 секунды"
+        # })
             
     def _audio_callback(self, indata, frames, time, status):
-        """Callback для записи аудио"""
+        """Callback для записи аудио с диагностикой пустых чанков"""
         try:
             if status:
                 logger.warning(f"⚠️ Статус аудио: {status}")
-                
+
             if self.is_listening:
+                # Проверяем уровень сигнала (диагностика CoreAudio overload)
+                peak = float(np.max(np.abs(indata)))
+
+                if peak < 0.001:  # Пустой чанк
+                    self.empty_chunk_counter += 1
+                    if self.empty_chunk_counter == self.empty_chunk_threshold:
+                        logger.warning(
+                            f"⚠️ {self.empty_chunk_threshold} пустых чанков подряд - возможна перегрузка CoreAudio"
+                        )
+                else:
+                    # Сигнал есть - сбрасываем счётчик
+                    if self.empty_chunk_counter > 0:
+                        logger.debug(f"✅ Сигнал восстановлен после {self.empty_chunk_counter} пустых чанков")
+                    self.empty_chunk_counter = 0
+
                 with self.audio_lock:
                     self.audio_data.append(indata.copy())
                     if len(self.audio_data) == 1:
+                        # Устанавливаем флаг для retry логики
+                        self.first_chunk_received = True
                         logger.debug(
-                            "🔊 Первый чанк получен: frames=%s, dtype=%s",
+                            "🔊 Первый чанк получен: frames=%s, dtype=%s, peak=%.4f",
                             frames,
                             indata.dtype,
+                            peak,
                         )
-                    
+
         except Exception as e:
             logger.error(f"❌ Ошибка в audio callback: {e}")
             

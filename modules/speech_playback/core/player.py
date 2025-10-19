@@ -104,9 +104,10 @@ class SequentialSpeechPlayer:
         self._pause_event = threading.Event()
         self._pause_event.set()  # Начинаем с разблокированной паузы
         
-        # Аудио поток
+        # Аудио поток (lazy start для снижения нагрузки)
         self._audio_stream: Optional[sd.OutputStream] = None
         self._stream_lock = threading.RLock()
+        self._stream_started = False  # Флаг для lazy start
         
         # macOS компоненты
         self._core_audio_manager = CoreAudioManager()
@@ -214,9 +215,12 @@ class SequentialSpeechPlayer:
 
             # Добавляем в буфер
             chunk_id = self.chunk_buffer.add_chunk(audio_data, priority, metadata)
-            
+
+            # Lazy start: стартуем поток при появлении первого чанка
+            self._ensure_stream_started()
+
             logger.info(f"✅ Аудио данные добавлены: {chunk_id} (size: {len(audio_data)})")
-            
+
             return chunk_id
             
         except Exception as e:
@@ -332,13 +336,13 @@ class SequentialSpeechPlayer:
             return False
     
     def _start_audio_stream(self) -> bool:
-        """Запуск аудио потока"""
+        """Запуск аудио потока с lazy start (создаём без старта)"""
         try:
             with self._stream_lock:
                 if self._audio_stream is not None:
-                    logger.warning("⚠️ Аудио поток уже запущен")
+                    logger.warning("⚠️ Аудио поток уже создан")
                     return True
-                
+
                 # Конфигурация потока - device=None означает системный дефолт от macOS
                 stream_config = {
                     'device': None,  # macOS автоматически выбирает дефолтное устройство
@@ -349,27 +353,41 @@ class SequentialSpeechPlayer:
                     'callback': self._audio_callback
                 }
 
-                # Создаем поток
+                # Создаем поток БЕЗ старта (lazy start для снижения нагрузки)
                 self._audio_stream = sd.OutputStream(**stream_config)
-                self._audio_stream.start()
+                self._stream_started = False
 
-                logger.info(f"🎵 Аудио поток запущен (device: системный дефолт, channels: {self.config.channels})")
+                logger.info(f"🔧 Аудио поток создан (device: системный дефолт, channels: {self.config.channels})")
+                logger.debug("💡 Поток будет стартован при появлении первого чанка (lazy start)")
                 return True
-                
+
         except Exception as e:
-            logger.error(f"❌ Ошибка запуска аудио потока: {e}")
+            logger.error(f"❌ Ошибка создания аудио потока: {e}")
             return False
+
+    def _ensure_stream_started(self):
+        """Убеждаемся что поток стартован (для lazy start)"""
+        with self._stream_lock:
+            if self._audio_stream is not None and not self._stream_started:
+                try:
+                    self._audio_stream.start()
+                    self._stream_started = True
+                    logger.info("▶️ Аудио поток стартован (lazy start)")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка старта аудио потока: {e}")
     
     def _stop_audio_stream(self):
         """Остановка аудио потока"""
         try:
             with self._stream_lock:
                 if self._audio_stream is not None:
-                    self._audio_stream.stop()
+                    if self._stream_started:
+                        self._audio_stream.stop()
                     self._audio_stream.close()
                     self._audio_stream = None
+                    self._stream_started = False
                     logger.info("🛑 Аудио поток остановлен")
-                    
+
         except Exception as e:
             logger.error(f"❌ Ошибка остановки аудио потока: {e}")
     
@@ -463,7 +481,17 @@ class SequentialSpeechPlayer:
                     
                     logger.info(f"✅ Чанк обработан: {chunk_info.id}")
                 else:
-                    # Нет чанков - небольшая задержка
+                    # Нет чанков - проверяем нужно ли остановить поток (lazy stop)
+                    if self.chunk_buffer.queue_size == 0 and self.chunk_buffer.buffer_size == 0:
+                        # Очередь пустая - останавливаем поток для снижения нагрузки
+                        with self._stream_lock:
+                            if self._stream_started:
+                                try:
+                                    self._audio_stream.stop()
+                                    self._stream_started = False
+                                    logger.info("⏸️ Аудио поток остановлен (очередь пуста, lazy stop)")
+                                except Exception as e:
+                                    logger.error(f"❌ Ошибка остановки потока: {e}")
                     time.sleep(0.01)
             
             logger.info("🔄 Playback loop завершен")

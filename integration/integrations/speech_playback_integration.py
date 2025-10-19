@@ -255,20 +255,9 @@ class SpeechPlaybackIntegration:
                 await self._handle_error(e, where="speech.decode_audio", severity="warning")
                 return
 
-            # Добавляем чанк и запускаем/возобновляем воспроизведение
+            # ✅ КРИТИЧНО: start_playback ПЕРЕД add_audio_data для lazy start
             try:
                 if self._player:
-                    self._player.add_audio_data(
-                        arr,
-                        priority=0,
-                        metadata={
-                            "session_id": sid,
-                            "sample_rate": src_sample_rate,
-                            "channels": src_channels,
-                            "original_dtype": dtype,  # ✅ Передаем оригинальный тип для диагностики
-                            "original_bytes": len(audio_bytes),  # ✅ Для диагностики
-                        },
-                    )
                     # Определяем текущее состояние плеера и корректно управляем
                     state = self._player.state_manager.get_state()
                     if state == PlaybackState.PAUSED:
@@ -284,6 +273,20 @@ class SpeechPlaybackIntegration:
                             await self._handle_error(Exception("start_failed"), where="speech.start_playback")
                             return
                         await self.event_bus.publish("playback.started", {"session_id": sid})
+
+                    # Добавляем чанк ПОСЛЕ создания потока
+                    self._player.add_audio_data(
+                        arr,
+                        priority=0,
+                        metadata={
+                            "session_id": sid,
+                            "sample_rate": src_sample_rate,
+                            "channels": src_channels,
+                            "original_dtype": dtype,  # ✅ Передаем оригинальный тип для диагностики
+                            "original_bytes": len(audio_bytes),  # ✅ Для диагностики
+                        },
+                    )
+
                 self._had_audio_for_session[sid] = True
 
                 # Обновляем метку времени последнего аудио (НЕ запускаем таймер тишины при каждом чанке)
@@ -450,7 +453,9 @@ class SpeechPlaybackIntegration:
                     "sample_rate": sample_rate,
                     "channels": channels
                 }
-                self._player.add_audio_data(audio_data, priority=priority, metadata=meta)
+
+                # ✅ КРИТИЧНО: start_playback ПЕРЕД add_audio_data для lazy start
+                # Поток должен быть создан до добавления данных, чтобы _ensure_stream_started() мог его запустить
                 state = self._player.state_manager.get_state()
                 if state == PlaybackState.PAUSED:
                     self._player.resume_playback()
@@ -459,6 +464,9 @@ class SpeechPlaybackIntegration:
                         await self._handle_error(Exception("start_failed"), where="speech.raw_audio.start")
                         return
                     await self.event_bus.publish("playback.started", {"session_id": session_id, "pattern": pattern})
+
+                # Добавляем данные ПОСЛЕ создания потока
+                self._player.add_audio_data(audio_data, priority=priority, metadata=meta)
 
                 # Обновляем отметку времени последнего аудио и планируем корректный shutdown
                 try:
@@ -519,10 +527,11 @@ class SpeechPlaybackIntegration:
             except Exception:
                 a = arr
 
-            # Добавляем данные и при необходимости запускаем воспроизведение
+            # ✅ КРИТИЧНО: start_playback ПЕРЕД add_audio_data для lazy start
             try:
                 meta = {"kind": "signal", "pattern": pattern}
-                self._player.add_audio_data(a, priority=priority, metadata=meta)
+
+                # Запускаем воспроизведение ПЕРЕД добавлением данных
                 state = self._player.state_manager.get_state()
                 if state == PlaybackState.PAUSED:
                     self._player.resume_playback()
@@ -534,6 +543,9 @@ class SpeechPlaybackIntegration:
                         await self._handle_error(Exception("start_failed"), where="speech.signal.start_playback")
                         return
                     await self.event_bus.publish("playback.started", {"signal": True})
+
+                # Добавляем данные ПОСЛЕ создания потока
+                self._player.add_audio_data(a, priority=priority, metadata=meta)
             except Exception as e:
                 await self._handle_error(e, where="speech.signal.add_chunk")
         except Exception as e:
