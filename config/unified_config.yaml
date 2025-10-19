@@ -58,6 +58,7 @@ default_audio:
   log_health_checks: false
   log_stream_events: false
   log_device_changes: false          # логировать смену устройств
+  log_performance_metrics: false     # логировать метрики производительности
   
   # Обратная совместимость (будут удалены в будущих версиях)
   input_sample_rate: 16000          # DEPRECATED: используйте target_sample_rate
