@@ -212,26 +212,67 @@ class VoiceRecognitionIntegration:
 
             # Если используем реальный движок — начинаем прослушивание
             if not self.config.simulate and self._recognizer is not None:
-                try:
-                    logger.debug(f"Starting real speech recognition for session {session_id}")
-                    await self._recognizer.start_listening()
-                    # Для единообразия сигнализируем старт распознавания и открытие микрофона
-                    await self.event_bus.publish("voice.recognition_started", {
-                        "session_id": session_id,
-                        "language": self.config.language
-                    })
-                    await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
-                    logger.info("VOICE: microphone opened (real)")
-                except Exception as e:
-                    logger.warning(f"VOICE: failed to start listening (fallback to simulation): {e}")
-                    # НЕ блокируем приложение - переключаемся на симуляцию
-                    self.config.simulate = True
-                    await self.event_bus.publish("voice.recognition_failed", {
-                        "session_id": session_id,
-                        "error": "mic_open_failed",
-                        "reason": str(e),
-                        "fallback_to_simulation": True
-                    })
+                # КРИТИЧНО: Проверяем состояние перед запуском для предотвращения двойного старта
+                recognizer_state = getattr(self._recognizer, 'state', None)
+                if recognizer_state and str(recognizer_state).upper() in ['LISTENING', 'RECOGNITIONSTATE.LISTENING']:
+                    logger.warning(f"⚠️ Уже в режиме прослушивания, пропускаем start для session {session_id}")
+                    self._recording_active = False  # Сбрасываем флаг перед выходом
+                    return
+
+                # Попытки с ретраями для устойчивости к временным сбоям CoreAudio
+                max_attempts = 3
+                for attempt in range(max_attempts):
+                    try:
+                        current_state = getattr(self._recognizer, 'state', 'UNKNOWN')
+                        logger.debug(f"🎤 Попытка {attempt+1}/{max_attempts}: recognizer.state={current_state}, session={session_id}")
+
+                        start_result = await self._recognizer.start_listening()
+                        logger.debug(f"🎤 start_listening вернул: {start_result}")
+
+                        # Для единообразия сигнализируем старт распознавания и открытие микрофона
+                        await self.event_bus.publish("voice.recognition_started", {
+                            "session_id": session_id,
+                            "language": self.config.language
+                        })
+                        logger.debug(f"✓ voice.recognition_started опубликован для session {session_id}")
+
+                        await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
+                        logger.info(f"🎤 VOICE: microphone opened (real) для session {session_id}")
+                        break  # Успешно запустили, выходим из цикла
+                    except Exception as e:
+                        error_str = str(e)
+                        is_already_running = "there already is a thread" in error_str.lower()
+                        current_state = getattr(self._recognizer, 'state', 'UNKNOWN')
+
+                        logger.warning(f"⚠️ Попытка {attempt+1}/{max_attempts} неудачна: {error_str[:100]}, recognizer.state={current_state}")
+
+                        if is_already_running:
+                            logger.warning(f"⚠️ CoreAudio thread already running, попытка {attempt+1}/{max_attempts}")
+                            if attempt < max_attempts - 1:
+                                await asyncio.sleep(0.3)  # Ждем 300ms перед повтором
+                                continue
+
+                        if attempt < max_attempts - 1:
+                            logger.warning(f"⚠️ Повтор через 300ms...")
+                            await asyncio.sleep(0.3)
+                        else:
+                            # Все попытки исчерпаны
+                            logger.error(f"❌ VOICE: failed to start listening after {max_attempts} attempts")
+                            logger.error(f"❌ Причина: {error_str}")
+                            logger.error(f"❌ Финальный state recognizer: {current_state}")
+                            logger.error(f"❌ Переход на симуляцию для session {session_id}")
+
+                            # КРИТИЧНО: Сбрасываем флаг записи при неудаче
+                            self._recording_active = False
+                            self._current_session_id = None
+                            # НЕ блокируем приложение - переключаемся на симуляцию
+                            self.config.simulate = True
+                            await self.event_bus.publish("voice.recognition_failed", {
+                                "session_id": session_id,
+                                "error": "mic_open_failed",
+                                "reason": str(e),
+                                "fallback_to_simulation": True
+                            })
         except Exception as e:
             logger.error(f"VOICE: error in recording_start handler: {e}")
 
@@ -259,8 +300,15 @@ class VoiceRecognitionIntegration:
 
                 async def _stop_and_publish():
                     try:
+                        logger.debug(f"🎤 Вызов stop_listening для session {session_id}")
                         result: "RecognitionResult" = await self._recognizer.stop_listening()
+
+                        # Диагностика результата
+                        chunks_count = getattr(self._recognizer, 'audio_data_len', 0) if hasattr(self._recognizer, 'audio_data_len') else 'N/A'
+                        logger.debug(f"🎤 stop_listening завершён: chunks={chunks_count}, text={result.text if result else None}, error={result.error if result else None}")
+
                         if result and result.text and not result.error:
+                            logger.info(f"✓ Распознавание успешно: text='{result.text[:50]}...', confidence={result.confidence}")
                             await self.event_bus.publish("voice.recognition_completed", {
                                 "session_id": session_id,
                                 "text": result.text,
@@ -268,13 +316,19 @@ class VoiceRecognitionIntegration:
                                 "language": result.language
                             })
                         else:
+                            error_msg = result.error if result else "unknown"
+                            logger.warning(f"⚠️ Распознавание не дало текста: error={error_msg}, chunks={chunks_count}")
+                            if chunks_count == 0 or chunks_count == 'N/A':
+                                logger.warning(f"⚠️ Похоже на тишину: chunks={chunks_count}")
                             await self.event_bus.publish("voice.recognition_failed", {
                                 "session_id": session_id,
-                                "error": (result.error if result else "unknown"),
+                                "error": error_msg,
                                 "reason": "no_text"
                             })
                     except Exception as e:
-                        logger.error(f"VOICE: error while stopping listening/recognizing: {e}")
+                        logger.error(f"❌ VOICE: error while stopping listening/recognizing: {e}")
+                        import traceback
+                        logger.error(f"❌ Traceback: {traceback.format_exc()}")
                         await self.event_bus.publish("voice.recognition_failed", {
                             "session_id": session_id,
                             "error": "recognition_error",

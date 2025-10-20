@@ -190,10 +190,13 @@ class QuartzKeyboardMonitor:
                             # Если уже отправили LONG_PRESS — это RELEASE
                             # Иначе (короткое нажатие) — это SHORT_PRESS
                             event_type_out = (
-                                KeyEventType.RELEASE if self._long_sent 
+                                KeyEventType.RELEASE if self._long_sent
                                 else KeyEventType.SHORT_PRESS
                             )
-                            logger.info(f"🔑 Quartz keyUp: duration={duration:.3f}s, _long_sent={self._long_sent} → {event_type_out.value}")
+                            import threading
+                            thread_name = threading.current_thread().name
+                            logger.info(f"🔑 PTT: keyUp → {event_type_out.value}, duration={duration:.3f}s, _long_sent={self._long_sent}, thread={thread_name}")
+                            logger.debug(f"Quartz keyUp: duration={duration:.3f}s, _long_sent={self._long_sent} → {event_type_out.value}")
 
                         ev = KeyEvent(
                             key=self.key_to_monitor,
@@ -293,8 +296,10 @@ class QuartzKeyboardMonitor:
                     if self.key_pressed and self.press_start_time:
                         duration = time.time() - self.press_start_time
                         if not self._long_sent and duration >= self.long_press_threshold:
-                            logger.info(f"🔑 HOLD_MONITOR: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}")
-                            print(f"🔑 HOLD_MONITOR: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}")  # Для отладки
+                            import threading
+                            thread_name = threading.current_thread().name
+                            logger.info(f"🔑 PTT: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}, thread={thread_name}")
+                            logger.debug(f"HOLD_MONITOR: _long_sent={self._long_sent} → True, event_type=LONG_PRESS")
                             ev = KeyEvent(
                                 key=self.key_to_monitor,
                                 event_type=KeyEventType.LONG_PRESS,
@@ -321,9 +326,10 @@ class QuartzKeyboardMonitor:
                     duration=duration,
                 )
 
+            import threading
+            thread_name = threading.current_thread().name
+            logger.debug(f"🔑 _trigger_event: type={event_type.value}, duration={duration:.3f}s, thread={thread_name}")
             threading.Thread(target=lambda: self._run_callback(callback, event), daemon=True).start()
-            logger.info(f"🔑 QuartzMonitor: _trigger_event {event_type.value}, duration={duration:.3f}")
-            print(f"🔑 QuartzMonitor: _trigger_event {event_type.value}, duration={duration:.3f}")  # Для отладки
         except Exception as e:
             logger.error(f"❌ Ошибка запуска события: {e}")
 

@@ -76,7 +76,13 @@ class SpeechRecognizer:
 
         # Инициализируем распознаватель
         self._init_recognizer()
-    
+
+    @property
+    def audio_data_len(self) -> int:
+        """Возвращает количество записанных аудио чанков"""
+        with self.audio_lock:
+            return len(self.audio_data)
+
     def __del__(self):
         """Деструктор для корректной остановки мониторинга"""
         try:
@@ -455,17 +461,27 @@ class SpeechRecognizer:
                     self.first_chunk_received = False
 
                     # Создаём поток
+                    # КРИТИЧНО: Используем blocksize >= 2048 и latency='high' для предотвращения CoreAudio overload
+                    # Минимальный blocksize = 2048 для стабильности на macOS
+                    effective_blocksize = max(2048, self.config.chunk_size)
+                    if effective_blocksize > self.config.chunk_size:
+                        logger.info(f"🔧 Blocksize увеличен с {self.config.chunk_size} до {effective_blocksize} для стабильности CoreAudio")
+
+                    logger.info(f"🔊 AUDIO: Создание потока: device_id={device_id}, rate={self.actual_input_rate}Hz, channels={self.actual_input_channels}, blocksize={effective_blocksize}, latency=high")
+
                     stream = sd.InputStream(
                         device=device_id,
                         samplerate=self.actual_input_rate,
                         channels=self.actual_input_channels,
                         dtype='float32',
-                        blocksize=self.config.chunk_size,
+                        blocksize=effective_blocksize,  # Минимум 2048 для предотвращения overload
+                        latency='high',  # Высокая латентность для предотвращения пропуска циклов
                         callback=self._audio_callback,
                     )
 
                     # Стартуем поток
                     stream.start()
+                    logger.debug(f"🔊 AUDIO: Поток стартовал успешно")
                     logger.debug(f"🔄 Попытка {attempt + 1}/{self.max_stream_start_retries}: поток стартовал")
 
                     # Ждём первый чанк с таймаутом
@@ -557,7 +573,7 @@ class SpeechRecognizer:
         """Callback для записи аудио с диагностикой пустых чанков"""
         try:
             if status:
-                logger.warning(f"⚠️ Статус аудио: {status}")
+                logger.warning(f"⚠️ AUDIO callback status: {status}, frames={frames}")
 
             if self.is_listening:
                 # Проверяем уровень сигнала (диагностика CoreAudio overload)
@@ -565,22 +581,29 @@ class SpeechRecognizer:
 
                 if peak < 0.001:  # Пустой чанк
                     self.empty_chunk_counter += 1
-                    if self.empty_chunk_counter == self.empty_chunk_threshold:
-                        logger.warning(
-                            f"⚠️ {self.empty_chunk_threshold} пустых чанков подряд - возможна перегрузка CoreAudio"
-                        )
+                    if self.empty_chunk_counter >= 10:  # Порог для WARNING
+                        if self.empty_chunk_counter == 10 or self.empty_chunk_counter % 50 == 0:  # Логируем на 10, потом каждые 50
+                            logger.warning(
+                                f"⚠️ {self.empty_chunk_counter} пустых чанков подряд - возможна перегрузка CoreAudio"
+                            )
                 else:
                     # Сигнал есть - сбрасываем счётчик
-                    if self.empty_chunk_counter > 0:
+                    if self.empty_chunk_counter >= 10:
+                        logger.info(f"✅ Сигнал восстановлен после {self.empty_chunk_counter} пустых чанков")
+                    elif self.empty_chunk_counter > 0:
                         logger.debug(f"✅ Сигнал восстановлен после {self.empty_chunk_counter} пустых чанков")
                     self.empty_chunk_counter = 0
+
+                    # DEBUG: каждые N чанков с сигналом логируем состояние
+                    if len(self.audio_data) % 20 == 0:  # Каждые 20 чанков
+                        logger.debug(f"🔊 AUDIO callback: chunks={len(self.audio_data)}, peak={peak:.4f}, frames={frames}")
 
                 with self.audio_lock:
                     self.audio_data.append(indata.copy())
                     if len(self.audio_data) == 1:
                         # Устанавливаем флаг для retry логики
                         self.first_chunk_received = True
-                        logger.debug(
+                        logger.info(
                             "🔊 Первый чанк получен: frames=%s, dtype=%s, peak=%.4f",
                             frames,
                             indata.dtype,
@@ -589,6 +612,8 @@ class SpeechRecognizer:
 
         except Exception as e:
             logger.error(f"❌ Ошибка в audio callback: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             
     async def _recognize_audio(self) -> RecognitionResult:
         """Распознает записанное аудио"""
@@ -623,7 +648,7 @@ class SpeechRecognizer:
             }
 
             logger.info(
-                "📈 Статистика аудио: chunks=%s, samples=%s, duration=%.2fs, peak=%.4f, rms=%.4f, rms_db=%.1f, actual_rate=%s, target_rate=%s, channels=%s",
+                "📈 AUDIO: Статистика перед распознаванием: chunks=%s, samples=%s, duration=%.2fs, peak=%.4f, rms=%.4f, rms_db=%.1fdB, actual_rate=%s, target_rate=%s, channels=%s",
                 len(self.audio_data),
                 sample_count,
                 duration_sec,

@@ -136,6 +136,10 @@ integrations:
     priority: 4
     enable_keyboard_monitoring: true
     auto_start: true
+    min_recording_duration_sec: 0.6
+    recording_prestart_delay_sec: 0.3
+    playback_idle_grace_sec: 0.3
+    playback_wait_timeout_sec: 5.0
   instance_manager:
     enabled: true
     priority: 13

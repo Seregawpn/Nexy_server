@@ -28,6 +28,8 @@ from modules.screenshot_capture.core.types import (
 
 # Конфиг
 from config.unified_config_loader import UnifiedConfigLoader
+from modules.permissions.core.permissions_queue import PermissionsQueue
+from modules.permissions.core.types import PermissionType
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +52,12 @@ class ScreenshotCaptureIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
+        permissions_queue: Optional[PermissionsQueue] = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
+        self.permissions_queue = permissions_queue
         self._initialized = False
         self._running = False
 
@@ -579,16 +583,33 @@ class ScreenshotCaptureIntegration:
             self._schedule_screen_permission_recheck()
             return
         self._screen_permission_prompted = True
+
+        queue_used = False
+        if self.permissions_queue:
+            result = await self.permissions_queue.request(
+                PermissionType.SCREEN_CAPTURE,
+                source="screenshot_capture",
+            )
+            status = (result or {}).get("status")
+            if status:
+                self._screen_permission_status = status
+                if status == "granted":
+                    logger.info("📸 Screen Recording permission already granted (queue)")
+                    self._screen_permission_prompted = False
+                    return
+            queue_used = True
+
         logger.warning(
             "📸 Screen Recording permission required. Open System Settings > Privacy & Security > Screen Recording and enable Nexy."
         )
-        try:
-            await self.event_bus.publish("permissions.request_required", {
-                "source": "screenshot_capture",
-                "permissions": ["screen_capture"],
-            })
-        except Exception as e:
-            logger.error(f"ScreenshotCaptureIntegration: failed to publish request_required: {e}")
+        if not queue_used:
+            try:
+                await self.event_bus.publish("permissions.request_required", {
+                    "source": "screenshot_capture",
+                    "permissions": ["screen_capture"],
+                })
+            except Exception as e:
+                logger.error(f"ScreenshotCaptureIntegration: failed to publish request_required: {e}")
         await self._ensure_screen_permission_status()
         self._schedule_screen_permission_recheck()
 

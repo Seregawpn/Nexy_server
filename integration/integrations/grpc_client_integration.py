@@ -12,7 +12,7 @@ import base64
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Set
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
@@ -80,6 +80,8 @@ class GrpcClientIntegration:
         self._sessions: Dict[Any, Dict[str, Any]] = {}
         # Активные отправки: session_id -> asyncio.Task
         self._inflight: Dict[Any, asyncio.Task] = {}
+        # Отметки о том, что отмена уже уведомлена (чтобы не дублировать события)
+        self._cancel_notified: Set[Any] = set()
 
         # Сеть
         self._network_connected: Optional[bool] = None
@@ -228,6 +230,7 @@ class GrpcClientIntegration:
             if sid and sid in self._inflight:
                 task = self._inflight.pop(sid)
                 task.cancel()
+                self._cancel_notified.add(sid)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": sid, "error": "cancelled"})
         except Exception as e:
             await self._handle_error(e, where="grpc.on_interrupt", severity="warning")
@@ -250,6 +253,7 @@ class GrpcClientIntegration:
             task = self._inflight.pop(target_sid, None)
             if task and not task.done():
                 task.cancel()
+                self._cancel_notified.add(target_sid)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": target_sid, "error": "cancelled"})
             else:
                 logger.debug(f"grpc.request_cancel: task not found or already done for sid={target_sid}")
@@ -296,6 +300,7 @@ class GrpcClientIntegration:
                 self._inflight.pop(session_id, None)
 
         task = asyncio.create_task(_delayed_send())
+        self._cancel_notified.discard(session_id)
         self._inflight[session_id] = task
 
     async def _send(self, session_id):
@@ -409,8 +414,10 @@ class GrpcClientIntegration:
             if not got_terminal:
                 await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
         except asyncio.CancelledError:
-            # Тихо выходим при отмене
-            await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "cancelled"})
+            # Тихо выходим при отмене; событие могло быть опубликовано ранее
+            if session_id not in self._cancel_notified:
+                self._cancel_notified.add(session_id)
+                await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "cancelled"})
         except Exception as e:
             await self._handle_error(e, where="grpc.stream_audio", severity="warning")
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": str(e)})

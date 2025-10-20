@@ -67,6 +67,10 @@ class InputProcessingConfig:
     enable_keyboard_monitoring: bool = True
     auto_start: bool = True
     keyboard_backend: str = "auto"
+    min_recording_duration_sec: float = 0.6
+    playback_idle_grace_sec: float = 0.3
+    playback_wait_timeout_sec: float = 5.0
+    recording_prestart_delay_sec: float = 0.3
 
 class UnifiedConfigLoader:
     """Единый загрузчик конфигурации с автоматической синхронизацией"""
@@ -334,7 +338,11 @@ class UnifiedConfigLoader:
             keyboard=self.get_keyboard_config(),
             enable_keyboard_monitoring=input_cfg.get('enable_keyboard_monitoring', True),
             auto_start=input_cfg.get('auto_start', True),
-            keyboard_backend=kbd_cfg.get('backend', 'auto')
+            keyboard_backend=kbd_cfg.get('backend', 'auto'),
+            min_recording_duration_sec=float(input_cfg.get('min_recording_duration_sec', 0.6)),
+            playback_idle_grace_sec=float(input_cfg.get('playback_idle_grace_sec', 0.3)),
+            playback_wait_timeout_sec=float(input_cfg.get('playback_wait_timeout_sec', 5.0)),
+            recording_prestart_delay_sec=float(input_cfg.get('recording_prestart_delay_sec', 0.3)),
         )
 
 # Глобальный экземпляр загрузчика

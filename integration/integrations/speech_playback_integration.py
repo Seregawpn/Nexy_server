@@ -327,20 +327,24 @@ class SpeechPlaybackIntegration:
                     self._cancelled_sessions.add(sid)
             if self._player:
                 try:
-                    self._player.stop_playback()
+                    state = getattr(self._player.state_manager, "current_state", None)
+                    if state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+                        self._player.stop_playback()
                 except Exception:
                     pass
+            if sid is not None:
+                self._finalized_sessions[sid] = True
+            if err == 'cancelled':
+                logger.info("SpeechPlayback: gRPC cancelled — пропускаем playback.failed")
+                return
             await self.event_bus.publish("playback.failed", {"session_id": sid, "error": data.get("error")})
-            self._finalized_sessions[sid] = True
-            # Возврат в SLEEPING не инициируем, если ошибка — отмена (cancelled)
-            if err != 'cancelled':
-                try:
-                    await self.event_bus.publish("mode.request", {
-                        "target": AppMode.SLEEPING,
-                        "source": "speech_playback"
-                    })
-                except Exception:
-                    pass
+            try:
+                await self.event_bus.publish("mode.request", {
+                    "target": AppMode.SLEEPING,
+                    "source": "speech_playback"
+                })
+            except Exception:
+                pass
         except Exception as e:
             await self._handle_error(e, where="speech.on_grpc_failed", severity="warning")
 
@@ -692,7 +696,9 @@ class SpeechPlaybackIntegration:
                 # На всякий случай — остановим воспроизведение, если ещё не остановлено
                 try:
                     if self._player:
-                        self._player.stop_playback()
+                        state = getattr(self._player.state_manager, "current_state", None)
+                        if state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+                            self._player.stop_playback()
                 except Exception:
                     pass
                 loop = self._loop

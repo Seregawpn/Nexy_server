@@ -35,6 +35,7 @@ from modules.signals.config.types import PatternConfig
 from integration.integrations.signal_integration import SignalsIntegrationConfig
 from integration.integrations.welcome_message_integration import WelcomeMessageIntegration
 from integration.integrations.voiceover_ducking_integration import VoiceOverDuckingIntegration
+from modules.permissions.core.permissions_queue import PermissionsQueue
 
 # Импорты core компонентов
 from integration.core.event_bus import EventBus, EventPriority
@@ -70,6 +71,9 @@ class SimpleModuleCoordinator:
         
         # Конфигурация
         self.config = UnifiedConfigLoader()
+
+        # Очередь разрешений (по умолчанию отсутствует)
+        self.permissions_queue: Optional[PermissionsQueue] = None
         
         # Состояние
         self.is_initialized = False
@@ -149,6 +153,21 @@ class SimpleModuleCoordinator:
             # КРИТИЧНО: InstanceManagerIntegration должен быть ПЕРВЫМ и БЛОКИРУЮЩИМ
             config_data = self.config._load_config()
             instance_config = config_data.get('instance_manager', {})
+
+            # Настраиваем очередь разрешений до создания интеграций
+            permissions_cfg = config_data.get('permissions', {}) or {}
+            sequential = permissions_cfg.get('sequential', True)
+            auto_open = permissions_cfg.get('auto_open_settings', False)
+            pause = permissions_cfg.get('pause_between_requests_sec', 0.5)
+            request_timeout = permissions_cfg.get('request_timeout_sec', 300.0)
+
+            self.permissions_queue = PermissionsQueue(
+                event_bus=self.event_bus,
+                sequential=sequential,
+                auto_open_settings=auto_open,
+                pause_between_requests=pause,
+                request_timeout=request_timeout,
+            )
             
             self.integrations['instance_manager'] = InstanceManagerIntegration(
                 event_bus=self.event_bus,
@@ -234,6 +253,7 @@ class SimpleModuleCoordinator:
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
                 error_handler=self.error_handler,
+                permissions_queue=self.permissions_queue,
             )
             
             # Voice Recognition Integration - конфигурация по умолчанию/из unified_config
@@ -327,6 +347,7 @@ class SimpleModuleCoordinator:
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
                 error_handler=self.error_handler,
+                permissions_queue=self.permissions_queue,
             )
 
             # VoiceOver Ducking Integration - управление VoiceOver
@@ -378,6 +399,10 @@ class SimpleModuleCoordinator:
     async def _initialize_integrations(self):
         """Инициализация всех интеграций"""
         try:
+            # Инициализируем очередь разрешений до остальных интеграций
+            if self.permissions_queue:
+                await self.permissions_queue.initialize()
+
             # Затем инициализируем остальные интеграции
             for name, integration in self.integrations.items():
                 print(f"🔧 Инициализация {name}...")

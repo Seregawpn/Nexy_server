@@ -25,6 +25,8 @@ from modules.welcome_message.config.welcome_config import WelcomeConfigLoader
 
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
+from modules.permissions.core.permissions_queue import PermissionsQueue
+from modules.permissions.core.types import PermissionType
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +39,12 @@ class WelcomeMessageIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
+        permissions_queue: Optional[PermissionsQueue] = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
+        self.permissions_queue = permissions_queue
         
         # Загружаем конфигурацию
         try:
@@ -410,10 +414,11 @@ class WelcomeMessageIntegration:
         )
 
         try:
-            await self.event_bus.publish("permissions.request_required", {
-                "source": "welcome_message",
-                "permissions": ["microphone"],
-            })
+            if not (self.permissions_queue and self.permissions_queue.sequential):
+                await self.event_bus.publish("permissions.request_required", {
+                    "source": "welcome_message",
+                    "permissions": ["microphone"],
+                })
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка публикации запроса разрешений: {e}")
 
@@ -434,6 +439,17 @@ class WelcomeMessageIntegration:
     async def _wait_for_microphone_permission(self):
         """Одноразовая проверка разрешения микрофона без блокировки"""
         try:
+            if self.permissions_queue:
+                result = await self.permissions_queue.request(
+                    PermissionType.MICROPHONE,
+                    source="welcome_message",
+                )
+                status = (result or {}).get("status")
+                if status:
+                    self._microphone_status = status
+                    if status == "granted":
+                        return
+
             # Запрашиваем актуальный статус разрешений
             await self._ensure_permission_status()
             
@@ -447,18 +463,6 @@ class WelcomeMessageIntegration:
             # Показываем инструкции пользователю
             await self._show_permission_instructions()
             
-            # Открываем системные настройки для удобства (неблокирующе)
-            try:
-                import subprocess
-                subprocess.Popen(
-                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                logger.info("🔧 [WELCOME_INTEGRATION] Открыты системные настройки для предоставления разрешений")
-            except Exception as e:
-                logger.debug(f"Не удалось открыть настройки: {e}")
-                
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка проверки разрешений: {e}")
             # Продолжаем работу даже при ошибке
@@ -518,12 +522,13 @@ class WelcomeMessageIntegration:
             )
             
             # Публикуем событие для показа уведомления в UI
-            await self.event_bus.publish("permissions.request_required", {
-                "source": "welcome_message",
-                "permissions": ["microphone"],
-                "blocking": True,
-                "message": "Требуется разрешение на микрофон для работы Nexy"
-            })
+            if not (self.permissions_queue and self.permissions_queue.sequential):
+                await self.event_bus.publish("permissions.request_required", {
+                    "source": "welcome_message",
+                    "permissions": ["microphone"],
+                    "blocking": True,
+                    "message": "Требуется разрешение на микрофон для работы Nexy"
+                })
             
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка показа инструкций: {e}")

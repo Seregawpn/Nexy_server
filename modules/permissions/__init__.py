@@ -4,6 +4,7 @@ Permissions Module для macOS
 """
 
 from .core.permissions_manager import PermissionManager
+from .core.permissions_queue import PermissionsQueue
 from .core.types import (
     PermissionType, PermissionStatus, PermissionInfo, PermissionResult,
     PermissionEvent, PermissionConfig, PermissionManagerState
@@ -19,6 +20,7 @@ __all__ = [
     'PermissionEvent',
     'PermissionConfig',
     'PermissionManagerState',
+    'PermissionsQueue',
     'PermissionConfigManager'
 ]
 
