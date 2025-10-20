@@ -53,6 +53,8 @@ class SpeechRecognizer:
         self.host_apis: List[Dict[str, Any]] = []
         self.prepared_device_id: Any = None
         self.last_audio_stats: Dict[str, Any] = {}
+        self._async_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._restart_task: Optional[Any] = None
 
         # Монитор устройств для стабилизации
         self.device_monitor = AudioDeviceMonitor(check_interval=0.5)
@@ -60,10 +62,12 @@ class SpeechRecognizer:
         self.last_device_change_time = 0.0
         self.stabilization_delay = 0.3  # 300мс задержка стабилизации
 
-        # Retry параметры для мягкого перезапуска потока
-        self.max_stream_start_retries = 3
-        self.retry_delay = 0.25  # 250мс между попытками
-        self.first_chunk_timeout = 0.5  # 500мс ожидание первого чанка
+        # Retry параметры для мягкого перезапуска потока (адаптивные для BT-устройств)
+        self.max_stream_start_retries = 5
+        self.retry_delay = 0.8  # 800мс между попытками (проводные устройства)
+        self.first_chunk_timeout = 2.0  # 2s ожидание первого чанка по умолчанию
+        self.first_chunk_timeout_bt = 3.5  # 3.5s для BT-маршрутов
+        self.retry_delay_bt = 1.2  # BT-устройства стабилизируются дольше
 
         # Счётчик пустых чанков для диагностики CoreAudio overload
         self.empty_chunk_counter = 0
@@ -116,11 +120,82 @@ class SpeechRecognizer:
         self.last_device_change_time = time.time()
         logger.info(f"🔄 Обнаружена смена аудио устройства: {old_device} -> {new_device}")
         
-        # Если мы сейчас слушаем, нужно будет перезапустить с задержкой
-        if self.state == RecognitionState.LISTENING:
-            logger.info("⏳ Устройство изменилось во время прослушивания - потребуется перезапуск")
-            self.state = RecognitionState.IDLE
-    
+        should_restart = self.state == RecognitionState.LISTENING
+        if should_restart:
+            logger.info("⏳ Устройство изменилось во время прослушивания - выполняем мягкую перезагрузку потока")
+            self._graceful_stop_listening(reason="device_changed")
+            self._schedule_listening_restart(self.stabilization_delay)
+
+    def _graceful_stop_listening(self, reason: str):
+        """Безопасно останавливает текущий поток прослушивания (синхронно)."""
+        try:
+            self.stop_event.set()
+        except Exception:
+            pass
+
+        thread = self.listen_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                logger.warning("⚠️ Поток прослушивания не завершился за 2с (reason=%s)", reason)
+        self.listen_thread = None
+
+        with self.audio_lock:
+            self.audio_data = []
+
+        self.is_listening = False
+        self.first_chunk_received = False
+        self.empty_chunk_counter = 0
+        self.prepared_device_id = None
+        self.state = RecognitionState.IDLE
+
+        # Сбрасываем stop_event, чтобы следующий запуск получил чистый объект
+        self.stop_event = threading.Event()
+
+        loop = self._async_loop
+        if loop:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._notify_event(RecognitionEventType.LISTENING_STOP, reason=reason),
+                    loop,
+                )
+            except Exception as e:
+                logger.debug("⚠️ Не удалось отправить LISTENING_STOP при принудительной остановке: %s", e)
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._notify_state_change(RecognitionState.IDLE, reason=reason),
+                    loop,
+                )
+            except Exception as e:
+                logger.debug("⚠️ Не удалось отправить state=IDLE при принудительной остановке: %s", e)
+
+    def _schedule_listening_restart(self, delay: float):
+        """Планирует повторный запуск прослушивания после стабилизации устройства."""
+        loop = self._async_loop
+        if not loop:
+            logger.debug("⚠️ Невозможно перезапустить прослушивание: event loop не задан")
+            return
+
+        # Отменяем предыдущую задачу перезапуска, если она ещё активна
+        if self._restart_task and not self._restart_task.done():
+            self._restart_task.cancel()
+            self._restart_task = None
+
+        async def _restart():
+            try:
+                await asyncio.sleep(max(delay, 0.0))
+                if self.state == RecognitionState.IDLE and not self.is_listening:
+                    logger.info("🔁 Перезапускаем прослушивание после смены устройства")
+                    await self.start_listening()
+            except asyncio.CancelledError:
+                logger.debug("🔁 Задача перезапуска прослушивания отменена")
+            except Exception as e:
+                logger.error(f"❌ Ошибка перезапуска прослушивания: {e}")
+
+        try:
+            self._restart_task = asyncio.run_coroutine_threadsafe(_restart(), loop)
+        except Exception as e:
+            logger.error(f"❌ Не удалось запланировать перезапуск прослушивания: {e}")
 
     async def start_listening(self) -> bool:
         """Начинает прослушивание микрофона с задержкой стабилизации"""
@@ -128,6 +203,11 @@ class SpeechRecognizer:
             if self.state != RecognitionState.IDLE:
                 logger.warning(f"⚠️ Невозможно начать прослушивание в состоянии {self.state.value}")
                 return False
+
+            self._async_loop = asyncio.get_running_loop()
+            if self._restart_task and not self._restart_task.done():
+                self._restart_task.cancel()
+                self._restart_task = None
 
             # Проверяем, не было ли недавней смены устройства
             current_time = time.time()
@@ -360,6 +440,13 @@ class SpeechRecognizer:
             logger.info("🎤 Прослушивание микрофона начато")
             self.listen_start_time = time.time()
             device_id = self.prepared_device_id or self._prepare_input_device()
+            first_chunk_timeout, retry_delay = self._get_stream_start_timing()
+            logger.debug(
+                "🎧 Настройка окна и повтора старта: timeout=%.2fs, retry_delay=%.2fs, retries=%s",
+                first_chunk_timeout,
+                retry_delay,
+                self.max_stream_start_retries,
+            )
 
             # Мягкий retry: пытаемся стартовать поток с паузами между попытками
             for attempt in range(self.max_stream_start_retries):
@@ -384,8 +471,8 @@ class SpeechRecognizer:
                     # Ждём первый чанк с таймаутом
                     start_wait = time.time()
                     while not self.first_chunk_received:
-                        if (time.time() - start_wait) > self.first_chunk_timeout:
-                            raise TimeoutError("Первый чанк не получен за 500ms")
+                        if (time.time() - start_wait) > first_chunk_timeout:
+                            raise TimeoutError(f"Первый чанк не получен за {first_chunk_timeout:.1f}s")
                         if not self.is_listening or self.stop_event.is_set():
                             # Пользователь отменил - выходим
                             return
@@ -410,7 +497,7 @@ class SpeechRecognizer:
 
                     # Если ещё есть попытки - ждём и пробуем снова
                     if attempt < self.max_stream_start_retries - 1:
-                        time.sleep(self.retry_delay)
+                        time.sleep(retry_delay)
                         continue
                     else:
                         # Последняя попытка провалилась - уведомляем пользователя
@@ -441,6 +528,21 @@ class SpeechRecognizer:
                 except Exception:
                     pass
             self.prepared_device_id = None
+
+    def _get_stream_start_timing(self) -> tuple[float, float]:
+        """Подбирает тайминги старта потока в зависимости от типа устройства."""
+        try:
+            device_name = (self.input_device_info or {}).get("name", "") or ""
+            device_name_lower = device_name.lower()
+            is_bluetooth = any(
+                keyword in device_name_lower
+                for keyword in ("bluetooth", "airpods", "beats", "headset")
+            )
+            if is_bluetooth:
+                return self.first_chunk_timeout_bt, self.retry_delay_bt
+        except Exception:
+            pass
+        return self.first_chunk_timeout, self.retry_delay
 
     def _notify_microphone_unstable(self):
         """Уведомляет пользователя о нестабильности микрофона"""
