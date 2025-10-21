@@ -88,6 +88,8 @@ class ModeManagementIntegration:
             
             # 🆕 Прямой переход для приветствия: SLEEPING -> PROCESSING
             self.controller.register_transition(ModeTransition(AppMode.SLEEPING, AppMode.PROCESSING, ModeTransitionType.MANUAL))
+            # 🆕 Позволяем отменить слушание и вернуться в сон вручную
+            self.controller.register_transition(ModeTransition(AppMode.LISTENING, AppMode.SLEEPING, ModeTransitionType.MANUAL))
 
             # Мост: при смене режима контроллером — обновляем StateManager,
             # который централизованно публикует события (app.mode_changed/app.state_changed)

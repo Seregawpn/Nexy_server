@@ -131,6 +131,9 @@ class SequentialSpeechPlayer:
                 logger.error("❌ [AUDIO_ERROR] Ошибка инициализации Core Audio")
                 return False
             logger.info("✅ [AUDIO_SUCCESS] Core Audio Manager инициализирован")
+
+            # Подстраиваемся под актуальный выходной маршрут
+            self._sync_output_format()
             
             # Используем системное устройство по умолчанию от macOS
             if self.config.auto_device_selection:
@@ -335,13 +338,17 @@ class SequentialSpeechPlayer:
             self.state_manager.set_state(PlaybackState.ERROR)
             return False
     
-    def _start_audio_stream(self) -> bool:
+    def _start_audio_stream(self, *, sync_output: bool = True) -> bool:
         """Запуск аудио потока с lazy start (создаём без старта)"""
         try:
             with self._stream_lock:
                 if self._audio_stream is not None:
                     logger.warning("⚠️ Аудио поток уже создан")
                     return True
+
+                # Перед созданием потока уточняем параметры текущего устройства
+                if sync_output:
+                    self._sync_output_format(restart_stream=False)
 
                 # Конфигурация потока - device=None означает системный дефолт от macOS
                 stream_config = {
@@ -391,6 +398,108 @@ class SequentialSpeechPlayer:
         except Exception as e:
             logger.error(f"❌ Ошибка остановки аудио потока: {e}")
     
+    @staticmethod
+    def _is_bluetooth_device(name: str) -> bool:
+        lowered = (name or "").lower()
+        return any(keyword in lowered for keyword in ("bluetooth", "airpods", "beats", "headset", "earbud"))
+
+    def _query_default_output_device(self):
+        """Возвращает информацию о текущем системном выходном устройстве."""
+        try:
+            default_setting = sd.default.device
+            output_device = None
+            if hasattr(default_setting, '__getitem__'):
+                try:
+                    output_device = default_setting[1]
+                except IndexError:
+                    output_device = None
+            return sd.query_devices(output_device, 'output')
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось определить выходное устройство: {e}")
+            return None
+
+    def _probe_output_format(self):
+        """Определяет желаемые sample_rate и channels для текущего выхода."""
+        if not self.config.auto_device_selection:
+            return None, None, None
+
+        device_info = self._query_default_output_device()
+        if not device_info:
+            return None, None, None
+
+        device_name = device_info.get('name', 'unknown')
+
+        raw_sample_rate = device_info.get('default_samplerate') or self.config.sample_rate
+        try:
+            sample_rate = int(raw_sample_rate)
+        except Exception:
+            sample_rate = self.config.sample_rate
+        if sample_rate <= 0:
+            sample_rate = self.config.sample_rate
+
+        raw_channels = device_info.get('max_output_channels') or self.config.channels
+        try:
+            channels = int(raw_channels)
+        except Exception:
+            channels = self.config.channels
+        if channels <= 0:
+            channels = self.config.channels
+
+        adjusted_channels = 1 if channels <= 1 else min(2, channels)
+        effective_rate = sample_rate if sample_rate > 0 else self.config.sample_rate
+        if self._is_bluetooth_device(device_name) and effective_rate <= 24000:
+            adjusted_channels = 1
+
+        return sample_rate, adjusted_channels, device_name
+
+    def _sync_output_format(self, restart_stream: bool = False) -> bool:
+        """Подстраивает sample_rate и channels под текущее выходное устройство."""
+        if not self.config.auto_device_selection:
+            return False
+
+        sample_rate, adjusted_channels, device_name = self._probe_output_format()
+        if sample_rate is None and adjusted_channels is None:
+            return False
+
+        sample_rate_changed = False
+        channel_changed = False
+
+        if sample_rate is not None and sample_rate > 0 and sample_rate != self.config.sample_rate:
+            logger.info(
+                "🎛 Обновляем sample_rate плеера: %s → %s (device=%s)",
+                self.config.sample_rate,
+                sample_rate,
+                device_name or "unknown",
+            )
+            self.config.sample_rate = sample_rate
+            sample_rate_changed = True
+
+        if adjusted_channels is not None and adjusted_channels > 0 and adjusted_channels != self.config.channels:
+            logger.info(
+                "🎛 Обновляем channels плеера: %s → %s (device=%s)",
+                self.config.channels,
+                adjusted_channels,
+                device_name or "unknown",
+            )
+            self.config.channels = adjusted_channels
+            channel_changed = True
+            try:
+                self.chunk_buffer.set_channels(adjusted_channels)
+            except Exception as channel_err:
+                logger.debug(f"⚠️ Не удалось обновить каналы буфера: {channel_err}")
+
+        if restart_stream and (sample_rate_changed or channel_changed) and self._audio_stream is not None:
+            was_active = self.state_manager.is_playing or self.state_manager.is_paused
+            self._stop_audio_stream()
+            if was_active:
+                self._start_audio_stream(sync_output=False)
+
+        return sample_rate_changed or channel_changed
+
+    def resync_output_device(self) -> bool:
+        """Переопределяет формат вывода и перезапускает поток при необходимости."""
+        return self._sync_output_format(restart_stream=True)
+
     def _audio_callback(self, outdata, frames, time_info, status):
         """Callback для воспроизведения аудио"""
         try:
@@ -411,9 +520,23 @@ class SequentialSpeechPlayer:
             if len(data) == 0:
                 outdata[:] = 0
             else:
+                # Если у нас моно-данные, а устройство ждёт стерео — дублируем канал
+                if data.ndim == 2 and data.shape[1] == 1 and self.config.channels > 1:
+                    data = np.repeat(data, self.config.channels, axis=1)
+                elif data.ndim == 1 and self.config.channels > 1:
+                    # На всякий случай обрабатываем 1D буфер
+                    mono = data.reshape(-1, 1)
+                    data = np.repeat(mono, self.config.channels, axis=1)
+
                 copy_ch = min(self.config.channels, data.shape[1])
                 out_frames = min(frames, data.shape[0])
                 outdata[:out_frames, :copy_ch] = data[:out_frames, :copy_ch]
+                if copy_ch < self.config.channels:
+                    # Если входных каналов всё равно меньше — копируем последний доступный канал
+                    last_col = min(data.shape[1], 1) - 1
+                    fill_segment = data[:out_frames, last_col:last_col + 1]
+                    for ch in range(copy_ch, self.config.channels):
+                        outdata[:out_frames, ch] = fill_segment.squeeze(axis=1)
                 if out_frames < frames:
                     outdata[out_frames:, :] = 0
                 

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 import threading
-from typing import Callable, Dict, Any, List
+from typing import Callable, Dict, Any, List, Optional
 import sounddevice as sd
 import numpy as np
 import speech_recognition as sr
@@ -16,6 +16,7 @@ from .types import (
     RecognitionEventType, RecognitionMetrics
 )
 from .audio_device_monitor import AudioDeviceMonitor
+from .audio_recovery_manager import AudioRecoveryManager, preflight_check
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +37,27 @@ class SpeechRecognizer:
         self.stop_event = threading.Event()
         self.audio_lock = threading.Lock()
         
+        # Event loop для асинхронных операций из audio callback
+        self._main_loop = None
+        
         # Callbacks
         self.state_callbacks: Dict[RecognitionState, Callable] = {}
         self.event_callbacks: Dict[RecognitionEventType, Callable] = {}
         
         # Метрики
         self.metrics = RecognitionMetrics()
+
+        # Управление состоянием запуска/остановки
+        self._start_lock = asyncio.Lock()
+        self._initializing = False
+        self._cooldown_until = 0.0
+        self._last_successful_start = 0.0
+        
+        # Audio Recovery Manager
+        self.recovery_manager: Optional[AudioRecoveryManager] = None
+        self.recovery_enabled = bool(getattr(self.config, "enable_audio_recovery", True))
+        self._current_stream: Optional[sd.InputStream] = None
+        self._device_priority: List[Any] = []
 
         # Параметры входного устройства - используем системные дефолты
         self.actual_input_rate: int = self.config.sample_rate
@@ -62,6 +78,11 @@ class SpeechRecognizer:
         self.last_device_change_time = 0.0
         self.stabilization_delay = 0.3  # 300мс задержка стабилизации
 
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop):
+        """Устанавливает event loop для асинхронных операций из audio callback."""
+        self._main_loop = loop
+        logger.debug(f"🔧 Event loop установлен в SpeechRecognizer: {loop}")
+
         # Retry параметры для мягкого перезапуска потока (адаптивные для BT-устройств)
         self.max_stream_start_retries = 5
         self.retry_delay = 0.8  # 800мс между попытками (проводные устройства)
@@ -73,6 +94,11 @@ class SpeechRecognizer:
         self.empty_chunk_counter = 0
         self.empty_chunk_threshold = 10  # Предупреждение после 10 пустых подряд
         self.first_chunk_received = False
+        self._signal_threshold = 1e-5  # Минимальный пик для признания сигнала
+        self._max_silence_start_bt = 0.35  # секунды тишины для BT-профиля
+        self._max_silence_start_default = 1.0  # секунды тишины для проводных/встроенных устройств
+        self.allow_device_fallback = False  # используем только текущее системное устройство без цепочки fallback
+        self.auto_reselect_default = True  # обновлять ли устройство, если системный default сменился
 
         # Инициализируем распознаватель
         self._init_recognizer()
@@ -126,6 +152,23 @@ class SpeechRecognizer:
         self.last_device_change_time = time.time()
         logger.info(f"🔄 Обнаружена смена аудио устройства: {old_device} -> {new_device}")
         
+        if self.auto_reselect_default:
+            try:
+                try:
+                    sd.default.device = (None, None)
+                except Exception:
+                    pass
+                default_setting = sd.default.device
+                candidate = None
+                if hasattr(default_setting, '__getitem__'):
+                    candidate = default_setting[0]
+                if candidate is not None:
+                    logger.info(f"🎯 Обновляем входное устройство на системный default: {candidate}")
+                    self.prepared_device_id = candidate
+                    self._device_priority = [candidate]
+            except Exception as e:
+                logger.debug(f"⚠️ Не удалось обновить default input: {e}")
+
         should_restart = self.state == RecognitionState.LISTENING
         if should_restart:
             logger.info("⏳ Устройство изменилось во время прослушивания - выполняем мягкую перезагрузку потока")
@@ -205,70 +248,107 @@ class SpeechRecognizer:
 
     async def start_listening(self) -> bool:
         """Начинает прослушивание микрофона с задержкой стабилизации"""
-        try:
-            if self.state != RecognitionState.IDLE:
-                logger.warning(f"⚠️ Невозможно начать прослушивание в состоянии {self.state.value}")
+        async with self._start_lock:
+            start_time = time.time()
+            try:
+                if self.state != RecognitionState.IDLE:
+                    logger.warning(f"⚠️ Невозможно начать прослушивание в состоянии {self.state.value}")
+                    return False
+                if self._initializing:
+                    logger.debug("🔁 Запуск прослушивания уже выполняется, пропускаем повторный вызов")
+                    return False
+
+                if start_time < self._cooldown_until:
+                    wait_for = self._cooldown_until - start_time
+                    logger.debug(f"⏳ Ожидаем cooldown перед запуском прослушивания: {wait_for:.3f}с")
+                    await asyncio.sleep(wait_for)
+
+                self._initializing = True
+
+                self._async_loop = asyncio.get_running_loop()
+                if self._restart_task and not self._restart_task.done():
+                    self._restart_task.cancel()
+                    self._restart_task = None
+
+                # Проверяем, не было ли недавней смены устройства
+                time_since_device_change = start_time - self.last_device_change_time
+
+                if time_since_device_change < self.stabilization_delay:
+                    remaining_delay = self.stabilization_delay - time_since_device_change
+                    logger.info(f"⏳ Ждем стабилизации устройства: {remaining_delay:.3f}с")
+                    await asyncio.sleep(remaining_delay)
+
+                # Запускаем мониторинг устройств если еще не запущен
+                if not self.device_monitor.is_monitoring():
+                    self.device_monitor.start_monitoring()
+                    logger.debug("🚀 Мониторинг устройств запущен")
+
+                device_id = self._prepare_input_device()
+                if device_id is None:
+                    logger.error("❌ Входное устройство недоступно, запись не запущена")
+                    self._device_priority = []
+                    self._schedule_cooldown(0.5)
+                    return False
+                
+                # Preflight проверка устройства
+                device_name = self.input_device_info.get('name', 'Unknown Device') if hasattr(self, 'input_device_info') else 'Unknown Device'
+                preflight_success, preflight_peak = await preflight_check(device_id, device_name, duration_ms=100)
+                
+                if not preflight_success:
+                    logger.warning(f"⚠️ Preflight check failed: peak={preflight_peak:.6f}")
+                    # Если есть RecoveryManager, инициируем восстановление
+                    if self.recovery_enabled and self.recovery_manager:
+                        logger.info("🔧 Инициируем восстановление после failed preflight")
+                        # Сбрасываем счетчик для немедленного восстановления
+                        self.recovery_manager.stats.silent_chunks = 10  # Порог A
+                        recovery_step = self.recovery_manager.on_chunk_received(
+                            np.zeros((1024, 1), dtype='float32'), 0.0, 0.0
+                        )
+                        if recovery_step:
+                            await self._execute_recovery(recovery_step)
+                else:
+                    logger.info(f"✅ Preflight check passed: peak={preflight_peak:.6f}")
+                
+                self._device_priority = self._build_device_priority(device_id)
+                self.state = RecognitionState.LISTENING
+                self.is_listening = True
+                self.audio_data = []
+                self.stop_event.clear()
+                self.prepared_device_id = device_id
+
+                # Уведомляем о начале прослушивания
+                await self._notify_state_change(RecognitionState.LISTENING)
+                await self._notify_event(RecognitionEventType.LISTENING_START)
+                logger.debug(
+                    "🎤 Параметры прослушивания: target_rate=%sHz, channels=%s, chunk=%s, dtype=%s",
+                    self.config.sample_rate,
+                    self.config.channels,
+                    self.config.chunk_size,
+                    self.config.dtype,
+                )
+
+                # Запускаем поток прослушивания
+                self.listen_thread = threading.Thread(
+                    target=self._run_listening,
+                    name="SpeechListening",
+                    daemon=True
+                )
+                self.listen_thread.start()
+
+                logger.info("🎤 Прослушивание микрофона начато")
+                return True
+
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка начала прослушивания (продолжаем работу): {e}")
+                # НЕ устанавливаем ERROR - возвращаемся в IDLE для повторных попыток
+                self.state = RecognitionState.IDLE
+                self.prepared_device_id = None
+                self._device_priority = []
+                await self._notify_state_change(RecognitionState.IDLE, error=str(e))
+                self._schedule_cooldown(0.5)
                 return False
-
-            self._async_loop = asyncio.get_running_loop()
-            if self._restart_task and not self._restart_task.done():
-                self._restart_task.cancel()
-                self._restart_task = None
-
-            # Проверяем, не было ли недавней смены устройства
-            current_time = time.time()
-            time_since_device_change = current_time - self.last_device_change_time
-            
-            if time_since_device_change < self.stabilization_delay:
-                remaining_delay = self.stabilization_delay - time_since_device_change
-                logger.info(f"⏳ Ждем стабилизации устройства: {remaining_delay:.3f}с")
-                await asyncio.sleep(remaining_delay)
-
-            # Запускаем мониторинг устройств если еще не запущен
-            if not self.device_monitor.is_monitoring():
-                self.device_monitor.start_monitoring()
-                logger.debug("🚀 Мониторинг устройств запущен")
-
-            device_id = self._prepare_input_device()
-            if device_id is None:
-                logger.error("❌ Входное устройство недоступно, запись не запущена")
-                return False
-
-            self.state = RecognitionState.LISTENING
-            self.is_listening = True
-            self.audio_data = []
-            self.stop_event.clear()
-            self.prepared_device_id = device_id
-            
-            # Уведомляем о начале прослушивания
-            await self._notify_state_change(RecognitionState.LISTENING)
-            await self._notify_event(RecognitionEventType.LISTENING_START)
-            logger.debug(
-                "🎤 Параметры прослушивания: target_rate=%sHz, channels=%s, chunk=%s, dtype=%s",
-                self.config.sample_rate,
-                self.config.channels,
-                self.config.chunk_size,
-                self.config.dtype,
-            )
-            
-            # Запускаем поток прослушивания
-            self.listen_thread = threading.Thread(
-                target=self._run_listening,
-                name="SpeechListening",
-                daemon=True
-            )
-            self.listen_thread.start()
-            
-            logger.info("🎤 Прослушивание микрофона начато")
-            return True
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка начала прослушивания (продолжаем работу): {e}")
-            # НЕ устанавливаем ERROR - возвращаемся в IDLE для повторных попыток
-            self.state = RecognitionState.IDLE
-            self.prepared_device_id = None
-            await self._notify_state_change(RecognitionState.IDLE, error=str(e))
-            return False
+            finally:
+                self._initializing = False
             
     async def stop_listening(self) -> RecognitionResult:
         """Останавливает прослушивание и возвращает результат распознавания"""
@@ -308,6 +388,7 @@ class SpeechRecognizer:
             
             self.state = RecognitionState.IDLE
             await self._notify_state_change(RecognitionState.IDLE)
+            self._device_priority = []
             
             if result.text:
                 logger.info(f"📝 Распознано: {result.text}")
@@ -330,39 +411,11 @@ class SpeechRecognizer:
             except Exception as host_err:
                 logger.debug("⚠️ Не удалось получить список host API: %s", host_err)
 
-            # Получаем текущий активный input (id может быть int или None)
-            default_input = None
-            try:
-                default_setting = sd.default.device
-                # Обрабатываем _InputOutputPair и обычные списки/кортежи
-                if hasattr(default_setting, '__getitem__'):
-                    default_input = default_setting[0]
-            except Exception:
-                default_input = None
-
-            device_info = None
-            try:
-                device_info = sd.query_devices(default_input, 'input')
-            except Exception:
-                device_info = None
-
-            if not device_info:
-                try:
-                    for idx, dev in enumerate(sd.query_devices()):
-                        if dev.get('max_input_channels', 0) > 0:
-                            device_info = dev
-                            default_input = idx
-                            break
-                except Exception:
-                    device_info = None
-
-            if not device_info:
-                raise RuntimeError("Входное аудио устройство не найдено")
+            device_id, device_info = self._select_default_input_device(strict=True)
 
             self.input_device_info = device_info
-            self.input_device_id = default_input
+            self.input_device_id = device_id
 
-            # Частота и количество каналов устройства - только от устройства
             samplerate = device_info.get('default_samplerate')
             channels = device_info.get('max_input_channels')
             
@@ -431,6 +484,14 @@ class SpeechRecognizer:
                 self.output_device_info = {}
                 self.output_device_id = None
 
+            # Инициализируем RecoveryManager (опционально)
+            if self.recovery_enabled:
+                device_name = device_info.get('name', 'Unknown Device')
+                self.recovery_manager = AudioRecoveryManager(self.input_device_id, device_name)
+                logger.info(f"🔧 AudioRecoveryManager инициализирован для {device_name} (ID: {self.input_device_id})")
+            else:
+                self.recovery_manager = None
+            
             return self.input_device_id
 
         except Exception as e:
@@ -445,84 +506,139 @@ class SpeechRecognizer:
         try:
             logger.info("🎤 Прослушивание микрофона начато")
             self.listen_start_time = time.time()
-            device_id = self.prepared_device_id or self._prepare_input_device()
-            first_chunk_timeout, retry_delay = self._get_stream_start_timing()
-            logger.debug(
-                "🎧 Настройка окна и повтора старта: timeout=%.2fs, retry_delay=%.2fs, retries=%s",
-                first_chunk_timeout,
-                retry_delay,
-                self.max_stream_start_retries,
-            )
 
-            # Мягкий retry: пытаемся стартовать поток с паузами между попытками
-            for attempt in range(self.max_stream_start_retries):
+            device_candidates = self._device_priority[:] if self._device_priority else []
+            if not device_candidates:
+                primary = self.prepared_device_id or self._prepare_input_device()
+                device_candidates = self._build_device_priority(primary)
+                if not device_candidates and primary is not None:
+                    device_candidates = [primary]
+
+            for candidate_index, device_id in enumerate(device_candidates):
                 try:
-                    # Сбрасываем флаг первого чанка
-                    self.first_chunk_received = False
+                    device_info = sd.query_devices(device_id, 'input')
+                except Exception as info_err:
+                    logger.warning(f"⚠️ Не удалось получить информацию об устройстве {device_id}: {info_err}")
+                    continue
 
-                    # Создаём поток
-                    # КРИТИЧНО: Используем blocksize >= 2048 и latency='high' для предотвращения CoreAudio overload
-                    # Минимальный blocksize = 2048 для стабильности на macOS
-                    effective_blocksize = max(2048, self.config.chunk_size)
-                    if effective_blocksize > self.config.chunk_size:
-                        logger.info(f"🔧 Blocksize увеличен с {self.config.chunk_size} до {effective_blocksize} для стабильности CoreAudio")
+                self.input_device_info = device_info or {}
+                self.input_device_id = device_id
 
-                    logger.info(f"🔊 AUDIO: Создание потока: device_id={device_id}, rate={self.actual_input_rate}Hz, channels={self.actual_input_channels}, blocksize={effective_blocksize}, latency=high")
+                samplerate = device_info.get('default_samplerate') or self.config.sample_rate
+                channels_available = int(device_info.get('max_input_channels') or 1)
+                channels_target = max(1, self.config.channels)
+                self.actual_input_rate = float(samplerate)
+                self.actual_input_channels = max(1, min(channels_available, channels_target))
 
-                    stream = sd.InputStream(
-                        device=device_id,
-                        samplerate=self.actual_input_rate,
-                        channels=self.actual_input_channels,
-                        dtype='float32',
-                        blocksize=effective_blocksize,  # Минимум 2048 для предотвращения overload
-                        latency='high',  # Высокая латентность для предотвращения пропуска циклов
-                        callback=self._audio_callback,
-                    )
+                first_chunk_timeout, retry_delay = self._get_stream_start_timing()
+                max_silence_start = (
+                    self._max_silence_start_bt
+                    if self._is_bluetooth_device(device_info.get('name', ''))
+                    else self._max_silence_start_default
+                )
+                if not self.allow_device_fallback:
+                    max_silence_start = float("inf")
+                logger.debug(
+                    "🎧 Настройка окна старта: timeout=%.2fs, retry_delay=%.2fs, retries=%s, device=%s (%s)",
+                    first_chunk_timeout,
+                    retry_delay,
+                    self.max_stream_start_retries,
+                    device_id,
+                    device_info.get('name'),
+                )
 
-                    # Стартуем поток
-                    stream.start()
-                    logger.debug(f"🔊 AUDIO: Поток стартовал успешно")
-                    logger.debug(f"🔄 Попытка {attempt + 1}/{self.max_stream_start_retries}: поток стартовал")
+                for attempt in range(self.max_stream_start_retries):
+                    try:
+                        # Сбрасываем флаг первого чанка
+                        self.first_chunk_received = False
+                        self.empty_chunk_counter = 0
 
-                    # Ждём первый чанк с таймаутом
-                    start_wait = time.time()
-                    while not self.first_chunk_received:
-                        if (time.time() - start_wait) > first_chunk_timeout:
-                            raise TimeoutError(f"Первый чанк не получен за {first_chunk_timeout:.1f}s")
-                        if not self.is_listening or self.stop_event.is_set():
-                            # Пользователь отменил - выходим
-                            return
-                        time.sleep(0.01)
+                        # Используем консервативный подход к выбору blocksize
+                        # Сначала пробуем config.chunk_size, потом увеличиваем постепенно
+                        effective_blocksize = self.config.chunk_size
+                        logger.info(
+                            "🔧 Используем blocksize=%s (без принудительного увеличения)",
+                            effective_blocksize,
+                        )
 
-                    # Успех! Первый чанк получен
-                    logger.info("✅ Аудио поток стабилен, первый чанк получен")
-                    stream_started = True
+                        logger.info(
+                            "🔊 AUDIO: Создание потока: device_id=%s (%s), rate=%.1fHz, channels=%s, blocksize=%s, latency=high",
+                            device_id,
+                            device_info.get('name'),
+                            self.actual_input_rate,
+                            self.actual_input_channels,
+                            effective_blocksize,
+                        )
+
+                        stream = sd.InputStream(
+                            device=device_id,
+                            samplerate=self.actual_input_rate,
+                            channels=self.actual_input_channels,
+                            dtype='float32',
+                            blocksize=effective_blocksize,
+                            # latency убран - пусть PortAudio подберет сам
+                            callback=self._audio_callback,
+                        )
+
+                        # Сохраняем ссылку на поток для recovery
+                        self._current_stream = stream
+                        
+                        stream.start()
+                        logger.debug(f"🔄 Попытка {attempt + 1}/{self.max_stream_start_retries}: поток стартовал")
+
+                        start_wait = time.time()
+                        while not self.first_chunk_received:
+                            elapsed = time.time() - start_wait
+                            if elapsed > first_chunk_timeout:
+                                raise TimeoutError(f"Первый чанк не получен за {first_chunk_timeout:.1f}s")
+                            if (
+                                elapsed > max_silence_start
+                                and self.empty_chunk_counter >= self.empty_chunk_threshold
+                            ):
+                                raise TimeoutError("В начале записи обнаружена продолжительная тишина")
+                            if not self.is_listening or self.stop_event.is_set():
+                                return
+                            time.sleep(0.01)
+
+                        logger.info(
+                            "✅ Аудио поток стабилен: device=%s (%s), rate=%.1fHz, channels=%s",
+                            device_id,
+                            device_info.get('name'),
+                            self.actual_input_rate,
+                            self.actual_input_channels,
+                        )
+                        stream_started = True
+                        self.prepared_device_id = device_id
+                        self._last_successful_start = time.time()
+                        break
+
+                    except (sd.PortAudioError, TimeoutError) as e:
+                        logger.warning(f"⚠️ Попытка {attempt + 1}/{self.max_stream_start_retries}: {e}")
+                        if stream:
+                            try:
+                                stream.stop()
+                                stream.close()
+                            except Exception:
+                                pass
+                            stream = None
+
+                        if attempt < self.max_stream_start_retries - 1 and not self.stop_event.is_set():
+                            time.sleep(retry_delay)
+                            continue
+                        break  # переходим к следующему устройству
+
+                if stream_started:
                     break
 
-                except (sd.PortAudioError, TimeoutError) as e:
-                    logger.warning(f"⚠️ Попытка {attempt + 1}/{self.max_stream_start_retries}: {e}")
-
-                    # Закрываем неудачный поток
-                    if stream:
-                        try:
-                            stream.stop()
-                            stream.close()
-                        except Exception:
-                            pass
-                        stream = None
-
-                    # Если ещё есть попытки - ждём и пробуем снова
-                    if attempt < self.max_stream_start_retries - 1:
-                        time.sleep(retry_delay)
-                        continue
-                    else:
-                        # Последняя попытка провалилась - уведомляем пользователя
-                        logger.error("❌ Не удалось стартовать аудио поток после всех попыток")
-                        self._notify_microphone_unstable()
-                        raise
+                if self.allow_device_fallback:
+                    logger.info("🔁 Переходим к fallback-устройству для записи")
+                else:
+                    break
 
             if not stream_started:
-                raise RuntimeError("Не удалось запустить аудио поток")
+                self._schedule_cooldown(0.8)
+                self._notify_microphone_unstable()
+                raise RuntimeError("Не удалось запустить аудио поток ни на одном устройстве")
 
             # Поток работает - ждём завершения
             with stream:
@@ -535,6 +651,7 @@ class SpeechRecognizer:
         except Exception as e:
             logger.error(f"❌ Ошибка прослушивания микрофона: {e}")
             self.state = RecognitionState.ERROR
+            self._schedule_cooldown(0.6)
         finally:
             # Закрываем поток если он всё ещё открыт
             if stream:
@@ -568,7 +685,194 @@ class SpeechRecognizer:
         #     "title": "Микрофон нестабилен",
         #     "message": "Устройство переключается, попробуйте через 2-3 секунды"
         # })
-            
+
+    def _schedule_cooldown(self, seconds: float):
+        """Устанавливает период, в течение которого не запускаем запись повторно."""
+        delay = max(0.0, seconds)
+        self._cooldown_until = max(self._cooldown_until, time.time() + delay)
+
+    @staticmethod
+    def _is_bluetooth_device(name: str) -> bool:
+        lowered = (name or "").lower()
+        return any(keyword in lowered for keyword in ("bluetooth", "airpods", "beats", "headset", "earbud"))
+
+    def _device_is_available(self, device_id: Any, device_info: Dict[str, Any]) -> bool:
+        """Проверяет, доступно ли устройство для записи (sd.check_input_settings)."""
+        try:
+            samplerate = device_info.get('default_samplerate') or self.config.sample_rate
+            try:
+                samplerate = float(samplerate)
+            except Exception:
+                samplerate = float(self.config.sample_rate)
+            channels_available = int(device_info.get('max_input_channels') or 1)
+            channels_target = max(1, min(channels_available, self.config.channels))
+            sd.check_input_settings(
+                device=device_id,
+                samplerate=samplerate,
+                channels=channels_target,
+                dtype='float32',
+            )
+            return True
+        except Exception as e:
+            logger.debug(f"⚠️ check_input_settings для устройства {device_info.get('name')} (id={device_id}) не пройден: {e}")
+            return False
+
+    @staticmethod
+    def _refresh_default_devices():
+        """Просит PortAudio обновить сведения о системных default-устройствах."""
+        try:
+            sd.default.device = (None, None)
+        except Exception:
+            try:
+                sd.default.device = None
+            except Exception:
+                pass
+
+    def _get_system_default_input_index(self) -> Optional[int]:
+        """Возвращает индекс системного дефолтного входного устройства."""
+        default_input = None
+        try:
+            hostapi_idx = sd.default.hostapi
+            hostapis = sd.query_hostapis()
+            default_input = hostapis[hostapi_idx].get('default_input_device')
+        except Exception:
+            default_input = None
+
+        if default_input is None or default_input < 0:
+            try:
+                default_setting = sd.default.device
+                if hasattr(default_setting, '__getitem__'):
+                    default_input = default_setting[0]
+            except Exception:
+                default_input = None
+        return default_input if default_input is not None and default_input >= 0 else None
+
+    def _select_default_input_device(self, strict: bool = True) -> tuple[Any, Optional[Dict[str, Any]]]:
+        """
+        Возвращает (device_id, device_info) для системного default входа.
+        Если strict=True и default недоступен — выбрасывает RuntimeError.
+        Если strict=False — пытается найти первый доступный альтернативный input.
+        """
+        # Принуждаем PortAudio заново запросить системный default
+        self._refresh_default_devices()
+
+        default_input = self._get_system_default_input_index()
+
+        devices_snapshot: List[Dict[str, Any]] = []
+        try:
+            devices_snapshot = sd.query_devices()
+        except Exception:
+            devices_snapshot = []
+
+        candidates: List[Any] = []
+        if default_input is not None and default_input >= 0:
+            candidates.append(default_input)
+
+        if not strict and devices_snapshot:
+            sorted_indices = sorted(
+                (
+                    idx
+                    for idx, dev in enumerate(devices_snapshot)
+                    if dev.get('max_input_channels', 0) > 0 and idx != default_input
+                ),
+                key=lambda idx: self._classify_input_device(devices_snapshot[idx].get('name', '')),
+            )
+            candidates.extend(sorted_indices)
+
+        if strict and not candidates:
+            raise RuntimeError("Системное входное устройство недоступно")
+
+        for candidate in candidates:
+            try:
+                info = sd.query_devices(candidate, 'input')
+            except Exception:
+                info = None
+            if not info:
+                continue
+            if not self._device_is_available(candidate, info):
+                continue
+            self._set_portaudio_default_input(candidate)
+            return candidate, info
+
+        if strict:
+            raise RuntimeError("Системное входное устройство недоступно или занято")
+        return None, None
+
+    def _set_portaudio_default_input(self, device_id: Any):
+        """Устанавливает выбранный input как default внутри PortAudio (без изменения системного default)."""
+        try:
+            current_default = sd.default.device
+            output_part = None
+            if hasattr(current_default, '__getitem__'):
+                if len(current_default) > 1:
+                    output_part = current_default[1]
+            elif current_default not in (None, -1):
+                output_part = current_default
+        except Exception:
+            output_part = None
+        try:
+            sd.default.device = (device_id, output_part)
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось обновить портативный default для устройства {device_id}: {e}")
+
+    @staticmethod
+    def _is_builtin_device(name: str) -> bool:
+        lowered = (name or "").lower()
+        return any(keyword in lowered for keyword in ("built-in", "internal microphone", "macbook", "mac mini"))
+
+    @staticmethod
+    def _is_remote_device(name: str) -> bool:
+        lowered = (name or "").lower()
+        return any(keyword in lowered for keyword in ("iphone", "ipad", "ipod", "continuity", "handoff"))
+
+    def _classify_input_device(self, name: str) -> int:
+        """Возвращает приоритет устройства: меньше — предпочтительнее."""
+        lowered = (name or "").lower()
+        if self._is_builtin_device(lowered):
+            return 0
+        if not self._is_bluetooth_device(lowered) and not self._is_remote_device(lowered):
+            return 1
+        if self._is_bluetooth_device(lowered):
+            return 2
+        if self._is_remote_device(lowered):
+            return 3
+        return 4
+
+    def _build_device_priority(self, primary_device: Any) -> List[Any]:
+        """Формирует предпочтительный список устройств для запуска записи."""
+        if not self.allow_device_fallback:
+            return [primary_device] if primary_device is not None else []
+
+        priority: List[Any] = []
+        seen = set()
+
+        def _append(device_id: Any):
+            if device_id is None or device_id in seen:
+                return
+            seen.add(device_id)
+            priority.append(device_id)
+
+        _append(primary_device)
+
+        try:
+            devices = sd.query_devices()
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось получить список устройств для fallback: {e}")
+            return priority
+
+        buckets: Dict[int, List[int]] = {}
+        for idx, dev in enumerate(devices):
+            if dev.get("max_input_channels", 0) <= 0 or idx == primary_device:
+                continue
+            score = self._classify_input_device(dev.get("name", ""))
+            buckets.setdefault(score, []).append(idx)
+
+        for score in sorted(buckets.keys()):
+            for idx in buckets[score]:
+                _append(idx)
+
+        return priority
+
     def _audio_callback(self, indata, frames, time, status):
         """Callback для записи аудио с диагностикой пустых чанков"""
         try:
@@ -578,8 +882,35 @@ class SpeechRecognizer:
             if self.is_listening:
                 # Проверяем уровень сигнала (диагностика CoreAudio overload)
                 peak = float(np.max(np.abs(indata)))
+                signal_detected = peak >= self._signal_threshold
 
-                if peak < 0.001:  # Пустой чанк
+                if not signal_detected and len(self.audio_data) < 10:
+                    mean_abs = float(np.mean(np.abs(indata)))
+                    logger.debug(
+                        "🔇 AUDIO chunk looks silent: peak=%.8f, mean_abs=%.8f, dtype=%s",
+                        peak,
+                        mean_abs,
+                        indata.dtype,
+                    )
+
+                # Интеграция с RecoveryManager
+                if self.recovery_enabled and self.recovery_manager:
+                    recovery_step = self.recovery_manager.on_chunk_received(indata, peak, float(np.mean(np.abs(indata))))
+                    if recovery_step:
+                        # Запускаем восстановление асинхронно из другого потока
+                        try:
+                            # Получаем event loop из главного потока
+                            if hasattr(self, '_main_loop') and self._main_loop and not self._main_loop.is_closed():
+                                asyncio.run_coroutine_threadsafe(
+                                    self._execute_recovery(recovery_step), 
+                                    self._main_loop
+                                )
+                            else:
+                                logger.warning("⚠️ Event loop недоступен для recovery")
+                        except Exception as e:
+                            logger.error(f"❌ Ошибка запуска recovery: {e}")
+                
+                if not signal_detected:  # Пустой чанк
                     self.empty_chunk_counter += 1
                     if self.empty_chunk_counter >= 10:  # Порог для WARNING
                         if self.empty_chunk_counter == 10 or self.empty_chunk_counter % 50 == 0:  # Логируем на 10, потом каждые 50
@@ -594,26 +925,116 @@ class SpeechRecognizer:
                         logger.debug(f"✅ Сигнал восстановлен после {self.empty_chunk_counter} пустых чанков")
                     self.empty_chunk_counter = 0
 
-                    # DEBUG: каждые N чанков с сигналом логируем состояние
-                    if len(self.audio_data) % 20 == 0:  # Каждые 20 чанков
-                        logger.debug(f"🔊 AUDIO callback: chunks={len(self.audio_data)}, peak={peak:.4f}, frames={frames}")
+                # DEBUG: каждые N чанков с сигналом логируем состояние
+                if signal_detected and len(self.audio_data) % 20 == 0:  # Каждые 20 чанков
+                    logger.debug(f"🔊 AUDIO callback: chunks={len(self.audio_data)}, peak={peak:.4f}, frames={frames}")
 
                 with self.audio_lock:
                     self.audio_data.append(indata.copy())
-                    if len(self.audio_data) == 1:
-                        # Устанавливаем флаг для retry логики
+                    if len(self.audio_data) == 1 and not self.first_chunk_received:
                         self.first_chunk_received = True
                         logger.info(
-                            "🔊 Первый чанк получен: frames=%s, dtype=%s, peak=%.4f",
+                            "🔊 Первый чанк получен: frames=%s, dtype=%s, peak=%.6f (signal=%s)",
                             frames,
                             indata.dtype,
                             peak,
+                            signal_detected,
                         )
 
         except Exception as e:
             logger.error(f"❌ Ошибка в audio callback: {e}")
             import traceback
             logger.error(f"❌ Traceback: {traceback.format_exc()}")
+    
+    async def _execute_recovery(self, recovery_step):
+        """Выполнение шага восстановления аудио."""
+        if not self.recovery_enabled or not self.recovery_manager:
+            return
+            
+        logger.info(f"🔧 Выполняем восстановление: {recovery_step.value}")
+        
+        # Создаем callback для управления потоком
+        async def stream_callback(**kwargs):
+            if 'stop' in kwargs and kwargs['stop']:
+                # Останавливаем поток
+                if hasattr(self, '_current_stream') and self._current_stream:
+                    self._current_stream.stop()
+            elif 'start' in kwargs and kwargs['start']:
+                # Запускаем поток
+                if hasattr(self, '_current_stream') and self._current_stream:
+                    self._current_stream.start()
+            elif 'recreate' in kwargs and kwargs['recreate']:
+                # Пересоздаем поток с новой конфигурацией
+                config = kwargs.get('config')
+                if config:
+                    await self._recreate_stream_with_config(config)
+            elif 'device_id' in kwargs:
+                # Переключаем устройство
+                await self._switch_device(kwargs['device_id'])
+        
+        # Выполняем восстановление
+        success = await self.recovery_manager.execute_recovery(recovery_step, stream_callback)
+        
+        if success:
+            logger.info(f"✅ Восстановление {recovery_step.value} выполнено успешно")
+        else:
+            logger.warning(f"⚠️ Восстановление {recovery_step.value} не удалось")
+    
+    async def _recreate_stream_with_config(self, config):
+        """Пересоздание потока с новой конфигурацией."""
+        try:
+            logger.info(f"🔄 Пересоздаем поток с конфигурацией: {config}")
+            
+            # Останавливаем текущий поток
+            if hasattr(self, '_current_stream') and self._current_stream:
+                self._current_stream.stop()
+                self._current_stream.close()
+            
+            # Обновляем параметры
+            self.actual_input_rate = config.samplerate
+            # blocksize и dtype можно добавить в конфигурацию позже
+            
+            # Создаем новый поток
+            self._current_stream = sd.InputStream(
+                device=self.input_device_id,
+                samplerate=self.actual_input_rate,
+                channels=self.actual_input_channels,
+                dtype=config.dtype,
+                blocksize=config.blocksize,
+                callback=self._audio_callback,
+            )
+            
+            self._current_stream.start()
+            logger.info(f"✅ Поток пересоздан с {config}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка при пересоздании потока: {e}")
+    
+    async def _switch_device(self, device_id):
+        """Переключение на другое устройство."""
+        try:
+            logger.info(f"🔄 Переключаемся на устройство {device_id}")
+            
+            # Останавливаем текущий поток
+            if hasattr(self, '_current_stream') and self._current_stream:
+                self._current_stream.stop()
+                self._current_stream.close()
+            
+            # Создаем поток с новым устройством
+            self._current_stream = sd.InputStream(
+                device=device_id,
+                samplerate=self.actual_input_rate,
+                channels=self.actual_input_channels,
+                dtype='float32',
+                blocksize=1024,
+                callback=self._audio_callback,
+            )
+            
+            self._current_stream.start()
+            logger.info(f"✅ Переключились на устройство {device_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка при переключении устройства: {e}")
             
     async def _recognize_audio(self) -> RecognitionResult:
         """Распознает записанное аудио"""

@@ -59,6 +59,9 @@ class SpeechPlaybackIntegration:
         self._wav_header_skipped: Dict[Any, bool] = {}
         # Основной event loop, используется для публикации из фоновых потоков
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        # Флаг необходимости пересинхронизации выхода после записи
+        self._needs_output_resync: bool = False
+        self._pending_resync_task: Optional[asyncio.Task] = None
 
     async def initialize(self) -> bool:
         try:
@@ -98,6 +101,7 @@ class SpeechPlaybackIntegration:
             
             # ЕДИНЫЙ канал прерываний - только playback.cancelled
             await self.event_bus.subscribe("playback.cancelled", self._on_unified_interrupt, EventPriority.CRITICAL)
+            await self.event_bus.subscribe("voice.mic_closed", self._on_voice_mic_closed, EventPriority.HIGH)
             
             # Устаревшие прямые прерывания (для обратной совместимости, но перенаправляем в единый канал)
             # УБРАНО: keyboard.short_press - прерывания только при переходе в LISTENING
@@ -258,8 +262,28 @@ class SpeechPlaybackIntegration:
             # ✅ КРИТИЧНО: start_playback ПЕРЕД add_audio_data для lazy start
             try:
                 if self._player:
+                    player_state = None
+                    try:
+                        player_state = self._player.state_manager.get_state()
+                    except Exception:
+                        player_state = None
+
+                    if self._needs_output_resync or player_state not in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+                        try:
+                            changed = self._player.resync_output_device()
+                            if changed:
+                                logger.info("SpeechPlayback: выходной маршрут обновлён перед воспроизведением")
+                        except Exception as sync_err:
+                            logger.debug(f"SpeechPlayback: не удалось пересинхронизировать выход перед воспроизведением: {sync_err}")
+                        finally:
+                            self._needs_output_resync = False
+                        try:
+                            player_state = self._player.state_manager.get_state()
+                        except Exception:
+                            player_state = None
+
                     # Определяем текущее состояние плеера и корректно управляем
-                    state = self._player.state_manager.get_state()
+                    state = player_state or self._player.state_manager.get_state()
                     if state == PlaybackState.PAUSED:
                         # Если пауза — резюмируем
                         self._player.resume_playback()
@@ -299,7 +323,33 @@ class SpeechPlaybackIntegration:
                 await self._handle_error(e, where="speech.add_chunk")
 
         except Exception as e:
-            await self._handle_error(e, where="speech.on_audio_chunk", severity="warning")
+                await self._handle_error(e, where="speech.on_audio_chunk", severity="warning")
+
+    async def _on_voice_mic_closed(self, event):
+        """Фиксирует завершение записи и готовит пересинхронизацию вывода."""
+        try:
+            self._needs_output_resync = True
+
+            if self._pending_resync_task and not self._pending_resync_task.done():
+                self._pending_resync_task.cancel()
+
+            async def _delayed_resync():
+                try:
+                    await asyncio.sleep(0.2)
+                    if self._player:
+                        changed = self._player.resync_output_device()
+                        if changed:
+                            logger.info("SpeechPlayback: выходной маршрут обновлён после закрытия микрофона")
+                except asyncio.CancelledError:
+                    return
+                except Exception as sync_err:
+                    logger.debug(f"SpeechPlayback: ошибка пересинхронизации после закрытия микрофона: {sync_err}")
+                finally:
+                    self._pending_resync_task = None
+
+            self._pending_resync_task = asyncio.create_task(_delayed_resync())
+        except Exception as e:
+            await self._handle_error(e, where="speech.on_voice_mic_closed", severity="warning")
 
     async def _on_grpc_completed(self, event):
         try:

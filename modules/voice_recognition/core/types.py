@@ -62,6 +62,7 @@ class RecognitionConfig:
     enable_logging: bool = True
     enable_metrics: bool = True
     auto_start: bool = True
+    enable_audio_recovery: bool = True
 
 @dataclass
 class RecognitionResult:

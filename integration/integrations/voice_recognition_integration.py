@@ -150,6 +150,13 @@ class VoiceRecognitionIntegration:
                     else:
                         logger.warning("⚠️ [AUDIO_DEBUG] SpeechRecognizer не поддерживает set_event_bus")
                     
+                    # Устанавливаем event loop для асинхронных операций из audio callback
+                    if hasattr(self._recognizer, 'set_event_loop'):
+                        self._recognizer.set_event_loop(asyncio.get_running_loop())
+                        logger.debug("🔍 [AUDIO_DEBUG] Event loop установлен в SpeechRecognizer")
+                    else:
+                        logger.warning("⚠️ [AUDIO_DEBUG] SpeechRecognizer не поддерживает set_event_loop")
+                    
                     logger.info("VoiceRecognitionIntegration: real SpeechRecognizer initialized with EventBus")
                 except Exception as e:
                     logger.warning(f"VoiceRecognitionIntegration: failed to init real recognizer, fallback to simulate. Error: {e}")

@@ -51,7 +51,8 @@ DEFAULT_RECOGNITION_CONFIG = RecognitionConfig(
     # Дополнительные настройки
     enable_logging=True,
     enable_metrics=True,
-    auto_start=True
+    auto_start=True,
+    enable_audio_recovery=False
 )
 
 # Конфигурация для высокого качества
@@ -76,7 +77,8 @@ HIGH_QUALITY_CONFIG = RecognitionConfig(
     
     enable_logging=True,
     enable_metrics=True,
-    auto_start=True
+    auto_start=True,
+    enable_audio_recovery=False
 )
 
 # Конфигурация для быстрого распознавания
@@ -101,7 +103,8 @@ FAST_CONFIG = RecognitionConfig(
     
     enable_logging=True,
     enable_metrics=True,
-    auto_start=True
+    auto_start=True,
+    enable_audio_recovery=False
 )
 
 # Словарь конфигураций
