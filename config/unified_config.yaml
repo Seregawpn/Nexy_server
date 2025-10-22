@@ -256,6 +256,7 @@ speech_playback:
   max_queue_size: 5
   playback_speed: 1.0
   volume: 0.8
+  auto_output_device_switch: true  # Автоматическое переключение output устройства при смене системного дефолта
 tray:
   icon_active: assets/icons/active.png
   icon_inactive: assets/icons/off.png

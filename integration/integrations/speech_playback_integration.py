@@ -73,6 +73,7 @@ class SpeechPlaybackIntegration:
                 buffer_size=self.config['buffer_size'],
                 max_memory_mb=self.config['max_memory_mb'],
                 auto_device_selection=self.config['auto_device_selection'],
+                auto_output_device_switch=self.config.get('auto_output_device_switch', True),
             )
             self._player = SequentialSpeechPlayer(pc)
             

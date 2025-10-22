@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class PlayerConfig:
     """
     Конфигурация плеера
-    
+
     ВАЖНО: Используйте from_centralized_config() для загрузки из unified_config.yaml
     Хардкод значения ниже - только fallback на случай ошибки загрузки конфигурации.
     """
@@ -45,6 +45,7 @@ class PlayerConfig:
     max_memory_mb: int = 1024 # Fallback - загружается из централизованной конфигурации
     device_id: Optional[int] = None
     auto_device_selection: bool = True
+    auto_output_device_switch: bool = True  # Автоматическое переключение output устройства
     
     @classmethod
     def from_centralized_config(cls) -> 'PlayerConfig':
@@ -65,6 +66,7 @@ class PlayerConfig:
                 buffer_size=config_dict['buffer_size'],
                 max_memory_mb=config_dict['max_memory_mb'],
                 auto_device_selection=config_dict['auto_device_selection'],
+                auto_output_device_switch=config_dict.get('auto_output_device_switch', True),
                 device_id=None  # Определяется автоматически
             )
         except Exception as e:
@@ -112,7 +114,11 @@ class SequentialSpeechPlayer:
         # macOS компоненты
         self._core_audio_manager = CoreAudioManager()
         self._performance_monitor = PerformanceMonitor()
-        
+
+        # Output device tracking (для автоматического переключения устройств)
+        self.output_device_name: Optional[str] = None  # PRIMARY: имя для сравнения
+        self._current_playback_session_id: Optional[Any] = None  # Текущая сессия воспроизведения
+
         # Callbacks
         self._on_chunk_started: Optional[Callable[[ChunkInfo], None]] = None
         self._on_chunk_completed: Optional[Callable[[ChunkInfo], None]] = None
@@ -161,16 +167,36 @@ class SequentialSpeechPlayer:
     def add_audio_data(self, audio_data: np.ndarray, priority: int = 0, metadata: Optional[Dict[str, Any]] = None) -> str:
         """
         Добавить аудио данные для воспроизведения
-        
+
         Args:
             audio_data: Аудио данные
             priority: Приоритет чанка
             metadata: Дополнительные метаданные
-            
+
         Returns:
             ID чанка
         """
         try:
+            # ✅ НОВАЯ ЛОГИКА: Проверка смены output устройства при первом чанке новой сессии
+            session_id = metadata.get('session_id') if metadata else None
+
+            # Проверяем при новой сессии ИЛИ при первом запуске (поток ещё не стартован)
+            if session_id != self._current_playback_session_id or not self._stream_started:
+                logger.debug(f"🔍 [OUTPUT] Новая сессия или первый запуск (session={session_id}, started={self._stream_started})")
+
+                # ✅ Проверяем И обновляем output устройство (атомарная операция)
+                if self._check_and_update_output_device():
+                    # Устройство изменилось (или первый запуск)
+                    logger.info("🔄 [OUTPUT] Устройство изменилось - пересоздаём поток")
+
+                    # Останавливаем старый поток если он существует
+                    if self._audio_stream is not None:
+                        logger.debug("🔄 [OUTPUT] Останавливаем старый поток")
+                        self._stop_audio_stream()
+
+                # Обновляем текущую сессию
+                self._current_playback_session_id = session_id
+
             # ✅ ПРАВИЛЬНО: ЕДИНСТВЕННАЯ конвертация в модуле плеера
             # Только dtype конвертация - все остальные конвертации убраны
             
@@ -500,6 +526,70 @@ class SequentialSpeechPlayer:
         """Переопределяет формат вывода и перезапускает поток при необходимости."""
         return self._sync_output_format(restart_stream=True)
 
+    def _check_and_update_output_device(self) -> bool:
+        """
+        Проверяет изменилось ли output устройство И обновляет кэш.
+        Атомарная операция (проверка + обновление) для предотвращения рассинхронизации.
+
+        Использует NAME-based сравнение (аналогично INPUT логике).
+
+        Returns:
+            True если устройство изменилось (или первый запуск), False если осталось тем же
+        """
+        if not self.config.auto_output_device_switch:
+            logger.debug("🔍 [OUTPUT] Автопереключение отключено (auto_output_device_switch=False)")
+            return False
+
+        try:
+            logger.debug("🔍 [OUTPUT] Проверка смены устройства...")
+
+            # Принудительно обновляем список устройств в PortAudio
+            # (аналогично INPUT логике в speech_recognizer.py:978-980)
+            try:
+                sd._terminate()
+                sd._initialize()
+                logger.debug("🔍 [OUTPUT] PortAudio переинициализирован")
+            except Exception as reinit_err:
+                logger.debug(f"⚠️ [OUTPUT] Не удалось переинициализировать PortAudio: {reinit_err}")
+
+            # Получаем текущее default output устройство
+            current_device_info = self._query_default_output_device()
+            if not current_device_info:
+                logger.debug("⚠️ [OUTPUT] Не удалось получить текущее устройство")
+                return False
+
+            current_device_name = current_device_info.get('name')
+            if not current_device_name:
+                logger.debug("⚠️ [OUTPUT] У устройства нет имени")
+                return False
+
+            # Сохраняем старое имя для сравнения
+            old_device_name = self.output_device_name
+
+            # ✅ АТОМАРНО: Обновляем кэш СРАЗУ (не откладываем на потом)
+            self.output_device_name = current_device_name
+
+            # Проверяем изменилось ли
+            if old_device_name is None:
+                # Первый запуск
+                logger.info(f"🔊 [OUTPUT] Начальное устройство: \"{current_device_name}\"")
+                return True
+
+            if current_device_name != old_device_name:
+                # Устройство изменилось
+                logger.info(
+                    f"🔄 [OUTPUT] Смена устройства: \"{old_device_name}\" → \"{current_device_name}\""
+                )
+                return True
+
+            # Устройство не изменилось
+            logger.debug(f"✅ [OUTPUT] Устройство не изменилось: \"{current_device_name}\"")
+            return False
+
+        except Exception as e:
+            logger.warning(f"⚠️ [OUTPUT] Ошибка проверки устройства: {e}")
+            return False
+
     def _audio_callback(self, outdata, frames, time_info, status):
         """Callback для воспроизведения аудио"""
         try:
@@ -684,15 +774,20 @@ class SequentialSpeechPlayer:
         try:
             # Останавливаем воспроизведение
             self.stop_playback()
-            
+
             # Останавливаем мониторинг производительности
             self._performance_monitor.stop()
-            
+
             # Очищаем буферы
             self.chunk_buffer.clear_all()
-            
+
+            # Очищаем кэш устройств (при завершении плеера)
+            self.output_device_name = None
+            self._current_playback_session_id = None
+            logger.debug("🔍 [OUTPUT] Кэш устройств очищен при shutdown")
+
             logger.info("🛑 Плеер завершил работу")
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка завершения работы плеера: {e}")
 

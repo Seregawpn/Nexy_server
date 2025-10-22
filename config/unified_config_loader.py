@@ -239,7 +239,8 @@ class UnifiedConfigLoader:
             'dtype': 'int16',
             'buffer_size': 512,
             'max_memory_mb': 50,
-            'auto_device_selection': True
+            'auto_device_selection': True,
+            'auto_output_device_switch': True
         })
     
     def get_stt_config(self) -> Dict[str, Any]:

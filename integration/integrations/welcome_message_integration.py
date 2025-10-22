@@ -198,7 +198,12 @@ class WelcomeMessageIntegration:
         """Коллбек завершения воспроизведения приветствия"""
         try:
             logger.info(f"🎵 [WELCOME_INTEGRATION] Приветствие завершено: {result.method}, success={result.success}")
-            
+
+            # 🔍 ДИАГНОСТИКА: Подробное логирование результата
+            logger.info(f"🔍 [WELCOME_INTEGRATION] result.success={result.success}, result.method={result.method}")
+            logger.info(f"🔍 [WELCOME_INTEGRATION] result.error={result.error}")
+            logger.info(f"🔍 [WELCOME_INTEGRATION] result.metadata={result.metadata}")
+
             # Публикуем событие завершения
             asyncio.create_task(self.event_bus.publish("welcome.completed", {
                 "success": result.success,
@@ -207,13 +212,19 @@ class WelcomeMessageIntegration:
                 "error": result.error,
                 "metadata": result.metadata or {}
             }))
-            
+
             # Если есть аудио данные, отправляем их в SpeechPlaybackIntegration
             if result.success and result.method == "server":
                 audio_data = self.welcome_player.get_audio_data()
+                logger.info(f"🔍 [WELCOME_INTEGRATION] audio_data is None: {audio_data is None}")
                 if audio_data is not None:
+                    logger.info(f"🔍 [WELCOME_INTEGRATION] audio_data.shape={audio_data.shape}, dtype={audio_data.dtype}")
                     asyncio.create_task(self._send_audio_to_playback(audio_data))
-            
+                else:
+                    logger.error("❌ [WELCOME_INTEGRATION] audio_data is None - НЕ отправляю в playback!")
+            else:
+                logger.warning(f"⚠️ [WELCOME_INTEGRATION] НЕ отправляю аудио: success={result.success}, method={result.method}")
+
             # 🆕 ВОЗВРАТ В SLEEPING РЕЖИМ после завершения воспроизведения
             # (это будет вызвано после завершения воспроизведения аудио)
             asyncio.create_task(self._return_to_sleeping_after_playback())
