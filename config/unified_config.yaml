@@ -54,11 +54,11 @@ default_audio:
   error_cooldown: 2.0
   
   # Логирование и отладка
-  enable_debug_logging: false
-  log_health_checks: false
-  log_stream_events: false
-  log_device_changes: false          # логировать смену устройств
-  log_performance_metrics: false     # логировать метрики производительности
+  enable_debug_logging: true
+  log_health_checks: true
+  log_stream_events: true
+  log_device_changes: true           # логировать смену устройств
+  log_performance_metrics: true      # логировать метрики производительности
   
   # Обратная совместимость (будут удалены в будущих версиях)
   input_sample_rate: 16000          # DEPRECATED: используйте target_sample_rate
@@ -193,8 +193,8 @@ integrations:
     enabled: true
     priority: 14
 logging:
-  console_level: ERROR
-  file_level: WARNING
+  console_level: DEBUG
+  file_level: DEBUG
   file_path: logs/nexy.log
   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
   max_file_size: 10485760

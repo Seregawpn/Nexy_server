@@ -63,11 +63,25 @@ class SpeechRecognizer:
         self.actual_input_rate: int = self.config.sample_rate
         self.actual_input_channels: int = self.config.channels
         self.input_device_info: Dict[str, Any] = {}
+
+        # PRIMARY идентификатор - NAME (стабильный, для логики и сравнений)
+        self.input_device_name: Optional[str] = None
+
+        # RUNTIME идентификатор - ID (для sounddevice API, может меняться)
         self.input_device_id: Any = None
+
         self.output_device_info: Dict[str, Any] = {}
+        self.output_device_name: Optional[str] = None
         self.output_device_id: Any = None
         self.host_apis: List[Dict[str, Any]] = []
-        self.prepared_device_id: Any = None
+
+        # Кэш для быстрого маппинга name → id
+        self._device_name_to_id_cache: Dict[str, int] = {}
+        self._device_cache_valid: bool = False
+
+        # УБРАНО: prepared_device_id и prepared_device_name (избыточно)
+        # Теперь используем только input_device_id и input_device_name
+
         self.last_audio_stats: Dict[str, Any] = {}
         self._async_loop: Optional[asyncio.AbstractEventLoop] = None
         self._restart_task: Optional[Any] = None
@@ -147,33 +161,69 @@ class SpeechRecognizer:
             logger.warning(f"⚠️ Ошибка инициализации распознавателя (продолжаем работу): {e}")
             # НЕ устанавливаем ERROR - позволяем работать в degraded режиме
     
-    def _on_device_changed(self, old_device: Any, new_device: Any):
-        """Callback для смены аудио устройства"""
+    def _on_device_changed(self, old_device_id: Any, new_device_id: Any):
+        """
+        Callback для смены аудио устройства.
+        КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Сравниваем устройства по NAME, а не по ID!
+        """
         self.last_device_change_time = time.time()
-        logger.info(f"🔄 Обнаружена смена аудио устройства: {old_device} -> {new_device}")
-        
-        if self.auto_reselect_default:
-            try:
-                try:
-                    sd.default.device = (None, None)
-                except Exception:
-                    pass
-                default_setting = sd.default.device
-                candidate = None
-                if hasattr(default_setting, '__getitem__'):
-                    candidate = default_setting[0]
-                if candidate is not None:
-                    logger.info(f"🎯 Обновляем входное устройство на системный default: {candidate}")
-                    self.prepared_device_id = candidate
-                    self._device_priority = [candidate]
-            except Exception as e:
-                logger.debug(f"⚠️ Не удалось обновить default input: {e}")
 
-        should_restart = self.state == RecognitionState.LISTENING
-        if should_restart:
-            logger.info("⏳ Устройство изменилось во время прослушивания - выполняем мягкую перезагрузку потока")
-            self._graceful_stop_listening(reason="device_changed")
-            self._schedule_listening_restart(self.stabilization_delay)
+        # Получаем ИМЕНА устройств (не ID!)
+        old_device_name = self.input_device_name  # Текущее имя устройства
+        new_device_name = self._get_device_name_by_id(new_device_id)  # Новое имя
+
+        logger.info(
+            f"🔄 [MONITOR] AudioDeviceMonitor callback: "
+            f"ID изменился ({old_device_id} → {new_device_id}), "
+            f"проверяем имена: \"{old_device_name}\" → \"{new_device_name}\""
+        )
+
+        logger.debug(
+            f"🔍 [MONITOR] Текущее состояние: "
+            f"state={self.state.value}, "
+            f"is_listening={self.is_listening}"
+        )
+
+        # Инвалидируем кэш при любом изменении устройств
+        self._invalidate_device_cache()
+
+        # КРИТИЧНО: Сравниваем по ИМЕНАМ, а не по ID!
+        if new_device_name != old_device_name:
+            # Реальная смена устройства (изменилось имя)
+            logger.info(
+                f"✅ [MONITOR] РЕАЛЬНАЯ смена устройства: \"{old_device_name}\" → \"{new_device_name}\" "
+                f"(ID: {old_device_id} → {new_device_id})"
+            )
+
+            logger.debug(
+                f"🔍 [MONITOR] NAME сравнение: \"{new_device_name}\" != \"{old_device_name}\" = True"
+            )
+
+            # Если сейчас идет запись - останавливаем
+            if self.state == RecognitionState.LISTENING:
+                logger.debug(f"🔍 [MONITOR] state=LISTENING - будем останавливать запись")
+                logger.warning(
+                    f"⚠️ Устройство изменилось во время записи - ОСТАНАВЛИВАЕМ запись. "
+                    f"Пользователь должен повторно нажать SPACE для записи на новом устройстве."
+                )
+                self._graceful_stop_listening(reason="device_changed")
+                # ❌ НЕ перезапускаем автоматически!
+                # Пользователь должен сам решить, когда начать запись на новом устройстве
+            else:
+                # Если запись НЕ идет, просто логируем информацию
+                logger.debug(f"🔍 [MONITOR] state!= LISTENING - запись не идет, просто логируем")
+                logger.info(f"ℹ️ Системное устройство изменилось на: \"{new_device_name}\" (ID: {new_device_id})")
+        else:
+            # ID изменился, но NAME остался тот же
+            # Это может быть при переподключении других устройств
+            logger.debug(
+                f"🔍 [MONITOR] NAME сравнение: \"{new_device_name}\" == \"{old_device_name}\" = True (НЕ реальная смена)"
+            )
+            logger.debug(
+                f"ℹ️ [MONITOR] ID изменился ({old_device_id} → {new_device_id}), "
+                f"но устройство то же: \"{new_device_name}\" - продолжаем без изменений"
+            )
+            # Ничего не делаем - start_listening() сам получит актуальный ID при следующем запуске
 
     def _graceful_stop_listening(self, reason: str):
         """Безопасно останавливает текущий поток прослушивания (синхронно)."""
@@ -195,7 +245,6 @@ class SpeechRecognizer:
         self.is_listening = False
         self.first_chunk_received = False
         self.empty_chunk_counter = 0
-        self.prepared_device_id = None
         self.state = RecognitionState.IDLE
 
         # Сбрасываем stop_event, чтобы следующий запуск получил чистый объект
@@ -314,7 +363,6 @@ class SpeechRecognizer:
                 self.is_listening = True
                 self.audio_data = []
                 self.stop_event.clear()
-                self.prepared_device_id = device_id
 
                 # Уведомляем о начале прослушивания
                 await self._notify_state_change(RecognitionState.LISTENING)
@@ -342,7 +390,6 @@ class SpeechRecognizer:
                 logger.warning(f"⚠️ Ошибка начала прослушивания (продолжаем работу): {e}")
                 # НЕ устанавливаем ERROR - возвращаемся в IDLE для повторных попыток
                 self.state = RecognitionState.IDLE
-                self.prepared_device_id = None
                 self._device_priority = []
                 await self._notify_state_change(RecognitionState.IDLE, error=str(e))
                 self._schedule_cooldown(0.5)
@@ -411,10 +458,25 @@ class SpeechRecognizer:
             except Exception as host_err:
                 logger.debug("⚠️ Не удалось получить список host API: %s", host_err)
 
+            # Обновляем кэш устройств перед выбором
+            logger.debug("🔍 [DEVICE] Обновление кэша устройств перед выбором")
+            self._refresh_device_cache()
+
             device_id, device_info = self._select_default_input_device(strict=True)
 
+            # Сохраняем ОБА идентификатора
+            logger.debug(
+                f"🔍 [DEVICE] Выбрано устройство: \"{device_info.get('name')}\" (ID: {device_id})"
+            )
             self.input_device_info = device_info
-            self.input_device_id = device_id
+            self.input_device_id = device_id  # RUNTIME: для sounddevice API
+            self.input_device_name = device_info.get('name')  # PRIMARY: для логики
+
+            logger.debug(
+                f"🔍 [DEVICE] Обновлены поля: "
+                f"input_device_id={self.input_device_id}, "
+                f"input_device_name=\"{self.input_device_name}\""
+            )
 
             samplerate = device_info.get('default_samplerate')
             channels = device_info.get('max_input_channels')
@@ -428,15 +490,13 @@ class SpeechRecognizer:
             self.actual_input_channels = int(channels)
 
             logger.info(
-                "🎧 Входное устройство: name=%s, id=%s, default_rate=%s, max_channels=%s, low_latency=%s, high_latency=%s → actual_rate=%s, channels=%s",
-                device_info.get('name'),
+                "🎧 Входное устройство: \"%s\" (ID: %s) | rate=%sHz, channels=%s, latency=%.3f-%.3fms",
+                self.input_device_name,
                 self.input_device_id,
-                device_info.get('default_samplerate'),
-                device_info.get('max_input_channels'),
-                device_info.get('default_low_input_latency'),
-                device_info.get('default_high_input_latency'),
                 self.actual_input_rate,
                 self.actual_input_channels,
+                (device_info.get('default_low_input_latency') or 0) * 1000,
+                (device_info.get('default_high_input_latency') or 0) * 1000,
             )
 
             # Диагностика выходного устройства
@@ -471,18 +531,18 @@ class SpeechRecognizer:
             if output_info:
                 self.output_device_info = output_info
                 self.output_device_id = default_output
+                self.output_device_name = output_info.get('name')  # Сохраняем NAME
                 logger.info(
-                    "🔊 Выходное устройство: name=%s, id=%s, max_channels=%s, default_rate=%s, low_latency=%s, high_latency=%s",
-                    output_info.get('name'),
+                    "🔊 Выходное устройство: \"%s\" (ID: %s) | channels=%s, rate=%sHz",
+                    self.output_device_name,
                     self.output_device_id,
                     output_info.get('max_output_channels'),
                     output_info.get('default_samplerate'),
-                    output_info.get('default_low_output_latency'),
-                    output_info.get('default_high_output_latency'),
                 )
             else:
                 self.output_device_info = {}
                 self.output_device_id = None
+                self.output_device_name = None
 
             # Инициализируем RecoveryManager (опционально)
             if self.recovery_enabled:
@@ -509,7 +569,8 @@ class SpeechRecognizer:
 
             device_candidates = self._device_priority[:] if self._device_priority else []
             if not device_candidates:
-                primary = self.prepared_device_id or self._prepare_input_device()
+                # Если нет приоритетного списка, получаем текущее устройство
+                primary = self.input_device_id or self._prepare_input_device()
                 device_candidates = self._build_device_priority(primary)
                 if not device_candidates and primary is not None:
                     device_candidates = [primary]
@@ -608,7 +669,6 @@ class SpeechRecognizer:
                             self.actual_input_channels,
                         )
                         stream_started = True
-                        self.prepared_device_id = device_id
                         self._last_successful_start = time.time()
                         break
 
@@ -660,7 +720,6 @@ class SpeechRecognizer:
                     stream.close()
                 except Exception:
                     pass
-            self.prepared_device_id = None
 
     def _get_stream_start_timing(self) -> tuple[float, float]:
         """Подбирает тайминги старта потока в зависимости от типа устройства."""
@@ -730,22 +789,33 @@ class SpeechRecognizer:
 
     def _get_system_default_input_index(self) -> Optional[int]:
         """Возвращает индекс системного дефолтного входного устройства."""
+        logger.debug("🔍 [DEFAULT] Начинаем определение default input устройства")
+
         default_input = None
         try:
             hostapi_idx = sd.default.hostapi
             hostapis = sd.query_hostapis()
             default_input = hostapis[hostapi_idx].get('default_input_device')
-        except Exception:
+            logger.debug(f"🔍 [DEFAULT] Через hostapi[{hostapi_idx}]: default_input={default_input}")
+        except Exception as e:
+            logger.debug(f"🔍 [DEFAULT] Не удалось получить через hostapi: {e}")
             default_input = None
 
         if default_input is None or default_input < 0:
+            logger.debug("🔍 [DEFAULT] Пробуем через sd.default.device")
             try:
                 default_setting = sd.default.device
+                logger.debug(f"🔍 [DEFAULT] sd.default.device = {default_setting}")
                 if hasattr(default_setting, '__getitem__'):
                     default_input = default_setting[0]
-            except Exception:
+                    logger.debug(f"🔍 [DEFAULT] Извлечено default_input[0] = {default_input}")
+            except Exception as e:
+                logger.debug(f"🔍 [DEFAULT] Не удалось получить через sd.default.device: {e}")
                 default_input = None
-        return default_input if default_input is not None and default_input >= 0 else None
+
+        result = default_input if default_input is not None and default_input >= 0 else None
+        logger.debug(f"✅ [DEFAULT] Итоговый default input ID: {result}")
+        return result
 
     def _select_default_input_device(self, strict: bool = True) -> tuple[Any, Optional[Dict[str, Any]]]:
         """
@@ -753,20 +823,25 @@ class SpeechRecognizer:
         Если strict=True и default недоступен — выбрасывает RuntimeError.
         Если strict=False — пытается найти первый доступный альтернативный input.
         """
+        logger.debug(f"🔍 [SELECT] Начинаем выбор default input устройства (strict={strict})")
+
         # Принуждаем PortAudio заново запросить системный default
         self._refresh_default_devices()
 
         default_input = self._get_system_default_input_index()
+        logger.debug(f"🔍 [SELECT] Системный default input ID: {default_input}")
 
         devices_snapshot: List[Dict[str, Any]] = []
         try:
             devices_snapshot = sd.query_devices()
+            logger.debug(f"🔍 [SELECT] Всего устройств в системе: {len(devices_snapshot)}")
         except Exception:
             devices_snapshot = []
 
         candidates: List[Any] = []
         if default_input is not None and default_input >= 0:
             candidates.append(default_input)
+            logger.debug(f"🔍 [SELECT] Добавлен кандидат (default): ID {default_input}")
 
         if not strict and devices_snapshot:
             sorted_indices = sorted(
@@ -778,20 +853,30 @@ class SpeechRecognizer:
                 key=lambda idx: self._classify_input_device(devices_snapshot[idx].get('name', '')),
             )
             candidates.extend(sorted_indices)
+            logger.debug(f"🔍 [SELECT] Добавлены альтернативные кандидаты: {sorted_indices}")
+
+        logger.debug(f"🔍 [SELECT] Всего кандидатов: {len(candidates)} → {candidates}")
 
         if strict and not candidates:
             raise RuntimeError("Системное входное устройство недоступно")
 
         for candidate in candidates:
+            logger.debug(f"🔍 [SELECT] Проверяем кандидата ID {candidate}...")
             try:
                 info = sd.query_devices(candidate, 'input')
-            except Exception:
+                device_name = info.get('name', 'Unknown')
+                logger.debug(f"🔍 [SELECT] ID {candidate}: \"{device_name}\"")
+            except Exception as e:
+                logger.debug(f"⚠️ [SELECT] ID {candidate}: не удалось получить info: {e}")
                 info = None
             if not info:
+                logger.debug(f"⚠️ [SELECT] ID {candidate}: info пуст, пропускаем")
                 continue
             if not self._device_is_available(candidate, info):
+                logger.debug(f"⚠️ [SELECT] ID {candidate}: устройство недоступно")
                 continue
             self._set_portaudio_default_input(candidate)
+            logger.debug(f"✅ [SELECT] ВЫБРАН: ID {candidate} - \"{info.get('name')}\"")
             return candidate, info
 
         if strict:
@@ -872,6 +957,134 @@ class SpeechRecognizer:
                 _append(idx)
 
         return priority
+
+    # ========== NAME-BASED DEVICE MANAGEMENT ==========
+
+    def _refresh_device_cache(self):
+        """
+        Обновляет кэш маппинга device_name → device_id.
+        Вызывается при изменении списка устройств.
+        """
+        import sys
+        logger.debug("🔍 [CACHE] Начинаем обновление кэша устройств")
+        logger.debug(f"🔍 [CACHE] Python executable: {sys.executable}")
+        logger.debug(f"🔍 [CACHE] sounddevice version: {sd.__version__}")
+        self._device_name_to_id_cache.clear()
+
+        try:
+            # КРИТИЧНО: Принудительно обновляем список устройств в PortAudio
+            # Это нужно чтобы увидеть устройства которые подключились ПОСЛЕ запуска приложения
+            logger.debug("🔍 [CACHE] Принудительное обновление списка устройств (_rescan)")
+            try:
+                sd._terminate()
+                sd._initialize()
+            except Exception as rescan_err:
+                logger.debug(f"⚠️ [CACHE] Не удалось сделать rescan: {rescan_err}")
+
+            devices = sd.query_devices()
+            logger.debug(f"🔍 [CACHE] Получено {len(devices)} устройств от sounddevice")
+
+            # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ВСЕХ УСТРОЙСТВ
+            for idx, dev in enumerate(devices):
+                in_ch = dev.get('max_input_channels', 0)
+                out_ch = dev.get('max_output_channels', 0)
+                name = dev.get('name', 'Unknown')
+                logger.debug(f"🔍 [CACHE] ID {idx}: \"{name}\" | IN={in_ch}, OUT={out_ch}")
+
+        except Exception as e:
+            logger.warning(f"⚠️ [CACHE] Не удалось получить список устройств: {e}")
+            self._device_cache_valid = False
+            return
+
+        input_devices_count = 0
+        for idx, dev in enumerate(devices):
+            if dev.get('max_input_channels', 0) > 0:
+                input_devices_count += 1
+                name = dev.get('name')
+                if name:
+                    # Для уникальности используем name@hostapi
+                    host_api = dev.get('hostapi', 0)
+                    unique_key = f"{name}@{host_api}"
+                    self._device_name_to_id_cache[unique_key] = idx
+
+                    # Также сохраняем просто имя (для простого поиска)
+                    # Если есть дубликаты - приоритет у первого найденного
+                    if name not in self._device_name_to_id_cache:
+                        self._device_name_to_id_cache[name] = idx
+                        logger.debug(f"🔍 [CACHE] Добавлено в кэш: \"{name}\" → ID {idx}")
+
+        self._device_cache_valid = True
+        logger.debug(
+            f"✅ [CACHE] Кэш обновлён: {len(self._device_name_to_id_cache)} записей "
+            f"({input_devices_count} входных устройств)"
+        )
+
+    def _find_device_id_by_name(self, target_name: str, strict: bool = True) -> Optional[int]:
+        """
+        Находит индекс устройства по имени.
+
+        Args:
+            target_name: Имя устройства для поиска
+            strict: Если True - требуется точное совпадение, иначе - частичное
+
+        Returns:
+            Индекс устройства или None если не найдено
+        """
+        if not target_name:
+            return None
+
+        # Обновляем кэш если не валиден
+        if not self._device_cache_valid:
+            self._refresh_device_cache()
+
+        # 1. Поиск в кэше (точное совпадение)
+        if target_name in self._device_name_to_id_cache:
+            return self._device_name_to_id_cache[target_name]
+
+        # 2. Если strict=False, ищем частичное совпадение
+        if not strict:
+            target_lower = target_name.lower()
+            for cached_name, device_id in self._device_name_to_id_cache.items():
+                # Пропускаем ключи с @hostapi
+                if '@' in cached_name:
+                    continue
+                if target_lower in cached_name.lower():
+                    logger.debug(f"🔍 Частичное совпадение: '{target_name}' → '{cached_name}' (ID: {device_id})")
+                    return device_id
+
+        # 3. Не найдено - обновляем кэш и пробуем ещё раз
+        self._refresh_device_cache()
+
+        if target_name in self._device_name_to_id_cache:
+            return self._device_name_to_id_cache[target_name]
+
+        return None
+
+    def _get_device_name_by_id(self, device_id: int) -> Optional[str]:
+        """
+        Получает имя устройства по его индексу.
+
+        Args:
+            device_id: Индекс устройства
+
+        Returns:
+            Имя устройства или None
+        """
+        try:
+            device_info = sd.query_devices(device_id, 'input')
+            device_name = device_info.get('name')
+            logger.debug(f"🔍 [LOOKUP] ID {device_id} → \"{device_name}\"")
+            return device_name
+        except Exception as e:
+            logger.warning(f"⚠️ [LOOKUP] Не удалось получить имя устройства {device_id}: {e}")
+            return None
+
+    def _invalidate_device_cache(self):
+        """Помечает кэш устройств как невалидный (нужно обновить)."""
+        logger.debug("🔍 [CACHE] Кэш устройств помечен как невалидный")
+        self._device_cache_valid = False
+
+    # ========== END NAME-BASED DEVICE MANAGEMENT ==========
 
     def _audio_callback(self, indata, frames, time, status):
         """Callback для записи аудио с диагностикой пустых чанков"""
