@@ -185,14 +185,29 @@ class SequentialSpeechPlayer:
                 logger.debug(f"🔍 [OUTPUT] Новая сессия или первый запуск (session={session_id}, started={self._stream_started})")
 
                 # ✅ Проверяем И обновляем output устройство (атомарная операция)
-                if self._check_and_update_output_device():
+                # НО! БЕЗ sd._terminate() внутри - это уничтожит потоки!
+                device_changed = self._check_and_update_output_device()
+
+                if device_changed:
                     # Устройство изменилось (или первый запуск)
                     logger.info("🔄 [OUTPUT] Устройство изменилось - пересоздаём поток")
 
-                    # Останавливаем старый поток если он существует
+                    # 1. Останавливаем старый поток если он существует
                     if self._audio_stream is not None:
                         logger.debug("🔄 [OUTPUT] Останавливаем старый поток")
                         self._stop_audio_stream()
+
+                    # 2. ✅ НЕ ВЫЗЫВАЕМ sd._terminate() / sd._initialize()!
+                    # Это может вызвать segfault/crash в многопоточной среде
+
+                    # 3. Получаем ID текущего дефолтного OUTPUT устройства
+                    current_device = self._query_default_output_device()
+                    device_id = current_device.get('index') if current_device else None
+                    logger.debug(f"🔍 [OUTPUT] Текущее OUTPUT устройство ID: {device_id}")
+
+                    # 4. Создаём новый поток для конкретного устройства
+                    logger.debug("🔄 [OUTPUT] Создаём новый поток для нового устройства")
+                    self._start_audio_stream(device_id=device_id)
 
                 # Обновляем текущую сессию
                 self._current_playback_session_id = session_id
@@ -244,6 +259,15 @@ class SequentialSpeechPlayer:
 
             # Добавляем в буфер
             chunk_id = self.chunk_buffer.add_chunk(audio_data, priority, metadata)
+
+            # ✅ ИСПРАВЛЕНИЕ: Если поток не существует (например, был остановлен lazy stop),
+            # создаём новый перед попыткой старта
+            if self._audio_stream is None:
+                logger.debug("🔍 [OUTPUT] Поток не существует, создаём новый...")
+                # Получаем текущее устройство
+                current_device = self._query_default_output_device()
+                device_id = current_device.get('index') if current_device else None
+                self._start_audio_stream(device_id=device_id)
 
             # Lazy start: стартуем поток при появлении первого чанка
             self._ensure_stream_started()
@@ -364,8 +388,14 @@ class SequentialSpeechPlayer:
             self.state_manager.set_state(PlaybackState.ERROR)
             return False
     
-    def _start_audio_stream(self, *, sync_output: bool = True) -> bool:
-        """Запуск аудио потока с lazy start (создаём без старта)"""
+    def _start_audio_stream(self, *, sync_output: bool = True, device_id: int = None) -> bool:
+        """
+        Запуск аудио потока с lazy start (создаём без старта)
+
+        Args:
+            sync_output: Синхронизировать формат с устройством
+            device_id: ID устройства (None = использовать дефолтное)
+        """
         try:
             with self._stream_lock:
                 if self._audio_stream is not None:
@@ -376,9 +406,16 @@ class SequentialSpeechPlayer:
                 if sync_output:
                     self._sync_output_format(restart_stream=False)
 
-                # Конфигурация потока - device=None означает системный дефолт от macOS
+                # ✅ ИСПРАВЛЕНИЕ: Используем явный device_id
+                # sounddevice.OutputStream принимает device как:
+                # - None: использовать системный дефолт
+                # - int: конкретный device ID
+                # - (input_id, output_id): для duplex streams
+                # У нас output-only stream, поэтому передаём просто int или None
+
+                # Конфигурация потока
                 stream_config = {
-                    'device': None,  # macOS автоматически выбирает дефолтное устройство
+                    'device': device_id,  # int ID или None для дефолтного
                     'channels': self.config.channels,
                     'dtype': self.config.dtype,
                     'samplerate': self.config.sample_rate,
@@ -386,11 +423,17 @@ class SequentialSpeechPlayer:
                     'callback': self._audio_callback
                 }
 
+                # 🔍 ДИАГНОСТИКА: Узнаем какое устройство будет использовано
+                current_device = self._query_default_output_device()
+                device_name = current_device.get('name', 'Unknown') if current_device else 'Unknown'
+                device_id_actual = current_device.get('index', 'Unknown') if current_device else 'Unknown'
+                logger.info(f"🔍 [OUTPUT] Создаём поток для устройства: {device_name} (ID={device_id_actual})")
+
                 # Создаем поток БЕЗ старта (lazy start для снижения нагрузки)
                 self._audio_stream = sd.OutputStream(**stream_config)
                 self._stream_started = False
 
-                logger.info(f"🔧 Аудио поток создан (device: системный дефолт, channels: {self.config.channels})")
+                logger.info(f"🔧 Аудио поток создан (device: {device_name}, ID={device_id_actual}, channels: {self.config.channels})")
                 logger.debug("💡 Поток будет стартован при появлении первого чанка (lazy start)")
                 return True
 
@@ -403,11 +446,21 @@ class SequentialSpeechPlayer:
         with self._stream_lock:
             if self._audio_stream is not None and not self._stream_started:
                 try:
+                    # 🔍 ДИАГНОСТИКА: Проверяем состояние перед стартом
+                    logger.info(f"🔍 [OUTPUT] Стартуем поток: stream exists={self._audio_stream is not None}, started={self._stream_started}")
+
                     self._audio_stream.start()
                     self._stream_started = True
                     logger.info("▶️ Аудио поток стартован (lazy start)")
+
+                    # 🔍 ДИАГНОСТИКА: Проверяем состояние после старта
+                    logger.info(f"🔍 [OUTPUT] Поток стартован: active={self._audio_stream.active if self._audio_stream else 'N/A'}")
                 except Exception as e:
                     logger.error(f"❌ Ошибка старта аудио потока: {e}")
+            elif self._audio_stream is None:
+                logger.error(f"❌ [OUTPUT] НЕ МОГУ СТАРТОВАТЬ: stream is None!")
+            elif self._stream_started:
+                logger.debug(f"✅ [OUTPUT] Поток уже стартован")
     
     def _stop_audio_stream(self):
         """Остановка аудио потока"""
@@ -433,15 +486,22 @@ class SequentialSpeechPlayer:
         """Возвращает информацию о текущем системном выходном устройстве."""
         try:
             default_setting = sd.default.device
+            logger.debug(f"🔍 [OUTPUT] sd.default.device = {default_setting}")
+
             output_device = None
             if hasattr(default_setting, '__getitem__'):
                 try:
                     output_device = default_setting[1]
+                    logger.debug(f"🔍 [OUTPUT] output_device ID = {output_device}")
                 except IndexError:
                     output_device = None
-            return sd.query_devices(output_device, 'output')
+                    logger.warning(f"⚠️ [OUTPUT] IndexError при получении output device из {default_setting}")
+
+            device_info = sd.query_devices(output_device, 'output')
+            logger.debug(f"🔍 [OUTPUT] device_info = {device_info}")
+            return device_info
         except Exception as e:
-            logger.debug(f"⚠️ Не удалось определить выходное устройство: {e}")
+            logger.error(f"❌ [OUTPUT] Не удалось определить выходное устройство: {e}")
             return None
 
     def _probe_output_format(self):
@@ -543,14 +603,9 @@ class SequentialSpeechPlayer:
         try:
             logger.debug("🔍 [OUTPUT] Проверка смены устройства...")
 
-            # Принудительно обновляем список устройств в PortAudio
-            # (аналогично INPUT логике в speech_recognizer.py:978-980)
-            try:
-                sd._terminate()
-                sd._initialize()
-                logger.debug("🔍 [OUTPUT] PortAudio переинициализирован")
-            except Exception as reinit_err:
-                logger.debug(f"⚠️ [OUTPUT] Не удалось переинициализировать PortAudio: {reinit_err}")
+            # ✅ НЕ вызываем sd._terminate() здесь!
+            # Это будет сделано ПОСЛЕ остановки старого потока, но ПЕРЕД созданием нового
+            # (в методе add_audio_data после того как мы вернём True)
 
             # Получаем текущее default output устройство
             current_device_info = self._query_default_output_device()
@@ -598,12 +653,17 @@ class SequentialSpeechPlayer:
 
             # Получаем данные из буфера (2D: frames x channels)
             data = self.chunk_buffer.get_playback_data(frames)
-            
-            # Логируем для отладки (только первые несколько вызовов)
+
+            # 🔍 ДИАГНОСТИКА: Увеличено логирование для отладки
             if not hasattr(self, '_callback_debug_count'):
                 self._callback_debug_count = 0
-            if self._callback_debug_count < 3:
-                logger.debug(f"🎵 Audio callback: frames={frames}, data_shape={data.shape if len(data) > 0 else 'empty'}, target_channels={self.config.channels}")
+            if self._callback_debug_count < 10:  # ✅ Увеличено с 3 до 10
+                buffer_size = self.chunk_buffer.buffer_size
+                has_data = len(data) > 0
+                logger.info(f"🎵 [CALLBACK #{self._callback_debug_count}] frames={frames}, data_shape={data.shape if has_data else 'EMPTY'}, buffer_size={buffer_size}, channels={self.config.channels}")
+                self._callback_debug_count += 1
+            elif self._callback_debug_count == 10:
+                logger.info(f"🔇 [CALLBACK] Дальнейшее логирование callback отключено (работает нормально)")
                 self._callback_debug_count += 1
             
             # Формируем выходные данные (ожидаем 2D)

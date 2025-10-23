@@ -458,19 +458,19 @@ class SpeechRecognizer:
             except Exception as host_err:
                 logger.debug("⚠️ Не удалось получить список host API: %s", host_err)
 
-            # Обновляем кэш устройств перед выбором
-            logger.debug("🔍 [DEVICE] Обновление кэша устройств перед выбором")
-            self._refresh_device_cache()
+            # Кэш устройств обновляется в _get_system_default_input_index()
+            # Не дублируем обновление здесь
 
             device_id, device_info = self._select_default_input_device(strict=True)
+            new_device_name = device_info.get('name') if device_info else None
 
-            # Сохраняем ОБА идентификатора
+            # ВСЕГДА обновляем поля устройства (система может переключиться)
             logger.debug(
-                f"🔍 [DEVICE] Выбрано устройство: \"{device_info.get('name')}\" (ID: {device_id})"
+                f"🔍 [DEVICE] Обновление устройства: \"{self.input_device_name}\" → \"{new_device_name}\" (ID: {self.input_device_id} → {device_id})"
             )
             self.input_device_info = device_info
             self.input_device_id = device_id  # RUNTIME: для sounddevice API
-            self.input_device_name = device_info.get('name')  # PRIMARY: для логики
+            self.input_device_name = new_device_name  # PRIMARY: для логики
 
             logger.debug(
                 f"🔍 [DEVICE] Обновлены поля: "
@@ -776,46 +776,150 @@ class SpeechRecognizer:
             logger.debug(f"⚠️ check_input_settings для устройства {device_info.get('name')} (id={device_id}) не пройден: {e}")
             return False
 
-    @staticmethod
-    def _refresh_default_devices():
-        """Просит PortAudio обновить сведения о системных default-устройствах."""
+    # ✅ УДАЛЕНО: _refresh_portaudio_device_cache()
+    # Причина: sd._terminate() / sd._initialize() опасны - убивают все потоки PortAudio
+    # Новый подход: используем sd.default.device[0] как фолбэк когда устройство не найдено по имени
+
+    def _get_system_default_input_name(self) -> Optional[str]:
+        """
+        Возвращает ИМЯ системного дефолтного INPUT устройства от macOS.
+
+        ✅ NAME-BASED ПОДХОД (аналогично OUTPUT):
+        1. Получаем имя от macOS через SwitchAudioSource
+        2. Возвращаем только имя (не ID), т.к. ID могут меняться при переподключении
+
+        Returns:
+            str: Имя устройства или None если не удалось определить
+        """
         try:
-            sd.default.device = (None, None)
-        except Exception:
-            try:
-                sd.default.device = None
-            except Exception:
-                pass
+            import subprocess
+            import json
+
+            result = subprocess.run(
+                ['SwitchAudioSource', '-c', '-t', 'input', '-f', 'json'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            if result.returncode == 0:
+                device_info = json.loads(result.stdout.strip())
+                device_name = device_info.get('name', '')
+                if device_name:
+                    logger.debug(f"🔍 [INPUT] macOS default INPUT: \"{device_name}\"")
+                    return device_name
+
+        except Exception as e:
+            logger.debug(f"⚠️ [INPUT] Ошибка получения имени: {e}")
+
+        return None
+
+    def _find_device_id_by_name_input(self, device_name: str) -> Optional[int]:
+        """
+        Находит ID INPUT устройства по имени в PortAudio.
+
+        Args:
+            device_name: Имя устройства для поиска
+
+        Returns:
+            int: ID устройства или None если не найдено
+        """
+        if not device_name:
+            return None
+
+        try:
+            all_devices = sd.query_devices()
+            logger.debug(f"🔍 [INPUT] Поиск \"{device_name}\" среди {len(all_devices)} устройств")
+
+            # 1. Точное совпадение
+            for idx, dev in enumerate(all_devices):
+                if dev.get('max_input_channels', 0) > 0:
+                    dev_name = dev.get('name', '')
+                    if dev_name == device_name:
+                        logger.debug(f"✅ [INPUT] Найдено (точное): ID {idx} - \"{dev_name}\"")
+                        return idx
+
+            # 2. Частичное совпадение (для разных апострофов)
+            search_keywords = device_name.replace("'s", "").replace("'s", "").lower().split()
+            for idx, dev in enumerate(all_devices):
+                if dev.get('max_input_channels', 0) > 0:
+                    dev_name = dev.get('name', '')
+                    dev_name_normalized = dev_name.replace("'s", "").replace("'s", "").lower()
+                    if all(keyword in dev_name_normalized for keyword in search_keywords):
+                        logger.debug(f"✅ [INPUT] Найдено (частичное): ID {idx} - \"{dev_name}\"")
+                        return idx
+
+            logger.debug(f"⚠️ [INPUT] Устройство \"{device_name}\" не найдено в PortAudio")
+            return None
+
+        except Exception as e:
+            logger.debug(f"⚠️ [INPUT] Ошибка поиска: {e}")
+            return None
+
+    def _safe_refresh_portaudio_cache(self) -> bool:
+        """
+        ОТКЛЮЧЕНО: Обновление кэша PortAudio через sd._terminate() / sd._initialize().
+
+        ⚠️ ПРОБЛЕМА:
+        - sd._terminate() убивает ВСЕ PortAudio потоки (INPUT + OUTPUT)
+        - Race condition: OUTPUT может создаваться параллельно
+        - Результат: CRASH приложения (PaErrorCode -9986)
+
+        ✅ РЕШЕНИЕ:
+        - Не обновляем кэш автоматически
+        - Показываем пользователю сообщение о необходимости перезапуска
+
+        Returns:
+            bool: Всегда False (обновление отключено)
+        """
+        logger.warning("⚠️ [CACHE] Автоматическое обновление кэша ОТКЛЮЧЕНО")
+        logger.info("💡 [CACHE] Для распознавания новых устройств необходим перезапуск приложения")
+        return False
 
     def _get_system_default_input_index(self) -> Optional[int]:
-        """Возвращает индекс системного дефолтного входного устройства."""
-        logger.debug("🔍 [DEFAULT] Начинаем определение default input устройства")
+        """
+        Возвращает индекс системного дефолтного INPUT устройства.
 
-        default_input = None
+        ✅ NAME-BASED ПОДХОД с БЕЗОПАСНЫМ обновлением кэша:
+        1. Получаем имя устройства от macOS (SwitchAudioSource)
+        2. Ищем его ID в списке устройств PortAudio по имени
+        3. Если не найдено - БЕЗОПАСНО обновляем кэш и ищем снова
+        4. Если всё ещё не найдено - возвращаем None
+
+        ВАЖНО: Вызывается ТОЛЬКО из _prepare_input_device(),
+        который вызывается ПЕРЕД созданием INPUT потока!
+        """
+        # Получаем имя системного default устройства
+        system_device_name = self._get_system_default_input_name()
+        if not system_device_name:
+            logger.debug("⚠️ [INPUT] Не удалось получить имя системного устройства")
+            return None
+
+        # Первая попытка: ищем ID по имени
+        device_id = self._find_device_id_by_name_input(system_device_name)
+        if device_id is not None:
+            logger.debug(f"✅ [INPUT] Найдено устройство: \"{system_device_name}\" → ID {device_id}")
+            return device_id
+
+        # Не найдено - НЕ обновляем кэш (риск crash)
+        logger.warning(f"⚠️ [INPUT] Устройство \"{system_device_name}\" не найдено в кэше PortAudio")
+        logger.error(f"❌ [INPUT] macOS использует \"{system_device_name}\", но PortAudio его не видит")
+        logger.info(f"💡 [INPUT] РЕШЕНИЕ: Перезапустите приложение для обновления списка устройств")
+
+        # Показываем доступные INPUT устройства для диагностики
         try:
-            hostapi_idx = sd.default.hostapi
-            hostapis = sd.query_hostapis()
-            default_input = hostapis[hostapi_idx].get('default_input_device')
-            logger.debug(f"🔍 [DEFAULT] Через hostapi[{hostapi_idx}]: default_input={default_input}")
-        except Exception as e:
-            logger.debug(f"🔍 [DEFAULT] Не удалось получить через hostapi: {e}")
-            default_input = None
+            all_devices = sd.query_devices()
+            available_inputs = [
+                f"{idx}: {dev.get('name')}"
+                for idx, dev in enumerate(all_devices)
+                if dev.get('max_input_channels', 0) > 0
+            ]
+            logger.info(f"📋 [INPUT] Доступные INPUT устройства в PortAudio: {', '.join(available_inputs)}")
+        except Exception:
+            pass
 
-        if default_input is None or default_input < 0:
-            logger.debug("🔍 [DEFAULT] Пробуем через sd.default.device")
-            try:
-                default_setting = sd.default.device
-                logger.debug(f"🔍 [DEFAULT] sd.default.device = {default_setting}")
-                if hasattr(default_setting, '__getitem__'):
-                    default_input = default_setting[0]
-                    logger.debug(f"🔍 [DEFAULT] Извлечено default_input[0] = {default_input}")
-            except Exception as e:
-                logger.debug(f"🔍 [DEFAULT] Не удалось получить через sd.default.device: {e}")
-                default_input = None
+        return None
 
-        result = default_input if default_input is not None and default_input >= 0 else None
-        logger.debug(f"✅ [DEFAULT] Итоговый default input ID: {result}")
-        return result
 
     def _select_default_input_device(self, strict: bool = True) -> tuple[Any, Optional[Dict[str, Any]]]:
         """
@@ -825,8 +929,8 @@ class SpeechRecognizer:
         """
         logger.debug(f"🔍 [SELECT] Начинаем выбор default input устройства (strict={strict})")
 
-        # Принуждаем PortAudio заново запросить системный default
-        self._refresh_default_devices()
+        # ✅ ПОДХОД: _get_system_default_input_index() ищет устройство по имени
+        # от macOS и при необходимости обновляет кэш PortAudio
 
         default_input = self._get_system_default_input_index()
         logger.debug(f"🔍 [SELECT] Системный default input ID: {default_input}")
@@ -839,7 +943,8 @@ class SpeechRecognizer:
             devices_snapshot = []
 
         candidates: List[Any] = []
-        if default_input is not None and default_input >= 0:
+        # Добавляем default_input если он найден
+        if default_input is not None:
             candidates.append(default_input)
             logger.debug(f"🔍 [SELECT] Добавлен кандидат (default): ID {default_input}")
 
@@ -966,20 +1071,38 @@ class SpeechRecognizer:
         Вызывается при изменении списка устройств.
         """
         import sys
-        logger.debug("🔍 [CACHE] Начинаем обновление кэша устройств")
+        import threading
+        import time
+        
+        # Логируем информацию о потоке для отслеживания race conditions
+        current_thread = threading.current_thread()
+        thread_id = current_thread.ident
+        thread_name = current_thread.name
+        timestamp = time.time()
+        
+        logger.debug("🔍 [CACHE] === НАЧИНАЕМ ОБНОВЛЕНИЕ КЭША УСТРОЙСТВ ===")
+        logger.debug(f"🔍 [CACHE] Thread: {thread_name} (ID: {thread_id}), timestamp: {timestamp}")
         logger.debug(f"🔍 [CACHE] Python executable: {sys.executable}")
         logger.debug(f"🔍 [CACHE] sounddevice version: {sd.__version__}")
+        logger.debug(f"🔍 [CACHE] Текущее состояние sd.default.device: {sd.default.device}")
+        
         self._device_name_to_id_cache.clear()
 
         try:
-            # КРИТИЧНО: Принудительно обновляем список устройств в PortAudio
-            # Это нужно чтобы увидеть устройства которые подключились ПОСЛЕ запуска приложения
-            logger.debug("🔍 [CACHE] Принудительное обновление списка устройств (_rescan)")
-            try:
-                sd._terminate()
-                sd._initialize()
-            except Exception as rescan_err:
-                logger.debug(f"⚠️ [CACHE] Не удалось сделать rescan: {rescan_err}")
+            # ✅ ИСПРАВЛЕНИЕ: НЕ используем sd._terminate() / sd._initialize()!
+            # Причина: это уничтожает ВСЕ PortAudio потоки (включая OUTPUT),
+            # что вызывает segfault/crash в многопоточной среде.
+            #
+            # Вместо этого полагаемся на то, что sounddevice.query_devices()
+            # получает актуальный список устройств без необходимости реинициализации.
+            # Если устройство подключилось после запуска - macOS/PortAudio автоматически
+            # обнаружат его при следующем query_devices().
+
+            # ✅ ИСПРАВЛЕНИЕ: Убрали _refresh_default_devices()
+            # Причина: Не даёт эффекта, т.к. sd.default.device не обновляется без sd._terminate()
+            # Теперь полагаемся на SwitchAudioSource + поиск по имени в sd.query_devices()
+
+            logger.debug("🔍 [CACHE] Получение списка устройств (без reinit)")
 
             devices = sd.query_devices()
             logger.debug(f"🔍 [CACHE] Получено {len(devices)} устройств от sounddevice")
