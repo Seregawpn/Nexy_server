@@ -37,6 +37,9 @@ a = Analysis(
         *([("/opt/homebrew/bin/flac", ".")] if Path("/opt/homebrew/bin/flac").exists() else []),
     ],
     hiddenimports=[
+        # System monitoring (must be first)
+        "psutil",
+        
         # Core modules
         "asyncio",
         "logging",
@@ -71,14 +74,10 @@ a = Analysis(
         
         # Tray helper на rumps
         "rumps",
-        "pyobjc_core",
-        "pyobjc_framework_Cocoa",
         
         # gRPC
         "grpc",
         "grpc.aio",
-        "streaming_pb2",
-        "streaming_pb2_grpc",
         # Protobuf runtime used by generated stubs
         "google",
         "google.protobuf",
@@ -88,9 +87,6 @@ a = Analysis(
         # macOS specific
         "Quartz",
         "AppKit",
-        
-        # System monitoring
-        "psutil",
     ],
     hookspath=[],
     hooksconfig={},
