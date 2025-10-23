@@ -67,7 +67,7 @@ init_ffmpeg_for_pydub()
 # ВАЖНО: Должен быть выполнен ДО импорта любых модулей, использующих rumps
 # Исправляет проблему "dlsym cannot find symbol NSMakeRect in CFBundle"
 try:
-    # Правильный порядок импорта: сначала AppKit, потом Foundation
+                                     # Правильный порядок импорта: сначала AppKit, потом Foundation
     import AppKit
     import Foundation
     
