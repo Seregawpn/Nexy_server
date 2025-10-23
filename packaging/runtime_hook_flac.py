@@ -13,7 +13,7 @@ if hasattr(sys, '_MEIPASS'):
     speech_recog_path = os.path.join(sys._MEIPASS, 'speech_recognition')
     if os.path.exists(speech_recog_path):
         old_flac_path = os.path.join(speech_recog_path, 'flac-mac')
-        new_flac_path = '/Users/sergiyzasorin/Downloads/flac-1.5.0/src/flac/flac'
+        new_flac_path = '/Users/sergiyzasorin/Downloads/flac-1.5.0/src/flac/flac'  # Already code-signed
         
         if os.path.exists(old_flac_path) and os.path.exists(new_flac_path):
             try:
