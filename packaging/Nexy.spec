@@ -90,9 +90,9 @@ a = Analysis(
         "Quartz",
         "AppKit",
     ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
+           hookspath=[],
+           hooksconfig={},
+           runtime_hooks=["packaging/runtime_hook_flac.py"],
     excludes=[
         # GUI and dev tooling
         "tkinter",
