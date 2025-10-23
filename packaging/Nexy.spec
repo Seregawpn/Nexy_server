@@ -30,11 +30,11 @@ a = Analysis(
         # Icons and resources
         (str(client_dir / "assets"), "assets"),
         # Proto files for gRPC (if exists)
-        (str(client_dir / "streaming.proto"), ".") if (client_dir / "streaming.proto").exists() else None,
+        *([(str(client_dir / "streaming.proto"), ".")] if (client_dir / "streaming.proto").exists() else []),
         # Utils (if exists)
-        (str(client_dir / "utils"), "utils") if (client_dir / "utils").exists() else None,
+        *([(str(client_dir / "utils"), "utils")] if (client_dir / "utils").exists() else []),
         # FLAC support files
-        ("/opt/homebrew/bin/flac", ".") if Path("/opt/homebrew/bin/flac").exists() else None,
+        *([("/opt/homebrew/bin/flac", ".")] if Path("/opt/homebrew/bin/flac").exists() else []),
     ],
     hiddenimports=[
         # Core modules
