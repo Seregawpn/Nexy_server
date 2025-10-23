@@ -29,10 +29,10 @@ a = Analysis(
         (str(client_dir / "config"), "config"),
         # Icons and resources
         (str(client_dir / "assets"), "assets"),
-        # Proto files for gRPC (if exists)
-        *([(str(client_dir / "streaming.proto"), ".")] if (client_dir / "streaming.proto").exists() else []),
-        # Utils (if exists)
-        *([(str(client_dir / "utils"), "utils")] if (client_dir / "utils").exists() else []),
+        # Proto files for gRPC
+        (str(client_dir / "modules" / "grpc_client" / "proto" / "streaming.proto"), "."),
+        # Utils
+        (str(client_dir / "integration" / "utils"), "utils"),
         # FLAC support files
         *([("/opt/homebrew/bin/flac", ".")] if Path("/opt/homebrew/bin/flac").exists() else []),
     ],
@@ -42,10 +42,14 @@ a = Analysis(
         
         # Core modules
         "asyncio",
+        "asyncio.events",
+        "asyncio.futures",
+        "asyncio.tasks",
         "logging",
         "time",
         "sys",
         "pathlib",
+        "uuid",
         
         # Audio
         "sounddevice",
@@ -60,6 +64,9 @@ a = Analysis(
         
         # STT
         "speech_recognition",
+        "speech_recognition.recognizer",
+        "speech_recognition.audio",
+        "speech_recognition.exceptions",
         
         # UI
         "rich.console",
@@ -67,19 +74,24 @@ a = Analysis(
         
         # Input
         "pynput",
+        "pynput.keyboard",
+        "pynput.mouse",
         
         # Screen capture
-        "mss",
         "PIL",
         "PIL.Image",
         "PIL.ImageDraw",
         
         # Tray helper на rumps
         "rumps",
+        "pyobjc_core",
+        "pyobjc_framework_Cocoa",
         
         # gRPC
         "grpc",
         "grpc.aio",
+        "streaming_pb2",
+        "streaming_pb2_grpc",
         # Protobuf runtime used by generated stubs
         "google",
         "google.protobuf",
@@ -89,6 +101,9 @@ a = Analysis(
         # macOS specific
         "Quartz",
         "AppKit",
+        
+        # Configuration
+        "yaml",
     ],
            hookspath=[],
            hooksconfig={},
