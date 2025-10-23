@@ -50,6 +50,8 @@ a = Analysis(
         # Audio
         "sounddevice",
         "numpy",
+        "scipy",
+        "scipy.signal",
         "queue",
         "threading",
         "pydub",
@@ -101,7 +103,6 @@ a = Analysis(
 
         # Data/ML stacks not used
         "matplotlib",
-        "scipy",
         "pandas",
         "numba",
         "llvmlite",
