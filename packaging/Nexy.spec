@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 
 # File paths - Force absolute paths
-current_dir = Path.cwd().resolve()  # This is /path/to/client/packaging
-client_dir = current_dir.parent     # This is /path/to/client
+current_dir = Path.cwd().resolve()  # This is /path/to/client (PyInstaller runs from client/)
+client_dir = current_dir            # This is /path/to/client
 icon_path = client_dir / "assets" / "icons" / "app_icon.icns"
 
 print(f"Using absolute path: {client_dir}")
