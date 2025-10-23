@@ -141,8 +141,8 @@ a = Analysis(
         # XML stack not used
         "lxml",
 
-        # Legacy problematic binary (Intel)
-        "speech_recognition.flac-mac",  # Intel x86_64 binary - not compatible with ARM64
+               # Legacy problematic binary (Intel) - causes notarization issues
+               "speech_recognition.flac-mac",  # Intel x86_64 binary - not compatible with ARM64, uses old SDK
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -154,23 +154,25 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
 # Create executable file
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name="Nexy",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=True,
-    upx=False,
-    console=False,  # Hide console for macOS application
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch="arm64",  # Только Apple Silicon для нотаризации
-    codesign_identity="Developer ID Application: Sergiy Zasorin (5NKLL2CLB9)",
-    entitlements_file="packaging/entitlements.plist",
-)
+       exe = EXE(
+           pyz,
+           a.scripts,
+           [],
+           exclude_binaries=True,
+           name="Nexy",
+           debug=False,
+           bootloader_ignore_signals=False,
+           strip=True,
+           upx=False,
+           console=False,  # Hide console for macOS application
+           disable_windowed_traceback=False,
+           argv_emulation=False,
+           target_arch="arm64",  # Только Apple Silicon для нотаризации
+           codesign_identity="Developer ID Application: Sergiy Zasorin (5NKLL2CLB9)",
+           entitlements_file="packaging/entitlements.plist",
+           codesign_deep=True,  # Deep signing
+           codesign_options="runtime",  # Enable hardened runtime
+       )
 
 # Create .app bundle
 coll = COLLECT(
@@ -184,12 +186,16 @@ coll = COLLECT(
     name="Nexy",
 )
 
-# Create .app file
-app = BUNDLE(
-    coll,
-    name="Nexy.app",
-    icon=icon_path,
-    bundle_identifier="com.nexy.assistant",
+       # Create .app file
+       app = BUNDLE(
+           coll,
+           name="Nexy.app",
+           icon=icon_path,
+           bundle_identifier="com.nexy.assistant",
+           codesign_identity="Developer ID Application: Sergiy Zasorin (5NKLL2CLB9)",
+           entitlements_file="packaging/entitlements.plist",
+           codesign_deep=True,  # Deep signing
+           codesign_options="runtime",  # Enable hardened runtime
     info_plist={
         # Main information
         "CFBundleName": "Nexy",
