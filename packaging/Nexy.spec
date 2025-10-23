@@ -88,6 +88,9 @@ a = Analysis(
         # macOS specific
         "Quartz",
         "AppKit",
+        
+        # System monitoring
+        "psutil",
     ],
     hookspath=[],
     hooksconfig={},
@@ -122,7 +125,6 @@ a = Analysis(
         "pkg_resources",
         "grpc_tools",
         "Cython",
-        "psutil",
         "zstandard",
         "pydantic_core",
         
