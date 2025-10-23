@@ -184,19 +184,24 @@ class QuartzKeyboardMonitor:
                             if not self.key_pressed:
                                 return event
                             duration = now - (self.press_start_time or now)
+
+                            # КРИТИЧНО: Сбрасываем состояние ПОСЛЕ определения типа события,
+                            # но ДО вызова _trigger_event, чтобы hold_monitor прекратил работу
+                            long_sent_snapshot = self._long_sent
                             self.key_pressed = False
                             self.press_start_time = None
                             self.last_event_time = now
+
                             # Если уже отправили LONG_PRESS — это RELEASE
                             # Иначе (короткое нажатие) — это SHORT_PRESS
                             event_type_out = (
-                                KeyEventType.RELEASE if self._long_sent
+                                KeyEventType.RELEASE if long_sent_snapshot
                                 else KeyEventType.SHORT_PRESS
                             )
                             import threading
                             thread_name = threading.current_thread().name
-                            logger.info(f"🔑 PTT: keyUp → {event_type_out.value}, duration={duration:.3f}s, _long_sent={self._long_sent}, thread={thread_name}")
-                            logger.debug(f"Quartz keyUp: duration={duration:.3f}s, _long_sent={self._long_sent} → {event_type_out.value}")
+                            logger.info(f"🔑 PTT: keyUp → {event_type_out.value}, duration={duration:.3f}s, _long_sent={long_sent_snapshot}, thread={thread_name}")
+                            logger.debug(f"Quartz keyUp: duration={duration:.3f}s, _long_sent={long_sent_snapshot} → {event_type_out.value}")
 
                         ev = KeyEvent(
                             key=self.key_to_monitor,
@@ -296,6 +301,12 @@ class QuartzKeyboardMonitor:
                     if self.key_pressed and self.press_start_time:
                         duration = time.time() - self.press_start_time
                         if not self._long_sent and duration >= self.long_press_threshold:
+                            # КРИТИЧНО: Проверяем еще раз, что клавиша все еще нажата
+                            # (keyUp мог произойти между проверкой и этой строкой)
+                            if not self.key_pressed or not self.press_start_time:
+                                logger.debug(f"HOLD_MONITOR: клавиша была отпущена во время проверки, пропускаем LONG_PRESS")
+                                continue
+
                             import threading
                             thread_name = threading.current_thread().name
                             logger.info(f"🔑 PTT: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}, thread={thread_name}")

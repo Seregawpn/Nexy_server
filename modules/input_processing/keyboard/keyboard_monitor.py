@@ -213,23 +213,28 @@ class KeyboardMonitor:
         """Обработка отпускания клавиши"""
         try:
             current_time = time.time()
-            
+
             # Проверяем, что это наша клавиша
             if not self._is_target_key(key):
                 return
-                
+
             with self.state_lock:
                 if not self.key_pressed:
                     return
-                    
+
                 duration = current_time - self.press_start_time if self.press_start_time else 0
-                
+
+                # КРИТИЧНО: Сбрасываем состояние СРАЗУ, чтобы hold_monitor не отправил LONG_PRESS
+                self.key_pressed = False
+                press_start_time_backup = self.press_start_time
+                self.press_start_time = None
+
                 # Определяем тип события
                 if duration < self.short_press_threshold:
                     event_type = KeyEventType.SHORT_PRESS
                 else:
                     event_type = KeyEventType.RELEASE
-                
+
                 # Создаем событие
                 event = KeyEvent(
                     key=self._key_to_string(key),
@@ -237,12 +242,10 @@ class KeyboardMonitor:
                     timestamp=current_time,
                     duration=duration
                 )
-                
+
                 self._trigger_event(event_type, duration, event)
-                
-                # Сбрасываем состояние
-                self.key_pressed = False
-                self.press_start_time = None
+
+                # Обновляем время последнего события
                 self.last_event_time = current_time
                 
             logger.debug(f"🔑 Клавиша отпущена: {self._key_to_string(key)} (длительность: {duration:.3f}s)")

@@ -149,6 +149,9 @@ class ModeManagementIntegration:
         try:
             data = (event or {}).get("data", {})
             target = data.get("target")  # может быть AppMode или str
+
+            logger.info(f"🔄 MODE_REQUEST: target={target}, source={data.get('source')}, session_id={data.get('session_id')}, priority={data.get('priority')}")
+
             if isinstance(target, str):
                 try:
                     target = AppMode(target.lower())
@@ -157,8 +160,10 @@ class ModeManagementIntegration:
                     try:
                         target = AppMode(target.lower())
                     except Exception:
+                        logger.warning(f"MODE_REQUEST: Invalid target={target}, ignoring")
                         return
             if target not in (AppMode.SLEEPING, AppMode.LISTENING, AppMode.PROCESSING):
+                logger.warning(f"MODE_REQUEST: target={target} not in allowed modes, ignoring")
                 return
 
             priority = int(data.get("priority", 0))
@@ -167,11 +172,14 @@ class ModeManagementIntegration:
 
             # Фильтрация по сессии (в PROCESSING принимаем только текущую либо interrupt)
             current_mode = self.state_manager.get_current_mode()
+            logger.info(f"🔄 MODE_REQUEST: current_mode={current_mode}, target={target}, source={source}")
+
             # Идемпотентность: если запрашивают тот же режим — игнорируем
             if target == current_mode:
                 logger.debug(f"Mode request ignored (same mode): {target}")
                 return
             if current_mode == AppMode.PROCESSING and source != 'interrupt':
+                logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={self._active_session_id}, request={session_id})")
                 if self._active_session_id is not None and session_id is not None:
                     if session_id != self._active_session_id:
                         logger.debug("Mode request ignored due to session mismatch in PROCESSING")
@@ -179,10 +187,12 @@ class ModeManagementIntegration:
 
             # Приоритеты: если заявка из более низкого приоритета — применяем только если нет конфликтов
             # Упрощённая модель: interrupt всегда применяется, остальное — напрямую
-            if source == 'interrupt':
+            if source == 'interrupt' or priority >= 90:
+                logger.info(f"🔄 MODE_REQUEST: применяем как interrupt (source={source}, priority={priority}) → {target}")
                 await self._apply_mode(target, source="interrupt")
                 return
 
+            logger.info(f"🔄 MODE_REQUEST: применяем mode → {target}")
             await self._apply_mode(target, source=source)
 
             # Обновляем активную сессию

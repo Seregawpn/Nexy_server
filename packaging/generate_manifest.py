@@ -86,7 +86,7 @@ def generate_manifest(dmg_path: str, version: str, build: int, private_key_path:
             "ed25519": ed25519_signature
         },
         "requirements": {
-            "min_macos": "11.0",
+            "min_macos": "12.0",  # macOS 12.0+ (Monterey) - соответствует Nexy.spec
             "architecture": "arm64"
         },
         "changelog": [

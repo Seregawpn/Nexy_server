@@ -98,11 +98,12 @@ class SpeechRecognizer:
         logger.debug(f"🔧 Event loop установлен в SpeechRecognizer: {loop}")
 
         # Retry параметры для мягкого перезапуска потока (адаптивные для BT-устройств)
-        self.max_stream_start_retries = 5
+        self.max_stream_start_retries = 7  # Увеличено для BT-устройств (было 5)
         self.retry_delay = 0.8  # 800мс между попытками (проводные устройства)
         self.first_chunk_timeout = 2.0  # 2s ожидание первого чанка по умолчанию
         self.first_chunk_timeout_bt = 3.5  # 3.5s для BT-маршрутов
         self.retry_delay_bt = 1.2  # BT-устройства стабилизируются дольше
+        self.bt_prestart_delay = 0.5  # 500мс задержка перед start() для BT (FIX для Error 89)
 
         # Счётчик пустых чанков для диагностики CoreAudio overload
         self.empty_chunk_counter = 0
@@ -622,6 +623,9 @@ class SpeechRecognizer:
                             effective_blocksize,
                         )
 
+                        # Засекаем время для диагностики Error 89
+                        stream_create_start = time.time()
+
                         logger.info(
                             "🔊 AUDIO: Создание потока: device_id=%s (%s), rate=%.1fHz, channels=%s, blocksize=%s, latency=high",
                             device_id,
@@ -643,9 +647,23 @@ class SpeechRecognizer:
 
                         # Сохраняем ссылку на поток для recovery
                         self._current_stream = stream
-                        
+
+                        # ✅ FIX для Error 89: Задержка перед start() для Bluetooth устройств
+                        # Bluetooth устройствам нужно время на инициализацию CoreAudio pipeline
+                        if self._is_bluetooth_device(device_info.get('name', '')):
+                            logger.info(
+                                "⏳ Ожидание готовности Bluetooth устройства (%.1fs)...",
+                                self.bt_prestart_delay
+                            )
+                            time.sleep(self.bt_prestart_delay)
+
                         stream.start()
-                        logger.debug(f"🔄 Попытка {attempt + 1}/{self.max_stream_start_retries}: поток стартовал")
+
+                        # Логируем время от создания до старта (диагностика Error 89)
+                        stream_start_elapsed = time.time() - stream_create_start
+                        logger.info(
+                            f"✅ Поток запущен за {stream_start_elapsed:.3f}s (попытка {attempt + 1}/{self.max_stream_start_retries})"
+                        )
 
                         start_wait = time.time()
                         while not self.first_chunk_received:
@@ -673,7 +691,18 @@ class SpeechRecognizer:
                         break
 
                     except (sd.PortAudioError, TimeoutError) as e:
-                        logger.warning(f"⚠️ Попытка {attempt + 1}/{self.max_stream_start_retries}: {e}")
+                        # Специальная обработка Error 89 (Hardware Not Running)
+                        error_msg = str(e)
+                        is_error_89 = "Error -9986" in error_msg or "Hardware" in error_msg
+
+                        if is_error_89:
+                            logger.warning(
+                                f"⚠️ Попытка {attempt + 1}/{self.max_stream_start_retries}: "
+                                f"Audio Hardware Not Running (Error 89) - устройство не готово"
+                            )
+                        else:
+                            logger.warning(f"⚠️ Попытка {attempt + 1}/{self.max_stream_start_retries}: {e}")
+
                         if stream:
                             try:
                                 stream.stop()
@@ -683,7 +712,13 @@ class SpeechRecognizer:
                             stream = None
 
                         if attempt < self.max_stream_start_retries - 1 and not self.stop_event.is_set():
-                            time.sleep(retry_delay)
+                            # Для Error 89 на BT устройствах увеличиваем задержку
+                            current_retry_delay = retry_delay
+                            if is_error_89 and self._is_bluetooth_device(device_info.get('name', '')):
+                                current_retry_delay = retry_delay * 1.5  # Увеличиваем на 50%
+                                logger.info(f"⏳ Увеличена задержка для BT после Error 89: {current_retry_delay:.1f}s")
+
+                            time.sleep(current_retry_delay)
                             continue
                         break  # переходим к следующему устройству
 

@@ -524,6 +524,55 @@ class InputProcessingIntegration:
         """Обработка короткого нажатия пробела"""
         try:
             logger.debug(f"🔑 SHORT_PRESS: {event.duration:.3f}с")
+
+            # ЗАЩИТА 1: Отменяем pending session при SHORT_PRESS БЕЗ записи
+            if self._pending_session_id is not None and not self._recording_started:
+                logger.info(f"🛑 SHORT_PRESS без записи - отменяем pending session {self._pending_session_id}")
+
+                # КРИТИЧНО: Прерываем воспроизведение при SHORT_PRESS
+                try:
+                    current_mode = self.state_manager.get_current_mode()
+                except Exception:
+                    current_mode = None
+
+                # Если идет воспроизведение (PROCESSING) - прерываем его через ProcessingWorkflow
+                if current_mode == AppMode.PROCESSING:
+                    logger.info("🛑 SHORT_PRESS: публикуем событие прерывания для ProcessingWorkflow")
+                    # ProcessingWorkflow подписан на keyboard.short_press и сам обработает прерывание
+                    await self.event_bus.publish("keyboard.short_press", {
+                        "source": "keyboard",
+                        "timestamp": event.timestamp,
+                        "duration": event.duration,
+                        "reason": "user_interrupt"
+                    })
+                    logger.info("🛑 SHORT_PRESS: событие прерывания опубликовано, ProcessingWorkflow обработает")
+                    
+                    # Дополнительно публикуем прямой запрос на SLEEPING для гарантии
+                    await self.event_bus.publish("mode.request", {
+                        "target": AppMode.SLEEPING,
+                        "source": "keyboard.short_press",
+                        "priority": 100,  # Максимальный приоритет для прерывания
+                        "reason": "user_interrupt_processing"
+                    })
+                    logger.info("🛑 SHORT_PRESS: дополнительный запрос на SLEEPING отправлен")
+
+                # Сброс всех состояний сессии
+                self._pending_session_id = None
+                self._cancel_session_id = None
+                self._active_grpc_session_id = None  # Сбрасываем активную gRPC сессию
+                self._current_session_id = None  # Сбрасываем текущую сессию
+
+                # Публикуем событие отмены для других модулей
+                await self.event_bus.publish(
+                    "keyboard.short_press_cancelled",
+                    {
+                        "source": "keyboard",
+                        "timestamp": event.timestamp,
+                        "reason": "no_recording_started"
+                    }
+                )
+                return
+
             # Debounce: подавляем повторные короткие нажатия в LISTENING в течение ~120 мс
             try:
                 current = self.state_manager.get_current_mode()
@@ -535,7 +584,7 @@ class InputProcessingIntegration:
                 return
             if current == AppMode.LISTENING:
                 self._last_short_ts = now
-            
+
             # НЕ публикуем keyboard.short_press - это создает бесконечный цикл!
             # Событие обрабатывается напрямую от QuartzKeyboardMonitor
 
@@ -622,17 +671,19 @@ class InputProcessingIntegration:
             # При коротком нажатии БЕЗ записи: переход в SLEEPING (отмена)
             await self.event_bus.publish("mode.request", {
                 "target": AppMode.SLEEPING,
-                "source": "input_processing"
+                "source": "keyboard.short_press",
+                "priority": 80,
+                "reason": "user_cancel"
             })
             logger.info("SHORT_PRESS: запрос на SLEEPING отправлен (отмена без записи)")
 
-            # Прерывание записи (если была)
+            # Полный сброс всех состояний сессии
             self._recording_started = False
             self._pending_session_id = None
-
-            # Состояние сбросится по событию завершения gRPC/плеера
-            if self._session_waiting_grpc:
-                logger.debug("SHORT_PRESS: удерживаем session_id=%s до завершения gRPC", self._current_session_id)
+            self._cancel_session_id = None
+            self._active_grpc_session_id = None
+            self._current_session_id = None
+            self._session_waiting_grpc = False
             
         except Exception as e:
             await self.error_handler.handle_error(
@@ -650,7 +701,19 @@ class InputProcessingIntegration:
             print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
             print(f"🔑 LONG_PRESS: event.key={event.key}, event.timestamp={event.timestamp}")  # Для отладки
             print(f"🔑 LONG_PRESS: _recording_started={self._recording_started}, _current_session_id={self._current_session_id}")  # Для отладки
-            
+
+            # ЗАЩИТА 2: Проверяем, что pending_session валиден
+            if self._pending_session_id is None:
+                logger.warning("⚠️ LONG_PRESS пришел БЕЗ pending_session - возможна race condition, игнорируем")
+                return
+
+            # ЗАЩИТА 3: Проверяем, что клавиша ЕЩЕ нажата (дополнительная проверка)
+            if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
+                if not self.keyboard_monitor.key_pressed:
+                    logger.warning("⚠️ LONG_PRESS пришел ПОСЛЕ отпускания клавиши - race condition, игнорируем")
+                    self._pending_session_id = None
+                    return
+
             # НЕ публикуем keyboard.long_press - это создает бесконечный цикл!
             # Событие уже пришло к нам через SimpleModuleCoordinator
 
@@ -698,12 +761,25 @@ class InputProcessingIntegration:
                 logger.debug("LONG_PRESS: voice.recording_start опубликовано")
                 logger.debug(f"LONG_PRESS: записываем время начала записи: {self._recording_start_time}")
 
-                # Запрашиваем переход в LISTENING централизованно
-                await self.event_bus.publish("mode.request", {
-                    "target": AppMode.LISTENING,
-                    "source": "input_processing"
-                })
-                logger.info("LONG_PRESS: запрос на LISTENING отправлен")
+                # Запрашиваем переход в LISTENING централизованно, но только если не в PROCESSING
+                try:
+                    current_mode = self.state_manager.get_current_mode()
+                    if current_mode == AppMode.PROCESSING:
+                        logger.info("LONG_PRESS: в PROCESSING режиме, пропускаем запрос на LISTENING")
+                    else:
+                        await self.event_bus.publish("mode.request", {
+                            "target": AppMode.LISTENING,
+                            "source": "input_processing"
+                        })
+                        logger.info("LONG_PRESS: запрос на LISTENING отправлен")
+                except Exception as e:
+                    logger.warning(f"LONG_PRESS: ошибка проверки режима: {e}")
+                    # Fallback - отправляем запрос
+                    await self.event_bus.publish("mode.request", {
+                        "target": AppMode.LISTENING,
+                        "source": "input_processing"
+                    })
+                    logger.info("LONG_PRESS: запрос на LISTENING отправлен (fallback)")
             
         except Exception as e:
             await self.error_handler.handle_error(

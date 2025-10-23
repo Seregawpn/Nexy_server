@@ -14,10 +14,10 @@
   
   <!-- Доступ к аудио входу (требуется для Hardened Runtime) -->
   <key>com.apple.security.device.audio-input</key><true/>
-  
-  <!-- Доступ к камере -->
-  <key>com.apple.security.device.camera</key><true/>
-  
+
+  <!-- Доступ к захвату экрана (Screen Recording) -->
+  <key>com.apple.security.device.screen-capture</key><true/>
+
   <!-- Network для gRPC -->
   <key>com.apple.security.network.client</key><true/>
   

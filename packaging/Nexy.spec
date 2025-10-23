@@ -218,14 +218,14 @@ app = BUNDLE(
         "CFBundleVersion": "1.0.0",
         "CFBundleShortVersionString": "1.0.0",
         "CFBundlePackageType": "APPL",
-        "CFBundleSignature": "????",
+        "CFBundleExecutable": "Nexy",  # Explicit executable name
         
         # macOS specific settings
         "LSMinimumSystemVersion": "12.0.0",  # macOS 12.0+ (Monterey) - M1+ support
         "NSHighResolutionCapable": True,
 
-        # Background mode (show in Dock, but background app)
-        "LSUIElement": False,  # Показать в Dock
+        # Background mode - Menu Bar App (не показывать в Dock)
+        "LSUIElement": True,  # Скрыть из Dock, показать только в Menu Bar
 
         # Permissions
         "NSMicrophoneUsageDescription": "Nexy needs access to your microphone to hear your commands.",
@@ -238,10 +238,7 @@ app = BUNDLE(
         
         # Application category
         "LSApplicationCategoryType": "public.app-category.productivity",
-        
-        # Background mode
-        "LSBackgroundOnly": False,  # Показать в Dock, но фоновое
-        
+
         # Additional settings
         "NSRequiresAquaSystemAppearance": False,
         "NSAppTransportSecurity": {
@@ -253,10 +250,11 @@ app = BUNDLE(
         "CFBundleDocumentTypes": [],
         "CFBundleURLTypes": [],
         
-        # Sandbox and security
-        "NSSupportsAutomaticTermination": False,
-        "NSSupportsSuddenTermination": False,
-        
+        # Background execution and stability
+        "NSSupportsAutomaticTermination": False,  # Не завершать автоматически
+        "NSSupportsSuddenTermination": False,     # Не завершать внезапно
+        "LSMultipleInstancesProhibited": True,    # Только одна копия приложения
+
         # ARM64 ONLY restrictions
         "LSRequiresNativeExecution": True,  # Только нативная ARM64 архитектура
     },
