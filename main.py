@@ -67,20 +67,25 @@ init_ffmpeg_for_pydub()
 # ВАЖНО: Должен быть выполнен ДО импорта любых модулей, использующих rumps
 # Исправляет проблему "dlsym cannot find symbol NSMakeRect in CFBundle"
 try:
+    # Правильный порядок импорта: сначала AppKit, потом Foundation
     import AppKit
     import Foundation
-    # Копируем NSMakeRect и другие символы из AppKit в Foundation
-    if not hasattr(Foundation, "NSMakeRect"):
-        Foundation.NSMakeRect = getattr(AppKit, "NSMakeRect", None)
-    if not hasattr(Foundation, "NSMakePoint"):
-        Foundation.NSMakePoint = getattr(AppKit, "NSMakePoint", None)
-    if not hasattr(Foundation, "NSMakeSize"):
-        Foundation.NSMakeSize = getattr(AppKit, "NSMakeSize", None)
-    if not hasattr(Foundation, "NSMakeRange"):
-        Foundation.NSMakeRange = getattr(AppKit, "NSMakeRange", None)
-except Exception:
-    # Если PyObjC недоступен или ошибка - продолжаем
-    pass
+    
+    # Убеждаемся, что AppKit полностью загружен
+    if hasattr(AppKit, 'NSMakeRect'):
+        # Копируем символы из AppKit в Foundation для совместимости
+        Foundation.NSMakeRect = AppKit.NSMakeRect
+        Foundation.NSMakePoint = AppKit.NSMakePoint  
+        Foundation.NSMakeSize = AppKit.NSMakeSize
+        Foundation.NSMakeRange = AppKit.NSMakeRange
+        print("✅ AppKit символы успешно скопированы в Foundation")
+    else:
+        print("⚠️ AppKit.NSMakeRect не найден")
+        
+except ImportError as e:
+    print(f"⚠️ PyObjC недоступен: {e}")
+except Exception as e:
+    print(f"⚠️ Ошибка инициализации PyObjC: {e}")
 
 # Настройка логирования
 logging.basicConfig(

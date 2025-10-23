@@ -29,12 +29,12 @@ a = Analysis(
         (str(client_dir / "config"), "config"),
         # Icons and resources
         (str(client_dir / "assets"), "assets"),
-        # Proto files for gRPC
-        (str(client_dir / "modules" / "grpc_client" / "proto" / "streaming.proto"), "."),
-        # Utils
-        (str(client_dir / "integration" / "utils"), "utils"),
-        # FLAC support files
-        *([("/opt/homebrew/bin/flac", ".")] if Path("/opt/homebrew/bin/flac").exists() else []),
+        # Resources (including FLAC binary)
+        (str(client_dir / "resources"), "resources"),
+        # Proto files for gRPC (preserve directory structure)
+        (str(client_dir / "modules" / "grpc_client" / "proto"), "modules/grpc_client/proto"),
+        # Utils (preserve directory structure)
+        (str(client_dir / "integration" / "utils"), "integration/utils"),
     ],
     hiddenimports=[
         # System monitoring (must be first)
@@ -90,8 +90,8 @@ a = Analysis(
         # gRPC
         "grpc",
         "grpc.aio",
-        "streaming_pb2",
-        "streaming_pb2_grpc",
+        "modules.grpc_client.proto.streaming_pb2",
+        "modules.grpc_client.proto.streaming_pb2_grpc",
         # Protobuf runtime used by generated stubs
         "google",
         "google.protobuf",
@@ -223,19 +223,18 @@ app = BUNDLE(
         # macOS specific settings
         "LSMinimumSystemVersion": "12.0.0",  # macOS 12.0+ (Monterey) - M1+ support
         "NSHighResolutionCapable": True,
-        
+
         # Background mode (show in Dock, but background app)
         "LSUIElement": False,  # Показать в Dock
-        
+
         # Permissions
         "NSMicrophoneUsageDescription": "Nexy needs access to your microphone to hear your commands.",
         "NSScreenCaptureUsageDescription": "Nexy needs screen recording access to capture content or control the screen based on your commands.",
         "NSAppleEventsUsageDescription": "Nexy needs to control other apps to execute your commands.",
         "NSAccessibilityUsageDescription": "Nexy needs accessibility permissions to assist you with controlling your computer.",
-        
+
         # Architecture - Apple Silicon ONLY (M1/M2)
         "LSArchitecturePriority": ["arm64"],  # ONLY M1/M2 support, NO Intel
-        "LSMinimumSystemVersion": "12.0.0",  # macOS 12.0+ (Monterey) - M1+ only
         
         # Application category
         "LSApplicationCategoryType": "public.app-category.productivity",
@@ -253,7 +252,6 @@ app = BUNDLE(
         "NSPrincipalClass": "NSApplication",
         "CFBundleDocumentTypes": [],
         "CFBundleURLTypes": [],
-        "LSApplicationCategoryType": "public.app-category.productivity",
         
         # Sandbox and security
         "NSSupportsAutomaticTermination": False,

@@ -136,12 +136,14 @@ class WelcomeMessageIntegration:
             if self.config.delay_sec > 0:
                 await asyncio.sleep(self.config.delay_sec)
             
-            # ВСЕГДА запрашиваем разрешения в запакованном приложении
-            if self._detect_packaged_environment():
-                await self._wait_for_microphone_permission()
-            
-            # Воспроизводим приветствие независимо от статуса разрешений
+            # 🎵 СНАЧАЛА воспроизводим приветствие (без микрофона)
+            logger.info("🎵 [WELCOME_INTEGRATION] Приоритет: сначала приветствие, потом микрофон")
             await self._play_welcome_message(trigger="app_startup")
+            
+            # 🎙️ ПОТОМ запрашиваем разрешения микрофона (после приветствия)
+            if self._detect_packaged_environment():
+                logger.info("🎙️ [WELCOME_INTEGRATION] Приветствие завершено, запрашиваем микрофон")
+                await self._wait_for_microphone_permission()
             
         except Exception as e:
             await self._handle_error(e, where="welcome.on_app_startup", severity="warning")

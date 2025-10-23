@@ -879,15 +879,53 @@ class SpeechRecognizer:
     def _get_system_default_input_index(self) -> Optional[int]:
         """
         Возвращает индекс системного дефолтного INPUT устройства.
+        
+        ✅ НОВЫЙ ПОДХОД (как в OUTPUT):
+        Использует sd.default.device для получения актуального устройства,
+        вместо поиска по имени в кэшированном списке.
+        
+        Это решает проблему с AirPods - sd.default.device обновляется
+        автоматически при смене устройства в macOS.
+        """
+        try:
+            # ✅ ИСПОЛЬЗУЕМ sd.default.device как в OUTPUT
+            default_setting = sd.default.device
+            logger.debug(f"🔍 [INPUT] sd.default.device = {default_setting}")
 
-        ✅ NAME-BASED ПОДХОД с БЕЗОПАСНЫМ обновлением кэша:
-        1. Получаем имя устройства от macOS (SwitchAudioSource)
-        2. Ищем его ID в списке устройств PortAudio по имени
-        3. Если не найдено - БЕЗОПАСНО обновляем кэш и ищем снова
-        4. Если всё ещё не найдено - возвращаем None
+            input_device_id = None
+            if hasattr(default_setting, '__getitem__'):
+                try:
+                    input_device_id = default_setting[0]  # INPUT устройство (индекс 0)
+                    logger.debug(f"🔍 [INPUT] input_device_id = {input_device_id}")
+                except IndexError:
+                    input_device_id = None
+                    logger.warning(f"⚠️ [INPUT] IndexError при получении input device из {default_setting}")
 
-        ВАЖНО: Вызывается ТОЛЬКО из _prepare_input_device(),
-        который вызывается ПЕРЕД созданием INPUT потока!
+            if input_device_id is not None:
+                # Проверяем что устройство действительно INPUT
+                try:
+                    device_info = sd.query_devices(input_device_id, 'input')
+                    if device_info and device_info.get('max_input_channels', 0) > 0:
+                        logger.debug(f"✅ [INPUT] Найдено INPUT устройство: ID {input_device_id} - \"{device_info.get('name')}\"")
+                        return input_device_id
+                    else:
+                        logger.warning(f"⚠️ [INPUT] Устройство ID {input_device_id} не является INPUT устройством")
+                except Exception as e:
+                    logger.warning(f"⚠️ [INPUT] Ошибка проверки устройства ID {input_device_id}: {e}")
+
+            # Fallback: если sd.default.device не работает, используем старый метод
+            logger.debug("🔄 [INPUT] Fallback к поиску по имени...")
+            return self._get_system_default_input_index_fallback()
+
+        except Exception as e:
+            logger.error(f"❌ [INPUT] Ошибка получения default input через sd.default.device: {e}")
+            # Fallback к старому методу
+            return self._get_system_default_input_index_fallback()
+
+    def _get_system_default_input_index_fallback(self) -> Optional[int]:
+        """
+        Fallback метод - старый подход через поиск по имени.
+        Используется если sd.default.device не работает.
         """
         # Получаем имя системного default устройства
         system_device_name = self._get_system_default_input_name()
@@ -895,13 +933,13 @@ class SpeechRecognizer:
             logger.debug("⚠️ [INPUT] Не удалось получить имя системного устройства")
             return None
 
-        # Первая попытка: ищем ID по имени
+        # Ищем ID по имени
         device_id = self._find_device_id_by_name_input(system_device_name)
         if device_id is not None:
-            logger.debug(f"✅ [INPUT] Найдено устройство: \"{system_device_name}\" → ID {device_id}")
+            logger.debug(f"✅ [INPUT] Найдено устройство (fallback): \"{system_device_name}\" → ID {device_id}")
             return device_id
 
-        # Не найдено - НЕ обновляем кэш (риск crash)
+        # Не найдено
         logger.warning(f"⚠️ [INPUT] Устройство \"{system_device_name}\" не найдено в кэше PortAudio")
         logger.error(f"❌ [INPUT] macOS использует \"{system_device_name}\", но PortAudio его не видит")
         logger.info(f"💡 [INPUT] РЕШЕНИЕ: Перезапустите приложение для обновления списка устройств")
