@@ -35,7 +35,7 @@ from modules.signals.config.types import PatternConfig
 from integration.integrations.signal_integration import SignalsIntegrationConfig
 from integration.integrations.welcome_message_integration import WelcomeMessageIntegration
 from integration.integrations.voiceover_ducking_integration import VoiceOverDuckingIntegration
-from modules.permissions.core.permissions_queue import PermissionsQueue
+from integration.integrations.first_run_permissions_integration import FirstRunPermissionsIntegration
 
 # Импорты core компонентов
 from integration.core.event_bus import EventBus, EventPriority
@@ -154,21 +154,6 @@ class SimpleModuleCoordinator:
             config_data = self.config._load_config()
             instance_config = config_data.get('instance_manager', {})
 
-            # Настраиваем очередь разрешений до создания интеграций
-            permissions_cfg = config_data.get('permissions', {}) or {}
-            sequential = permissions_cfg.get('sequential', True)
-            auto_open = permissions_cfg.get('auto_open_settings', False)
-            pause = permissions_cfg.get('pause_between_requests_sec', 0.5)
-            request_timeout = permissions_cfg.get('request_timeout_sec', 300.0)
-
-            self.permissions_queue = PermissionsQueue(
-                event_bus=self.event_bus,
-                sequential=sequential,
-                auto_open_settings=auto_open,
-                pause_between_requests=pause,
-                request_timeout=request_timeout,
-            )
-            
             self.integrations['instance_manager'] = InstanceManagerIntegration(
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
@@ -253,7 +238,7 @@ class SimpleModuleCoordinator:
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
                 error_handler=self.error_handler,
-                permissions_queue=self.permissions_queue,
+                permissions_queue=None,  # Старая очередь не используется
             )
             
             # Voice Recognition Integration - конфигурация по умолчанию/из unified_config
@@ -347,7 +332,7 @@ class SimpleModuleCoordinator:
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
                 error_handler=self.error_handler,
-                permissions_queue=self.permissions_queue,
+                permissions_queue=None,  # Старая очередь не используется
             )
 
             # VoiceOver Ducking Integration - управление VoiceOver
@@ -360,9 +345,17 @@ class SimpleModuleCoordinator:
                 config=voiceover_config
             )
 
-            print("✅ Интеграции созданы: instance_manager, hardware_id, tray, mode_management, input, updater, network, interrupt, voice_recognition, screenshot_capture, grpc, speech_playback, signals, autostart_manager, welcome_message, voiceover_ducking")
-            print("⚠️ ОТСУТСТВУЕТ: permissions_integration.py (модуль permissions существует, но интеграции нет)")
-            
+            # First Run Permissions Integration - запрос разрешений при первом запуске
+            permissions_first_run_config = config_data.get("permissions", {}).get("first_run", {})
+            self.integrations['first_run_permissions'] = FirstRunPermissionsIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler,
+                config=permissions_first_run_config
+            )
+
+            print("✅ Интеграции созданы: instance_manager, hardware_id, first_run_permissions, tray, mode_management, input, updater, network, interrupt, voice_recognition, screenshot_capture, grpc, speech_playback, signals, autostart_manager, welcome_message, voiceover_ducking")
+
             # 3. Создаем Workflows (координаторы режимов)
             print("🔧 Создание Workflows...")
             
@@ -465,18 +458,19 @@ class SimpleModuleCoordinator:
             
             # Запускаем интеграции в правильном порядке (с учетом зависимостей)
             startup_order = [
-                'instance_manager',   # 1. Управление экземплярами (ПЕРВЫЙ - блокирующий)
-                'hardware_id',        # 2. Получить уникальный ID
-                'tray',               # 3. GUI и меню-бар
-                'mode_management',    # 4. Управление режимами
-                'input',              # 5. Обработка ввода
-                'voice_recognition',  # 6. Распознавание речи
-                'network',            # 7. Сетевая система
-                'interrupt',          # 8. Управление прерываниями
-                'screenshot_capture', # 9. Захват экрана
-                'grpc',               # 10. gRPC клиент (зависит от hardware_id)
-                'speech_playback',    # 11. Воспроизведение речи (зависит от grpc)
-                'updater',            # 12. Система обновлений
+                'instance_manager',        # 1. Управление экземплярами (ПЕРВЫЙ - блокирующий)
+                'hardware_id',             # 2. Получить уникальный ID
+                'first_run_permissions',   # 3. Запрос разрешений при первом запуске (блокирующий)
+                'tray',                    # 4. GUI и меню-бар
+                'mode_management',         # 5. Управление режимами
+                'input',                   # 6. Обработка ввода (использует accessibility)
+                'voice_recognition',       # 7. Распознавание речи (использует microphone)
+                'network',                 # 8. Сетевая система
+                'interrupt',               # 9. Управление прерываниями
+                'screenshot_capture',      # 10. Захват экрана (использует screen_capture)
+                'grpc',                    # 11. gRPC клиент (зависит от hardware_id)
+                'speech_playback',         # 12. Воспроизведение речи (зависит от grpc)
+                'updater',                 # 13. Система обновлений
                 'signals',            # 13. Аудио сигналы
                 'welcome_message',    # 14. Приветственное сообщение (зависит от speech_playback)
                 'voiceover_ducking',  # 15. VoiceOver Ducking

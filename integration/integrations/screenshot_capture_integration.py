@@ -124,7 +124,8 @@ class ScreenshotCaptureIntegration:
                 asyncio.create_task(self._cleanup_old_screenshots())
             except Exception:
                 pass
-            asyncio.create_task(self._request_initial_permission_status())
+            # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration
+            logger.info("📸 [SCREENSHOT_INTEGRATION] Разрешения будут запрошены через PermissionsIntegration")
             return True
         except Exception as e:
             logger.error(f"Failed to initialize ScreenshotCaptureIntegration: {e}")
@@ -584,32 +585,12 @@ class ScreenshotCaptureIntegration:
             return
         self._screen_permission_prompted = True
 
-        queue_used = False
-        if self.permissions_queue:
-            result = await self.permissions_queue.request(
-                PermissionType.SCREEN_CAPTURE,
-                source="screenshot_capture",
-            )
-            status = (result or {}).get("status")
-            if status:
-                self._screen_permission_status = status
-                if status == "granted":
-                    logger.info("📸 Screen Recording permission already granted (queue)")
-                    self._screen_permission_prompted = False
-                    return
-            queue_used = True
+        # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration при старте
+        logger.info("📸 [SCREENSHOT_INTEGRATION] Разрешение Screen Recording обрабатывается через PermissionsIntegration")
 
         logger.warning(
             "📸 Screen Recording permission required. Open System Settings > Privacy & Security > Screen Recording and enable Nexy."
         )
-        if not queue_used:
-            try:
-                await self.event_bus.publish("permissions.request_required", {
-                    "source": "screenshot_capture",
-                    "permissions": ["screen_capture"],
-                })
-            except Exception as e:
-                logger.error(f"ScreenshotCaptureIntegration: failed to publish request_required: {e}")
         await self._ensure_screen_permission_status()
         self._schedule_screen_permission_recheck()
 

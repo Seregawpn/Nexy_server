@@ -1,0 +1,141 @@
+"""
+Status Checker для проверки статусов разрешений macOS.
+
+Проверяет текущий статус разрешений БЕЗ показа диалогов.
+Используется для определения нужно ли вызывать активацию.
+"""
+
+import logging
+from enum import Enum
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+class PermissionStatus(Enum):
+    """Статус разрешения"""
+    NOT_DETERMINED = "not_determined"  # Пользователь ещё не видел диалог
+    GRANTED = "granted"                # Разрешение дано
+    DENIED = "denied"                  # Разрешение отклонено
+    ERROR = "error"                    # Ошибка проверки
+
+
+def check_microphone_status() -> PermissionStatus:
+    """
+    Проверить статус разрешения микрофона.
+
+    Returns:
+        PermissionStatus: текущий статус разрешения
+    """
+    try:
+        # Пытаемся использовать AVFoundation через PyObjC
+        try:
+            import AVFoundation
+
+            # Получаем статус через AVCaptureDevice
+            auth_status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+                AVFoundation.AVMediaTypeAudio
+            )
+
+            # Маппинг статусов AVFoundation на наши
+            # AVAuthorizationStatusNotDetermined = 0
+            # AVAuthorizationStatusRestricted = 1
+            # AVAuthorizationStatusDenied = 2
+            # AVAuthorizationStatusAuthorized = 3
+
+            if auth_status == 0:  # NotDetermined
+                logger.debug("🎙️ Microphone: NOT_DETERMINED")
+                return PermissionStatus.NOT_DETERMINED
+            elif auth_status == 3:  # Authorized
+                logger.debug("🎙️ Microphone: GRANTED")
+                return PermissionStatus.GRANTED
+            else:  # Denied or Restricted
+                logger.debug("🎙️ Microphone: DENIED")
+                return PermissionStatus.DENIED
+
+        except ImportError:
+            logger.warning("⚠️ AVFoundation недоступен, используем fallback")
+            # Fallback: предполагаем NOT_DETERMINED чтобы попытаться активировать
+            return PermissionStatus.NOT_DETERMINED
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка проверки микрофона: {e}")
+        return PermissionStatus.ERROR
+
+
+def check_accessibility_status() -> PermissionStatus:
+    """
+    Проверить статус разрешения Accessibility.
+
+    Returns:
+        PermissionStatus: текущий статус разрешения
+    """
+    try:
+        # Используем существующий AccessibilityHandler
+        from modules.permissions.macos.accessibility_handler import AccessibilityHandler
+
+        handler = AccessibilityHandler()
+        is_granted = handler.check_accessibility_permission()
+
+        if is_granted:
+            logger.debug("♿ Accessibility: GRANTED")
+            return PermissionStatus.GRANTED
+        else:
+            # AXIsProcessTrustedWithOptions возвращает False если:
+            # 1. Разрешение не дано (NOT_DETERMINED или DENIED)
+            # Мы не можем различить эти два случая через публичный API
+            # Предполагаем NOT_DETERMINED чтобы попытаться показать диалог
+            logger.debug("♿ Accessibility: NOT_DETERMINED or DENIED")
+            return PermissionStatus.NOT_DETERMINED
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка проверки Accessibility: {e}")
+        return PermissionStatus.ERROR
+
+
+def check_screen_capture_status() -> PermissionStatus:
+    """
+    Проверить статус разрешения Screen Capture.
+
+    Returns:
+        PermissionStatus: текущий статус разрешения
+    """
+    try:
+        # Используем существующий ScreenCapturePermissionManager
+        from modules.permissions.macos.screen_capture_permission import ScreenCapturePermissionManager
+
+        manager = ScreenCapturePermissionManager()
+
+        if not manager.is_available:
+            logger.warning("⚠️ Screen Capture API недоступен")
+            return PermissionStatus.ERROR
+
+        has_permission = manager.check_permission()
+
+        if has_permission:
+            logger.debug("📺 Screen Capture: GRANTED")
+            return PermissionStatus.GRANTED
+        else:
+            # CGPreflightScreenCaptureAccess возвращает False если:
+            # 1. Разрешение не дано (NOT_DETERMINED или DENIED)
+            # Предполагаем NOT_DETERMINED чтобы попытаться показать диалог
+            logger.debug("📺 Screen Capture: NOT_DETERMINED or DENIED")
+            return PermissionStatus.NOT_DETERMINED
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка проверки Screen Capture: {e}")
+        return PermissionStatus.ERROR
+
+
+def check_all_permissions() -> dict:
+    """
+    Проверить статусы всех разрешений.
+
+    Returns:
+        dict: словарь с статусами {permission_name: PermissionStatus}
+    """
+    return {
+        "microphone": check_microphone_status(),
+        "accessibility": check_accessibility_status(),
+        "screen_capture": check_screen_capture_status(),
+    }

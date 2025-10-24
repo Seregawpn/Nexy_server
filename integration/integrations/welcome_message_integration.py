@@ -140,10 +140,9 @@ class WelcomeMessageIntegration:
             logger.info("🎵 [WELCOME_INTEGRATION] Приоритет: сначала приветствие, потом микрофон")
             await self._play_welcome_message(trigger="app_startup")
             
-            # 🎙️ ПОТОМ запрашиваем разрешения микрофона (после приветствия)
-            if self._detect_packaged_environment():
-                logger.info("🎙️ [WELCOME_INTEGRATION] Приветствие завершено, запрашиваем микрофон")
-                await self._wait_for_microphone_permission()
+            # 🎙️ Разрешения будут запрошены через PermissionsIntegration автоматически
+            # Не запрашиваем здесь, чтобы избежать дублирования
+            logger.info("🎙️ [WELCOME_INTEGRATION] Приветствие завершено. Разрешения обрабатываются через PermissionsIntegration")
             
         except Exception as e:
             await self._handle_error(e, where="welcome.on_app_startup", severity="warning")
@@ -426,14 +425,8 @@ class WelcomeMessageIntegration:
             "Откройте 'Системные настройки → Конфиденциальность и безопасность → Микрофон' и включите Nexy."
         )
 
-        try:
-            if not (self.permissions_queue and self.permissions_queue.sequential):
-                await self.event_bus.publish("permissions.request_required", {
-                    "source": "welcome_message",
-                    "permissions": ["microphone"],
-                })
-        except Exception as e:
-            logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка публикации запроса разрешений: {e}")
+        # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration при старте
+        logger.info("🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration")
 
         await self._ensure_permission_status()
         self._schedule_permission_recheck()
@@ -452,16 +445,11 @@ class WelcomeMessageIntegration:
     async def _wait_for_microphone_permission(self):
         """Одноразовая проверка разрешения микрофона без блокировки"""
         try:
-            if self.permissions_queue:
-                result = await self.permissions_queue.request(
-                    PermissionType.MICROPHONE,
-                    source="welcome_message",
-                )
-                status = (result or {}).get("status")
-                if status:
-                    self._microphone_status = status
-                    if status == "granted":
-                        return
+            # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration при старте
+            logger.info("🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration")
+
+            # Небольшая задержка для обработки
+            await asyncio.sleep(0.5)
 
             # Запрашиваем актуальный статус разрешений
             await self._ensure_permission_status()
@@ -534,15 +522,9 @@ class WelcomeMessageIntegration:
                 "⏳ Приложение будет ждать до 5 минут..."
             )
             
-            # Публикуем событие для показа уведомления в UI
-            if not (self.permissions_queue and self.permissions_queue.sequential):
-                await self.event_bus.publish("permissions.request_required", {
-                    "source": "welcome_message",
-                    "permissions": ["microphone"],
-                    "blocking": True,
-                    "message": "Требуется разрешение на микрофон для работы Nexy"
-                })
-            
+            # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration при старте
+            logger.info("🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration")
+
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка показа инструкций: {e}")
 

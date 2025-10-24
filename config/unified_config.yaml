@@ -208,6 +208,17 @@ network:
   - 8.8.8.8
   - 1.1.1.1
 permissions:
+  # First Run - запрос разрешений при первом запуске приложения
+  first_run:
+    enabled: true                        # Включить запрос разрешений при первом запуске
+    pause_between_requests_sec: 7.0      # Пауза между диалогами разрешений (7 секунд)
+
+  # Управление последовательностью запросов разрешений (устаревшее, оставлено для совместимости)
+  sequential: true                      # Запрашивать разрешения по очереди (не одновременно)
+  pause_between_requests_sec: 7.0       # Пауза между запросами разрешений (7 секунд)
+  request_timeout_sec: 120.0            # Ждать ответа пользователя 2 минуты (максимум)
+  auto_open_settings: false             # Не открывать System Settings автоматически
+
   microphone:
     enabled: true
     required: true
