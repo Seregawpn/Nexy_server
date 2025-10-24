@@ -151,27 +151,148 @@ pause_for_review
 # ============================================================================
 log_step "2️⃣  СБРОС TCC РАЗРЕШЕНИЙ"
 
-log_info "Сбрасываем разрешения для com.nexy.assistant..."
-sudo tccutil reset All com.nexy.assistant 2>/dev/null || true
-log_success "TCC сброшен для com.nexy.assistant"
+# Массив всех возможных bundle ID для Nexy
+BUNDLE_IDS=(
+    "com.nexy.assistant"
+    "com.nexy.assistant.dev" 
+    "com.nexy.assistant.beta"
+    "Nexy"
+)
 
-log_info "Удаляем старые записи из пользовательской TCC базы..."
-sqlite3 ~/Library/Application\ Support/com.apple.TCC/TCC.db \
-    "DELETE FROM access WHERE client LIKE '%nexy%' OR client = 'Nexy';" 2>/dev/null || true
-log_success "Пользовательская TCC база очищена"
+# Массив всех типов разрешений, которые использует Nexy
+PERMISSION_TYPES=(
+    "All"
+    "Microphone"
+    "ScreenCapture" 
+    "Accessibility"
+    "InputMonitoring"
+)
 
-log_info "Попытка очистки системной TCC базы..."
+log_info "Начинаем полную очистку TCC разрешений для всех bundle ID..."
+log_info "Bundle ID для очистки: ${BUNDLE_IDS[*]}"
+log_info "Типы разрешений: ${PERMISSION_TYPES[*]}"
+
+# Сброс разрешений через tccutil для всех комбинаций bundle_id + permission_type
+for bundle_id in "${BUNDLE_IDS[@]}"; do
+    log_info "Обрабатываем bundle ID: $bundle_id"
+    
+    for permission_type in "${PERMISSION_TYPES[@]}"; do
+        log_info "  Сбрасываем $permission_type для $bundle_id..."
+        
+        # Выполняем сброс с логированием результата
+        if sudo tccutil reset "$permission_type" "$bundle_id" 2>/dev/null; then
+            log_success "    ✅ $permission_type сброшен для $bundle_id"
+        else
+            log_info "    ℹ️  $permission_type для $bundle_id (нет записей или уже сброшен)"
+        fi
+    done
+done
+
+log_success "TCC разрешения сброшены через tccutil для всех bundle ID"
+
+# Дополнительная очистка через прямую работу с TCC базами данных
+log_info "Выполняем дополнительную очистку TCC баз данных..."
+
+# Проверяем наличие пользовательской TCC базы
+USER_TCC_DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
+if [ -f "$USER_TCC_DB" ]; then
+    log_info "Очищаем пользовательскую TCC базу: $USER_TCC_DB"
+    
+    # Создаем резервную копию перед очисткой
+    BACKUP_DB="$USER_TCC_DB.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$USER_TCC_DB" "$BACKUP_DB" 2>/dev/null || true
+    log_info "Создана резервная копия: $BACKUP_DB"
+    
+    # Очищаем записи для всех bundle ID
+    for bundle_id in "${BUNDLE_IDS[@]}"; do
+        log_info "  Удаляем записи для $bundle_id из пользовательской TCC базы..."
+        sqlite3 "$USER_TCC_DB" \
+            "DELETE FROM access WHERE client = '$bundle_id' OR client LIKE '%$bundle_id%';" 2>/dev/null || true
+    done
+    
+    # Дополнительная очистка по частичным совпадениям
+    sqlite3 "$USER_TCC_DB" \
+        "DELETE FROM access WHERE client LIKE '%nexy%' OR client LIKE '%Nexy%';" 2>/dev/null || true
+    
+    log_success "Пользовательская TCC база очищена"
+else
+    log_info "Пользовательская TCC база не найдена: $USER_TCC_DB"
+fi
+
+# Попытка очистки системной TCC базы
+SYSTEM_TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
+log_info "Попытка очистки системной TCC базы: $SYSTEM_TCC_DB"
 log_warning "ВАЖНО: Системная TCC база защищена SIP"
 log_warning "Если SIP включён (по умолчанию), очистка не сработает"
 log_warning "Это нормально - tccutil reset уже сбросил основные разрешения"
 
-# Попытка очистки системной базы (работает только при отключённом SIP)
-if sudo sqlite3 /Library/Application\ Support/com.apple.TCC/TCC.db \
-    "DELETE FROM access WHERE client LIKE '%nexy%' OR client = 'Nexy';" 2>/dev/null; then
-    log_success "Системная TCC база очищена (SIP отключён)"
+if [ -f "$SYSTEM_TCC_DB" ]; then
+    # Попытка очистки системной базы (работает только при отключённом SIP)
+    SYSTEM_CLEANED=false
+    
+    for bundle_id in "${BUNDLE_IDS[@]}"; do
+        if sudo sqlite3 "$SYSTEM_TCC_DB" \
+            "DELETE FROM access WHERE client = '$bundle_id' OR client LIKE '%$bundle_id%';" 2>/dev/null; then
+            SYSTEM_CLEANED=true
+            log_info "  Удалены записи для $bundle_id из системной TCC базы"
+        fi
+    done
+    
+    # Дополнительная очистка по частичным совпадениям
+    if sudo sqlite3 "$SYSTEM_TCC_DB" \
+        "DELETE FROM access WHERE client LIKE '%nexy%' OR client LIKE '%Nexy%';" 2>/dev/null; then
+        SYSTEM_CLEANED=true
+    fi
+    
+    if [ "$SYSTEM_CLEANED" = true ]; then
+        log_success "Системная TCC база очищена (SIP отключён)"
+    else
+        log_info "Системная TCC база защищена SIP (нормально)"
+    fi
 else
-    log_info "Системная TCC база защищена SIP (нормально)"
+    log_info "Системная TCC база не найдена: $SYSTEM_TCC_DB"
 fi
+
+# Очистка кэшей разрешений и связанных системных кэшей
+log_info "Очищаем кэши разрешений и системные кэши..."
+
+# Очистка кэша Launch Services (уже будет в следующем этапе, но упоминаем)
+log_info "  Кэш Launch Services будет очищен в следующем этапе"
+
+# Очистка кэша приложений в системе
+log_info "  Очищаем кэш приложений..."
+sudo rm -rf /var/folders/*/0/com.apple.LaunchServices-* 2>/dev/null || true
+sudo rm -rf /var/folders/*/0/com.apple.QuickLook.thumbnailcache 2>/dev/null || true
+log_success "  Кэш приложений очищен"
+
+# Очистка кэша TCC (если доступен)
+log_info "  Очищаем кэш TCC..."
+sudo rm -rf /var/folders/*/0/com.apple.TCC 2>/dev/null || true
+log_success "  Кэш TCC очищен"
+
+# Очистка кэша системных разрешений
+log_info "  Очищаем кэш системных разрешений..."
+sudo rm -rf /var/folders/*/0/com.apple.security.* 2>/dev/null || true
+log_success "  Кэш системных разрешений очищен"
+
+# Проверка результата очистки
+log_info "Проверяем результат очистки разрешений..."
+
+# Проверяем, остались ли записи в пользовательской TCC базе
+if [ -f "$USER_TCC_DB" ]; then
+    REMAINING_RECORDS=$(sqlite3 "$USER_TCC_DB" \
+        "SELECT COUNT(*) FROM access WHERE client LIKE '%nexy%' OR client LIKE '%Nexy%';" 2>/dev/null || echo "0")
+    
+    if [ "$REMAINING_RECORDS" -eq 0 ]; then
+        log_success "Пользовательская TCC база полностью очищена от записей Nexy"
+    else
+        log_warning "В пользовательской TCC базе осталось $REMAINING_RECORDS записей Nexy"
+        log_info "Это может быть нормально, если записи относятся к другим приложениям"
+    fi
+fi
+
+log_success "Полная очистка TCC разрешений завершена"
+log_info "Все разрешения Nexy сброшены - приложение запросит их заново при первом запуске"
 
 echo ""
 pause_for_review

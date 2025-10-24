@@ -109,15 +109,11 @@ class InputProcessingIntegration:
                 try:
                     from modules.input_processing.keyboard.mac.quartz_monitor import QuartzKeyboardMonitor
                     self.keyboard_monitor = QuartzKeyboardMonitor(self.config.keyboard)
-                    # Тестируем, работает ли Quartz
-                    if self.keyboard_monitor.start_monitoring():
-                        use_quartz = True
-                        self._using_quartz = True
-                        logger.info("✅ Используется QuartzKeyboardMonitor (macOS)")
-                    else:
-                        logger.warning("⚠️ QuartzKeyboardMonitor не запустился (нет прав). Фоллбек на pynput")
-                        self.keyboard_monitor.stop_monitoring()
-                        self.keyboard_monitor = None
+                    # НЕ тестируем Quartz во время инициализации - откладываем до start()
+                    # Это предотвращает запрос разрешений до FirstRunPermissionsIntegration
+                    use_quartz = True
+                    self._using_quartz = True
+                    logger.info("✅ QuartzKeyboardMonitor создан (тестирование отложено до start())")
                 except Exception as e:
                     logger.warning(f"⚠️ Не удалось инициализировать QuartzKeyboardMonitor: {e}. Фоллбек на pynput")
 
@@ -475,8 +471,23 @@ class InputProcessingIntegration:
                         loop = None
                 if loop:
                     self.keyboard_monitor.set_loop(loop)
-                self.keyboard_monitor.start_monitoring()
-                logger.info("🎹 Мониторинг клавиатуры запущен")
+                
+                # Тестируем Quartz только сейчас (после возможного запроса разрешений)
+                if self._using_quartz:
+                    logger.info("🔧 Тестируем QuartzKeyboardMonitor после инициализации...")
+                    if not self.keyboard_monitor.start_monitoring():
+                        logger.warning("⚠️ QuartzKeyboardMonitor не запустился (нет прав). Фоллбек на pynput")
+                        # Переключаемся на pynput
+                        from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
+                        self.keyboard_monitor = KeyboardMonitor(self.config.keyboard)
+                        self._using_quartz = False
+                        self.keyboard_monitor.start_monitoring()
+                        logger.info("✅ Переключились на KeyboardMonitor (pynput)")
+                    else:
+                        logger.info("✅ QuartzKeyboardMonitor успешно запущен")
+                else:
+                    self.keyboard_monitor.start_monitoring()
+                    logger.info("🎹 Мониторинг клавиатуры запущен")
                 
                 # Отладка: проверяем статус
                 status = self.keyboard_monitor.get_status()

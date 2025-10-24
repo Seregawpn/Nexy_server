@@ -9,6 +9,7 @@ import asyncio
 import logging
 from typing import Optional, Dict, Any
 from pathlib import Path
+import uuid
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
@@ -55,6 +56,7 @@ class FirstRunPermissionsIntegration:
 
         self._initialized = False
         self._running = False
+        self._permissions_in_progress = False
 
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -101,23 +103,51 @@ class FirstRunPermissionsIntegration:
             # ПЕРВЫЙ ЗАПУСК!
             logger.info("🔐 [FIRST_RUN_PERMISSIONS] Первый запуск обнаружен - запрашиваем разрешения")
 
+            # Публикуем начало процесса запроса разрешений
+            session_id = str(uuid.uuid4())
+            await self.event_bus.publish("permissions.first_run_started", {
+                "session_id": session_id,
+                "source": "first_run_permissions_integration"
+            })
+
             self._running = True
+            self._permissions_in_progress = True
 
-            # Запрашиваем разрешения последовательно
-            await self._request_permissions_sequentially()
-
-            # Сохраняем флаг
             try:
-                self.flag_file.touch()
-                logger.info(f"✅ [FIRST_RUN_PERMISSIONS] Флаг сохранён: {self.flag_file}")
-            except Exception as e:
-                logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Не удалось сохранить флаг: {e}")
+                # Запрашиваем разрешения последовательно
+                await self._request_permissions_sequentially()
 
-            logger.info("✅ [FIRST_RUN_PERMISSIONS] Первый запуск завершён")
-            return True
+                # Сохраняем флаг
+                try:
+                    self.flag_file.touch()
+                    logger.info(f"✅ [FIRST_RUN_PERMISSIONS] Флаг сохранён: {self.flag_file}")
+                except Exception as e:
+                    logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Не удалось сохранить флаг: {e}")
+
+                # Публикуем успешное завершение
+                await self.event_bus.publish("permissions.first_run_completed", {
+                    "session_id": session_id,
+                    "source": "first_run_permissions_integration"
+                })
+
+                logger.info("✅ [FIRST_RUN_PERMISSIONS] Первый запуск завершён")
+                return True
+
+            except Exception as e:
+                # Публикуем ошибку
+                await self.event_bus.publish("permissions.first_run_failed", {
+                    "session_id": session_id,
+                    "error": str(e),
+                    "source": "first_run_permissions_integration"
+                })
+                raise
 
         except Exception as e:
             logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Ошибка запуска: {e}")
+            # Сбрасываем флаги состояния
+            self._running = False
+            self._permissions_in_progress = False
+            
             # Сохраняем флаг даже при ошибке чтобы не застрять в цикле
             try:
                 self.flag_file.touch()
@@ -130,6 +160,7 @@ class FirstRunPermissionsIntegration:
         """Остановка интеграции"""
         try:
             self._running = False
+            self._permissions_in_progress = False
             logger.info("✅ [FIRST_RUN_PERMISSIONS] Остановлен")
             return True
 
@@ -181,12 +212,16 @@ class FirstRunPermissionsIntegration:
             logger.info("   Пропускаем (разрешение уже решено)")
 
         logger.info("✅ [FIRST_RUN_PERMISSIONS] Все разрешения обработаны")
+        
+        # Сбрасываем флаг процесса после завершения
+        self._permissions_in_progress = False
 
     def get_status(self) -> Dict[str, Any]:
         """Получить статус интеграции"""
         return {
             "initialized": self._initialized,
             "running": self._running,
+            "permissions_in_progress": self._permissions_in_progress,
             "enabled": self.enabled,
             "pause_seconds": self.pause_seconds,
             "first_run_completed": self.flag_file.exists(),

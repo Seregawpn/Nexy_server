@@ -73,7 +73,7 @@ class SimpleModuleCoordinator:
         self.config = UnifiedConfigLoader()
 
         # Очередь разрешений (по умолчанию отсутствует)
-        self.permissions_queue: Optional[PermissionsQueue] = None
+        self.permissions_queue: Optional[Any] = None
         
         # Состояние
         self.is_initialized = False
@@ -81,6 +81,9 @@ class SimpleModuleCoordinator:
         # Фоновый asyncio loop и поток для асинхронных интеграций
         self._bg_loop = None
         self._bg_thread = None
+        
+        # Состояние процесса разрешений
+        self._permissions_in_progress = False
         
     async def initialize(self) -> bool:
         """Инициализация всех компонентов и интеграций"""
@@ -437,6 +440,14 @@ class SimpleModuleCoordinator:
             except Exception:
                 pass
 
+            # НОВОЕ: Подписка на события разрешений
+            await self.event_bus.subscribe("permissions.first_run_started", 
+                                          self._on_permissions_started, EventPriority.HIGH)
+            await self.event_bus.subscribe("permissions.first_run_completed", 
+                                          self._on_permissions_completed, EventPriority.HIGH)
+            await self.event_bus.subscribe("permissions.first_run_failed", 
+                                          self._on_permissions_failed, EventPriority.HIGH)
+
             print("✅ Координация настроена")
             
         except Exception as e:
@@ -487,6 +498,13 @@ class SimpleModuleCoordinator:
                     if name == "instance_manager" and not success:
                         print("❌ Дублирование обнаружено - приложение завершено")
                         return False
+                    
+                    # НОВОЕ: Блокируем запуск остальных интеграций до завершения first_run_permissions
+                    if name == "first_run_permissions" and success:
+                        print("⏳ Ожидание завершения запроса разрешений...")
+                        # Ждем завершения процесса запроса разрешений
+                        await self._wait_for_permissions_completion()
+                        print("✅ Запрос разрешений завершен, продолжаем запуск...")
                     
                     if not success:
                         print(f"❌ Ошибка запуска {name}")
@@ -721,12 +739,69 @@ class SimpleModuleCoordinator:
         except Exception as e:
             logger.debug(f"Failed to log screenshot.error: {e}")
 
+    # НОВОЕ: Обработчики событий разрешений
+    async def _on_permissions_started(self, event):
+        """Начало запроса разрешений - блокируем остальные интеграции"""
+        try:
+            data = (event or {}).get("data", {})
+            session_id = data.get("session_id", "unknown")
+            print(f"⏳ [PERMISSIONS] Начат процесс запроса разрешений (session={session_id})")
+            logger.info(f"⏳ [PERMISSIONS] Начат процесс запроса разрешений (session={session_id})")
+            self._permissions_in_progress = True
+        except Exception as e:
+            logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_started: {e}")
+
+    async def _on_permissions_completed(self, event):
+        """Завершение запроса разрешений - продолжаем запуск"""
+        try:
+            data = (event or {}).get("data", {})
+            session_id = data.get("session_id", "unknown")
+            print(f"✅ [PERMISSIONS] Запрос разрешений завершен (session={session_id})")
+            logger.info(f"✅ [PERMISSIONS] Запрос разрешений завершен (session={session_id})")
+            self._permissions_in_progress = False
+        except Exception as e:
+            logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_completed: {e}")
+
+    async def _on_permissions_failed(self, event):
+        """Ошибка запроса разрешений - продолжаем с предупреждением"""
+        try:
+            data = (event or {}).get("data", {})
+            session_id = data.get("session_id", "unknown")
+            error = data.get("error", "unknown error")
+            print(f"⚠️ [PERMISSIONS] Ошибка запроса разрешений (session={session_id}): {error}")
+            logger.warning(f"⚠️ [PERMISSIONS] Ошибка запроса разрешений (session={session_id}): {error}")
+            self._permissions_in_progress = False
+        except Exception as e:
+            logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_failed: {e}")
+
+    async def _wait_for_permissions_completion(self):
+        """Ждет завершения процесса запроса разрешений"""
+        try:
+            # Ждем пока процесс разрешений не завершится
+            timeout_seconds = 300  # 5 минут максимум
+            check_interval = 0.1   # Проверяем каждые 100мс
+            elapsed = 0.0
+            
+            while self._permissions_in_progress and elapsed < timeout_seconds:
+                await asyncio.sleep(check_interval)
+                elapsed += check_interval
+            
+            if elapsed >= timeout_seconds:
+                logger.warning("⚠️ [PERMISSIONS] Таймаут ожидания завершения разрешений")
+                self._permissions_in_progress = False  # Принудительно сбрасываем флаг
+            else:
+                logger.debug(f"✅ [PERMISSIONS] Ожидание завершено за {elapsed:.1f} секунд")
+                
+        except Exception as e:
+            logger.error(f"❌ [PERMISSIONS] Ошибка ожидания завершения разрешений: {e}")
+            self._permissions_in_progress = False  # Принудительно сбрасываем флаг
 
     def get_status(self) -> Dict[str, Any]:
         """Получить статус всех компонентов"""
         return {
             "is_initialized": self.is_initialized,
             "is_running": self.is_running,
+            "permissions_in_progress": self._permissions_in_progress,
             "core_components": {
                 "event_bus": self.event_bus is not None,
                 "state_manager": self.state_manager is not None,
