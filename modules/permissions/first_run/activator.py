@@ -7,7 +7,9 @@ Activator для активации разрешений macOS.
 
 import asyncio
 import logging
-from typing import Optional
+import subprocess
+import ctypes
+from ctypes import util
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +92,8 @@ async def activate_accessibility(hold_duration: float = 7.0) -> bool:
             # Вызываем с prompt=True чтобы показать диалог
             # Если разрешение уже дано, диалог не появится
             prompt_key = getattr(AppKit, "kAXTrustedCheckOptionPrompt", "AXTrustedCheckOptionPrompt")
-            options = {prompt_key: True}  # Показать диалог если нужно
+            prompt_value = AppKit.NSNumber.numberWithBool_(True)
+            options = AppKit.NSDictionary.dictionaryWithObject_forKey_(prompt_value, prompt_key)  # Показать диалог если нужно
 
             trusted = AppKit.AXIsProcessTrustedWithOptions(options)
 
@@ -111,6 +114,71 @@ async def activate_accessibility(hold_duration: float = 7.0) -> bool:
 
     except Exception as e:
         logger.error(f"❌ Ошибка активации Accessibility: {e}")
+        return False
+
+
+async def activate_input_monitoring(hold_duration: float = 7.0) -> bool:
+    """
+    Активировать запрос разрешения Input Monitoring.
+
+    Использует публичный API IOHIDRequestAccess, который триггерит системный диалог
+    (или автоматически открывает System Settings) если разрешение ещё не выдано.
+    Затем делает паузу, чтобы дать пользователю время выдать доступ.
+
+    Args:
+        hold_duration: сколько секунд ждать после активации (по умолчанию 7.0)
+
+    Returns:
+        True если активация прошла успешно, False при ошибке
+    """
+    try:
+        logger.info(f"⌨️ Активация Input Monitoring (пауза {hold_duration} сек)...")
+
+        iokit_path = util.find_library("IOKit")
+        if not iokit_path:
+            logger.warning("⚠️ Не удалось найти библиотеку IOKit – пропускаем запрос")
+            return False
+
+        iokit = ctypes.CDLL(iokit_path)
+
+        kIOHIDRequestTypeListenEvent = ctypes.c_uint32(1)
+        kIOReturnSuccess = 0
+
+        try:
+            request_access = iokit.IOHIDRequestAccess
+        except AttributeError:
+            logger.warning("⚠️ IOHIDRequestAccess недоступен – вероятно старая версия macOS")
+            return False
+
+        request_access.argtypes = [ctypes.c_uint32]
+        request_access.restype = ctypes.c_int32
+
+        status = request_access(kIOHIDRequestTypeListenEvent.value)
+
+        if status == kIOReturnSuccess:
+            logger.info("✅ Input Monitoring разрешение уже выдано или диалог был открыт")
+        else:
+            status_hex = hex(ctypes.c_uint32(status).value)
+            logger.info(
+                "ℹ️ IOHIDRequestAccess вернул код %s – "
+                "System Settings должно открыться для выдачи доступа",
+                status_hex,
+            )
+            try:
+                subprocess.Popen([
+                    'open',
+                    'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent'
+                ])
+                logger.debug("   🔗 Открываем System Settings для Input Monitoring")
+            except Exception as open_err:
+                logger.debug(f"   ⚠️ Не удалось открыть System Settings: {open_err}")
+
+        logger.debug(f"   ⏸️ Пауза {hold_duration} сек...")
+        await asyncio.sleep(hold_duration)
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка активации Input Monitoring: {e}")
         return False
 
 
@@ -181,6 +249,12 @@ async def activate_all_permissions(pause_seconds: float = 7.0) -> dict:
     # Accessibility
     results['accessibility'] = await activate_accessibility()
     if results['accessibility']:
+        logger.info(f"   Пауза {pause_seconds} сек...")
+        await asyncio.sleep(pause_seconds)
+
+    # Input Monitoring
+    results['input_monitoring'] = await activate_input_monitoring()
+    if results['input_monitoring']:
         logger.info(f"   Пауза {pause_seconds} сек...")
         await asyncio.sleep(pause_seconds)
 

@@ -20,12 +20,14 @@ from modules.permissions.first_run.status_checker import (
     PermissionStatus,
     check_microphone_status,
     check_accessibility_status,
+    check_input_monitoring_status,
     check_screen_capture_status,
 )
 
 from modules.permissions.first_run.activator import (
     activate_microphone,
     activate_accessibility,
+    activate_input_monitoring,
     activate_screen_capture,
 )
 
@@ -49,7 +51,8 @@ class FirstRunPermissionsIntegration:
 
         # Настройки из конфига
         self.enabled = self.config.get('enabled', True)
-        self.pause_seconds = self.config.get('pause_between_requests_sec', 7.0)
+        self.pause_seconds = self.config.get('pause_between_requests_sec', 1.0)
+        self.activation_hold_seconds = self.config.get('activation_hold_duration_sec', 7.0)
 
         # Путь к флагу
         self.flag_file = get_user_data_dir("Nexy") / "permissions_first_run_completed.flag"
@@ -180,7 +183,7 @@ class FirstRunPermissionsIntegration:
             logger.info("   Активируем Microphone...")
             # activate_microphone держит микрофон открытым всю паузу
             # это гарантирует что диалог успеет появиться
-            success = await activate_microphone(hold_duration=self.pause_seconds)
+            success = await activate_microphone(hold_duration=self.activation_hold_seconds)
             # Отдельная пауза НЕ нужна - функция уже подождала
         else:
             logger.info("   Пропускаем (разрешение уже решено)")
@@ -193,12 +196,23 @@ class FirstRunPermissionsIntegration:
         if acc_status == PermissionStatus.NOT_DETERMINED:
             logger.info("   Активируем Accessibility...")
             # activate_accessibility держит паузу внутри себя
-            success = await activate_accessibility(hold_duration=self.pause_seconds)
+            success = await activate_accessibility(hold_duration=self.activation_hold_seconds)
             # Отдельная пауза НЕ нужна - функция уже подождала
         else:
             logger.info("   Пропускаем (разрешение уже решено)")
 
-        # 3. SCREEN CAPTURE
+        # 3. INPUT MONITORING
+        logger.info("⌨️ [FIRST_RUN_PERMISSIONS] Проверка Input Monitoring...")
+        input_status = check_input_monitoring_status()
+        logger.info(f"   Статус: {input_status.value}")
+
+        if input_status == PermissionStatus.NOT_DETERMINED:
+            logger.info("   Активируем Input Monitoring...")
+            success = await activate_input_monitoring(hold_duration=self.activation_hold_seconds)
+        else:
+            logger.info("   Пропускаем (разрешение уже решено)")
+
+        # 4. SCREEN CAPTURE
         logger.info("📺 [FIRST_RUN_PERMISSIONS] Проверка Screen Capture...")
         screen_status = check_screen_capture_status()
         logger.info(f"   Статус: {screen_status.value}")
@@ -206,7 +220,7 @@ class FirstRunPermissionsIntegration:
         if screen_status == PermissionStatus.NOT_DETERMINED:
             logger.info("   Активируем Screen Capture...")
             # activate_screen_capture держит паузу внутри себя
-            success = await activate_screen_capture(hold_duration=self.pause_seconds)
+            success = await activate_screen_capture(hold_duration=self.activation_hold_seconds)
             # Отдельная пауза НЕ нужна - функция уже подождала
         else:
             logger.info("   Пропускаем (разрешение уже решено)")
@@ -224,6 +238,7 @@ class FirstRunPermissionsIntegration:
             "permissions_in_progress": self._permissions_in_progress,
             "enabled": self.enabled,
             "pause_seconds": self.pause_seconds,
+            "activation_hold_seconds": self.activation_hold_seconds,
             "first_run_completed": self.flag_file.exists(),
             "flag_file": str(self.flag_file),
         }

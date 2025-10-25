@@ -23,7 +23,8 @@ class AccessibilityHandler:
                 import AppKit
                 # Проверяем через AXIsProcessTrustedWithOptions (публичный API)
                 prompt_key = getattr(AppKit, "kAXTrustedCheckOptionPrompt", "AXTrustedCheckOptionPrompt")
-                options = {prompt_key: False}
+                prompt_value = AppKit.NSNumber.numberWithBool_(False)
+                options = AppKit.NSDictionary.dictionaryWithObject_forKey_(prompt_value, prompt_key)
                 trusted = AppKit.AXIsProcessTrustedWithOptions(options)
                 
                 if trusted:
@@ -34,9 +35,9 @@ class AccessibilityHandler:
                 return trusted
                 
             except ImportError:
-                logger.warning("⚠️ AppKit недоступен, используем fallback")
-                # Fallback: предполагаем, что разрешение есть (не блокируем работу)
-                return True
+                logger.warning("⚠️ AppKit недоступен — считаем, что разрешение не выдано")
+                # Возвращаем False, чтобы другие компоненты попытались запросить доступ
+                return False
             
         except Exception as e:
             logger.error(f"❌ Error checking accessibility permission: {e}")

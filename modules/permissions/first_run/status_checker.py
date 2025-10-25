@@ -6,8 +6,9 @@ Status Checker для проверки статусов разрешений mac
 """
 
 import logging
+import ctypes
+from ctypes import util
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,62 @@ def check_accessibility_status() -> PermissionStatus:
         return PermissionStatus.ERROR
 
 
+def check_input_monitoring_status() -> PermissionStatus:
+    """
+    Проверить статус разрешения Input Monitoring.
+
+    Returns:
+        PermissionStatus: текущий статус разрешения
+    """
+    try:
+        iokit_path = util.find_library("IOKit")
+        if not iokit_path:
+            logger.warning("⚠️ IOKit недоступен – предполагаем NOT_DETERMINED")
+            return PermissionStatus.NOT_DETERMINED
+
+        iokit = ctypes.CDLL(iokit_path)
+
+        try:
+            check_access = iokit.IOHIDCheckAccess
+        except AttributeError:
+            logger.warning("⚠️ IOHIDCheckAccess недоступен – используем tccutil fallback")
+            raise AttributeError("IOHIDCheckAccess unavailable")
+
+        check_access.argtypes = [ctypes.c_uint32]
+        check_access.restype = ctypes.c_bool
+
+        kIOHIDRequestTypeListenEvent = ctypes.c_uint32(1)
+        granted = bool(check_access(kIOHIDRequestTypeListenEvent.value))
+
+        if granted:
+            logger.debug("⌨️ Input Monitoring: GRANTED")
+            return PermissionStatus.GRANTED
+
+        logger.debug("⌨️ Input Monitoring: NOT_DETERMINED or DENIED")
+        return PermissionStatus.NOT_DETERMINED
+
+    except Exception:
+        # Fallback: используем tccutil для проверки
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ['tccutil', 'check', 'ListenEvent', 'com.nexy.assistant'],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                logger.debug("⌨️ Input Monitoring (fallback): GRANTED")
+                return PermissionStatus.GRANTED
+            else:
+                logger.debug("⌨️ Input Monitoring (fallback): NOT_DETERMINED or DENIED")
+                return PermissionStatus.NOT_DETERMINED
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки Input Monitoring: {e}")
+            return PermissionStatus.ERROR
+
+
 def check_screen_capture_status() -> PermissionStatus:
     """
     Проверить статус разрешения Screen Capture.
@@ -137,5 +194,6 @@ def check_all_permissions() -> dict:
     return {
         "microphone": check_microphone_status(),
         "accessibility": check_accessibility_status(),
+        "input_monitoring": check_input_monitoring_status(),
         "screen_capture": check_screen_capture_status(),
     }

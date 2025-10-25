@@ -8,6 +8,7 @@ import os
 import subprocess
 from typing import Optional, Dict, Any
 from packaging import version
+from pathlib import Path
 from .config import UpdaterConfig
 from .net import UpdateHTTPClient
 from .verify import sha256_checksum, verify_ed25519_signature, verify_app_signature
@@ -25,6 +26,22 @@ class Updater:
     def __init__(self, config: UpdaterConfig):
         self.config = config
         self.http_client = UpdateHTTPClient(config.timeout, config.retries)
+        # Настраиваем файловый логгер для апдейтера
+        try:
+            log_file = Path(self.config.get_log_path())
+            if not any(
+                isinstance(handler, logging.FileHandler)
+                and Path(getattr(handler, "baseFilename", "")) == log_file
+                for handler in logger.handlers
+            ):
+                log_file.parent.mkdir(parents=True, exist_ok=True)
+                file_handler = logging.FileHandler(log_file, encoding="utf-8")
+                file_handler.setLevel(logging.INFO)
+                formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+        except Exception as log_err:
+            logger.debug(f"Не удалось настроить файловый логгер обновлений: {log_err}")
     
     def get_current_build(self) -> str:
         """Получение текущего номера сборки (строка из Info.plist)"""
