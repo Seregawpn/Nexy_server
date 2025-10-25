@@ -291,7 +291,7 @@ updater:
   auto_check: true
   check_interval: 3600
   check_on_startup: true
-  auto_install: false
+  auto_install: true
   install_after_download: false
   silent_mode: true
   security:

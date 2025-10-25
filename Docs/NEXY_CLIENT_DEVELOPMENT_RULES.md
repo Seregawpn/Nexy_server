@@ -1,6 +1,6 @@
 # Nexy Client Development Rules
 
-> Обновлено: 2025-10-20  
+> Обновлено: 2025-10-24  
 > Эти правила синхронизированы с текущим состоянием репозитория `client/`.
 
 ## 1. Контекст перед началом работы
@@ -28,26 +28,27 @@
 - **Workflows (`integration/workflows/`)** — координаторы режимов (Listening/Processing).
 - **Core adapters (`integration/adapters/`)** — вспомогательные переходники (например, `EventBusAudioSink`).
 
-Модуль `permissions` существует (`modules/permissions/`), но отдельная интеграция не реализована. Проверки разрешений распределены по интеграциям микрофона, скриншотов и VoiceOver.
+Модуль `permissions` существует (`modules/permissions/`) и теперь имеет `first_run_permissions_integration.py` для системы первого запуска. Проверки разрешений также распределены по интеграциям микрофона, скриншотов и VoiceOver.
 
 ## 4. Порядок инициализации и запуска
 Фактический порядок задаётся в `SimpleModuleCoordinator._create_integrations()` и `start()`:
-1. `instance_manager`
+1. `instance_manager` (блокирующий)
 2. `hardware_id`
-3. `tray`
-4. `mode_management`
-5. `input`
-6. `voice_recognition`
-7. `network`
-8. `interrupt`
-9. `screenshot_capture`
-10. `grpc`
-11. `speech_playback`
-12. `updater`
+3. `first_run_permissions` (блокирующий - новая интеграция)
+4. `tray`
+5. `mode_management`
+6. `input`
+7. `voice_recognition`
+8. `network`
+9. `interrupt`
+10. `screenshot_capture`
+11. `grpc`
+12. `speech_playback`
 13. `signals`
-14. `welcome_message`
-15. `voiceover_ducking`
-16. `autostart_manager`
+14. `updater`
+15. `autostart_manager`
+16. `welcome_message`
+17. `voiceover_ducking`
 
 Не меняй порядок без проверки зависимостей — он влияет на состояние режима и готовность сервисов.
 
@@ -55,6 +56,7 @@
 - Центральный источник режимов — `ModeManagementIntegration`; `ApplicationStateManager` публикует `app.mode_changed` и `app.state_changed`.
 - Основные режимы: `AppMode.SLEEPING → LISTENING → PROCESSING`. Прямой переход `SLEEPING → PROCESSING` используется приветствием (см. `ModeManagementIntegration`).
 - Смена режима инициируется событиями `mode.request`. В существующем коде не все события передают `session_id`; при новой разработке включай `session_id` и `source`, когда это возможно.
+- **ОБНОВЛЕНО:** FirstRunPermissionsIntegration использует события `permissions.first_run_started/completed/failed` для мониторинга процесса первого запуска.
 - Контракты событий пока не оформлены в виде констант `CONTRACT`. Документируй используемые события в README интеграции/модуля и поддерживай раздел «Event log».
 - Используй `EventPriority` по аналогии с текущими реализациями (critical для `mode.request`, medium для мониторинга и т. п.).
 
@@ -67,6 +69,7 @@
 ## 7. Взаимодействие с сервером
 - gRPC схемы лежат в `../server/modules/grpc_service/streaming.proto`; сгенерированные stubs — в `../server/modules/grpc_service/*`.
 - `GrpcClientIntegration` агрегирует данные по `session_id`, опираясь на настройки `unified_config`.
+- **ОБНОВЛЕНО:** Приветственные сообщения теперь генерируются на сервере через gRPC TTS (параметр `use_server: true` в unified_config).
 - При изменениях на сервере обновляй stubs и прогоняй интеграционные проверки (см. `tests/test_grpc_connection.py`).
 
 ## 8. Логирование и диагностика
@@ -106,7 +109,7 @@
 ## 12. Известные ограничения и план улучшений
 - Контракты EventBus не формализованы. При добавлении новой интеграции создавай раздел «Events» в README и поддерживай тесты, эмулирующие ключевые события.
 - Логирование не добавляет `session_id` автоматически. Рассмотри расширение форматтера или внедрение структурированных логов.
-- Модуль `permissions` не интегрирован через отдельный адаптер. Если появится необходимость в централизованной проверке, добавь интеграцию и опиши в ADR.
+- **ОБНОВЛЕНО:** Модуль `permissions` теперь имеет `first_run_permissions_integration.py` для системы первого запуска с умными паузами и блокирующей логикой.
 - Для отслеживания разрешений необходимо завести `Docs/PERMISSIONS_REPORT.md` и поддерживать его вручную.
 
 ---

@@ -89,9 +89,8 @@ async def activate_accessibility(hold_duration: float = 7.0) -> bool:
 
             # Вызываем с prompt=True чтобы показать диалог
             # Если разрешение уже дано, диалог не появится
-            options = {
-                'prompt': True  # Показать диалог если нужно
-            }
+            prompt_key = getattr(AppKit, "kAXTrustedCheckOptionPrompt", "AXTrustedCheckOptionPrompt")
+            options = {prompt_key: True}  # Показать диалог если нужно
 
             trusted = AppKit.AXIsProcessTrustedWithOptions(options)
 

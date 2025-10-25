@@ -7,10 +7,12 @@ import tempfile
 import os
 import subprocess
 from typing import Optional, Dict, Any
+from packaging import version
 from .config import UpdaterConfig
 from .net import UpdateHTTPClient
 from .verify import sha256_checksum, verify_ed25519_signature, verify_app_signature
 from .dmg import mount_dmg, unmount_dmg, find_app_in_dmg
+from .pkg import install_pkg, verify_pkg_signature, extract_pkg_contents, find_app_in_pkg, cleanup_pkg_extract
 from .replace import atomic_replace_app
 from .migrate import get_user_app_path
 import logging
@@ -24,24 +26,37 @@ class Updater:
         self.config = config
         self.http_client = UpdateHTTPClient(config.timeout, config.retries)
     
-    def get_current_build(self) -> int:
-        """Получение текущего номера сборки"""
+    def get_current_build(self) -> str:
+        """Получение текущего номера сборки (строка из Info.plist)"""
         try:
             import plistlib
             info_plist_path = os.path.join(get_user_app_path(), "Contents", "Info.plist")
             with open(info_plist_path, "rb") as f:
                 plist = plistlib.load(f)
-            return int(plist.get("CFBundleVersion", 0))
+            build_value = plist.get("CFBundleVersion", "0")
+            return str(build_value)
         except Exception:
-            return 0
+            return "0"
     
     def check_for_updates(self) -> Optional[Dict[str, Any]]:
         """Проверка доступности обновлений"""
         try:
             manifest = self.http_client.get_manifest(self.config.manifest_url)
-            current_build = self.get_current_build()
-            latest_build = int(manifest.get("build", 0))
-            
+            current_build_str = self.get_current_build()
+            latest_build_str = str(manifest.get("build", "0"))
+
+            try:
+                current_build = version.parse(current_build_str)
+            except Exception:
+                logger.warning(f"Не удалось распарсить текущую версию '{current_build_str}', используем 0")
+                current_build = version.parse("0")
+
+            try:
+                latest_build = version.parse(latest_build_str)
+            except Exception:
+                logger.error(f"Не удалось распарсить версию манифеста '{latest_build_str}'")
+                return None
+
             if latest_build > current_build:
                 return manifest
             return None
@@ -100,9 +115,24 @@ class Updater:
                 
             finally:
                 unmount_dmg(mount_point)
+                
+        elif artifact_type == "pkg":
+            # Установка PKG файла
+            logger.info("Установка PKG файла...")
+            
+            # Проверяем подпись PKG
+            if not verify_pkg_signature(artifact_path):
+                logger.warning("PKG подпись не проверена, продолжаем установку")
+            
+            # Устанавливаем PKG
+            install_pkg(artifact_path)
+            
+            # PKG устанавливается в /Applications, поэтому просто перезапускаем
+            logger.info("PKG установлен, приложение будет перезапущено")
+            
         else:
             # ZIP файл - аналогично, но с распаковкой
-            raise NotImplementedError("ZIP пока не поддерживается")
+            raise NotImplementedError(f"Тип файла {artifact_type} пока не поддерживается")
         
         # Удаляем временный файл
         os.unlink(artifact_path)

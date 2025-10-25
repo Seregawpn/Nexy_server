@@ -7,6 +7,7 @@ from .config import UpdaterConfig
 from .net import UpdateHTTPClient
 from .verify import sha256_checksum, verify_ed25519_signature, verify_app_signature
 from .dmg import mount_dmg, unmount_dmg, find_app_in_dmg
+from .pkg import install_pkg, verify_pkg_signature
 from .replace import atomic_replace_app
 from .updater import Updater
 
@@ -19,6 +20,8 @@ __all__ = [
     'mount_dmg',
     'unmount_dmg',
     'find_app_in_dmg',
+    'install_pkg',
+    'verify_pkg_signature',
     'atomic_replace_app',
     'Updater'
 ]

@@ -25,12 +25,13 @@ class UpdateHTTPClient:
         # Отключаем предупреждения urllib3 для чистоты логов
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         
-        # Создаем отдельный HTTP клиент для обновлений
+        # Создаем отдельный HTTP клиент для обновлений с поддержкой редиректов
         self.http = urllib3.PoolManager(
             retries=urllib3.Retry(
                 total=retries, 
                 backoff_factor=0.5,
-                status_forcelist=[500, 502, 503, 504]
+                status_forcelist=[500, 502, 503, 504],
+                redirect=5  # Поддержка до 5 редиректов
             ),
             timeout=urllib3.Timeout(total=timeout)
         )
@@ -121,11 +122,11 @@ class UpdateHTTPClient:
                 if version_attr:
                     version = version_attr
                 
-                # Получаем build номер
+                # Получаем build номер (храним как строку, Sparkle допускает произвольные идентификаторы)
                 build_attr = enclosure.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}version')
-                build = int(build_attr) if build_attr else 10000
+                build = build_attr.strip() if build_attr else "0"
             else:
-                build = 10000
+                build = "0"
             
             # Создаем нормализованный манифест
             download_url = enclosure.get('url') if enclosure is not None else None
@@ -140,6 +141,15 @@ class UpdateHTTPClient:
                     artifact_type = "pkg"
                 elif download_url.endswith('.zip'):
                     artifact_type = "zip"
+                # GitHub Releases часто используют прямые ссылки
+                elif 'github.com' in download_url and 'releases/download' in download_url:
+                    # Определяем тип по имени файла в URL
+                    if '.dmg' in download_url:
+                        artifact_type = "dmg"
+                    elif '.pkg' in download_url:
+                        artifact_type = "pkg"
+                    elif '.zip' in download_url:
+                        artifact_type = "zip"
             
             manifest = {
                 'version': version,

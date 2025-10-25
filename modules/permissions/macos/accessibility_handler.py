@@ -22,7 +22,9 @@ class AccessibilityHandler:
             try:
                 import AppKit
                 # Проверяем через AXIsProcessTrustedWithOptions (публичный API)
-                trusted = AppKit.AXIsProcessTrustedWithOptions(None)
+                prompt_key = getattr(AppKit, "kAXTrustedCheckOptionPrompt", "AXTrustedCheckOptionPrompt")
+                options = {prompt_key: False}
+                trusted = AppKit.AXIsProcessTrustedWithOptions(options)
                 
                 if trusted:
                     logger.info("✅ Accessibility permission granted (public API)")

@@ -23,15 +23,15 @@
   - См. полный список: `client/modules/`
 - **Интеграции** (`client/integration/integrations/`): тонкие обёртки над модулями.
   - См. полный список: `client/integration/integrations/`
-  - **ПРИМЕЧАНИЕ:** Модуль `permissions` существует, но `permissions_integration.py` отсутствует.
+  - **ОБНОВЛЕНО:** Модуль `permissions` теперь имеет `first_run_permissions_integration.py` для системы первого запуска.
 - **Workflows** (`client/integration/workflows/`): `ListeningWorkflow`, `ProcessingWorkflow` управляют переходами между режимами.
 - **Режимы** (`AppMode`): SLEEPING → LISTENING → PROCESSING, переходы только через события `mode.request`.
 - **EventBus**: все коммуникации — события, приоритеты задаются через `EventPriority`.
 
 ## 4. Порядок модулей и инициализации
-`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → Tray → InputProcessing → Updater → NetworkManager → InterruptManagement → ScreenshotCapture → VoiceRecognition → ModeManagement → GrpcClient → SpeechPlayback → Signals → AutostartManager → WelcomeMessage → VoiceOverDucking. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
+`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → **FirstRunPermissions** → Tray → ModeManagement → InputProcessing → VoiceRecognition → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → SpeechPlayback → Signals → Updater → AutostartManager → WelcomeMessage → VoiceOverDucking. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
 
-**ПРИМЕЧАНИЕ:** Permissions модуль существует, но permissions_integration.py отсутствует. Аудио управление интегрировано через VoiceRecognitionIntegration.
+**ОБНОВЛЕНО:** FirstRunPermissionsIntegration добавлена на позицию 3 (блокирующая). Permissions модуль теперь имеет полноценную интеграцию для системы первого запуска.
 
 **АКТУАЛЬНЫЕ СПИСКИ:**
 - Модули: см. `client/modules/`
@@ -117,7 +117,7 @@
 ## 13. Напоминание
 Клиентская часть должна оставаться совместимой с уже завершёнными интеграциями. При сомнениях синхронизируйся с владельцем сервера и UX прежде чем менять контракт или пользовательский поток.
 
-**ИЗВЕСТНАЯ ПРОБЛЕМА:** Отсутствует `permissions_integration.py` - модуль `permissions` существует, но интеграции нет. Проверка разрешений выполняется через другие механизмы (VoiceRecognitionIntegration, ScreenshotCaptureIntegration и т.д.).
+**ОБНОВЛЕНО:** Создана `first_run_permissions_integration.py` - полноценная система первого запуска с умными паузами и блокирующей логикой. Проверка разрешений также выполняется через специализированные интеграции (VoiceRecognitionIntegration, ScreenshotCaptureIntegration и т.д.).
 
 ## 14. Принципы архитектуры "быстрой диагностики"
 
