@@ -118,13 +118,37 @@ class UpdateServerProvider:
                     content_type='text/plain'
                 )
             
+            # Получаем актуальный размер файла
+            actual_size = file_path.stat().st_size
+            
+            # Получаем размер из манифеста для сравнения
+            latest_manifest = self.manifest_provider.get_latest_manifest()
+            expected_size = 0
+            if latest_manifest and "artifact" in latest_manifest:
+                expected_size = latest_manifest["artifact"].get("size", 0)
+            
+            # Логируем несоответствие размера
+            if expected_size > 0 and actual_size != expected_size:
+                logger.warning(f"⚠️ Размер файла не совпадает: ожидалось {expected_size}, фактический {actual_size} (разница: {actual_size - expected_size:+d} байт)")
+                
+                # Обновляем манифест с актуальным размером
+                try:
+                    self.manifest_provider.update_manifest(
+                        f"manifest_{latest_manifest['version']}.json",
+                        {"artifact": {"size": actual_size}}
+                    )
+                    logger.info(f"✅ Манифест обновлен с актуальным размером: {actual_size} байт")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка обновления манифеста: {e}")
+            
             if self.config.log_downloads:
-                logger.info(f"📥 Загрузка файла: {filename}")
+                logger.info(f"📥 Загрузка файла: {filename} (размер: {actual_size} байт)")
             
             return web.FileResponse(
                 file_path,
                 headers={
                     'Content-Type': 'application/octet-stream',
+                    'Content-Length': str(actual_size),  # Явно указываем размер
                     'Content-Disposition': f'attachment; filename="{filename}"'
                 }
             )
