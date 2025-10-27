@@ -18,31 +18,32 @@ class AccessibilityHandler:
     def check_accessibility_permission(self) -> bool:
         """Check whether the app is trusted for Accessibility using public API."""
         try:
-            # Используем публичный API вместо прямых TCC вызовов
+            # Используем публичный API из Quartz (AXIsProcessTrustedWithOptions)
             try:
-                import AppKit
-                # Проверяем через AXIsProcessTrustedWithOptions (публичный API)
-                prompt_key = getattr(AppKit, "kAXTrustedCheckOptionPrompt", "AXTrustedCheckOptionPrompt")
-                prompt_value = AppKit.NSNumber.numberWithBool_(False)
-                options = AppKit.NSDictionary.dictionaryWithObject_forKey_(prompt_value, prompt_key)
-                trusted = AppKit.AXIsProcessTrustedWithOptions(options)
-                
-                if trusted:
-                    logger.info("✅ Accessibility permission granted (public API)")
-                else:
-                    logger.warning("⚠️ Accessibility permission not granted (public API)")
-                
-                return trusted
-                
+                from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+                from Foundation import NSDictionary, NSNumber
             except ImportError:
-                logger.warning("⚠️ AppKit недоступен — считаем, что разрешение не выдано")
-                # Возвращаем False, чтобы другие компоненты попытались запросить доступ
+                logger.warning("⚠️ Quartz/AX API недоступен — считаем, что разрешение не выдано")
+                # Возвращаем False, чтобы FirstRunPermissions смог повторно запросить доступ
                 return False
+
+            options = NSDictionary.dictionaryWithObject_forKey_(
+                NSNumber.numberWithBool_(False),
+                kAXTrustedCheckOptionPrompt,
+            )
+            trusted = bool(AXIsProcessTrustedWithOptions(options))
+            
+            if trusted:
+                logger.info("✅ Accessibility permission granted (public API)")
+            else:
+                logger.warning("⚠️ Accessibility permission not granted (public API)")
+            
+            return trusted
             
         except Exception as e:
             logger.error(f"❌ Error checking accessibility permission: {e}")
-            # Fallback: не блокируем работу приложения
-            return True
+            # Возвращаем False, чтобы другие компоненты попытались запросить доступ
+            return False
     
     def check_input_monitoring_permission(self) -> bool:
         """Check whether the app is trusted for Input Monitoring."""

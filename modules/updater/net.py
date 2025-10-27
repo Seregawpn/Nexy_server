@@ -6,7 +6,7 @@ HTTP клиент для системы обновлений
 import urllib3
 import os
 import logging
-from typing import Optional
+from typing import Optional, Callable
 import urllib3.exceptions
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,13 @@ class UpdateHTTPClient:
             logger.error(f"Ошибка обработки XML манифеста: {e}")
             raise RuntimeError(f"Ошибка обработки XML: {e}")
     
-    def download_file(self, url: str, dest_path: str, expected_size: Optional[int] = None):
+    def download_file(
+        self,
+        url: str,
+        dest_path: str,
+        expected_size: Optional[int] = None,
+        on_progress: Optional[Callable[[int, Optional[int]], None]] = None,
+    ):
         """
         Скачивание файла с проверкой размера
         
@@ -213,6 +219,12 @@ class UpdateHTTPClient:
                         f.write(chunk)
                         downloaded += len(chunk)
                         
+                        if on_progress:
+                            try:
+                                on_progress(downloaded, expected_size)
+                            except Exception as callback_error:
+                                logger.debug(f"download_file progress callback error: {callback_error}")
+
                         # Показываем прогресс каждые 10MB
                         if downloaded % (10 * 1024 * 1024) == 0:
                             mb_downloaded = downloaded / (1024 * 1024)

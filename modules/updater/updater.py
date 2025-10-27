@@ -26,6 +26,8 @@ class Updater:
     def __init__(self, config: UpdaterConfig):
         self.config = config
         self.http_client = UpdateHTTPClient(config.timeout, config.retries)
+        self.on_download_progress = None
+        self.on_install_progress = None
         # Настраиваем файловый логгер для апдейтера
         try:
             log_file = Path(self.config.get_log_path())
@@ -94,7 +96,12 @@ class Updater:
         temp_file = tempfile.mktemp(suffix=suffix)
         
         logger.info(f"Скачивание {artifact_type}...")
-        self.http_client.download_file(artifact_url, temp_file, expected_size)
+        self.http_client.download_file(
+            artifact_url,
+            temp_file,
+            expected_size,
+            on_progress=self._report_download_progress,
+        )
         
         # Проверяем SHA256
         if expected_sha256:
@@ -116,6 +123,8 @@ class Updater:
         artifact_type = artifact_info.get("type", "dmg")
         user_app_path = get_user_app_path()
         
+        self._report_install_progress("start", 0)
+
         if artifact_type == "dmg":
             mount_point = mount_dmg(artifact_path)
             try:
@@ -128,10 +137,13 @@ class Updater:
                     raise RuntimeError("Подпись нового приложения неверна")
                 
                 # Атомарно заменяем приложение
+                self._report_install_progress("copy", 50)
                 atomic_replace_app(new_app_path, user_app_path)
                 
             finally:
+                self._report_install_progress("unmount", 80)
                 unmount_dmg(mount_point)
+                self._report_install_progress("finish", 100)
                 
         elif artifact_type == "pkg":
             # Установка PKG файла
@@ -142,10 +154,12 @@ class Updater:
                 logger.warning("PKG подпись не проверена, продолжаем установку")
             
             # Устанавливаем PKG
+            self._report_install_progress("install", 50)
             install_pkg(artifact_path)
             
             # PKG устанавливается в /Applications, поэтому просто перезапускаем
             logger.info("PKG установлен, приложение будет перезапущено")
+            self._report_install_progress("finish", 100)
             
         else:
             # ZIP файл - аналогично, но с распаковкой
@@ -185,3 +199,19 @@ class Updater:
         except Exception as e:
             logger.error(f"Ошибка обновления: {e}")
             return False
+
+    def _report_download_progress(self, downloaded: int, expected_size: Optional[int]) -> None:
+        if not callable(self.on_download_progress):
+            return
+        try:
+            self.on_download_progress(downloaded, expected_size)
+        except Exception as callback_error:
+            logger.debug(f"download progress callback error: {callback_error}")
+
+    def _report_install_progress(self, stage: str, percent: int) -> None:
+        if not callable(self.on_install_progress):
+            return
+        try:
+            self.on_install_progress(stage, percent)
+        except Exception as callback_error:
+            logger.debug(f"install progress callback error: {callback_error}")

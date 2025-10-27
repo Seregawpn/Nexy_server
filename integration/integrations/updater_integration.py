@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
@@ -45,6 +45,10 @@ class UpdaterIntegration:
         self.updater = Updater(updater_config)
         self.check_task = None
         self.is_running = False
+        self._update_in_progress: bool = False
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._last_download_percent: int = 0
+        self._last_install_percent: int = 0
         # Поведение миграции регулируется конфигом/ENV
         # Отключаем миграцию в ~/Applications (стратегия: системная установка в /Applications)
         self._migrate_mode: str = "never"
@@ -59,6 +63,11 @@ class UpdaterIntegration:
             
             # Настраиваем обработчики событий
             await self._setup_event_handlers()
+            self._set_update_state(False, trigger="initialize")
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self._loop = None
             
             logger.info("✅ UpdaterIntegration инициализирован")
             return True
@@ -80,7 +89,7 @@ class UpdaterIntegration:
             if self.updater.config.check_on_startup:
                 logger.info("🔍 Проверка обновлений при запуске...")
                 if await self._can_update():
-                    if self.updater.update():
+                    if await self._execute_update(trigger="startup"):
                         return True  # Приложение перезапустится
             
             # Запускаем периодическую проверку
@@ -100,7 +109,7 @@ class UpdaterIntegration:
             try:
                 # Проверяем, можно ли обновляться
                 if await self._can_update():
-                    if self.updater.update():
+                    if await self._execute_update(trigger="scheduled"):
                         return  # Приложение перезапустится
                 
                 # Ждем до следующей проверки
@@ -140,18 +149,55 @@ class UpdaterIntegration:
         """Ручная проверка обновлений"""
         logger.info("🔍 Ручная проверка обновлений")
         if await self._can_update():
-            self.updater.update()
+            await self._execute_update(trigger="manual")
     
     async def _on_mode_changed(self, event_data):
         """Обработка изменения режима приложения"""
         new_mode = event_data.get("mode")
         logger.info(f"Режим приложения изменен на: {new_mode}")
     
+    async def _execute_update(self, trigger: str) -> bool:
+        """Обертка над updater.update() с публикацией событий и флагом состояния."""
+        if self._update_in_progress:
+            logger.info("⏳ Обновление уже выполняется (trigger=%s)", trigger)
+            return False
+
+        self._set_update_state(True, trigger=trigger)
+        await self._safe_publish("updater.update_started", {"trigger": trigger})
+
+        success = False
+        loop = self._loop or asyncio.get_running_loop()
+        self._last_download_percent = 0
+        self._last_install_percent = 0
+        self.updater.on_download_progress = lambda downloaded, total: asyncio.run_coroutine_threadsafe(
+            self._handle_download_progress(downloaded, total, trigger),
+            loop,
+        )
+        self.updater.on_install_progress = lambda stage, percent: asyncio.run_coroutine_threadsafe(
+            self._handle_install_progress(stage, percent, trigger),
+            loop,
+        )
+        try:
+            success = await asyncio.to_thread(self.updater.update)
+            if success:
+                await self._safe_publish("updater.update_completed", {"trigger": trigger})
+            else:
+                await self._safe_publish("updater.update_skipped", {"trigger": trigger})
+            return success
+        except Exception as exc:
+            await self._safe_publish("updater.update_failed", {"trigger": trigger, "error": str(exc)})
+            raise
+        finally:
+            self.updater.on_download_progress = None
+            self.updater.on_install_progress = None
+            self._set_update_state(False, trigger=trigger)
+
     async def stop(self):
         """Остановка интеграции"""
         if self.check_task:
             self.check_task.cancel()
         self.is_running = False
+        self._set_update_state(False, trigger="stop")
         logger.info("✅ UpdaterIntegration остановлен")
 
 
@@ -182,3 +228,64 @@ class UpdaterIntegration:
             return False
         except Exception:
             return False
+
+    def is_update_in_progress(self) -> bool:
+        """Возвращает текущий статус установки обновления."""
+        return self._update_in_progress
+
+    def _set_update_state(self, active: bool, trigger: str = "unknown") -> None:
+        if self._update_in_progress == active:
+            # Обновляем state manager даже если значение не меняется, чтобы синхронизировать потребителей.
+            try:
+                self.state_manager.set_state_data("update_in_progress", active)
+            except Exception:
+                pass
+            return
+
+        self._update_in_progress = active
+        try:
+            self.state_manager.set_state_data("update_in_progress", active)
+        except Exception:
+            pass
+        logger.debug("UpdaterIntegration: update_in_progress=%s (trigger=%s)", active, trigger)
+
+    async def _handle_download_progress(
+        self,
+        downloaded: int,
+        expected_size: Optional[int],
+        trigger: str,
+    ) -> None:
+        if not expected_size or expected_size <= 0:
+            return
+        percent = int(min(100, max(0, downloaded * 100 // expected_size)))
+        if percent <= self._last_download_percent:
+            return
+        self._last_download_percent = percent
+        await self._safe_publish(
+            "updater.download_progress",
+            {
+                "percent": percent,
+                "stage": "download",
+                "trigger": trigger,
+            },
+        )
+
+    async def _handle_install_progress(self, stage: str, percent: int, trigger: str) -> None:
+        percent = int(min(100, max(0, percent)))
+        if percent <= self._last_install_percent:
+            return
+        self._last_install_percent = percent
+        await self._safe_publish(
+            "updater.install_progress",
+            {
+                "percent": percent,
+                "stage": stage,
+                "trigger": trigger,
+            },
+        )
+
+    async def _safe_publish(self, event_type: str, payload: Dict[str, Any]) -> None:
+        try:
+            await self.event_bus.publish(event_type, payload)
+        except Exception as exc:
+            logger.debug("UpdaterIntegration: не удалось опубликовать %s: %s", event_type, exc)

@@ -215,8 +215,8 @@ app = BUNDLE(
         # Main information
         "CFBundleName": "Nexy",
         "CFBundleDisplayName": "Nexy",
-        "CFBundleVersion": "1.0.0",
-        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleVersion": "1.0.1",
+        "CFBundleShortVersionString": "1.0.1",
         "CFBundlePackageType": "APPL",
         "CFBundleExecutable": "Nexy",  # Explicit executable name
         

@@ -18,6 +18,8 @@ from .interrupt_management_integration import InterruptManagementIntegration
 from .screenshot_capture_integration import ScreenshotCaptureIntegration
 from .mode_management_integration import ModeManagementIntegration
 from .signal_integration import SignalIntegration
+from .permission_restart_integration import PermissionRestartIntegration
+from .update_notification_integration import UpdateNotificationIntegration
 
 __all__ = [
     'InstanceManagerIntegration',
@@ -36,6 +38,8 @@ __all__ = [
     'ScreenshotCaptureIntegration',
     'ModeManagementIntegration',
     'SignalIntegration',
+    'PermissionRestartIntegration',
+    'UpdateNotificationIntegration',
 ]
 
 __version__ = "1.0.0"

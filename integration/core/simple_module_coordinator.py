@@ -24,6 +24,8 @@ from modules.tray_controller.core.tray_types import TrayConfig
 from integration.integrations.input_processing_integration import InputProcessingIntegration, InputProcessingConfig
 from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration, VoiceRecognitionConfig
 from integration.integrations.updater_integration import UpdaterIntegration
+from integration.integrations.permission_restart_integration import PermissionRestartIntegration
+from integration.integrations.update_notification_integration import UpdateNotificationIntegration
 from integration.integrations.network_manager_integration import NetworkManagerIntegration
 from modules.network_manager.core.config import NetworkManagerConfig
 # DefaultAudioIntegration удален - используем audio_default напрямую
@@ -200,6 +202,25 @@ class SimpleModuleCoordinator:
                 state_manager=self.state_manager,
                 config=updater_cfg
             )
+
+            # Permission Restart Integration - автоматический перезапуск после критических разрешений
+            perm_restart_cfg = (config_data.get('integrations') or {}).get('permission_restart') or {}
+            self.integrations['permission_restart'] = PermissionRestartIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler,
+                config=perm_restart_cfg,
+                updater_integration=self.integrations.get('updater'),
+            )
+
+            # Update Notification Integration - голосовые уведомления о ходе обновления
+            update_notify_cfg = (config_data.get('integrations') or {}).get('update_notification') or {}
+            self.integrations['update_notification'] = UpdateNotificationIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler,
+                config=update_notify_cfg,
+            )
             
             # Network Manager Integration - используем конфигурацию модуля
             # Конфигурация будет загружена внутри NetworkManagerIntegration
@@ -357,7 +378,7 @@ class SimpleModuleCoordinator:
                 config=permissions_first_run_config
             )
 
-            print("✅ Интеграции созданы: instance_manager, hardware_id, first_run_permissions, tray, mode_management, input, updater, network, interrupt, voice_recognition, screenshot_capture, grpc, speech_playback, signals, autostart_manager, welcome_message, voiceover_ducking")
+            print("✅ Интеграции созданы: instance_manager, hardware_id, first_run_permissions, permission_restart, update_notification, tray, mode_management, input, updater, network, interrupt, voice_recognition, screenshot_capture, grpc, speech_playback, signals, autostart_manager, welcome_message, voiceover_ducking")
 
             # 3. Создаем Workflows (координаторы режимов)
             print("🔧 Создание Workflows...")
@@ -472,20 +493,22 @@ class SimpleModuleCoordinator:
                 'instance_manager',        # 1. Управление экземплярами (ПЕРВЫЙ - блокирующий)
                 'hardware_id',             # 2. Получить уникальный ID
                 'first_run_permissions',   # 3. Запрос разрешений при первом запуске (блокирующий)
-                'tray',                    # 4. GUI и меню-бар
-                'mode_management',         # 5. Управление режимами
-                'input',                   # 6. Обработка ввода (использует accessibility)
-                'voice_recognition',       # 7. Распознавание речи (использует microphone)
-                'network',                 # 8. Сетевая система
-                'interrupt',               # 9. Управление прерываниями
-                'screenshot_capture',      # 10. Захват экрана (использует screen_capture)
-                'grpc',                    # 11. gRPC клиент (зависит от hardware_id)
-                'speech_playback',         # 12. Воспроизведение речи (зависит от grpc)
-                'updater',                 # 13. Система обновлений
-                'signals',            # 13. Аудио сигналы
-                'welcome_message',    # 14. Приветственное сообщение (зависит от speech_playback)
-                'voiceover_ducking',  # 15. VoiceOver Ducking
-                'autostart_manager',  # 16. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
+                'permission_restart',      # 4. Автоматический перезапуск после выдачи критических разрешений
+                'tray',                    # 5. GUI и меню-бар
+                'mode_management',         # 6. Управление режимами
+                'input',                   # 7. Обработка ввода (использует accessibility)
+                'voice_recognition',       # 8. Распознавание речи (использует microphone)
+                'network',                 # 9. Сетевая система
+                'interrupt',               # 10. Управление прерываниями
+                'screenshot_capture',      # 11. Захват экрана (использует screen_capture)
+                'grpc',                    # 12. gRPC клиент (зависит от hardware_id)
+                'speech_playback',         # 13. Воспроизведение речи (зависит от grpc)
+                'updater',                 # 14. Система обновлений
+                'update_notification',     # 15. Голосовые уведомления об обновлениях
+                'signals',                 # 16. Аудио сигналы
+                'welcome_message',         # 17. Приветственное сообщение (зависит от speech_playback)
+                'voiceover_ducking',       # 18. VoiceOver Ducking
+                'autostart_manager',       # 19. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
             ]
             
             # Запускаем в правильном порядке

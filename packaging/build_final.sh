@@ -21,7 +21,7 @@ INSTALLER_IDENTITY="Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)"
 ENTITLEMENTS="packaging/entitlements.plist"
 APP_NAME="Nexy"
 BUNDLE_ID="com.nexy.assistant"
-VERSION="1.0.0"
+VERSION="1.87.0"
 
 # Пути
 CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -81,6 +81,17 @@ clean_xattrs() {
 
 warn() {
     echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+update_app_version() {
+    local app_path="$1"
+    local plist_path="$app_path/Contents/Info.plist"
+    if [ -f "$plist_path" ]; then
+        /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$plist_path" >/dev/null 2>&1 || true
+        /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$plist_path" >/dev/null 2>&1 || true
+    else
+        warn "Info.plist не найден в $app_path"
+    fi
 }
 
 error() {
@@ -250,6 +261,11 @@ safe_copy "dist/$APP_NAME.app" "$CLEAN_APP"
 
 log "Проверяем и очищаем extended attributes в копии..."
 clean_xattrs "$CLEAN_APP" "создание чистой копии"
+
+# Обновляем версии в Info.plist в обоих бандлах
+log "Устанавливаем версию приложения $VERSION..."
+update_app_version "dist/$APP_NAME.app"
+update_app_version "$CLEAN_APP"
 
 # Исправляем Python.framework (удаляем проблемные симлинки)
 fix_python_framework "$CLEAN_APP"
