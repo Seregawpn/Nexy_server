@@ -21,7 +21,7 @@ INSTALLER_IDENTITY="Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)"
 ENTITLEMENTS="packaging/entitlements.plist"
 APP_NAME="Nexy"
 BUNDLE_ID="com.nexy.assistant"
-VERSION="1.87.0"
+VERSION="1.96.0"
 
 # Пути
 CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

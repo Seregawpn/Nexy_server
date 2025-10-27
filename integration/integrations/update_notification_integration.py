@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -16,6 +17,8 @@ from integration.core.base_integration import BaseIntegration
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -109,10 +112,14 @@ class UpdateNotificationIntegration(BaseIntegration):
     async def _on_update_started(self, event: Dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
+            logger.info(
+                "[UPDATE_NOTIFY] Update started (trigger=%s)",
+                (event.get("data") or {}).get("trigger"),
+            )
             if self.config.speak_start:
                 await self._speak(
-                    "Началось обновление Nexy. Это может занять несколько минут. "
-                    "Пожалуйста, дождитесь завершения."
+                    "An update for Nexy is now in progress. This may take a few minutes. "
+                    "You can continue using Nexy while we finish."
                 )
             if self.config.use_signals:
                 await self._play_signal("update_start")
@@ -132,26 +139,34 @@ class UpdateNotificationIntegration(BaseIntegration):
             self._last_stage = stage
             self._last_announce_ts = time.monotonic()
 
-        stage_text = "скачивание" if stage == "download" else "установка"
-        await self._speak(f"Обновление Nexy: {stage_text} {percent} процентов.")
+        stage_text = "downloading" if stage == "download" else "installing"
+        logger.debug(
+            "[UPDATE_NOTIFY] progress stage=%s percent=%s", stage, percent
+        )
+        await self._speak(f"Nexy update: {stage_text} {percent} percent completed.")
 
     async def _on_update_completed(self, event: Dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
+        logger.info(
+            "[UPDATE_NOTIFY] Update completed (trigger=%s)",
+            (event.get("data") or {}).get("trigger"),
+        )
         if self.config.use_signals:
             await self._play_signal("update_success")
         if self.config.speak_complete:
-            await self._speak("Обновление завершено. Nexy перезапустится для применения изменений.")
+            await self._speak("Update completed. Nexy will restart to apply changes.")
 
     async def _on_update_failed(self, event: Dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
+        data = event.get("data") or {}
+        logger.warning("[UPDATE_NOTIFY] Update failed: %s", data.get("error"))
         if self.config.use_signals:
             await self._play_signal("update_error")
         if self.config.speak_error:
-            data = event.get("data") or {}
-            reason = str(data.get("error") or "неизвестная ошибка")
-            await self._speak(f"Обновление Nexy не удалось. Причина: {reason}. Повторите попытку позже.")
+            reason = str(data.get("error") or "unknown error")
+            await self._speak(f"Nexy update failed. Reason: {reason}. Please try again later.")
 
     def _should_announce(self, percent: int, stage: str) -> bool:
         if percent <= self._last_percent:
@@ -168,13 +183,17 @@ class UpdateNotificationIntegration(BaseIntegration):
     async def _speak(self, text: str) -> None:
         if self.config.dry_run:
             return
+        
+        # Используем существующую архитектуру: отправляем запрос на сервер через gRPC
+        # Это аналогично тому, как работает WelcomeMessageIntegration
         await self.event_bus.publish(
-            "speech.playback.request",
+            "voice.recognition_completed",  # Используем существующий тип события
             {
                 "text": text,
                 "voice": self.config.voice,
                 "category": "update_notification",
                 "interruptible": True,
+                "session_id": f"update_notification_{int(time.time())}",
             },
         )
 
