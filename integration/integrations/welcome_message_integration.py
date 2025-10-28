@@ -72,6 +72,8 @@ class WelcomeMessageIntegration:
         self._pending_welcome = False
         self._permission_prompted = False
         self._permission_recheck_task: Optional[asyncio.Task] = None
+        self._welcome_played = False
+        self._welcome_lock = asyncio.Lock()
 
         # Блокировки по разрешениям отключены по умолчанию
         self._enforce_permissions = bool(
@@ -86,7 +88,7 @@ class WelcomeMessageIntegration:
             logger.info("🔧 [WELCOME_INTEGRATION] Инициализация...")
             
             # Подписываемся на события
-            await self.event_bus.subscribe("app.startup", self._on_app_startup, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("system.ready_to_greet", self._on_ready_to_greet, EventPriority.MEDIUM)
             await self.event_bus.subscribe("permissions.status_checked", self._on_permission_event, EventPriority.HIGH)
             await self.event_bus.subscribe("permissions.changed", self._on_permission_event, EventPriority.HIGH)
             await self.event_bus.subscribe("permissions.requested", self._on_permission_event, EventPriority.MEDIUM)
@@ -118,34 +120,46 @@ class WelcomeMessageIntegration:
             self._running = False
             await self._cancel_permission_recheck_task()
             logger.info("✅ [WELCOME_INTEGRATION] Остановлен")
+            self._welcome_played = False
             return True
         except Exception as e:
             await self._handle_error(e, where="welcome.stop", severity="warning")
             return False
     
-    async def _on_app_startup(self, event):
+    async def _on_ready_to_greet(self, event):
         """Обработка события запуска приложения"""
         try:
             if not self.config.enabled:
                 logger.info("🔇 [WELCOME_INTEGRATION] Приветствие отключено в конфигурации")
                 return
             
-            logger.info("🚀 [WELCOME_INTEGRATION] Обработка запуска приложения")
-            
-            # Небольшая задержка для полной инициализации системы
-            if self.config.delay_sec > 0:
-                await asyncio.sleep(self.config.delay_sec)
-            
-            # 🎵 СНАЧАЛА воспроизводим приветствие (без микрофона)
-            logger.info("🎵 [WELCOME_INTEGRATION] Приоритет: сначала приветствие, потом микрофон")
-            await self._play_welcome_message(trigger="app_startup")
-            
+            async with self._welcome_lock:
+                if self._welcome_played or self._pending_welcome:
+                    source = (event or {}).get("data", {}).get("source", "unknown")
+                    logger.info("🔁 [WELCOME_INTEGRATION] Уже воспроизводилось/ожидает — игнорируем (source=%s)", source)
+                    return
+
+                logger.info("🚀 [WELCOME_INTEGRATION] Обработка события готовности к приветствию")
+                self._pending_welcome = True
+                self._welcome_played = True
+
+                if self.config.delay_sec > 0:
+                    await asyncio.sleep(self.config.delay_sec)
+
+                try:
+                    await self._play_welcome_message(trigger="system_ready")
+                except Exception as e:
+                    self._welcome_played = False
+                    raise
+                finally:
+                    self._pending_welcome = False
+
             # 🎙️ Разрешения будут запрошены через PermissionsIntegration автоматически
             # Не запрашиваем здесь, чтобы избежать дублирования
             logger.info("🎙️ [WELCOME_INTEGRATION] Приветствие завершено. Разрешения обрабатываются через PermissionsIntegration")
             
         except Exception as e:
-            await self._handle_error(e, where="welcome.on_app_startup", severity="warning")
+            await self._handle_error(e, where="welcome.on_ready_to_greet", severity="warning")
     
     async def _play_welcome_message(self, trigger: str = "app_startup"):
         """Воспроизводит приветственное сообщение"""
@@ -199,6 +213,7 @@ class WelcomeMessageIntegration:
         """Коллбек завершения воспроизведения приветствия"""
         try:
             logger.info(f"🎵 [WELCOME_INTEGRATION] Приветствие завершено: {result.method}, success={result.success}")
+            self._welcome_played = True
 
             # 🔍 ДИАГНОСТИКА: Подробное логирование результата
             logger.info(f"🔍 [WELCOME_INTEGRATION] result.success={result.success}, result.method={result.method}")

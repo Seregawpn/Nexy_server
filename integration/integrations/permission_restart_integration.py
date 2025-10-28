@@ -8,7 +8,8 @@ critical permissions become available.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
 
 from integration.core.base_integration import BaseIntegration
 from integration.core.event_bus import EventPriority
@@ -17,6 +18,7 @@ from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
 
 from config.unified_config_loader import UnifiedConfigLoader
+from integration.utils.resource_path import get_user_data_dir
 from modules.permission_restart import (
     PermissionRestartConfig,
     PermissionChangeDetector,
@@ -24,6 +26,11 @@ from modules.permission_restart import (
     load_permission_restart_config,
 )
 from modules.permission_restart.core.types import PermissionTransition
+from modules.permissions.core.types import PermissionStatus, PermissionType
+from modules.permissions.first_run.status_checker import (
+    check_accessibility_status,
+    check_input_monitoring_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +65,10 @@ class PermissionRestartIntegration(BaseIntegration):
         self._detector = PermissionChangeDetector(self._config.critical_permissions)
         self._scheduler: Optional[RestartScheduler] = None
         self._subscriptions: List[Tuple[str, Any]] = []
+        self._ready_emitted = False
+        self._ready_pending_update = False
+        self._first_run_flag: Path = get_user_data_dir("Nexy") / "permissions_first_run_completed.flag"
+        self._assume_permissions_logged = False
 
     async def _do_initialize(self) -> bool:
         try:
@@ -93,6 +104,11 @@ class PermissionRestartIntegration(BaseIntegration):
         try:
             await self._subscribe("permissions.changed", self._on_permission_event, EventPriority.HIGH)
             await self._subscribe("permissions.status_checked", self._on_permission_event, EventPriority.MEDIUM)
+            await self._subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.HIGH)
+            await self._subscribe("updater.update_started", self._on_update_started, EventPriority.MEDIUM)
+            await self._subscribe("updater.update_completed", self._on_update_completed, EventPriority.HIGH)
+            await self._subscribe("updater.update_skipped", self._on_update_completed, EventPriority.HIGH)
+            await self._subscribe("app.startup", self._on_app_startup_event, EventPriority.MEDIUM)
             logger.info("[PERMISSION_RESTART] Subscribed to permission events")
             return True
         except Exception as exc:
@@ -141,6 +157,55 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Error handling permission event: %s", exc)
 
+    async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
+        if not self._config.enabled or not self._scheduler:
+            return
+
+        try:
+            accessibility_status = check_accessibility_status()
+            input_status = check_input_monitoring_status()
+        except Exception as exc:
+            logger.error("[PERMISSION_RESTART] Failed to check permission status after first run: %s", exc)
+            return
+
+        if (
+            accessibility_status != PermissionStatus.GRANTED
+            or input_status != PermissionStatus.GRANTED
+        ):
+            if not self._should_assume_permissions_granted(
+                accessibility_status,
+                input_status,
+                source="first_run_completed",
+            ):
+                logger.info(
+                    "[PERMISSION_RESTART] First run completed but permissions not fully granted "
+                    "(accessibility=%s, input_monitoring=%s)",
+                    accessibility_status.value,
+                    input_status.value,
+                )
+                return
+
+        data = (event or {}).get("data") or {}
+        session_id = data.get("session_id")
+
+        logger.info(
+            "[PERMISSION_RESTART] All critical permissions granted after first run (session_id=%s), scheduling restart",
+            session_id,
+        )
+        self._ready_emitted = False
+
+        for perm in (PermissionType.ACCESSIBILITY, PermissionType.INPUT_MONITORING):
+            payload = {
+                "permission": perm.value,
+                "old_status": PermissionStatus.NOT_DETERMINED.value,
+                "new_status": PermissionStatus.GRANTED.value,
+                "session_id": session_id,
+                "source": "permissions.first_run_completed",
+            }
+            transitions = self._detector.process_event("permissions.synthetic", payload)
+            for transition in transitions:
+                await self._handle_transition(transition)
+
     async def _handle_transition(self, transition: PermissionTransition) -> None:
         scheduler = self._scheduler
         if not scheduler:
@@ -154,6 +219,72 @@ class PermissionRestartIntegration(BaseIntegration):
                 [perm.value for perm in request.critical_permissions],
             )
 
+    async def _on_update_started(self, event: Dict[str, Any]) -> None:
+        self._ready_pending_update = True
+        self._ready_emitted = False
+
+    async def _on_update_completed(self, event: Dict[str, Any]) -> None:
+        self._ready_pending_update = False
+        await self._publish_ready_if_applicable(source="update_completed")
+
+    async def _on_app_startup_event(self, event: Dict[str, Any]) -> None:
+        await self._publish_ready_if_applicable(source="app_startup")
+
+    async def _publish_ready_if_applicable(self, *, source: str) -> None:
+        if self._ready_emitted:
+            return
+
+        try:
+            accessibility_status = check_accessibility_status()
+            input_status = check_input_monitoring_status()
+        except Exception as exc:
+            logger.debug("[PERMISSION_RESTART] Unable to verify permissions for readiness: %s", exc)
+            return
+
+        permissions_granted = (
+            accessibility_status == PermissionStatus.GRANTED
+            and input_status == PermissionStatus.GRANTED
+        )
+
+        if not permissions_granted:
+            if self._should_assume_permissions_granted(accessibility_status, input_status, source=source):
+                permissions_granted = True
+            else:
+                logger.debug(
+                    "[PERMISSION_RESTART] Readiness postponed, permissions not granted "
+                    "(accessibility=%s, input_monitoring=%s)",
+                    accessibility_status.value,
+                    input_status.value,
+                )
+                return
+
+        updater_busy = False
+        if self._updater_integration and hasattr(self._updater_integration, "is_update_in_progress"):
+            try:
+                updater_busy = bool(self._updater_integration.is_update_in_progress())
+            except Exception as exc:
+                logger.debug("[PERMISSION_RESTART] Failed to read updater status: %s", exc)
+
+        if updater_busy or self._ready_pending_update:
+            self._ready_pending_update = True
+            logger.debug("[PERMISSION_RESTART] Readiness waiting for updater to finish (source=%s)", source)
+            return
+
+        try:
+            await self.event_bus.publish(
+                "system.permissions_ready",
+                {"source": source, "permissions": ["accessibility", "input_monitoring"]},
+            )
+            await self.event_bus.publish(
+                "system.ready_to_greet",
+                {"source": source},
+            )
+            self._ready_emitted = True
+            self._ready_pending_update = False
+            logger.info("[PERMISSION_RESTART] Published system.ready_to_greet (source=%s)", source)
+        except Exception as exc:
+            logger.debug("[PERMISSION_RESTART] Failed to publish readiness events: %s", exc)
+
     def _resolve_config_section(self) -> Dict[str, Any]:
         if self._raw_config:
             return dict(self._raw_config)
@@ -165,3 +296,35 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception as exc:
             logger.debug("[PERMISSION_RESTART] Failed to read unified config: %s", exc)
             return {}
+
+    def _should_assume_permissions_granted(
+        self,
+        accessibility_status: PermissionStatus,
+        input_status: PermissionStatus,
+        *,
+        source: str,
+    ) -> bool:
+        """
+        Решаем, можно ли считать разрешения выданными, даже если статус не GRANTED.
+
+        Требование заказчика: после первой процедуры запроса (флаг первого запуска сохранён)
+        считать разрешения выданными, чтобы запуск не блокировался повторными проверками.
+        """
+
+        if not self._first_run_flag.exists():
+            return False
+
+        if accessibility_status == PermissionStatus.GRANTED and input_status == PermissionStatus.GRANTED:
+            return True
+
+        if not self._assume_permissions_logged:
+            logger.warning(
+                "[PERMISSION_RESTART] Permissions unresolved (accessibility=%s, input_monitoring=%s) "
+                "но флаг первого запуска найден — считаем, что администратор подтвердил права (source=%s)",
+                accessibility_status.value,
+                input_status.value,
+                source,
+            )
+            self._assume_permissions_logged = True
+
+        return True

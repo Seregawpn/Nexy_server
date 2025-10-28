@@ -8,17 +8,43 @@ Status Checker для проверки статусов разрешений mac
 import logging
 import ctypes
 from ctypes import util
-from enum import Enum
+
+try:
+    from config.unified_config_loader import UnifiedConfigLoader
+except Exception:
+    UnifiedConfigLoader = None
+
+from modules.permissions.core.types import PermissionStatus
 
 logger = logging.getLogger(__name__)
 
 
-class PermissionStatus(Enum):
-    """Статус разрешения"""
-    NOT_DETERMINED = "not_determined"  # Пользователь ещё не видел диалог
-    GRANTED = "granted"                # Разрешение дано
-    DENIED = "denied"                  # Разрешение отклонено
-    ERROR = "error"                    # Ошибка проверки
+def _is_dev_override_granted(log_prefix: str, resource_name: str) -> bool:
+    """
+    Проверяет, включен ли dev override для разрешений.
+
+    Args:
+        log_prefix: текст/emoji для логов конкретного разрешения
+        resource_name: название разрешения для логов
+    """
+    if not UnifiedConfigLoader:
+        return False
+
+    try:
+        override_config = UnifiedConfigLoader().get_permission_override_config()
+    except Exception as exc:
+        logger.debug("%s [PERMISSIONS] Override check failed: %s", log_prefix, exc)
+        return False
+
+    if override_config.get("assume_granted", False):
+        logger.debug(
+            "%s [PERMISSIONS] Dev override: %s treated as granted",
+            log_prefix,
+            resource_name,
+        )
+        return True
+
+    return False
 
 
 def check_microphone_status() -> PermissionStatus:
@@ -29,6 +55,10 @@ def check_microphone_status() -> PermissionStatus:
         PermissionStatus: текущий статус разрешения
     """
     try:
+        # Dev override — если в конфиге явно указано считать разрешение выданным
+        if _is_dev_override_granted("🎙️", "microphone"):
+            return PermissionStatus.GRANTED
+
         # Пытаемся использовать AVFoundation через PyObjC
         try:
             import AVFoundation
@@ -72,6 +102,10 @@ def check_accessibility_status() -> PermissionStatus:
         PermissionStatus: текущий статус разрешения
     """
     try:
+        # Dev override — если в конфиге явно указано считать разрешение выданным
+        if _is_dev_override_granted("♿", "accessibility"):
+            return PermissionStatus.GRANTED
+
         # Используем существующий AccessibilityHandler
         from modules.permissions.macos.accessibility_handler import AccessibilityHandler
 
@@ -101,6 +135,9 @@ def check_input_monitoring_status() -> PermissionStatus:
     Returns:
         PermissionStatus: текущий статус разрешения
     """
+    if _is_dev_override_granted("⌨️", "input monitoring"):
+        return PermissionStatus.GRANTED
+
     try:
         iokit_path = util.find_library("IOKit")
         if not iokit_path:

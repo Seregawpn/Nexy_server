@@ -5,9 +5,13 @@
 
 import yaml
 import os
+import sys
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class AppConfig:
@@ -84,6 +88,7 @@ class UnifiedConfigLoader:
             self.config_file = Path(config_file)
         self._config_cache: Optional[Dict[str, Any]] = None
         self._last_modified: Optional[float] = None
+        self._environment: str = self._detect_environment()
     
     def _load_config(self) -> Dict[str, Any]:
         """Загружает конфигурацию с проверкой изменений"""
@@ -190,6 +195,82 @@ class UnifiedConfigLoader:
         """Получает порт gRPC сервера"""
         return self.get_grpc_config(environment).port
     
+    # =====================================================
+    # РАЗРЕШЕНИЯ
+    # =====================================================
+
+    def get_permission_override_config(self) -> Dict[str, Any]:
+        """Возвращает настройку override для разрешений с учетом окружения"""
+        config = self._load_config()
+        raw_override = config.get('permission_override', {})
+
+        if isinstance(raw_override, bool):
+            return {"assume_granted": raw_override}
+
+        if not isinstance(raw_override, dict):
+            return {}
+
+        # Поддержка формата с default + окружениями
+        if any(isinstance(raw_override.get(key), dict) for key in ('default', self._environment)):
+            resolved: Dict[str, Any] = {}
+
+            default_section = raw_override.get('default')
+            if isinstance(default_section, dict):
+                resolved.update(default_section)
+
+            env_section = raw_override.get(self._environment)
+            if isinstance(env_section, dict):
+                resolved.update(env_section)
+
+            return resolved
+
+        # Формат legacy (плоский словарь)
+        return raw_override
+
+    def get_environment(self) -> str:
+        """Возвращает активное окружение (development / production / custom)"""
+        return self._environment
+
+    # =====================================================
+    # СЛУЖЕБНЫЕ МЕТОДЫ
+    # =====================================================
+
+    def _detect_environment(self) -> str:
+        """
+        Определяет, в каком окружении работает приложение.
+        Приоритет:
+          1. Переменные окружения NEXY_ENV/NEXY_ENVIRONMENT
+          2. Признак упакованного приложения (sys.frozen, .app)
+          3. Значение по умолчанию — development
+        """
+        env_candidate = os.getenv("NEXY_ENV") or os.getenv("NEXY_ENVIRONMENT")
+        if env_candidate:
+            normalized = env_candidate.strip().lower()
+            if normalized in ("prod", "production"):
+                env = "production"
+            elif normalized in ("dev", "development"):
+                env = "development"
+            else:
+                env = normalized
+            logger.debug("UnifiedConfigLoader: environment set via env var -> %s", env)
+            return env
+
+        # PyInstaller / py2app ставят sys.frozen
+        if getattr(sys, "frozen", False):
+            env = "production"
+            logger.debug("UnifiedConfigLoader: environment detected as %s (sys.frozen)", env)
+            return env
+
+        argv_path = Path(sys.argv[0]).resolve()
+        if ".app/Contents/MacOS" in str(argv_path):
+            env = "production"
+            logger.debug("UnifiedConfigLoader: environment detected as %s (.app launch)", env)
+            return env
+
+        env = "development"
+        logger.debug("UnifiedConfigLoader: environment defaulted to %s", env)
+        return env
+
     # =====================================================
     # НАСТРОЙКИ ЛОГИРОВАНИЯ
     # =====================================================

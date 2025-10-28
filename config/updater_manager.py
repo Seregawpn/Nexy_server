@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from integration.utils.resource_path import get_resource_path
+from config.unified_config_loader import UnifiedConfigLoader
 
 
 @dataclass
@@ -48,6 +49,7 @@ class UpdaterManager:
         self.config_path = resource_path
         self._config = None
         self._updater_config = None
+        self._environment = UnifiedConfigLoader().get_environment()
         self._load_config()
     
     def _load_config(self):
@@ -64,7 +66,8 @@ class UpdaterManager:
     
     def _parse_updater_config(self):
         """Парсит конфигурацию обновлений"""
-        updater_data = self._config.get('updater', {})
+        updater_raw = self._config.get('updater', {})
+        updater_data = self._resolve_environment_section(updater_raw)
         
         # Парсим каналы
         channels = {}
@@ -93,6 +96,39 @@ class UpdaterManager:
             ui=updater_data.get('ui', {}),
             channels=channels
         )
+
+    def _resolve_environment_section(self, data: Any) -> Dict[str, Any]:
+        """Возвращает секцию updater с учётом default/development настроек"""
+        if not isinstance(data, dict):
+            return {}
+
+        default_section = data.get('default')
+        env_section = data.get(self._environment)
+
+        if isinstance(default_section, dict) or isinstance(env_section, dict):
+            merged: Dict[str, Any] = {}
+            if isinstance(default_section, dict):
+                merged = self._deep_merge_dicts(merged, default_section)
+            if isinstance(env_section, dict):
+                merged = self._deep_merge_dicts(merged, env_section)
+            return merged
+
+        # Формат без окружений
+        return data
+
+    def _deep_merge_dicts(self, base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+        """Глубокое объединение словарей"""
+        result = dict(base)
+        for key, value in overrides.items():
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
+                result[key] = self._deep_merge_dicts(result[key], value)
+            else:
+                result[key] = value
+        return result
     
     def _save_config(self):
         """Сохраняет конфигурацию в файл"""

@@ -324,38 +324,50 @@ tray:
   show_notifications: true
   tooltip: Nexy AI Assistant
 updater:
-  enabled: true
-  update_channel: stable
-  appcast_url: http://20.151.51.172:8081/appcast.xml
-  manifest_url: http://20.151.51.172:8081/appcast.xml
-  auto_check: true
-  check_interval: 3600
-  check_on_startup: true
-  auto_install: true
-  install_after_download: false
-  silent_mode: true
-  security:
-    public_key: ''
-    verify_signatures: true
-    require_https: true
-  network:
-    timeout: 30
-    retries: 3
-    user_agent: Nexy-Updater/1.0
-  ui:
-    show_notifications: true
-    auto_download: true
-    progress_notifications: true
-  channels:
-    stable:
-      url: http://20.151.51.172:8081/appcast.xml
-      description: Стабильные релизы
-    beta:
-      url: http://20.151.51.172:8081/appcast-beta.xml
-      description: Бета версии
-    alpha:
-      url: http://20.151.51.172:8081/appcast-alpha.xml
-      description: Альфа версии
+  default:
+    enabled: true
+    update_channel: stable
+    appcast_url: http://20.151.51.172:8081/appcast.xml
+    manifest_url: http://20.151.51.172:8081/appcast.xml
+    auto_check: true
+    check_interval: 3600
+    check_on_startup: true
+    auto_install: true
+    install_after_download: false
+    silent_mode: true
+    security:
+      public_key: ''
+      verify_signatures: true
+      require_https: true
+    network:
+      timeout: 30
+      retries: 3
+      user_agent: Nexy-Updater/1.0
+    ui:
+      show_notifications: true
+      auto_download: true
+      progress_notifications: true
+    channels:
+      stable:
+        url: http://20.151.51.172:8081/appcast.xml
+        description: Стабильные релизы
+      beta:
+        url: http://20.151.51.172:8081/appcast-beta.xml
+        description: Бета версии
+      alpha:
+        url: http://20.151.51.172:8081/appcast-alpha.xml
+        description: Альфа версии
+  development:
+    enabled: false
+    auto_check: false
+    check_on_startup: false
+    auto_install: false
+    network:
+      timeout: 10
+      retries: 0
+    ui:
+      show_notifications: false
+      auto_download: false
 voice_recognition:
   enabled: true
   language: en-US
@@ -400,3 +412,9 @@ network_manager:
   - https://www.google.com
   - https://www.apple.com
   - https://www.cloudflare.com
+
+permission_override:
+  default:
+    assume_granted: false
+  development:
+    assume_granted: true

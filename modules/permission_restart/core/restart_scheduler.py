@@ -123,8 +123,20 @@ class RestartScheduler:
         return self._pending_task is not None and not self._pending_task.done()
 
     async def _run_when_safe(self):
+        MAX_WAIT_SECONDS = 600.0  # 10 минут
+        start_ts = asyncio.get_event_loop().time()
+
         try:
             while True:
+                elapsed = asyncio.get_event_loop().time() - start_ts
+                if elapsed >= MAX_WAIT_SECONDS:
+                    logger.warning(
+                        "[PERMISSION_RESTART] Timeout waiting for safe restart conditions "
+                        "(waited %.1fs), continuing with restart",
+                        elapsed,
+                    )
+                    break
+
                 if self._config.respect_updates and self._is_update_in_progress():
                     await asyncio.sleep(self._poll_interval)
                     continue

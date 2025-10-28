@@ -19,8 +19,7 @@ sys.path.insert(0, str(CLIENT_ROOT / "integration"))
 def init_ffmpeg_for_pydub():
     """Настраивает путь к встроенному ffmpeg для pydub.
 
-    Порядок поиска:
-    1) PyInstaller onefile: sys._MEIPASS/resources/ffmpeg/ffmpeg
+     1) PyInstaller onefile: sys._MEIPASS/resources/ffmpeg/ffmpeg
     2) PyInstaller bundle:  Contents/Resources/resources/ffmpeg/ffmpeg
     3) Dev-режим:           resources/ffmpeg/ffmpeg (в корне проекта)
     """
