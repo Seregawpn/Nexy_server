@@ -158,42 +158,35 @@ class PermissionRestartIntegration(BaseIntegration):
             logger.error("[PERMISSION_RESTART] Error handling permission event: %s", exc)
 
     async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
+        """
+        Обработчик завершения процедуры первого запуска.
+
+        ВАЖНО: Событие permissions.first_run_completed означает, что пользователь
+        прошёл через процедуру запроса разрешений (предоставил или отклонил).
+        Приложение ДОЛЖНО перезапуститься независимо от результата, чтобы:
+        - Выйти из режима "первого запуска"
+        - Применить новые настройки разрешений
+        - Позволить пользователю продолжить работу
+
+        Проверка статуса разрешений НЕ нужна, так как:
+        1. macOS может не успеть обновить TCC базу данных (race condition)
+        2. Пользователь мог отказать в разрешениях - приложение всё равно должно работать
+        3. Событие уже означает завершение процедуры
+        """
         if not self._config.enabled or not self._scheduler:
             return
-
-        try:
-            accessibility_status = check_accessibility_status()
-            input_status = check_input_monitoring_status()
-        except Exception as exc:
-            logger.error("[PERMISSION_RESTART] Failed to check permission status after first run: %s", exc)
-            return
-
-        if (
-            accessibility_status != PermissionStatus.GRANTED
-            or input_status != PermissionStatus.GRANTED
-        ):
-            if not self._should_assume_permissions_granted(
-                accessibility_status,
-                input_status,
-                source="first_run_completed",
-            ):
-                logger.info(
-                    "[PERMISSION_RESTART] First run completed but permissions not fully granted "
-                    "(accessibility=%s, input_monitoring=%s)",
-                    accessibility_status.value,
-                    input_status.value,
-                )
-                return
 
         data = (event or {}).get("data") or {}
         session_id = data.get("session_id")
 
         logger.info(
-            "[PERMISSION_RESTART] All critical permissions granted after first run (session_id=%s), scheduling restart",
+            "[PERMISSION_RESTART] First run completed (session_id=%s), scheduling restart",
             session_id,
         )
         self._ready_emitted = False
 
+        # Планируем перезапуск для критических разрешений
+        # Создаём синтетические transition события, которые запустят RestartScheduler
         for perm in (PermissionType.ACCESSIBILITY, PermissionType.INPUT_MONITORING):
             payload = {
                 "permission": perm.value,
