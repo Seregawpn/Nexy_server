@@ -80,17 +80,41 @@ class UpdateNotificationIntegration(BaseIntegration):
         self._update_in_progress: bool = False  # Флаг активного обновления
 
     async def _do_initialize(self) -> bool:
-        return True
+        """
+        Инициализация интеграции.
 
-    async def _do_start(self) -> bool:
+        ВАЖНО: Подписки на события делаются в initialize(), а не в start()!
+        Это гарантирует, что мы не пропустим события, которые могут быть
+        опубликованы другими интеграциями в их start() методах.
+
+        Race condition fix: UpdaterIntegration публикует updater.update_started
+        в своем start() методе, поэтому мы должны подписаться ДО этого момента.
+        """
         if not self.config.enabled:
             return True
 
+        # Подписываемся на события обновления
         await self._subscribe("updater.update_started", self._on_update_started, EventPriority.MEDIUM)
         await self._subscribe("updater.download_progress", self._on_progress, EventPriority.MEDIUM)
         await self._subscribe("updater.install_progress", self._on_progress, EventPriority.MEDIUM)
         await self._subscribe("updater.update_completed", self._on_update_completed, EventPriority.MEDIUM)
         await self._subscribe("updater.update_failed", self._on_update_failed, EventPriority.MEDIUM)
+
+        logger.info("[UPDATE_NOTIFY] Подписки на события обновления зарегистрированы")
+        return True
+
+    async def _do_start(self) -> bool:
+        """
+        Запуск интеграции.
+
+        Подписки уже зарегистрированы в initialize(), поэтому здесь
+        только подтверждаем готовность к работе.
+        """
+        if not self.config.enabled:
+            logger.info("[UPDATE_NOTIFY] Интеграция отключена в конфигурации")
+            return True
+
+        logger.info("[UPDATE_NOTIFY] Интеграция готова к приему событий обновления")
         return True
 
     async def _do_stop(self) -> bool:
@@ -204,12 +228,18 @@ class UpdateNotificationIntegration(BaseIntegration):
         if percent <= self._last_percent and stage == self._last_stage:
             return False
 
-        # Проверяем интервал времени между уведомлениями
+        # Если это НОВАЯ стадия (download → install), сбрасываем счетчик
+        # и озвучиваем при достижении порога (игнорируем интервал времени)
+        if stage != self._last_stage:
+            # Новая стадия - проверяем только достижение порога
+            return percent >= self.config.progress_step_percent
+
+        # Проверяем интервал времени между уведомлениями (только для той же стадии)
         now = time.monotonic()
         if self._last_announce_ts > 0 and now - self._last_announce_ts < self.config.progress_interval_sec:
             return False
 
-        # Озвучиваем только при достижении или превышении порога
+        # Для той же стадии: озвучиваем только при приросте >= порога
         if percent - self._last_percent < self.config.progress_step_percent:
             return False
 
@@ -233,11 +263,6 @@ class UpdateNotificationIntegration(BaseIntegration):
         if self.config.dry_run:
             return
 
-        # Проверяем, что обновление не завершено
-        if self._update_completed:
-            logger.debug("[UPDATE_NOTIFY] Игнорируем озвучку - обновление завершено")
-            return
-
         try:
             # Отправляем текст на сервер для генерации TTS через GrpcClientIntegration
             # GrpcClientIntegration обработает этот запрос и вернет аудио через grpc.response.audio
@@ -256,7 +281,6 @@ class UpdateNotificationIntegration(BaseIntegration):
                     "interruptible": True,
                     "priority": 7,  # Высокий приоритет для системных уведомлений
                 },
-                priority=EventPriority.HIGH,
             )
 
             logger.debug(f"[UPDATE_NOTIFY] Текст отправлен для озвучки (session_id={session_id})")
