@@ -170,9 +170,26 @@ class Updater:
     
     def relaunch_app(self):
         """Перезапуск приложения"""
+        import time
         user_app_path = get_user_app_path()
         logger.info("🔁 Updater: relaunching app after update, exiting current process")
-        subprocess.Popen(["/usr/bin/open", "-a", user_app_path])
+
+        # Используем subprocess.run() для синхронного выполнения команды запуска
+        # Это гарантирует, что команда 'open' успеет запуститься до завершения процесса
+        try:
+            subprocess.run(
+                ["/usr/bin/open", "-a", user_app_path],
+                check=True,
+                timeout=5.0
+            )
+            logger.info("✅ Команда перезапуска выполнена успешно")
+            # Даём время новому экземпляру приложения запуститься
+            time.sleep(1.0)
+        except subprocess.TimeoutExpired:
+            logger.warning("⚠️ Команда перезапуска выполняется дольше ожидаемого, продолжаем выход")
+        except Exception as e:
+            logger.error(f"❌ Ошибка при перезапуске приложения: {e}")
+
         os._exit(0)
     
     def update(self) -> bool:

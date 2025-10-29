@@ -147,7 +147,7 @@ class UpdateNotificationIntegration(BaseIntegration):
             if self.config.speak_start:
                 await self._speak(
                     "An update for Nexy is now in progress. This may take a few minutes. "
-                    "You can continue using Nexy while we finish."
+                    "Nexy will restart automatically when the update is complete."
                 )
             if self.config.use_signals:
                 await self._play_signal("update_start")
@@ -228,18 +228,12 @@ class UpdateNotificationIntegration(BaseIntegration):
         if percent <= self._last_percent and stage == self._last_stage:
             return False
 
-        # Если это НОВАЯ стадия (download → install), сбрасываем счетчик
-        # и озвучиваем при достижении порога (игнорируем интервал времени)
-        if stage != self._last_stage:
-            # Новая стадия - проверяем только достижение порога
-            return percent >= self.config.progress_step_percent
-
-        # Проверяем интервал времени между уведомлениями (только для той же стадии)
+        # Проверяем интервал времени между уведомлениями
         now = time.monotonic()
         if self._last_announce_ts > 0 and now - self._last_announce_ts < self.config.progress_interval_sec:
             return False
 
-        # Для той же стадии: озвучиваем только при приросте >= порога
+        # Озвучиваем только при достижении или превышении порога
         if percent - self._last_percent < self.config.progress_step_percent:
             return False
 
@@ -261,6 +255,11 @@ class UpdateNotificationIntegration(BaseIntegration):
         но для консистентности используем серверную генерацию (как WelcomeMessageIntegration).
         """
         if self.config.dry_run:
+            return
+
+        # Проверяем, что обновление не завершено
+        if self._update_completed:
+            logger.debug("[UPDATE_NOTIFY] Игнорируем озвучку - обновление завершено")
             return
 
         try:

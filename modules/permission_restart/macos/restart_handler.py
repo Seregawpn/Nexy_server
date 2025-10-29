@@ -50,9 +50,26 @@ class MacOSRestartHandler:
         return True
 
     def _perform_restart(self) -> None:
+        import time
         try:
             user_app_path = get_user_app_path()
-            subprocess.Popen(["/usr/bin/open", "-a", user_app_path])
+
+            # Используем subprocess.run() для синхронного выполнения команды запуска
+            # Это гарантирует, что команда 'open' успеет запуститься до завершения процесса
+            logger.info("[PERMISSION_RESTART] Executing relaunch command...")
+            subprocess.run(
+                ["/usr/bin/open", "-a", user_app_path],
+                check=True,
+                timeout=5.0
+            )
+            logger.info("[PERMISSION_RESTART] ✅ Relaunch command executed successfully")
+
+            # Даём время новому экземпляру приложения запуститься
+            time.sleep(1.0)
+
+            os._exit(0)
+        except subprocess.TimeoutExpired:
+            logger.warning("[PERMISSION_RESTART] ⚠️ Relaunch command taking longer than expected, proceeding with exit")
             os._exit(0)
         except Exception as exc:  # pragma: no cover - process will exit on success
             logger.error("[PERMISSION_RESTART] Failed to relaunch Nexy: %s", exc)
