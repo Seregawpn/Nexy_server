@@ -233,6 +233,17 @@ class SpeechRecognizer:
         except Exception:
             pass
 
+        # ВАЖНО: Принудительно закрываем аудио поток перед join треда
+        if self._current_stream:
+            try:
+                logger.debug(f"🛑 Принудительное закрытие аудио потока (reason={reason})")
+                self._current_stream.stop()
+                self._current_stream.close()
+            except Exception as e:
+                logger.debug(f"⚠️ Ошибка закрытия потока в _graceful_stop: {e}")
+            finally:
+                self._current_stream = None  # Всегда очищаем ссылку
+
         thread = self.listen_thread
         if thread and thread.is_alive():
             thread.join(timeout=2.0)
@@ -422,7 +433,17 @@ class SpeechRecognizer:
             if self.listen_thread and self.listen_thread.is_alive():
                 logger.debug("⏳ Ожидаем завершение потока записи...")
                 self.listen_thread.join(timeout=5.0)
-            
+
+            # ВАЖНО: Принудительно очищаем поток после завершения треда
+            if self._current_stream:
+                try:
+                    self._current_stream.stop()
+                    self._current_stream.close()
+                except Exception as e:
+                    logger.debug(f"⚠️ Ошибка закрытия потока в stop_listening: {e}")
+                finally:
+                    self._current_stream = None
+
             # Распознаем речь
             logger.debug(
                 "🎧 Завершаем запись: chunks=%s, thread_alive=%s",
@@ -755,6 +776,10 @@ class SpeechRecognizer:
                     stream.close()
                 except Exception:
                     pass
+
+            # ВАЖНО: Очищаем ссылку на поток для предотвращения утечек ресурсов
+            self._current_stream = None
+            logger.debug("🧹 Аудио поток очищен (_current_stream = None)")
 
     def _get_stream_start_timing(self) -> tuple[float, float]:
         """Подбирает тайминги старта потока в зависимости от типа устройства."""

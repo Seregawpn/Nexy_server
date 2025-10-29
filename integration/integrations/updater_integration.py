@@ -157,15 +157,41 @@ class UpdaterIntegration:
         logger.info(f"Режим приложения изменен на: {new_mode}")
     
     async def _execute_update(self, trigger: str) -> bool:
-        """Обертка над updater.update() с публикацией событий и флагом состояния."""
+        """
+        Проверяет, скачивает и устанавливает обновление с публикацией событий.
+
+        ВАЖНО: Сначала проверяется наличие обновления (check_for_updates),
+        и только если обновление есть, публикуется updater.update_started.
+        Это предотвращает ложные уведомления при старте приложения с актуальной версией.
+        """
         if self._update_in_progress:
             logger.info("⏳ Обновление уже выполняется (trigger=%s)", trigger)
             return False
 
-        self._set_update_state(True, trigger=trigger)
-        await self._safe_publish("updater.update_started", {"trigger": trigger})
+        # ШАГ 1: Сначала ПРОВЕРЯЕМ, есть ли обновление (БЕЗ изменения состояния)
+        manifest = await asyncio.to_thread(self.updater.check_for_updates)
 
-        success = False
+        if not manifest:
+            # НЕТ обновления - публикуем update_skipped и выходим
+            await self._safe_publish("updater.update_skipped", {
+                "trigger": trigger,
+                "reason": "no_updates_available",
+                "current_version": self.updater.get_current_build()
+            })
+            logger.info("✅ Обновления не требуются (trigger=%s)", trigger)
+            return False
+
+        # ШАГ 2: Обновление ЕСТЬ - теперь публикуем update_started
+        version = manifest.get("version", "unknown")
+        logger.info(f"🔄 Найдено обновление до версии {version} (trigger={trigger})")
+
+        self._set_update_state(True, trigger=trigger)
+        await self._safe_publish("updater.update_started", {
+            "trigger": trigger,
+            "version": version
+        })
+
+        # ШАГ 3: Настраиваем callbacks для прогресса
         loop = self._loop or asyncio.get_running_loop()
         self._last_download_percent = 0
         self._last_install_percent = 0
@@ -177,15 +203,38 @@ class UpdaterIntegration:
             self._handle_install_progress(stage, percent, trigger),
             loop,
         )
+
+        # ШАГ 4: Выполняем скачивание и установку (проверка уже выполнена!)
         try:
-            success = await asyncio.to_thread(self.updater.update)
-            if success:
-                await self._safe_publish("updater.update_completed", {"trigger": trigger})
-            else:
-                await self._safe_publish("updater.update_skipped", {"trigger": trigger})
-            return success
+            # download_and_verify
+            artifact_path = await asyncio.to_thread(
+                self.updater.download_and_verify,
+                manifest["artifact"]
+            )
+
+            # install_update
+            await asyncio.to_thread(
+                self.updater.install_update,
+                artifact_path,
+                manifest["artifact"]
+            )
+
+            # ШАГ 5: Успешно завершено
+            await self._safe_publish("updater.update_completed", {
+                "trigger": trigger,
+                "version": version
+            })
+
+            # relaunch
+            await asyncio.to_thread(self.updater.relaunch_app)
+            return True
+
         except Exception as exc:
-            await self._safe_publish("updater.update_failed", {"trigger": trigger, "error": str(exc)})
+            await self._safe_publish("updater.update_failed", {
+                "trigger": trigger,
+                "error": str(exc),
+                "version": version
+            })
             raise
         finally:
             self.updater.on_download_progress = None
