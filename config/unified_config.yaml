@@ -185,7 +185,7 @@ integrations:
     speak_complete: true
     speak_error: true
     progress_interval_sec: 30.0
-    progress_step_percent: 20
+    progress_step_percent: 50  # Озвучивать только при 50% (было: 20)
     use_signals: true
     voice: en-US
     dry_run: false

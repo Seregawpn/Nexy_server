@@ -8,43 +8,17 @@ Status Checker для проверки статусов разрешений mac
 import logging
 import ctypes
 from ctypes import util
-
-try:
-    from config.unified_config_loader import UnifiedConfigLoader
-except Exception:
-    UnifiedConfigLoader = None
-
-from modules.permissions.core.types import PermissionStatus
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 
-def _is_dev_override_granted(log_prefix: str, resource_name: str) -> bool:
-    """
-    Проверяет, включен ли dev override для разрешений.
-
-    Args:
-        log_prefix: текст/emoji для логов конкретного разрешения
-        resource_name: название разрешения для логов
-    """
-    if not UnifiedConfigLoader:
-        return False
-
-    try:
-        override_config = UnifiedConfigLoader().get_permission_override_config()
-    except Exception as exc:
-        logger.debug("%s [PERMISSIONS] Override check failed: %s", log_prefix, exc)
-        return False
-
-    if override_config.get("assume_granted", False):
-        logger.debug(
-            "%s [PERMISSIONS] Dev override: %s treated as granted",
-            log_prefix,
-            resource_name,
-        )
-        return True
-
-    return False
+class PermissionStatus(Enum):
+    """Статус разрешения"""
+    NOT_DETERMINED = "not_determined"  # Пользователь ещё не видел диалог
+    GRANTED = "granted"                # Разрешение дано
+    DENIED = "denied"                  # Разрешение отклонено
+    ERROR = "error"                    # Ошибка проверки
 
 
 def check_microphone_status() -> PermissionStatus:
@@ -55,10 +29,6 @@ def check_microphone_status() -> PermissionStatus:
         PermissionStatus: текущий статус разрешения
     """
     try:
-        # Dev override — если в конфиге явно указано считать разрешение выданным
-        if _is_dev_override_granted("🎙️", "microphone"):
-            return PermissionStatus.GRANTED
-
         # Пытаемся использовать AVFoundation через PyObjC
         try:
             import AVFoundation
@@ -102,10 +72,6 @@ def check_accessibility_status() -> PermissionStatus:
         PermissionStatus: текущий статус разрешения
     """
     try:
-        # Dev override — если в конфиге явно указано считать разрешение выданным
-        if _is_dev_override_granted("♿", "accessibility"):
-            return PermissionStatus.GRANTED
-
         # Используем существующий AccessibilityHandler
         from modules.permissions.macos.accessibility_handler import AccessibilityHandler
 
@@ -135,9 +101,6 @@ def check_input_monitoring_status() -> PermissionStatus:
     Returns:
         PermissionStatus: текущий статус разрешения
     """
-    if _is_dev_override_granted("⌨️", "input monitoring"):
-        return PermissionStatus.GRANTED
-
     try:
         iokit_path = util.find_library("IOKit")
         if not iokit_path:
@@ -159,8 +122,27 @@ def check_input_monitoring_status() -> PermissionStatus:
         granted = bool(check_access(kIOHIDRequestTypeListenEvent.value))
 
         if granted:
-            logger.debug("⌨️ Input Monitoring: GRANTED")
+            logger.debug("⌨️ Input Monitoring: GRANTED (IOHIDCheckAccess)")
             return PermissionStatus.GRANTED
+
+        # IOHIDCheckAccess иногда возвращает False даже при выданном разрешении
+        # (например, сразу после обновления приложения). Дополнительно проверяем
+        # статус через tccutil, чтобы не триггерить повторный запрос зря.
+        logger.debug("⌨️ Input Monitoring: IOHIDCheckAccess вернул False, выполняем tccutil check…")
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ['tccutil', 'check', 'ListenEvent', 'com.nexy.assistant'],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                logger.debug("⌨️ Input Monitoring: GRANTED (tccutil fallback)")
+                return PermissionStatus.GRANTED
+        except Exception as tcc_err:
+            logger.debug(f"⌨️ Input Monitoring: tccutil fallback недоступен ({tcc_err})")
 
         logger.debug("⌨️ Input Monitoring: NOT_DETERMINED or DENIED")
         return PermissionStatus.NOT_DETERMINED

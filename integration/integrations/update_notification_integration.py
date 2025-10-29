@@ -76,6 +76,8 @@ class UpdateNotificationIntegration(BaseIntegration):
         self._last_stage: Optional[str] = None
         self._last_announce_ts: float = 0.0
         self._lock = asyncio.Lock()
+        self._update_completed: bool = False  # Флаг завершения обновления
+        self._update_in_progress: bool = False  # Флаг активного обновления
 
     async def _do_initialize(self) -> bool:
         return True
@@ -112,6 +114,8 @@ class UpdateNotificationIntegration(BaseIntegration):
     async def _on_update_started(self, event: Dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
+            self._update_in_progress = True
+            self._update_completed = False
             logger.info(
                 "[UPDATE_NOTIFY] Update started (trigger=%s)",
                 (event.get("data") or {}).get("trigger"),
@@ -126,6 +130,11 @@ class UpdateNotificationIntegration(BaseIntegration):
 
     async def _on_progress(self, event: Dict[str, Any]) -> None:
         if not self.config.speak_progress:
+            return
+
+        # Проверяем, что обновление не завершено
+        if self._update_completed:
+            logger.debug("[UPDATE_NOTIFY] Игнорируем прогресс - обновление завершено")
             return
 
         data = event.get("data") or {}
@@ -148,59 +157,118 @@ class UpdateNotificationIntegration(BaseIntegration):
     async def _on_update_completed(self, event: Dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
+            self._update_in_progress = False
+            self._update_completed = True  # Помечаем обновление как завершенное
+
         logger.info(
             "[UPDATE_NOTIFY] Update completed (trigger=%s)",
             (event.get("data") or {}).get("trigger"),
         )
+
         if self.config.use_signals:
             await self._play_signal("update_success")
+
         if self.config.speak_complete:
             await self._speak("Update completed. Nexy will restart to apply changes.")
+
+        # Отписываемся от событий после завершения обновления
+        logger.info("[UPDATE_NOTIFY] Отписываемся от событий после завершения обновления")
+        await self._unsubscribe_all()
 
     async def _on_update_failed(self, event: Dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
+            self._update_in_progress = False
+            self._update_completed = True  # Помечаем обновление как завершенное
+
         data = event.get("data") or {}
         logger.warning("[UPDATE_NOTIFY] Update failed: %s", data.get("error"))
+
         if self.config.use_signals:
             await self._play_signal("update_error")
+
         if self.config.speak_error:
             reason = str(data.get("error") or "unknown error")
             await self._speak(f"Nexy update failed. Reason: {reason}. Please try again later.")
 
+        # Отписываемся от событий после ошибки обновления
+        logger.info("[UPDATE_NOTIFY] Отписываемся от событий после ошибки обновления")
+        await self._unsubscribe_all()
+
     def _should_announce(self, percent: int, stage: str) -> bool:
-        if percent <= self._last_percent:
+        # Озвучиваем только при достижении 50% (точное совпадение с progress_step_percent)
+        if percent < self.config.progress_step_percent:
             return False
+
+        # Если уже озвучивали этот процент для этой стадии - не повторяем
+        if percent <= self._last_percent and stage == self._last_stage:
+            return False
+
+        # Проверяем интервал времени между уведомлениями
+        now = time.monotonic()
+        if self._last_announce_ts > 0 and now - self._last_announce_ts < self.config.progress_interval_sec:
+            return False
+
+        # Озвучиваем только при достижении или превышении порога
         if percent - self._last_percent < self.config.progress_step_percent:
             return False
-        now = time.monotonic()
-        if now - self._last_announce_ts < self.config.progress_interval_sec:
-            return False
-        if stage == self._last_stage and percent == self._last_percent:
-            return False
+
         return True
 
     async def _speak(self, text: str) -> None:
+        """
+        Озвучивает текст через серверную генерацию TTS и SpeechPlaybackIntegration.
+
+        ВАЖНО: Использует правильную архитектуру озвучки через gRPC TTS,
+        а не через voice.recognition_completed (которое для пользовательских запросов).
+
+        Процесс:
+        1. Отправляем текст на сервер через gRPC для генерации аудио
+        2. Получаем аудио ответ через grpc.response.audio
+        3. SpeechPlaybackIntegration автоматически воспроизводит аудио
+
+        Альтернатива: Можно использовать локальную TTS через playback.raw_audio,
+        но для консистентности используем серверную генерацию (как WelcomeMessageIntegration).
+        """
         if self.config.dry_run:
             return
-        
-        # Используем существующую архитектуру: отправляем запрос на сервер через gRPC
-        # Это аналогично тому, как работает WelcomeMessageIntegration
-        await self.event_bus.publish(
-            "voice.recognition_completed",  # Используем существующий тип события
-            {
-                "text": text,
-                "voice": self.config.voice,
-                "category": "update_notification",
-                "interruptible": True,
-                "session_id": f"update_notification_{int(time.time())}",
-            },
-        )
+
+        # Проверяем, что обновление не завершено
+        if self._update_completed:
+            logger.debug("[UPDATE_NOTIFY] Игнорируем озвучку - обновление завершено")
+            return
+
+        try:
+            # Отправляем текст на сервер для генерации TTS через GrpcClientIntegration
+            # GrpcClientIntegration обработает этот запрос и вернет аудио через grpc.response.audio
+            session_id = f"update_notification_{int(time.time() * 1000)}"
+
+            logger.info(f"[UPDATE_NOTIFY] Отправляем текст для озвучки через gRPC: '{text[:50]}...'")
+
+            # Публикуем событие распознавания голоса (это запустит цепочку gRPC → TTS → playback)
+            await self.event_bus.publish(
+                "voice.recognition_completed",
+                {
+                    "text": text,
+                    "session_id": session_id,
+                    "source": "update_notification",
+                    "category": "system_notification",
+                    "interruptible": True,
+                    "priority": 7,  # Высокий приоритет для системных уведомлений
+                },
+                priority=EventPriority.HIGH,
+            )
+
+            logger.debug(f"[UPDATE_NOTIFY] Текст отправлен для озвучки (session_id={session_id})")
+
+        except Exception as e:
+            logger.error(f"[UPDATE_NOTIFY] Ошибка отправки текста для озвучки: {e}")
 
     async def _play_signal(self, pattern: str) -> None:
         await self.event_bus.publish("signal.play", {"pattern": pattern})
 
     def _reset_progress(self) -> None:
+        """Сбрасывает счетчики прогресса (но НЕ флаги состояния обновления)"""
         self._last_percent = 0
         self._last_stage = None
         self._last_announce_ts = 0.0
