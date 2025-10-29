@@ -2,14 +2,14 @@
 <installer-gui-script minSpecVersion="1">
     <title>Nexy</title>
     <options customize="never" require-scripts="false" />
-    
+
     <domains enable_localSystem="true" enable_currentUserHome="false" />
     <choices-outline>
         <line choice="main" />
     </choices-outline>
     <choice id="main" visible="false">
-        <pkg-ref id="com.nexy.assistant.pkg" version="1.96.0" />
+        <pkg-ref id="com.nexy.assistant.pkg" version="1.0.0" />
     </choice>
-    
-    <pkg-ref id="com.nexy.assistant.pkg" version="1.96.0">Nexy-raw.pkg</pkg-ref>
+
+    <pkg-ref id="com.nexy.assistant.pkg" version="1.0.0">Nexy-raw.pkg</pkg-ref>
 </installer-gui-script>

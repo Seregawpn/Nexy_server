@@ -15,21 +15,28 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Пути
+CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DIST_DIR="$CLIENT_DIR/dist"
+
+# Read version from unified_config.yaml (single source of truth)
+VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('$CLIENT_DIR/config/unified_config.yaml'))['app']['version'])")
+
 # Конфигурация
 IDENTITY="Developer ID Application: Sergiy Zasorin (5NKLL2CLB9)"
 INSTALLER_IDENTITY="Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)"
 ENTITLEMENTS="packaging/entitlements.plist"
 APP_NAME="Nexy"
 BUNDLE_ID="com.nexy.assistant"
-VERSION="1.96.0"
-
-# Пути
-CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIST_DIR="$CLIENT_DIR/dist"
 CLEAN_APP="/tmp/${APP_NAME}.app"
 
 echo -e "${BLUE}🚀 Начинаем финальную упаковку Nexy AI Assistant${NC}"
 echo "Рабочая директория: $CLIENT_DIR"
+echo "Версия: $VERSION"
+
+# Обновляем версии в Info.plist модулей
+echo -e "${YELLOW}📝 Обновляем версии в модулях...${NC}"
+python3 "$CLIENT_DIR/scripts/update_module_versions.py"
 
 # Функция для логирования
 log() {
@@ -428,6 +435,25 @@ pkgbuild --root /tmp/nexy_pkg_clean_final \
     --version "$VERSION" \
     --install-location "$INSTALL_LOCATION" \
     "$DIST_DIR/$APP_NAME-raw.pkg"
+
+log "Генерируем distribution.xml с версией $VERSION..."
+cat > packaging/distribution.xml <<EOF
+<?xml version='1.0' encoding='utf-8'?>
+<installer-gui-script minSpecVersion="1">
+    <title>Nexy</title>
+    <options customize="never" require-scripts="false" />
+
+    <domains enable_localSystem="true" enable_currentUserHome="false" />
+    <choices-outline>
+        <line choice="main" />
+    </choices-outline>
+    <choice id="main" visible="false">
+        <pkg-ref id="${BUNDLE_ID}.pkg" version="$VERSION" />
+    </choice>
+
+    <pkg-ref id="${BUNDLE_ID}.pkg" version="$VERSION">$APP_NAME-raw.pkg</pkg-ref>
+</installer-gui-script>
+EOF
 
 log "Создаем distribution PKG..."
 productbuild --package-path "$DIST_DIR" \

@@ -5,6 +5,7 @@ PyInstaller spec file for macOS application "Nexy AI Assistant"
 """
 
 import sys
+import yaml
 from pathlib import Path
 
 # File paths - Force absolute paths
@@ -12,7 +13,14 @@ current_dir = Path.cwd().resolve()  # This is /path/to/client (PyInstaller runs 
 client_dir = current_dir            # This is /path/to/client
 icon_path = client_dir / "assets" / "icons" / "app_icon.icns"
 
+# Read version from unified_config.yaml (single source of truth)
+config_path = client_dir / "config" / "unified_config.yaml"
+with open(config_path, 'r', encoding='utf-8') as f:
+    config = yaml.safe_load(f)
+    APP_VERSION = config['app']['version']
+
 print(f"Using absolute path: {client_dir}")
+print(f"App version from config: {APP_VERSION}")
 
 # Check icon existence
 if not icon_path.exists():
@@ -215,8 +223,8 @@ app = BUNDLE(
         # Main information
         "CFBundleName": "Nexy",
         "CFBundleDisplayName": "Nexy",
-        "CFBundleVersion": "1.0.1",
-        "CFBundleShortVersionString": "1.0.1",
+        "CFBundleVersion": APP_VERSION,
+        "CFBundleShortVersionString": APP_VERSION,
         "CFBundlePackageType": "APPL",
         "CFBundleExecutable": "Nexy",  # Explicit executable name
         

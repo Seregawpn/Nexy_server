@@ -503,9 +503,9 @@ class SimpleModuleCoordinator:
                 'screenshot_capture',      # 11. Захват экрана (использует screen_capture)
                 'grpc',                    # 12. gRPC клиент (зависит от hardware_id)
                 'speech_playback',         # 13. Воспроизведение речи (зависит от grpc)
-                'updater',                 # 14. Система обновлений
-                'update_notification',     # 15. Голосовые уведомления об обновлениях
-                'signals',                 # 16. Аудио сигналы
+                'signals',                 # 14. Аудио сигналы (должны быть до update_notification)
+                'update_notification',     # 15. Голосовые уведомления об обновлениях (ПЕРЕД updater!)
+                'updater',                 # 16. Система обновлений (после update_notification)
                 'welcome_message',         # 17. Приветственное сообщение (зависит от speech_playback)
                 'voiceover_ducking',       # 18. VoiceOver Ducking
                 'autostart_manager',       # 19. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)

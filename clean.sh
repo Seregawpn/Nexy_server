@@ -27,12 +27,18 @@ echo -e "${BLUE}[INFO]${NC} 1. Сброс разрешений TCC..."
 
 bundle_ids=("com.nexy.assistant" "Nexy" "nexy" "com.sergiyzasorin.nexy.voiceassistant")
 # В TCC сервис Input Monitoring называется ListenEvent
-permissions=("Microphone" "ScreenCapture" "Accessibility" "ListenEvent" "Camera")
+permissions=("Microphone" "ScreenCapture" "Accessibility" "ListenEvent" "PostEvent" "SystemPolicyAllFiles" "Camera")
 
 pretty_permission() {
     case "$1" in
         ListenEvent)
             echo "InputMonitoring (ListenEvent)"
+            ;;
+        PostEvent)
+            echo "PostEvent (Automation)"
+            ;;
+        SystemPolicyAllFiles)
+            echo "Full Disk Access"
             ;;
         *)
             echo "$1"
@@ -106,8 +112,18 @@ done
 
 echo
 
-# 4. Очистка Python кэша
-echo -e "${BLUE}[INFO]${NC} 4. Очистка Python кэша..."
+# 4. Очистка Launch Services кэша
+echo -e "${BLUE}[INFO]${NC} 4. Очистка Launch Services кэша..."
+if /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user 2>/dev/null; then
+    echo -e "${GREEN}[SUCCESS]${NC} Launch Services кэш очищен"
+else
+    echo -e "${YELLOW}[INFO]${NC} Не удалось очистить Launch Services кэш"
+fi
+
+echo
+
+# 5. Очистка Python кэша
+echo -e "${BLUE}[INFO]${NC} 5. Очистка Python кэша..."
 
 if [ -d "." ]; then
     find . -name "*.pyc" -delete 2>/dev/null
@@ -117,8 +133,8 @@ fi
 
 echo
 
-# 5. Очистка временных файлов
-echo -e "${BLUE}[INFO]${NC} 5. Очистка временных файлов..."
+# 6. Очистка временных файлов
+echo -e "${BLUE}[INFO]${NC} 6. Очистка временных файлов..."
 
 find "/tmp" \( -iname "*nexy*" \) -print0 2>/dev/null | while IFS= read -r -d '' file; do
     rm -rf "$file"
@@ -127,8 +143,8 @@ done
 
 echo
 
-# 6. Финальная проверка
-echo -e "${BLUE}[INFO]${NC} 6. Финальная проверка..."
+# 7. Финальная проверка
+echo -e "${BLUE}[INFO]${NC} 7. Финальная проверка..."
 
 remaining=0
 
