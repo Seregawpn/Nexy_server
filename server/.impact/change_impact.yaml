@@ -1,0 +1,36 @@
+axes:
+  - name: Permission.mic
+    values: [granted, denied, prompt_blocked]
+  - name: Device.input
+    values: [default_ok, busy]
+  - name: Network
+    values: [online, offline]
+
+invariants:
+  - health_endpoints_must_remain_available
+  - grpc_contract_backward_compatible_or_versioned
+
+guards:
+  - domain: permissions
+    condition: "Permission.mic == denied"
+    decision: abort_listen
+  - domain: audio
+    condition: "Permission.mic == granted && Device.input == busy && appMode == LISTENING"
+    decision: retry_backoff
+  - domain: network
+    condition: "Network == offline && appMode == PROCESSING"
+    decision: degrade_offline
+
+test_plan:
+  pairwise_min: 10
+  negatives: 2
+
+metrics:
+  - decision_rate{type}
+  - stream_open_success_rate
+  - tcc_prompt_duration_ms
+
+rollout:
+  flag: FEATURE_<NAME>
+  stages: [1%, 25%, 100%]
+  kill_switch: NEXY_KS_<FEATURE>

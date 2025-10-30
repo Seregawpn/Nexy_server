@@ -76,6 +76,14 @@
 - При необходимости fallback/провайдера — используй `UniversalProviderInterface`
 - Поддерживай чистое async-API, избегай блокирующих вызовов
 
+**Перед мерджем — Impact-гейт**
+
+- [ ] Приложен `change_impact.yaml` (оси условий, инварианты, guards, тест-стратегия, метрики, роллаут)
+- [ ] Обновлены `Docs/STATE_CATALOG.md` и/или `client/config/interaction_matrix.yaml` (если задето)
+- [ ] Есть минимум 8–14 pairwise тестов по выбранным осям + 2 негативных
+- [ ] Логи решений видны локально: `decision=<...> ctx={...} source=<domain>`
+- [ ] Фича-флаг + kill-switch прописаны (см. раздел «Роллаут»)
+
 **После**
 - Прогоняй релевантные модульные тесты + smoke gRPC (`modules/grpc_service/test_grpc_service.py`)
 - Проверь, что health-checkи и статусы модулей возвращают ожидаемые данные
@@ -91,3 +99,97 @@
 
 ## 11. Напоминание
 Все серверные изменения должны оставаться совместимыми с актуальной клиентской реализацией и не ломать уже завершённые модули. При сомнениях — синхронизируйся с владельцем клиентской части до мержа.
+
+
+## 12. Каталог состояний и матрица взаимодействий
+
+### 12.1 STATE_CATALOG (Docs/STATE_CATALOG.md)
+- Оси/флаги: `permissions.mic|screen|accessibility`, `device.input`, `network`, `firstRun`, `appMode`, ...
+- Для каждой оси: допустимые состояния, владелец, кто пишет/читает, источник истины, метрики.
+- Ответственный: один владелец документа (по умолчанию: Tech Lead клиента).
+
+### 12.2 INTERACTION_MATRIX (client/config/interaction_matrix.yaml)
+- Фиксирует только взаимозависимые оси (без полного перебора).
+- Формат правила:
+  - `when: {Permission.mic: denied, appMode: listen} -> decision: abort_listen`
+  - `priority: hard_stop | graceful | preference`
+- Любое изменение >2 осей должно обновлять эту матрицу.
+
+Пример `interaction_matrix.yaml`:
+
+```yaml
+axes:
+  Permission.mic: [granted, denied, prompt_blocked]
+  Device.input: [default_ok, busy]
+  Network: [online, offline]
+  FirstRun: [true, false]
+rules:
+  - when: {Permission.mic: denied}
+    decision: abort_listen
+    priority: hard_stop
+  - when: {Permission.mic: granted, Device.input: busy, appMode: LISTENING}
+    decision: retry_backoff
+    priority: graceful
+  - when: {Network: offline, appMode: PROCESSING}
+    decision: degrade_offline
+    priority: graceful
+```
+
+
+## 13. FSM + guard-условия на домены
+
+- Для доменов `audio`, `permissions`, `mode_management` решения принимаются через FSM-таблицы: `(state, event) --[guard]--> (new_state, action)`.
+- Guard-условия обязаны проверять критичные оси: permissions, device, network, firstRun.
+- Запрещены скрытые записи состояний в чужие домены — только через EventBus.
+
+Мини-образец решения из снапшота состояния:
+
+```python
+def decide_listen_action(s):
+    if s.perm.mic != "granted":
+        return Abort("mic_denied", ui="open_settings_mic")
+    if s.device.input == "busy" and s.appMode == "LISTENING":
+        return Retry("device_busy_backoff")
+    if s.network == "offline":
+        return Degrade("offline_mode")
+    return Start()
+```
+
+
+## 14. Decision-логи (наблюдаемость решений)
+
+Обязательны для FSM/интеграций:
+
+`decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=...,firstRun=...,appMode=...} source=<domain> duration_ms=<int>`
+
+Метрики:
+- `decision_rate{type}` — распределение решений
+- `stream_open_success_rate` — доля удачных запусков аудио
+- `tcc_prompt_duration_ms` — длительность последовательности разрешений (p95)
+
+
+## 15. Политика роллаута изменяющих взаимодействия
+
+- Любое изменение, затрагивающее >2 осей, включается через фича-флаг.
+- Этапы: 1% → 25% → 100% (config-driven), с возможностью shadow-mode (считаем решение, но не применяем).
+- Kill-switch: `NEXY_KS_<FEATURE>` в окружении/конфиге, выключает поведение немедленно без релиза.
+- В `change_impact.yaml` обязательно указать: флаг, план раскатки, условие отката.
+
+
+## 16. SLO и стоп-релизы (beta)
+
+- `p95 start_listening ≤ 600ms`
+- `stream_open_success_rate ≥ 98%`
+- `permission_flow_success ≥ 99%` (микрофон+экран на first-run)
+- Если SLO пробит на beta-канале — стоп всех функциональных релизов до восстановления.
+
+
+## 17. Дополнительные улучшения
+
+- ADR-минимум: один абзац «что/почему/альтернативы/дата» для любого изменения модуля или матрицы взаимодействий.
+- Правила приоритетов условий (для 12.2):
+  1. `hard_stop`: безопасность/разрешения/инварианты — всегда прерывают действие;
+  2. `graceful`: деградация (сеть/квоты) — урезаем функционал, но живём;
+  3. `preference`: UX-предпочтения — только если не конфликтуют с 1–2.
+- Назначить владельца `STATE_CATALOG.md` и `interaction_matrix.yaml` (иначе зачерствеют).
+- Контракт-тесты как decision-tables: входной снапшот → ожидаемое решение, без знания внутренностей модуля.
