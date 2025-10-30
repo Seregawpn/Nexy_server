@@ -155,6 +155,63 @@ rm -rf nexy_server_temp
 - **Health check:** `http://20.151.51.172/health`
 - **Status API:** `http://20.151.51.172/status`
 
+### 🔐 HTTPS/443 Ingress (Nginx) — обновление
+
+Внешняя публикация сервисов переведена на 443/HTTPS через Nginx (HTTP/2):
+
+- gRPC: корневой путь `/` → `grpc_pass grpc://127.0.0.1:50051;`
+- Updates: `/updates/` → `proxy_pass http://127.0.0.1:8081/;`
+
+Минимальная конфигурация Nginx (`/etc/nginx/sites-available/nexy`):
+
+```
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name 20.151.51.172; # либо домен
+
+    ssl_certificate     /etc/nginx/ssl/server.crt;
+    ssl_certificate_key /etc/nginx/ssl/server.key;
+
+    # gRPC по умолчанию (корневой путь)
+    location / {
+        grpc_pass grpc://127.0.0.1:50051;
+        grpc_read_timeout 300s;
+        grpc_send_timeout 300s;
+    }
+
+    # Update Server
+    location /updates/      { proxy_pass http://127.0.0.1:8081/; }
+    location = /appcast.xml { proxy_pass http://127.0.0.1:8081/appcast.xml; }
+    location /downloads/    { proxy_pass http://127.0.0.1:8081/downloads/; }
+    location = /updates/health { proxy_pass http://127.0.0.1:8081/health; }
+}
+```
+
+Выпуск self‑signed сертификата с SAN=IP (временное решение):
+
+```bash
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/server.key \
+  -out /etc/nginx/ssl/server.crt \
+  -subj "/CN=20.151.51.172" \
+  -addext "subjectAltName=IP:20.151.51.172"
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Проверка:
+
+```bash
+curl -sk https://20.151.51.172/updates/health  # 200 OK
+echo | openssl s_client -connect 20.151.51.172:443 -servername 20.151.51.172 -showcerts 2>/dev/null | \
+  openssl x509 -noout -subject -ext subjectAltName
+```
+
+Клиентские настройки:
+- gRPC endpoint: `https://20.151.51.172` (HTTP/2, TLS)
+- Updates: `https://20.151.51.172/updates/...`
+- На время self‑signed: доверить сертификат или отключить strict verify.
+
 ---
 
 ## ✅ **ПРОВЕРКА УСПЕШНОГО ДЕПЛОЯ**
