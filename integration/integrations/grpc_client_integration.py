@@ -99,14 +99,21 @@ class GrpcClientIntegration:
                 net = uc.get_network_config()
                 servers_cfg = {}
                 for name, s in net.grpc_servers.items():
-                    servers_cfg[name] = {
+                    server_dict = {
                         'address': s.host,
                         'port': s.port,
                         'use_ssl': s.ssl,
+                        'ssl_verify': s.ssl_verify,  # NEW
+                        'use_http2': s.use_http2,  # NEW
+                        'keepalive': s.keepalive,  # NEW
+                        'grpc_path': s.grpc_path,  # NEW
                         'timeout': s.timeout,
                         'retry_attempts': s.retry_attempts,
                         'retry_delay': s.retry_delay,
                     }
+                    # DEBUG: Log what we're passing to GrpcClient
+                    logger.info(f"🔌 [DEBUG] GrpcClientIntegration passing server '{name}' to GrpcClient: ssl_verify={s.ssl_verify}")
+                    servers_cfg[name] = server_dict
                 client_cfg = {
                     'servers': servers_cfg,
                     'auto_fallback': net.auto_fallback,

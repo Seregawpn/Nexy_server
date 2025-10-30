@@ -59,7 +59,7 @@ class GrpcClient:
             # Преобразуем конфигурацию в формат, ожидаемый GrpcClient
             servers = {}
             for server_name, server_config in servers_config.items():
-                servers[server_name] = {
+                server_dict = {
                     'address': server_config.get('host', '127.0.0.1'),
                     'port': server_config.get('port', 50051),
                     'use_ssl': server_config.get('ssl', False),
@@ -71,6 +71,9 @@ class GrpcClient:
                     'retry_delay': server_config.get('retry_delay', grpc_data.get('retry_delay', 1.0)),
                     'keepalive': server_config.get('keepalive', True)
                 }
+                # DEBUG: Логируем конфигурацию каждого сервера
+                logger.info(f"🔌 [DEBUG] Loaded server '{server_name}': {server_dict['address']}:{server_dict['port']}, ssl={server_dict['use_ssl']}, ssl_verify={server_dict['ssl_verify']}")
+                servers[server_name] = server_dict
             
             return {
                 'servers': servers,
@@ -113,17 +116,29 @@ class GrpcClient:
         try:
             servers_config = self.config.get('servers', {})
             for name, server_config in servers_config.items():
+                # DEBUG: Log what we're reading from config dict
+                ssl_verify_from_config = server_config.get('ssl_verify', True)
+                logger.info(f"🔌 [DEBUG] _initialize_servers creating ServerConfig for '{name}': ssl_verify={ssl_verify_from_config}")
+
                 config = ServerConfig(
                     address=server_config['address'],
                     port=server_config['port'],
                     use_ssl=server_config.get('use_ssl', False),
+                    ssl_verify=ssl_verify_from_config,  # NEW: Add ssl_verify
+                    grpc_path=server_config.get('grpc_path'),  # NEW: Add grpc_path
+                    use_http2=server_config.get('use_http2', True),  # NEW: Add use_http2
                     timeout=server_config.get('timeout', 30),
                     retry_attempts=server_config.get('retry_attempts', 3),
                     retry_delay=server_config.get('retry_delay', 1.0),
-                    max_message_size=server_config.get('max_message_size', 50 * 1024 * 1024)
+                    max_message_size=server_config.get('max_message_size', 50 * 1024 * 1024),
+                    keepalive=server_config.get('keepalive', True)  # NEW: Add keepalive
                 )
+
+                # DEBUG: Log the created ServerConfig
+                logger.info(f"🔌 [DEBUG] Created ServerConfig for '{name}': ssl_verify={config.ssl_verify}")
+
                 self.connection_manager.add_server(name, config)
-            
+
             logger.info(f"🌐 Инициализировано {len(servers_config)} серверов")
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации серверов: {e}")
@@ -141,12 +156,16 @@ class GrpcClient:
             config_path = get_resource_path('config/unified_config.yaml')
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
-            
+
             # Получаем настройки gRPC клиента из секции integrations
             integrations = config.get('integrations', {})
             grpc_config = integrations.get('grpc_client', {})
             default_server = grpc_config.get('server', 'local')
-            
+
+            # DEBUG: Логируем выбор сервера
+            logger.info(f"🔌 [DEBUG] Config says default server: '{default_server}'")
+            logger.info(f"🔌 [DEBUG] Available servers: {list(self.connection_manager.servers.keys())}")
+
             # Устанавливаем сервер по умолчанию
             if default_server in self.connection_manager.servers:
                 self.connection_manager.current_server = default_server
@@ -154,7 +173,7 @@ class GrpcClient:
             else:
                 logger.warning(f"⚠️ Сервер '{default_server}' не найден, используем 'local'")
                 self.connection_manager.current_server = 'local'
-                
+
         except Exception as e:
             logger.warning(f"⚠️ Не удалось загрузить конфигурацию gRPC: {e}")
             # Используем local по умолчанию

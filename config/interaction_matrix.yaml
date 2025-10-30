@@ -1,0 +1,20 @@
+axes:
+  Permission.mic: [granted, denied, prompt_blocked]
+  Device.input: [default_ok, busy]
+  Network: [online, offline]
+  FirstRun: [true, false]
+  appMode: [SLEEPING, LISTENING, PROCESSING]
+
+rules:
+  - when: {Permission.mic: denied}
+    decision: abort_listen
+    priority: hard_stop
+
+  - when: {Permission.mic: granted, Device.input: busy, appMode: LISTENING}
+    decision: retry_backoff
+    priority: graceful
+
+  - when: {Network: offline, appMode: PROCESSING}
+    decision: degrade_offline
+    priority: graceful
+

@@ -101,6 +101,10 @@ class WelcomeAudioGenerator:
                     'address': server.host,
                     'port': server.port,
                     'use_ssl': server.ssl,
+                    'ssl_verify': server.ssl_verify,  # NEW: Pass ssl_verify from config
+                    'use_http2': server.use_http2,  # NEW: Pass use_http2 from config
+                    'keepalive': server.keepalive,  # NEW: Pass keepalive from config
+                    'grpc_path': server.grpc_path,  # NEW: Pass grpc_path from config
                     'timeout': server.timeout,
                     'retry_attempts': server.retry_attempts,
                     'retry_delay': server.retry_delay,

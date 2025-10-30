@@ -63,12 +63,18 @@ class ConnectionManager:
             if not self.current_server or self.current_server not in self.servers:
                 logger.error("❌ Нет доступного сервера для подключения")
                 return False
-            
+
+            # DEBUG: Логируем начало подключения
+            logger.info(f"🔌 [DEBUG] Начало подключения к серверу: {self.current_server}")
+
             self.connection_state = ConnectionState.CONNECTING
             self._notify_connection_changed()
-            
+
             server_config = self.servers[self.current_server]
             address = f"{server_config.address}:{server_config.port}"
+
+            # DEBUG: Логируем конфигурацию сервера
+            logger.info(f"🔌 [DEBUG] Server config - address: {address}, use_ssl: {server_config.use_ssl}, ssl_verify: {server_config.ssl_verify}")
 
             # Закрываем предыдущее соединение
             if self.channel:
@@ -81,25 +87,36 @@ class ConnectionManager:
             options = self._create_grpc_options(server_config)
 
             # Создаем канал
+            logger.info(f"🔌 [DEBUG] Создание канала - use_ssl={server_config.use_ssl}")
             if server_config.use_ssl:
                 # Создаем SSL credentials с учётом ssl_verify
+                logger.info(f"🔌 [DEBUG] SSL enabled, ssl_verify={server_config.ssl_verify}")
                 if server_config.ssl_verify:
                     # Проверять сертификат (по умолчанию - системные CA)
+                    logger.info(f"🔌 [DEBUG] Using system CA certificates")
                     credentials = grpc.ssl_channel_credentials()
                 else:
                     # Для self-signed сертификата загружаем сертификат сервера
                     logger.warning(f"⚠️ SSL verification disabled for {address} - используется self-signed сертификат")
+                    logger.info(f"🔌 [DEBUG] Attempting to load self-signed certificate...")
 
                     # Пытаемся загрузить сертификат production сервера
                     try:
                         from integration.utils.resource_path import get_resource_path
+                        logger.info(f"🔌 [DEBUG] Imported get_resource_path")
                         cert_path = get_resource_path('resources/certs/production_server.pem')
+                        logger.info(f"🔌 [DEBUG] Certificate path resolved to: {cert_path}")
                         with open(cert_path, 'rb') as f:
                             root_cert = f.read()
+                        logger.info(f"🔌 [DEBUG] Certificate loaded, size: {len(root_cert)} bytes")
                         logger.info(f"✅ Загружен self-signed сертификат: {cert_path}")
                         credentials = grpc.ssl_channel_credentials(root_certificates=root_cert)
+                        logger.info(f"🔌 [DEBUG] SSL credentials created with custom certificate")
                     except Exception as e:
                         logger.error(f"❌ Не удалось загрузить сертификат: {e}")
+                        logger.error(f"🔌 [DEBUG] Exception details: {type(e).__name__}: {str(e)}")
+                        import traceback
+                        logger.error(f"🔌 [DEBUG] Traceback:\n{traceback.format_exc()}")
                         logger.warning("⚠️ Используем credentials без проверки (небезопасно!)")
                         credentials = grpc.ssl_channel_credentials(
                             root_certificates=None,

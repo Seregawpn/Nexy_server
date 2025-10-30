@@ -31,6 +31,10 @@ class GrpcServerConfig:
     timeout: int
     retry_attempts: int
     retry_delay: float
+    ssl_verify: bool = True  # NEW: Проверка SSL сертификата
+    use_http2: bool = True  # NEW: Использовать HTTP/2 (ALPN h2)
+    keepalive: bool = True  # NEW: Включить keepalive
+    grpc_path: Optional[str] = None  # NEW: Путь для Nginx reverse proxy
 
 @dataclass
 class NetworkConfig:
@@ -154,13 +158,21 @@ class UnifiedConfigLoader:
         servers_config = grpc_data.get('servers', {})
         
         for server_name, server_config in servers_config.items():
+            # DEBUG: Log what we're reading from YAML
+            ssl_verify_value = server_config.get('ssl_verify', True)
+            logger.info(f"🔌 [DEBUG] Loading server '{server_name}' from YAML: ssl_verify={ssl_verify_value}")
+
             grpc_servers[server_name] = GrpcServerConfig(
                 host=server_config.get('host', '127.0.0.1'),
                 port=server_config.get('port', 50051),
                 ssl=server_config.get('ssl', False),
                 timeout=server_config.get('timeout', grpc_data.get('connection_timeout', 30)),
                 retry_attempts=server_config.get('retry_attempts', grpc_data.get('retry_attempts', 3)),
-                retry_delay=server_config.get('retry_delay', grpc_data.get('retry_delay', 1.0))
+                retry_delay=server_config.get('retry_delay', grpc_data.get('retry_delay', 1.0)),
+                ssl_verify=ssl_verify_value,  # NEW
+                use_http2=server_config.get('use_http2', True),  # NEW
+                keepalive=server_config.get('keepalive', True),  # NEW
+                grpc_path=server_config.get('grpc_path')  # NEW
             )
         
         # Получаем настройки сети (если есть)
