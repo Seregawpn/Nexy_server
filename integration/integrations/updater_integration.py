@@ -39,7 +39,8 @@ class UpdaterIntegration:
             timeout=updater_config_data.network.get("timeout", 30),
             retries=updater_config_data.network.get("retries", 3),
             show_notifications=updater_config_data.ui.get("show_notifications", True),
-            auto_download=updater_config_data.ui.get("auto_download", True)
+            auto_download=updater_config_data.ui.get("auto_download", True),
+            ssl_verify=updater_config_data.security.get("ssl_verify", True)
         )
         
         self.updater = Updater(updater_config)

@@ -13,30 +13,41 @@ logger = logging.getLogger(__name__)
 
 class UpdateHTTPClient:
     """HTTP клиент для обновлений с повышенной безопасностью"""
-    
-    def __init__(self, timeout: int = 30, retries: int = 3):
+
+    def __init__(self, timeout: int = 30, retries: int = 3, ssl_verify: bool = True):
         """
         Инициализация HTTP клиента
-        
+
         Args:
             timeout: Таймаут в секундах
             retries: Количество повторных попыток
+            ssl_verify: Проверять SSL сертификат (False для self-signed)
         """
         # Отключаем предупреждения urllib3 для чистоты логов
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
+
+        self.ssl_verify = ssl_verify
+
         # Создаем отдельный HTTP клиент для обновлений с поддержкой редиректов
-        self.http = urllib3.PoolManager(
-            retries=urllib3.Retry(
-                total=retries, 
+        pool_kwargs = {
+            'retries': urllib3.Retry(
+                total=retries,
                 backoff_factor=0.5,
                 status_forcelist=[500, 502, 503, 504],
                 redirect=5  # Поддержка до 5 редиректов
             ),
-            timeout=urllib3.Timeout(total=timeout)
-        )
-        
-        logger.info(f"HTTP клиент инициализирован: timeout={timeout}s, retries={retries}")
+            'timeout': urllib3.Timeout(total=timeout)
+        }
+
+        # Для self-signed сертификатов отключаем проверку
+        if not ssl_verify:
+            logger.warning("⚠️ SSL verification disabled - используется self-signed сертификат")
+            pool_kwargs['cert_reqs'] = 'CERT_NONE'
+            pool_kwargs['assert_hostname'] = False
+
+        self.http = urllib3.PoolManager(**pool_kwargs)
+
+        logger.info(f"HTTP клиент инициализирован: timeout={timeout}s, retries={retries}, ssl_verify={ssl_verify}")
     
     def get_manifest(self, url: str) -> dict:
         """
@@ -52,8 +63,9 @@ class UpdateHTTPClient:
             ValueError: Если URL не HTTPS
             RuntimeError: Если HTTP статус не 200
         """
-        if not url.startswith('https://') and not url.startswith('http://localhost') and not url.startswith('http://20.151.51.172'):
-            raise ValueError("URL должен использовать HTTPS для безопасности (кроме localhost и Azure VM для тестирования)")
+        # Проверяем HTTPS (исключения только для localhost в dev-режиме)
+        if not url.startswith('https://') and not url.startswith('http://localhost') and not url.startswith('http://127.0.0.1'):
+            raise ValueError("URL должен использовать HTTPS для безопасности (кроме localhost для тестирования)")
         
         logger.info(f"Запрос манифеста: {url}")
         
@@ -199,8 +211,9 @@ class UpdateHTTPClient:
             ValueError: Если URL не HTTPS
             RuntimeError: Если размер файла не совпадает
         """
-        if not url.startswith('https://') and not url.startswith('http://localhost') and not url.startswith('http://20.151.51.172'):
-            raise ValueError("URL должен использовать HTTPS для безопасности (кроме localhost и Azure VM для тестирования)")
+        # Проверяем HTTPS (исключения только для localhost в dev-режиме)
+        if not url.startswith('https://') and not url.startswith('http://localhost') and not url.startswith('http://127.0.0.1'):
+            raise ValueError("URL должен использовать HTTPS для безопасности (кроме localhost для тестирования)")
         
         logger.info(f"Скачивание файла: {url} -> {dest_path}")
         

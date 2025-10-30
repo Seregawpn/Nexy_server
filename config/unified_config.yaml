@@ -93,12 +93,15 @@ grpc:
       description: Локальный сервер для разработки
     production:
       host: 20.151.51.172
-      port: 50051
-      ssl: false
-      timeout: 120
+      port: 443
+      ssl: true
+      ssl_verify: false  # Временно отключено для self-signed сертификата
+      use_http2: true    # Включить HTTP/2 (ALPN h2)
+      timeout: 300       # Увеличен таймаут для длинных ответов
       retry_attempts: 5
       retry_delay: 2.0
-      description: Production сервер на Azure
+      keepalive: true    # Включить keepalive
+      description: Production сервер на Azure (HTTPS через Nginx, gRPC на /)
     fallback:
       host: 127.0.0.1
       port: 50052
@@ -328,8 +331,8 @@ updater:
   default:
     enabled: true
     update_channel: stable
-    appcast_url: http://20.151.51.172:8081/appcast.xml
-    manifest_url: http://20.151.51.172:8081/appcast.xml
+    appcast_url: https://20.151.51.172/updates/appcast.xml
+    manifest_url: https://20.151.51.172/updates/appcast.xml
     auto_check: true
     check_interval: 3600
     check_on_startup: true
@@ -340,6 +343,7 @@ updater:
       public_key: ''
       verify_signatures: true
       require_https: true
+      ssl_verify: false  # Временно отключено для self-signed сертификата
     network:
       timeout: 30
       retries: 3
@@ -350,13 +354,13 @@ updater:
       progress_notifications: true
     channels:
       stable:
-        url: http://20.151.51.172:8081/appcast.xml
+        url: https://20.151.51.172/updates/appcast.xml
         description: Стабильные релизы
       beta:
-        url: http://20.151.51.172:8081/appcast-beta.xml
+        url: https://20.151.51.172/updates/appcast-beta.xml
         description: Бета версии
       alpha:
-        url: http://20.151.51.172:8081/appcast-alpha.xml
+        url: https://20.151.51.172/updates/appcast-alpha.xml
         description: Альфа версии
   development:
     enabled: false

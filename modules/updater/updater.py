@@ -25,7 +25,11 @@ class Updater:
     
     def __init__(self, config: UpdaterConfig):
         self.config = config
-        self.http_client = UpdateHTTPClient(config.timeout, config.retries)
+        self.http_client = UpdateHTTPClient(
+            config.timeout,
+            config.retries,
+            ssl_verify=getattr(config, 'ssl_verify', True)
+        )
         self.on_download_progress = None
         self.on_install_progress = None
         # Настраиваем файловый логгер для апдейтера

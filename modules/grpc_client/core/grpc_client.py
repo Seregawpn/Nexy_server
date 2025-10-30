@@ -63,9 +63,13 @@ class GrpcClient:
                     'address': server_config.get('host', '127.0.0.1'),
                     'port': server_config.get('port', 50051),
                     'use_ssl': server_config.get('ssl', False),
+                    'ssl_verify': server_config.get('ssl_verify', True),
+                    'grpc_path': server_config.get('grpc_path'),
+                    'use_http2': server_config.get('use_http2', True),
                     'timeout': server_config.get('timeout', grpc_data.get('connection_timeout', 30)),
                     'retry_attempts': server_config.get('retry_attempts', grpc_data.get('retry_attempts', 3)),
-                    'retry_delay': server_config.get('retry_delay', grpc_data.get('retry_delay', 1.0))
+                    'retry_delay': server_config.get('retry_delay', grpc_data.get('retry_delay', 1.0)),
+                    'keepalive': server_config.get('keepalive', True)
                 }
             
             return {

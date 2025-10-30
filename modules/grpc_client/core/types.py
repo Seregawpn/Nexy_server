@@ -31,6 +31,9 @@ class ServerConfig:
     address: str
     port: int
     use_ssl: bool = False
+    ssl_verify: bool = True  # Проверка SSL сертификата (False для self-signed)
+    grpc_path: Optional[str] = None  # Путь для Nginx reverse proxy (например /grpc)
+    use_http2: bool = True  # Использовать HTTP/2 (ALPN h2)
     timeout: int = 30
     retry_attempts: int = 3
     retry_delay: float = 1.0
@@ -39,6 +42,7 @@ class ServerConfig:
     keep_alive_time: int = 120
     keep_alive_timeout: int = 10
     keep_alive_permit_without_calls: bool = False
+    keepalive: bool = True  # Включить keepalive
 
 
 @dataclass

@@ -19,12 +19,13 @@ class UpdaterConfig:
     retries: int = 3
     show_notifications: bool = True
     auto_download: bool = True
+    ssl_verify: bool = True  # Проверка SSL сертификата (False для self-signed)
     
     def __post_init__(self):
         """Валидация конфигурации"""
-        # Проверка HTTPS (отключена для тестирования и Azure VM)
-        if self.manifest_url and not self.manifest_url.startswith('https://') and not self.manifest_url.startswith('http://localhost') and not self.manifest_url.startswith('http://20.151.51.172'):
-            raise ValueError("manifest_url должен использовать HTTPS (кроме localhost и Azure VM для тестирования)")
+        # Проверка HTTPS (исключения только для localhost в dev-режиме)
+        if self.manifest_url and not self.manifest_url.startswith('https://') and not self.manifest_url.startswith('http://localhost') and not self.manifest_url.startswith('http://127.0.0.1'):
+            raise ValueError("manifest_url должен использовать HTTPS (кроме localhost для тестирования)")
         
         # Проверка интервала
         if self.check_interval < 300:  # Минимум 5 минут

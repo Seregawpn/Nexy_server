@@ -69,22 +69,49 @@ class ConnectionManager:
             
             server_config = self.servers[self.current_server]
             address = f"{server_config.address}:{server_config.port}"
-            
+
             # Закрываем предыдущее соединение
             if self.channel:
                 try:
                     await self.channel.close()
                 except:
                     pass
-            
+
             # Настройки gRPC
             options = self._create_grpc_options(server_config)
-            
+
             # Создаем канал
             if server_config.use_ssl:
+                # Создаем SSL credentials с учётом ssl_verify
+                if server_config.ssl_verify:
+                    # Проверять сертификат (по умолчанию - системные CA)
+                    credentials = grpc.ssl_channel_credentials()
+                else:
+                    # Для self-signed сертификата загружаем сертификат сервера
+                    logger.warning(f"⚠️ SSL verification disabled for {address} - используется self-signed сертификат")
+
+                    # Пытаемся загрузить сертификат production сервера
+                    try:
+                        from integration.utils.resource_path import get_resource_path
+                        cert_path = get_resource_path('resources/certs/production_server.pem')
+                        with open(cert_path, 'rb') as f:
+                            root_cert = f.read()
+                        logger.info(f"✅ Загружен self-signed сертификат: {cert_path}")
+                        credentials = grpc.ssl_channel_credentials(root_certificates=root_cert)
+                    except Exception as e:
+                        logger.error(f"❌ Не удалось загрузить сертификат: {e}")
+                        logger.warning("⚠️ Используем credentials без проверки (небезопасно!)")
+                        credentials = grpc.ssl_channel_credentials(
+                            root_certificates=None,
+                            private_key=None,
+                            certificate_chain=None
+                        )
+                        # Добавляем опцию для отключения проверки имени хоста
+                        options.append(('grpc.ssl_target_name_override', server_config.address))
+
                 self.channel = grpc.aio.secure_channel(
-                    address, 
-                    grpc.aio.ssl_channel_credentials(), 
+                    address,
+                    credentials,
                     options=options
                 )
             else:
@@ -128,18 +155,29 @@ class ConnectionManager:
     
     def _create_grpc_options(self, server_config: ServerConfig) -> list:
         """Создает опции gRPC"""
-        # Консервативные keepalive-настройки, чтобы избежать ENHANCE_YOUR_CALM/too_many_pings
-        return [
+        options = [
             ('grpc.max_send_message_length', server_config.max_message_size),
             ('grpc.max_receive_message_length', server_config.max_message_size),
             ('grpc.max_metadata_size', 1024 * 1024),
-            ('grpc.keepalive_time_ms', max(60000, server_config.keep_alive_time * 1000)),  # >= 60s
-            ('grpc.keepalive_timeout_ms', max(5000, server_config.keep_alive_timeout * 1000)),
-            ('grpc.keepalive_permit_without_calls', server_config.keep_alive_permit_without_calls),
-            ('grpc.http2.max_pings_without_data', 1),
-            ('grpc.http2.min_time_between_pings_ms', 60000),
-            ('grpc.http2.min_ping_interval_without_data_ms', 600000),
         ]
+
+        # HTTP/2 ALPN для reverse proxy
+        if server_config.use_http2:
+            options.append(('grpc.http2.true_binary', 1))
+
+        # Keepalive настройки (если включено)
+        if server_config.keepalive:
+            # Консервативные keepalive-настройки, чтобы избежать ENHANCE_YOUR_CALM/too_many_pings
+            options.extend([
+                ('grpc.keepalive_time_ms', max(60000, server_config.keep_alive_time * 1000)),  # >= 60s
+                ('grpc.keepalive_timeout_ms', max(5000, server_config.keep_alive_timeout * 1000)),
+                ('grpc.keepalive_permit_without_calls', server_config.keep_alive_permit_without_calls),
+                ('grpc.http2.max_pings_without_data', 1),
+                ('grpc.http2.min_time_between_pings_ms', 60000),
+                ('grpc.http2.min_ping_interval_without_data_ms', 600000),
+            ])
+
+        return options
     
     def _create_stub(self):
         """Создает gRPC stub (должен быть переопределен в наследниках)"""
