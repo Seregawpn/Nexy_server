@@ -7,7 +7,6 @@ Activator для активации разрешений macOS.
 
 import asyncio
 import logging
-import subprocess
 import ctypes
 from ctypes import util
 
@@ -107,43 +106,9 @@ async def activate_accessibility(hold_duration: float = 7.0) -> bool:
         if trusted:
             logger.info("✅ Accessibility уже предоставлен")
         else:
-            logger.info("✅ Accessibility диалог показан (или будет открыт System Settings)")
-            try:
-                subprocess.Popen([
-                    'open',
-                    'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
-                ])
-                logger.debug("   🔗 Открываем System Settings -> Privacy & Security → Accessibility")
-            except Exception as open_err:
-                logger.debug(f"   ⚠️ Не удалось открыть System Settings: {open_err}")
-            else:
-                try:
-                    subprocess.Popen([
-                        'osascript',
-                        '-e',
-                        'tell application "System Settings" to activate'
-                    ])
-                    logger.debug("   🪟 Делаем System Settings активным окном")
-                except Exception as activate_err:
-                    logger.debug(f"   ⚠️ Не удалось активировать System Settings: {activate_err}")
-
-                try:
-                    dialog_script = (
-                        'set dialogResult to display dialog '
-                        '"Nexy нужен доступ к Accessibility, чтобы отслеживать клавиатуру и автоматизировать действия.\\n\\n'
-                        '1. Нажмите на замок в левом нижнем углу и введите пароль.\\n'
-                        '2. Поставьте галочку напротив Nexy.\\n'
-                        '3. Перезапустите Nexy." '
-                        'buttons {"Готово", "Открыть настройки"} default button "Открыть настройки" with icon caution\n'
-                        'if button returned of dialogResult is "Открыть настройки" then\n'
-                        '    tell application "System Settings" to activate\n'
-                        '    do shell script "open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"\n'
-                        'end if'
-                    )
-                    subprocess.Popen(['osascript', '-e', dialog_script])
-                    logger.debug("   💬 Показано диалоговое окно с инструкцией по выдаче доступа")
-                except Exception as dialog_err:
-                    logger.debug(f"   ⚠️ Не удалось показать диалоговое окно: {dialog_err}")
+            logger.info("ℹ️ Accessibility диалог запрошен через AXIsProcessTrustedWithOptions")
+            logger.info("   macOS автоматически откроет System Settings если нужно")
+            logger.info("   Пожалуйста, предоставьте доступ в System Settings → Privacy & Security → Accessibility")
 
         # Ждём чтобы дать пользователю время ответить
         logger.debug(f"   ⏸️ Пауза {hold_duration} сек...")
@@ -199,18 +164,11 @@ async def activate_input_monitoring(hold_duration: float = 7.0) -> bool:
         else:
             status_hex = hex(ctypes.c_uint32(status).value)
             logger.info(
-                "ℹ️ IOHIDRequestAccess вернул код %s – "
-                "System Settings должно открыться для выдачи доступа",
+                "ℹ️ IOHIDRequestAccess вернул код %s",
                 status_hex,
             )
-            try:
-                subprocess.Popen([
-                    'open',
-                    'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent'
-                ])
-                logger.debug("   🔗 Открываем System Settings для Input Monitoring")
-            except Exception as open_err:
-                logger.debug(f"   ⚠️ Не удалось открыть System Settings: {open_err}")
+            logger.info("   macOS автоматически откроет System Settings если нужно")
+            logger.info("   Пожалуйста, предоставьте доступ в System Settings → Privacy & Security → Input Monitoring")
 
         logger.debug(f"   ⏸️ Пауза {hold_duration} сек...")
         await asyncio.sleep(hold_duration)

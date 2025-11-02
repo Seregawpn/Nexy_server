@@ -282,7 +282,7 @@ INFO - VoiceOverController: VoiceOver restored via Command+F5
 ## 🔗 Связанные файлы
 
 - **Контроллер**: `client/modules/voiceover_control/core/controller.py`
-- **Конфигурация**: `client/config/unified_config.yaml`
+- **Конфигурация**: `config/unified_config.yaml`
 - **Тесты**: `client/modules/voiceover_control/tests/`
 - **Результаты**: `client/modules/voiceover_control/tests/TEST_RESULTS.md`
 

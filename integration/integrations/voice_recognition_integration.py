@@ -63,6 +63,9 @@ class VoiceRecognitionIntegration:
         # Реальный распознаватель (если доступен и симуляция отключена)
         self._recognizer: Optional["SpeechRecognizer"] = None
 
+        # Флаг блокировки во время first_run
+        self._first_run_in_progress: bool = False
+
     @classmethod
     def run_dependency_check(cls) -> bool:
         """
@@ -136,6 +139,11 @@ class VoiceRecognitionIntegration:
             # Гарантированно закрываем прослушивание при выходе из LISTENING
             await self.event_bus.subscribe("app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM)
 
+            # КРИТИЧНО: Подписываемся на события first_run для блокировки активации
+            await self.event_bus.subscribe("permissions.first_run_started", self._on_first_run_started, EventPriority.CRITICAL)
+            await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.CRITICAL)
+            await self.event_bus.subscribe("permissions.first_run_failed", self._on_first_run_completed, EventPriority.CRITICAL)
+
             # Инициализация реального распознавателя, если симуляция отключена
             logger.debug(f"🔍 [AUDIO_DEBUG] Условия создания SpeechRecognizer: simulate={self.config.simulate}, _REAL_VOICE_AVAILABLE={_REAL_VOICE_AVAILABLE}")
             if not self.config.simulate and _REAL_VOICE_AVAILABLE:
@@ -204,6 +212,14 @@ class VoiceRecognitionIntegration:
     # События записи
     async def _on_recording_start(self, event: Dict[str, Any]):
         try:
+            # КРИТИЧНО: Проверяем first_run перед началом записи
+            if self._first_run_in_progress:
+                logger.warning(
+                    "⚠️ [VOICE_RECOGNITION] Блокировка активации - first_run в процессе. "
+                    "Запись микрофона во время запроса разрешений запрещена."
+                )
+                return
+
             # Поддерживаем оба формата: прямой и вложенный
             if "data" in event:
                 data = event.get("data", {})
@@ -385,6 +401,31 @@ class VoiceRecognitionIntegration:
                         pass
         except Exception as e:
             logger.debug(f"VOICE: mode_changed guard failed: {e}")
+
+    async def _on_first_run_started(self, event: Dict[str, Any]):
+        """Обработчик начала процедуры first_run - блокируем активацию"""
+        try:
+            self._first_run_in_progress = True
+            logger.info(
+                "🔒 [VOICE_RECOGNITION] First run начат - блокировка активации микрофона"
+            )
+            # Отменяем любую текущую запись/распознавание
+            await self._cancel_recognition(reason="first_run_started")
+            if self._recording_active:
+                self._recording_active = False
+                logger.info("   Остановлена активная запись (если была)")
+        except Exception as e:
+            logger.error(f"❌ [VOICE_RECOGNITION] Ошибка обработки first_run_started: {e}")
+
+    async def _on_first_run_completed(self, event: Dict[str, Any]):
+        """Обработчик завершения/ошибки процедуры first_run - разблокируем активацию"""
+        try:
+            self._first_run_in_progress = False
+            logger.info(
+                "🔓 [VOICE_RECOGNITION] First run завершён - разблокировка активации микрофона"
+            )
+        except Exception as e:
+            logger.error(f"❌ [VOICE_RECOGNITION] Ошибка обработки first_run_completed: {e}")
 
     async def _start_recognition(self, session_id: float):
         # Публикуем старт распознавания

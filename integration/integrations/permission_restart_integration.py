@@ -25,6 +25,9 @@ from modules.permission_restart import (
     RestartScheduler,
     load_permission_restart_config,
 )
+from modules.permission_restart.macos.permissions_restart_handler import (
+    PermissionsRestartHandler,
+)
 from modules.permission_restart.core.types import PermissionTransition
 from modules.permissions.core.types import PermissionStatus, PermissionType
 from modules.permissions.first_run.status_checker import (
@@ -80,6 +83,7 @@ class PermissionRestartIntegration(BaseIntegration):
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
                 updater_integration=self._updater_integration,
+                restart_handler=PermissionsRestartHandler(),
             )
             logger.info(
                 "[PERMISSION_RESTART] Integration initialised (enabled=%s, delay=%s, attempts=%s)",
@@ -110,6 +114,17 @@ class PermissionRestartIntegration(BaseIntegration):
             await self._subscribe("updater.update_skipped", self._on_update_completed, EventPriority.HIGH)
             await self._subscribe("app.startup", self._on_app_startup_event, EventPriority.MEDIUM)
             logger.info("[PERMISSION_RESTART] Subscribed to permission events")
+
+            # Догоняющий вызов: если first_run уже завершён (флаг существует), вызываем обработчик
+            # Это обеспечивает перезапуск даже если событие было пропущено из-за порядка инициализации
+            from integration.utils.resource_path import get_user_data_dir
+            flag_path = get_user_data_dir("Nexy") / "permissions_first_run_completed.flag"
+            if flag_path.exists():
+                logger.info(
+                    "[PERMISSION_RESTART] First run flag exists - catching up with first_run_completed event"
+                )
+                await self._on_first_run_completed({})
+
             return True
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Failed to start: %s", exc)
@@ -184,6 +199,11 @@ class PermissionRestartIntegration(BaseIntegration):
             session_id,
         )
         self._ready_emitted = False
+
+        # Помечаем как first_run рестарт - это форсирует перезапуск независимо от режима
+        if self._scheduler:
+            self._scheduler._is_first_run_restart = True
+            logger.debug("[PERMISSION_RESTART] Marked as first_run restart")
 
         # Планируем перезапуск для критических разрешений
         # Создаём синтетические transition события, которые запустят RestartScheduler

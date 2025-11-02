@@ -130,7 +130,7 @@
 - Что делаем:
   - Поднять `server/grpc_server.py` на Azure VM (IP 20.151.51.172), открыть порт, настроить процессы и логи.
   - Проверить совместимость по `server/streaming.proto`: клиент отправляет `prompt + screenshot(base64 WebP) + hardware_id`, сервер стримит текст/аудио (48 kHz mono int16) и завершает `end_message`.
-  - `client/config/unified_config.yaml`: выставить `grpc_host`, `grpc_port`, `use_tls` (если нет домена с валидным сертификатом — временно без TLS на бете).
+  - `config/unified_config.yaml`: выставить `grpc_host`, `grpc_port`, `use_tls` (если нет домена с валидным сертификатом — временно без TLS на бете).
   - Таймауты/ретраи и корректное закрытие in‑flight задач при обрыве сети.
 
 - DoD (готово):
@@ -181,7 +181,7 @@
 - ⏳ **Инструкция:** для тестеров готова, канал фидбека работает
 
 ### 8) Материалы в репозитории
-- Клиент: `client/main.py`, `client/integration/core/simple_module_coordinator.py`, `client/integration/integrations/*.py`, `client/config/unified_config.yaml`.
+- Клиент: `client/main.py`, `client/integration/core/simple_module_coordinator.py`, `client/integration/integrations/*.py`, `config/unified_config.yaml`.
 - Сервер: `server/grpc_server.py`, `server/streaming.proto`, `server/integrations/workflow_integrations/streaming_workflow_integration.py`.
 - Пакетирование: `client/packaging/*`, Sparkle настройки.
 

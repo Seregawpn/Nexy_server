@@ -127,4 +127,3 @@ if __name__ == "__main__":
         print("\n⏹️ Приложение прервано пользователем")
     finally:
         loop.close()
-                                   

@@ -71,7 +71,7 @@ await integration.start()
 ### YAML конфигурация
 
 ```yaml
-# client/config/unified_config.yaml
+# config/unified_config.yaml
 welcome_message:
   enabled: true
   text: "Hi! Nexy is here. How can I help you?"

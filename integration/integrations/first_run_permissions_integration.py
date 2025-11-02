@@ -30,6 +30,9 @@ from modules.permissions.first_run.activator import (
     activate_input_monitoring,
     activate_screen_capture,
 )
+from modules.permission_restart.macos.permissions_restart_handler import (
+    PermissionsRestartHandler,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,15 +67,37 @@ class FirstRunPermissionsIntegration:
 
         # Путь к флагу
         self.flag_file = get_user_data_dir("Nexy") / "permissions_first_run_completed.flag"
+        self._restart_flag = self.flag_file.parent / "restart_completed.flag"
 
         self._initialized = False
         self._running = False
         self._permissions_in_progress = False
+        self._restart_session_id: Optional[str] = None  # Session ID для перезапуска
 
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
         try:
             logger.info("🔧 [FIRST_RUN_PERMISSIONS] Инициализация...")
+
+            # Сбрасываем состояние при инициализации (важно для повторных запусков/тестов)
+            self._restart_session_id = None
+            self._permissions_in_progress = False
+            self.state_manager.set_state_data("permissions_restart_pending", False)
+
+            # КРИТИЧНО: Проверяем был ли перезапуск после first_run
+            # Это позволяет опубликовать completed ТОЛЬКО после успешного перезапуска
+            if self._restart_flag.exists():
+                logger.info("✅ [FIRST_RUN_PERMISSIONS] Перезапуск после first_run завершён успешно")
+
+                # Публикуем completed в НОВОМ процессе (после перезапуска)
+                await self.event_bus.publish("permissions.first_run_completed", {
+                    "session_id": "restarted",
+                    "source": "first_run_permissions_integration",
+                    "note": "Published after successful restart"
+                })
+
+                # Удаляем флаг после публикации
+                self._clear_restart_flag()
 
             if not self.enabled:
                 logger.info("ℹ️ [FIRST_RUN_PERMISSIONS] Отключено в конфиге")
@@ -125,7 +150,7 @@ class FirstRunPermissionsIntegration:
             self._permissions_in_progress = True
 
             try:
-                # Запрашиваем разрешения последовательно
+                # Запрашиваем разрешения последовательно (простая блокирующая схема)
                 await self._request_permissions_sequentially()
 
                 # Сохраняем флаг
@@ -135,13 +160,38 @@ class FirstRunPermissionsIntegration:
                 except Exception as e:
                     logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Не удалось сохранить флаг: {e}")
 
-                # Публикуем успешное завершение
-                await self.event_bus.publish("permissions.first_run_completed", {
-                    "session_id": session_id,
-                    "source": "first_run_permissions_integration"
-                })
+                # ВАЖНО: НЕ сбрасываем флаг permissions_in_progress!
+                # Это предотвратит запуск остальных интеграций (voice_recognition и т.д.)
+                # Флаг сбросится только при следующем запуске приложения после перезапуска
 
                 logger.info("✅ [FIRST_RUN_PERMISSIONS] Первый запуск завершён")
+
+                # КРИТИЧНО: Устанавливаем флаг для публикации completed в НОВОМ процессе
+                # Это предотвращает разблокировку voice_recognition ДО перезапуска
+                self._set_restart_flag()
+                self.state_manager.set_state_data("permissions_restart_pending", True)
+
+                # НЕ публикуем permissions.first_run_completed здесь!
+                # Оно будет опубликовано в НОВОМ процессе после успешного перезапуска
+                # Это предотвращает преждевременную разблокировку voice_recognition
+
+                logger.info("🔄 [FIRST_RUN_PERMISSIONS] Запрос перезапуска приложения...")
+
+                # Публикуем ТОЛЬКО restart_pending для coordinator
+                await self.event_bus.publish("permissions.first_run_restart_pending", {
+                    "session_id": session_id,
+                    "source": "first_run_permissions_integration",
+                    "note": "Restart required - completed will be published after restart"
+                })
+
+                # ВАЖНО: НЕ вызываем _force_restart() здесь!
+                # Coordinator проверит флаг _permissions_in_progress и сам запустит перезапуск
+                # Это позволит корректно остановить запуск остальных интеграций
+
+                # Сохраняем session_id для вызова из coordinator
+                self._restart_session_id = session_id
+
+                # Возвращаем True чтобы coordinator проверил флаг и запустил перезапуск
                 return True
 
             except Exception as e:
@@ -180,30 +230,26 @@ class FirstRunPermissionsIntegration:
             return False
 
     async def _request_permissions_sequentially(self):
-        """Запросить все разрешения последовательно с умными паузами"""
+        """Простая последовательная схема запроса разрешений с задержками."""
         import time
 
         # 1. MICROPHONE
         logger.info("🎙️ [FIRST_RUN_PERMISSIONS] Проверка Microphone...")
         mic_status = check_microphone_status()
         logger.info(f"   Статус: {mic_status.value}")
-
         if mic_status == PermissionStatus.NOT_DETERMINED:
             logger.info(
                 "   Активируем Microphone с hold_duration=%s сек...",
                 self.activation_hold_seconds
             )
             start_time = time.time()
-            # activate_microphone держит микрофон открытым всю паузу
-            # это гарантирует что диалог успеет появиться
-            success = await activate_microphone(hold_duration=self.activation_hold_seconds)
+            await activate_microphone(hold_duration=self.activation_hold_seconds)
             elapsed = time.time() - start_time
             logger.info(
                 "   ✅ Microphone activation завершена за %.2f сек (ожидалось %.2f сек)",
                 elapsed,
                 self.activation_hold_seconds
             )
-            # Отдельная пауза НЕ нужна - функция уже подождала
         else:
             logger.info("   Пропускаем (разрешение уже решено)")
 
@@ -211,22 +257,19 @@ class FirstRunPermissionsIntegration:
         logger.info("♿ [FIRST_RUN_PERMISSIONS] Проверка Accessibility...")
         acc_status = check_accessibility_status()
         logger.info(f"   Статус: {acc_status.value}")
-
         if acc_status == PermissionStatus.NOT_DETERMINED:
             logger.info(
                 "   Активируем Accessibility с hold_duration=%s сек...",
                 self.activation_hold_seconds
             )
             start_time = time.time()
-            # activate_accessibility держит паузу внутри себя
-            success = await activate_accessibility(hold_duration=self.activation_hold_seconds)
+            await activate_accessibility(hold_duration=self.activation_hold_seconds)
             elapsed = time.time() - start_time
             logger.info(
                 "   ✅ Accessibility activation завершена за %.2f сек (ожидалось %.2f сек)",
                 elapsed,
                 self.activation_hold_seconds
             )
-            # Отдельная пауза НЕ нужна - функция уже подождала
         else:
             logger.info("   Пропускаем (разрешение уже решено)")
 
@@ -234,14 +277,13 @@ class FirstRunPermissionsIntegration:
         logger.info("⌨️ [FIRST_RUN_PERMISSIONS] Проверка Input Monitoring...")
         input_status = check_input_monitoring_status()
         logger.info(f"   Статус: {input_status.value}")
-
         if input_status == PermissionStatus.NOT_DETERMINED:
             logger.info(
                 "   Активируем Input Monitoring с hold_duration=%s сек...",
                 self.activation_hold_seconds
             )
             start_time = time.time()
-            success = await activate_input_monitoring(hold_duration=self.activation_hold_seconds)
+            await activate_input_monitoring(hold_duration=self.activation_hold_seconds)
             elapsed = time.time() - start_time
             logger.info(
                 "   ✅ Input Monitoring activation завершена за %.2f сек (ожидалось %.2f сек)",
@@ -255,29 +297,93 @@ class FirstRunPermissionsIntegration:
         logger.info("📺 [FIRST_RUN_PERMISSIONS] Проверка Screen Capture...")
         screen_status = check_screen_capture_status()
         logger.info(f"   Статус: {screen_status.value}")
-
         if screen_status == PermissionStatus.NOT_DETERMINED:
             logger.info(
                 "   Активируем Screen Capture с hold_duration=%s сек...",
                 self.activation_hold_seconds
             )
             start_time = time.time()
-            # activate_screen_capture держит паузу внутри себя
-            success = await activate_screen_capture(hold_duration=self.activation_hold_seconds)
+            await activate_screen_capture(hold_duration=self.activation_hold_seconds)
             elapsed = time.time() - start_time
             logger.info(
                 "   ✅ Screen Capture activation завершена за %.2f сек (ожидалось %.2f сек)",
                 elapsed,
                 self.activation_hold_seconds
             )
-            # Отдельная пауза НЕ нужна - функция уже подождала
         else:
             logger.info("   Пропускаем (разрешение уже решено)")
 
         logger.info("✅ [FIRST_RUN_PERMISSIONS] Все разрешения обработаны")
-        
-        # Сбрасываем флаг процесса после завершения
+
+    async def request_restart(self, *, session_id: Optional[str] = None) -> bool:
+        """
+        Публичный API для запроса перезапуска приложения.
+
+        Args:
+            session_id: ID сессии для логирования (опционально)
+
+        Returns:
+            True если перезапуск успешно инициирован, False в противном случае
+        """
+        session = session_id or self._restart_session_id or "unknown"
+        logger.info(f"🔄 [FIRST_RUN_PERMISSIONS] Инициирован перезапуск (session={session})")
+
+        try:
+            handler = PermissionsRestartHandler()
+            success = await handler.trigger_restart(
+                reason="first_run_completed",
+                permissions=("microphone", "accessibility", "input_monitoring", "screen_capture"),
+            )
+
+            if not success:
+                logger.warning(
+                    "⚠️ [FIRST_RUN_PERMISSIONS] Перезапуск не выполнен (возможно dry-run режим). session_id=%s",
+                    session,
+                )
+                # Fallback: сбрасываем флаг чтобы не блокировать интеграции
+                self._handle_restart_failure()
+                return False
+
+            return True
+
+        except Exception as exc:
+            logger.error(
+                "❌ [FIRST_RUN_PERMISSIONS] Ошибка перезапуска (session_id=%s): %s",
+                session,
+                exc,
+            )
+            # Fallback: сбрасываем флаг чтобы не блокировать интеграции
+            self._handle_restart_failure()
+            return False
+
+    async def _force_restart(self, *, session_id: str) -> None:
+        """
+        DEPRECATED: Используйте request_restart() вместо этого.
+        Оставлено для обратной совместимости.
+        """
+        await self.request_restart(session_id=session_id)
+
+    def _set_restart_flag(self) -> None:
+        try:
+            self._restart_flag.touch()
+            logger.info("✅ [FIRST_RUN_PERMISSIONS] Флаг restart_completed.flag установлен")
+        except Exception as exc:
+            logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Не удалось установить restart_completed.flag: {exc}")
+
+    def _clear_restart_flag(self) -> None:
+        try:
+            if self._restart_flag.exists():
+                self._restart_flag.unlink()
+                logger.debug("[FIRST_RUN_PERMISSIONS] restart_completed.flag удалён")
+        except Exception as exc:
+            logger.warning(f"[FIRST_RUN_PERMISSIONS] Не удалось удалить restart_completed.flag: {exc}")
+
+    def _handle_restart_failure(self) -> None:
+        """Fallback: разблокируем интеграции и очищаем флаг."""
         self._permissions_in_progress = False
+        self._restart_session_id = None
+        self._clear_restart_flag()
+        self.state_manager.set_state_data("permissions_restart_pending", False)
 
     def get_status(self) -> Dict[str, Any]:
         """Получить статус интеграции"""

@@ -285,7 +285,7 @@
 
 - Логи: `log.md`
 - Архитектура: `Docs/ARCHITECTURE_OVERVIEW.md`
-- Правила разработки: `Docs/NEXY_CLIENT_DEVELOPMENT_RULES.md`
+- Правила разработки: `.cursorrules`
 - Ключевые файлы:
   - `integration/core/simple_module_coordinator.py`
   - `integration/integrations/update_notification_integration.py`

@@ -73,7 +73,7 @@ accessibility:
 ### 1. Файлы уже созданы:
 - ✅ `client/integration/integrations/voiceover_ducking_integration.py`
 - ✅ `client/modules/voiceover_control/core/controller.py` (обновлен)
-- ✅ `client/config/unified_config.yaml` (обновлен)
+- ✅ `config/unified_config.yaml` (обновлен)
 - ✅ `client/integration/core/simple_module_coordinator.py` (обновлен)
 
 ### 2. Порядок инициализации:
@@ -213,7 +213,7 @@ grep "Command+F5" logs/app.log
 
 - **Интеграция**: `client/integration/integrations/voiceover_ducking_integration.py`
 - **Контроллер**: `client/modules/voiceover_control/core/controller.py`
-- **Конфигурация**: `client/config/unified_config.yaml`
+- **Конфигурация**: `config/unified_config.yaml`
 - **Координатор**: `client/integration/core/simple_module_coordinator.py`
 - **Тесты**: `client/modules/voiceover_control/tests/`
 - **Документация**: `client/modules/voiceover_control/README.md`

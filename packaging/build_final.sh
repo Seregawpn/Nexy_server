@@ -460,8 +460,15 @@ productbuild --package-path "$DIST_DIR" \
     --distribution packaging/distribution.xml \
     "$DIST_DIR/$APP_NAME-distribution.pkg"
 
+TIMESTAMP_MODE=${TIMESTAMP_MODE:-auto}
+if [[ "$TIMESTAMP_MODE" == "none" ]]; then
+    TIMESTAMP_FLAG="--timestamp=none"
+else
+    TIMESTAMP_FLAG="--timestamp"
+fi
+
 log "Подписываем PKG правильным сертификатом..."
-productsign --sign "$INSTALLER_IDENTITY" \
+productsign --sign "$INSTALLER_IDENTITY" $TIMESTAMP_FLAG \
     "$DIST_DIR/$APP_NAME-distribution.pkg" \
     "$DIST_DIR/$APP_NAME.pkg"
 
@@ -470,7 +477,7 @@ clean_appledouble_from_pkg "$DIST_DIR/$APP_NAME.pkg"
 
 # Переподписываем PKG после очистки AppleDouble
 log "Переподписываем PKG после очистки..."
-productsign --sign "$INSTALLER_IDENTITY" \
+productsign --sign "$INSTALLER_IDENTITY" $TIMESTAMP_FLAG \
     "$DIST_DIR/$APP_NAME.pkg" \
     "$DIST_DIR/$APP_NAME-final-signed.pkg"
 mv "$DIST_DIR/$APP_NAME-final-signed.pkg" "$DIST_DIR/$APP_NAME.pkg"

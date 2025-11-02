@@ -116,6 +116,5 @@ spctl --assess --type install "/path/to/Nexy-signed.pkg"
 ---
 
 ## 🔗 Ссылки на общие гайды
-- PACKAGING_README.md (в корне)
-- PRODUCTION_BUILD_GUIDE.md (в корне)
-- client/Docs/GLOBAL_DELIVERY_PLAN.md (этапы поставки, Azure/AppCast)
+- Docs/PACKAGING_FINAL_GUIDE.md (единственная инструкция по упаковке)
+- Docs/GLOBAL_DELIVERY_PLAN.md (этапы поставки, Azure/AppCast)

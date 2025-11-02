@@ -1,0 +1,195 @@
+"""
+Selectors: pure functions for checking state snapshots.
+
+This module provides read-only selectors that extract boolean conditions
+from Snapshot objects. All state access should go through selectors instead
+of direct state inspection.
+
+See .cursorrules section 21.x for architecture details.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Literal
+
+
+class PermissionStatus(Enum):
+    """Permission status values."""
+
+    GRANTED = "granted"
+    DENIED = "denied"
+    PROMPT_BLOCKED = "prompt_blocked"
+
+
+class DeviceStatus(Enum):
+    """Device status values."""
+
+    DEFAULT_OK = "default_ok"
+    BUSY = "busy"
+
+
+class NetworkStatus(Enum):
+    """Network status values."""
+
+    ONLINE = "online"
+    OFFLINE = "offline"
+
+
+class AppMode(Enum):
+    """Application mode values."""
+
+    SLEEPING = "SLEEPING"
+    LISTENING = "LISTENING"
+    PROCESSING = "PROCESSING"
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """
+    Immutable snapshot of system state axes.
+
+    This is the single source of truth for decision-making. All selectors
+    operate on Snapshot instances rather than accessing state directly.
+    """
+
+    # Permission axes
+    perm_mic: PermissionStatus
+    perm_screen: PermissionStatus
+    perm_accessibility: PermissionStatus
+
+    # Device axes
+    device_input: DeviceStatus
+
+    # Network axis
+    network: NetworkStatus
+
+    # Application state axes
+    first_run: bool
+    app_mode: AppMode
+
+    # Restart state axis (Phase 2 - ADR-001)
+    restart_pending: bool = False  # Default False for backward compatibility
+
+
+# Permission selectors
+
+
+def mic_ready(s: Snapshot) -> bool:
+    """Check if microphone permission is granted."""
+    return s.perm_mic == PermissionStatus.GRANTED
+
+
+def screen_ready(s: Snapshot) -> bool:
+    """Check if screen capture permission is granted."""
+    return s.perm_screen == PermissionStatus.GRANTED
+
+
+def accessibility_ready(s: Snapshot) -> bool:
+    """Check if accessibility permission is granted."""
+    return s.perm_accessibility == PermissionStatus.GRANTED
+
+
+def all_permissions_ready(s: Snapshot) -> bool:
+    """Check if all critical permissions are granted."""
+    return mic_ready(s) and screen_ready(s) and accessibility_ready(s)
+
+
+# Device selectors
+
+
+def device_idle(s: Snapshot) -> bool:
+    """Check if input device is idle (not busy)."""
+    return s.device_input == DeviceStatus.DEFAULT_OK
+
+
+def device_busy(s: Snapshot) -> bool:
+    """Check if input device is busy."""
+    return s.device_input == DeviceStatus.BUSY
+
+
+# Network selectors
+
+
+def network_online(s: Snapshot) -> bool:
+    """Check if network is online."""
+    return s.network == NetworkStatus.ONLINE
+
+
+def network_offline(s: Snapshot) -> bool:
+    """Check if network is offline."""
+    return s.network == NetworkStatus.OFFLINE
+
+
+# Application state selectors
+
+
+def is_first_run(s: Snapshot) -> bool:
+    """Check if this is the first run of the application."""
+    return s.first_run
+
+
+def is_sleeping_mode(s: Snapshot) -> bool:
+    """Check if application is in SLEEPING mode."""
+    return s.app_mode == AppMode.SLEEPING
+
+
+def is_listening_mode(s: Snapshot) -> bool:
+    """Check if application is in LISTENING mode."""
+    return s.app_mode == AppMode.LISTENING
+
+
+def is_processing_mode(s: Snapshot) -> bool:
+    """Check if application is in PROCESSING mode."""
+    return s.app_mode == AppMode.PROCESSING
+
+
+# Restart state selectors (Phase 2 - ADR-001)
+
+
+def is_restart_pending(s: Snapshot) -> bool:
+    """Check if application restart is pending after first-run permissions."""
+    return s.restart_pending
+
+
+def is_first_run_restart_pending(s: Snapshot) -> bool:
+    """
+    Check if this is first run AND restart is pending.
+
+    This is the critical condition that blocks integration startup
+    until the application restarts.
+    """
+    return s.first_run and s.restart_pending
+
+
+# Composite selectors
+
+
+def can_start_listening(s: Snapshot) -> bool:
+    """
+    Check if listening can be started (permissions + device + mode + not first_run).
+
+    Блокирует активацию во время процедуры первого запуска (first_run).
+    """
+    return (
+        not is_first_run(s)  # КРИТИЧНО: Блокируем активацию во время first_run
+        and mic_ready(s)
+        and device_idle(s)
+        and (is_sleeping_mode(s) or is_listening_mode(s))
+    )
+
+
+def can_process_audio(s: Snapshot) -> bool:
+    """Check if audio processing can proceed (permissions + network + mode)."""
+    return (
+        mic_ready(s)
+        and network_online(s)
+        and (is_listening_mode(s) or is_processing_mode(s))
+    )
+
+
+def should_degrade_offline(s: Snapshot) -> bool:
+    """Check if processing should degrade due to offline network."""
+    return network_offline(s) and is_processing_mode(s)
+

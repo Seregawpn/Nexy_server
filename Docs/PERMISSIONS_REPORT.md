@@ -1,0 +1,21 @@
+# 📋 Permissions Report
+> Единственный источник истины по критическим разрешениям Nexy. Обновляем документ, когда меняется UX запросов, список читателей или процедуры сброса.
+
+| Permission | Статус (dev / prod) | Кто пишет | Кто читает | Как сбросить | Тест-скрипт / план | Метрики |
+|------------|----------------------|-----------|------------|---------------|--------------------|---------|
+| microphone | Dev: выдаём при первом запуске через FirstRunPermissionsIntegration. Prod: хранится в TCC, требуется при обновлениях. | `modules.permissions.first_run`, `integration/integrations/permission_restart_integration.py` (мониторинг) | `modules/voice_recognition`, `integration/workflows/listening_workflow.py`, `modules/permission_restart` | System Settings → Privacy & Security → Microphone → Nexy.app; CLI: `tccutil reset Microphone com.nexy.assistant` | `tests/request_mic_permission.py` | `tcc_prompt_duration_ms`, `permission_flow_success` |
+| accessibility | Dev: FirstRunPermissionsIntegration, флаг `permissions_first_run_completed.flag`. Prod: требуется для VoiceOver и горячих клавиш. | `modules.permissions.first_run`, `integration/integrations/permission_restart_integration.py` (мониторинг) | `modules/voiceover_control`, `modules/permission_restart`, `integration/integrations/tray_controller_integration.py` | System Settings → Privacy & Security → Accessibility → Nexy.app; CLI: `tccutil reset Accessibility com.nexy.assistant` | `tests/check_tcc_status.sh` | `tcc_prompt_duration_ms`, `permission_flow_success` |
+| input_monitoring | Dev: FirstRunPermissionsIntegration, проверяется при старте. Prod: обязателен для hotkeys. | `modules.permissions.first_run`, `integration/integrations/permission_restart_integration.py` | `modules/input_processing`, `modules/permission_restart`, `integration/integrations/mode_management_integration.py` | System Settings → Privacy & Security → Input Monitoring → Nexy.app; CLI: `tccutil reset ListenEvent com.nexy.assistant` | `tests/check_tcc_status.sh` | `tcc_prompt_duration_ms`, `permission_flow_success`, `device_busy_rate` |
+| screen_capture | Dev: FirstRunPermissionsIntegration, повторный запрос при необходимости. Prod: обязателен для PROCESSING скриншотов. | `modules.permissions.first_run`, `integration/integrations/screenshot_capture_integration.py` | `modules/screenshot_capture`, `integration/workflows/processing_workflow.py`, `modules/permission_restart` | System Settings → Privacy & Security → Screen Recording → Nexy.app; CLI: `tccutil reset ScreenCapture com.nexy.assistant` | `tests/check_tcc_status.sh` | `tcc_prompt_duration_ms`, `permission_flow_success`, `screenshot_capture_success` |
+
+## Процедура обновления отчёта
+- При изменении UX или порядка запросов сначала фиксируем изменения в `Docs/CURRENT_STATUS_REPORT.md`, затем синхронизируем таблицу.
+- Добавляя новую ось в `STATE_CATALOG.md`, отражаем её связь с разрешениями и обновляем колонку «Кто читает».
+- При появлении автоматизированных тестов указываем путь в колонке «Тест-скрипт / план».
+- Метрики храним в системе мониторинга; названия в таблице совпадают с ключами, используемыми в логах/дашбордах.
+
+## Быстрые проверки (dev)
+- `tests/open_microphone_settings.sh` — быстрый доступ к настройкам микрофона.
+- `tests/test_permission_monitoring.py` — наблюдение за изменением Accessibility / Input Monitoring.
+- `run_diagnostics.py` — агрегированная проверка ключевых интеграций, включает раздел «Permissions».
+

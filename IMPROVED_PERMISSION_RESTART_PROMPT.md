@@ -251,7 +251,7 @@
 
 - Логи: `log.md`
 - Архитектура: `Docs/ARCHITECTURE_OVERVIEW.md`
-- Правила разработки: `Docs/NEXY_CLIENT_DEVELOPMENT_RULES.md`
+- Правила разработки: `.cursorrules`
 - Ключевые файлы:
   - `integration/integrations/first_run_permissions_integration.py`
   - `integration/integrations/permission_restart_integration.py`

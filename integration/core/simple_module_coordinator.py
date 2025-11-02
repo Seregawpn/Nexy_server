@@ -38,6 +38,14 @@ from integration.integrations.signal_integration import SignalsIntegrationConfig
 from integration.integrations.welcome_message_integration import WelcomeMessageIntegration
 from integration.integrations.voiceover_ducking_integration import VoiceOverDuckingIntegration
 from integration.integrations.first_run_permissions_integration import FirstRunPermissionsIntegration
+from integration.core.selectors import (
+    Snapshot,
+    PermissionStatus,
+    DeviceStatus,
+    NetworkStatus,
+    AppMode,
+)
+from integration.core.gateways import decide_continue_integration_startup, Decision
 
 # Импорты core компонентов
 from integration.core.event_bus import EventBus, EventPriority
@@ -86,6 +94,7 @@ class SimpleModuleCoordinator:
         
         # Состояние процесса разрешений
         self._permissions_in_progress = False
+        self._restart_pending = False  # Флаг ожидания перезапуска после first_run
         
     async def initialize(self) -> bool:
         """Инициализация всех компонентов и интеграций"""
@@ -462,12 +471,14 @@ class SimpleModuleCoordinator:
                 pass
 
             # НОВОЕ: Подписка на события разрешений
-            await self.event_bus.subscribe("permissions.first_run_started", 
+            await self.event_bus.subscribe("permissions.first_run_started",
                                           self._on_permissions_started, EventPriority.HIGH)
-            await self.event_bus.subscribe("permissions.first_run_completed", 
+            await self.event_bus.subscribe("permissions.first_run_completed",
                                           self._on_permissions_completed, EventPriority.HIGH)
-            await self.event_bus.subscribe("permissions.first_run_failed", 
+            await self.event_bus.subscribe("permissions.first_run_failed",
                                           self._on_permissions_failed, EventPriority.HIGH)
+            await self.event_bus.subscribe("permissions.first_run_restart_pending",
+                                          self._on_permissions_restart_pending, EventPriority.CRITICAL)
 
             print("✅ Координация настроена")
             
@@ -522,12 +533,58 @@ class SimpleModuleCoordinator:
                         print("❌ Дублирование обнаружено - приложение завершено")
                         return False
                     
-                    # НОВОЕ: Блокируем запуск остальных интеграций до завершения first_run_permissions
+                    # КРИТИЧНО: Проверяем запрошен ли перезапуск после first_run_permissions
                     if name == "first_run_permissions" and success:
-                        print("⏳ Ожидание завершения запроса разрешений...")
-                        # Ждем завершения процесса запроса разрешений
-                        await self._wait_for_permissions_completion()
-                        print("✅ Запрос разрешений завершен, продолжаем запуск...")
+                        # Даём время обработчикам событий сработать
+                        await asyncio.sleep(0.5)
+
+                        snapshot = Snapshot(
+                            perm_mic=PermissionStatus.GRANTED,
+                            perm_screen=PermissionStatus.GRANTED,
+                            perm_accessibility=PermissionStatus.GRANTED,
+                            device_input=DeviceStatus.DEFAULT_OK,
+                            network=NetworkStatus.ONLINE,
+                            first_run=self._permissions_in_progress,
+                            app_mode=AppMode.SLEEPING,
+                            restart_pending=self._restart_pending or bool(
+                                self.state_manager.get_state_data("permissions_restart_pending", False)
+                            ),
+                        )
+
+                        decision = decide_continue_integration_startup(snapshot)
+
+                        if decision == Decision.ABORT:
+                            logger.info(
+                                "decision=abort reason=first_run_restart_pending "
+                                f"ctx={{firstRun={snapshot.first_run},restart_pending={snapshot.restart_pending},"
+                                f"appMode={snapshot.app_mode.value}}} source=coordinator duration_ms=0"
+                            )
+                            print("🔄 [PERMISSIONS] Первый запуск разрешений - запуск перезапуска приложения")
+                            print("⏹️ [PERMISSIONS] Остальные интеграции НЕ будут запущены")
+
+                            first_run_integration = self.integrations.get("first_run_permissions")
+                            if first_run_integration and hasattr(first_run_integration, "request_restart"):
+                                restart_success = await first_run_integration.request_restart()
+                                if not restart_success:
+                                    logger.warning(
+                                        "⚠️ [PERMISSIONS] Перезапуск не удался - продолжаем запуск интеграций"
+                                    )
+                                    print("⚠️ [PERMISSIONS] Перезапуск не удался - продолжаем запуск")
+                                    self._permissions_in_progress = False
+                                    self._restart_pending = False
+                                    self.state_manager.set_state_data("permissions_restart_pending", False)
+                                else:
+                                    return True
+                            else:
+                                logger.error(
+                                    "❌ [PERMISSIONS] FirstRunPermissionsIntegration не поддерживает request_restart()"
+                                )
+                                print("❌ [PERMISSIONS] Не удалось вызвать перезапуск - продолжаем запуск")
+                                self._permissions_in_progress = False
+                                self._restart_pending = False
+                                self.state_manager.set_state_data("permissions_restart_pending", False)
+                        else:
+                            print("✅ [PERMISSIONS] Первый запуск уже завершён ранее, продолжаем запуск...")
                     
                     if not success:
                         print(f"❌ Ошибка запуска {name}")
@@ -797,27 +854,24 @@ class SimpleModuleCoordinator:
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_failed: {e}")
 
-    async def _wait_for_permissions_completion(self):
-        """Ждет завершения процесса запроса разрешений"""
+    async def _on_permissions_restart_pending(self, event):
+        """Обработка события перезапуска после первого запуска"""
         try:
-            # Ждем пока процесс разрешений не завершится
-            timeout_seconds = 300  # 5 минут максимум
-            check_interval = 0.1   # Проверяем каждые 100мс
-            elapsed = 0.0
-            
-            while self._permissions_in_progress and elapsed < timeout_seconds:
-                await asyncio.sleep(check_interval)
-                elapsed += check_interval
-            
-            if elapsed >= timeout_seconds:
-                logger.warning("⚠️ [PERMISSIONS] Таймаут ожидания завершения разрешений")
-                self._permissions_in_progress = False  # Принудительно сбрасываем флаг
-            else:
-                logger.debug(f"✅ [PERMISSIONS] Ожидание завершено за {elapsed:.1f} секунд")
-                
+            data = (event or {}).get("data", {})
+            session_id = data.get("session_id", "unknown")
+            print(f"🔄 [PERMISSIONS] Приложение будет перезапущено (session={session_id})")
+            print(f"⏹️ [PERMISSIONS] Остальные интеграции НЕ будут запущены")
+            logger.info(f"🔄 [PERMISSIONS] Перезапуск приложения запрошен (session={session_id})")
+
+            # Устанавливаем флаг ожидания перезапуска
+            # Это сигнал для метода start() остановить запуск интеграций
+            self._restart_pending = True
+            self.state_manager.set_state_data("permissions_restart_pending", True)
+
+            # НЕ сбрасываем _permissions_in_progress - это предотвратит запуск интеграций
+            # Флаг сбросится автоматически при следующем запуске приложения
         except Exception as e:
-            logger.error(f"❌ [PERMISSIONS] Ошибка ожидания завершения разрешений: {e}")
-            self._permissions_in_progress = False  # Принудительно сбрасываем флаг
+            logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_restart_pending: {e}")
 
     def get_status(self) -> Dict[str, Any]:
         """Получить статус всех компонентов"""

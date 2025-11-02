@@ -180,6 +180,10 @@ integrations:
     max_restart_attempts: 3
     respect_active_sessions: true
     respect_updates: true
+    # Polling enabled: false by default to avoid conflicts with Updater and reduce EventBus load
+    # Enable only for debugging/canary rollout
+    polling_enabled: false
+    poll_interval_sec: 3.0  # Only used if polling_enabled: true
   update_notification:
     enabled: true
     priority: 15
@@ -256,6 +260,8 @@ permissions:
   first_run:
     enabled: true                         # Включить запрос разрешений при первом запуске
     activation_hold_duration_sec: 13.0    # Сколько держать открытым каждый запрос разрешения (13 секунд)
+    wait_for_grant: true                  # Опрос статуса разрешения после активации (ждём GRANTED или таймаут)
+    grant_wait_timeout_sec: 30            # Максимальное время ожидания GRANTED статуса (30 секунд)
 
   # Управление последовательностью запросов разрешений (устаревшее, оставлено для совместимости)
   sequential: true                      # Запрашивать разрешения по очереди (не одновременно)
@@ -423,3 +429,25 @@ permission_override:
     assume_granted: false
   development:
     assume_granted: true
+
+# Feature flags and kill-switches
+# See .cursorrules section 19 for rollout policy
+features:
+  # Rollout flags: stages 1% → 25% → 100%
+  # Example: sequential TCC prompts (gradual rollout)
+  serial_tcc_prompts:
+    enabled: false  # Currently disabled (1% → will move to 25% → 100%)
+    rollout_percentage: 1
+  
+  # Kill-switches: override feature flags (immediate shutdown)
+  # Format: ks_<feature_name>
+  # If ks_* == true, feature is disabled regardless of feature flag
+  ks_serial_tcc:
+    enabled: false  # Kill-switch for serial_tcc_prompts (if true, disables regardless of feature flag)
+  
+  # Example pattern for new features:
+  # new_feature_name:
+  #   enabled: false
+  #   rollout_percentage: 0
+  # ks_new_feature_name:
+  #   enabled: false

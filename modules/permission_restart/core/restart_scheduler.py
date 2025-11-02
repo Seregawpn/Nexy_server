@@ -61,6 +61,9 @@ class RestartScheduler:
         self._latest_reason: str = "critical_permissions_granted"
         self._attempts = 0
 
+        # Флаг для форсирования перезапуска после first_run (независимо от режима SLEEPING)
+        self._is_first_run_restart = False
+
     async def maybe_schedule_restart(self, transition: PermissionTransition) -> Optional[RestartRequest]:
         """
         Request scheduling of a restart if constraints allow it.
@@ -223,6 +226,14 @@ class RestartScheduler:
 
     def _is_idle_mode(self) -> bool:
         try:
+            # Специальный случай: перезапуск после first_run
+            # Форсируем перезапуск независимо от текущего режима приложения
+            if self._is_first_run_restart:
+                logger.debug(
+                    "[PERMISSION_RESTART] First run restart - bypassing SLEEPING mode check"
+                )
+                return True
+
             current_mode = self._state_manager.get_current_mode()
             return current_mode == AppMode.SLEEPING
         except Exception:  # pragma: no cover
