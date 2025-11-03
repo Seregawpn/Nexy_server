@@ -11,7 +11,7 @@
       "patternProperties": {
         ".*": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {"oneOf": [{"type": "string"}, {"type": "boolean"}, {"type": "number"}]}
         }
       }
     },

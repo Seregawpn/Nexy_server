@@ -44,11 +44,28 @@ def _log_decision(
     """Unified decision log formatter.
 
     Always logs ctx={mic, screen, device, network, firstRun, appMode} with optional duration_ms.
+    Also includes new axes if present in Snapshot: restart_pending, update_in_progress.
     """
-    ctx = (
-        f"ctx={{mic={s.perm_mic.value},screen={s.perm_screen.value},device={s.device_input.value},"
-        f"network={s.network.value},firstRun={s.first_run},appMode={s.app_mode.value}}}"
-    )
+    # Include all axes in context: mic, screen, device, network, firstRun, appMode
+    # Also include new axes if present in Snapshot: restart_pending, update_in_progress
+    restart_pending_val = getattr(s, 'restart_pending', None)
+    update_in_progress_val = getattr(s, 'update_in_progress', None)
+    
+    ctx_parts = [
+        f"mic={s.perm_mic.value}",
+        f"screen={s.perm_screen.value}",
+        f"device={s.device_input.value}",
+        f"network={s.network.value}",
+        f"firstRun={s.first_run}",
+        f"appMode={s.app_mode.value}",
+    ]
+    
+    if restart_pending_val is not None:
+        ctx_parts.append(f"restart_pending={restart_pending_val}")
+    if update_in_progress_val is not None:
+        ctx_parts.append(f"update_in_progress={update_in_progress_val}")
+    
+    ctx = f"ctx={{{','.join(ctx_parts)}}}"
     reason_part = f" reason={reason}" if reason else ""
     duration_part = f" duration_ms={int(duration_ms)}" if duration_ms is not None else ""
     msg = f"decision={(decision.value if isinstance(decision, Decision) else decision)}{reason_part} {ctx} source={source}{duration_part}"

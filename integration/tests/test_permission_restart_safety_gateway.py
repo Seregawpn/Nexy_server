@@ -37,10 +37,11 @@ class TestDecidePermissionRestartSafety:
             first_run=False,
             app_mode=AppMode.SLEEPING,
             restart_pending=False,
+            update_in_progress=True,  # update_in_progress blocks
         )
 
         with caplog.at_level(logging.INFO):
-            decision = decide_permission_restart_safety(snapshot, update_in_progress=True)
+            decision = decide_permission_restart_safety(snapshot)
 
         assert decision == Decision.ABORT
 
@@ -68,10 +69,11 @@ class TestDecidePermissionRestartSafety:
             first_run=True,  # first_run blocks
             app_mode=AppMode.SLEEPING,
             restart_pending=True,  # restart_pending blocks
+            update_in_progress=False,
         )
 
         with caplog.at_level(logging.INFO):
-            decision = decide_permission_restart_safety(snapshot, update_in_progress=False)
+            decision = decide_permission_restart_safety(snapshot)
 
         assert decision == Decision.ABORT
 
@@ -99,10 +101,11 @@ class TestDecidePermissionRestartSafety:
             first_run=False,
             app_mode=AppMode.SLEEPING,
             restart_pending=False,
+            update_in_progress=False,
         )
 
         with caplog.at_level(logging.DEBUG):
-            decision = decide_permission_restart_safety(snapshot, update_in_progress=False)
+            decision = decide_permission_restart_safety(snapshot)
 
         assert decision == Decision.START
 
@@ -126,10 +129,11 @@ class TestDecidePermissionRestartSafety:
             first_run=False,  # Would allow START if not for update_in_progress
             app_mode=AppMode.SLEEPING,
             restart_pending=False,
+            update_in_progress=True,  # update_in_progress blocks
         )
 
         with caplog.at_level(logging.INFO):
-            decision = decide_permission_restart_safety(snapshot, update_in_progress=True)
+            decision = decide_permission_restart_safety(snapshot)
 
         assert decision == Decision.ABORT
         assert "reason=update_in_progress" in caplog.text
@@ -145,11 +149,11 @@ class TestDecidePermissionRestartSafety:
             first_run=True,
             app_mode=AppMode.SLEEPING,
             restart_pending=True,
+            update_in_progress=True,  # Both conditions are true, but first_run_restart_pending should be checked first
         )
 
         with caplog.at_level(logging.INFO):
-            # Both conditions are true, but first_run_restart_pending should be checked first
-            decision = decide_permission_restart_safety(snapshot, update_in_progress=True)
+            decision = decide_permission_restart_safety(snapshot)
 
         assert decision == Decision.ABORT
         assert "reason=first_run_restart_pending" in caplog.text
@@ -165,16 +169,18 @@ class TestDecidePermissionRestartSafety:
             first_run=True,
             app_mode=AppMode.PROCESSING,
             restart_pending=True,
+            update_in_progress=False,
         )
 
         with caplog.at_level(logging.INFO):
-            decide_permission_restart_safety(snapshot, update_in_progress=False)
+            decide_permission_restart_safety(snapshot)
 
         log_text = caplog.text
 
         # Verify canonical format with regex
         # Note: appMode values are lowercase (sleeping/listening/processing) from AppMode enum
-        pattern = r"decision=(start|abort)\s+(reason=\w+\s+)?ctx=\{mic=(granted|denied|prompt_blocked),screen=(granted|denied|prompt_blocked),device=(default_ok|busy),network=(online|offline),firstRun=(True|False),appMode=(sleeping|listening|processing)\}\s+source=permission_restart_gateway"
+        # New axes (restart_pending, update_in_progress) are optional and may be present in logs
+        pattern = r"decision=(start|abort)\s+(reason=\w+\s+)?ctx=\{mic=(granted|denied|prompt_blocked),screen=(granted|denied|prompt_blocked),device=(default_ok|busy),network=(online|offline),firstRun=(True|False),appMode=(sleeping|listening|processing)(?:,restart_pending=(True|False))?(?:,update_in_progress=(True|False))?\}\s+source=permission_restart_gateway"
         assert re.search(pattern, log_text), f"Log does not match canonical format: {log_text}"
 
         # Verify all context values are present
@@ -184,4 +190,9 @@ class TestDecidePermissionRestartSafety:
         assert f"network={snapshot.network.value}" in log_text
         assert f"firstRun={snapshot.first_run}" in log_text
         assert f"appMode={snapshot.app_mode.value}" in log_text
+        # New axes may be present in logs (restart_pending, update_in_progress)
+        if hasattr(snapshot, 'restart_pending'):
+            assert f"restart_pending={snapshot.restart_pending}" in log_text
+        if hasattr(snapshot, 'update_in_progress'):
+            assert f"update_in_progress={snapshot.update_in_progress}" in log_text
 

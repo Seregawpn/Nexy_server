@@ -185,7 +185,6 @@ class PermissionRestartGateway:
 
 def decide_permission_restart_safety(
     snapshot: Snapshot,
-    update_in_progress: bool,
 ) -> Decision:
     """
     Decide whether it's safe to schedule a permission restart.
@@ -196,8 +195,7 @@ def decide_permission_restart_safety(
     - start: if all conditions are met
 
     Args:
-        snapshot: Current system state snapshot
-        update_in_progress: Whether an update is currently in progress
+        snapshot: Current system state snapshot (includes update_in_progress axis)
 
     Returns:
         Decision.START if restart is safe, Decision.ABORT otherwise
@@ -214,7 +212,7 @@ def decide_permission_restart_safety(
         return Decision.ABORT
 
     # Graceful: update in progress blocks restart
-    if update_in_progress:
+    if snapshot.update_in_progress:
         _log_decision(
             level="info",
             decision=Decision.ABORT,

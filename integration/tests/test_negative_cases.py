@@ -156,11 +156,12 @@ class TestNegativeCases:
             first_run=False,
             app_mode=AppMode.SLEEPING,
             restart_pending=False,
+            update_in_progress=True,  # update_in_progress blocks
         )
 
         from integration.core.gateways.permission_gateways import decide_permission_restart_safety
 
-        decision = decide_permission_restart_safety(snapshot, update_in_progress=True)
+        decision = decide_permission_restart_safety(snapshot)
 
         # Verify restart is blocked
         assert decision == Decision.ABORT, "Permission restart should be blocked when update is in progress"
@@ -176,11 +177,12 @@ class TestNegativeCases:
             first_run=True,  # first_run blocks
             app_mode=AppMode.SLEEPING,
             restart_pending=True,  # restart_pending blocks
+            update_in_progress=False,
         )
 
         from integration.core.gateways.permission_gateways import decide_permission_restart_safety
 
-        decision = decide_permission_restart_safety(snapshot, update_in_progress=False)
+        decision = decide_permission_restart_safety(snapshot)
 
         # Verify restart is blocked
         assert decision == Decision.ABORT, "Permission restart should be blocked when first_run=True & restart_pending=True"

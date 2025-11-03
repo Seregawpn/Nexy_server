@@ -67,6 +67,7 @@ class Snapshot:
 
     # Restart state axis (Phase 2 - ADR-001)
     restart_pending: bool = False  # Default False for backward compatibility
+    update_in_progress: bool = False  # Default False for backward compatibility
 
 
 # Permission selectors
@@ -253,6 +254,9 @@ def create_snapshot_from_state(
     
     # TODO: Get actual permission statuses from PermissionsIntegration if available
     
+    # Get update_in_progress status
+    update_in_progress = is_update_in_progress(state_manager)
+    
     return Snapshot(
         perm_mic=perm_mic,
         perm_screen=perm_screen,
@@ -262,6 +266,7 @@ def create_snapshot_from_state(
         first_run=first_run,
         app_mode=current_mode,
         restart_pending=restart_pending,
+        update_in_progress=update_in_progress,
     )
 
 

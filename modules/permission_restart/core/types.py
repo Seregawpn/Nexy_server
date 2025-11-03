@@ -22,8 +22,8 @@ class PermissionTransition:
     permission: PermissionType
     old_status: PermissionStatus
     new_status: PermissionStatus
-    session_id: Optional[str]
-    source: Optional[str]
+    session_id: Optional[str] = None
+    source: Optional[str] = None
 
 
 @dataclass(frozen=True)

@@ -19,9 +19,15 @@ class TestUpdaterInProgressChanged:
     """Test updater.in_progress.changed event contract."""
 
     @pytest.fixture
-    def event_bus(self):
-        """Create EventBus."""
-        return EventBus()
+    async def event_bus(self):
+        """Create EventBus with attached loop."""
+        bus = EventBus()
+        try:
+            loop = asyncio.get_running_loop()
+            bus.attach_loop(loop)
+        except RuntimeError:
+            pass
+        return bus
 
     @pytest.fixture
     def state_manager(self):
@@ -31,10 +37,15 @@ class TestUpdaterInProgressChanged:
     @pytest.fixture
     async def updater_integration(self, event_bus, state_manager):
         """Create UpdaterIntegration."""
-        config = {"updater": {"enabled": True}}
+        config = {"updater": {"enabled": True, "check_on_startup": False, "check_interval_sec": 3600}}
         integration = UpdaterIntegration(event_bus, state_manager, config)
         await integration.initialize()
-        return integration
+        yield integration
+        # Cleanup: stop the integration to cancel check_task
+        try:
+            await integration.stop()
+        except Exception:
+            pass
 
     @pytest.mark.anyio
     async def test_event_published_when_state_changes_to_true(self, event_bus, state_manager):

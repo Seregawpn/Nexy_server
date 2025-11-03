@@ -228,20 +228,20 @@ class PermissionRestartIntegration(BaseIntegration):
 
         # Check restart safety via gateway before scheduling
         try:
+            # snapshot already includes update_in_progress from create_snapshot_from_state
             snapshot = create_snapshot_from_state(self.state_manager)
-            update_in_progress = is_update_in_progress(self.state_manager)
             
             # Check kill-switch for first_run normalization
             try:
                 config = self._config_loader._load_config()
                 kill_switch = config.get("features", {}).get("ks_first_run_normalization", {}).get("enabled", False)
                 if not kill_switch:
-                    # Apply gateway check
-                    decision = decide_permission_restart_safety(snapshot, update_in_progress)
+                    # Apply gateway check (snapshot already includes update_in_progress axis)
+                    decision = decide_permission_restart_safety(snapshot)
                     if decision == Decision.ABORT:
                         logger.info(
                             "[PERMISSION_RESTART] Restart blocked by gateway (update_in_progress=%s, first_run_restart_pending=%s)",
-                            update_in_progress,
+                            snapshot.update_in_progress,
                             snapshot.first_run and snapshot.restart_pending,
                         )
                         return  # Don't schedule restart

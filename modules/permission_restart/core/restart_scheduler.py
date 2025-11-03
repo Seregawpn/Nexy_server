@@ -110,7 +110,13 @@ class RestartScheduler:
                 aggregated_permissions,
             )
             await self._publish_scheduled_event(request)
-            self._pending_task = asyncio.create_task(self._run_when_safe())
+            # Use running loop for task creation (avoids RuntimeError in tests)
+            try:
+                loop = asyncio.get_running_loop()
+                self._pending_task = loop.create_task(self._run_when_safe())
+            except RuntimeError:
+                # Fallback: if no running loop, create task directly (should not happen in normal flow)
+                self._pending_task = asyncio.create_task(self._run_when_safe())
             return request
 
     async def shutdown(self) -> None:

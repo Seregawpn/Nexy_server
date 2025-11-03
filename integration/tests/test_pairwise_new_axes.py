@@ -412,10 +412,11 @@ class TestPairwiseWithNewAxes:
             first_run=first_run,
             app_mode=app_mode,
             restart_pending=restart_pending,
+            update_in_progress=update_in_progress,
         )
 
         with caplog.at_level(logging.INFO if expected_decision == Decision.ABORT else logging.DEBUG):
-            decision = decide_permission_restart_safety(snapshot, update_in_progress)
+            decision = decide_permission_restart_safety(snapshot)
             assert decision == expected_decision, (
                 f"Expected {expected_decision}, got {decision}\n"
                 f"Context: first_run={first_run}, restart_pending={restart_pending}, "
