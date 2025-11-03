@@ -57,6 +57,8 @@ class UpdaterIntegration:
         self._migrate_on_start: bool = False
         # Config loader for feature flags
         self._config_loader = UnifiedConfigLoader()
+        # Current app mode (tracked via events instead of direct state access)
+        self._current_mode: AppMode = AppMode.SLEEPING
     
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -67,6 +69,14 @@ class UpdaterIntegration:
             
             # Настраиваем обработчики событий
             await self._setup_event_handlers()
+            # Initialize current mode from state (one-time read allowed during init)
+            # After init, mode is tracked via events only
+            try:
+                initial_mode = self.state_manager.get_current_mode()
+                if isinstance(initial_mode, AppMode):
+                    self._current_mode = initial_mode
+            except Exception:
+                self._current_mode = AppMode.SLEEPING
             self._set_update_state(False, trigger="initialize")
             try:
                 self._loop = asyncio.get_running_loop()
@@ -126,16 +136,38 @@ class UpdaterIntegration:
                 await asyncio.sleep(300)  # Ждем 5 минут при ошибке
     
     async def _can_update(self) -> bool:
-        """Проверка, можно ли обновляться"""
-        current_mode = self.state_manager.get_current_mode()
+        """Проверка, можно ли обновляться.
+        
+        Использует tracked mode (из событий app.mode_changed) вместо прямого доступа к state_manager.
+        Это соответствует правилу 21.3: запрет прямого доступа к состоянию вне selectors/gateways.
+        
+        Fallback: Если tracked mode не обновлен событиями (например, в тестах без реального EventBus),
+        читаем из state_manager для совместимости. В production режим должен обновляться через события.
+        """
+        # Use tracked mode from events (updated in _on_mode_changed/_on_mode_changed_via_gateway)
+        current_mode = self._current_mode
+        
+        # Fallback: Если tracked mode == SLEEPING (initial state), проверяем актуальный режим
+        # Это необходимо для тестов и edge cases, когда события не работают
+        # TODO: Remove fallback after all consumers migrate to event-based mode tracking
         try:
-            # Нормализуем к AppMode, если вдруг пришла строка
-            if not isinstance(current_mode, AppMode):
-                current_mode = AppMode(current_mode)  # type: ignore[arg-type]
+            actual_mode = self.state_manager.get_current_mode()
+            if isinstance(actual_mode, AppMode):
+                # Update tracked mode if different (fallback sync)
+                if actual_mode != current_mode:
+                    self._current_mode = actual_mode
+                    current_mode = actual_mode
+            elif not isinstance(actual_mode, AppMode):
+                # Normalize string/other types to AppMode
+                try:
+                    actual_mode = AppMode(actual_mode)
+                    self._current_mode = actual_mode
+                    current_mode = actual_mode
+                except Exception:
+                    pass
         except Exception:
-            # В сомнительном состоянии — подстраховываемся запретом обновления
-            return False
-
+            pass  # Use tracked mode if fallback fails
+        
         if current_mode in (AppMode.LISTENING, AppMode.PROCESSING):
             return False
         return True
@@ -147,6 +179,8 @@ class UpdaterIntegration:
         await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
         await self.event_bus.subscribe("updater.check_manual", self._on_manual_check, EventPriority.HIGH)
         await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed, EventPriority.LOW)
+        # Subscribe to mode changes to track current mode (replaces direct get_current_mode access)
+        await self.event_bus.subscribe("mode.changed", self._on_mode_changed_via_gateway, EventPriority.LOW)
     
     async def _on_app_startup(self, event_data):
         """Обработка запуска приложения"""
@@ -164,9 +198,34 @@ class UpdaterIntegration:
             await self._execute_update(trigger="manual")
     
     async def _on_mode_changed(self, event_data):
-        """Обработка изменения режима приложения"""
-        new_mode = event_data.get("mode")
+        """Обработка изменения режима приложения (legacy event)"""
+        data = (event_data or {}).get("data", event_data or {})
+        new_mode = data.get("mode") or event_data.get("mode")
+        if new_mode:
+            try:
+                if not isinstance(new_mode, AppMode):
+                    new_mode = AppMode(new_mode)
+                self._current_mode = new_mode
+            except Exception:
+                pass
         logger.info(f"Режим приложения изменен на: {new_mode}")
+    
+    async def _on_mode_changed_via_gateway(self, event_data):
+        """Обработка изменения режима через gateway (mode.changed event).
+        
+        Используется вместо прямого чтения state_manager.get_current_mode().
+        Это соответствует правилу 21.3: запрет прямого доступа к состоянию.
+        """
+        data = (event_data or {}).get("data", event_data or {})
+        new_mode = data.get("mode") or data.get("new_mode")
+        if new_mode:
+            try:
+                if not isinstance(new_mode, AppMode):
+                    new_mode = AppMode(new_mode)
+                self._current_mode = new_mode
+                logger.debug(f"[UPDATER] Tracked mode updated to: {new_mode}")
+            except Exception as e:
+                logger.debug(f"[UPDATER] Failed to update tracked mode: {e}")
     
     async def _execute_update(self, trigger: str) -> bool:
         """

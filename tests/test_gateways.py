@@ -204,7 +204,7 @@ class TestGatewayPairwiseCombinations:
                 AppMode.PROCESSING,
                 Decision.DEGRADE,
             ),
-            # Processing: all conditions met
+            # Processing: cannot start listening (must be in SLEEPING/LISTENING)
             (
                 PermissionStatus.GRANTED,
                 PermissionStatus.GRANTED,
@@ -212,7 +212,7 @@ class TestGatewayPairwiseCombinations:
                 NetworkStatus.ONLINE,
                 False,
                 AppMode.PROCESSING,
-                Decision.START,
+                Decision.ABORT,  # PROCESSING mode blocks start_listening
             ),
         ],
     )

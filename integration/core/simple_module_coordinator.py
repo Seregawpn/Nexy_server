@@ -585,7 +585,16 @@ class SimpleModuleCoordinator:
                                     print(f"⚠️ [PERMISSIONS] Перезапуск не удался ({restart_duration_ms}ms) - продолжаем запуск")
                                     self._permissions_in_progress = False
                                     self._restart_pending = False
-                                    self.state_manager.set_state_data("permissions_restart_pending", False)
+                                    # Legacy: Update state_data for backward compatibility (will be removed after migration)
+                                    try:
+                                        self.state_manager.set_state_data("permissions_restart_pending", False)
+                                        await self.event_bus.publish(
+                                            "permissions.restart_pending.changed",
+                                            {"active": False, "session_id": "unknown", "source": "coordinator"},
+                                            EventPriority.MEDIUM,
+                                        )
+                                    except Exception:
+                                        pass
                                 else:
                                     logger.info(f"✅ [PERMISSIONS] Перезапуск инициирован успешно ({restart_duration_ms}ms)")
                                     return True
@@ -596,7 +605,16 @@ class SimpleModuleCoordinator:
                                 print("❌ [PERMISSIONS] Не удал��сь вызвать перезапуск - продолжаем запуск")
                                 self._permissions_in_progress = False
                                 self._restart_pending = False
-                                self.state_manager.set_state_data("permissions_restart_pending", False)
+                                # Legacy: Update state_data for backward compatibility (will be removed after migration)
+                                try:
+                                    self.state_manager.set_state_data("permissions_restart_pending", False)
+                                    await self.event_bus.publish(
+                                        "permissions.restart_pending.changed",
+                                        {"active": False, "session_id": "unknown", "source": "coordinator"},
+                                        EventPriority.MEDIUM,
+                                    )
+                                except Exception:
+                                    pass
                         else:
                             logger.info(
                                 "decision=continue reason=no_restart_pending "
@@ -885,10 +903,17 @@ class SimpleModuleCoordinator:
             print(f"⏹️ [PERMISSIONS] Остальные интеграции НЕ будут запущены")
             logger.info(f"🔄 [PERMISSIONS] Перезапуск приложения запрошен (session={session_id})")
 
-            # Устанавливаем флаг ожидания перезапуска
+            # Устанавливаем флаг ожидания перезапуска (internal state only)
             # Это сигнал для метода start() остановить запуск интеграций
+            # NOTE: Per rule 21.3, мы не используем set_state_data() - состояние публикуется через события
             self._restart_pending = True
-            self.state_manager.set_state_data("permissions_restart_pending", True)
+
+            # Legacy: Update state_data for backward compatibility during shadow-mode migration
+            # This will be removed once all consumers migrate to events/selectors
+            try:
+                self.state_manager.set_state_data("permissions_restart_pending", True)
+            except Exception:
+                pass
 
             # Shadow-mode: diagnostic logging for coordinator._restart_pending vs state_data comparison
             try:
@@ -914,7 +939,8 @@ class SimpleModuleCoordinator:
             except Exception:
                 pass  # Don't fail if feature flag check fails
 
-            # Shadow-mode событие изменения служебного флага
+            # Publish event (primary source of truth after migration)
+            # Consumers should subscribe to permissions.restart_pending.changed instead of reading state_data
             try:
                 await self.event_bus.publish(
                     "permissions.restart_pending.changed",

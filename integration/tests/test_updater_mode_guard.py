@@ -92,11 +92,11 @@ class TestUpdaterModeGuard:
         # Set mode to LISTENING
         state_manager.set_mode(AppMode.LISTENING)
 
-        # Try to execute update
-        update_executed = await integration._execute_update(trigger="test")
+        # Check _can_update instead of _execute_update (avoids network calls)
+        can_update = await integration._can_update()
 
-        # Update should not execute (returns False or raises exception)
-        assert update_executed is False or not update_executed
+        # Update should be blocked
+        assert can_update is False
 
     @pytest.mark.anyio
     async def test_update_does_not_start_in_processing_mode(self, event_bus, state_manager):
@@ -109,11 +109,11 @@ class TestUpdaterModeGuard:
         # Set mode to PROCESSING
         state_manager.set_mode(AppMode.PROCESSING)
 
-        # Try to execute update
-        update_executed = await integration._execute_update(trigger="test")
+        # Check _can_update instead of _execute_update (avoids network calls)
+        can_update = await integration._can_update()
 
-        # Update should not execute
-        assert update_executed is False or not update_executed
+        # Update should be blocked
+        assert can_update is False
 
     @pytest.mark.anyio
     async def test_update_starts_in_sleeping_mode(self, event_bus, state_manager):

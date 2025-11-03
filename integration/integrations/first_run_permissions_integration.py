@@ -536,6 +536,13 @@ class FirstRunPermissionsIntegration:
             "session_id": session_id,
             "source": source,
         }
+        logger.info(
+            "[FIRST_RUN_PERMISSIONS] permissions.status_checked -> %s (status=%s, session=%s, source=%s)",
+            permission.value,
+            status.value,
+            session_id,
+            source,
+        )
         try:
             await self.event_bus.publish("permissions.status_checked", payload)
         except Exception as exc:
@@ -560,6 +567,14 @@ class FirstRunPermissionsIntegration:
             "session_id": session_id,
             "source": source,
         }
+        logger.info(
+            "[FIRST_RUN_PERMISSIONS] permissions.changed -> %s (%s → %s, session=%s, source=%s)",
+            permission.value,
+            old_status.value,
+            new_status.value,
+            session_id,
+            source,
+        )
         try:
             await self.event_bus.publish("permissions.changed", payload)
         except Exception as exc:

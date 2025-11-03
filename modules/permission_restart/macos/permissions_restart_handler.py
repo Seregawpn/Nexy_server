@@ -48,6 +48,8 @@ class PermissionsRestartHandler:
 
         self._dry_run = bool(dry_run)
         self._packaged_unavailable = False  # Флаг что .app бандл недоступен (для избежания повторных попыток)
+        self._last_reason: str = "unknown"
+        self._last_permissions: Sequence[str] = ()
         self._config = config or PermissionRestartConfig()  # Default config if not provided
 
         # Диагностический лог итоговой конфигурации
@@ -69,6 +71,9 @@ class PermissionsRestartHandler:
             )
             return False
 
+        self._last_reason = reason
+        self._last_permissions = tuple(permissions)
+
         logger.info(
             "[PERMISSION_RESTART] Restart requested (reason=%s, permissions=%s)",
             reason,
@@ -87,6 +92,11 @@ class PermissionsRestartHandler:
             logger.debug(
                 "[PERMISSION_RESTART] _perform_restart start (packaged_unavailable=%s)",
                 self._packaged_unavailable,
+            )
+            logger.info(
+                "[PERMISSION_RESTART] Restart requested: reason=%s permissions=%s",
+                self._last_reason,
+                self._last_permissions,
             )
 
             if self._exec_current_bundle():
@@ -134,6 +144,7 @@ class PermissionsRestartHandler:
 
         try:
             logger.info("[PERMISSION_RESTART] Relaunching packaged app at %s", bundle_path)
+            start_ts = time.time()
 
             # Запускаем новый экземпляр Nexy.app напрямую.
             # Ранее использовался флаг -W (wait-apps), из-за чего команда `open`
@@ -146,6 +157,11 @@ class PermissionsRestartHandler:
                 timeout=5.0,
                 capture_output=True,
                 text=True,
+            )
+            logger.info(
+                "[PERMISSION_RESTART] open -n -a returned code=%s elapsed=%.2fs",
+                result.returncode,
+                time.time() - start_ts,
             )
 
             # Проверяем exit code

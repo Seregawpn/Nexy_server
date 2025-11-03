@@ -386,6 +386,14 @@ voice_recognition:
   phrase_timeout: 0.3
   silence_timeout: 0.8
 
+# Voice integration settings (used by voice_recognition_integration.py)
+voice:
+  start_retry_delay_ms: 300  # Задержка между попытками запуска микрофона (мс)
+
+# Coordinator settings (used by simple_module_coordinator.py)
+coordinator:
+  event_settle_delay_ms: 500  # Задержка после событий для обработки handlers (мс)
+
 # Настройки STT (Speech-to-Text)
 stt:
   language: en-US
