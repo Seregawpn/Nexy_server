@@ -114,15 +114,20 @@ class SimpleModuleCoordinator:
             # 1.1 Запускаем фоновый asyncio loop (для EventBus/интеграций)
             self._start_background_loop()
 
-            # 2. Создаем интеграции
-            print("🔧 Создание интеграций...")
-            # Прикрепляем EventBus к StateManager, чтобы централизованно публиковать смену режимов
+            # 1.2 КРИТИЧНО: Подписываемся на события разрешений ДО инициализации интеграций
+            # Это предотвращает потерю событий permissions.first_run_completed,
+            # публикуемых в FirstRunPermissionsIntegration.initialize()
+            print("🔧 Настройка критичных подписок на события...")
             try:
                 self.state_manager.attach_event_bus(self.event_bus)
-                # Фиксируем основной loop в EventBus
                 self.event_bus.attach_loop(self._bg_loop)
-            except Exception:
-                pass
+                await self._setup_critical_subscriptions()
+                print("✅ Критичные подписки настроены")
+            except Exception as e:
+                print(f"⚠️ Ошибка настройки критичных подписок: {e}")
+
+            # 2. Создаем интеграции
+            print("🔧 Создание интеграций...")
             await self._create_integrations()
             print("✅ Интеграции созданы")
             
@@ -131,7 +136,7 @@ class SimpleModuleCoordinator:
             await self._initialize_integrations()
             print("✅ Интеграции инициализированы")
             
-            # 4. Настраиваем координацию
+            # 4. Настраиваем остальную координацию
             print("🔧 Настройка координации...")
             await self._setup_coordination()
             print("✅ Координация настроена")
@@ -453,6 +458,46 @@ class SimpleModuleCoordinator:
             print(f"❌ Ошибка инициализации интеграций/workflows: {e}")
             raise
     
+    async def _setup_critical_subscriptions(self):
+        """
+        Настройка критичных подписок на события ДО инициализации интеграций.
+        
+        КРИТИЧНО: Должна вызываться ДО _initialize_integrations(), чтобы
+        не потерять события permissions.first_run_completed, публикуемые
+        в FirstRunPermissionsIntegration.initialize() при обнаружении
+        флага перезапуска.
+        """
+        try:
+            logger.info("[COORDINATOR] Настройка критичных подписок на события разрешений...")
+            
+            # Подписываемся на события разрешений (высокий приоритет)
+            await self.event_bus.subscribe(
+                "permissions.first_run_started",
+                self._on_permissions_started,
+                EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "permissions.first_run_completed",
+                self._on_permissions_completed,
+                EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "permissions.first_run_failed",
+                self._on_permissions_failed,
+                EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "permissions.first_run_restart_pending",
+                self._on_permissions_restart_pending,
+                EventPriority.CRITICAL
+            )
+            
+            logger.info("[COORDINATOR] Критичные подписки настроены успешно")
+            
+        except Exception as e:
+            logger.error(f"[COORDINATOR] Ошибка настройки критичных подписок: {e}")
+            raise
+    
     async def _setup_coordination(self):
         """Настройка координации между модулями"""
         try:
@@ -474,15 +519,8 @@ class SimpleModuleCoordinator:
             except Exception:
                 pass
 
-            # НОВОЕ: Подписка на события разрешений
-            await self.event_bus.subscribe("permissions.first_run_started",
-                                          self._on_permissions_started, EventPriority.HIGH)
-            await self.event_bus.subscribe("permissions.first_run_completed",
-                                          self._on_permissions_completed, EventPriority.HIGH)
-            await self.event_bus.subscribe("permissions.first_run_failed",
-                                          self._on_permissions_failed, EventPriority.HIGH)
-            await self.event_bus.subscribe("permissions.first_run_restart_pending",
-                                          self._on_permissions_restart_pending, EventPriority.CRITICAL)
+            # NOTE: Подписки на события разрешений перенесены в _setup_critical_subscriptions()
+            # (вызывается ДО инициализации интеграций для предотвращения потери событий)
 
             print("✅ Координация настроена")
             

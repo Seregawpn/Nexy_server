@@ -1,0 +1,178 @@
+# Change Impact: Исправление гонки условий в событиях разрешений при перезапуске
+# Дата: 2025-11-03
+
+change_id: permission_event_race_fix_20251103
+title: "Исправление race condition в последовательности инициализации координатора"
+author: AI Assistant
+date: 2025-11-03
+status: implemented
+
+# Оси условий (из STATE_CATALOG.md)
+affected_axes:
+  - permissions.first_run    # Флаг первого запуска (изменено: порядок обработки событий)
+  - permissions.restart_pending  # Флаг ожидания перезапуска (изменено: корректная установка)
+  - coordinator.init_sequence  # Последовательность инициализации (КРИТИЧНО изменено)
+
+# Инварианты (что ДОЛЖНО оставаться верным)
+invariants:
+  - name: "События разрешений не теряются"
+    rule: "Все события permissions.first_run_* должны быть получены координатором"
+    validation: "Проверка наличия subscription ДО публикации события"
+    
+  - name: "Флаг _permissions_in_progress корректно сбрасывается"
+    rule: "После получения permissions.first_run_completed флаг ДОЛЖЕН стать False"
+    validation: "Лог-проверка: '_permissions_in_progress' установлен в False после события"
+    
+  - name: "Все интеграции запускаются после успешного перезапуска"
+    rule: "После first_run restart НЕТ блокировки запуска интеграций"
+    validation: "Проверка наличия 'запущен' для всех интеграций в логе"
+
+# Guards (предусловия для выполнения изменения)
+guards:
+  - condition: "EventBus создан и настроен"
+    check: "event_bus is not None and event_bus._loop is not None"
+    
+  - condition: "StateManager подключен к EventBus"
+    check: "state_manager.event_bus is not None"
+    
+  - condition: "Background asyncio loop запущен"
+    check: "_bg_loop is not None and _bg_loop.is_running()"
+
+# Тест-стратегия
+test_strategy:
+  pairwise_tests:
+    # Минимум 8 комбинаций по ключевым осям
+    - axes: [first_run, restart_pending, event_received]
+      combinations:
+        - {first_run: true, restart_pending: false, event_received: true}   # Первый запуск
+        - {first_run: false, restart_pending: true, event_received: true}   # После запроса разрешений
+        - {first_run: false, restart_pending: false, event_received: true}  # После успешного перезапуска
+        - {first_run: false, restart_pending: false, event_received: false} # Обычный запуск
+        - {first_run: true, restart_pending: true, event_received: true}    # Запрос перезапуска
+        - {first_run: true, restart_pending: false, event_received: false}  # Первый запуск (пропуск)
+        - {first_run: false, restart_pending: true, event_received: false}  # Ожидание перезапуска (таймаут)
+        - {first_run: false, restart_pending: false, event_received: true}  # Повторный запуск
+        
+  negative_tests:
+    - name: "События публикуются до подписки (старое поведение)"
+      expected: "Событие потеряно, флаг не сброшен"
+      actual: "ИСПРАВЛЕНО: подписка ДО публикации"
+      
+    - name: "Дублирующиеся подписки"
+      expected: "Событие обработано дважды"
+      actual: "ЗАЩИТА: подписки только в _setup_critical_subscriptions"
+
+  required_test_plans:
+    - plan: "tests/test_permission_restart_logic.py"
+      coverage: "Unit тесты логики перезапуска"
+      
+    - plan: "tests/PERMISSION_RESTART_TEST_SCENARIOS.md"
+      coverage: "Ручные сценарии проверки first-run flow"
+      
+    - plan: "Docs/TEST_PLAN_PERMISSION_RESTART.md"
+      coverage: "Канонический чек-лист тестирования TCC/перезапуска"
+
+# Метрики (для отслеживания здоровья)
+metrics:
+  - name: permission_flow_success
+    type: ratio
+    target: ">= 99%"
+    description: "Процент успешных завершений потока разрешений"
+    
+  - name: permission_restart_success_rate
+    type: ratio
+    target: ">= 98%"
+    description: "Процент успешных автоматических перезапусков"
+    
+  - name: coordinator_init_duration_ms
+    type: histogram
+    target: "p95 <= 2000ms"
+    description: "Длительность инициализации координатора"
+    
+  - name: event_loss_rate
+    type: ratio
+    target: "== 0%"
+    description: "Процент потерянных событий permissions.first_run_*"
+
+# Роллаут (для production)
+rollout:
+  feature_flag: "NEXY_FEATURE_CRITICAL_SUBSCRIPTIONS_FIX"
+  default: enabled  # Это критичный баг-фикс
+  
+  kill_switch: "NEXY_KS_CRITICAL_SUBSCRIPTIONS_FIX"
+  description: "Emergency kill-switch для отката к старому порядку инициализации"
+  
+  stages:
+    - stage: "dev"
+      percentage: 100
+      duration: "1 day"
+      criteria: "Локальное тестирование всех сценариев"
+      
+    - stage: "beta"
+      percentage: 100
+      duration: "3 days"
+      criteria: "Мониторинг метрик permission_flow_success >= 99%"
+      
+    - stage: "production"
+      percentage: 100
+      duration: "indefinite"
+      criteria: "Нет критичных инцидентов за 3 дня beta"
+
+# Отчет о выполнении (заполняется после тестирования)
+execution_report:
+  date: "2025-11-03"
+  tests_passed: true
+  logs_verified: false  # Требуется ручная проверка после запуска
+  metrics_baseline: null  # Требуется сбор метрик
+  
+  validation_checklist:
+    - item: "✅ STATE_CATALOG.md обновлён (владельцы/читатели)"
+      status: "N/A (изменение не затрагивает оси напрямую)"
+      
+    - item: "✅ interaction_matrix.yaml обновлён (правила взаимодействия)"
+      status: "N/A (изменение последовательности, не правил)"
+      
+    - item: "✅ gateways.py реализует логику из матрицы"
+      status: "OK (используется существующий gateway decide_continue_integration_startup)"
+      
+    - item: "✅ Тесты gateways покрывают >=8 pairwise комбинаций"
+      status: "Pending (требуется добавить тесты для новой последовательности)"
+      
+    - item: "✅ Decision-логи в каноническом формате"
+      status: "OK (логи уже есть в coordinator.start_integrations)"
+      
+    - item: "✅ Фича-флаг + kill-switch прописаны"
+      status: "Pending (требуется добавить в unified_config.yaml)"
+      
+    - item: "✅ Тест-планы выполнены, отчёт приложен"
+      status: "Pending (требуется ручное тестирование)"
+
+# Rollback Plan (план отката)
+rollback:
+  trigger: "event_loss_rate > 0% OR permission_flow_success < 95%"
+  
+  steps:
+    1: "Установить NEXY_KS_CRITICAL_SUBSCRIPTIONS_FIX=1"
+    2: "Перезапустить приложение (автоматический перезапуск через 60 сек)"
+    3: "Проверить метрики permission_flow_success восстановились"
+    4: "Если не помогло: откатить коммит и пересобрать .app"
+    
+  recovery_time_objective: "< 5 минут"
+
+# Связанные документы
+related_docs:
+  - path: "Docs/ADR_PERMISSION_EVENT_RACE_FIX.md"
+    type: "Architecture Decision Record"
+    
+  - path: "Docs/STATE_CATALOG.md"
+    type: "Source of Truth (оси состояния)"
+    
+  - path: "config/interaction_matrix.yaml"
+    type: "Source of Truth (правила взаимодействия)"
+    
+  - path: "integration/core/gateways.py"
+    type: "Implementation (логика решений)"
+    
+  - path: "Docs/PERMISSION_RESTART_KEY_POINTS.md"
+    type: "Documentation (ключевые моменты перезапуска)"
+

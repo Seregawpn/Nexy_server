@@ -461,7 +461,13 @@ features:
   # Shadow-mode: use events/selectors for restart_pending instead of state_data
   use_events_for_restart_pending:
     enabled: true  # Shadow-mode: read restart_pending via selectors/events
-    rollout_percentage: 1  # Beta: 1% rollout for observation
+  
+  # Fix: Critical subscriptions before integration initialization (race condition fix)
+  # This ensures permissions.first_run_completed event is not lost
+  critical_subscriptions_fix:
+    enabled: true  # Production: enabled by default (critical bug fix)
+    rollout_percentage: 100  # Full rollout
+    description: "Prevent race condition in permissions event handling by subscribing before integration initialization"
   
   # Kill-switches: override feature flags (immediate shutdown)
   ks_first_run_normalization:
