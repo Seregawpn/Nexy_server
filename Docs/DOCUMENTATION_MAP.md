@@ -16,6 +16,7 @@
 | `config/interaction_matrix.yaml` | Правила взаимодействия осей с приоритетами | `Docs/STATE_CATALOG.md`, `integration/core/gateways.py` |
 <!-- CODE_REVIEW_ASSISTANT_PROMPT.md перенесён в _archive -->
 | `.cursorrules` | Полные правила разработки (раздел 1.1 — источник истины) | Все документы |
+| `Docs/CODE_REVIEW_ASSISTANT_PROMPT.md` | Промпт для архитектурного ревью (enforcement) | `.cursorrules`, `Docs/STATE_CATALOG.md`, `config/interaction_matrix.yaml` |
 
 ### 2. Концептуальные документы
 
@@ -127,7 +128,7 @@
 → `config/interaction_matrix.yaml` (детализация правил)
 
 **Хочу сделать ревью кода:**
-→ `.cursorrules` (разделы 11, 17–21)
+→ `.cursorrules` (разделы 11, 17–21) + `Docs/CODE_REVIEW_ASSISTANT_PROMPT.md`
 
 **Хочу изменить поведение:**
 → `.cursorrules` раздел 11 "Инвариант: изменил поведение? обнови 4 артефакта"

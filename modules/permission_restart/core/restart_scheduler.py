@@ -130,6 +130,12 @@ class RestartScheduler:
         start_ts = asyncio.get_event_loop().time()
 
         try:
+            logger.info(
+                "[PERMISSION_RESTART] Waiting for safe conditions (respect_updates=%s, respect_active_sessions=%s, delay_sec=%s)",
+                self._config.respect_updates,
+                self._config.respect_active_sessions,
+                self._config.restart_delay_sec,
+            )
             while True:
                 elapsed = asyncio.get_event_loop().time() - start_ts
                 if elapsed >= MAX_WAIT_SECONDS:
@@ -141,10 +147,24 @@ class RestartScheduler:
                     break
 
                 if self._config.respect_updates and self._is_update_in_progress():
+                    logger.debug(
+                        "[PERMISSION_RESTART] Waiting: updater in progress (elapsed=%.1fs)",
+                        elapsed,
+                    )
                     await asyncio.sleep(self._poll_interval)
                     continue
 
                 if self._config.respect_active_sessions and not self._is_idle_mode():
+                    try:
+                        current_mode = self._state_manager.get_current_mode()
+                        mode_value = getattr(current_mode, "value", str(current_mode))
+                    except Exception:
+                        mode_value = "unknown"
+                    logger.debug(
+                        "[PERMISSION_RESTART] Waiting: app not idle (mode=%s, elapsed=%.1fs)",
+                        mode_value,
+                        elapsed,
+                    )
                     await asyncio.sleep(self._poll_interval)
                     continue
                 break
@@ -240,20 +260,37 @@ class RestartScheduler:
             return True
 
     def _is_update_in_progress(self) -> bool:
+        """
+        Check if an update is in progress.
+        
+        Priority order:
+        1. UpdaterIntegration.is_update_in_progress() (if available) - primary source
+        2. selectors.is_update_in_progress(state_manager) - fallback via selector
+        """
         # Updater integration provides a lightweight boolean accessor.
         updater = self._updater_integration
-        if updater is None:
-            state_flag = self._state_manager.get_state_data("update_in_progress", False)
-            return bool(state_flag)
+        if updater is not None:
+            try:
+                accessor = getattr(updater, "is_update_in_progress", None)
+                if callable(accessor):
+                    result = bool(accessor())
+                    logger.debug("[PERMISSION_RESTART] is_update_in_progress (updater callable): %s", result)
+                    return result
+                if isinstance(accessor, bool):
+                    logger.debug("[PERMISSION_RESTART] is_update_in_progress (updater bool): %s", accessor)
+                    return accessor
+            except Exception:
+                pass
 
+        # Fallback: use selector instead of direct state_data access
         try:
-            accessor = getattr(updater, "is_update_in_progress", None)
-            if callable(accessor):
-                return bool(accessor())
-            if isinstance(accessor, bool):
-                return accessor
+            from integration.core.selectors import is_update_in_progress
+            result = is_update_in_progress(self._state_manager)
+            logger.debug("[PERMISSION_RESTART] is_update_in_progress (selector fallback): %s", result)
+            return result
         except Exception:
-            pass
-
-        state_flag = self._state_manager.get_state_data("update_in_progress", False)
-        return bool(state_flag)
+            # Last resort: direct state_data access (should not happen in normal operation)
+            state_flag = self._state_manager.get_state_data("update_in_progress", False)
+            result = bool(state_flag)
+            logger.debug("[PERMISSION_RESTART] is_update_in_progress (direct state fallback): %s", result)
+            return result

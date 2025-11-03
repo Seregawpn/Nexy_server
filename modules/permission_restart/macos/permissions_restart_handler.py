@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from modules.updater.migrate import get_user_app_path
+from modules.permission_restart.core.config import PermissionRestartConfig
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,12 @@ class PermissionsRestartHandler:
     - Development (no Nexy.app): restart the current Python command.
     """
 
-    def __init__(self, *, dry_run: Optional[bool] = None):
+    def __init__(
+        self,
+        *,
+        dry_run: Optional[bool] = None,
+        config: Optional[PermissionRestartConfig] = None,
+    ):
         env_flag = os.environ.get("NEXY_DISABLE_AUTO_RESTART")
         kill_switch = os.environ.get("NEXY_KS_FIRST_RUN_RESTART")
 
@@ -41,6 +47,16 @@ class PermissionsRestartHandler:
             dry_run = True
 
         self._dry_run = bool(dry_run)
+        self._packaged_unavailable = False  # Флаг что .app бандл недоступен (для избежания повторных попыток)
+        self._config = config or PermissionRestartConfig()  # Default config if not provided
+
+        # Диагностический лог итоговой конфигурации
+        logger.info(
+            "[PERMISSION_RESTART] RestartHandler init: dry_run=%s env(NEXY_DISABLE_AUTO_RESTART)=%s ks(NEXY_KS_FIRST_RUN_RESTART)=%s",
+            self._dry_run,
+            env_flag,
+            kill_switch,
+        )
 
     async def trigger_restart(self, *, reason: str, permissions: Sequence[str]) -> bool:
         """Kick off the relaunch flow. Returns False in dry-run mode."""
@@ -68,18 +84,30 @@ class PermissionsRestartHandler:
         restart_successful = False
 
         try:
-            if self._launch_packaged_app():
-                logger.info("[PERMISSION_RESTART] Packaged app launched successfully")
-                restart_successful = True
-                # Даём новому процессу время запуститься перед завершением текущего
-                time.sleep(2.0)
-                return
+            logger.debug(
+                "[PERMISSION_RESTART] _perform_restart start (packaged_unavailable=%s)",
+                self._packaged_unavailable,
+            )
 
-            logger.info("[PERMISSION_RESTART] Packaged app not available, restarting current command")
+            if self._exec_current_bundle():
+                return  # os.execv не возвращается при успехе
+
+            # Пропускаем packaged app если уже знаем что он недоступен
+            if not self._packaged_unavailable:
+                if self._launch_packaged_app():
+                    logger.info("[PERMISSION_RESTART] Packaged app launch verified (fallback)")
+                    restart_successful = True
+                    return
+                else:
+                    # Запоминаем что packaged app недоступен для следующих попыток
+                    self._packaged_unavailable = True
+                    logger.info("[PERMISSION_RESTART] Packaged app unavailable - will use dev fallback")
+
+            logger.info("[PERMISSION_RESTART] Restarting via dev process (python command)")
             self._launch_dev_process()
             restart_successful = True
-            # Даём dev процессу время запуститься
-            time.sleep(1.0)
+            delay_sec = self._config.handler_launch_delay_ms / 1000.0
+            time.sleep(delay_sec)
 
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Critical error during restart: %s", exc)
@@ -91,14 +119,13 @@ class PermissionsRestartHandler:
                 os._exit(0)
             else:
                 logger.error("[PERMISSION_RESTART] Restart failed - NOT exiting to allow fallback")
-                # НЕ вызываем os._exit(0) если перезапуск не удался
 
     def _launch_packaged_app(self) -> bool:
         """
         Try to relaunch a packaged Nexy.app. Returns True on success,
         False when we should fall back to dev mode.
 
-        Uses 'open -W' to wait for the application to launch before returning.
+        Uses `open -n -a` and verifies the spawned process via `pgrep`.
         """
         bundle_path = self._derive_bundle_path()
         if bundle_path is None:
@@ -108,23 +135,34 @@ class PermissionsRestartHandler:
         try:
             logger.info("[PERMISSION_RESTART] Relaunching packaged app at %s", bundle_path)
 
-            # КРИТИЧНО: Используем -W (--wait-apps) для ожидания запуска приложения
-            # Это блокирует выполнение пока приложение не откроется
+            # Запускаем новый экземпляр Nexy.app напрямую.
+            # Ранее использовался флаг -W (wait-apps), из-за чего команда `open`
+            # блокировала выполнение до закрытия нового процесса и регулярно
+            # завершалась по таймауту. Это приводило к тому, что перезапуск
+            # распознавался как неуспешный и текущий процесс не завершался.
             result = subprocess.run(
-                ["/usr/bin/open", "-n", "-W", "-a", str(bundle_path)],
+                ["/usr/bin/open", "-n", "-a", str(bundle_path)],
                 check=False,  # Не падаем на non-zero exit code
-                timeout=10.0,  # Увеличенный timeout для PyInstaller unpacking
+                timeout=5.0,
                 capture_output=True,
                 text=True,
             )
 
             # Проверяем exit code
             if result.returncode != 0:
+                stderr = result.stderr.strip() if result.stderr else ""
                 logger.error(
                     "[PERMISSION_RESTART] open command failed (exit_code=%d, stderr=%s)",
                     result.returncode,
-                    result.stderr.strip() if result.stderr else "no stderr"
+                    stderr
                 )
+                # Специальная обработка kLSNoExecutableErr (10810) - нет исполняемого файла в bundle
+                if "10810" in stderr or "kLSNoExecutableErr" in stderr:
+                    logger.error(
+                        "[PERMISSION_RESTART] Bundle missing executable (kLSNoExecutableErr) - "
+                        "check packaging/build_final.sh creates Contents/MacOS/Nexy"
+                    )
+                    self._packaged_unavailable = True
                 return False
 
             if not self._verify_app_launched(bundle_path):
@@ -132,13 +170,14 @@ class PermissionsRestartHandler:
                 return False
 
             # Даём дополнительное время для PyInstaller unpacking и инициализации
-            time.sleep(3.0)
+            grace_sec = self._config.packaged_launch_grace_ms / 1000.0
+            time.sleep(grace_sec)
 
             logger.info("[PERMISSION_RESTART] Packaged app launch verified")
             return True
 
         except subprocess.TimeoutExpired:
-            logger.error("[PERMISSION_RESTART] Launch timeout (>10 seconds) - app may not have started")
+            logger.error("[PERMISSION_RESTART] Launch timeout (>5 seconds) - app may not have started")
             return False
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Failed to relaunch packaged app: %s", exc)
@@ -156,9 +195,18 @@ class PermissionsRestartHandler:
         cmd = [python_executable] + argv
         cwd = os.getcwd()
 
+        # КРИТИЧНО: Передаём env переменную NEXY_FIRST_RUN_RESTARTED для нового процесса
+        # Это позволяет FirstRunPermissionsIntegration обнаружить завершённый рестарт
+        # даже если флаг restart_completed.flag не создался из-за PermissionError
+        env = os.environ.copy()
+        env["NEXY_FIRST_RUN_RESTARTED"] = "1"
+
         logger.info("[PERMISSION_RESTART] Launching dev process: %s (cwd=%s)", cmd, cwd)
+        logger.info("[PERMISSION_RESTART] Setting NEXY_FIRST_RUN_RESTARTED=1 for new process")
+
         try:
-            subprocess.Popen(cmd, cwd=cwd)
+            subprocess.Popen(cmd, cwd=cwd, env=env)
+            logger.info("[PERMISSION_RESTART] Dev process launched with restart env flag")
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Failed to relaunch dev process: %s", exc)
 
@@ -199,12 +247,20 @@ class PermissionsRestartHandler:
 
         Используем pgrep -f с путём к бинарнику в Contents/MacOS.
         """
-        executable = (bundle_path / "Contents" / "MacOS")
-        if not executable.exists():
-            logger.debug("[PERMISSION_RESTART] Executable directory missing: %s", executable)
+        executable_dir = bundle_path / "Contents" / "MacOS"
+        if not executable_dir.exists():
+            logger.debug("[PERMISSION_RESTART] Executable directory missing: %s", executable_dir)
             return False
 
-        executable_str = str(executable)
+        candidate = executable_dir / bundle_path.stem
+        if not candidate.exists():
+            binaries = list(executable_dir.glob("*"))
+            if not binaries:
+                logger.debug("[PERMISSION_RESTART] No binaries found in %s", executable_dir)
+                return False
+            candidate = binaries[0]
+
+        executable_str = str(candidate)
         deadline = time.time() + timeout
 
         while time.time() < deadline:
@@ -225,4 +281,21 @@ class PermissionsRestartHandler:
             time.sleep(interval)
 
         logger.debug("[PERMISSION_RESTART] pgrep did not detect process for %s", executable_str)
+        return False
+
+    def _exec_current_bundle(self) -> bool:
+        """Попытка перезапустить текущий PyInstaller-бандл через execv."""
+        if not getattr(sys, "frozen", False):
+            return False
+
+        exe_path = Path(sys.executable).resolve()
+        args = [str(exe_path), *sys.argv[1:]]
+        try:
+            logger.info("[PERMISSION_RESTART] Restarting current bundle via execv (%s)", exe_path)
+            os.execv(str(exe_path), args)
+            # execv не возвращается при успехе - процесс заменяется
+            # Эта строка недостижима, но нужна для type checker
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("[PERMISSION_RESTART] execv failed: %s", exc)
+
         return False

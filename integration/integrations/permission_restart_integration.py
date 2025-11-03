@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional, Tuple
-from pathlib import Path
 
 from integration.core.base_integration import BaseIntegration
 from integration.core.event_bus import EventPriority
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core.selectors import create_snapshot_from_state, is_update_in_progress
+from integration.core.gateways.permission_gateways import decide_permission_restart_safety
+from integration.core.gateways.common import Decision
 
 from config.unified_config_loader import UnifiedConfigLoader
 from integration.utils.resource_path import get_user_data_dir
@@ -33,6 +35,8 @@ from modules.permissions.core.types import PermissionStatus, PermissionType
 from modules.permissions.first_run.status_checker import (
     check_accessibility_status,
     check_input_monitoring_status,
+    check_screen_capture_status,
+    PermissionStatus as FirstRunPermissionStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,8 +74,6 @@ class PermissionRestartIntegration(BaseIntegration):
         self._subscriptions: List[Tuple[str, Any]] = []
         self._ready_emitted = False
         self._ready_pending_update = False
-        self._first_run_flag: Path = get_user_data_dir("Nexy") / "permissions_first_run_completed.flag"
-        self._assume_permissions_logged = False
 
     async def _do_initialize(self) -> bool:
         try:
@@ -83,7 +85,7 @@ class PermissionRestartIntegration(BaseIntegration):
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
                 updater_integration=self._updater_integration,
-                restart_handler=PermissionsRestartHandler(),
+                restart_handler=PermissionsRestartHandler(config=self._config),
             )
             logger.info(
                 "[PERMISSION_RESTART] Integration initialised (enabled=%s, delay=%s, attempts=%s)",
@@ -224,6 +226,32 @@ class PermissionRestartIntegration(BaseIntegration):
         if not scheduler:
             return
 
+        # Check restart safety via gateway before scheduling
+        try:
+            snapshot = create_snapshot_from_state(self.state_manager)
+            update_in_progress = is_update_in_progress(self.state_manager)
+            
+            # Check kill-switch for first_run normalization
+            try:
+                config = self._config_loader._load_config()
+                kill_switch = config.get("features", {}).get("ks_first_run_normalization", {}).get("enabled", False)
+                if not kill_switch:
+                    # Apply gateway check
+                    decision = decide_permission_restart_safety(snapshot, update_in_progress)
+                    if decision == Decision.ABORT:
+                        logger.info(
+                            "[PERMISSION_RESTART] Restart blocked by gateway (update_in_progress=%s, first_run_restart_pending=%s)",
+                            update_in_progress,
+                            snapshot.first_run and snapshot.restart_pending,
+                        )
+                        return  # Don't schedule restart
+            except Exception as exc:
+                logger.debug("[PERMISSION_RESTART] Gateway check failed, proceeding with scheduling: %s", exc)
+                # Continue with scheduling if gateway check fails (defensive)
+        except Exception as exc:
+            logger.debug("[PERMISSION_RESTART] Snapshot creation failed, proceeding with scheduling: %s", exc)
+            # Continue with scheduling if snapshot creation fails (defensive)
+
         request = await scheduler.maybe_schedule_restart(transition)
         if request:
             logger.info(
@@ -250,26 +278,26 @@ class PermissionRestartIntegration(BaseIntegration):
         try:
             accessibility_status = check_accessibility_status()
             input_status = check_input_monitoring_status()
+            screen_capture_status = check_screen_capture_status()
         except Exception as exc:
             logger.debug("[PERMISSION_RESTART] Unable to verify permissions for readiness: %s", exc)
             return
 
         permissions_granted = (
-            accessibility_status == PermissionStatus.GRANTED
-            and input_status == PermissionStatus.GRANTED
+            accessibility_status == FirstRunPermissionStatus.GRANTED
+            and input_status == FirstRunPermissionStatus.GRANTED
+            and screen_capture_status == FirstRunPermissionStatus.GRANTED
         )
 
         if not permissions_granted:
-            if self._should_assume_permissions_granted(accessibility_status, input_status, source=source):
-                permissions_granted = True
-            else:
-                logger.debug(
-                    "[PERMISSION_RESTART] Readiness postponed, permissions not granted "
-                    "(accessibility=%s, input_monitoring=%s)",
-                    accessibility_status.value,
-                    input_status.value,
-                )
-                return
+            logger.debug(
+                "[PERMISSION_RESTART] Readiness postponed, permissions not granted "
+                "(accessibility=%s, input_monitoring=%s, screen_capture=%s)",
+                accessibility_status.value,
+                input_status.value,
+                screen_capture_status.value,
+            )
+            return
 
         updater_busy = False
         if self._updater_integration and hasattr(self._updater_integration, "is_update_in_progress"):
@@ -286,7 +314,7 @@ class PermissionRestartIntegration(BaseIntegration):
         try:
             await self.event_bus.publish(
                 "system.permissions_ready",
-                {"source": source, "permissions": ["accessibility", "input_monitoring"]},
+                {"source": source, "permissions": ["accessibility", "input_monitoring", "screen_capture"]},
             )
             await self.event_bus.publish(
                 "system.ready_to_greet",
@@ -309,35 +337,3 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception as exc:
             logger.debug("[PERMISSION_RESTART] Failed to read unified config: %s", exc)
             return {}
-
-    def _should_assume_permissions_granted(
-        self,
-        accessibility_status: PermissionStatus,
-        input_status: PermissionStatus,
-        *,
-        source: str,
-    ) -> bool:
-        """
-        Решаем, можно ли считать разрешения выданными, даже если статус не GRANTED.
-
-        Требование заказчика: после первой процедуры запроса (флаг первого запуска сохранён)
-        считать разрешения выданными, чтобы запуск не блокировался повторными проверками.
-        """
-
-        if not self._first_run_flag.exists():
-            return False
-
-        if accessibility_status == PermissionStatus.GRANTED and input_status == PermissionStatus.GRANTED:
-            return True
-
-        if not self._assume_permissions_logged:
-            logger.warning(
-                "[PERMISSION_RESTART] Permissions unresolved (accessibility=%s, input_monitoring=%s) "
-                "но флаг первого запуска найден — считаем, что администратор подтвердил права (source=%s)",
-                accessibility_status.value,
-                input_status.value,
-                source,
-            )
-            self._assume_permissions_logged = True
-
-        return True

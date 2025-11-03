@@ -70,6 +70,9 @@ class TrayControllerIntegration:
         # Состояние интеграции
         self.is_initialized = False
         self.is_running = False
+        self._disabled_due_to_errors: bool = False
+        self._init_failures: int = 0
+        self._start_failures: int = 0
         # Желаемый статус трея (прямое применение в UI-треде при смене режима)
         self._desired_status: Optional[TrayStatus] = None
         self._ui_timer: Optional[rumps.Timer] = None
@@ -87,15 +90,36 @@ class TrayControllerIntegration:
         """Инициализация интеграции"""
         try:
             logger.info("🔧 Инициализация TrayControllerIntegration...")
-            
+            if self._disabled_due_to_errors:
+                logger.warning("[TRAY] Disabled previously due to errors – skipping initialization")
+                return True
+
             # Создаем TrayController (обертываем существующий модуль)
             self.tray_controller = TrayController()
-            
-            # Инициализируем TrayController
-            success = await self.tray_controller.initialize()
+
+            # Инициализируем с повторами и бэк-оффом
+            max_retries = 3
+            backoff_sec = 0.5
+            for attempt in range(1, max_retries + 1):
+                success = await self.tray_controller.initialize()
+                if success:
+                    break
+                self._init_failures += 1
+                logger.warning(
+                    "[TRAY] Initialize failed (attempt %d/%d). Backing off %.1fs",
+                    attempt,
+                    max_retries,
+                    backoff_sec,
+                )
+                await asyncio.sleep(backoff_sec)
+                backoff_sec = min(backoff_sec * 2.0, 4.0)
+
             if not success:
-                logger.error("❌ Ошибка инициализации TrayController")
-                return False
+                logger.error("[TRAY] Initialization failed after retries – auto-disabling tray for this session")
+                self._disabled_due_to_errors = True
+                self.tray_controller = None
+                # Не считаем это фатальной ошибкой: позволяем приложению работать без меню-бара
+                return True
             
             # Настраиваем обработчики событий
             await self._setup_event_handlers()
@@ -119,13 +143,35 @@ class TrayControllerIntegration:
                 logger.warning("TrayControllerIntegration уже запущен")
                 return True
             
+            if self._disabled_due_to_errors:
+                logger.warning("[TRAY] Disabled due to previous errors – skipping start")
+                return True
+
             logger.info("🚀 Запуск TrayControllerIntegration...")
             
-            # Запускаем TrayController
-            success = await self.tray_controller.start()
+            # Запускаем TrayController с повторами и бэк-оффом
+            max_retries = 3
+            backoff_sec = 0.5
+            success = False
+            for attempt in range(1, max_retries + 1):
+                success = await (self.tray_controller.start() if self.tray_controller else asyncio.sleep(0))
+                if success:
+                    break
+                self._start_failures += 1
+                logger.warning(
+                    "[TRAY] Start failed (attempt %d/%d). Backing off %.1fs",
+                    attempt,
+                    max_retries,
+                    backoff_sec,
+                )
+                await asyncio.sleep(backoff_sec)
+                backoff_sec = min(backoff_sec * 2.0, 4.0)
+
             if not success:
-                logger.error("❌ Ошибка запуска TrayController")
-                return False
+                logger.error("[TRAY] Start failed after retries – auto-disabling tray for this session")
+                self._disabled_due_to_errors = True
+                self.tray_controller = None
+                return True
             
             # Синхронизируем статус с текущим режимом приложения
             await self._sync_with_app_mode()
@@ -489,6 +535,9 @@ class TrayControllerIntegration:
         return {
             "is_initialized": self.is_initialized,
             "is_running": self.is_running,
+            "disabled_due_to_errors": self._disabled_due_to_errors,
+            "init_failures": self._init_failures,
+            "start_failures": self._start_failures,
             "tray_controller": {
                 "initialized": self.tray_controller is not None,
                 "running": self.tray_controller.is_running if self.tray_controller else False,

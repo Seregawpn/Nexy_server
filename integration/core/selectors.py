@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
+from integration.core.state_manager import ApplicationStateManager, AppMode
 
 class PermissionStatus(Enum):
     """Permission status values."""
@@ -37,12 +38,7 @@ class NetworkStatus(Enum):
     OFFLINE = "offline"
 
 
-class AppMode(Enum):
-    """Application mode values."""
-
-    SLEEPING = "SLEEPING"
-    LISTENING = "LISTENING"
-    PROCESSING = "PROCESSING"
+# NOTE: AppMode is imported from state_manager to ensure a single source of truth.
 
 
 @dataclass(frozen=True)
@@ -192,4 +188,80 @@ def can_process_audio(s: Snapshot) -> bool:
 def should_degrade_offline(s: Snapshot) -> bool:
     """Check if processing should degrade due to offline network."""
     return network_offline(s) and is_processing_mode(s)
+
+
+
+# Service flags (thin accessors; shadow-mode during migration)
+
+
+def is_update_in_progress(state_manager: ApplicationStateManager) -> bool:
+    """Check if an application update is currently in progress.
+
+    Source of truth is UpdaterIntegration which mirrors its state to state_manager.
+    This selector exists to prevent direct state access in integrations.
+    """
+    try:
+        return bool(state_manager.get_state_data("update_in_progress", False))
+    except Exception:
+        return False
+
+
+def create_snapshot_from_state(
+    state_manager: ApplicationStateManager,
+    *,
+    default_permissions: bool = True,
+    default_device: DeviceStatus = DeviceStatus.DEFAULT_OK,
+    default_network: NetworkStatus = NetworkStatus.ONLINE,
+) -> Snapshot:
+    """
+    Create a Snapshot from ApplicationStateManager state.
+    
+    This helper function is allowed to read state_manager directly because
+    it's in selectors.py (allowed exception per architecture rules).
+    
+    Args:
+        state_manager: ApplicationStateManager instance
+        default_permissions: Whether to assume all permissions granted (default True)
+        default_device: Default device status
+        default_network: Default network status
+        
+    Returns:
+        Snapshot with current system state
+    """
+    # Get app mode
+    try:
+        current_mode = state_manager.get_current_mode()
+        if not isinstance(current_mode, AppMode):
+            try:
+                current_mode = AppMode(current_mode)  # type: ignore[arg-type]
+            except Exception:
+                current_mode = AppMode.SLEEPING
+    except Exception:
+        current_mode = AppMode.SLEEPING
+    
+    # Get first_run status
+    first_run = bool(state_manager.get_state_data("permissions_restart_pending", False)) or False
+    # TODO: Get actual first_run flag from FirstRunPermissionsIntegration if needed
+    
+    # Get restart_pending status
+    restart_pending = bool(state_manager.get_state_data("permissions_restart_pending", False))
+    
+    # Permission statuses (default to GRANTED, can be overridden by actual checks)
+    perm_mic = PermissionStatus.GRANTED if default_permissions else PermissionStatus.DENIED
+    perm_screen = PermissionStatus.GRANTED if default_permissions else PermissionStatus.DENIED
+    perm_accessibility = PermissionStatus.GRANTED if default_permissions else PermissionStatus.DENIED
+    
+    # TODO: Get actual permission statuses from PermissionsIntegration if available
+    
+    return Snapshot(
+        perm_mic=perm_mic,
+        perm_screen=perm_screen,
+        perm_accessibility=perm_accessibility,
+        device_input=default_device,
+        network=default_network,
+        first_run=first_run,
+        app_mode=current_mode,
+        restart_pending=restart_pending,
+    )
+
 

@@ -6,6 +6,8 @@ Status Checker для проверки статусов разрешений mac
 """
 
 import logging
+import os
+import sys
 import ctypes
 from ctypes import util
 from enum import Enum
@@ -28,6 +30,10 @@ def check_microphone_status() -> PermissionStatus:
     Returns:
         PermissionStatus: текущий статус разрешения
     """
+    if _force_granted():
+        logger.debug("🎙️ Microphone: forced GRANTED via NEXY_DEV_FORCE_PERMISSIONS")
+        return PermissionStatus.GRANTED
+
     try:
         # Пытаемся использовать AVFoundation через PyObjC
         try:
@@ -71,6 +77,10 @@ def check_accessibility_status() -> PermissionStatus:
     Returns:
         PermissionStatus: текущий статус разрешения
     """
+    if _force_granted():
+        logger.debug("♿ Accessibility: forced GRANTED via NEXY_DEV_FORCE_PERMISSIONS")
+        return PermissionStatus.GRANTED
+
     try:
         # Используем существующий AccessibilityHandler
         from modules.permissions.macos.accessibility_handler import AccessibilityHandler
@@ -101,6 +111,10 @@ def check_input_monitoring_status() -> PermissionStatus:
     Returns:
         PermissionStatus: текущий статус разрешения
     """
+    if _force_granted():
+        logger.debug("⌨️ Input Monitoring: forced GRANTED via NEXY_DEV_FORCE_PERMISSIONS")
+        return PermissionStatus.GRANTED
+
     try:
         iokit_path = util.find_library("IOKit")
         if not iokit_path:
@@ -176,6 +190,10 @@ def check_screen_capture_status() -> PermissionStatus:
     Returns:
         PermissionStatus: текущий статус разрешения
     """
+    if _force_granted():
+        logger.debug("📺 Screen Capture: forced GRANTED via NEXY_DEV_FORCE_PERMISSIONS")
+        return PermissionStatus.GRANTED
+
     try:
         # Используем существующий ScreenCapturePermissionManager
         from modules.permissions.macos.screen_capture_permission import ScreenCapturePermissionManager
@@ -201,6 +219,31 @@ def check_screen_capture_status() -> PermissionStatus:
     except Exception as e:
         logger.error(f"❌ Ошибка проверки Screen Capture: {e}")
         return PermissionStatus.ERROR
+
+
+def _force_granted() -> bool:
+    """
+    Определяет, нужно ли принудительно считать разрешения выданными.
+
+    Логика:
+    1. Если явно задана переменная окружения NEXY_DEV_FORCE_PERMISSIONS:
+       - 1/true/yes  → форсируем GRANTED
+       - 0/false/no  → не форсируем
+    2. По умолчанию форсируем только при dev-запуске из терминала
+       (не упакованный билд, stdout или stdin привязаны к TTY).
+    """
+    value = os.environ.get("NEXY_DEV_FORCE_PERMISSIONS")
+    if value is not None:
+        return value.strip().lower() in {"1", "true", "yes"}
+
+    if not getattr(sys, "frozen", False):
+        try:
+            if sys.stdout.isatty() or sys.stdin.isatty():
+                return True
+        except Exception:
+            pass
+
+    return False
 
 
 def check_all_permissions() -> dict:

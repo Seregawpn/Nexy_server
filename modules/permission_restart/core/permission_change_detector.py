@@ -42,18 +42,14 @@ class PermissionChangeDetector:
             if new_status is None:
                 continue
 
-            # Persist the latest status regardless of whether the permission is critical.
-            if new_status is not None:
-                self._last_status[perm] = new_status
-
-            if perm not in self._critical:
-                continue
-
-            baseline_old = old_status or self._last_status.get(perm)
+            # Compute the baseline status before mutating the cache. This avoids
+            # clobbering the previous state when events do not provide old_status.
+            cached_status = self._last_status.get(perm)
+            baseline_old = old_status or cached_status
             if baseline_old is None:
                 baseline_old = new_status
 
-            if new_status == PermissionStatus.GRANTED and baseline_old != PermissionStatus.GRANTED:
+            if perm in self._critical and new_status == PermissionStatus.GRANTED and baseline_old != PermissionStatus.GRANTED:
                 transition = PermissionTransition(
                     permission=perm,
                     old_status=baseline_old,
@@ -68,6 +64,10 @@ class PermissionChangeDetector:
                     baseline_old.value if baseline_old else "unknown",
                     new_status.value,
                 )
+
+            # Persist the latest status after computing the transition, so future
+            # events have the correct baseline even when old_status is omitted.
+            self._last_status[perm] = new_status
 
         return transitions
 

@@ -10,10 +10,11 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager
+from integration.core.state_manager import ApplicationStateManager, AppMode
 from modules.updater import Updater
 from modules.updater.config import UpdaterConfig
 from config.updater_manager import get_updater_manager
+from config.unified_config_loader import UnifiedConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,8 @@ class UpdaterIntegration:
         # Отключаем миграцию в ~/Applications (стратегия: системная установка в /Applications)
         self._migrate_mode: str = "never"
         self._migrate_on_start: bool = False
+        # Config loader for feature flags
+        self._config_loader = UnifiedConfigLoader()
     
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -125,7 +128,15 @@ class UpdaterIntegration:
     async def _can_update(self) -> bool:
         """Проверка, можно ли обновляться"""
         current_mode = self.state_manager.get_current_mode()
-        if current_mode in ["LISTENING", "PROCESSING"]:
+        try:
+            # Нормализуем к AppMode, если вдруг пришла строка
+            if not isinstance(current_mode, AppMode):
+                current_mode = AppMode(current_mode)  # type: ignore[arg-type]
+        except Exception:
+            # В сомнительном состоянии — подстраховываемся запретом обновления
+            return False
+
+        if current_mode in (AppMode.LISTENING, AppMode.PROCESSING):
             return False
         return True
     
@@ -290,6 +301,42 @@ class UpdaterIntegration:
                 self.state_manager.set_state_data("update_in_progress", active)
             except Exception:
                 pass
+            
+            # Shadow-mode: diagnostic logging for accessor vs state_data comparison
+            try:
+                feature_config = self._config_loader._load_config().get("features", {}).get("use_events_for_update_status", {})
+                if feature_config.get("enabled", False):
+                    # Compare accessor vs state_data
+                    state_data_value = bool(self.state_manager.get_state_data("update_in_progress", False))
+                    accessor_value = self._update_in_progress
+                    if state_data_value != accessor_value:
+                        logger.warning(
+                            "[UPDATER] Shadow-mode mismatch: accessor=%s vs state_data=%s (trigger=%s)",
+                            accessor_value,
+                            state_data_value,
+                            trigger,
+                        )
+                    else:
+                        logger.debug(
+                            "[UPDATER] Shadow-mode sync: accessor=%s == state_data=%s (trigger=%s)",
+                            accessor_value,
+                            state_data_value,
+                            trigger,
+                        )
+            except Exception:
+                pass  # Don't fail if feature flag check fails
+            
+            # Публикуем событие изменения состояния (shadow-mode)
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._safe_publish(
+                        "updater.in_progress.changed",
+                        {"active": active, "trigger": trigger},
+                    ),
+                    self._loop or asyncio.get_event_loop(),
+                )
+            except Exception:
+                pass
             return
 
         self._update_in_progress = active
@@ -297,7 +344,42 @@ class UpdaterIntegration:
             self.state_manager.set_state_data("update_in_progress", active)
         except Exception:
             pass
+        
+        # Shadow-mode: diagnostic logging for accessor vs state_data comparison
+        try:
+            feature_config = self._config_loader._load_config().get("features", {}).get("use_events_for_update_status", {})
+            if feature_config.get("enabled", False):
+                # Compare accessor vs state_data
+                state_data_value = bool(self.state_manager.get_state_data("update_in_progress", False))
+                accessor_value = self._update_in_progress
+                if state_data_value != accessor_value:
+                    logger.warning(
+                        "[UPDATER] Shadow-mode mismatch: accessor=%s vs state_data=%s (trigger=%s)",
+                        accessor_value,
+                        state_data_value,
+                        trigger,
+                    )
+                else:
+                    logger.debug(
+                        "[UPDATER] Shadow-mode sync: accessor=%s == state_data=%s (trigger=%s)",
+                        accessor_value,
+                        state_data_value,
+                        trigger,
+                    )
+        except Exception:
+            pass  # Don't fail if feature flag check fails
+        
         logger.debug("UpdaterIntegration: update_in_progress=%s (trigger=%s)", active, trigger)
+        # Публикуем событие изменения состояния
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self._safe_publish(
+                    "updater.in_progress.changed", {"active": active, "trigger": trigger}
+                ),
+                self._loop or asyncio.get_event_loop(),
+            )
+        except Exception:
+            pass
 
     async def _handle_download_progress(
         self,

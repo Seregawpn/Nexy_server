@@ -32,6 +32,31 @@ class Decision(Enum):
     DEGRADE = "degrade"
 
 
+def _log_decision(
+    *,
+    level: str,
+    decision: "Decision | str",
+    s: Snapshot,
+    source: str,
+    reason: str | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    """Unified decision log formatter.
+
+    Always logs ctx={mic, screen, device, network, firstRun, appMode} with optional duration_ms.
+    """
+    ctx = (
+        f"ctx={{mic={s.perm_mic.value},screen={s.perm_screen.value},device={s.device_input.value},"
+        f"network={s.network.value},firstRun={s.first_run},appMode={s.app_mode.value}}}"
+    )
+    reason_part = f" reason={reason}" if reason else ""
+    duration_part = f" duration_ms={int(duration_ms)}" if duration_ms is not None else ""
+    msg = f"decision={(decision.value if isinstance(decision, Decision) else decision)}{reason_part} {ctx} source={source}{duration_part}"
+
+    log_fn = getattr(logger, level, logger.info)
+    log_fn(msg)
+
+
 def decide_start_listening(s: Snapshot) -> Decision:
     """
     Decide whether to start listening based on current state.
@@ -44,84 +69,44 @@ def decide_start_listening(s: Snapshot) -> Decision:
     - start: if all conditions are met
     """
     if s.first_run:
-        logger.info(
-            "decision=abort reason=first_run_in_progress "
-            f"ctx={{firstRun={s.first_run},mic={s.perm_mic.value},device={s.device_input.value}}} "
-            "source=listening_gateway"
-        )
+        _log_decision(level="info", decision=Decision.ABORT, s=s, source="listening_gateway", reason="first_run_in_progress")
         return Decision.ABORT
 
     if not mic_ready(s):
-        logger.debug(
-            "decision=abort "
-            f"ctx={{mic={s.perm_mic.value},device={s.device_input.value},network={s.network.value}}} "
-            "source=listening_gateway"
-        )
+        _log_decision(level="debug", decision=Decision.ABORT, s=s, source="listening_gateway")
         return Decision.ABORT
 
     if device_busy(s):
-        logger.debug(
-            "decision=retry "
-            f"ctx={{mic={s.perm_mic.value},device={s.device_input.value},network={s.network.value}}} "
-            "source=listening_gateway"
-        )
+        _log_decision(level="debug", decision=Decision.RETRY, s=s, source="listening_gateway")
         return Decision.RETRY
 
     if network_offline(s):
-        logger.debug(
-            "decision=degrade "
-            f"ctx={{mic={s.perm_mic.value},device={s.device_input.value},network={s.network.value}}} "
-            "source=listening_gateway"
-        )
+        _log_decision(level="debug", decision=Decision.DEGRADE, s=s, source="listening_gateway")
         return Decision.DEGRADE
 
     if can_start_listening(s):
-        logger.debug(
-            "decision=start "
-            f"ctx={{mic={s.perm_mic.value},device={s.device_input.value},network={s.network.value},appMode={s.app_mode.value}}} "
-            "source=listening_gateway"
-        )
+        _log_decision(level="debug", decision=Decision.START, s=s, source="listening_gateway")
         return Decision.START
 
-    logger.debug(
-        "decision=abort "
-        f"ctx={{mic={s.perm_mic.value},device={s.device_input.value},network={s.network.value},appMode={s.app_mode.value}}} "
-        "source=listening_gateway"
-    )
+    _log_decision(level="debug", decision=Decision.ABORT, s=s, source="listening_gateway")
     return Decision.ABORT
 
 
 def decide_process_audio(s: Snapshot) -> Decision:
     """Decide whether to process audio based on current state."""
     if not mic_ready(s):
-        logger.debug(
-            "decision=abort "
-            f"ctx={{mic={s.perm_mic.value},network={s.network.value},appMode={s.app_mode.value}}} "
-            "source=processing_gateway"
-        )
+        _log_decision(level="debug", decision=Decision.ABORT, s=s, source="processing_gateway")
         return Decision.ABORT
 
     if should_degrade_offline(s):
-        logger.debug(
-            "decision=degrade "
-            f"ctx={{mic={s.perm_mic.value},network={s.network.value},appMode={s.app_mode.value}}} "
-            "source=processing_gateway"
-        )
+        _log_decision(level="debug", decision=Decision.DEGRADE, s=s, source="processing_gateway")
         return Decision.DEGRADE
 
     if can_process_audio(s):
-        logger.debug(
-            "decision=start "
-            f"ctx={{mic={s.perm_mic.value},network={s.network.value},appMode={s.app_mode.value}}} "
-            "source=processing_gateway"
-        )
+        _log_decision(level="debug", decision=Decision.START, s=s, source="processing_gateway")
         return Decision.START
 
-    logger.debug(
-        "decision=abort "
-        f"ctx={{mic={s.perm_mic.value},network={s.network.value},appMode={s.app_mode.value}}} "
-        "source=processing_gateway"
-    )
+    _log_decision(level="debug", decision=Decision.ABORT, s=s, source="processing_gateway")
     return Decision.ABORT
 
 
@@ -147,25 +132,27 @@ def decide_continue_integration_startup(s: Snapshot) -> Decision:
     Decide whether to continue launching integrations after first_run_permissions.
     """
     if is_first_run_restart_pending(s):
-        logger.info(
-            "decision=abort reason=first_run_restart_pending "
-            f"ctx={{firstRun={s.first_run},restart_pending={s.restart_pending},"
-            f"appMode={s.app_mode.value}}} source=coordinator_gateway duration_ms=0"
+        _log_decision(
+            level="info",
+            decision=Decision.ABORT,
+            s=s,
+            source="coordinator_gateway",
+            reason="first_run_restart_pending",
+            duration_ms=0,
         )
         return Decision.ABORT
 
     if is_restart_pending(s):
-        logger.warning(
-            "decision=abort reason=restart_pending_without_first_run "
-            f"ctx={{firstRun={s.first_run},restart_pending={s.restart_pending},"
-            f"appMode={s.app_mode.value}}} source=coordinator_gateway duration_ms=0"
+        _log_decision(
+            level="warning",
+            decision=Decision.ABORT,
+            s=s,
+            source="coordinator_gateway",
+            reason="restart_pending_without_first_run",
+            duration_ms=0,
         )
         return Decision.ABORT
 
-    logger.debug(
-        "decision=start "
-        f"ctx={{firstRun={s.first_run},restart_pending={s.restart_pending},appMode={s.app_mode.value}}} "
-        "source=coordinator_gateway"
-    )
+    _log_decision(level="debug", decision=Decision.START, s=s, source="coordinator_gateway")
     return Decision.START
 

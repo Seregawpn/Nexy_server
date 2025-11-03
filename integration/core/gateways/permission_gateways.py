@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 from integration.core.state_manager import ApplicationStateManager
+from integration.core.gateways.common import Decision, _log_decision
+from integration.core.selectors import Snapshot, is_first_run_restart_pending, is_update_in_progress
 
 try:  # pragma: no cover - defensive fallback for tooling contexts
     from integration.core.state_manager import AppMode  # type: ignore
@@ -139,6 +141,10 @@ class PermissionRestartGateway:
     def is_update_in_progress(self) -> bool:
         """
         Inspect updater integration or shared state to detect an ongoing update.
+        
+        Priority order:
+        1. UpdaterIntegration.is_update_in_progress() (if available) - primary source
+        2. selectors.is_update_in_progress(state_manager) - fallback via selector
         """
 
         updater = self._updater_integration
@@ -152,9 +158,9 @@ class PermissionRestartGateway:
             except Exception:  # pragma: no cover - defensive
                 logger.debug("PermissionRestartGateway: updater status check failed", exc_info=True)
 
+        # Fallback: use selector instead of direct state_data access
         try:
-            state_flag = self._state_manager.get_state_data("update_in_progress", False)
-            return bool(state_flag)
+            return is_update_in_progress(self._state_manager)
         except Exception:  # pragma: no cover - defensive
             return False
 
@@ -175,3 +181,54 @@ class PermissionRestartGateway:
                 logger.debug("PermissionRestartGateway: update availability check failed", exc_info=True)
 
         return False
+
+
+def decide_permission_restart_safety(
+    snapshot: Snapshot,
+    update_in_progress: bool,
+) -> Decision:
+    """
+    Decide whether it's safe to schedule a permission restart.
+
+    Rules:
+    - hard_stop: if first_run restart is pending, abort (block restart)
+    - graceful: if update is in progress, abort (avoid interrupting update)
+    - start: if all conditions are met
+
+    Args:
+        snapshot: Current system state snapshot
+        update_in_progress: Whether an update is currently in progress
+
+    Returns:
+        Decision.START if restart is safe, Decision.ABORT otherwise
+    """
+    # Hard stop: first_run restart pending blocks all restarts
+    if is_first_run_restart_pending(snapshot):
+        _log_decision(
+            level="info",
+            decision=Decision.ABORT,
+            s=snapshot,
+            source="permission_restart_gateway",
+            reason="first_run_restart_pending",
+        )
+        return Decision.ABORT
+
+    # Graceful: update in progress blocks restart
+    if update_in_progress:
+        _log_decision(
+            level="info",
+            decision=Decision.ABORT,
+            s=snapshot,
+            source="permission_restart_gateway",
+            reason="update_in_progress",
+        )
+        return Decision.ABORT
+
+    # All conditions met - restart is safe
+    _log_decision(
+        level="debug",
+        decision=Decision.START,
+        s=snapshot,
+        source="permission_restart_gateway",
+    )
+    return Decision.START

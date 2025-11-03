@@ -14,6 +14,7 @@ from shutil import which
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode
 from integration.core.error_handler import ErrorHandler
+from config.unified_config_loader import UnifiedConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,12 @@ class VoiceRecognitionIntegration:
 
         # Флаг блокировки во время first_run
         self._first_run_in_progress: bool = False
+        # Конфигурируемая задержка между попытками запуска микрофона
+        try:
+            voice_cfg = UnifiedConfigLoader().get("voice") or {}
+            self._start_retry_delay_sec = max(0.0, float(voice_cfg.get("start_retry_delay_ms", 300)) / 1000.0)
+        except Exception:
+            self._start_retry_delay_sec = 0.3
 
     @classmethod
     def run_dependency_check(cls) -> bool:
@@ -272,12 +279,14 @@ class VoiceRecognitionIntegration:
                         if is_already_running:
                             logger.warning(f"⚠️ CoreAudio thread already running, попытка {attempt+1}/{max_attempts}")
                             if attempt < max_attempts - 1:
-                                await asyncio.sleep(0.3)  # Ждем 300ms перед повтором
+                                await asyncio.sleep(self._start_retry_delay_sec)
                                 continue
 
                         if attempt < max_attempts - 1:
-                            logger.warning(f"⚠️ Повтор через 300ms...")
-                            await asyncio.sleep(0.3)
+                            logger.warning(
+                                f"⚠️ Повтор через {int(self._start_retry_delay_sec * 1000)}ms..."
+                            )
+                            await asyncio.sleep(self._start_retry_delay_sec)
                         else:
                             # Все попытки исчерпаны
                             logger.error(f"❌ VOICE: failed to start listening after {max_attempts} attempts")

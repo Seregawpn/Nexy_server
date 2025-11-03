@@ -18,6 +18,7 @@ axes:
   appMode: [SLEEPING, LISTENING, PROCESSING]
   permissions.restart_pending: [true, false]  # NEW - Phase 2
   process.lifecycle: [running, restarting, terminated]  # NEW - Phase 2
+  update_in_progress: [true, false]  # NEW - Phase 2
 
 rules:
   # ============================================================================
@@ -126,7 +127,42 @@ rules:
     description: Update in progress - delay restart until installation completes (max 10 minutes)
     gateway: permission_restart._wait_for_safe_conditions
     timeout_seconds: 600
-      source: STATE_CATALOG.md (Связь с Permission Restart)
+    source: STATE_CATALOG.md (Связь с Permission Restart)
+
+  # ============================================================================
+  # UPDATE / RESTART CONFLICT RULES (Phase 2)
+  # See Docs/STATE_CATALOG.md section 10 (update_in_progress axis)
+  # ============================================================================
+
+  # Graceful: update_in_progress blocks permission restart
+  # Rule: If update_in_progress=true → abort permission restart (graceful)
+  # Reason: Avoid interrupting update installation process
+  - when: {update_in_progress: true}
+    decision: abort_permission_restart
+    priority: graceful
+    description: Update in progress - block permission restart to avoid interrupting installation
+    gateway: decide_permission_restart_safety
+    source: STATE_CATALOG.md (update_in_progress axis)
+
+  # Hard stop: update_in_progress + active session blocks update launch
+  # Rule: If update_in_progress=true AND appMode=LISTENING|PROCESSING → block update launch
+  # Reason: Prevent updates during active user sessions
+  - when: {update_in_progress: true, appMode: [LISTENING, PROCESSING]}
+    decision: abort_update_launch
+    priority: hard_stop
+    description: Active session during update - block update launch (only allowed in SLEEPING mode)
+    gateway: UpdaterIntegration._can_update
+    source: STATE_CATALOG.md (update_in_progress axis)
+
+  # Hard stop: first_run + restart_pending blocks update launch
+  # Rule: If firstRun=true AND restart_pending=true → block update launch
+  # Reason: First-run restart takes precedence over update
+  - when: {FirstRun: true, permissions.restart_pending: true}
+    decision: abort_update_launch
+    priority: hard_stop
+    description: First-run restart pending - block update launch (restart takes precedence)
+    gateway: decide_permission_restart_safety
+    source: STATE_CATALOG.md (restart_pending + update_in_progress)
 
   # Hard stop: max_restart_attempts exceeded
   # Rule: If attempts >= max_restart_attempts → skip restart

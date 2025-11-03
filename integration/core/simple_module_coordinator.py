@@ -43,7 +43,6 @@ from integration.core.selectors import (
     PermissionStatus,
     DeviceStatus,
     NetworkStatus,
-    AppMode,
 )
 from integration.core.gateways import decide_continue_integration_startup, Decision
 
@@ -183,16 +182,21 @@ class SimpleModuleCoordinator:
                 config=None  # берёт значения из unified_config.yaml при наличии
             )
 
-            # TrayController Integration - используем конфигурацию модуля
-            # Конфигурация будет загружена внутри TrayControllerIntegration
-            tray_config = None  # Будет создана автоматически из unified_config.yaml
-            
-            self.integrations['tray'] = TrayControllerIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
-                config=tray_config
-            )
+            # TrayController Integration - уважаем глобальный флаг enabled из unified_config
+            tray_cfg_all = (config_data.get('integrations') or {}).get('tray_controller') or {}
+            tray_enabled = bool(tray_cfg_all.get('enabled', True))
+
+            if tray_enabled:
+                # Конфигурация будет загружена внутри TrayControllerIntegration
+                tray_config = None  # Автоматически из unified_config.yaml / tray_config.yaml
+                self.integrations['tray'] = TrayControllerIntegration(
+                    event_bus=self.event_bus,
+                    state_manager=self.state_manager,
+                    error_handler=self.error_handler,
+                    config=tray_config
+                )
+            else:
+                logger.info("[TRAY] Disabled via config.integrations.tray_controller.enabled=false - skipping tray integration")
             
             # InputProcessing Integration - используем централизованную конфигурацию
             input_config = self.config.get_input_processing_config()
@@ -535,55 +539,70 @@ class SimpleModuleCoordinator:
                     
                     # КРИТИЧНО: Проверяем запрошен ли перезапуск после first_run_permissions
                     if name == "first_run_permissions" and success:
-                        # Даём время обработчикам событий сработать
-                        await asyncio.sleep(0.5)
+                        import time
+                        decision_start = time.time()
+
+                        # Даём время обработчикам событий сработать (конфигурируемая задержка)
+                        try:
+                            delay_ms = int((self.config.get("coordinator") or {}).get("event_settle_delay_ms", 500))
+                        except Exception:
+                            delay_ms = 500
+                        await asyncio.sleep(max(0.0, delay_ms / 1000.0))
 
                         snapshot = Snapshot(
-                            perm_mic=PermissionStatus.GRANTED,
+                            perm_mic=PermissionStatus.GRANTED,  # TODO: использовать реальный статус
                             perm_screen=PermissionStatus.GRANTED,
                             perm_accessibility=PermissionStatus.GRANTED,
                             device_input=DeviceStatus.DEFAULT_OK,
                             network=NetworkStatus.ONLINE,
                             first_run=self._permissions_in_progress,
                             app_mode=AppMode.SLEEPING,
-                            restart_pending=self._restart_pending or bool(
-                                self.state_manager.get_state_data("permissions_restart_pending", False)
-                            ),
+                            restart_pending=self._restart_pending,  # Use internal state, not state_data (source: permissions.restart_pending.changed event)
                         )
 
                         decision = decide_continue_integration_startup(snapshot)
+                        decision_duration_ms = int((time.time() - decision_start) * 1000)
 
                         if decision == Decision.ABORT:
                             logger.info(
                                 "decision=abort reason=first_run_restart_pending "
                                 f"ctx={{firstRun={snapshot.first_run},restart_pending={snapshot.restart_pending},"
-                                f"appMode={snapshot.app_mode.value}}} source=coordinator duration_ms=0"
+                                f"appMode={snapshot.app_mode.value}}} source=coordinator duration_ms={decision_duration_ms}"
                             )
                             print("🔄 [PERMISSIONS] Первый запуск разрешений - запуск перезапуска приложения")
                             print("⏹️ [PERMISSIONS] Остальные интеграции НЕ будут запущены")
 
                             first_run_integration = self.integrations.get("first_run_permissions")
                             if first_run_integration and hasattr(first_run_integration, "request_restart"):
+                                restart_start = time.time()
                                 restart_success = await first_run_integration.request_restart()
+                                restart_duration_ms = int((time.time() - restart_start) * 1000)
+
                                 if not restart_success:
                                     logger.warning(
-                                        "⚠️ [PERMISSIONS] Перезапуск не удался - продолжаем запуск интеграций"
+                                        f"⚠️ [PERMISSIONS] Перезапуск не удался после {restart_duration_ms}ms - продолжаем запуск интеграций"
                                     )
-                                    print("⚠️ [PERMISSIONS] Перезапуск не удался - продолжаем запуск")
+                                    print(f"⚠️ [PERMISSIONS] Перезапуск не удался ({restart_duration_ms}ms) - продолжаем запуск")
                                     self._permissions_in_progress = False
                                     self._restart_pending = False
                                     self.state_manager.set_state_data("permissions_restart_pending", False)
                                 else:
+                                    logger.info(f"✅ [PERMISSIONS] Перезапуск инициирован успешно ({restart_duration_ms}ms)")
                                     return True
                             else:
                                 logger.error(
                                     "❌ [PERMISSIONS] FirstRunPermissionsIntegration не поддерживает request_restart()"
                                 )
-                                print("❌ [PERMISSIONS] Не удалось вызвать перезапуск - продолжаем запуск")
+                                print("❌ [PERMISSIONS] Не удал��сь вызвать перезапуск - продолжаем запуск")
                                 self._permissions_in_progress = False
                                 self._restart_pending = False
                                 self.state_manager.set_state_data("permissions_restart_pending", False)
                         else:
+                            logger.info(
+                                "decision=continue reason=no_restart_pending "
+                                f"ctx={{firstRun={snapshot.first_run},restart_pending={snapshot.restart_pending}}} "
+                                f"source=coordinator duration_ms={decision_duration_ms}"
+                            )
                             print("✅ [PERMISSIONS] Первый запуск уже завершён ранее, продолжаем запуск...")
                     
                     if not success:
@@ -693,19 +712,22 @@ class SimpleModuleCoordinator:
                 print("❌ Не удалось запустить компоненты")
                 return
             
-            # Получаем приложение rumps для отображения иконки
+            # Получаем приложение rumps для отображения иконки (если трей включён)
             tray_integration = self.integrations.get('tray')
             if not tray_integration:
-                print("❌ TrayController интеграция не найдена")
+                # Headless режим: трей отключён конфигом — продолжаем работу без меню-бара
+                print("🖥️ Headless mode: Tray disabled. Running without menu bar. Press Ctrl+C to exit.")
+                while self.is_running:
+                    await asyncio.sleep(3600)
                 return
-            
+
             app = tray_integration.get_app()
             if not app:
                 print("❌ Не удалось получить приложение трея")
                 return
-            
+
             print("🎯 Запуск приложения с иконкой в меню-баре...")
-            
+
             # Запускаем UI-таймер ПОСЛЕ того как rumps приложение готово
             # Используем rumps.Timer для запуска таймера в UI-потоке (однократно)
             import rumps
@@ -717,12 +739,12 @@ class SimpleModuleCoordinator:
                     startup_timer.stop()
                 except Exception as e:
                     logger.error(f"❌ Ошибка запуска UI-таймера через callback: {e}")
-            
+
             # Запускаем таймер через 1 секунду после старта приложения (однократно)
             # В rumps.Timer нет параметра repeat; останавливаем таймер внутри колбэка
             startup_timer = rumps.Timer(start_timer_callback, 1.0)
             startup_timer.start()
-            
+
             # Запускаем приложение rumps (блокирующий вызов)
             app.run()
             
@@ -867,6 +889,44 @@ class SimpleModuleCoordinator:
             # Это сигнал для метода start() остановить запуск интеграций
             self._restart_pending = True
             self.state_manager.set_state_data("permissions_restart_pending", True)
+
+            # Shadow-mode: diagnostic logging for coordinator._restart_pending vs state_data comparison
+            try:
+                feature_config = self.config._load_config().get("features", {}).get("use_events_for_restart_pending", {})
+                if feature_config.get("enabled", False):
+                    # Compare coordinator internal state vs state_data
+                    state_data_value = bool(self.state_manager.get_state_data("permissions_restart_pending", False))
+                    coordinator_value = self._restart_pending
+                    if state_data_value != coordinator_value:
+                        logger.warning(
+                            "[COORDINATOR] Shadow-mode mismatch: coordinator._restart_pending=%s vs state_data=%s (session=%s)",
+                            coordinator_value,
+                            state_data_value,
+                            session_id,
+                        )
+                    else:
+                        logger.debug(
+                            "[COORDINATOR] Shadow-mode sync: coordinator._restart_pending=%s == state_data=%s (session=%s)",
+                            coordinator_value,
+                            state_data_value,
+                            session_id,
+                        )
+            except Exception:
+                pass  # Don't fail if feature flag check fails
+
+            # Shadow-mode событие изменения служебного флага
+            try:
+                await self.event_bus.publish(
+                    "permissions.restart_pending.changed",
+                    {
+                        "active": True,
+                        "session_id": session_id,
+                        "source": "coordinator",
+                    },
+                    EventPriority.MEDIUM,
+                )
+            except Exception:
+                pass
 
             # НЕ сбрасываем _permissions_in_progress - это предотвратит запуск интеграций
             # Флаг сбросится автоматически при следующем запуске приложения

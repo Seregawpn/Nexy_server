@@ -31,6 +31,8 @@ class PermissionRestartConfig:
     max_restart_attempts: int = 3
     respect_active_sessions: bool = True
     respect_updates: bool = True
+    handler_launch_delay_ms: float = 1000.0  # Delay after dev process launch (default: 1.0 sec)
+    packaged_launch_grace_ms: float = 3000.0  # Delay after packaged app launch (default: 3.0 sec)
 
     @classmethod
     def from_dict(cls, raw: Optional[Dict[str, object]]) -> "PermissionRestartConfig":
@@ -46,6 +48,8 @@ class PermissionRestartConfig:
         max_attempts = int(raw.get("max_restart_attempts", 3))
         respect_sessions = bool(raw.get("respect_active_sessions", True))
         respect_updates = bool(raw.get("respect_updates", True))
+        handler_launch_delay_ms = float(raw.get("handler_launch_delay_ms", 1000.0))
+        packaged_launch_grace_ms = float(raw.get("packaged_launch_grace_ms", 3000.0))
 
         critical_raw: Optional[Iterable[object]] = raw.get("critical_permissions")  # type: ignore[assignment]
         critical_permissions = _parse_permission_list(critical_raw)
@@ -57,6 +61,8 @@ class PermissionRestartConfig:
             max_restart_attempts=max_attempts,
             respect_active_sessions=respect_sessions,
             respect_updates=respect_updates,
+            handler_launch_delay_ms=handler_launch_delay_ms,
+            packaged_launch_grace_ms=packaged_launch_grace_ms,
         )
 
 

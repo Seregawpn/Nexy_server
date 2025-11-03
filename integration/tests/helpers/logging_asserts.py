@@ -32,8 +32,8 @@ def assert_decision_logged(
     Raises:
         AssertionError: If decision log not found or format invalid
     """
-    # Canonical format pattern
-    pattern = rf"decision={decision}\s+ctx=\{{[^}}]+\}}\s+source={source}(\s+duration_ms=\d+)?"
+    # Canonical format pattern (reason is optional and appears between decision and ctx)
+    pattern = rf"decision={decision}(\s+reason=\w+)?\s+ctx=\{{[^}}]+\}}\s+source={source}(\s+duration_ms=\d+)?"
     
     logs = caplog.text
     match = re.search(pattern, logs)

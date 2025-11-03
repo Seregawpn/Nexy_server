@@ -24,7 +24,6 @@ max-complexity = 7
 [tool.ruff.lint.per-file-ignores]
 # Allow higher complexity in selectors/gateways (they are intentionally decision trees)
 "integration/core/selectors.py" = ["C901"]
-"integration/core/gateways.py" = ["C901"]
 "integration/core/gateways/**/*.py" = ["C901"]
 
 [tool.ruff.lint.isort]

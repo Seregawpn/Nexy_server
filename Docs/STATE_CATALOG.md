@@ -108,6 +108,20 @@
 - **механизм верификации**: `open -W` блокируется пока новое приложение не откроется
 - **связанные документы**: `modules/permission_restart/macos/permissions_restart_handler.py`
 
+#### 10) update_in_progress **[НОВАЯ ОСЬ - Phase 2]**
+- **владелец**: UpdaterIntegration owner
+- **пишет**: `updater_integration` (через `_set_update_state`)
+- **читает**: `permission_restart_integration`, `simple_module_coordinator` (через selectors/gateways)
+- **источник истины**: `UpdaterIntegration.is_update_in_progress()` (mirrors to `state_manager.set_state_data("update_in_progress")`)
+- **метрики**: `update_in_progress_duration_ms`, `update_restart_conflict_rate`
+- **состояния**: `true | false`
+- **правила в interaction_matrix.yaml**: 
+  - `graceful` при `update_in_progress=true` → блокирует permission restart (через gateway `decide_permission_restart_safety`)
+  - `hard_stop` при `update_in_progress=true` + `appMode=LISTENING|PROCESSING` → блокирует запуск обновления
+- **события**: `updater.in_progress.changed` публикуется при изменении статуса (`{active: bool, trigger: str}`)
+- **shadow-mode**: параллельно с записью `state_data` публикуются события для постепенной миграции на selectors
+- **связанные документы**: `integration/integrations/updater_integration.py`, `integration/core/selectors.py`
+
 ### Связь с interaction_matrix.yaml
 
 **Обязательная синхронизация**: Каждая ось, влияющая на принятие решений, должна иметь соответствующее правило в `interaction_matrix.yaml`:
@@ -121,6 +135,8 @@
 | `firstRun: true` | Блокирует активацию | `hard_stop` | `decide_start_listening()` |
 | `permissions.restart_pending: true` + `firstRun: true` **[НОВАЯ]** | Блокирует запуск интеграций | `hard_stop` | `decide_continue_integration_startup()` **[Phase 2]** |
 | `process.lifecycle: restarting` **[НОВАЯ]** | Блокирует интеграции | `hard_stop` | через `restart_pending` |
+| `update_in_progress: true` **[НОВАЯ]** | Блокирует permission restart | `graceful` | `decide_permission_restart_safety()` **[Phase 2]** |
+| `update_in_progress: true` + `appMode: LISTENING|PROCESSING` **[НОВАЯ]** | Блокирует запуск обновления | `hard_stop` | `UpdaterIntegration._can_update()` |
 
 **Правило обновления**: При изменении оси или добавлении нового правила:
 1. Обновить `STATE_CATALOG.md` (этот документ)
@@ -188,6 +204,7 @@ decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=
 | `interaction_matrix.yaml` | Tech Lead клиента | Разработчики (после синхронизации с STATE_CATALOG.md) | Все разработчики, gateways | `config/interaction_matrix.yaml` | Tech Lead клиента |
 | `gateways.py` | Tech Lead клиента | Разработчики (после синхронизации с interaction_matrix.yaml) | Все интеграции | `integration/core/gateways.py` | Tech Lead клиента |
 | `permission_restart` | Tech Lead клиента | `permission_restart_integration` | Все интеграции, влияющие на перезапуск | `modules/permission_restart/core/restart_scheduler.py` | Tech Lead клиента |
+| `update_in_progress` | UpdaterIntegration owner | `updater_integration` | `permission_restart_integration`, `simple_module_coordinator` | `UpdaterIntegration.is_update_in_progress()` | Tech Lead клиента |
 
 **Правило разрешения споров**: При любом разногласии по оси/артефакту — окончательное решение принимает Owner из этой таблицы.
 
