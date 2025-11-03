@@ -186,9 +186,9 @@ class TestCoordinatorCriticalSubscriptions:
             {
                 "session_id": "test-session",
                 "source": "first_run_permissions_integration",
-                "note": "Test event"
-            },
-            EventPriority.HIGH
+                "note": "Test event",
+                "priority": EventPriority.HIGH
+            }
         )
         
         # Даём время на обработку события
@@ -227,9 +227,9 @@ class TestCoordinatorCriticalSubscriptions:
             "permissions.first_run_restart_pending",
             {
                 "session_id": "test-restart-session",
-                "source": "first_run_permissions_integration"
-            },
-            EventPriority.CRITICAL
+                "source": "first_run_permissions_integration",
+                "priority": EventPriority.CRITICAL
+            }
         )
         
         # Даём время на обработку

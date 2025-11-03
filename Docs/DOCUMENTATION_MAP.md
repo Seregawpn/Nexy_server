@@ -49,6 +49,13 @@
 | `Docs/templates/change_impact.yaml` | Шаблон для Impact-гейт | `.cursorrules` (раздел 11) |
 | `Docs/templates/ADR_MIN.md` | Шаблон микро-ADR | `.cursorrules` (раздел 14.7) |
 
+### 6. ADR (Architecture Decision Records)
+
+| Документ | Назначение | Связан с |
+|----------|-----------|----------|
+| `Docs/ADR_PERMISSION_EVENT_RACE_FIX.md` | ADR: исправление race condition в обработке событий разрешений | `integration/core/simple_module_coordinator.py`, `tests/test_coordinator_critical_subscriptions.py` |
+| `Docs/change_impact_permission_event_race_fix.yaml` | Change Impact Analysis для race condition fix | `Docs/ADR_PERMISSION_EVENT_RACE_FIX.md` |
+
 ---
 
 ## 🔗 Связи между документами
