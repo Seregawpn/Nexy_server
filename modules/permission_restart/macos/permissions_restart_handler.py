@@ -111,12 +111,16 @@ class PermissionsRestartHandler:
                 else:
                     # Запоминаем что packaged app недоступен для следующих попыток
                     self._packaged_unavailable = True
-                    logger.info("[PERMISSION_RESTART] Packaged app unavailable - will use dev fallback")
+                    logger.info(
+                        "[PERMISSION_RESTART] Packaged app unavailable - will use dev fallback (bundle_path=%s)",
+                        self._derive_bundle_path(),
+                    )
 
             logger.info("[PERMISSION_RESTART] Restarting via dev process (python command)")
             self._launch_dev_process()
             restart_successful = True
             delay_sec = self._config.handler_launch_delay_ms / 1000.0
+            logger.debug("[PERMISSION_RESTART] Sleeping %.2fs to allow dev process to boot", delay_sec)
             time.sleep(delay_sec)
 
         except Exception as exc:
@@ -125,10 +129,20 @@ class PermissionsRestartHandler:
 
         finally:
             if restart_successful:
-                logger.info("[PERMISSION_RESTART] Exiting current process (new process should be running)")
+                logger.info(
+                    "[PERMISSION_RESTART] Exiting current process (reason=%s, permissions=%s)",
+                    self._last_reason,
+                    self._last_permissions,
+                )
                 os._exit(0)
             else:
                 logger.error("[PERMISSION_RESTART] Restart failed - NOT exiting to allow fallback")
+                logger.debug(
+                    "[PERMISSION_RESTART] Restart failed context: packaged_unavailable=%s reason=%s permissions=%s",
+                    self._packaged_unavailable,
+                    self._last_reason,
+                    self._last_permissions,
+                )
 
     def _launch_packaged_app(self) -> bool:
         """
@@ -194,9 +208,11 @@ class PermissionsRestartHandler:
 
         except subprocess.TimeoutExpired:
             logger.error("[PERMISSION_RESTART] Launch timeout (>5 seconds) - app may not have started")
+            logger.debug("[PERMISSION_RESTART] Timeout context: bundle_path=%s", bundle_path)
             return False
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Failed to relaunch packaged app: %s", exc)
+            logger.debug("[PERMISSION_RESTART] Exception context: bundle_path=%s", bundle_path)
             return False
 
     def _launch_dev_process(self) -> None:
@@ -290,6 +306,11 @@ class PermissionsRestartHandler:
                 if result.returncode == 0 and result.stdout.strip():
                     logger.debug("[PERMISSION_RESTART] Verified process launched for %s", executable_str)
                     return True
+                logger.debug(
+                    "[PERMISSION_RESTART] pgrep pending (rc=%s stdout=%s)",
+                    result.returncode,
+                    result.stdout.strip(),
+                )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("[PERMISSION_RESTART] pgrep failed: %s", exc)
                 break

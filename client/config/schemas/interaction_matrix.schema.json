@@ -23,7 +23,7 @@
         "required": ["when", "decision", "priority"],
         "properties": {
           "when": {"type": "object"},
-          "decision": {"type": "string", "enum": ["abort_listen", "abort_processing", "retry_backoff", "degrade_offline", "skip_restart", "delay_restart"]},
+          "decision": {"type": "string", "enum": ["abort_listen", "abort_processing", "retry_backoff", "degrade_offline", "skip_restart", "delay_restart", "abort_permission_restart", "abort_update_launch", "abort_integration_startup"]},
           "priority": {"type": "string", "enum": ["hard_stop", "graceful", "preference"]},
           "description": {"type": "string"},
           "gateway": {"type": "string"},

@@ -583,6 +583,11 @@ class SimpleModuleCoordinator:
                                         f"⚠️ [PERMISSIONS] Перезапуск не удался после {restart_duration_ms}ms - продолжаем запуск интеграций"
                                     )
                                     print(f"⚠️ [PERMISSIONS] Перезапуск не удался ({restart_duration_ms}ms) - продолжаем запуск")
+                                    logger.warning(
+                                        "[PERMISSIONS] request_restart returned False (duration_ms=%s, session=%s)",
+                                        restart_duration_ms,
+                                        getattr(first_run_integration, "_restart_session_id", None),
+                                    )
                                     self._permissions_in_progress = False
                                     self._restart_pending = False
                                     # Legacy: Update state_data for backward compatibility (will be removed after migration)
@@ -597,6 +602,11 @@ class SimpleModuleCoordinator:
                                         pass
                                 else:
                                     logger.info(f"✅ [PERMISSIONS] Перезапуск инициирован успешно ({restart_duration_ms}ms)")
+                                    logger.info(
+                                        "[PERMISSIONS] request_restart succeeded (duration_ms=%s, session=%s)",
+                                        restart_duration_ms,
+                                        getattr(first_run_integration, "_restart_session_id", None),
+                                    )
                                     return True
                             else:
                                 logger.error(

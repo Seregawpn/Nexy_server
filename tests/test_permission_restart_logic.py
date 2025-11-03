@@ -74,7 +74,7 @@ class TestPermissionRestartLogic:
 
     # ===== СЦЕНАРИЙ 1: Обновление доступно =====
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_skip_restart_when_update_available(
         self, scheduler, mock_updater_integration
     ):
@@ -98,6 +98,7 @@ class TestPermissionRestartLogic:
             old_status=PermissionStatus.NOT_DETERMINED,
             new_status=PermissionStatus.GRANTED,
             session_id="test-session",
+            source="test_source",
         )
 
         # Act
@@ -110,7 +111,7 @@ class TestPermissionRestartLogic:
 
     # ===== СЦЕНАРИЙ 2: Обновления нет =====
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_schedule_restart_when_no_update(
         self, scheduler, mock_updater_integration
     ):
@@ -133,6 +134,7 @@ class TestPermissionRestartLogic:
             old_status=PermissionStatus.NOT_DETERMINED,
             new_status=PermissionStatus.GRANTED,
             session_id="test-session",
+            source="test_source",
         )
 
         # Act
@@ -148,7 +150,7 @@ class TestPermissionRestartLogic:
 
     # ===== СЦЕНАРИЙ 3: respect_updates = false =====
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_ignore_update_when_respect_updates_false(
         self, mock_event_bus, mock_state_manager, mock_updater_integration
     ):
@@ -187,6 +189,7 @@ class TestPermissionRestartLogic:
             old_status=PermissionStatus.NOT_DETERMINED,
             new_status=PermissionStatus.GRANTED,
             session_id="test-session",
+            source="test_source",
         )
 
         # Act
@@ -201,7 +204,7 @@ class TestPermissionRestartLogic:
 
     # ===== СЦЕНАРИЙ 4: enabled = false =====
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_skip_when_disabled(
         self, mock_event_bus, mock_state_manager, mock_updater_integration
     ):
@@ -237,6 +240,7 @@ class TestPermissionRestartLogic:
             old_status=PermissionStatus.NOT_DETERMINED,
             new_status=PermissionStatus.GRANTED,
             session_id="test-session",
+            source="test_source",
         )
 
         # Act
@@ -249,7 +253,7 @@ class TestPermissionRestartLogic:
 
     # ===== СЦЕНАРИЙ 5: max_restart_attempts исчерпан =====
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_skip_when_max_attempts_reached(self, scheduler):
         """
         СЦЕНАРИЙ 5: max_restart_attempts >= 3 → не планировать
@@ -269,6 +273,7 @@ class TestPermissionRestartLogic:
             old_status=PermissionStatus.NOT_DETERMINED,
             new_status=PermissionStatus.GRANTED,
             session_id="test-session",
+            source="test_source",
         )
 
         # Act
@@ -280,7 +285,7 @@ class TestPermissionRestartLogic:
 
     # ===== СЦЕНАРИЙ 6: Обновление начинается ПОСЛЕ планирования restart =====
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_wait_for_update_during_restart(
         self, scheduler, mock_updater_integration, mock_state_manager
     ):
@@ -312,6 +317,7 @@ class TestPermissionRestartLogic:
             old_status=PermissionStatus.NOT_DETERMINED,
             new_status=PermissionStatus.GRANTED,
             session_id="test-session",
+            source="test_source",
         )
 
         # Act - планируем restart
@@ -330,7 +336,7 @@ class TestPermissionRestartLogic:
 
     # ===== СЦЕНАРИЙ 7: respect_active_sessions - ждём SLEEPING =====
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_wait_for_sleeping_mode(
         self, scheduler, mock_state_manager, mock_updater_integration
     ):
@@ -365,6 +371,7 @@ class TestPermissionRestartLogic:
             old_status=PermissionStatus.NOT_DETERMINED,
             new_status=PermissionStatus.GRANTED,
             session_id="test-session",
+            source="test_source",
         )
 
         # Act
@@ -381,7 +388,7 @@ class TestPermissionRestartLogic:
 
     # ===== СЦЕНАРИЙ 8: Dry-run mode =====
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dry_run_mode(
         self, scheduler, mock_updater_integration
     ):
@@ -436,7 +443,7 @@ class TestPermissionRestartLogic:
 class TestPermissionRestartIntegration:
     """Интеграционные тесты полного flow"""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_full_flow_with_update_available(self):
         """
         ПОЛНЫЙ FLOW: Обновление доступно с самого начала
@@ -452,7 +459,7 @@ class TestPermissionRestartIntegration:
         # Требует мокирования EventBus, всех интеграций и координации событий
         pass
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_full_flow_without_update(self):
         """
         ПОЛНЫЙ FLOW: Обновления нет

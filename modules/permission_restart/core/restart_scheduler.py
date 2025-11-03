@@ -102,6 +102,13 @@ class RestartScheduler:
                 self._config.restart_delay_sec,
                 [perm.value for perm in aggregated_permissions],
             )
+            logger.debug(
+                "[PERMISSION_RESTART] Restart metadata snapshot: session=%s reason=%s attempts=%s pending=%s",
+                request.session_id,
+                request.reason,
+                self._attempts,
+                aggregated_permissions,
+            )
             await self._publish_scheduled_event(request)
             self._pending_task = asyncio.create_task(self._run_when_safe())
             return request
@@ -187,6 +194,12 @@ class RestartScheduler:
             await self._publish_executing_event(snapshot)
 
             self._attempts += 1
+            logger.info(
+                "[PERMISSION_RESTART] Initiating restart attempt #%d (reason=%s, permissions=%s)",
+                self._attempts,
+                snapshot.reason,
+                [perm.value for perm in snapshot.critical_permissions],
+            )
             await self._restart_handler.trigger_restart(
                 reason=snapshot.reason,
                 permissions=tuple(perm.value for perm in snapshot.critical_permissions),

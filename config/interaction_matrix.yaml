@@ -105,7 +105,7 @@ rules:
     priority: hard_stop
     description: Update available - skip permission restart (update will restart itself)
     gateway: permission_restart.maybe_schedule_restart
-      source: STATE_CATALOG.md (Связь с Permission Restart)
+    source: STATE_CATALOG.md (Связь с Permission Restart)
 
   # Graceful: respect_active_sessions delays restart until SLEEPING
   # Rule: If respect_active_sessions=true AND appMode != SLEEPING → delay restart (max 10 min)
@@ -116,7 +116,7 @@ rules:
     description: Active session - delay restart until SLEEPING (max 10 minutes, then force)
     gateway: permission_restart._wait_for_safe_conditions
     timeout_seconds: 600
-      source: STATE_CATALOG.md (Связь с Permission Restart)
+    source: STATE_CATALOG.md (Связь с Permission Restart)
 
   # Graceful: respect_updates delays restart if update in progress
   # Rule: If respect_updates=true AND update_in_progress=true → delay restart (max 10 min)
@@ -172,7 +172,7 @@ rules:
     priority: hard_stop
     description: Max restart attempts reached - skip to prevent infinite loops
     gateway: permission_restart.maybe_schedule_restart
-      source: STATE_CATALOG.md (Связь с Permission Restart)
+    source: STATE_CATALOG.md (Связь с Permission Restart)
 
   # Hard stop: permission_restart enabled=false
   # Rule: If enabled=false → skip restart
@@ -182,5 +182,5 @@ rules:
     priority: hard_stop
     description: Permission restart disabled by configuration
     gateway: permission_restart.maybe_schedule_restart
-      source: STATE_CATALOG.md (Связь с Permission Restart)
+    source: STATE_CATALOG.md (Связь с Permission Restart)
 

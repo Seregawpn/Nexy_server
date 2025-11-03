@@ -77,11 +77,15 @@ class UpdaterIntegration:
                     self._current_mode = initial_mode
             except Exception:
                 self._current_mode = AppMode.SLEEPING
-            self._set_update_state(False, trigger="initialize")
+            # Attach event loop for async event publishing
             try:
                 self._loop = asyncio.get_running_loop()
+                # Attach loop to event_bus if available
+                if hasattr(self.event_bus, "attach_loop"):
+                    self.event_bus.attach_loop(self._loop)
             except RuntimeError:
                 self._loop = None
+            self._set_update_state(False, trigger="initialize")
             
             logger.info("✅ UpdaterIntegration инициализирован")
             return True
@@ -263,17 +267,29 @@ class UpdaterIntegration:
         })
 
         # ШАГ 3: Настраиваем callbacks для прогресса
-        loop = self._loop or asyncio.get_running_loop()
+        try:
+            loop = self._loop if (self._loop is not None and self._loop.is_running()) else asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
         self._last_download_percent = 0
         self._last_install_percent = 0
-        self.updater.on_download_progress = lambda downloaded, total: asyncio.run_coroutine_threadsafe(
-            self._handle_download_progress(downloaded, total, trigger),
-            loop,
-        )
-        self.updater.on_install_progress = lambda stage, percent: asyncio.run_coroutine_threadsafe(
-            self._handle_install_progress(stage, percent, trigger),
-            loop,
-        )
+        if loop is not None:
+            self.updater.on_download_progress = lambda downloaded, total: asyncio.run_coroutine_threadsafe(
+                self._handle_download_progress(downloaded, total, trigger),
+                loop,
+            )
+            self.updater.on_install_progress = lambda stage, percent: asyncio.run_coroutine_threadsafe(
+                self._handle_install_progress(stage, percent, trigger),
+                loop,
+            )
+        else:
+            # Fallback: create_task if no loop available (for tests)
+            self.updater.on_download_progress = lambda downloaded, total: asyncio.create_task(
+                self._handle_download_progress(downloaded, total, trigger)
+            )
+            self.updater.on_install_progress = lambda stage, percent: asyncio.create_task(
+                self._handle_install_progress(stage, percent, trigger)
+            )
 
         # ШАГ 4: Выполняем скачивание и установку (проверка уже выполнена!)
         try:
@@ -387,14 +403,33 @@ class UpdaterIntegration:
             
             # Публикуем событие изменения состояния (shadow-mode)
             try:
-                asyncio.run_coroutine_threadsafe(
-                    self._safe_publish(
-                        "updater.in_progress.changed",
-                        {"active": active, "trigger": trigger},
-                    ),
-                    self._loop or asyncio.get_event_loop(),
-                )
-            except Exception:
+                if self._loop is not None and self._loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self._safe_publish(
+                            "updater.in_progress.changed",
+                            {"active": active, "trigger": trigger},
+                        ),
+                        self._loop,
+                    )
+                else:
+                    try:
+                        loop = asyncio.get_running_loop()
+                        asyncio.run_coroutine_threadsafe(
+                            self._safe_publish(
+                                "updater.in_progress.changed",
+                                {"active": active, "trigger": trigger},
+                            ),
+                            loop,
+                        )
+                    except RuntimeError:
+                        asyncio.create_task(
+                            self._safe_publish(
+                                "updater.in_progress.changed",
+                                {"active": active, "trigger": trigger},
+                            )
+                        )
+            except Exception as e:
+                logger.debug(f"[UPDATER] Failed to publish event: {e}")
                 pass
             return
 
@@ -431,13 +466,33 @@ class UpdaterIntegration:
         logger.debug("UpdaterIntegration: update_in_progress=%s (trigger=%s)", active, trigger)
         # Публикуем событие изменения состояния
         try:
-            asyncio.run_coroutine_threadsafe(
-                self._safe_publish(
-                    "updater.in_progress.changed", {"active": active, "trigger": trigger}
-                ),
-                self._loop or asyncio.get_event_loop(),
-            )
-        except Exception:
+            if self._loop is not None and self._loop.is_running():
+                # Use attached loop for thread-safe publishing
+                asyncio.run_coroutine_threadsafe(
+                    self._safe_publish(
+                        "updater.in_progress.changed", {"active": active, "trigger": trigger}
+                    ),
+                    self._loop,
+                )
+            else:
+                # Fallback: try to get running loop or use async call
+                try:
+                    loop = asyncio.get_running_loop()
+                    asyncio.run_coroutine_threadsafe(
+                        self._safe_publish(
+                            "updater.in_progress.changed", {"active": active, "trigger": trigger}
+                        ),
+                        loop,
+                    )
+                except RuntimeError:
+                    # No running loop - use async call directly (for tests)
+                    asyncio.create_task(
+                        self._safe_publish(
+                            "updater.in_progress.changed", {"active": active, "trigger": trigger}
+                        )
+                    )
+        except Exception as e:
+            logger.debug(f"[UPDATER] Failed to publish event: {e}")
             pass
 
     async def _handle_download_progress(

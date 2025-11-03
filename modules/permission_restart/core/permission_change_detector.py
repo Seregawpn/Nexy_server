@@ -41,6 +41,16 @@ class PermissionChangeDetector:
         ):
             if new_status is None:
                 continue
+            logger.debug(
+                "[PERMISSION_RESTART] Event received: type=%s perm=%s old=%s new=%s session=%s source=%s (critical=%s)",
+                event_type,
+                perm.value,
+                old_status.value if old_status else None,
+                new_status.value if new_status else None,
+                session_id,
+                source,
+                perm in self._critical,
+            )
 
             # Compute the baseline status before mutating the cache. This avoids
             # clobbering the previous state when events do not provide old_status.
@@ -63,6 +73,14 @@ class PermissionChangeDetector:
                     perm.value,
                     baseline_old.value if baseline_old else "unknown",
                     new_status.value,
+                )
+            else:
+                logger.debug(
+                    "[PERMISSION_RESTART] No restart transition for %s (baseline=%s, new=%s, critical=%s)",
+                    perm.value,
+                    baseline_old.value if baseline_old else None,
+                    new_status.value,
+                    perm in self._critical,
                 )
 
             # Persist the latest status after computing the transition, so future

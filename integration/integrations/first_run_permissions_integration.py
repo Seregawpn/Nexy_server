@@ -192,6 +192,9 @@ class FirstRunPermissionsIntegration:
 
                 self.state_manager.set_state_data("permissions_restart_pending", True)
                 self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
+                logger.info(
+                    "[FIRST_RUN_PERMISSIONS] State updated: permissions_restart_pending=True, permissions_restart_completed_fallback=True"
+                )
 
                 # НЕ публикуем permissions.first_run_completed здесь!
                 # Оно будет опубликовано в НОВОМ процессе после успешного перезапуска
@@ -205,6 +208,10 @@ class FirstRunPermissionsIntegration:
                     "source": "first_run_permissions_integration",
                     "note": "Restart required - completed will be published after restart"
                 })
+                logger.info(
+                    "[FIRST_RUN_PERMISSIONS] Event permissions.first_run_restart_pending published (session=%s)",
+                    session_id,
+                )
 
                 # ВАЖНО: НЕ вызываем _force_restart() здесь!
                 # Coordinator проверит флаг _permissions_in_progress и сам запустит перезапуск
@@ -450,6 +457,7 @@ class FirstRunPermissionsIntegration:
                 # Fallback: сбрасываем флаг чтобы не блокировать интеграции
                 self._handle_restart_failure()
                 return False
+            logger.info("✅ [FIRST_RUN_PERMISSIONS] Permissions restart handler accepted request (session=%s)", session)
 
             return True
 
@@ -477,7 +485,12 @@ class FirstRunPermissionsIntegration:
         Returns:
             True если флаг успешно создан, False в противном случае
         """
-        return self._safe_touch_flag(self._restart_flag, "restart_completed")
+        result = self._safe_touch_flag(self._restart_flag, "restart_completed")
+        if result:
+            logger.info("[FIRST_RUN_PERMISSIONS] restart_completed.flag установлен")
+        else:
+            logger.warning("[FIRST_RUN_PERMISSIONS] restart_completed.flag не удалось установить")
+        return result
 
     def _safe_touch_flag(self, flag_path: Path, flag_name: str) -> bool:
         """
@@ -521,6 +534,7 @@ class FirstRunPermissionsIntegration:
         self._restart_session_id = None
         self._clear_restart_flag()
         self.state_manager.set_state_data("permissions_restart_pending", False)
+        logger.warning("[FIRST_RUN_PERMISSIONS] Restart flow failed, state reset (permissions_restart_pending=False)")
 
     async def _publish_status_checked(
         self,
