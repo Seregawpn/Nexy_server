@@ -9,6 +9,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
+# Глобальный кэш для стабильности пути user data directory
+# КРИТИЧНО: Гарантирует что все вызовы get_user_data_dir() возвращают один и тот же путь
+_USER_DATA_DIR_CACHE = None
+
 
 def get_resource_path(relative_path: str) -> Path:
     """
@@ -63,11 +67,19 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
     2. ~/Library/Containers/{bundle_id}/Data/Library/Application Support/{app_name} (sandbox)
     3. /tmp/{app_name} (последний fallback)
 
+    КРИТИЧНО: Кэширует результат в _USER_DATA_DIR_CACHE для гарантии стабильности пути.
+
     Raises:
         RuntimeError: Если не удалось создать ни одну из директорий
     """
     import logging
     logger = logging.getLogger(__name__)
+
+    # КРИТИЧНО: Кэшируем путь чтобы всегда возвращать один и тот же
+    global _USER_DATA_DIR_CACHE
+    if _USER_DATA_DIR_CACHE is not None:
+        logger.debug(f"Using cached user data dir: {_USER_DATA_DIR_CACHE}")
+        return _USER_DATA_DIR_CACHE
 
     # Попытка 1: Стандартный путь
     data_dir = Path.home() / "Library" / "Application Support" / app_name
@@ -77,6 +89,8 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
         test_file = data_dir / ".write_test"
         test_file.touch()
         test_file.unlink()
+        logger.info(f"✅ Using standard user data directory: {data_dir}")
+        _USER_DATA_DIR_CACHE = data_dir
         return data_dir
     except (PermissionError, OSError) as e:
         logger.warning(f"Cannot write to {data_dir}: {e}, trying sandbox path...")
@@ -90,7 +104,8 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
         test_file = sandbox_dir / ".write_test"
         test_file.touch()
         test_file.unlink()
-        logger.info(f"Using sandbox data directory: {sandbox_dir}")
+        logger.warning(f"⚠️ Using sandbox data directory: {sandbox_dir}")
+        _USER_DATA_DIR_CACHE = sandbox_dir
         return sandbox_dir
     except (PermissionError, OSError) as e:
         logger.warning(f"Cannot write to sandbox {sandbox_dir}: {e}, trying /tmp fallback...")
@@ -99,7 +114,8 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
     tmp_dir = Path("/tmp") / app_name
     try:
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        logger.warning(f"Using temporary data directory: {tmp_dir} - flags will be lost on reboot!")
+        logger.error(f"🚨 CRITICAL: Using temporary data directory: {tmp_dir} - flags will be lost on reboot!")
+        _USER_DATA_DIR_CACHE = tmp_dir
         return tmp_dir
     except (PermissionError, OSError) as e:
         logger.error(f"Cannot write to /tmp: {e}")

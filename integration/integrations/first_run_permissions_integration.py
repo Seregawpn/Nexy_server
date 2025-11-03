@@ -485,11 +485,12 @@ class FirstRunPermissionsIntegration:
         Returns:
             True если флаг успешно создан, False в противном случае
         """
+        logger.info(f"[FIRST_RUN_PERMISSIONS] Установка restart_completed.flag: {self._restart_flag}")
         result = self._safe_touch_flag(self._restart_flag, "restart_completed")
         if result:
-            logger.info("[FIRST_RUN_PERMISSIONS] restart_completed.flag установлен")
+            logger.info(f"[FIRST_RUN_PERMISSIONS] ✅ restart_completed.flag установлен: {self._restart_flag}")
         else:
-            logger.warning("[FIRST_RUN_PERMISSIONS] restart_completed.flag не удалось установить")
+            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ restart_completed.flag не удалось установить: {self._restart_flag}")
         return result
 
     def _safe_touch_flag(self, flag_path: Path, flag_name: str) -> bool:
@@ -523,10 +524,13 @@ class FirstRunPermissionsIntegration:
     def _clear_restart_flag(self) -> None:
         try:
             if self._restart_flag.exists():
+                logger.info(f"[FIRST_RUN_PERMISSIONS] Удаление restart_completed.flag: {self._restart_flag}")
                 self._restart_flag.unlink()
-                logger.debug("[FIRST_RUN_PERMISSIONS] restart_completed.flag удалён")
+                logger.info(f"[FIRST_RUN_PERMISSIONS] ✅ restart_completed.flag удалён: {self._restart_flag}")
+            else:
+                logger.warning(f"[FIRST_RUN_PERMISSIONS] restart_completed.flag не существует (уже удалён?): {self._restart_flag}")
         except Exception as exc:
-            logger.warning(f"[FIRST_RUN_PERMISSIONS] Не удалось удалить restart_completed.flag: {exc}")
+            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Не удалось удалить restart_completed.flag: {exc}")
 
     def _handle_restart_failure(self) -> None:
         """Fallback: разблокируем интеграции и очищаем флаг."""
