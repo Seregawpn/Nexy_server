@@ -88,6 +88,11 @@ class InstanceManager:
                 
         except (OSError, IOError) as e:
             print(f"❌ Ошибка захвата блокировки: {e}")
+            # Разрешаем автоматический переход на fallback при ограничениях доступа
+            errno = getattr(e, "errno", None)
+            if isinstance(e, PermissionError) or errno in (1, 13, 30):
+                if retry_count < MAX_RETRIES and self._switch_to_fallback_lock():
+                    return await self.acquire_lock(retry_count + 1)
             return False
     
     async def release_lock(self) -> bool:

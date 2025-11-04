@@ -12,7 +12,7 @@ from enum import Enum
 import logging
 import time
 
-from .common import Decision
+from .types import Decision
 from .base import DecisionCtx, log_decision
 from integration.core.selectors import Snapshot
 from . import predicates as pred
@@ -120,4 +120,3 @@ class DecisionEngine:
             reason="no_rule_matched",
         )
         return default_decision
-

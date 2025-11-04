@@ -9,7 +9,8 @@ Tests:
 import logging
 import pytest
 
-from integration.core.gateways.common import decide_continue_integration_startup, Decision
+from integration.core.gateways.common import decide_continue_integration_startup
+from integration.core.gateways.types import Decision
 from integration.core.selectors import (
     Snapshot,
     PermissionStatus,
@@ -211,4 +212,3 @@ class TestNegativeCases:
         # Verify reason is logged
         log_text = caplog.text
         assert "reason=first_run_in_progress" in log_text
-

@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.gateways.common import Decision, _log_decision
+from integration.core.gateways.common import _log_decision
+from integration.core.gateways.types import Decision
 from integration.core.gateways.base import create_ctx_from_snapshot
 from integration.core.gateways.engine_loader import get_engine
 from integration.core.selectors import Snapshot, is_first_run_restart_pending, is_update_in_progress

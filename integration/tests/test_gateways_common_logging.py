@@ -9,7 +9,8 @@ import logging
 import re
 import pytest
 
-from integration.core.gateways.common import _log_decision, Decision
+from integration.core.gateways.common import _log_decision
+from integration.core.gateways.types import Decision
 from integration.core.selectors import (
     Snapshot,
     PermissionStatus,
@@ -197,4 +198,3 @@ class TestLogDecisionFormat:
         # Check that log was written at warning level
         assert len(caplog.records) > 0
         assert caplog.records[0].levelname == "WARNING"
-

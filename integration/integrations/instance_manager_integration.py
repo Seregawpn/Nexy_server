@@ -28,10 +28,18 @@ class InstanceManagerIntegration:
         self.error_handler = error_handler
         self.config = config or {}
         
+        # Позволяем переопределять путь lock-файла через окружение (удобно в dev/sandbox)
+        import os
+        env_lock_file = os.environ.get("NEXY_INSTANCE_LOCK_FILE")
+        if env_lock_file:
+            logger.info("[INSTANCE_MANAGER] Using lock file from env NEXY_INSTANCE_LOCK_FILE=%s", env_lock_file)
+
+        lock_file = env_lock_file or self.config.get('lock_file', '~/Library/Application Support/Nexy/nexy.lock')
+
         # Создаем конфигурацию модуля
         instance_config = InstanceManagerConfig(
             enabled=self.config.get('enabled', True),
-            lock_file=self.config.get('lock_file', '~/Library/Application Support/Nexy/nexy.lock'),
+            lock_file=lock_file,
             timeout_seconds=self.config.get('timeout_seconds', 30),
             cleanup_on_startup=self.config.get('cleanup_on_startup', True),
             show_duplicate_message=self.config.get('show_duplicate_message', True),

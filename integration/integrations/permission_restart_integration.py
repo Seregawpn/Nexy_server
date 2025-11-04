@@ -8,6 +8,7 @@ critical permissions become available.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from integration.core.base_integration import BaseIntegration
@@ -17,7 +18,7 @@ from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
 from integration.core.selectors import create_snapshot_from_state, is_update_in_progress
 from integration.core.gateways.permission_gateways import decide_permission_restart_safety
-from integration.core.gateways.common import Decision
+from integration.core.gateways.types import Decision
 
 from config.unified_config_loader import UnifiedConfigLoader
 from integration.utils.resource_path import get_user_data_dir
@@ -336,6 +337,25 @@ class PermissionRestartIntegration(BaseIntegration):
         if self._ready_emitted:
             return
 
+        # DEV/diagnostic escape hatch: skip hard permission checks
+        if os.environ.get("NEXY_BYPASS_PERMISSION_READY", "").strip().lower() in {"1", "true", "yes"}:
+            self._ready_emitted = True
+            self._ready_pending_update = False
+            logger.info("[PERMISSION_RESTART] Bypassing permission readiness checks via env override")
+            try:
+                await self.event_bus.publish(
+                    "system.permissions_ready",
+                    {"source": source, "permissions": ["accessibility", "input_monitoring", "screen_capture"], "bypassed": True},
+                )
+                await self.event_bus.publish(
+                    "system.ready_to_greet",
+                    {"source": source, "bypassed": True},
+                )
+                logger.info("[PERMISSION_RESTART] Published system.ready_to_greet (bypassed)")
+            except Exception as exc:
+                logger.debug("[PERMISSION_RESTART] Failed to publish readiness events (bypass): %s", exc)
+            return
+
         try:
             accessibility_status = check_accessibility_status()
             input_status = check_input_monitoring_status()
@@ -349,6 +369,24 @@ class PermissionRestartIntegration(BaseIntegration):
             and input_status == FirstRunPermissionStatus.GRANTED
             and screen_capture_status == FirstRunPermissionStatus.GRANTED
         )
+        assumed_permissions = False
+
+        if not permissions_granted:
+            try:
+                fallback_state = bool(self.state_manager.get_state_data("permissions_restart_completed_fallback", False))
+            except Exception:
+                fallback_state = False
+            if fallback_state:
+                logger.warning(
+                    "[PERMISSION_RESTART] Permissions fallback active (permissions_restart_completed_fallback=True) "
+                    "— считаем разрешения выданными "
+                    "(accessibility=%s, input_monitoring=%s, screen_capture=%s)",
+                    accessibility_status.value,
+                    input_status.value,
+                    screen_capture_status.value,
+                )
+                permissions_granted = True
+                assumed_permissions = True
 
         if not permissions_granted:
             logger.debug(
@@ -381,11 +419,15 @@ class PermissionRestartIntegration(BaseIntegration):
         try:
             await self.event_bus.publish(
                 "system.permissions_ready",
-                {"source": source, "permissions": ["accessibility", "input_monitoring", "screen_capture"]},
+                {
+                    "source": source,
+                    "permissions": ["accessibility", "input_monitoring", "screen_capture"],
+                    "assumed": assumed_permissions,
+                },
             )
             await self.event_bus.publish(
                 "system.ready_to_greet",
-                {"source": source},
+                {"source": source, "assumed": assumed_permissions},
             )
             logger.info("[PERMISSION_RESTART] Published system.ready_to_greet (source=%s)", source)
         except Exception as exc:

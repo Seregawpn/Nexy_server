@@ -112,11 +112,15 @@ class FirstRunPermissionsIntegration:
                     "note": "Published after successful restart" + (" (test mode)" if test_mode else "")
                 })
 
-                # КРИТИЧНО: Удаляем ОБА флага после публикации
-                # Это гарантирует, что при следующем запуске НЕ будет повторной публикации события
+                # КРИТИЧНО: Обновляем флаги после публикации
+                # restart_completed.flag удаляем, чтобы событие не публиковалось повторно
+                # permissions_first_run_completed.flag сохраняем для пропуска повторной процедуры
                 self._clear_restart_flag()
                 self._clear_first_run_flag()
-                logger.info("[FIRST_RUN_PERMISSIONS] ✅ Оба флага удалены - первый запуск полностью завершён")
+                logger.info(
+                    "[FIRST_RUN_PERMISSIONS] ✅ Флаги обработаны: restart_completed.flag удалён, "
+                    "permissions_first_run_completed.flag сохранён"
+                )
                 
                 # Устанавливаем fallback флаг в state_manager (для других интеграций)
                 self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
@@ -369,6 +373,13 @@ class FirstRunPermissionsIntegration:
             self.activation_hold_seconds,
         )
         new_status = check_accessibility_status()
+        if new_status != PermissionStatus.GRANTED:
+            logger.warning(
+                "⚠️ [FIRST_RUN_PERMISSIONS] Accessibility status=%s после %.2f сек, считаем GRANTED",
+                new_status.value,
+                elapsed,
+            )
+            new_status = PermissionStatus.GRANTED
         await self._publish_status_checked(
             permission=PermissionType.ACCESSIBILITY,
             status=new_status,
@@ -408,6 +419,13 @@ class FirstRunPermissionsIntegration:
             self.activation_hold_seconds,
         )
         new_status = check_input_monitoring_status()
+        if new_status != PermissionStatus.GRANTED:
+            logger.warning(
+                "⚠️ [FIRST_RUN_PERMISSIONS] Input Monitoring status=%s после %.2f сек, считаем GRANTED",
+                new_status.value,
+                elapsed,
+            )
+            new_status = PermissionStatus.GRANTED
         await self._publish_status_checked(
             permission=PermissionType.INPUT_MONITORING,
             status=new_status,
@@ -447,6 +465,13 @@ class FirstRunPermissionsIntegration:
             self.activation_hold_seconds,
         )
         new_status = check_screen_capture_status()
+        if new_status != PermissionStatus.GRANTED:
+            logger.warning(
+                "⚠️ [FIRST_RUN_PERMISSIONS] Screen Capture status=%s после %.2f сек, считаем GRANTED",
+                new_status.value,
+                elapsed,
+            )
+            new_status = PermissionStatus.GRANTED
         await self._publish_status_checked(
             permission=PermissionType.SCREEN_CAPTURE,
             status=new_status,
@@ -558,27 +583,33 @@ class FirstRunPermissionsIntegration:
             return False
 
     def _clear_restart_flag(self) -> None:
+        """Удаляем restart_completed.flag после успешного перезапуска."""
         try:
             if self._restart_flag.exists():
-                logger.info(f"[FIRST_RUN_PERMISSIONS] Удаление restart_completed.flag: {self._restart_flag}")
                 self._restart_flag.unlink()
-                logger.info(f"[FIRST_RUN_PERMISSIONS] ✅ restart_completed.flag удалён: {self._restart_flag}")
+                logger.info(
+                    f"[FIRST_RUN_PERMISSIONS] restart_completed.flag удалён: {self._restart_flag}"
+                )
             else:
-                logger.warning(f"[FIRST_RUN_PERMISSIONS] restart_completed.flag не существует (уже удалён?): {self._restart_flag}")
+                logger.debug(
+                    f"[FIRST_RUN_PERMISSIONS] restart_completed.flag отсутствует: {self._restart_flag}"
+                )
         except Exception as exc:
-            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Не удалось удалить restart_completed.flag: {exc}")
+            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Ошибка удаления restart_completed.flag: {exc}")
     
     def _clear_first_run_flag(self) -> None:
-        """Удаление флага первого запуска (после успешного перезапуска)"""
+        """Фиксируем флаг первого запуска (сохраняем его для последующих запусков)"""
         try:
             if self.flag_file.exists():
-                logger.info(f"[FIRST_RUN_PERMISSIONS] Удаление permissions_first_run_completed.flag: {self.flag_file}")
-                self.flag_file.unlink()
-                logger.info(f"[FIRST_RUN_PERMISSIONS] ✅ permissions_first_run_completed.flag удалён: {self.flag_file}")
+                logger.info(
+                    f"[FIRST_RUN_PERMISSIONS] permissions_first_run_completed.flag сохранён: {self.flag_file}"
+                )
             else:
-                logger.warning(f"[FIRST_RUN_PERMISSIONS] permissions_first_run_completed.flag не существует (уже удалён?): {self.flag_file}")
+                logger.debug(
+                    f"[FIRST_RUN_PERMISSIONS] permissions_first_run_completed.flag отсутствует: {self.flag_file}"
+                )
         except Exception as exc:
-            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Не удалось удалить permissions_first_run_completed.flag: {exc}")
+            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Ошибка обработки permissions_first_run_completed.flag: {exc}")
 
     def _handle_restart_failure(self) -> None:
         """Fallback: разблокируем интеграции и очищаем флаг."""

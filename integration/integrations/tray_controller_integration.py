@@ -6,6 +6,7 @@ TrayController Integration
 
 import asyncio
 import logging
+import os
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
@@ -64,13 +65,23 @@ class TrayControllerIntegration:
         
         self.config = config
         
+        # Опциональное отключение через переменную окружения (для headless/dev режима)
+        disable_env = os.environ.get("NEXY_DISABLE_TRAY")
+        self._disabled_by_env = False
+        if disable_env and disable_env.strip().lower() in {"1", "true", "yes"}:
+            self._disabled_by_env = True
+            logger.warning(
+                "[TRAY] Disabled via environment variable NEXY_DISABLE_TRAY=%s",
+                disable_env,
+            )
+
         # TrayController (обертываем существующий модуль)
         self.tray_controller: Optional[TrayController] = None
         
         # Состояние интеграции
         self.is_initialized = False
         self.is_running = False
-        self._disabled_due_to_errors: bool = False
+        self._disabled_due_to_errors: bool = False or self._disabled_by_env
         self._init_failures: int = 0
         self._start_failures: int = 0
         # Желаемый статус трея (прямое применение в UI-треде при смене режима)
@@ -85,12 +96,19 @@ class TrayControllerIntegration:
             AppMode.LISTENING: TrayStatus.LISTENING,
             AppMode.PROCESSING: TrayStatus.PROCESSING,
         }
+
+        if self._disabled_by_env:
+            # Считаем интеграцию проинициализированной, чтобы coordinator не падал
+            self.is_initialized = True
     
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
         try:
             logger.info("🔧 Инициализация TrayControllerIntegration...")
             if self._disabled_due_to_errors:
+                self.is_initialized = True
+                if self._disabled_by_env:
+                    logger.info("[TRAY] Initialization skipped (disabled by env)")
                 logger.warning("[TRAY] Disabled previously due to errors – skipping initialization")
                 return True
 
@@ -144,6 +162,8 @@ class TrayControllerIntegration:
                 return True
             
             if self._disabled_due_to_errors:
+                if self._disabled_by_env:
+                    logger.info("[TRAY] Start skipped (disabled by env)")
                 logger.warning("[TRAY] Disabled due to previous errors – skipping start")
                 return True
 

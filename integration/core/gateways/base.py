@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .common import Decision
+from .types import Decision
 from integration.core.selectors import Snapshot
 
 logger = logging.getLogger(__name__)
@@ -102,4 +102,3 @@ def log_decision(
     log_fn(log_msg)
     
     return log_msg
-

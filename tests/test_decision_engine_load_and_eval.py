@@ -10,7 +10,7 @@ import pytest
 from integration.core.gateways.decision_engine import DecisionEngine, Rule, Priority
 from integration.core.gateways.rule_loader import load_rules_for_gateway
 from integration.core.gateways.base import DecisionCtx, create_ctx_from_snapshot
-from integration.core.gateways.common import Decision
+from integration.core.gateways.types import Decision
 from integration.core.selectors import (
     Snapshot,
     PermissionStatus,
@@ -105,4 +105,3 @@ def test_decision_engine_no_match_defaults_to_start():
     
     d = eng.decide(s, source="test", ctx=ctx)
     assert d == Decision.START
-

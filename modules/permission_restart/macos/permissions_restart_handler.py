@@ -109,6 +109,21 @@ class PermissionsRestartHandler:
             if self._exec_current_bundle():
                 return  # os.execv не возвращается при успехе
 
+            # В dev-режиме (запуск через python main.py) предпочитаем перезапустить текущую команду
+            if not getattr(sys, "frozen", False) and self._allow_dev_fallback:
+                logger.info(
+                    "[PERMISSION_RESTART] Dev restart path active (non-frozen build, restarting python command)"
+                )
+                self._launch_dev_process()
+                restart_successful = True
+                delay_sec = self._config.handler_launch_delay_ms / 1000.0
+                logger.debug(
+                    "[PERMISSION_RESTART] Sleeping %.2fs to allow dev process to boot",
+                    delay_sec,
+                )
+                time.sleep(delay_sec)
+                return
+
             # Пропускаем packaged app если уже знаем что он недоступен
             if not self._packaged_unavailable:
                 if self._launch_packaged_app():

@@ -9,7 +9,8 @@ Tests that:
 import logging
 import pytest
 
-from integration.core.gateways.common import decide_continue_integration_startup, Decision
+from integration.core.gateways.common import decide_continue_integration_startup
+from integration.core.gateways.types import Decision
 from integration.core.selectors import (
     Snapshot,
     PermissionStatus,
@@ -112,4 +113,3 @@ class TestCoordinatorRestartPendingGate:
         assert f"network={snapshot.network.value}" in log_text
         assert f"firstRun={snapshot.first_run}" in log_text
         assert f"appMode={snapshot.app_mode.value}" in log_text
-

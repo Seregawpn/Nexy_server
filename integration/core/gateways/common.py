@@ -5,8 +5,6 @@ Common decision gateways used across integrations.
 from __future__ import annotations
 
 import logging
-from enum import Enum
-
 from integration.core.selectors import (
     Snapshot,
     can_process_audio,
@@ -23,17 +21,9 @@ from integration.core.selectors import (
 # DecisionEngine integration
 from .base import create_ctx_from_snapshot
 from .engine_loader import get_engine
+from .types import Decision
 
 logger = logging.getLogger(__name__)
-
-
-class Decision(Enum):
-    """Decision outcomes for state transitions."""
-
-    START = "start"
-    RETRY = "retry"
-    ABORT = "abort"
-    DEGRADE = "degrade"
 
 
 def _log_decision(
@@ -201,4 +191,3 @@ def decide_continue_integration_startup(s: Snapshot) -> Decision:
             return Decision.ABORT
         _log_decision(level="debug", decision=Decision.START, s=s, source="coordinator_gateway")
         return Decision.START
-

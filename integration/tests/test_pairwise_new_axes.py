@@ -20,10 +20,10 @@ import logging
 import pytest
 
 from integration.core.gateways.common import (
-    Decision,
     decide_start_listening,
     decide_process_audio,
 )
+from integration.core.gateways.types import Decision
 from integration.core.gateways.permission_gateways import decide_permission_restart_safety
 from integration.core.selectors import (
     Snapshot,
@@ -443,4 +443,3 @@ class TestPairwiseWithNewAxes:
                     assert "reason=first_run_restart_pending" in logs
                 elif update_in_progress:
                     assert "reason=update_in_progress" in logs
-

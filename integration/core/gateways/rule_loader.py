@@ -9,7 +9,7 @@ import sys
 from pathlib import Path as PathType
 
 from .decision_engine import Rule, Priority
-from .common import Decision
+from .types import Decision
 
 # Import existing loader - add config to path for import
 config_path = PathType(__file__).parent.parent.parent.parent / "config"
@@ -90,4 +90,3 @@ def load_rules_for_gateway(gateway_name: str) -> List[Rule]:
         ))
     
     return out
-

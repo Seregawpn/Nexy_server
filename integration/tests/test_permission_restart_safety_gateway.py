@@ -12,7 +12,7 @@ import re
 import pytest
 
 from integration.core.gateways.permission_gateways import decide_permission_restart_safety
-from integration.core.gateways.common import Decision
+from integration.core.gateways.types import Decision
 from integration.core.selectors import (
     Snapshot,
     PermissionStatus,
@@ -195,4 +195,3 @@ class TestDecidePermissionRestartSafety:
             assert f"restart_pending={snapshot.restart_pending}" in log_text
         if hasattr(snapshot, 'update_in_progress'):
             assert f"update_in_progress={snapshot.update_in_progress}" in log_text
-
