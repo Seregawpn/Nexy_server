@@ -93,6 +93,11 @@ def all_permissions_ready(s: Snapshot) -> bool:
     return mic_ready(s) and screen_ready(s) and accessibility_ready(s)
 
 
+def missing_any_permissions(s: Snapshot) -> bool:
+    """Check if any critical permissions are missing."""
+    return not all_permissions_ready(s)
+
+
 # Device selectors
 
 

@@ -238,7 +238,7 @@ class WelcomeMessageIntegration:
     def _on_welcome_error(self, error: str):
         """Коллбек ошибки воспроизведения приветствия (вызывается из sync контекста)"""
         logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка приветствия: {error}")
-    
+            
     async def _wait_for_playback_completion(self):
         """Ожидает завершения воспроизведения приветствия"""
         try:
@@ -266,10 +266,10 @@ class WelcomeMessageIntegration:
             finally:
                 # Отписываемся от события
                 await self.event_bus.unsubscribe("playback.completed", on_playback_event)
-                
+            
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _wait_for_playback_completion: {e}")
-
+    
     async def _return_to_sleeping_after_playback(self):
         """Возвращает приложение в режим SLEEPING после завершения воспроизведения"""
         try:

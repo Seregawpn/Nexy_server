@@ -52,10 +52,17 @@ class PermissionsRestartHandler:
         self._last_permissions: Sequence[str] = ()
         self._config = config or PermissionRestartConfig()  # Default config if not provided
 
+        # Разрешено ли скатываться в dev-фолбэк (перезапуск python-командой)
+        if config is None and getattr(sys, "frozen", False):
+            self._allow_dev_fallback = False
+        else:
+            self._allow_dev_fallback = bool(self._config.allow_dev_fallback)
+
         # Диагностический лог итоговой конфигурации
         logger.info(
-            "[PERMISSION_RESTART] RestartHandler init: dry_run=%s env(NEXY_DISABLE_AUTO_RESTART)=%s ks(NEXY_KS_FIRST_RUN_RESTART)=%s",
+            "[PERMISSION_RESTART] RestartHandler init: dry_run=%s allow_dev_fallback=%s env(NEXY_DISABLE_AUTO_RESTART)=%s ks(NEXY_KS_FIRST_RUN_RESTART)=%s",
             self._dry_run,
+            self._allow_dev_fallback,
             env_flag,
             kill_switch,
         )
@@ -115,6 +122,14 @@ class PermissionsRestartHandler:
                         "[PERMISSION_RESTART] Packaged app unavailable - will use dev fallback (bundle_path=%s)",
                         self._derive_bundle_path(),
                     )
+
+            if not self._allow_dev_fallback:
+                logger.error(
+                    "[PERMISSION_RESTART] Dev fallback disabled (allow_dev_fallback=False). Restart aborted (reason=%s, permissions=%s)",
+                    self._last_reason,
+                    self._last_permissions,
+                )
+                return
 
             logger.info("[PERMISSION_RESTART] Restarting via dev process (python command)")
             self._launch_dev_process()
@@ -295,6 +310,8 @@ class PermissionsRestartHandler:
         executable_str = str(candidate)
         deadline = time.time() + timeout
 
+        current_pid = os.getpid()
+
         while time.time() < deadline:
             try:
                 result = subprocess.run(
@@ -304,8 +321,30 @@ class PermissionsRestartHandler:
                     check=False,
                 )
                 if result.returncode == 0 and result.stdout.strip():
-                    logger.debug("[PERMISSION_RESTART] Verified process launched for %s", executable_str)
-                    return True
+                    try:
+                        pids = {
+                            int(pid.strip())
+                            for pid in result.stdout.strip().splitlines()
+                            if pid.strip().isdigit()
+                        }
+                    except ValueError:
+                        pids = set()
+
+                    # Считаем запуск успешным только если появился новый PID,
+                    # отличный от текущего процесса.
+                    for pid in pids:
+                        if pid != current_pid:
+                            logger.debug(
+                                "[PERMISSION_RESTART] Verified new process %s for %s",
+                                pid,
+                                executable_str,
+                            )
+                            return True
+
+                    logger.debug(
+                        "[PERMISSION_RESTART] pgrep matched current process only (pid=%s), waiting for new instance...",
+                        current_pid,
+                    )
                 logger.debug(
                     "[PERMISSION_RESTART] pgrep pending (rc=%s stdout=%s)",
                     result.returncode,

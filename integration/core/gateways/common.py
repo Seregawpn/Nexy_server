@@ -20,6 +20,10 @@ from integration.core.selectors import (
     should_degrade_offline,
 )
 
+# DecisionEngine integration
+from .base import create_ctx_from_snapshot
+from .engine_loader import get_engine
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,53 +82,67 @@ def decide_start_listening(s: Snapshot) -> Decision:
     """
     Decide whether to start listening based on current state.
 
-    Rules:
-    - hard_stop: if first_run is in progress, abort (блокировка активации)
-    - hard_stop: if mic permission is denied, abort
-    - graceful: if device is busy, retry
-    - graceful: if network is offline, degrade (offline mode)
-    - start: if all conditions are met
+    Uses DecisionEngine with rules from interaction_matrix.yaml.
+    Rules are applied in priority order: hard_stop → graceful → preference.
     """
-    if s.first_run:
-        _log_decision(level="info", decision=Decision.ABORT, s=s, source="listening_gateway", reason="first_run_in_progress")
-        return Decision.ABORT
-
-    if not mic_ready(s):
+    try:
+        engine = get_engine("decide_start_listening")
+        ctx = create_ctx_from_snapshot(s)
+        return engine.decide(s, source="listening_gateway", ctx=ctx, extra=None)
+    except Exception as exc:
+        # Fallback to legacy logic if engine fails
+        logger.warning(
+            f"decision_engine_fallback gateway=decide_start_listening "
+            f"ctx={create_ctx_from_snapshot(s).to_log_string()} "
+            f"error={exc} fallback_to=legacy"
+        )
+        if s.first_run:
+            _log_decision(level="info", decision=Decision.ABORT, s=s, source="listening_gateway", reason="first_run_in_progress")
+            return Decision.ABORT
+        if not mic_ready(s):
+            _log_decision(level="debug", decision=Decision.ABORT, s=s, source="listening_gateway")
+            return Decision.ABORT
+        if device_busy(s):
+            _log_decision(level="debug", decision=Decision.RETRY, s=s, source="listening_gateway")
+            return Decision.RETRY
+        if network_offline(s):
+            _log_decision(level="debug", decision=Decision.DEGRADE, s=s, source="listening_gateway")
+            return Decision.DEGRADE
+        if can_start_listening(s):
+            _log_decision(level="debug", decision=Decision.START, s=s, source="listening_gateway")
+            return Decision.START
         _log_decision(level="debug", decision=Decision.ABORT, s=s, source="listening_gateway")
         return Decision.ABORT
 
-    if device_busy(s):
-        _log_decision(level="debug", decision=Decision.RETRY, s=s, source="listening_gateway")
-        return Decision.RETRY
-
-    if network_offline(s):
-        _log_decision(level="debug", decision=Decision.DEGRADE, s=s, source="listening_gateway")
-        return Decision.DEGRADE
-
-    if can_start_listening(s):
-        _log_decision(level="debug", decision=Decision.START, s=s, source="listening_gateway")
-        return Decision.START
-
-    _log_decision(level="debug", decision=Decision.ABORT, s=s, source="listening_gateway")
-    return Decision.ABORT
-
 
 def decide_process_audio(s: Snapshot) -> Decision:
-    """Decide whether to process audio based on current state."""
-    if not mic_ready(s):
+    """
+    Decide whether to process audio based on current state.
+
+    Uses DecisionEngine with rules from interaction_matrix.yaml.
+    """
+    try:
+        engine = get_engine("decide_process_audio")
+        ctx = create_ctx_from_snapshot(s)
+        return engine.decide(s, source="processing_gateway", ctx=ctx, extra=None)
+    except Exception as exc:
+        # Fallback to legacy logic if engine fails
+        logger.warning(
+            f"decision_engine_fallback gateway=decide_process_audio "
+            f"ctx={create_ctx_from_snapshot(s).to_log_string()} "
+            f"error={exc} fallback_to=legacy"
+        )
+        if not mic_ready(s):
+            _log_decision(level="debug", decision=Decision.ABORT, s=s, source="processing_gateway")
+            return Decision.ABORT
+        if should_degrade_offline(s):
+            _log_decision(level="debug", decision=Decision.DEGRADE, s=s, source="processing_gateway")
+            return Decision.DEGRADE
+        if can_process_audio(s):
+            _log_decision(level="debug", decision=Decision.START, s=s, source="processing_gateway")
+            return Decision.START
         _log_decision(level="debug", decision=Decision.ABORT, s=s, source="processing_gateway")
         return Decision.ABORT
-
-    if should_degrade_offline(s):
-        _log_decision(level="debug", decision=Decision.DEGRADE, s=s, source="processing_gateway")
-        return Decision.DEGRADE
-
-    if can_process_audio(s):
-        _log_decision(level="debug", decision=Decision.START, s=s, source="processing_gateway")
-        return Decision.START
-
-    _log_decision(level="debug", decision=Decision.ABORT, s=s, source="processing_gateway")
-    return Decision.ABORT
 
 
 def decide_with_backoff(s: Snapshot, retry_count: int, max_retries: int = 3) -> Decision:
@@ -147,29 +165,40 @@ def decide_with_backoff(s: Snapshot, retry_count: int, max_retries: int = 3) -> 
 def decide_continue_integration_startup(s: Snapshot) -> Decision:
     """
     Decide whether to continue launching integrations after first_run_permissions.
+
+    Uses DecisionEngine with rules from interaction_matrix.yaml.
     """
-    if is_first_run_restart_pending(s):
-        _log_decision(
-            level="info",
-            decision=Decision.ABORT,
-            s=s,
-            source="coordinator_gateway",
-            reason="first_run_restart_pending",
-            duration_ms=0,
+    try:
+        engine = get_engine("decide_continue_integration_startup")
+        ctx = create_ctx_from_snapshot(s)
+        return engine.decide(s, source="coordinator_gateway", ctx=ctx, extra=None)
+    except Exception as exc:
+        # Fallback to legacy logic if engine fails
+        logger.warning(
+            f"decision_engine_fallback gateway=decide_continue_integration_startup "
+            f"ctx={create_ctx_from_snapshot(s).to_log_string()} "
+            f"error={exc} fallback_to=legacy"
         )
-        return Decision.ABORT
-
-    if is_restart_pending(s):
-        _log_decision(
-            level="warning",
-            decision=Decision.ABORT,
-            s=s,
-            source="coordinator_gateway",
-            reason="restart_pending_without_first_run",
-            duration_ms=0,
-        )
-        return Decision.ABORT
-
-    _log_decision(level="debug", decision=Decision.START, s=s, source="coordinator_gateway")
-    return Decision.START
+        if is_first_run_restart_pending(s):
+            _log_decision(
+                level="info",
+                decision=Decision.ABORT,
+                s=s,
+                source="coordinator_gateway",
+                reason="first_run_restart_pending",
+                duration_ms=0,
+            )
+            return Decision.ABORT
+        if is_restart_pending(s):
+            _log_decision(
+                level="warning",
+                decision=Decision.ABORT,
+                s=s,
+                source="coordinator_gateway",
+                reason="restart_pending_without_first_run",
+                duration_ms=0,
+            )
+            return Decision.ABORT
+        _log_decision(level="debug", decision=Decision.START, s=s, source="coordinator_gateway")
+        return Decision.START
 

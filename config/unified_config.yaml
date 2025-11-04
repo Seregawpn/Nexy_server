@@ -472,3 +472,10 @@ features:
   # Kill-switches: override feature flags (immediate shutdown)
   ks_first_run_normalization:
     enabled: false  # Kill-switch for first_run normalization (if true, disables new gateway checks)
+
+  # Example pattern for new features:
+  # new_feature_name:
+  #   enabled: false
+  #   rollout_percentage: 0
+  # ks_new_feature_name:
+  #   enabled: false

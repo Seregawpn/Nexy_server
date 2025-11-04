@@ -26,29 +26,29 @@ rules:
   # ============================================================================
 
   # Hard stop: permission denied always aborts listening
-  - when: {Permission.mic: denied}
-    decision: abort_listen
+  - when: {perm.mic: denied}
+    decision: abort
     priority: hard_stop
     description: Microphone permission denied - cannot proceed with listening
     gateway: decide_start_listening
 
   # Hard stop: first_run in progress blocks activation
-  - when: {FirstRun: true}
-    decision: abort_listen
+  - when: {app.first_run: true}
+    decision: abort
     priority: hard_stop
     description: First run in progress - block activation until permissions are granted
     gateway: decide_start_listening
 
-  # Graceful: device busy - retry with backoff
-  - when: {Permission.mic: granted, Device.input: busy, appMode: LISTENING}
-    decision: retry_backoff
+  # Graceful: device busy - retry
+  - when: {perm.mic: granted, device.busy: true, app.mode: listening}
+    decision: retry
     priority: graceful
-    description: Device busy - retry with exponential backoff
-    gateway: decide_with_backoff
+    description: Device busy - retry
+    gateway: decide_start_listening
 
   # Graceful: network offline during listening (can still listen, won't process)
-  - when: {Network: offline, appMode: LISTENING}
-    decision: degrade_offline
+  - when: {network.offline: true, app.mode: listening}
+    decision: degrade
     priority: graceful
     description: Network offline - can listen but won't process until online
     gateway: decide_start_listening
@@ -59,18 +59,18 @@ rules:
   # ============================================================================
 
   # Hard stop: first_run + restart_pending blocks all integration startup
-  - when: {FirstRun: true, permissions.restart_pending: true}
-    decision: abort_integration_startup
+  - when: {app.first_run: true, app.restart_pending: true}
+    decision: abort
     priority: hard_stop
     description: First run restart pending - stop launching remaining integrations until restart completes
     gateway: decide_continue_integration_startup
     source: Docs/change_impact.yaml
 
-  # Hard stop: restarting lifecycle blocks integrations
-  - when: {process.lifecycle: restarting}
-    decision: abort_integration_startup
+  # Hard stop: restarting lifecycle blocks integrations (via first_run_restart_pending selector)
+  - when: {app.first_run_restart_pending: true}
+    decision: abort
     priority: hard_stop
-    description: Process restarting - do not launch new integrations
+    description: First run restart pending - do not launch new integrations
     gateway: decide_continue_integration_startup
     source: Docs/change_impact.yaml
 
@@ -79,17 +79,24 @@ rules:
   # ============================================================================
 
   # Hard stop: screen capture denied during processing
-  - when: {Permission.screen: denied, appMode: PROCESSING}
-    decision: abort_processing
+  - when: {perm.screen: denied, app.mode: processing}
+    decision: abort
     priority: hard_stop
     description: Screen capture permission denied during processing
     gateway: decide_process_audio
 
   # Graceful: network offline during processing
-  - when: {Network: offline, appMode: PROCESSING}
-    decision: degrade_offline
+  - when: {network.offline: true, app.mode: processing}
+    decision: degrade
     priority: graceful
     description: Network offline - degrade to offline mode
+    gateway: decide_process_audio
+
+  # Hard stop: microphone denied during processing
+  - when: {perm.mic: denied, app.mode: processing}
+    decision: abort
+    priority: hard_stop
+    description: Microphone permission denied during processing
     gateway: decide_process_audio
 
   # ============================================================================
@@ -134,11 +141,19 @@ rules:
   # See Docs/STATE_CATALOG.md section 10 (update_in_progress axis)
   # ============================================================================
 
+  # Hard stop: first_run + restart_pending blocks permission restart
+  - when: {app.first_run_restart_pending: true}
+    decision: abort
+    priority: hard_stop
+    description: First run restart pending - block permission restart
+    gateway: decide_permission_restart_safety
+    source: STATE_CATALOG.md (restart_pending + update_in_progress)
+
   # Graceful: update_in_progress blocks permission restart
   # Rule: If update_in_progress=true → abort permission restart (graceful)
   # Reason: Avoid interrupting update installation process
-  - when: {update_in_progress: true}
-    decision: abort_permission_restart
+  - when: {update.in_progress: true}
+    decision: abort
     priority: graceful
     description: Update in progress - block permission restart to avoid interrupting installation
     gateway: decide_permission_restart_safety
@@ -147,8 +162,9 @@ rules:
   # Hard stop: update_in_progress + active session blocks update launch
   # Rule: If update_in_progress=true AND appMode=LISTENING|PROCESSING → block update launch
   # Reason: Prevent updates during active user sessions
-  - when: {update_in_progress: true, appMode: [LISTENING, PROCESSING]}
-    decision: abort_update_launch
+  # NOTE: This rule is for UpdaterIntegration._can_update, not yet integrated with DecisionEngine
+  - when: {update.in_progress: true, app.mode: [listening, processing]}
+    decision: abort
     priority: hard_stop
     description: Active session during update - block update launch (only allowed in SLEEPING mode)
     gateway: UpdaterIntegration._can_update
@@ -157,8 +173,9 @@ rules:
   # Hard stop: first_run + restart_pending blocks update launch
   # Rule: If firstRun=true AND restart_pending=true → block update launch
   # Reason: First-run restart takes precedence over update
-  - when: {FirstRun: true, permissions.restart_pending: true}
-    decision: abort_update_launch
+  # NOTE: This is handled by decide_permission_restart_safety via app.first_run_restart_pending
+  - when: {app.first_run_restart_pending: true}
+    decision: abort
     priority: hard_stop
     description: First-run restart pending - block update launch (restart takes precedence)
     gateway: decide_permission_restart_safety

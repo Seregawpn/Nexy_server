@@ -229,19 +229,11 @@ def _force_granted() -> bool:
     1. Если явно задана переменная окружения NEXY_DEV_FORCE_PERMISSIONS:
        - 1/true/yes  → форсируем GRANTED
        - 0/false/no  → не форсируем
-    2. По умолчанию форсируем только при dev-запуске из терминала
-       (не упакованный билд, stdout или stdin привязаны к TTY).
+    2. По умолчанию считаем, что разрешения НЕ форсятся.
     """
     value = os.environ.get("NEXY_DEV_FORCE_PERMISSIONS")
     if value is not None:
         return value.strip().lower() in {"1", "true", "yes"}
-
-    if not getattr(sys, "frozen", False):
-        try:
-            if sys.stdout.isatty() or sys.stdin.isatty():
-                return True
-        except Exception:
-            pass
 
     return False
 

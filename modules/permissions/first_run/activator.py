@@ -29,6 +29,7 @@ async def activate_microphone(hold_duration: float = 7.0) -> bool:
     """
     try:
         logger.info(f"🎙️ Активация микрофона (держим открытым {hold_duration} сек)...")
+        print(f"🎙️ [ACTIVATOR] Начало активации микрофона")  # DEBUG: Для console.app
 
         # Используем sounddevice для открытия микрофона
         import sounddevice as sd
@@ -37,11 +38,14 @@ async def activate_microphone(hold_duration: float = 7.0) -> bool:
         # Это вызовет системный диалог если разрешение NOT_DETERMINED
         try:
             # Получаем дефолтное устройство
+            print(f"🎙️ [ACTIVATOR] Запрос default input device...")  # DEBUG
             default_device = sd.query_devices(kind='input')
             logger.debug(f"   Default input device: {default_device['name']}")
+            print(f"🎙️ [ACTIVATOR] Default device: {default_device['name']}")  # DEBUG
 
             # Открываем stream и держим открытым на протяжении всей паузы
             # Это гарантирует что диалог успеет появиться до следующего запроса
+            print(f"🎙️ [ACTIVATOR] Открываем InputStream...")  # DEBUG
             with sd.InputStream(
                 samplerate=16000,
                 channels=1,
@@ -50,21 +54,31 @@ async def activate_microphone(hold_duration: float = 7.0) -> bool:
             ):
                 # Держим микрофон открытым всю паузу
                 logger.debug(f"   ⏸️ Удерживаем микрофон открытым {hold_duration} сек...")
+                print(f"🎙️ [ACTIVATOR] Удерживаем микрофон {hold_duration} сек...")  # DEBUG
                 await asyncio.sleep(hold_duration)
+                print(f"🎙️ [ACTIVATOR] Удержание завершено")  # DEBUG
 
             logger.info("✅ Микрофон активирован успешно")
+            print(f"✅ [ACTIVATOR] Микрофон активирован успешно")  # DEBUG
             return True
 
         except Exception as e:
             logger.warning(f"⚠️ Не удалось открыть микрофон: {e}")
+            print(f"⚠️ [ACTIVATOR] Exception при открытии микрофона: {e}")  # DEBUG
             # Это OK - возможно разрешения нет, диалог показан
+            # Но даём ещё паузу для показа диалога
+            print(f"⏸️ [ACTIVATOR] Ждём {hold_duration} сек для диалога...")  # DEBUG
+            await asyncio.sleep(hold_duration)
+            print(f"✅ [ACTIVATOR] Ожидание завершено")  # DEBUG
             return True
 
     except ImportError:
         logger.warning("⚠️ sounddevice недоступен")
+        print(f"⚠️ [ACTIVATOR] sounddevice недоступен")  # DEBUG
         return False
     except Exception as e:
         logger.error(f"❌ Ошибка активации микрофона: {e}")
+        print(f"❌ [ACTIVATOR] Критическая ошибка: {e}")  # DEBUG
         return False
 
 
@@ -84,21 +98,26 @@ async def activate_accessibility(hold_duration: float = 7.0) -> bool:
     """
     try:
         logger.info(f"♿ Активация Accessibility (пауза {hold_duration} сек)...")
+        print(f"♿ [ACTIVATOR] Начало активации Accessibility")  # DEBUG
 
         try:
+            print(f"♿ [ACTIVATOR] Импортируем Quartz/AX API...")  # DEBUG
             from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
             from Foundation import NSDictionary, NSNumber
         except ImportError:
             logger.warning("⚠️ Quartz/AX API недоступен – не удалось запросить Accessibility")
+            print(f"⚠️ [ACTIVATOR] Quartz/AX API недоступен")  # DEBUG
             return False
 
         try:
             # Вызываем с prompt=True, чтобы система показала диалог, если доступ ещё не выдан
+            print(f"♿ [ACTIVATOR] Вызываем AXIsProcessTrustedWithOptions с prompt=True...")  # DEBUG
             options = NSDictionary.dictionaryWithObject_forKey_(
                 NSNumber.numberWithBool_(True),
                 kAXTrustedCheckOptionPrompt,
             )
             trusted = bool(AXIsProcessTrustedWithOptions(options))
+            print(f"♿ [ACTIVATOR] AXIsProcessTrustedWithOptions вернул: {trusted}")  # DEBUG
         except Exception as ax_err:
             logger.error(f"❌ Ошибка вызова AXIsProcessTrustedWithOptions: {ax_err}")
             return False

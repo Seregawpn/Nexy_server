@@ -31,6 +31,18 @@
 
 **Синхронизация**: Любое изменение оси или правила → обновить STATE_CATALOG.md → interaction_matrix.yaml → gateways.py → тесты (см. раздел 11 "Чеклист изменений").
 
+### 1.1.1 Процедура синхронизации осей (явное правило)
+
+**ОБЯЗАТЕЛЬНАЯ ПРОЦЕДУРА**: Любые правки осей → сначала правим STATE_CATALOG.md, затем interaction_matrix.yaml, затем gateways.py + тесты.
+
+**Порядок действий:**
+1. **STATE_CATALOG.md** — добавить/изменить ось, обновить владельцев/читателей, источник истины, метрики
+2. **interaction_matrix.yaml** — добавить/изменить правило взаимодействия с приоритетами (hard_stop/graceful/preference)
+3. **gateways.py** — реализовать логику в соответствующем gateway (decide_* функции)
+4. **Тесты gateways** — добавить/обновить тесты (≥8–14 pairwise + 2 негативных) с проверкой decision-логов
+
+**Owner оси разрешает споры**: При любом разногласии по оси/артефакту — окончательное решение принимает Owner из таблицы ownership в STATE_CATALOG.md (см. раздел "Таблица ownership").
+
 ## 2. Среда и запуск
 - macOS 13+, Python 3.11, работа ведётся из `client/`.
 - Точка входа: `python client/main.py` (создаёт EventBus и запускает `SimpleModuleCoordinator`).
@@ -50,9 +62,9 @@
 - **EventBus**: все коммуникации — события, приоритеты задаются через `EventPriority`.
 
 ## 4. Порядок модулей и инициализации
-`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → **FirstRunPermissions** → Tray → ModeManagement → InputProcessing → VoiceRecognition → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → SpeechPlayback → Signals → Updater → AutostartManager → WelcomeMessage → VoiceOverDucking. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
+`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → **FirstRunPermissions** → **PermissionRestart** → Tray → ModeManagement → InputProcessing → VoiceRecognition → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → SpeechPlayback → Signals → Updater → AutostartManager → WelcomeMessage → VoiceOverDucking. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
 
-**ОБНОВЛЕНО:** FirstRunPermissionsIntegration добавлена на позицию 3 (блокирующая). Permissions модуль теперь имеет полноценную интеграцию для системы первого запуска.
+**ОБНОВЛЕНО:** FirstRunPermissionsIntegration добавлена на позицию 3 (блокирующая). PermissionRestartIntegration добавлена на позицию 4 (сразу после FirstRunPermissions, как в README и Global Delivery Plan). Permissions модуль теперь имеет полноценную интеграцию для системы первого запуска.
 
 **АКТУАЛЬНЫЕ СПИСКИ:**
 - Модули: см. `client/modules/`
@@ -83,6 +95,23 @@
 - Новые параметры добавляй в `unified_config.yaml`, обновляя документацию и пример (если нужен).
 - Секреты не коммить: используем Keychain/окружение.
 
+### 6.1 Feature Flags и Kill-Switches (обязательный слой управления)
+
+**ОБЯЗАТЕЛЬНО**: Любое поведение, затрагивающее >2 оси состояния, **ОБЯЗАНО** раскатываться через feature flag и иметь мгновенный откат (kill-switch).
+
+**Реестр флагов**: См. `Docs/FEATURE_FLAGS.md` — карта всех feature flags/kill-switches → код.
+
+**Конкретные флаги для first-run/permission-restart:**
+- `NEXY_FEATURE_FIRST_RUN_V2` — включить систему первого запуска (v2)
+- `NEXY_FEATURE_PERMISSION_RESTART_V2` — включить автоматический перезапуск после разрешений (v2)
+- `NEXY_KS_PERMISSION_RESTART_V2` — kill-switch для мгновенного отключения перезапуска (env переменная или unified_config)
+- `NEXY_DISABLE_AUTO_RESTART` — env-переключатель для dry-run режима (перезапуск не выполняется)
+
+**Правила использования:**
+- Feature flags: постепенный роллаут (1% → 25% → 100%) через `unified_config.yaml` или env переменные
+- Kill-switches: мгновенный откат без релиза (env переменная или `unified_config.yaml`)
+- Все флаги должны быть зарегистрированы в `Docs/FEATURE_FLAGS.md` перед мерджем (см. раздел 19 «Роллаут»)
+
 ## 7. Взаимодействие с сервером
 - gRPC настройки (`grpc.server_host`, `grpc.server_port`, TLS) берутся из unified_config.
 - Сообщения/стриминг определены `../server/modules/grpc_service/streaming.proto`; при изменениях сервера обновляй клиентские stubs и проводи совместное тестирование.
@@ -95,6 +124,22 @@
 - **Логируй**: переходы режимов, сетевые события, ошибки устройств, автообновления.
 - **Избегай**: PII/секретов (микрофонные данные, токены, URL).
 - **Для DIAG**: добавлять config_hash, build_id, git_sha в контекст.
+
+### 8.1 Shadow-mode и Expected Logs (Definition of Done)
+
+**ОБЯЗАТЕЛЬНО**: Перед мерджем изменений, затрагивающих first-run/permission-restart, **ОБЯЗАНА** быть сверка со «спецификацией логов первого запуска».
+
+**Спецификация логов**: См. `Docs/NEXY_FIRST_RUN_LOG_EXPECTED.md` — точная последовательность логов для правильной работы процесса первого запуска.
+
+**Проверочный чек-лист** (перед мерджем):
+- [ ] Логи сверены со спецификацией из `NEXY_FIRST_RUN_LOG_EXPECTED.md`
+- [ ] Нет «проигрывания приветствия до рестарта» в старом процессе
+- [ ] Нет публикации `permissions.first_run_completed` в старом процессе (только `restart_pending`)
+- [ ] Нет логов CoreAudio о записи микрофона до перезапуска
+- [ ] В новом процессе есть `Перезапуск после first_run завершён успешно`
+- [ ] Приветствие играет **ТОЛЬКО** после перезапуска (в новом процессе)
+
+**Shadow-mode**: Для постепенного роллаута изменений используй shadow-mode (параллельная публикация событий/состояний для наблюдения без применения изменений).
 
 **Decision-лог (канонический формат, обязателен для всех gateways):**
 `decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=...,firstRun=...,appMode=...} source=<domain> duration_ms=<int>`
@@ -129,10 +174,10 @@ permission_restart:
 
 first_run_permissions:
   pause_between_requests_sec: 1.0    # Пауза между запросами разрешений
-  activation_hold_duration_sec: 7.0  # Пауза между диалогами для комфортного UX
+  activation_hold_duration_sec: 13.0  # Пауза между диалогами для комфортного UX (13 секунд)
 ```
 
-**Ссылки в других местах**: В документации (README, KEY_POINTS, BLOCKERS) указывай только ссылку на `unified_config.yaml`, не дублируй значения.
+**Ссылки в других местах**: В документации (README, KEY_POINTS, BLOCKERS) указывай только ссылку на `unified_config.yaml`, не дублируй значения. **Источник истины — `unified_config.yaml`** (см. раздел 6).
 
 **Использование в коде**: Все интеграции читают значения из `unified_config.yaml` через соответствующие config-менеджеры. Hardcoded значения допускаются только для констант (например, `MAX_WAIT_SECONDS = 600.0` в `restart_scheduler.py`), но должны быть документированы с указанием причины.
 
@@ -140,6 +185,14 @@ first_run_permissions:
 - Модульные тесты (если есть) держим рядом с модулями (`modules/*/tests` или `integration/tests`).
 - Обязательные ручные проверки: push-to-talk, переходы режимов, Tray меню, автообновление Sparkle, VoiceOver ducking.
 - Для регрессии глянь сценарии в `../Docs/CURRENT_STATUS_REPORT.md` и адаптируй плейлист.
+
+### 10.1 Shadow-mode и Expected Logs (для first-run/restart)
+
+**ОБЯЗАТЕЛЬНО**: Перед мерджем изменений, затрагивающих first-run/permission-restart, **ОБЯЗАНА** быть сверка со «спецификацией логов первого запуска» (см. раздел 8.1).
+
+**Спецификация логов**: `Docs/NEXY_FIRST_RUN_LOG_EXPECTED.md` — канонический чек-лист для проверки правильности работы процесса первого запуска.
+
+**Проверка логов**: Используй проверочный чек-лист из `NEXY_FIRST_RUN_LOG_EXPECTED.md` для валидации последовательности логов перед мерджем.
 
 ## 11. Чеклист изменений
 **Перед началом**
@@ -164,10 +217,16 @@ first_run_permissions:
 3. ✅ `integration/core/gateways.py` — реализовать логику в соответствующем gateway
 4. ✅ Тесты gateways — добавить/обновить тесты (≥8–14 pairwise + 2 негативных) с проверкой decision-логов
 
+**Machine-enforced правила** (машинно-проверяемые условия):
+- **Запрет прямого доступа к состоянию**: `pyproject.toml` + `scripts/verify_no_direct_state_access.py` проверяют паттерны доступа к состоянию
+- **Валидация схем**: `tests/test_schemas.py` + `scripts/validate_schemas.py` проверяют соответствие unified_config.yaml и interaction_matrix.yaml схемам
+- **CI-гейты**: `.github/workflows/ci.yml` (lint, schema-validate, contracts-test, impact-gate) обязательны перед мерджем
+
 **Проверка синхронизации** (перед мерджем):
 - [ ] Все оси из STATE_CATALOG.md присутствуют в interaction_matrix.yaml (если влияют на решения)
 - [ ] Все правила из interaction_matrix.yaml реализованы в gateways.py
-- [ ] Все gateways покрыты тестами с проверкой decision-логов в каноническом формате
+- [ ] Все gateways покрыты тестами (≥8–14 pairwise + 2 негативных) с проверкой decision-логов в каноническом формате
+- [ ] Machine-enforced правила пройдены (lint, schema-validate, verify_no_direct_state_access)
 
 **Перед мерджем — SIMPLE-гейт**
 
@@ -506,9 +565,11 @@ def publish_event(self, event_name: str, payload: dict):
 
 ### 18.1 STATE_CATALOG (Docs/STATE_CATALOG.md)
 
-- Оси/флаги: `permissions.mic|screen|accessibility`, `device.input`, `network`, `firstRun`, `appMode`, ...
+- Оси/флаги: `permissions.mic|screen|accessibility`, `device.input`, `network`, `firstRun`, `appMode`, `update_in_progress`, ...
 - Для каждой оси: допустимые состояния, владелец, кто пишет/читает, источник истины, метрики.
 - Ответственный: один владелец документа (по умолчанию: Tech Lead клиента).
+
+**НОВАЯ ОСЬ**: `update_in_progress` — статус обновления приложения (см. STATE_CATALOG.md раздел 10). Владелец: UpdaterIntegration owner. Используется для безопасного рестарта во время обновлений.
 
 ### 18.2 INTERACTION_MATRIX (config/interaction_matrix.yaml)
 
@@ -522,12 +583,34 @@ def publish_event(self, event_name: str, payload: dict):
   2. `graceful`: деградация (сеть/квоты) — урезаем функционал, но живём;
   3. `preference`: UX-предпочтения — только если не конфликтуют с 1–2.
 
+**Правила для `update_in_progress`**:
+- `graceful` при `update_in_progress=true` → блокирует permission restart (через gateway `decide_permission_restart_safety`)
+- `hard_stop` при `update_in_progress=true` + `appMode=LISTENING|PROCESSING` → блокирует запуск обновления
+- Селекторы и gateways должны проверять `update_in_progress` в паре с `interaction_matrix.yaml` (см. STATE_CATALOG.md раздел 10)
+
 ## 19. Политика роллаута изменяющих взаимодействия
 
 - Любое изменение, затрагивающее >2 осей, включается через фича-флаг.
 - Этапы: 1% → 25% → 100% (config-driven), с возможностью shadow-mode (считаем решение, но не применяем).
 - Kill-switch: `NEXY_KS_<FEATURE>` в окружении/конфиге, выключает поведение немедленно без релиза.
 - В `change_impact.yaml` обязательно указать: флаг, план раскатки, условие отката.
+
+### 19.1 Feature Flags и Kill-Switches (обязательный слой)
+
+**ОБЯЗАТЕЛЬНО**: Любое поведение, затрагивающее >2 оси состояния, **ОБЯЗАНО** раскатываться через feature flag и иметь мгновенный откат (kill-switch).
+
+**Реестр флагов**: См. `Docs/FEATURE_FLAGS.md` — карта всех feature flags/kill-switches → код. Все флаги должны быть зарегистрированы в этом реестре перед мерджем.
+
+**Конкретные флаги для first-run/permission-restart:**
+- `NEXY_FEATURE_FIRST_RUN_V2` — включить систему первого запуска (v2)
+- `NEXY_FEATURE_PERMISSION_RESTART_V2` — включить автоматический перезапуск после разрешений (v2)
+- `NEXY_KS_PERMISSION_RESTART_V2` — kill-switch для мгновенного отключения перезапуска (env переменная или unified_config)
+- `NEXY_DISABLE_AUTO_RESTART` — env-переключатель для dry-run режима (перезапуск не выполняется)
+
+**Правила использования:**
+- Feature flags: постепенный роллаут (1% → 25% → 100%) через `unified_config.yaml` или env переменные
+- Kill-switches: мгновенный откат без релиза (env переменная или `unified_config.yaml`)
+- Все флаги должны быть зарегистрированы в `Docs/FEATURE_FLAGS.md` перед мерджем (см. раздел 6.1)
 
 ## 20. SLO и стоп-релизы (beta)
 

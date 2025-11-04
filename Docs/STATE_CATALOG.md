@@ -5,7 +5,7 @@
 **ВАЖНО**: Этот документ — единый источник истины для осей состояния. Любые изменения осей **ОБЯЗАТЕЛЬНО** синхронизируются с:
 1. `config/interaction_matrix.yaml` — правила взаимодействия осей
 2. `integration/core/selectors.py` — типы и значения осей
-3. `integration/core/gateways.py` — логика принятия решений на основе осей
+3. **Gateway layer** (`integration/core/gateways/`) — логика принятия решений на основе осей (decision_engine.py, rule_loader.py, predicates.py, base.py, common.py, permission_gateways.py)
 4. Тесты gateways (pairwise покрытие ≥8–14 комбинаций + 2 негативных)
 
 **Правило синхронизации**: Любые новые/изменённые оси → сначала правка `STATE_CATALOG.md`, затем синхронизация `interaction_matrix.yaml`, затем обновление gateway-тестов. Это предотвращает рассинхрон и «скрытые» зависимости между флагами.
@@ -116,11 +116,13 @@
 - **метрики**: `update_in_progress_duration_ms`, `update_restart_conflict_rate`
 - **состояния**: `true | false`
 - **правила в interaction_matrix.yaml**: 
-  - `graceful` при `update_in_progress=true` → блокирует permission restart (через gateway `decide_permission_restart_safety`)
-  - `hard_stop` при `update_in_progress=true` + `appMode=LISTENING|PROCESSING` → блокирует запуск обновления
+  - `graceful` при `update_in_progress=true` → блокирует permission restart (через gateway `decide_permission_restart_safety()`)
+  - `hard_stop` при `update_in_progress=true` + `appMode=LISTENING|PROCESSING` → блокирует запуск обновления (через `UpdaterIntegration._can_update()`)
+- **gateway**: `integration/core/gateways/permission_gateways.py::decide_permission_restart_safety()` — проверяет `snapshot.update_in_progress` и возвращает `Decision.ABORT` при `true` (graceful блокировка)
+- **тесты**: обязательны ≥1 happy (update_in_progress=false) + 1 негативный (update_in_progress=true) с проверкой decision-логов в каноническом формате
 - **события**: `updater.in_progress.changed` публикуется при изменении статуса (`{active: bool, trigger: str}`)
 - **shadow-mode**: параллельно с записью `state_data` публикуются события для постепенной миграции на selectors
-- **связанные документы**: `integration/integrations/updater_integration.py`, `integration/core/selectors.py`
+- **связанные документы**: `integration/integrations/updater_integration.py`, `integration/core/selectors.py`, `integration/core/gateways/permission_gateways.py`
 
 ### Связь с interaction_matrix.yaml
 
@@ -141,7 +143,7 @@
 **Правило обновления**: При изменении оси или добавлении нового правила:
 1. Обновить `STATE_CATALOG.md` (этот документ)
 2. Обновить `interaction_matrix.yaml` (добавить правило или изменить существующее)
-3. Обновить `integration/core/gateways.py` (реализовать логику в соответствующем gateway)
+3. Обновить **gateway layer** (`integration/core/gateways/*.py`) — реализовать логику в соответствующем gateway (decision_engine.py, rule_loader.py, predicates.py, common.py, permission_gateways.py)
 4. Добавить/обновить тесты gateways (≥8–14 pairwise комбинаций + 2 негативных)
 5. Проверить decision-логи в тестах (обязательный формат: `decision=<...> ctx={...} source=<domain>`)
 
@@ -164,7 +166,7 @@
 | Ось | Прямой доступ (запрещён) | Разрешён через | Gateway/Selector |
 |-----|--------------------------|----------------|------------------|
 | Все оси | ❌ Интеграции/модули | ✅ `integration/core/selectors.py` | `Snapshot` → selectors → gateways |
-| Все оси | ❌ Прямой `state_manager.get_*` | ✅ `integration/core/gateways.py` | `decide_*()` функции |
+| Все оси | ❌ Прямой `state_manager.get_*` | ✅ **Gateway layer** (`integration/core/gateways/`) | `decide_*()` функции |
 
 **Исключения** (разрешён прямой доступ только для):
 - `**/selectors.py` — чтение для создания selectors
@@ -202,7 +204,7 @@ decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=
 | `appMode` | ModeManagement module owner | `mode_management` (единственный источник изменения режима) | Все интеграции, `permission_restart` | `ApplicationStateManager` (централизованное состояние) | Tech Lead клиента |
 | `STATE_CATALOG.md` | Tech Lead клиента | Tech Lead клиента | Все разработчики | Этот документ | Tech Lead клиента |
 | `interaction_matrix.yaml` | Tech Lead клиента | Разработчики (после синхронизации с STATE_CATALOG.md) | Все разработчики, gateways | `config/interaction_matrix.yaml` | Tech Lead клиента |
-| `gateways.py` | Tech Lead клиента | Разработчики (после синхронизации с interaction_matrix.yaml) | Все интеграции | `integration/core/gateways.py` | Tech Lead клиента |
+| **Gateway layer** | Tech Lead клиента | Разработчики (после синхронизации с interaction_matrix.yaml) | Все интеграции | `integration/core/gateways/` (decision_engine.py, rule_loader.py, predicates.py, base.py, common.py, permission_gateways.py) | Tech Lead клиента |
 | `permission_restart` | Tech Lead клиента | `permission_restart_integration` | Все интеграции, влияющие на перезапуск | `modules/permission_restart/core/restart_scheduler.py` | Tech Lead клиента |
 | `update_in_progress` | UpdaterIntegration owner | `updater_integration` | `permission_restart_integration`, `simple_module_coordinator` | `UpdaterIntegration.is_update_in_progress()` | Tech Lead клиента |
 
@@ -213,19 +215,19 @@ decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=
 **Before**: Любое изменение осей или правил взаимодействия
 1. Проверить текущий `STATE_CATALOG.md`
 2. Проверить `interaction_matrix.yaml` на соответствие
-3. Проверить `gateways.py` на реализацию правил
+3. Проверить **gateway layer** (`integration/core/gateways/*.py`) на реализацию правил
 4. **Уведомить Owner** оси/артефакта о планируемых изменениях
 
 **During**: Внесение изменений
 1. Обновить `STATE_CATALOG.md` (добавить/изменить ось, обновить таблицу ownership)
 2. Обновить `interaction_matrix.yaml` (добавить/изменить правило)
-3. Обновить `gateways.py` (реализовать логику)
+3. Обновить **gateway layer** (`integration/core/gateways/*.py`) — реализовать логику
 4. Добавить/обновить тесты (pairwise + негативные)
 5. Проверить decision-логи в тестах
 
 **After**: Проверка синхронизации
 1. ✅ Все оси из `STATE_CATALOG.md` присутствуют в `interaction_matrix.yaml` (если влияют на решения)
-2. ✅ Все правила из `interaction_matrix.yaml` реализованы в `gateways.py`
+2. ✅ Все правила из `interaction_matrix.yaml` реализованы в **gateway layer** (`integration/core/gateways/*.py`)
 3. ✅ Все gateways покрыты тестами (≥8–14 pairwise + 2 негативных)
 4. ✅ Decision-логи в каноническом формате в тестах (1 позитив + 1 негатив минимум)
 5. ✅ **Owner оси/артефакта уведомлён и одобрил изменения**

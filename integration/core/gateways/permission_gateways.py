@@ -10,6 +10,8 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.gateways.common import Decision, _log_decision
+from integration.core.gateways.base import create_ctx_from_snapshot
+from integration.core.gateways.engine_loader import get_engine
 from integration.core.selectors import Snapshot, is_first_run_restart_pending, is_update_in_progress
 
 try:  # pragma: no cover - defensive fallback for tooling contexts
@@ -189,10 +191,8 @@ def decide_permission_restart_safety(
     """
     Decide whether it's safe to schedule a permission restart.
 
-    Rules:
-    - hard_stop: if first_run restart is pending, abort (block restart)
-    - graceful: if update is in progress, abort (avoid interrupting update)
-    - start: if all conditions are met
+    Uses DecisionEngine with rules from interaction_matrix.yaml.
+    Rules are applied in priority order: hard_stop → graceful → preference.
 
     Args:
         snapshot: Current system state snapshot (includes update_in_progress axis)
@@ -200,33 +200,43 @@ def decide_permission_restart_safety(
     Returns:
         Decision.START if restart is safe, Decision.ABORT otherwise
     """
-    # Hard stop: first_run restart pending blocks all restarts
-    if is_first_run_restart_pending(snapshot):
+    try:
+        engine = get_engine("decide_permission_restart_safety")
+        ctx = create_ctx_from_snapshot(snapshot)
+        extra = {"update_in_progress": snapshot.update_in_progress}
+        return engine.decide(snapshot, source="permission_restart_gateway", ctx=ctx, extra=extra)
+    except Exception as exc:
+        # Fallback to legacy logic if engine fails
+        logger.warning(
+            f"decision_engine_fallback gateway=decide_permission_restart_safety "
+            f"ctx={create_ctx_from_snapshot(snapshot).to_log_string()} "
+            f"error={exc} fallback_to=legacy"
+        )
+        # Hard stop: first_run restart pending blocks all restarts
+        if is_first_run_restart_pending(snapshot):
+            _log_decision(
+                level="info",
+                decision=Decision.ABORT,
+                s=snapshot,
+                source="permission_restart_gateway",
+                reason="first_run_restart_pending",
+            )
+            return Decision.ABORT
+        # Graceful: update in progress blocks restart
+        if snapshot.update_in_progress:
+            _log_decision(
+                level="info",
+                decision=Decision.ABORT,
+                s=snapshot,
+                source="permission_restart_gateway",
+                reason="update_in_progress",
+            )
+            return Decision.ABORT
+        # All conditions met - restart is safe
         _log_decision(
-            level="info",
-            decision=Decision.ABORT,
+            level="debug",
+            decision=Decision.START,
             s=snapshot,
             source="permission_restart_gateway",
-            reason="first_run_restart_pending",
         )
-        return Decision.ABORT
-
-    # Graceful: update in progress blocks restart
-    if snapshot.update_in_progress:
-        _log_decision(
-            level="info",
-            decision=Decision.ABORT,
-            s=snapshot,
-            source="permission_restart_gateway",
-            reason="update_in_progress",
-        )
-        return Decision.ABORT
-
-    # All conditions met - restart is safe
-    _log_decision(
-        level="debug",
-        decision=Decision.START,
-        s=snapshot,
-        source="permission_restart_gateway",
-    )
-    return Decision.START
+        return Decision.START

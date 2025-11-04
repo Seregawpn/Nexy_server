@@ -13,7 +13,7 @@
 
 1. **STATE_CATALOG.md** — единый источник истины для осей состояния + таблица ownership
 2. **interaction_matrix.yaml** — правила взаимодействия осей с приоритетами
-3. **gateways.py** — логика принятия решений на основе осей
+3. **Gateway layer** (`integration/core/gateways/`) — логика принятия решений на основе осей (decision_engine.py, rule_loader.py, predicates.py, base.py, common.py, permission_gateways.py)
 4. **test_gateways.py** — тесты с проверкой decision-логов в каноническом формате
 5. **change_impact.yaml** — обязателен для изменений >2 осей (шаблон в `.impact/`)
 6. **schemas/** — JSON Schema для валидации unified_config.yaml и interaction_matrix.yaml
@@ -27,7 +27,7 @@
 **Инвариант**: "изменил поведение? обнови 4 артефакта"
 1. ✅ `Docs/STATE_CATALOG.md`
 2. ✅ `config/interaction_matrix.yaml`
-3. ✅ `integration/core/gateways.py`
+3. ✅ **Gateway layer** (`integration/core/gateways/*.py`)
 4. ✅ Тесты gateways (≥8–14 pairwise + 2 негативных)
 
 ### Machine-enforced правила

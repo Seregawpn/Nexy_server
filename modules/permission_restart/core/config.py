@@ -24,6 +24,7 @@ class PermissionRestartConfig:
     """
 
     enabled: bool = True
+    allow_dev_fallback: bool = True
     critical_permissions: List[PermissionType] = field(
         default_factory=lambda: list(DEFAULT_CRITICAL_PERMISSIONS)
     )
@@ -44,6 +45,7 @@ class PermissionRestartConfig:
             return cls()
 
         enabled = bool(raw.get("enabled", True))
+        allow_dev_fallback = bool(raw.get("allow_dev_fallback", True))
         restart_delay_sec = float(raw.get("restart_delay_sec", 5.0))
         max_attempts = int(raw.get("max_restart_attempts", 3))
         respect_sessions = bool(raw.get("respect_active_sessions", True))
@@ -56,6 +58,7 @@ class PermissionRestartConfig:
 
         return cls(
             enabled=enabled,
+            allow_dev_fallback=allow_dev_fallback,
             critical_permissions=critical_permissions or list(DEFAULT_CRITICAL_PERMISSIONS),
             restart_delay_sec=restart_delay_sec,
             max_restart_attempts=max_attempts,
