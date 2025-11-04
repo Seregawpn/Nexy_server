@@ -130,6 +130,17 @@ class FirstRunPermissionsIntegration:
                 if restarted_via_env:
                     os.environ.pop("NEXY_FIRST_RUN_RESTARTED", None)
 
+            elif self.flag_file.exists():
+                # Флаг первого запуска присутствует, даже если restart flag уже очищен —
+                # фиксируем завершение процедуры, чтобы PermissionRestartIntegration
+                # мог полагаться на fallback без повторной проверки Permission APIs.
+                logger.info(
+                    "[FIRST_RUN_PERMISSIONS] Обнаружен существующий permissions_first_run_completed.flag "
+                    "- считаем процедуру первого запуска завершённой"
+                )
+                self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
+                logger.info("[FIRST_RUN_PERMISSIONS] Set restart_completed_fallback=True in state_manager (flag only)")
+
             if not self.enabled:
                 logger.info("ℹ️ [FIRST_RUN_PERMISSIONS] Отключено в конфиге")
 
