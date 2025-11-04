@@ -102,7 +102,8 @@ class QuartzKeyboardMonitor:
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
-        logger.debug("QuartzMonitor: установлен event loop для async-колбэков")
+        logger.info(f"🔑 QuartzMonitor: установлен event loop для async-колбэков (loop={id(loop)}, running={loop.is_running() if loop else False})")
+        print(f"🔑 QuartzMonitor: установлен event loop (loop={id(loop)}, running={loop.is_running() if loop else False})")
 
     def start_monitoring(self) -> bool:
         if not self.keyboard_available:
@@ -355,13 +356,23 @@ class QuartzKeyboardMonitor:
                 # Это гарантирует, что события попадут в правильный EventBus
                 if self._loop:
                     try:
-                        logger.info(f"🔑 Выполняем async callback в loop: {event.event_type.value}")
-                        print(f"🔑 Выполняем async callback в loop: {event.event_type.value}")  # Для отладки
+                        logger.info(f"🔑 Выполняем async callback в loop: {event.event_type.value} (loop={id(self._loop)}, running={self._loop.is_running()})")
+                        print(f"🔑 Выполняем async callback в loop: {event.event_type.value} (loop={id(self._loop)}, running={self._loop.is_running()})")
                         future = asyncio.run_coroutine_threadsafe(callback(event), self._loop)
-                        # Опционально: можно дождаться выполнения с таймаутом
-                        # future.result(timeout=5.0)
+                        # Fire-and-forget: не блокируем поток клавиатуры
+                        # Добавляем callback для логирования завершения/ошибок
+                        def _on_done(f):
+                            try:
+                                f.result()  # Проверяем на исключения
+                                logger.info(f"✅ Async callback {event.event_type.value} completed successfully")
+                                print(f"✅ Async callback {event.event_type.value} completed successfully")
+                            except Exception as e:
+                                logger.error(f"❌ Async callback {event.event_type.value} failed: {e}", exc_info=True)
+                                print(f"❌ Async callback {event.event_type.value} failed: {e}")
+                        future.add_done_callback(_on_done)
                     except Exception as e:
-                        logger.error(f"❌ Ошибка постинга async callback в loop: {e}")
+                        logger.error(f"❌ Ошибка постинга async callback в loop: {e}", exc_info=True)
+                        print(f"❌ Ошибка постинга async callback в loop: {e}")
                 else:
                     # Fallback: если loop не установлен, пытаемся выполнить в новом loop
                     logger.warning("⚠️ Loop не установлен, создаем временный (события могут не дойти до EventBus)")

@@ -80,9 +80,11 @@ class UpdaterIntegration:
             # Attach event loop for async event publishing
             try:
                 self._loop = asyncio.get_running_loop()
-                # Attach loop to event_bus if available
-                if hasattr(self.event_bus, "attach_loop"):
-                    self.event_bus.attach_loop(self._loop)
+                # НЕ переприсваиваем loop в event_bus! 
+                # SimpleModuleCoordinator уже установил правильный _bg_loop
+                # Переприсваивание здесь ломает async callbacks в QuartzMonitor!
+                # if hasattr(self.event_bus, "attach_loop"):
+                #     self.event_bus.attach_loop(self._loop)
             except RuntimeError:
                 self._loop = None
             self._set_update_state(False, trigger="initialize")

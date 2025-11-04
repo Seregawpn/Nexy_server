@@ -9,6 +9,9 @@
   <!-- Нужен, если посылаете Apple Events -->
   <key>com.apple.security.automation.apple-events</key><true/>
   
+  <!-- Доступ к Accessibility API (для клавиатурного мониторинга) -->
+  <key>com.apple.security.automation.accessibility</key><true/>
+  
   <!-- Доступ к микрофону -->
   <key>com.apple.security.device.microphone</key><true/>
   

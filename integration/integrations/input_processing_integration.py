@@ -155,6 +155,8 @@ class InputProcessingIntegration:
             raise
     async def _handle_press(self, event: KeyEvent):
         """Начало удержания: готовим сессию, но не открываем микрофон (until LONG_PRESS)."""
+        print(f"🎤🎤🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
+        logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         try:
             logger.info(f"🎤 PTT: keyDown(space) → PRESS, timestamp={event.timestamp}")
             logger.debug(f"PRESS: current_session={self._current_session_id}, pending_session={self._pending_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
@@ -173,6 +175,7 @@ class InputProcessingIntegration:
             logger.debug("PRESS: pending_session_id=%s", self._pending_session_id)
 
             # Публикуем событие press чтобы другие модули (например VoiceOver) могли отреагировать мгновенно
+            logger.info(f"🔑 [INPUT] Публикую keyboard.press событие...")
             await self.event_bus.publish(
                 "keyboard.press",
                 {
@@ -185,6 +188,7 @@ class InputProcessingIntegration:
                     "timestamp": event.timestamp,
                 }
             )
+            logger.info(f"🔑 [INPUT] ✅ keyboard.press событие опубликовано")
         except Exception as e:
             await self.error_handler.handle_error(
                 severity=ErrorSeverity.MEDIUM,
@@ -464,13 +468,19 @@ class InputProcessingIntegration:
                 import asyncio
                 # Используем loop из EventBus (фоновый), если доступен
                 loop = getattr(self.event_bus, "_loop", None)
+                logger.info(f"🔧 INPUT_PROCESSING: получен loop из EventBus: {id(loop) if loop else 'None'}")
                 if not loop:
                     try:
                         loop = asyncio.get_running_loop()
+                        logger.info(f"🔧 INPUT_PROCESSING: получен running loop: {id(loop)}")
                     except RuntimeError:
                         loop = None
+                        logger.warning("⚠️ INPUT_PROCESSING: не удалось получить running loop")
                 if loop:
+                    logger.info(f"🔧 INPUT_PROCESSING: передаём loop в keyboard_monitor (loop={id(loop)}, running={loop.is_running()})")
                     self.keyboard_monitor.set_loop(loop)
+                else:
+                    logger.error("❌ INPUT_PROCESSING: НЕТ LOOP! Async callbacks НЕ будут работать!")
                 
                 # Тестируем Quartz только сейчас (после возможного запроса разрешений)
                 if self._using_quartz:
@@ -706,6 +716,8 @@ class InputProcessingIntegration:
             
     async def _handle_long_press(self, event: KeyEvent):
         """Обработка длинного нажатия пробела"""
+        print(f"🎤🎤🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
+        logger.info(f"🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
         try:
             logger.info(f"🎤 PTT: LONG_PRESS triggered → RECORDING_START, duration={event.duration:.3f}s")
             logger.info(f"🔑 LONG_PRESS: {event.duration:.3f}с")
@@ -802,6 +814,8 @@ class InputProcessingIntegration:
             
     async def _handle_key_release(self, event: KeyEvent):
         """Обработка отпускания пробела"""
+        print(f"🎤🎤🎤 _handle_key_release ВЫЗВАН! duration={event.duration:.3f}s")
+        logger.info(f"🎤 _handle_key_release ВЫЗВАН! duration={event.duration:.3f}s")
         try:
             duration_ms = event.duration * 1000 if event.duration else 0
             logger.info(f"🛑 PTT: keyUp(space) → RELEASE, duration={duration_ms:.0f}ms")

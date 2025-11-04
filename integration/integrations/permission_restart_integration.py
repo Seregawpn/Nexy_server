@@ -117,15 +117,14 @@ class PermissionRestartIntegration(BaseIntegration):
             await self._subscribe("app.startup", self._on_app_startup_event, EventPriority.MEDIUM)
             logger.info("[PERMISSION_RESTART] Subscribed to permission events")
 
-            # Догоняющий вызов: если first_run уже завершён (флаг существует), вызываем обработчик
-            # Это обеспечивает перезапуск даже если событие было пропущено из-за порядка инициализации
-            from integration.utils.resource_path import get_user_data_dir
-            flag_path = get_user_data_dir("Nexy") / "permissions_first_run_completed.flag"
-            if flag_path.exists():
-                logger.info(
-                    "[PERMISSION_RESTART] First run flag exists - catching up with first_run_completed event"
-                )
-                await self._on_first_run_completed({})
+            # ИСПРАВЛЕНО: НЕ вызываем догоняющий обработчик!
+            # Если флаг permissions_first_run_completed.flag существует, значит первый запуск уже был
+            # завершён ранее, и перезапуск уже был выполнен. Не нужно планировать новый перезапуск!
+            # 
+            # Событие permissions.first_run_completed должно публиковаться только ОДИН РАЗ -
+            # когда FirstRunPermissionsIntegration завершает процедуру запроса разрешений.
+            # При последующих запусках это событие НЕ публикуется, и мы НЕ должны эмулировать его.
+            logger.info("[PERMISSION_RESTART] First run handling: will only react to live permissions.first_run_completed events")
 
             return True
         except Exception as exc:
@@ -200,7 +199,8 @@ class PermissionRestartIntegration(BaseIntegration):
             "[PERMISSION_RESTART] First run completed (session_id=%s), scheduling restart",
             session_id,
         )
-        self._ready_emitted = False
+        # ИСПРАВЛЕНО: НЕ сбрасываем _ready_emitted, чтобы избежать повторной публикации system.ready_to_greet
+        # self._ready_emitted = False  ← УДАЛЕНО
 
         # Помечаем как first_run рестарт - это форсирует перезапуск независимо от режима
         if self._scheduler:
@@ -222,6 +222,12 @@ class PermissionRestartIntegration(BaseIntegration):
                 await self._handle_transition(transition)
 
     async def _handle_transition(self, transition: PermissionTransition) -> None:
+        # 🧪 ТЕСТОВЫЙ РЕЖИМ: пропускаем обработку изменений разрешений
+        import os
+        if os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1":
+            logger.debug("[PERMISSION_RESTART] Тестовый режим: пропускаем обработку изменений разрешений")
+            return
+        
         scheduler = self._scheduler
         if not scheduler:
             return
@@ -269,6 +275,61 @@ class PermissionRestartIntegration(BaseIntegration):
         await self._publish_ready_if_applicable(source="update_completed")
 
     async def _on_app_startup_event(self, event: Dict[str, Any]) -> None:
+        """
+        Обработчик события app.startup.
+        Инициализирует детектор текущим состоянием разрешений, чтобы избежать
+        ложных срабатываний на уже выданные разрешения.
+        """
+        # КРИТИЧНО: Предотвращаем повторную публикацию system.ready_to_greet
+        # если async обработка завершается после первой публикации
+        if self._ready_emitted:
+            logger.debug("[PERMISSION_RESTART] Skipping app_startup handler - already emitted ready")
+            return
+        
+        # Инициализируем детектор текущим состоянием разрешений
+        try:
+            # 🧪 ТЕСТОВЫЙ РЕЖИМ: эмулируем что все разрешения выданы
+            import os
+            test_mode = os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1"
+            
+            if test_mode:
+                logger.info("[PERMISSION_RESTART] 🧪 ТЕСТОВЫЙ РЕЖИМ: эмулируем все разрешения как GRANTED")
+                current_permissions = {
+                    "accessibility": FirstRunPermissionStatus.GRANTED,
+                    "input_monitoring": FirstRunPermissionStatus.GRANTED,
+                    "screen_capture": FirstRunPermissionStatus.GRANTED,
+                }
+            else:
+                current_permissions = {
+                    "accessibility": check_accessibility_status(),
+                    "input_monitoring": check_input_monitoring_status(),
+                    "screen_capture": check_screen_capture_status(),
+                }
+            
+            for perm_name, status in current_permissions.items():
+                # Преобразуем FirstRunPermissionStatus в PermissionStatus
+                perm_status = PermissionStatus.GRANTED if status == FirstRunPermissionStatus.GRANTED else (
+                    PermissionStatus.DENIED if status == FirstRunPermissionStatus.DENIED else PermissionStatus.NOT_DETERMINED
+                )
+                
+                # Синтетическое событие для инициализации детектора
+                payload = {
+                    "permission": perm_name,
+                    "old_status": PermissionStatus.NOT_DETERMINED.value,
+                    "new_status": perm_status.value,
+                    "session_id": "app_startup_init",
+                    "source": "app_startup_init",
+                }
+                # Обрабатываем без вызова _handle_transition (только инициализация)
+                self._detector.process_event("permissions.init", payload)
+            
+            logger.info(
+                "[PERMISSION_RESTART] Initialized with current permissions: %s",
+                {k: v.value for k, v in current_permissions.items()}
+            )
+        except Exception as exc:
+            logger.warning("[PERMISSION_RESTART] Failed to initialize with current permissions: %s", exc)
+        
         await self._publish_ready_if_applicable(source="app_startup")
 
     async def _publish_ready_if_applicable(self, *, source: str) -> None:
@@ -311,6 +372,12 @@ class PermissionRestartIntegration(BaseIntegration):
             logger.debug("[PERMISSION_RESTART] Readiness waiting for updater to finish (source=%s)", source)
             return
 
+        # ИСПРАВЛЕНИЕ: Устанавливаем флаг ДО публикации, чтобы избежать race condition
+        # Если между публикацией и установкой флага вызовется _publish_ready_if_applicable снова,
+        # то проверка if self._ready_emitted сработает и предотвратит повторную публикацию
+        self._ready_emitted = True
+        self._ready_pending_update = False
+
         try:
             await self.event_bus.publish(
                 "system.permissions_ready",
@@ -320,8 +387,6 @@ class PermissionRestartIntegration(BaseIntegration):
                 "system.ready_to_greet",
                 {"source": source},
             )
-            self._ready_emitted = True
-            self._ready_pending_update = False
             logger.info("[PERMISSION_RESTART] Published system.ready_to_greet (source=%s)", source)
         except Exception as exc:
             logger.debug("[PERMISSION_RESTART] Failed to publish readiness events: %s", exc)

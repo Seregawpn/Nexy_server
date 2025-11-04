@@ -91,21 +91,36 @@ class FirstRunPermissionsIntegration:
             # Также проверяем env переменную NEXY_FIRST_RUN_RESTARTED (для dev-режима)
             restarted_via_flag = self._restart_flag.exists()
             restarted_via_env = os.environ.get("NEXY_FIRST_RUN_RESTARTED") == "1"
+            
+            # 🧪 ТЕСТОВЫЙ РЕЖИМ: эмулируем перезапуск если флаги существуют
+            test_mode = os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1"
+            if test_mode and self.flag_file.exists() and self._restart_flag.exists():
+                logger.info("🧪 [FIRST_RUN_PERMISSIONS] ТЕСТОВЫЙ РЕЖИМ: эмулируем перезапуск")
+                restarted_via_flag = True  # Принудительно активируем логику перезапуска
 
             if restarted_via_flag or restarted_via_env:
                 logger.info("✅ [FIRST_RUN_PERMISSIONS] Перезапуск после first_run завершён успешно")
                 if restarted_via_env:
                     logger.info("   (обнаружено через NEXY_FIRST_RUN_RESTARTED env)")
+                if test_mode:
+                    logger.info("   (тестовый режим)")
 
                 # Публикуем completed в НОВОМ процессе (после перезапуска)
                 await self.event_bus.publish("permissions.first_run_completed", {
                     "session_id": "restarted",
                     "source": "first_run_permissions_integration",
-                    "note": "Published after successful restart"
+                    "note": "Published after successful restart" + (" (test mode)" if test_mode else "")
                 })
 
-                # Удаляем флаг после публикации
+                # КРИТИЧНО: Удаляем ОБА флага после публикации
+                # Это гарантирует, что при следующем запуске НЕ будет повторной публикации события
                 self._clear_restart_flag()
+                self._clear_first_run_flag()
+                logger.info("[FIRST_RUN_PERMISSIONS] ✅ Оба флага удалены - первый запуск полностью завершён")
+                
+                # Устанавливаем fallback флаг в state_manager (для других интеграций)
+                self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
+                logger.info("[FIRST_RUN_PERMISSIONS] Set restart_completed_fallback=True in state_manager")
 
                 # Очищаем env переменную
                 if restarted_via_env:
@@ -143,9 +158,37 @@ class FirstRunPermissionsIntegration:
                 logger.info("ℹ️ [FIRST_RUN_PERMISSIONS] Отключено - пропускаем")
                 return True
 
+            # 🧪 ВРЕМЕННАЯ ЗАГЛУШКА для тестирования: пропускаем проверку разрешений
+            if os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1":
+                logger.warning("🧪 [FIRST_RUN_PERMISSIONS] ТЕСТОВЫЙ РЕЖИМ: пропускаем проверку разрешений (NEXY_TEST_SKIP_PERMISSIONS=1)")
+                
+                # Если флага НЕТ - создаём флаги (эмулируем первый запуск)
+                # При следующем запуске initialize() обработает их и опубликует событие
+                if not self.flag_file.exists():
+                    logger.info("🧪 [FIRST_RUN_PERMISSIONS] Создаём флаги для эмуляции первого запуска")
+                    self._safe_touch_flag(self.flag_file, "permissions_first_run_completed")
+                    self._safe_touch_flag(self._restart_flag, "restart_completed")
+                    logger.info("🧪 [FIRST_RUN_PERMISSIONS] Флаги созданы - при следующем запуске будет эмулирован перезапуск")
+                
+                return True
+
             # Проверяем флаг первого запуска
             if self.flag_file.exists():
                 logger.info("✅ [FIRST_RUN_PERMISSIONS] Первый запуск уже завершён - пропускаем")
+                return True
+
+            # Если флага нет, но ВСЕ разрешения уже выданы - считаем что первый запуск был
+            # (например, флаги были удалены после успешного перезапуска)
+            mic_status = check_microphone_status()
+            accessibility_status = check_accessibility_status()
+            screen_status = check_screen_capture_status()
+            input_status = check_input_monitoring_status()
+            
+            if (mic_status == PermissionStatus.GRANTED and
+                accessibility_status == PermissionStatus.GRANTED and
+                screen_status == PermissionStatus.GRANTED and
+                input_status == PermissionStatus.GRANTED):
+                logger.info("✅ [FIRST_RUN_PERMISSIONS] Все разрешения уже выданы - первый запуск был ранее")
                 return True
 
             # ПЕРВЫЙ ЗАПУСК!
@@ -531,6 +574,18 @@ class FirstRunPermissionsIntegration:
                 logger.warning(f"[FIRST_RUN_PERMISSIONS] restart_completed.flag не существует (уже удалён?): {self._restart_flag}")
         except Exception as exc:
             logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Не удалось удалить restart_completed.flag: {exc}")
+    
+    def _clear_first_run_flag(self) -> None:
+        """Удаление флага первого запуска (после успешного перезапуска)"""
+        try:
+            if self.flag_file.exists():
+                logger.info(f"[FIRST_RUN_PERMISSIONS] Удаление permissions_first_run_completed.flag: {self.flag_file}")
+                self.flag_file.unlink()
+                logger.info(f"[FIRST_RUN_PERMISSIONS] ✅ permissions_first_run_completed.flag удалён: {self.flag_file}")
+            else:
+                logger.warning(f"[FIRST_RUN_PERMISSIONS] permissions_first_run_completed.flag не существует (уже удалён?): {self.flag_file}")
+        except Exception as exc:
+            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Не удалось удалить permissions_first_run_completed.flag: {exc}")
 
     def _handle_restart_failure(self) -> None:
         """Fallback: разблокируем интеграции и очищаем флаг."""
