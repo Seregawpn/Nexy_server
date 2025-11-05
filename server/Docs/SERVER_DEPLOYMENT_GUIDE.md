@@ -152,8 +152,9 @@ rm -rf nexy_server_temp
 
 ### **📊 Мониторинг деплоя:**
 - **GitHub Actions:** `https://github.com/Seregawpn/Nexy_server/actions`
-- **Health check:** `http://20.151.51.172/health`
-- **Status API:** `http://20.151.51.172/status`
+- **Health check (PUBLIC):** `https://20.151.51.172/health` (через Nginx/443)
+- **Status API (PUBLIC):** `https://20.151.51.172/status` (через Nginx/443)
+- **Health check (INTERNAL):** `http://127.0.0.1:8080/health` (прямой доступ, только локально)
 
 ### 🔐 HTTPS/443 Ingress (Nginx) — обновление
 
@@ -216,17 +217,28 @@ echo | openssl s_client -connect 20.151.51.172:443 -servername 20.151.51.172 -sh
 
 ## ✅ **ПРОВЕРКА УСПЕШНОГО ДЕПЛОЯ**
 
-### **1. Health Check:**
+### **1. Health Check (PUBLIC - через Nginx/HTTPS):**
 ```bash
-curl http://20.151.51.172/health
-# Ожидаемый результат: "OK"
+# ПУБЛИЧНАЯ проверка (как её видит клиент)
+curl -sk https://20.151.51.172/health
+# Ожидаемый результат: JSON с полями: status, latest_version, latest_build
 ```
 
-### **2. Status API:**
+### **2. Status API (PUBLIC - через Nginx/HTTPS):**
 ```bash
-curl http://20.151.51.172/status
-# Ожидаемый результат: JSON с информацией о сервисе
+# ПУБЛИЧНАЯ проверка (как её видит клиент)
+curl -sk https://20.151.51.172/status
+# Ожидаемый результат: JSON с информацией о сервисе, включая latest_version и latest_build
 ```
+
+### **3. Internal Health Check (для локальной диагностики):**
+```bash
+# ВНУТРЕННЯЯ проверка (только с VM, не доступна извне)
+curl http://127.0.0.1:8080/health
+# Ожидаемый результат: JSON с полями: status, latest_version, latest_build
+```
+
+**Примечание:** Все публичные проверки (из внешней сети) ДОЛЖНЫ идти через HTTPS (443). HTTP порты (8080, 8081, 50051) слушают только localhost и недоступны извне.
 
 ### **3. Проверка на сервере:**
 ```bash
@@ -369,8 +381,8 @@ az vm run-command invoke \
   --command-id RunShellScript \
   --scripts "systemctl status voice-assistant.service"
 
-# Health check
-curl http://20.151.51.172/health
+# Health check (PUBLIC)
+curl -sk https://20.151.51.172/health
 
 # Логи сервиса
 az vm run-command invoke \

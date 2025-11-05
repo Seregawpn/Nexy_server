@@ -15,15 +15,12 @@
 - Перед запуском загрузи переменные окружения из `server/config.env`
 - **Внешний доступ:** HTTPS порт 443 через Nginx (HTTP/2) — gRPC корневой путь `/`, Updates префикс `/updates/`
 - Внутренние порты (8080, 50051, 8081) слушаются на localhost; доступ наружу только через Nginx reverse proxy
-- Для регенерации gRPC артефактов используй:
+- Для регенерации gRPC артефактов (из корня server репозитория):
   ```bash
-  cd server/modules/grpc_service
-  python -m grpc_tools.protoc \
-      -I. \
-      --python_out=. \
-      --grpc_python_out=. \
-      streaming.proto
+  cd modules/grpc_service
+  python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. streaming.proto
   ```
+  **Канон пути:** `modules/grpc_service/streaming.proto` (без префикса `server/`, совпадает с CI)
 - Health-check `/health` и `/status` должны оставаться доступными для Azure Container Apps
 - **Nginx/HTTP инварианты:**
   - `/updates/appcast.xml` → `Cache-Control: public, max-age=60`

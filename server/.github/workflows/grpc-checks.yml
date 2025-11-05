@@ -136,26 +136,61 @@ jobs:
           fi
         continue-on-error: true
       
+      - name: Cache-Control Headers Check
+        id: cache_control_check
+        run: |
+          echo "🗂️ Checking Cache-Control headers..."
+
+          # Проверяем /health
+          HEALTH_CACHE=$(curl -s -k -I https://20.151.51.172/health 2>/dev/null | grep -i "cache-control:" | tr -d '\r\n' || echo "")
+          if echo "$HEALTH_CACHE" | grep -q "max-age=30"; then
+            echo "✅ /health: $HEALTH_CACHE"
+          else
+            echo "❌ /health: Expected 'max-age=30', got: $HEALTH_CACHE"
+            exit 1
+          fi
+
+          # Проверяем /updates/health
+          UPDATES_HEALTH_CACHE=$(curl -s -k -I https://20.151.51.172/updates/health 2>/dev/null | grep -i "cache-control:" | tr -d '\r\n' || echo "")
+          if echo "$UPDATES_HEALTH_CACHE" | grep -q "max-age=30"; then
+            echo "✅ /updates/health: $UPDATES_HEALTH_CACHE"
+          else
+            echo "❌ /updates/health: Expected 'max-age=30', got: $UPDATES_HEALTH_CACHE"
+            exit 1
+          fi
+
+          # Проверяем /updates/appcast.xml
+          APPCAST_CACHE=$(curl -s -k -I https://20.151.51.172/updates/appcast.xml 2>/dev/null | grep -i "cache-control:" | tr -d '\r\n' || echo "")
+          if echo "$APPCAST_CACHE" | grep -q "max-age=60"; then
+            echo "✅ /updates/appcast.xml: $APPCAST_CACHE"
+          else
+            echo "❌ /updates/appcast.xml: Expected 'max-age=60', got: $APPCAST_CACHE"
+            exit 1
+          fi
+
+          echo "✅ All Cache-Control headers are correct"
+        continue-on-error: true
+
       - name: AppCast Size Check
         id: appcast_size_check
         run: |
           echo "📦 Checking AppCast size consistency..."
-          
+
           # Получаем размер из appcast
           APPCAST_XML=$(curl -s -k https://20.151.51.172/updates/appcast.xml || echo "")
-          
+
           if [ -n "$APPCAST_XML" ]; then
             APPCAST_SIZE=$(echo "$APPCAST_XML" | grep -oP 'length="\K[^"]+' | head -1)
-            
+
             if [ -n "$APPCAST_SIZE" ]; then
               echo "AppCast size: $APPCAST_SIZE bytes"
-              
+
               # Попытка получить размер с GitHub (если доступен)
               GITHUB_SIZE=$(curl -s -L -I "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg" 2>/dev/null | grep -i "content-length:" | tail -1 | awk '{print $2}' | tr -d '\r\n')
-              
+
               if [ -n "$GITHUB_SIZE" ]; then
                 echo "GitHub size: $GITHUB_SIZE bytes"
-                
+
                 if [ "$APPCAST_SIZE" = "$GITHUB_SIZE" ]; then
                   echo "✅ Sizes match: $APPCAST_SIZE bytes"
                 else
@@ -201,6 +236,7 @@ jobs:
           echo "- Health Check: ${{ steps.health_check.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "- Port Check: ${{ steps.port_check.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "- Version Check: ${{ steps.version_check.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Cache-Control Check: ${{ steps.cache_control_check.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "- AppCast Size Check: ${{ steps.appcast_size_check.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "- Update Validation: ${{ steps.update_validation.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
