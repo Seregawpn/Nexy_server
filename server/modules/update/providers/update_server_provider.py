@@ -90,7 +90,7 @@ class UpdateServerProvider:
                 text=appcast_xml,
                 content_type='application/xml',
                 headers={
-                    'Cache-Control': self.config.cache_control,
+                    'Cache-Control': 'public, max-age=60',  # 1 минута для appcast (PR-7)
                     'Pragma': 'no-cache',
                     'Expires': '0'
                 }
@@ -167,18 +167,29 @@ class UpdateServerProvider:
             latest_manifest = self.manifest_provider.get_latest_manifest()
             artifacts = self.artifact_provider.list_artifacts()
             
+            # Версии должны быть строками (PR-7)
+            latest_version = str(latest_manifest.get("version")) if latest_manifest and latest_manifest.get("version") else None
+            latest_build = str(latest_manifest.get("build")) if latest_manifest and latest_manifest.get("build") else None
+            
             health_data = {
                 "status": "healthy",
                 "timestamp": datetime.now().isoformat(),
                 "version": "1.0.0",
-                "latest_version": latest_manifest.get("version") if latest_manifest else None,
-                "latest_build": latest_manifest.get("build") if latest_manifest else None,
+                "latest_version": latest_version,  # Строка (PR-7)
+                "latest_build": latest_build,  # Строка (PR-7)
                 "artifacts_available": len(artifacts),
                 "downloads_dir": self.config.downloads_dir,
                 "manifests_dir": self.config.manifests_dir
             }
             
-            return web.json_response(health_data)
+            return web.json_response(
+                health_data,
+                headers={
+                    'Cache-Control': 'public, max-age=30',  # 30 секунд для health (PR-7)
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
             
         except Exception as e:
             logger.error(f"❌ Ошибка health check: {e}")

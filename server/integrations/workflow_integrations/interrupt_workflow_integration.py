@@ -59,33 +59,79 @@ class InterruptWorkflowIntegration:
     async def check_interrupts(self, hardware_id: str) -> bool:
         """
         Проверка активных прерываний
-        
+
         Args:
             hardware_id: Идентификатор оборудования
-            
+
         Returns:
             True если есть активные прерывания, False иначе
         """
         if not self.is_initialized:
             logger.error("❌ InterruptWorkflowIntegration не инициализирован")
             return False
-        
+
         try:
             if not self.interrupt_manager:
                 logger.debug("InterruptManager не доступен, прерывания не проверяются")
                 return False
-            
+
             # Проверяем через InterruptManager
             should_interrupt = self.interrupt_manager.should_interrupt(hardware_id)
-            
+
             if should_interrupt:
                 logger.info(f"🛑 Обнаружено прерывание для {hardware_id}")
-            
+
             return should_interrupt
-            
+
         except Exception as e:
             logger.warning(f"⚠️ Ошибка проверки прерываний: {e}")
             return False
+
+    async def interrupt_session(self, hardware_id: str) -> Dict[str, Any]:
+        """
+        Прерывание сессии по hardware_id
+
+        Args:
+            hardware_id: Идентификатор оборудования
+
+        Returns:
+            Результат прерывания в формате:
+            {
+                'success': bool,
+                'message': str,
+                'interrupted_sessions': List[str]
+            }
+        """
+        if not self.is_initialized:
+            logger.error("❌ InterruptWorkflowIntegration не инициализирован")
+            return {
+                'success': False,
+                'message': 'InterruptWorkflowIntegration not initialized',
+                'interrupted_sessions': []
+            }
+
+        try:
+            if not self.interrupt_manager:
+                logger.error("❌ InterruptManager не доступен")
+                return {
+                    'success': False,
+                    'message': 'InterruptManager not available',
+                    'interrupted_sessions': []
+                }
+
+            # Делегируем прерывание в InterruptManager
+            interrupt_result = await self.interrupt_manager.interrupt_session(hardware_id=hardware_id)
+
+            logger.info(f"✅ Прерывание сессии для {hardware_id}: {interrupt_result}")
+            return interrupt_result
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка прерывания сессии: {e}")
+            return {
+                'success': False,
+                'message': f'Error interrupting session: {str(e)}',
+                'interrupted_sessions': []
+            }
     
     async def process_with_interrupts(self, workflow_func: Callable, hardware_id: str, session_id: Optional[str] = None) -> AsyncGenerator[Any, None]:
         """

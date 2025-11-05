@@ -1,6 +1,6 @@
 # STATE_CATALOG
 
-Owner: <assign>
+Owner: Tech Lead клиента
 Source of truth: This document consolidates cross-domain state axes.
 
 ## Axes

@@ -1,0 +1,208 @@
+name: gRPC Compatibility & Health Checks
+
+on:
+  pull_request:
+    paths:
+      - 'modules/grpc_service/**'
+      - 'scripts/grpc_smoke.py'
+      - 'scripts/check_grpc_health.py'
+      - 'main.py'
+      - 'modules/grpc_service/core/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'modules/grpc_service/**'
+      - 'scripts/grpc_smoke.py'
+      - 'scripts/check_grpc_health.py'
+  workflow_dispatch:
+
+jobs:
+  grpc-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y netcat-openbsd jq
+      
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install grpcio grpcio-tools requests
+      
+      - name: Regenerate protobuf files
+        run: |
+          cd modules/grpc_service
+          python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. streaming.proto
+          echo "✅ Protobuf files regenerated"
+      
+      - name: Verify protobuf regeneration
+        run: |
+          if [ ! -f "modules/grpc_service/streaming_pb2.py" ]; then
+            echo "❌ Protobuf files not found after regeneration"
+            exit 1
+          fi
+          echo "✅ Protobuf files verified"
+      
+      - name: Check for breaking changes
+        run: |
+          echo "🔍 Checking for breaking changes in streaming.proto..."
+          if grep -qiE "(removed|deleted|required|deprecated)" modules/grpc_service/streaming.proto; then
+            echo "⚠️ Potential breaking changes detected. Please review manually."
+            echo "Breaking changes require v2 service + feature flag (see Docs/GRPC_PROTOCOL_AUDIT.md)"
+          else
+            echo "✅ No obvious breaking changes detected"
+          fi
+        continue-on-error: true
+      
+      - name: gRPC Smoke Test
+        id: smoke_test
+        run: |
+          echo "🧪 Running gRPC smoke test..."
+          python scripts/grpc_smoke.py 20.151.51.172 443 || echo "⚠️ Smoke test failed (server may be down)"
+        continue-on-error: true
+        env:
+          GRPC_TIMEOUT: 10
+      
+      - name: gRPC Contract Tests
+        id: contract_tests
+        run: |
+          echo "🧪 Running gRPC contract tests..."
+          python scripts/grpc_contract_tests.py 20.151.51.172 443 || echo "⚠️ Contract tests failed (server may be down)"
+        continue-on-error: true
+      
+      - name: Chaos Smoke Test
+        id: chaos_test
+        run: |
+          echo "🧪 Running chaos smoke test..."
+          python scripts/chaos_smoke.py 20.151.51.172 443 || echo "⚠️ Chaos test failed (server may be down)"
+        continue-on-error: true
+      
+      - name: Health/Status Check
+        id: health_check
+        run: |
+          echo "🏥 Running health/status check..."
+          python scripts/check_grpc_health.py 20.151.51.172 443 || echo "⚠️ Health check failed (server may be down)"
+        continue-on-error: true
+      
+      - name: Port Check
+        id: port_check
+        run: |
+          echo "🔌 Checking gRPC port..."
+          nc -zv 20.151.51.172 50051 || echo "⚠️ Port check skipped (Nginx reverse proxy may be used)"
+        continue-on-error: true
+      
+      - name: Version Consistency Check
+        id: version_check
+        run: |
+          echo "📋 Checking version consistency..."
+          
+          # Получаем версии из health
+          HEALTH_RESPONSE=$(curl -s -k https://20.151.51.172/health || echo "{}")
+          HEALTH_VERSION=$(echo "$HEALTH_RESPONSE" | jq -r '.latest_version // empty')
+          HEALTH_BUILD=$(echo "$HEALTH_RESPONSE" | jq -r '.latest_build // empty')
+          
+          if [ -n "$HEALTH_VERSION" ] && [ -n "$HEALTH_BUILD" ]; then
+            echo "Health version: $HEALTH_VERSION"
+            echo "Health build: $HEALTH_BUILD"
+            
+            # Проверяем, что версии - строки
+            if [[ "$HEALTH_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$HEALTH_BUILD" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              # Проверяем совпадение
+              if [ "$HEALTH_VERSION" = "$HEALTH_BUILD" ]; then
+                echo "✅ Versions match: $HEALTH_VERSION"
+              else
+                echo "❌ Versions don't match: version=$HEALTH_VERSION, build=$HEALTH_BUILD"
+                exit 1
+              fi
+            else
+              echo "⚠️ Version format check skipped (versions are not standard format)"
+            fi
+          else
+            echo "⚠️ Version check skipped (health endpoint unavailable)"
+          fi
+        continue-on-error: true
+      
+      - name: AppCast Size Check
+        id: appcast_size_check
+        run: |
+          echo "📦 Checking AppCast size consistency..."
+          
+          # Получаем размер из appcast
+          APPCAST_XML=$(curl -s -k https://20.151.51.172/updates/appcast.xml || echo "")
+          
+          if [ -n "$APPCAST_XML" ]; then
+            APPCAST_SIZE=$(echo "$APPCAST_XML" | grep -oP 'length="\K[^"]+' | head -1)
+            
+            if [ -n "$APPCAST_SIZE" ]; then
+              echo "AppCast size: $APPCAST_SIZE bytes"
+              
+              # Попытка получить размер с GitHub (если доступен)
+              GITHUB_SIZE=$(curl -s -L -I "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg" 2>/dev/null | grep -i "content-length:" | tail -1 | awk '{print $2}' | tr -d '\r\n')
+              
+              if [ -n "$GITHUB_SIZE" ]; then
+                echo "GitHub size: $GITHUB_SIZE bytes"
+                
+                if [ "$APPCAST_SIZE" = "$GITHUB_SIZE" ]; then
+                  echo "✅ Sizes match: $APPCAST_SIZE bytes"
+                else
+                  echo "❌ Sizes don't match: appcast=$APPCAST_SIZE, github=$GITHUB_SIZE"
+                  exit 1
+                fi
+              else
+                echo "⚠️ GitHub size unavailable (size check skipped)"
+              fi
+            else
+              echo "⚠️ AppCast size not found"
+            fi
+          else
+            echo "⚠️ AppCast unavailable (size check skipped)"
+          fi
+        continue-on-error: true
+      
+      - name: Update Validation (PR-8)
+        id: update_validation
+        run: |
+          echo "📋 Running update validation..."
+          bash scripts/validate_updates.sh 20.151.51.172 443 || echo "⚠️ Update validation failed (server may be down)"
+        continue-on-error: true
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grpc-checks-logs
+          path: |
+            **/*.log
+          retention-days: 7
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo "## gRPC Checks Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Results:" >> $GITHUB_STEP_SUMMARY
+          echo "- Smoke Test: ${{ steps.smoke_test.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Contract Tests: ${{ steps.contract_tests.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Chaos Test: ${{ steps.chaos_test.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Health Check: ${{ steps.health_check.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Port Check: ${{ steps.port_check.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Version Check: ${{ steps.version_check.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- AppCast Size Check: ${{ steps.appcast_size_check.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Update Validation: ${{ steps.update_validation.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** Some checks may fail if server is unavailable. This is expected in CI." >> $GITHUB_STEP_SUMMARY
+

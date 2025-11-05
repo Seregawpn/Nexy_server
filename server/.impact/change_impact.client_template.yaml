@@ -1,0 +1,29 @@
+change:
+  title: "<кратко>"
+  components: ["<интеграции/зоны>"]
+  entrypoints: ["<event|method|cli>"]
+axes:
+  Permission.mic: [granted, denied, prompt_blocked]
+  Device.input: [default_ok, busy]
+  Network: [online, offline]
+  FirstRun: [true, false]
+invariants:
+  - "If stream_open then Permission.mic == granted"
+  - "Prompt sequencing allowed only when FirstRun == true"
+guards:
+  - where: "voice_recognition.start"
+    check: "Permission.mic == granted"
+    action: "toast('Enable mic') and abort"
+tests:
+  strategy: "pairwise + targeted negatives"
+  cases:
+    - "mic=granted, device=default_ok, network=online, firstRun=true"
+    - "mic=denied, device=default_ok, firstRun=true"
+    - "mic=granted, device=busy, firstRun=false"
+observability:
+  logs: ["decision", "prompt.sequence.step", "audio.stream.open_ms"]
+  metrics: ["stream_open_success_rate", "tcc_prompt_duration_ms"]
+rollout:
+  flag: "serial_tcc_prompts"
+  plan: "1% → 25% → 100%"
+  killswitch: "NEXY_KS_SERIAL_TCC"

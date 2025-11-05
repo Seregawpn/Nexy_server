@@ -17,7 +17,15 @@ from integrations.workflow_integrations.memory_workflow_integration import Memor
 from integrations.workflow_integrations.interrupt_workflow_integration import InterruptWorkflowIntegration
 
 from config.unified_config import get_config
-from integrations.core.module_factory import ModuleFactory
+
+# Импорты адаптеров (не прямые импорты модулей!)
+from modules.text_processing.module import TextProcessingModule
+from modules.audio_generation.adapter import AudioGenerationAdapter
+from modules.memory_management.adapter import MemoryManagementAdapter
+from modules.database.adapter import DatabaseAdapter
+from modules.session_management.adapter import SessionManagementAdapter
+from modules.interrupt_handling.adapter import InterruptHandlingAdapter
+from modules.text_filtering.adapter import TextFilteringAdapter
 
 from modules.grpc_service.config import GrpcServiceConfig
 
@@ -134,9 +142,9 @@ class GrpcServiceManager(UniversalModuleInterface):
         raise NotImplementedError("Legacy подход не поддерживается в PR-2.1")
     
     async def _register_modules(self) -> None:
-        """Регистрация модулей в координаторе через фабрику"""
-        logger.info("Регистрация модулей в координаторе через ModuleFactory...")
-
+        """Регистрация модулей в координаторе"""
+        logger.info("Регистрация модулей в координаторе...")
+        
         # Получаем конфигурации модулей из unified_config
         modules_config = {
             'text_processing': self.unified_config.get_module_config('text_processing'),
@@ -147,29 +155,30 @@ class GrpcServiceManager(UniversalModuleInterface):
             'interrupt_handling': self.unified_config.get_module_config('interrupt'),
             'text_filtering': {},  # Конфигурация будет из TextFilteringConfig
         }
-
-        # Список модулей для регистрации
-        capabilities = [
-            'text_processing',
-            'audio_generation',
-            'memory_management',
-            'database',
-            'session_management',
-            'interrupt_handling',
-            'text_filtering',
-        ]
-
-        # Создаём и регистрируем модули через фабрику
-        for capability in capabilities:
+        
+        # Регистрируем модули
+        modules_map = {
+            'text_processing': TextProcessingModule(),
+            'audio_generation': AudioGenerationAdapter(),
+            'memory_management': MemoryManagementAdapter(),
+            'database': DatabaseAdapter(),
+            'session_management': SessionManagementAdapter(),
+            'interrupt_handling': InterruptHandlingAdapter(),
+            'text_filtering': TextFilteringAdapter(),
+        }
+        
+        for capability, module in modules_map.items():
             try:
-                # Создаём модуль через фабрику (без прямого импорта!)
-                module = ModuleFactory.create(capability)
-
-                # Регистрируем в координаторе
                 module_config = modules_config.get(capability, {})
                 await self.coordinator.register(capability, module, module_config)
-                logger.info(f"✅ Модуль '{capability}' создан через фабрику и зарегистрирован")
-
+                logger.info(f"✅ Модуль '{capability}' зарегистрирован")
+                
+                # Специальная логика для database -> memory_management
+                if capability == 'database':
+                    memory_module = self.coordinator.get('memory_management')
+                    if hasattr(memory_module, 'set_database_manager'):
+                        memory_module.set_database_manager(module.get_manager())
+                
             except Exception as e:
                 logger.error(f"❌ Ошибка регистрации модуля '{capability}': {e}")
                 raise
@@ -177,7 +186,7 @@ class GrpcServiceManager(UniversalModuleInterface):
     async def _create_workflow_integrations_with_coordinator(self) -> None:
         """Создание workflow интеграций с использованием координатора"""
         logger.info("Создание workflow интеграций с координатором...")
-
+        
         try:
             # Получаем модули из координатора
             text_module = self.coordinator.get('text_processing')
@@ -185,21 +194,14 @@ class GrpcServiceManager(UniversalModuleInterface):
             memory_module = self.coordinator.get('memory_management')
             interrupt_module = self.coordinator.get('interrupt_handling')
             filter_module = self.coordinator.get('text_filtering')
-
-            # TODO (TECH-DEBT): Workflow интеграции требуют рефакторинга
-            # Они должны работать через module.process(), а не напрямую с процессорами
-            # ВРЕМЕННОЕ РЕШЕНИЕ: используем get_processor/get_manager для совместимости
-            # ISSUE: https://github.com/nexy/server/issues/XXX
-            # Причина: StreamingWorkflowIntegration/MemoryWorkflowIntegration/InterruptWorkflowIntegration
-            #          ожидают внутренние объекты (text_processor, audio_processor, etc.)
-            #          вместо работы через UniversalModuleInterface.process()
-
+            
+            # Получаем внутренние процессоры/менеджеры для совместимости
             text_processor = text_module.get_processor() if hasattr(text_module, 'get_processor') else None
             audio_processor = audio_module.get_processor() if hasattr(audio_module, 'get_processor') else None
             memory_manager = memory_module.get_manager() if hasattr(memory_module, 'get_manager') else None
             interrupt_manager = interrupt_module.get_manager() if hasattr(interrupt_module, 'get_manager') else None
             filter_manager = filter_module.get_manager() if hasattr(filter_module, 'get_manager') else None
-
+            
             # Создаем workflow интеграции с модулями
             self.streaming_workflow = StreamingWorkflowIntegration(
                 text_processor=text_processor,
@@ -207,21 +209,20 @@ class GrpcServiceManager(UniversalModuleInterface):
                 memory_workflow=None,  # Будет установлен ниже
                 text_filter_manager=filter_manager
             )
-
+            
             self.memory_workflow = MemoryWorkflowIntegration(
                 memory_manager=memory_manager
             )
-
+            
             self.interrupt_workflow = InterruptWorkflowIntegration(
                 interrupt_manager=interrupt_manager
             )
-
+            
             # Устанавливаем memory_workflow в streaming_workflow
             self.streaming_workflow.memory_workflow = self.memory_workflow
-
+            
             logger.info("✅ Workflow интеграции созданы с использованием координатора")
-            logger.warning("⚠️ TECH-DEBT: Workflow интеграции используют legacy get_processor/get_manager")
-
+            
         except Exception as e:
             logger.error(f"❌ Ошибка создания workflow интеграций: {e}")
             raise
