@@ -90,7 +90,7 @@ class UpdateServerProvider:
                 text=appcast_xml,
                 content_type='application/xml',
                 headers={
-                    'Cache-Control': self.config.cache_control,
+                    'Cache-Control': 'public, max-age=60',  # 1 минута для appcast (PR-7)
                     'Pragma': 'no-cache',
                     'Expires': '0'
                 }
@@ -118,13 +118,37 @@ class UpdateServerProvider:
                     content_type='text/plain'
                 )
             
+            # Получаем актуальный размер файла
+            actual_size = file_path.stat().st_size
+            
+            # Получаем размер из манифеста для сравнения
+            latest_manifest = self.manifest_provider.get_latest_manifest()
+            expected_size = 0
+            if latest_manifest and "artifact" in latest_manifest:
+                expected_size = latest_manifest["artifact"].get("size", 0)
+            
+            # Логируем несоответствие размера
+            if expected_size > 0 and actual_size != expected_size:
+                logger.warning(f"⚠️ Размер файла не совпадает: ожидалось {expected_size}, фактический {actual_size} (разница: {actual_size - expected_size:+d} байт)")
+                
+                # Обновляем манифест с актуальным размером
+                try:
+                    self.manifest_provider.update_manifest(
+                        f"manifest_{latest_manifest['version']}.json",
+                        {"artifact": {"size": actual_size}}
+                    )
+                    logger.info(f"✅ Манифест обновлен с актуальным размером: {actual_size} байт")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка обновления манифеста: {e}")
+            
             if self.config.log_downloads:
-                logger.info(f"📥 Загрузка файла: {filename}")
+                logger.info(f"📥 Загрузка файла: {filename} (размер: {actual_size} байт)")
             
             return web.FileResponse(
                 file_path,
                 headers={
                     'Content-Type': 'application/octet-stream',
+                    'Content-Length': str(actual_size),  # Явно указываем размер
                     'Content-Disposition': f'attachment; filename="{filename}"'
                 }
             )
@@ -143,18 +167,29 @@ class UpdateServerProvider:
             latest_manifest = self.manifest_provider.get_latest_manifest()
             artifacts = self.artifact_provider.list_artifacts()
             
+            # Версии должны быть строками (PR-7)
+            latest_version = str(latest_manifest.get("version")) if latest_manifest and latest_manifest.get("version") else None
+            latest_build = str(latest_manifest.get("build")) if latest_manifest and latest_manifest.get("build") else None
+            
             health_data = {
                 "status": "healthy",
                 "timestamp": datetime.now().isoformat(),
                 "version": "1.0.0",
-                "latest_version": latest_manifest.get("version") if latest_manifest else None,
-                "latest_build": latest_manifest.get("build") if latest_manifest else None,
+                "latest_version": latest_version,  # Строка (PR-7)
+                "latest_build": latest_build,  # Строка (PR-7)
                 "artifacts_available": len(artifacts),
                 "downloads_dir": self.config.downloads_dir,
                 "manifests_dir": self.config.manifests_dir
             }
             
-            return web.json_response(health_data)
+            return web.json_response(
+                health_data,
+                headers={
+                    'Cache-Control': 'public, max-age=30',  # 30 секунд для health (PR-7)
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
             
         except Exception as e:
             logger.error(f"❌ Ошибка health check: {e}")
