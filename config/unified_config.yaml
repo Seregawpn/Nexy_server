@@ -226,6 +226,14 @@ integrations:
   tray_controller:
     enabled: true
     priority: 1
+    # Фазы запуска иконки меню-бара (см. Docs/TRAY_ICON_STARTUP_PHASES.md)
+    defer_heavy_until_status_ready: true  # Отложить тяжёлые операции до появления иконки
+    status_ready_timeout_sec: 15.0        # Тайм-кап для появления иконки (сек)
+    retry_backoff_initial_sec: 0.5       # Начальная задержка для ретраев (сек)
+    retry_backoff_max_sec: 8.0            # Максимальная задержка для ретраев (сек)
+    retry_max_attempts: 5                 # Максимум попыток установки иконки
+    enable_telemetry: true                # Включить телеметрию (метки времени, метрики)
+    enable_fallback_ux: true               # Включить фолбэк-UX при неудаче (системное уведомление)
   updater:
     enabled: true
     priority: 5

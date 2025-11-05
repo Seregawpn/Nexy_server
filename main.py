@@ -81,11 +81,30 @@ try:
     else:
         print("⚠️ AppKit.NSMakeRect не найден")
 
-    # CRITICAL: Activate NSApplication for LSUIElement applications
-    # Without this, menu bar icon doesn't appear when launched from .app on macOS Sequoia
-    # Must be called BEFORE creating rumps.App and NSStatusItem
+except ImportError as e:
+    print(f"⚠️ PyObjC недоступен: {e}")
+except Exception as e:
+    print(f"⚠️ Ошибка инициализации PyObjC: {e}")
+
+# Функция активации NSApplication - вызывается при каждом запуске
+def activate_nsapplication_for_menu_bar():
+    """
+    CRITICAL: Activate NSApplication for LSUIElement applications.
+    Without this, menu bar icon doesn't appear when launched from .app on macOS Sequoia.
+    Must be called BEFORE creating rumps.App and NSStatusItem.
+
+    This function is called on EVERY startup (including after restart via os.execv())
+    to ensure NSApplication is properly configured.
+
+    NOTE: Задержки удалены - tray теперь запускается рано и имеет собственную retry-логику.
+    """
     try:
-        print("[NEXY_INIT] Activating NSApplication for menu bar app...")
+        import AppKit
+
+        # Используем print для раннего лога (до настройки logging)
+        msg = "[NEXY_INIT] Activating NSApplication for menu bar app..."
+        print(msg)
+
         app = AppKit.NSApplication.sharedApplication()
         print(f"[NEXY_INIT] NSApplication instance: {app}")
         print(f"[NEXY_INIT] Current activation policy: {app.activationPolicy()}")
@@ -101,15 +120,12 @@ try:
         print("[NEXY_INIT] Called activateIgnoringOtherApps_(True)")
 
         print("[NEXY_INIT] SUCCESS: NSApplication activated for menu bar app")
+        return True
     except Exception as e:
         print(f"[NEXY_INIT] ERROR: NSApplication activation failed: {e}")
         import traceback
         traceback.print_exc()
-
-except ImportError as e:
-    print(f"⚠️ PyObjC недоступен: {e}")
-except Exception as e:
-    print(f"⚠️ Ошибка инициализации PyObjC: {e}")
+        return False
 
 # Настройка логирования
 # ВАЖНО: Для .app bundle логи должны писаться в файл, т.к. stdout недоступен
@@ -138,12 +154,17 @@ print(f"📝 Логи записываются в: {log_file}")
 async def main():
     """Главная функция"""
     try:
+        # CRITICAL: Активируем NSApplication ДО создания любых UI компонентов
+        # Это необходимо для корректного отображения иконки в menu bar,
+        # особенно после перезапуска через os.execv()
+        activate_nsapplication_for_menu_bar()
+
         # Импортируем SimpleModuleCoordinator
         from integration.core.simple_module_coordinator import SimpleModuleCoordinator
-        
+
         # Создаем координатор
         coordinator = SimpleModuleCoordinator()
-        
+
         # Запускаем (run() сам вызовет initialize() и проверку дублирования)
         await coordinator.run()                                                         
         

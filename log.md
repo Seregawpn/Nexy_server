@@ -1,573 +1,440 @@
-default	11:13:09.620887-0500	lsd	com.nexy.assistant/Unknown Persona:5:5:1:1:Building bundle record for app
-default	11:13:09.621033-0500	lsd	com.nexy.assistant/Unknown Persona:5:5:2:1:Built bundle record for app
-default	11:13:09.622483-0500	lsd	com.nexy.assistant/Unknown Persona:5:4:2:1:_LSServerRegisterItemInfo result = 0
-default	11:13:09.629379-0500	runningboardd	Launch request for app<application.com.nexy.assistant.20931626.20931632(501)>[0] is using uid 501 (divined from auid 501 euid 501)
-default	11:13:09.629471-0500	runningboardd	Acquiring assertion targeting app<application.com.nexy.assistant.20931626.20931632(501)> from originator [osservice<com.apple.coreservices.uiagent(501)>:17422] with description <RBSAssertionDescriptor| "LS launch com.nexy.assistant" ID:398-17422-1504570 target:app<application.com.nexy.assistant.20931626.20931632(501)> attributes:[
+default	14:51:00.174812-0500	lsd	com.nexy.assistant/Unknown Persona:5:5:1:1:Building bundle record for app
+default	14:51:00.174962-0500	lsd	com.nexy.assistant/Unknown Persona:5:5:2:1:Built bundle record for app
+default	14:51:00.176453-0500	lsd	com.nexy.assistant/Unknown Persona:5:4:2:1:_LSServerRegisterItemInfo result = 0
+default	14:51:00.182369-0500	runningboardd	Launch request for app<application.com.nexy.assistant.21074037.21074043(501)>[0] is using uid 501 (divined from auid 501 euid 501)
+default	14:51:00.182445-0500	runningboardd	Acquiring assertion targeting app<application.com.nexy.assistant.21074037.21074043(501)> from originator [osservice<com.apple.coreservices.uiagent(501)>:17422] with description <RBSAssertionDescriptor| "LS launch com.nexy.assistant" ID:398-17422-1518708 target:app<application.com.nexy.assistant.21074037.21074043(501)> attributes:[
 	<RBSDomainAttribute| domain:"com.apple.launchservicesd" name:"LaunchRoleUserInteractive" sourceEnvironment:"(null)">
 	]>
-default	11:13:09.629617-0500	runningboardd	Assertion 398-17422-1504570 (target:app<application.com.nexy.assistant.20931626.20931632(501)>) will be created as active
-default	11:13:09.626524-0500	dmd	Received xpc stream event (distributed notification matching) with name: com.apple.LaunchServices.applicationRegistered user info: {
+default	14:51:00.182518-0500	runningboardd	Assertion 398-17422-1518708 (target:app<application.com.nexy.assistant.21074037.21074043(501)>) will be created as active
+default	14:51:00.185749-0500	runningboardd	Checking PreventLaunch: global:0 exPath:/Applications/Nexy.app/Contents/MacOS/Nexy predicates:(null) allow:(null)
+default	14:51:00.185779-0500	runningboardd	Creating and launching job for: app<application.com.nexy.assistant.21074037.21074043(501)>
+default	14:51:00.185790-0500	runningboardd	_mutateContextIfNeeded called for com.nexy.assistant
+default	14:51:00.185918-0500	runningboardd	app<application.com.nexy.assistant.21074037.21074043(501)>: -[RBPersonaManager personaForIdentity:context:personaUID:personaUniqueString:] required 0.000000 ms (wallclock); resolved to {4294967295, (null)}
+default	14:51:00.184818-0500	dmd	Received xpc stream event (distributed notification matching) with name: com.apple.LaunchServices.applicationRegistered user info: {
     CFBundleDisplayName = Nexy;
     bundleIDs =     (
         "com.nexy.assistant"
     );
     isPlaceholder = 0;
 }
-default	11:13:09.632827-0500	runningboardd	Checking PreventLaunch: global:0 exPath:/Applications/Nexy.app/Contents/MacOS/Nexy predicates:(null) allow:(null)
-default	11:13:09.632862-0500	runningboardd	Creating and launching job for: app<application.com.nexy.assistant.20931626.20931632(501)>
-default	11:13:09.632877-0500	runningboardd	_mutateContextIfNeeded called for com.nexy.assistant
-default	11:13:09.632977-0500	runningboardd	app<application.com.nexy.assistant.20931626.20931632(501)>: -[RBPersonaManager personaForIdentity:context:personaUID:personaUniqueString:] required 0.000000 ms (wallclock); resolved to {4294967295, (null)}
-default	11:13:09.666753-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] is not RunningBoard jetsam managed.
-default	11:13:09.666768-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] This process will not be managed.
-default	11:13:09.666778-0500	runningboardd	Now tracking process: [app<application.com.nexy.assistant.20931626.20931632(501)>:84850]
-default	11:13:09.666914-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:09.667522-0500	gamepolicyd	Hit the server for a process handle 31e364c00014b72 that resolved to: [app<application.com.nexy.assistant.20931626.20931632(501)>:84850]
-default	11:13:09.667556-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:09.670932-0500	runningboardd	Using default underlying assertion for app: [app<application.com.nexy.assistant.20931626.20931632(501)>:84850]
-default	11:13:09.671001-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] from originator [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] with description <RBSAssertionDescriptor| "RB Underlying Assertion" ID:398-398-1504571 target:84850 attributes:[
+default	14:51:00.221148-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] is not RunningBoard jetsam managed.
+default	14:51:00.221162-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] This process will not be managed.
+default	14:51:00.221172-0500	runningboardd	Now tracking process: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:51:00.221332-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:00.221880-0500	gamepolicyd	Hit the server for a process handle 8c0137200009b08 that resolved to: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:51:00.221916-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:00.224320-0500	runningboardd	Using default underlying assertion for app: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:51:00.224386-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] from originator [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] with description <RBSAssertionDescriptor| "RB Underlying Assertion" ID:398-398-1518709 target:39688 attributes:[
 	<RBSDomainAttribute| domain:"com.apple.underlying" name:"defaultUnderlyingAppAssertion" sourceEnvironment:"(null)">,
 	<RBSAcquisitionCompletionAttribute| policy:AfterApplication>
 	]>
-default	11:13:09.671128-0500	runningboardd	Assertion 398-398-1504571 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) will be created as active
-default	11:13:09.671307-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:09.671320-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:09.671335-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Set darwin role to: UserInteractive
-default	11:13:09.671344-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:09.671370-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:09.671431-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] reported to RB as running
-default	11:13:09.672713-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] from originator [osservice<com.apple.coreservices.launchservicesd>:363] with description <RBSAssertionDescriptor| "uielement:84850" ID:398-363-1504572 target:84850 attributes:[
+default	14:51:00.224498-0500	runningboardd	Assertion 398-398-1518709 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688]) will be created as active
+default	14:51:00.224673-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:00.224693-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:00.224710-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Set darwin role to: UserInteractive
+default	14:51:00.224725-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:00.224752-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:00.224785-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] reported to RB as running
+default	14:51:00.226073-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] from originator [osservice<com.apple.coreservices.launchservicesd>:363] with description <RBSAssertionDescriptor| "uielement:39688" ID:398-363-1518710 target:39688 attributes:[
 	<RBSDomainAttribute| domain:"com.apple.launchservicesd" name:"RoleUserInteractive" sourceEnvironment:"(null)">
 	]>
-default	11:13:09.672796-0500	runningboardd	Assertion 398-363-1504572 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) will be created as active
-default	11:13:09.672869-0500	CoreServicesUIAgent	LAUNCH: 0x0-0x1972971 com.nexy.assistant starting stopped process.
-default	11:13:09.673659-0500	loginwindow	-[Application updateInformation] | Got App URL: file:///Applications/Nexy.app/
-default	11:13:09.674207-0500	loginwindow	-[ApplicationManager checkInAppContext:eventData:] | ApplicationManager: Checked in app : Nexy
-default	11:13:09.675096-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:09.675137-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:09.675163-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:09.675204-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:09.675332-0500	runningboardd	Successfully acquired underlying assertion for [app<application.com.nexy.assistant.20931626.20931632(501)>:84850]
-default	11:13:09.676772-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:09.677017-0500	runningboardd	Invalidating assertion 398-17422-1504570 (target:app<application.com.nexy.assistant.20931626.20931632(501)>) from originator [osservice<com.apple.coreservices.uiagent(501)>:17422]
-default	11:13:09.677051-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:09.677148-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:09.677061-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:09.677100-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:09.677179-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:09.679995-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:09.784060-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:09.784070-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:09.784079-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:09.784097-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:09.787231-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:09.787873-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:09.813733-0500	syspolicyd	GK evaluateScanResult: 3, PST: (path: a2cffff67b96be6e), (team: 5NKLL2CLB9), (id: com.nexy.assistant), (bundle_id: (null)), 0, 0, 1, 0, 9, 4, 1
-default	11:13:09.814877-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=511.169, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.syspolicyd, pid=511, auid=0, euid=0, binary_path=/usr/libexec/syspolicyd}, },
-default	11:13:09.820573-0500	tccd	AUTHREQ_SUBJECT: msgID=511.169, subject=com.nexy.assistant,
-default	11:13:09.821266-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:09.958687-0500	Nexy	[0x105f20380] activating connection: mach=true listener=false peer=false name=com.apple.cfprefsd.daemon
-default	11:13:09.958765-0500	Nexy	[0x105f208c0] activating connection: mach=true listener=false peer=false name=com.apple.cfprefsd.agent
-error	11:13:10.215588-0500	Nexy	dlsym cannot find symbol NSMakeRect in CFBundle 0x105f2beb0 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
-error	11:13:10.215826-0500	Nexy	dlsym cannot find symbol NSMakePoint in CFBundle 0x105f2beb0 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
-error	11:13:10.216033-0500	Nexy	dlsym cannot find symbol NSMakeSize in CFBundle 0x105f2beb0 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
-error	11:13:10.216229-0500	Nexy	dlsym cannot find symbol NSMakeRange in CFBundle 0x105f2beb0 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
-default	11:13:10.217485-0500	Nexy	[0x105f1eb80] activating connection: mach=true listener=false peer=false name=com.apple.coreservices.launchservicesd
-default	11:13:10.218228-0500	Nexy	[0xaa7a1c000] activating connection: mach=true listener=false peer=false name=com.apple.analyticsd
-default	11:13:10.218589-0500	Nexy	[0xaa7a1c140] activating connection: mach=true listener=false peer=false name=com.apple.pasteboard.1
-default	11:13:10.219022-0500	Nexy	[0xaa7a1c280] activating connection: mach=true listener=false peer=false name=com.apple.distributed_notifications@Uv3
-default	11:13:10.219784-0500	Nexy	Received configuration update from daemon (initial)
-default	11:13:10.221137-0500	Nexy	void _NSDisableAutomaticTerminationAndLog(NSString *) No windows open yet
-default	11:13:10.221507-0500	Nexy	[0xaa7a1c3c0] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
-default	11:13:10.222191-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.1, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:13:10.223851-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.1, subject=com.nexy.assistant,
-default	11:13:10.224522-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:10.236840-0500	Nexy	[0xaa7a1c3c0] invalidated after the last release of the connection object
-default	11:13:10.245922-0500	Nexy	server port 0x0000340f, session port 0x0000340f
-default	11:13:10.247031-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.16886, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
-default	11:13:10.247056-0500	tccd	requestor: TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
-default	11:13:10.248018-0500	tccd	AUTHREQ_SUBJECT: msgID=393.16886, subject=com.nexy.assistant,
-default	11:13:10.248622-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:10.266566-0500	Nexy	New connection 0x1555d3 main
-default	11:13:10.268861-0500	Nexy	CHECKIN: pid=84850
-default	11:13:10.275377-0500	Nexy	CHECKEDIN: pid=84850 asn=0x0-0x1972971 foreground=0
-default	11:13:10.275537-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] from originator [osservice<com.apple.coreservices.launchservicesd>:363] with description <RBSAssertionDescriptor| "uielement:84850" ID:398-363-1504573 target:84850 attributes:[
+default	14:51:00.226216-0500	runningboardd	Assertion 398-363-1518710 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688]) will be created as active
+default	14:51:00.226125-0500	CoreServicesUIAgent	LAUNCH: 0x0-0x1a7aa79 com.nexy.assistant starting stopped process.
+default	14:51:00.226697-0500	loginwindow	-[Application updateInformation] | Got App URL: file:///Applications/Nexy.app/
+default	14:51:00.226871-0500	loginwindow	-[ApplicationManager checkInAppContext:eventData:] | ApplicationManager: Checked in app : Nexy
+default	14:51:00.229099-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:00.229211-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:00.229223-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:00.229233-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:00.229250-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:00.229315-0500	runningboardd	Successfully acquired underlying assertion for [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:51:00.229341-0500	runningboardd	Invalidating assertion 398-17422-1518708 (target:app<application.com.nexy.assistant.21074037.21074043(501)>) from originator [osservice<com.apple.coreservices.uiagent(501)>:17422]
+default	14:51:00.229378-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:00.229391-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:00.229490-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:00.229401-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:00.229520-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:00.232414-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:00.332405-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:00.332420-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:00.332431-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:00.332468-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:00.332818-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:00.336250-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:00.336786-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:00.360603-0500	syspolicyd	GK evaluateScanResult: 3, PST: (path: a2cffff67b96be6e), (team: 5NKLL2CLB9), (id: com.nexy.assistant), (bundle_id: (null)), 0, 0, 1, 0, 9, 4, 1
+default	14:51:00.362821-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=511.177, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.syspolicyd, pid=511, auid=0, euid=0, binary_path=/usr/libexec/syspolicyd}, },
+default	14:51:00.368928-0500	tccd	AUTHREQ_SUBJECT: msgID=511.177, subject=com.nexy.assistant,
+default	14:51:00.369613-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:00.386008-0500	kernel	Nexy[39688] triggered unnest of range 0x1f6000000->0x1f8000000 of DYLD shared region in VM map 0x8251adb5114c2ac1. While not abnormal for debuggers, this increases system memory footprint until the target exits.
+error	14:51:00.843584-0500	Nexy	dlsym cannot find symbol NSMakeRect in CFBundle 0x101b61c60 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
+error	14:51:00.843851-0500	Nexy	dlsym cannot find symbol NSMakePoint in CFBundle 0x101b61c60 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
+error	14:51:00.844070-0500	Nexy	dlsym cannot find symbol NSMakeSize in CFBundle 0x101b61c60 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
+error	14:51:00.844279-0500	Nexy	dlsym cannot find symbol NSMakeRange in CFBundle 0x101b61c60 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
+default	14:51:00.845628-0500	Nexy	[0x101b4dc80] activating connection: mach=true listener=false peer=false name=com.apple.coreservices.launchservicesd
+default	14:51:00.846426-0500	Nexy	[0x768460000] activating connection: mach=true listener=false peer=false name=com.apple.analyticsd
+default	14:51:00.846792-0500	Nexy	[0x768460140] activating connection: mach=true listener=false peer=false name=com.apple.pasteboard.1
+default	14:51:00.847243-0500	Nexy	[0x768460280] activating connection: mach=true listener=false peer=false name=com.apple.distributed_notifications@Uv3
+default	14:51:00.847953-0500	Nexy	Received configuration update from daemon (initial)
+default	14:51:00.849390-0500	Nexy	void _NSDisableAutomaticTerminationAndLog(NSString *) No windows open yet
+default	14:51:00.849771-0500	Nexy	[0x7684603c0] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+default	14:51:00.850516-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.1, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:00.852574-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.1, subject=com.nexy.assistant,
+default	14:51:00.853363-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:00.867360-0500	Nexy	[0x7684603c0] invalidated after the last release of the connection object
+default	14:51:00.868813-0500	Nexy	server port 0x0000360f, session port 0x0000360f
+default	14:51:00.869895-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.17732, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
+default	14:51:00.869927-0500	tccd	requestor: TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:51:00.871052-0500	tccd	AUTHREQ_SUBJECT: msgID=393.17732, subject=com.nexy.assistant,
+default	14:51:00.871860-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:00.888714-0500	Nexy	New connection 0x19b46f main
+default	14:51:00.891186-0500	Nexy	CHECKIN: pid=39688
+default	14:51:00.897844-0500	launchservicesd	CHECKIN:0x0-0x1a7aa79 39688 com.nexy.assistant
+default	14:51:00.898197-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] from originator [osservice<com.apple.coreservices.launchservicesd>:363] with description <RBSAssertionDescriptor| "uielement:39688" ID:398-363-1518711 target:39688 attributes:[
 	<RBSDomainAttribute| domain:"com.apple.launchservicesd" name:"RoleUserInteractive" sourceEnvironment:"(null)">
 	]>
-default	11:13:10.275268-0500	launchservicesd	CHECKIN:0x0-0x1972971 84850 com.nexy.assistant
-default	11:13:10.275644-0500	runningboardd	Assertion 398-363-1504573 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) will be created as active
-default	11:13:10.276123-0500	runningboardd	Invalidating assertion 398-363-1504572 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) from originator [osservice<com.apple.coreservices.launchservicesd>:363]
-default	11:13:10.276264-0500	loginwindow	-[Application updateInformation] | Got App URL: file:///Applications/Nexy.app/
-default	11:13:10.275625-0500	Nexy	[0xaa7a1c3c0] activating connection: mach=false listener=true peer=false name=(anonymous)
-default	11:13:10.276411-0500	loginwindow	-[ApplicationManager checkInAppContext:eventData:] | ApplicationManager: Checked in app : Nexy
-default	11:13:10.275635-0500	Nexy	[0xaa7a1c3c0] Connection returned listener port: 0x4d03
-default	11:13:10.275949-0500	Nexy	[0xaa6bfc300] activating connection: mach=false listener=false peer=true name=com.apple.xpc.anonymous.0xaa7a1c3c0.peer[363].0xaa6bfc300
-default	11:13:10.280533-0500	WindowServer	1555d3[CreateApplication]: Process creation: 0x0-0x1972971 (Nexy) connectionID: 1555D3 pid: 84850 in session 0x101
-default	11:13:10.280181-0500	Nexy	FRONTLOGGING: version 1
-default	11:13:10.280231-0500	Nexy	Registered, pid=84850 ASN=0x0,0x1972971
-default	11:13:10.281584-0500	Nexy	[0xaa7a1c500] activating connection: mach=true listener=false peer=false name=com.apple.lsd.mapdb
-default	11:13:10.281696-0500	Nexy	[0xaa7a1c3c0] Connection returned listener port: 0x4d03
-default	11:13:10.282084-0500	Nexy	BringForward: pid=84850 asn=0x0-0x1972971 bringForward=0 foreground=0 uiElement=1 launchedByLS=1 modifiersCount=1 allDisabled=0
-default	11:13:10.282111-0500	Nexy	BringFrontModifier: pid=84850 asn=0x0-0x1972971 Modifier 0 hideAfter=0 hideOthers=0 dontMakeFrontmost=0 mouseDown=0/0 seed=0/0
-default	11:13:10.282751-0500	Nexy	Current system appearance, (HLTB: 1), (SLS: 0)
-default	11:13:10.284185-0500	Nexy	No persisted cache on this platform.
-default	11:13:10.285464-0500	Nexy	Current system appearance, (HLTB: 1), (SLS: 0)
-default	11:13:10.286026-0500	Nexy	Post-registration system appearance: (HLTB: 1)
-default	11:13:10.287938-0500	Nexy	FBSWorkspace: endpoint monitoring is disabled.
-default	11:13:10.287946-0500	Nexy	FBSWorkspace: default shell endpoint is disabled.
-default	11:13:10.287997-0500	Nexy	Initializing connection
-default	11:13:10.288043-0500	Nexy	Removing all cached process handles
-default	11:13:10.288073-0500	Nexy	Sending handshake request attempt #1 to server
-default	11:13:10.288081-0500	Nexy	Creating connection to com.apple.runningboard
-default	11:13:10.288089-0500	Nexy	[0xaa7a1c640] activating connection: mach=true listener=false peer=false name=com.apple.runningboard
-default	11:13:10.288532-0500	Nexy	[0xaa7a1c3c0] Connection returned listener port: 0x4d03
-default	11:13:10.288558-0500	runningboardd	Setting client for [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as ready
-default	11:13:10.289203-0500	Nexy	Handshake succeeded
-default	11:13:10.289221-0500	Nexy	Identity resolved as app<application.com.nexy.assistant.20931626.20931632(501)>
-default	11:13:10.289428-0500	distnoted	register name: com.apple.xctest.FakeForceTouchDevice object: com.nexy.assistant token: 1e0000001d pid: 84850
-default	11:13:10.292644-0500	Nexy	[0xaa7a1c3c0] Connection returned listener port: 0x4d03
-default	11:13:10.296453-0500	Nexy	Created a new Process Instance Registry XPC connection (inactive)
-default	11:13:10.296473-0500	Nexy	[0xaa7a1c780] activating connection: mach=true listener=false peer=false name=com.apple.linkd.autoShortcut
-default	11:13:10.296581-0500	Nexy	Activated connection to com.apple.linkd.autoShortcut (ApplicationService)
-default	11:13:10.296623-0500	Nexy	[0xaa7a1ca00] activating connection: mach=false listener=true peer=false name=(anonymous)
-default	11:13:10.298608-0500	Nexy	[0xaa7a1ca00] Connection returned listener port: 0x6903
-default	11:13:10.299612-0500	Nexy	Registered process with identifier 84850-2565938
-default	11:13:10.520684-0500	Nexy	Registered notify signal com.apple.caulk.alloc.rtdump (0)
-default	11:13:10.523439-0500	Nexy	System_Input_Processing_Notification_Handler.mm:456   System_Input_Processing_Notification_Handler::is_vi_available(): Voice isolation DSP is available for client with bundle id com.nexy.assistant (AVFoundation is available, application is not in client deny list, application is not FaceTime variant)
-default	11:13:10.525439-0500	Nexy	[0xaa7a1cb40] activating connection: mach=true listener=false peer=false name=com.apple.cmio.registerassistantservice.system-extensions
-fault	11:13:10.527998-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.20931626.20931632 AUID=501> and <type=Application identifier=application.com.nexy.assistant.20931626.20931632>
-default	11:13:10.532007-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOInitializeListenersForBundleID: for <private> -> <private>
-default	11:13:10.533560-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> vpio_preferenceChangedListener: new value ((null)) for key AUVoiceIOClients/com-nexy-assistant/AUVoiceIOChatFlavor, translatedBundleID com.nexy.assistant, bundleIDs {(
+default	14:51:00.898355-0500	runningboardd	Assertion 398-363-1518711 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688]) will be created as active
+default	14:51:00.898972-0500	runningboardd	Invalidating assertion 398-363-1518710 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688]) from originator [osservice<com.apple.coreservices.launchservicesd>:363]
+default	14:51:00.897945-0500	Nexy	CHECKEDIN: pid=39688 asn=0x0-0x1a7aa79 foreground=0
+default	14:51:00.898253-0500	Nexy	[0x7684603c0] activating connection: mach=false listener=true peer=false name=(anonymous)
+default	14:51:00.899249-0500	loginwindow	-[Application updateInformation] | Got App URL: file:///Applications/Nexy.app/
+default	14:51:00.898262-0500	Nexy	[0x7684603c0] Connection returned listener port: 0x4d03
+default	14:51:00.899401-0500	loginwindow	-[ApplicationManager checkInAppContext:eventData:] | ApplicationManager: Checked in app : Nexy
+default	14:51:00.898498-0500	Nexy	[0x768470300] activating connection: mach=false listener=false peer=true name=com.apple.xpc.anonymous.0x7684603c0.peer[363].0x768470300
+default	14:51:00.903929-0500	Nexy	FRONTLOGGING: version 1
+default	14:51:00.903937-0500	Nexy	Registered, pid=39688 ASN=0x0,0x1a7aa79
+default	14:51:00.904236-0500	WindowServer	19b46f[CreateApplication]: Process creation: 0x0-0x1a7aa79 (Nexy) connectionID: 19B46F pid: 39688 in session 0x101
+default	14:51:00.904668-0500	Nexy	[0x768460500] activating connection: mach=true listener=false peer=false name=com.apple.lsd.mapdb
+default	14:51:00.905245-0500	Nexy	[0x7684603c0] Connection returned listener port: 0x4d03
+default	14:51:00.905667-0500	Nexy	BringForward: pid=39688 asn=0x0-0x1a7aa79 bringForward=0 foreground=0 uiElement=1 launchedByLS=1 modifiersCount=1 allDisabled=0
+default	14:51:00.905692-0500	Nexy	BringFrontModifier: pid=39688 asn=0x0-0x1a7aa79 Modifier 0 hideAfter=0 hideOthers=0 dontMakeFrontmost=0 mouseDown=0/0 seed=0/0
+default	14:51:00.906341-0500	Nexy	Current system appearance, (HLTB: 1), (SLS: 0)
+default	14:51:00.907869-0500	Nexy	No persisted cache on this platform.
+default	14:51:00.909302-0500	Nexy	Current system appearance, (HLTB: 1), (SLS: 0)
+default	14:51:00.909838-0500	Nexy	Post-registration system appearance: (HLTB: 1)
+default	14:51:00.911686-0500	Nexy	FBSWorkspace: endpoint monitoring is disabled.
+default	14:51:00.911699-0500	Nexy	FBSWorkspace: default shell endpoint is disabled.
+default	14:51:00.911751-0500	Nexy	Initializing connection
+default	14:51:00.911796-0500	Nexy	Removing all cached process handles
+default	14:51:00.911813-0500	Nexy	Sending handshake request attempt #1 to server
+default	14:51:00.911820-0500	Nexy	Creating connection to com.apple.runningboard
+default	14:51:00.911828-0500	Nexy	[0x768460640] activating connection: mach=true listener=false peer=false name=com.apple.runningboard
+default	14:51:00.912231-0500	Nexy	[0x7684603c0] Connection returned listener port: 0x4d03
+default	14:51:00.912352-0500	runningboardd	Setting client for [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as ready
+default	14:51:00.913078-0500	distnoted	register name: com.apple.xctest.FakeForceTouchDevice object: com.nexy.assistant token: 1e0000001d pid: 39688
+default	14:51:00.913129-0500	Nexy	Handshake succeeded
+default	14:51:00.913147-0500	Nexy	Identity resolved as app<application.com.nexy.assistant.21074037.21074043(501)>
+default	14:51:00.920114-0500	Nexy	[0x7684603c0] Connection returned listener port: 0x4d03
+default	14:51:00.923754-0500	Nexy	Created a new Process Instance Registry XPC connection (inactive)
+default	14:51:00.923778-0500	Nexy	[0x768460780] activating connection: mach=true listener=false peer=false name=com.apple.linkd.autoShortcut
+default	14:51:00.923908-0500	Nexy	Activated connection to com.apple.linkd.autoShortcut (ApplicationService)
+default	14:51:00.923953-0500	Nexy	[0x768460a00] activating connection: mach=false listener=true peer=false name=(anonymous)
+default	14:51:00.926320-0500	Nexy	[0x768460a00] Connection returned listener port: 0x6b03
+default	14:51:00.927246-0500	Nexy	Registered process with identifier 39688-2685721
+default	14:51:02.189064-0500	Nexy	Registered notify signal com.apple.caulk.alloc.rtdump (0)
+default	14:51:02.191930-0500	Nexy	System_Input_Processing_Notification_Handler.mm:456   System_Input_Processing_Notification_Handler::is_vi_available(): Voice isolation DSP is available for client with bundle id com.nexy.assistant (AVFoundation is available, application is not in client deny list, application is not FaceTime variant)
+default	14:51:02.195174-0500	Nexy	[0x768460b40] activating connection: mach=true listener=false peer=false name=com.apple.cmio.registerassistantservice.system-extensions
+fault	14:51:02.198282-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.21074037.21074043 AUID=501> and <type=Application identifier=application.com.nexy.assistant.21074037.21074043>
+default	14:51:02.203365-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOInitializeListenersForBundleID: for <private> -> <private>
+default	14:51:02.206453-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> vpio_preferenceChangedListener: new value ((null)) for key AUVoiceIOClients/com-nexy-assistant/AUVoiceIOChatFlavor, translatedBundleID com.nexy.assistant, bundleIDs {(
     "com.nexy.assistant"
 )}
-default	11:13:10.533708-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> vpio_preferenceChangedListener: new value ((null)) for key AUVoiceIOClients/com-nexy-assistant/AUVoiceIOIsAutoChatFlavorEnabled, translatedBundleID com.nexy.assistant, bundleIDs {(
+default	14:51:02.206614-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> vpio_preferenceChangedListener: new value ((null)) for key AUVoiceIOClients/com-nexy-assistant/AUVoiceIOIsAutoChatFlavorEnabled, translatedBundleID com.nexy.assistant, bundleIDs {(
     "com.nexy.assistant"
 )}
-default	11:13:10.533830-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetSupportedChatFlavorsForBundleID: <private>-><private> get supported chat flavors: <private>
-default	11:13:10.533843-0500	Nexy	            HALSystem.cpp:134    Enabling HAL Voice Isolation support
-default	11:13:10.534099-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetHiddenChatFlavorsForBundleID: <private>-><private> setting to: <private>
-default	11:13:10.534224-0500	Nexy	[0xaa7a1cc80] activating connection: mach=true listener=false peer=false name=com.apple.tccd
-default	11:13:10.534591-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOHiddenChatFlavors newValue: (
+default	14:51:02.206768-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetSupportedChatFlavorsForBundleID: <private>-><private> get supported chat flavors: <private>
+default	14:51:02.206779-0500	Nexy	            HALSystem.cpp:134    Enabling HAL Voice Isolation support
+default	14:51:02.206810-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetHiddenChatFlavorsForBundleID: <private>-><private> setting to: <private>
+default	14:51:02.206945-0500	Nexy	[0x768460c80] activating connection: mach=true listener=false peer=false name=com.apple.tccd
+default	14:51:02.207350-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOHiddenChatFlavors newValue: (
     1
 )
-default	11:13:10.535360-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.2, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:13:10.541984-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.2, subject=com.nexy.assistant,
-default	11:13:10.542570-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:10.553055-0500	Nexy	[0xaa7a1cc80] invalidated after the last release of the connection object
-default	11:13:10.553186-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetPreferredChatFlavorForBundleID: <private>-><private> get value: 0
-default	11:13:10.553229-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetSupportedChatFlavorsForBundleID: <private>-><private> setting to: <private>
-default	11:13:10.553463-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOSupportedChatFlavors newValue: (
+default	14:51:02.208134-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.2, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:02.215442-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.2, subject=com.nexy.assistant,
+default	14:51:02.216063-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:02.228169-0500	Nexy	[0x768460c80] invalidated after the last release of the connection object
+default	14:51:02.228225-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetSupportedChatFlavorsForBundleID: <private>-><private> setting to: <private>
+default	14:51:02.230911-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOSupportedChatFlavors newValue: (
+)
+default	14:51:02.232026-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11831, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:02.232949-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11831, subject=com.nexy.assistant,
+default	14:51:02.233510-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+error	14:51:02.250488-0500	tccd	Request message contains a target_token to accessing_process (TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy) but TCCDProcess: identifier=com.apple.audio.coreaudiod, pid=401, auid=202, euid=202, binary_path=/usr/sbin/coreaudiod is not a TCC manager for service: kTCCServiceScreenCapture.
+default	14:51:02.251368-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11833, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:02.252475-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11833, subject=com.nexy.assistant,
+default	14:51:02.253330-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:02.268105-0500	Nexy	  HALPlugInManagement.cpp:440    HALPlugInManagement::RegisterPlugIns: skipping in-process plug-ins
+error	14:51:02.268152-0500	Nexy	AddInstanceForFactory: No factory registered for id <CFUUID 0x768aa2480> F8BB1C28-BAE8-11D6-9C31-00039315CD46
+default	14:51:02.287981-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetPreferredChatFlavorForBundleID: <private>-><private> get value: 0
+default	14:51:02.562299-0500	Nexy	NotifyToken::RegisterDispatch(user.uid.501.com.apple.LaunchServices.database) fired for session key <private>
+default	14:51:04.782870-0500	kernel	SK[7]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 940703BA-F6E9-49A9-8955-85949D0DBB8C flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.58147,dst=<IPv4-redacted>.53,proto=0x06 mask=0x0000003f,hash=0xbff72696 tp_proto=0x06"
+default	14:51:04.782991-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:58147<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102088 t_state: SYN_SENT process: Nexy:39688 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0xb7059a4c
+default	14:51:04.803575-0500	kernel	tcp connected: [<IPv4-redacted>:58147<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102088 t_state: ESTABLISHED process: Nexy:39688 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0xb7059a4c
+default	14:51:04.803884-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:58147<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102088 t_state: FIN_WAIT_1 process: Nexy:39688 Duration: 0.021 sec Conn_Time: 0.021 sec bytes in/out: 0/0 pkts in/out: 0/0 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
+rtt: 21.000 ms rttvar: 10.500 ms base rtt: 21 ms so_error: 0 svc/tc: 0 flow: 0xb7059a4c
+default	14:51:04.803894-0500	kernel	tcp_connection_summary [<IPv4-redacted>:58147<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102088 t_state: FIN_WAIT_1 process: Nexy:39688 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
+default	14:51:04.831233-0500	Nexy	[0x768460c80] activating connection: mach=true listener=false peer=false name=com.apple.audio.AudioComponentRegistrar
+default	14:51:04.844377-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x76a0df140) Selecting device 71 from constructor
+default	14:51:04.844388-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x76a0df140)
+default	14:51:04.844393-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x76a0df140) not already running
+default	14:51:04.844398-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x76a0df140) nothing to teardown
+default	14:51:04.844402-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x76a0df140) connecting device 71
+default	14:51:04.844492-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x76a0df140) Device ID: 71 (Input:No | Output:Yes): true
+default	14:51:04.844824-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x76a0df140) created ioproc 0xa for device 71
+default	14:51:04.844928-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 7 device listeners to device 71
+default	14:51:04.845089-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 0 device delegate listeners to device 71
+default	14:51:04.845097-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x76a0df140)
+default	14:51:04.845160-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:51:04.845168-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:51:04.845174-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  2 ch,  48000 Hz, Float32, interleaved
+default	14:51:04.845180-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:51:04.845189-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:51:04.845274-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x76a0df140) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:51:04.845283-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x76a0df140) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:51:04.845288-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:51:04.845293-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 0 device listeners from device 0
+default	14:51:04.845298-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 0 device delegate listeners from device 0
+default	14:51:04.845307-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x76a0df140)
+default	14:51:04.845324-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
+default	14:51:04.845422-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x76a0df140) caller requesting device change from 71 to 78
+default	14:51:04.845431-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x76a0df140)
+default	14:51:04.845437-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x76a0df140) not already running
+default	14:51:04.845442-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x76a0df140) disconnecting device 71
+default	14:51:04.845446-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x76a0df140) destroying ioproc 0xa for device 71
+default	14:51:04.845768-0500	Nexy	  AVAudioSession_MacOS.mm:1021  initForMacOS
+default	14:51:04.846839-0500	Nexy	[0x768460f00] activating connection: mach=true listener=false peer=false name=com.apple.audio.AudioSession
+default	14:51:04.847753-0500	audiomxd	  ServerSessionManager.mm:315   { "action":"create_session", "session":{"ID":"0x1ef2bf","name":"Nexy(39688)"}, "details":{"PID":39688,"session_type":"Primary"} }
+default	14:51:04.847836-0500	audiomxd	AudioApplicationInfoImpl.mm:250   Setting initial isRecording state: 0 for newly-created AudioApp
+	app: {"name":"[implicit] Nexy","pid":39688}
+	AudioApp.isRecording: false
+[ 
+	{ sessionID: 0x1ef2bf, sessionType: 'prim', isRecording: false }, 
+]
+default	14:51:04.848541-0500	audiomxd	  ServerSessionManager.mm:1317  Start process monitoring, pid = 39688, name = Nexy
+default	14:51:04.848773-0500	Nexy	    SessionCore_Create.mm:99    Created session 0x768acd280 with ID: 0x1ef2bf
+default	14:51:04.849890-0500	Nexy	[0x768461040] activating connection: mach=true listener=false peer=false name=com.apple.audioanalyticsd
+error	14:51:04.850308-0500	Nexy	Reporter disconnected. { function=sendMessage, reporterID=170458662043649 }
+default	14:51:04.850325-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {BuiltInSpeakerDevice, 0xa}
+default	14:51:04.850377-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+)} Server update was not required.
+default	14:51:04.850481-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x76a0df140) connecting device 78
+default	14:51:04.850570-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x76a0df140) Device ID: 78 (Input:Yes | Output:No): true
+default	14:51:04.851983-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11834, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:04.854032-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11834, subject=com.nexy.assistant,
+default	14:51:04.854705-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:04.867402-0500	tccd	AUTHREQ_PROMPTING: msgID=401.11834, service=kTCCServiceMicrophone, subject=Sub:{com.nexy.assistant}Resp:{TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy},
+default	14:51:05.189671-0500	runningboardd	Assertion did invalidate due to timeout: 398-398-1518709 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688])
+default	14:51:05.390199-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:05.390216-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:05.390225-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:05.390244-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:05.395088-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:05.395735-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:08.586180-0500	tccd	Publishing <TCCDEvent: type=Create, service=kTCCServiceMicrophone, identifier_type=Bundle ID, identifier=com.nexy.assistant> to 3 subscribers: {
+    471 = "<TCCDEventSubscriber: token=471, state=Passed, csid=com.apple.chronod>";
+    37 = "<TCCDEventSubscriber: token=37, state=Initial, csid=(null)>";
+    476 = "<TCCDEventSubscriber: token=476, state=Passed, csid=com.apple.photolibraryd>";
+}
+default	14:51:08.587306-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x76a0df140) created ioproc 0xa for device 78
+default	14:51:08.587630-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 7 device listeners to device 78
+default	14:51:08.588149-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 0 device delegate listeners to device 78
+default	14:51:08.588165-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x76a0df140)
+default	14:51:08.588187-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
+default	14:51:08.588222-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:51:08.588501-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  input stream 0 [0x4f]:  1 ch,  48000 Hz, Float32
+default	14:51:08.588514-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
+default	14:51:08.588521-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  1 ch,  48000 Hz, Float32
+default	14:51:08.588651-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x76a0df140) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:51:08.588686-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x76a0df140) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:51:08.588696-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:51:08.588713-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 7 device listeners from device 71
+default	14:51:08.587841-0500	chronod	[appAuth:com.nexy.assistant] tcc authorization(s) changed
+default	14:51:08.588956-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 0 device delegate listeners from device 71
+default	14:51:08.588967-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x76a0df140)
+default	14:51:08.589997-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:51:08.591871-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11835, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:08.593262-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11835, subject=com.nexy.assistant,
+default	14:51:08.594213-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:08.613430-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:51:08.614636-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11836, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:08.615799-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11836, subject=com.nexy.assistant,
+default	14:51:08.617335-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:08.632558-0500	Nexy	Registered notify signal com.apple.caulk.alloc.audiodump (0)
+default	14:51:08.634608-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11837, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:08.635584-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11837, subject=com.nexy.assistant,
+default	14:51:08.636168-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:08.651103-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetPreferredChatFlavorForBundleID: <private>-><private> get value: 0
+default	14:51:08.651734-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetSupportedChatFlavorsForBundleID: <private>-><private> setting to: <private>
+default	14:51:08.656510-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] from originator [osservice<com.apple.powerd>:334] with description <RBSAssertionDescriptor| "App is holding power assertion" ID:398-334-1518718 target:39688 attributes:[
+	<RBSDomainAttribute| domain:"com.apple.appnap" name:"PowerAssertion" sourceEnvironment:"(null)">,
+	<RBSAcquisitionCompletionAttribute| policy:AfterApplication>
+	]>
+default	14:51:08.656697-0500	runningboardd	Assertion 398-334-1518718 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688]) will be created as active
+default	14:51:08.658070-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:08.658288-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:08.658402-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:08.658682-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:08.659050-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOSupportedChatFlavors newValue: (
     0,
     2
 )
-default	11:13:10.554872-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11372, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:10.555671-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11372, subject=com.nexy.assistant,
-default	11:13:10.556210-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-error	11:13:10.567075-0500	tccd	Request message contains a target_token to accessing_process (TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy) but TCCDProcess: identifier=com.apple.audio.coreaudiod, pid=401, auid=202, euid=202, binary_path=/usr/sbin/coreaudiod is not a TCC manager for service: kTCCServiceScreenCapture.
-default	11:13:10.568020-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11374, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:10.568800-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11374, subject=com.nexy.assistant,
-default	11:13:10.569325-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:10.581754-0500	Nexy	  HALPlugInManagement.cpp:440    HALPlugInManagement::RegisterPlugIns: skipping in-process plug-ins
-error	11:13:10.581948-0500	Nexy	AddInstanceForFactory: No factory registered for id <CFUUID 0xaa79a6520> F8BB1C28-BAE8-11D6-9C31-00039315CD46
-error	11:13:10.604182-0500	Nexy	         HALC_ProxyObjectMap.cpp:174   HALC_ProxyObjectMap::_CopyObjectByObjectID: failed to create the local object
-error	11:13:10.604191-0500	Nexy	            HALC_ShellDevice.cpp:2673  HALC_ShellDevice::RebuildControlList: couldn't find the control object
-default	11:13:10.608609-0500	coreaudiod	>>> SIMULATE [com.nexy.assistant]
-default	11:13:10.608746-0500	coreaudiod	<<< SIMULATE [com.nexy.assistant]
-default	11:13:10.613892-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetPreferredChatFlavorForBundleID: <private>-><private> get value: 0
-default	11:13:12.945664-0500	kernel	SK[7]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid FF555708-3C4B-4ABA-B3BF-8B2A9DB090A5 flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.63085,dst=<IPv4-redacted>.53,proto=0x06 mask=0x0000003f,hash=0xc691e221 tp_proto=0x06"
-default	11:13:12.945755-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:63085<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933247 t_state: SYN_SENT process: Nexy:84850 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x8375952e
-default	11:13:12.959001-0500	kernel	tcp connected: [<IPv4-redacted>:63085<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933247 t_state: ESTABLISHED process: Nexy:84850 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x8375952e
-default	11:13:12.959294-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:63085<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933247 t_state: FIN_WAIT_1 process: Nexy:84850 Duration: 0.014 sec Conn_Time: 0.014 sec bytes in/out: 0/0 pkts in/out: 0/0 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
-rtt: 14.000 ms rttvar: 7.000 ms base rtt: 14 ms so_error: 0 svc/tc: 0 flow: 0x8375952e
-default	11:13:12.959302-0500	kernel	tcp_connection_summary [<IPv4-redacted>:63085<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933247 t_state: FIN_WAIT_1 process: Nexy:84850 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
-default	11:13:12.988660-0500	Nexy	[0xaa7a1cc80] activating connection: mach=true listener=false peer=false name=com.apple.audio.AudioComponentRegistrar
-default	11:13:13.414625-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0xaa6cc0040) Selecting device 85 from constructor
-default	11:13:13.414643-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xaa6cc0040)
-default	11:13:13.414653-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xaa6cc0040) not already running
-default	11:13:13.414659-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0xaa6cc0040) nothing to teardown
-default	11:13:13.414665-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0xaa6cc0040) connecting device 85
-default	11:13:13.414824-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0xaa6cc0040) Device ID: 85 (Input:No | Output:Yes): true
-default	11:13:13.415563-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0xaa6cc0040) created ioproc 0xa for device 85
-default	11:13:13.415725-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 7 device listeners to device 85
-default	11:13:13.415983-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 0 device delegate listeners to device 85
-default	11:13:13.415997-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0xaa6cc0040)
-default	11:13:13.416091-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
-  output stream 0 [0x56]:  2 ch,  48000 Hz, Float32, interleaved
-default	11:13:13.416101-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
-default	11:13:13.416110-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
-  Output render format:  2 ch,  48000 Hz, Float32, interleaved
-default	11:13:13.416119-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
-default	11:13:13.416127-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
-  Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
-default	11:13:13.416263-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0xaa6cc0040) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
-default	11:13:13.416280-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0xaa6cc0040) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
-default	11:13:13.416287-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
-default	11:13:13.416301-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 0 device listeners from device 0
-default	11:13:13.416311-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 0 device delegate listeners from device 0
-default	11:13:13.416317-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xaa6cc0040)
-default	11:13:13.416338-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
-default	11:13:13.416460-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0xaa6cc0040) caller requesting device change from 85 to 91
-default	11:13:13.416471-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xaa6cc0040)
-default	11:13:13.416477-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xaa6cc0040) not already running
-default	11:13:13.416487-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0xaa6cc0040) disconnecting device 85
-default	11:13:13.416493-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0xaa6cc0040) destroying ioproc 0xa for device 85
-default	11:13:13.416589-0500	Nexy	  AVAudioSession_MacOS.mm:1021  initForMacOS
-default	11:13:13.417345-0500	Nexy	[0xaa7a1cf00] activating connection: mach=true listener=false peer=false name=com.apple.audio.AudioSession
-default	11:13:13.419527-0500	audiomxd	  ServerSessionManager.mm:315   { "action":"create_session", "session":{"ID":"0x1ef2a1","name":"Nexy(84850)"}, "details":{"PID":84850,"session_type":"Primary"} }
-default	11:13:13.419636-0500	audiomxd	AudioApplicationInfoImpl.mm:250   Setting initial isRecording state: 0 for newly-created AudioApp
-	app: {"name":"[implicit] Nexy","pid":84850}
-	AudioApp.isRecording: false
-[ 
-	{ sessionID: 0x1ef2a1, sessionType: 'prim', isRecording: false }, 
-]
-default	11:13:13.420650-0500	audiomxd	  ServerSessionManager.mm:1317  Start process monitoring, pid = 84850, name = Nexy
-default	11:13:13.421065-0500	Nexy	    SessionCore_Create.mm:99    Created session 0xaa64b1dc0 with ID: 0x1ef2a1
-default	11:13:13.422230-0500	Nexy	[0xaa7a1d040] activating connection: mach=true listener=false peer=false name=com.apple.audioanalyticsd
-error	11:13:13.422781-0500	Nexy	Reporter disconnected. { function=sendMessage, reporterID=364427975065601 }
-default	11:13:13.422800-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {1C-77-54-18-C8-A3:output, 0xa}
-default	11:13:13.422875-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
-)} Server update was not required.
-default	11:13:13.423013-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0xaa6cc0040) connecting device 91
-default	11:13:13.423142-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0xaa6cc0040) Device ID: 91 (Input:Yes | Output:No): true
-default	11:13:13.425040-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11375, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:13.426600-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11375, subject=com.nexy.assistant,
-default	11:13:13.427438-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:13.440177-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0xaa6cc0040) created ioproc 0xa for device 91
-default	11:13:13.440314-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 7 device listeners to device 91
-default	11:13:13.440510-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 0 device delegate listeners to device 91
-default	11:13:13.440521-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0xaa6cc0040)
-default	11:13:13.440529-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
-default	11:13:13.440538-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
-  Output render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
-default	11:13:13.440686-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
-  input stream 0 [0x5c]:  1 ch,  24000 Hz, Float32
-default	11:13:13.440699-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
-default	11:13:13.440705-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
-  Input render format:  1 ch,  24000 Hz, Float32
-default	11:13:13.440790-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0xaa6cc0040) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
-default	11:13:13.440802-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0xaa6cc0040) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
-default	11:13:13.440808-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
-default	11:13:13.440813-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 7 device listeners from device 85
-default	11:13:13.440973-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 0 device delegate listeners from device 85
-default	11:13:13.440982-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xaa6cc0040)
-default	11:13:13.441633-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
-default	11:13:13.442811-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11376, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:13.443805-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11376, subject=com.nexy.assistant,
-default	11:13:13.444385-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:13.455554-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
-default	11:13:13.456545-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11377, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:13.457436-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11377, subject=com.nexy.assistant,
-default	11:13:13.457992-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:13.469620-0500	Nexy	Registered notify signal com.apple.caulk.alloc.audiodump (0)
-default	11:13:13.471189-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11378, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:13.472081-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11378, subject=com.nexy.assistant,
-default	11:13:13.472641-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:13.484373-0500	coreaudiod	>>> NEGOTIATE [com.nexy.assistant]
-default	11:13:13.484520-0500	coreaudiod	<<< NEGOTIATE [com.nexy.assistant]
-default	11:13:13.485750-0500	coreaudiod	>>> ADAPT [com.nexy.assistant]
-default	11:13:13.487066-0500	coreaudiod	[Detector.cpp:154   rtaid::Detector:0xbf76a5b00] Created node ADM::com.nexy.assistant_61703.61532.0_airpods noise suppression studio::in-0 with nodeID 0 - reporting period = 10.000000, sample rate = 24000.000000
-default	11:13:13.487143-0500	coreaudiod	[Detector.cpp:154   rtaid::Detector:0xbf76a5b00] Created node ADM::com.nexy.assistant_61703.61532.0_airpods noise suppression studio::out-0 with nodeID 1 - reporting period = 10.000000, sample rate = 24000.000000
-default	11:13:13.563143-0500	coreaudiod	<<< ADAPT [com.nexy.assistant]
-default	11:13:13.565886-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Input {1C-77-54-18-C8-A3:input, 0xa}
-default	11:13:13.565818-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 1 0 0, id:61703 called from <private>
-default	11:13:13.566214-0500	Nexy	         HALC_ProxyIOContext.cpp:1594  HALC_ProxyIOContext::IOWorkLoop: ending the transport, stopping the io thread
-default	11:13:13.567255-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61703 called from <private>
-default	11:13:13.567429-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61703)
-default	11:13:13.567446-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61703 called from <private>
-default	11:13:13.567454-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61703 called from <private>
-default	11:13:13.572570-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] from originator [osservice<com.apple.powerd>:334] with description <RBSAssertionDescriptor| "App is holding power assertion" ID:398-334-1504575 target:84850 attributes:[
-	<RBSDomainAttribute| domain:"com.apple.appnap" name:"PowerAssertion" sourceEnvironment:"(null)">,
-	<RBSAcquisitionCompletionAttribute| policy:AfterApplication>
-	]>
-default	11:13:13.573009-0500	runningboardd	Assertion 398-334-1504575 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) will be created as active
-default	11:13:13.568080-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61702)
-default	11:13:13.568469-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 0 0, id:61702 called from <private>
-default	11:13:13.568514-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61702 called from <private>
-default	11:13:13.574227-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:13.574533-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:13.574968-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:13.575229-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-fault	11:13:13.576065-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.20931626.20931632 AUID=501> and <type=Application identifier=application.com.nexy.assistant.20931626.20931632>
-default	11:13:13.576925-0500	coreaudiod	>>> SIMULATE [com.nexy.assistant]
-default	11:13:13.577433-0500	coreaudiod	<<< SIMULATE [com.nexy.assistant]
-fault	11:13:13.578823-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.20931626.20931632 AUID=501> and <type=Application identifier=application.com.nexy.assistant.20931626.20931632>
-default	11:13:13.580326-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:13.580765-0500	runningboardd	Invalidating assertion 398-334-1504575 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) from originator [osservice<com.apple.powerd>:334]
-default	11:13:13.583137-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61703)
-default	11:13:13.583170-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61703)
-default	11:13:13.583182-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61703)
-default	11:13:13.583220-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61703)
-default	11:13:13.583818-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:13.587209-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 2 2, id:61703 called from <private>
-default	11:13:13.587227-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 3 3, id:61703 called from <private>
-default	11:13:13.587235-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 3 3 id:61703 called from <private>
-default	11:13:13.587240-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 2 2 id:61703 called from <private>
-default	11:13:13.587249-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61703 called from <private>
-default	11:13:13.587253-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61703 called from <private>
-default	11:13:13.587258-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61703 called from <private>
-default	11:13:13.587270-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61703 called from <private>
-default	11:13:13.587326-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61703 called from <private>
-default	11:13:13.587362-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61703 called from <private>
-default	11:13:13.587599-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2a1","name":"Nexy(84850)"}, "details":{"deviceUIDs":["1C-77-54-18-C8-A3:input"],"implicit_category":"Record","input_running":true,"output_running":false} }
-default	11:13:13.587699-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
-default	11:13:13.587784-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:13.587866-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2a1, Nexy(84850), 'prim'', AudioCategory changed to 'Record_WithBluetooth'
-default	11:13:13.587908-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:13.587938-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:13.587939-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:08.667974-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:08.669867-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:08.679316-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Input {BuiltInMicrophoneDevice, 0xa}
+default	14:51:08.681787-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2bf","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"Record","input_running":true,"output_running":false} }
+default	14:51:08.682049-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:51:08.682178-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:08.682296-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2bf, Nexy(39688), 'prim'', AudioCategory changed to 'Record_WithBluetooth'
+default	14:51:08.682367-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:08.682380-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:13.587994-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> is going active
-default	11:13:13.588009-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2a1, Nexy(84850), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 674 starting recording
-default	11:13:13.588056-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:08.682396-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:08.682449-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> is going active
+default	14:51:08.682461-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2bf, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 704 starting recording
+default	14:51:08.682523-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:13.588370-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:08.682765-0500	audioaccessoryd	Audio state update Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:13.588448-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:08.682921-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:13.588520-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:13.588550-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
-default	11:13:13.588720-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 0]. BT device UIDS: {(
-    "1C-77-54-18-C8-A3:input"
+default	14:51:08.682962-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:08.682988-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:08.683022-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:51:08.683054-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2bf, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:51:08.683125-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:08.683129-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:08.683161-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 0]. BT device UIDS: {(
 )}
-default	11:13:13.588574-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2a1, Nexy(84850), 'prim'', displayID:'com.nexy.assistant'}
-default	11:13:13.588735-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
-default	11:13:13.588680-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 200, deviceID = <private>
-default	11:13:13.596381-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61703)
-default	11:13:13.596400-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61703 called from <private>
-default	11:13:13.598438-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61702)
-default	11:13:13.599704-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11379, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:13.599848-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:13.599860-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:13.601970-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11379, subject=com.nexy.assistant,
-default	11:13:13.603351-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:13.609303-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 2 2, id:61702 called from <private>
-default	11:13:13.609321-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 3 3, id:61702 called from <private>
-default	11:13:13.609458-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61702)
-default	11:13:13.610690-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61702)
-default	11:13:13.610985-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 3 3 id:61702 called from <private>
-default	11:13:13.610996-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 2 2 id:61702 called from <private>
-default	11:13:13.611103-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61702)
-default	11:13:13.615220-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
-default	11:13:13.615362-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
-default	11:13:13.615519-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:13.618186-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61702)
-default	11:13:13.617553-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.618779-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:13.618793-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:13.619059-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:13.617614-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.619069-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:13.619085-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:13.619092-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:13.617772-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.619102-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:13.619136-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:13.617943-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.619189-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:13.618356-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.619189-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61702)
-default	11:13:13.618666-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.619283-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:13.619345-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:13.619376-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:13.619694-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:13.619415-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:13.619492-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:13.619546-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:13.619597-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:13.629043-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61702)
-default	11:13:13.629255-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:13.629261-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:13.629271-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61702 called from <private>
-default	11:13:13.629280-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 0 0 id:61702 called from <private>
-default	11:13:13.637835-0500	coreaudiod	>>> NEGOTIATE [com.nexy.assistant]
-default	11:13:13.647797-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+default	14:51:08.683181-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:51:08.683247-0500	audioaccessoryd	Audio state update Start apps {
     "com.nexy.assistant" : 200,
 }
-default	11:13:13.648520-0500	audioaccessoryd	Audio state update Start apps {
+default	14:51:08.683291-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
     "com.nexy.assistant" : 200,
 }
-default	11:13:13.673968-0500	coreaudiod	>>> ADAPT [com.nexy.assistant]
-default	11:13:13.675101-0500	coreaudiod	[Detector.cpp:154   rtaid::Detector:0xbf76f4300] Created node ADM::com.nexy.assistant_61703.61532.0_airpods noise suppression studio::in-0 with nodeID 0 - reporting period = 10.000000, sample rate = 24000.000000
-default	11:13:13.675165-0500	coreaudiod	[Detector.cpp:154   rtaid::Detector:0xbf76f4300] Created node ADM::com.nexy.assistant_61703.61532.0_airpods noise suppression studio::out-0 with nodeID 1 - reporting period = 10.000000, sample rate = 24000.000000
-default	11:13:13.678884-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:13.687005-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:13.687017-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:13.687028-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:13.687093-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:13.693299-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.693310-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.693317-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.693324-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.693330-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.693336-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.693455-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:13.709470-0500	coreaudiod	<<< ADAPT [com.nexy.assistant]
-default	11:13:13.712779-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 1 0 0 id:61703 called from <private>
-default	11:13:13.713526-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 1 0 0, id:61703 called from <private>
-default	11:13:13.714862-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] from originator [osservice<com.apple.powerd>:334] with description <RBSAssertionDescriptor| "App is holding power assertion" ID:398-334-1504577 target:84850 attributes:[
-	<RBSDomainAttribute| domain:"com.apple.appnap" name:"PowerAssertion" sourceEnvironment:"(null)">,
-	<RBSAcquisitionCompletionAttribute| policy:AfterApplication>
-	]>
-default	11:13:13.713627-0500	Nexy	         HALC_ProxyIOContext.cpp:1594  HALC_ProxyIOContext::IOWorkLoop: ending the transport, stopping the io thread
-default	11:13:13.714931-0500	runningboardd	Assertion 398-334-1504577 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) will be created as active
-default	11:13:13.715769-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61703 called from <private>
-default	11:13:13.715946-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61703)
-default	11:13:13.715966-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61703 called from <private>
-default	11:13:13.715974-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61703 called from <private>
-default	11:13:13.716154-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:13.716218-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:13.716259-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:13.716377-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:13.717144-0500	coreaudiod	>>> SIMULATE [com.nexy.assistant]
-default	11:13:13.717295-0500	coreaudiod	<<< SIMULATE [com.nexy.assistant]
-default	11:13:13.717772-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61703)
-default	11:13:13.721268-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:13.721597-0500	runningboardd	Invalidating assertion 398-334-1504577 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) from originator [osservice<com.apple.powerd>:334]
-default	11:13:13.721970-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11381, subject=com.nexy.assistant,
-default	11:13:13.722760-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:13.735379-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
-default	11:13:13.735425-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
-default	11:13:13.735469-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:13.735876-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.735893-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.735919-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.735929-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.735938-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.735945-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.736001-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.736012-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.736021-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.736028-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.736032-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:13.736036-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.736068-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.737191-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.737206-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.737215-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.737226-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.737232-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
-default	11:13:13.737232-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.737242-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.753146-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:13.762583-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.762602-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.762612-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.762618-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.762624-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.762629-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.762710-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:13.768874-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
-default	11:13:13.768996-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
-default	11:13:13.769062-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:13.782020-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782033-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782047-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.782052-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782058-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.782064-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.782141-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:13.782123-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782182-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782193-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.782200-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782207-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.782216-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.782618-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782628-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782634-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.782639-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:13.782646-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:13.782650-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:13.782675-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
-default	11:13:13.794877-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:14.766578-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {1C-77-54-18-C8-A3:input, 0xa}
-default	11:13:14.767030-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2a1","name":"Nexy(84850)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
-default	11:13:14.767175-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:14.767242-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
-default	11:13:14.767277-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2a1, Nexy(84850), 'prim'', displayID:'com.nexy.assistant'}
-default	11:13:14.767344-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 200, deviceID = <private>
-default	11:13:14.767348-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2a1, Nexy(84850), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 674 stopping recording
-default	11:13:14.767373-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
-default	11:13:14.767400-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:14.767430-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:14.767541-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
+default	14:51:08.683320-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 200 count 1
+default	14:51:08.683340-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+error	14:51:08.683363-0500	audioaccessoryd	Updating local audio category 100 -> 200 app com.nexy.assistant
+default	14:51:08.683428-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+fault	14:51:08.686578-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.21074037.21074043 AUID=501> and <type=Application identifier=application.com.nexy.assistant.21074037.21074043>
+fault	14:51:08.688807-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.21074037.21074043 AUID=501> and <type=Application identifier=application.com.nexy.assistant.21074037.21074043>
+default	14:51:08.716300-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:51:08.716427-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
+default	14:51:08.716484-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
+default	14:51:08.717964-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.717988-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.718002-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:08.718008-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.718015-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:08.718024-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:08.718123-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:08.719309-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.719317-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.719331-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:08.719341-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.719347-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:08.719353-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:08.719424-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:08.721946-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.721961-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.721973-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:08.721982-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:08.721987-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:08.721995-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:08.722722-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
+default	14:51:08.798521-0500	audioaccessoryd	AudioStateSnapshot: Route:Speaker App com.nexy.assistant, Score 200, Remote -1NumofApp 1
+default	14:51:09.661989-0500	Nexy	         HALC_ProxyIOContext.cpp:1594  HALC_ProxyIOContext::IOWorkLoop: ending the transport, stopping the io thread
+default	14:51:09.670166-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xa}
+default	14:51:09.670948-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2bf","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
+default	14:51:09.670945-0500	runningboardd	Invalidating assertion 398-334-1518718 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688]) from originator [osservice<com.apple.powerd>:334]
+default	14:51:09.671188-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:09.671293-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:51:09.671359-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2bf, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:51:09.671778-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:09.671485-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:09.671870-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:09.671534-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2bf, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 704 stopping recording
+default	14:51:09.671910-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:51:09.671663-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
+default	14:51:09.672003-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:51:09.671803-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:09.671962-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:09.672472-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
 )}
-default	11:13:14.767556-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
-default	11:13:14.767682-0500	audioaccessoryd	Routing request Wx 1C:77:54:18:C8:A3 score 200 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
-default	11:13:14.767923-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:14.767961-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:09.672499-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:51:09.672418-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:14.768013-0500	audioaccessoryd	Audio state update Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:14.768043-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:14.768057-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
-default	11:13:14.768074-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:09.672629-0500	audioaccessoryd	Audio state update Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:14.768152-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
-default	11:13:14.768167-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+default	14:51:09.672678-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:14.768177-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 0
-default	11:13:14.771441-0500	runningboardd	Invalidating assertion 398-334-1504578 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) from originator [osservice<com.apple.powerd>:334]
-default	11:13:14.788971-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:14.789591-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:14.789606-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:14.789622-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:14.789628-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:14.789635-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:14.789642-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:14.789796-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:14.868993-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0xaa6cc0040) Selecting device 0 from destructor
-default	11:13:14.869031-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xaa6cc0040)
-default	11:13:14.869060-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xaa6cc0040) not already running
-default	11:13:14.869079-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0xaa6cc0040) disconnecting device 91
-default	11:13:14.869093-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0xaa6cc0040) destroying ioproc 0xa for device 91
-default	11:13:14.869153-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {1C-77-54-18-C8-A3:input, 0xa}
-default	11:13:14.869219-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+default	14:51:09.672703-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 0
+default	14:51:09.686897-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
+default	14:51:09.687972-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:09.687989-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:09.688005-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:09.688015-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:09.688025-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:09.688034-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:09.688175-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:09.773617-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:09.773631-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:09.773641-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:09.773683-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:09.775075-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0x76a0df140) Selecting device 0 from destructor
+default	14:51:09.775094-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x76a0df140)
+default	14:51:09.775104-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x76a0df140) not already running
+default	14:51:09.775109-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x76a0df140) disconnecting device 78
+default	14:51:09.775115-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x76a0df140) destroying ioproc 0xa for device 78
+default	14:51:09.775156-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xa}
+default	14:51:09.775187-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
 )} Server update was not required.
-default	11:13:14.869527-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0xaa6cc0040) nothing to setup
-default	11:13:14.869543-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 0 device listeners to device 0
-default	11:13:14.869549-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 0 device delegate listeners to device 0
-default	11:13:14.869559-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 7 device listeners from device 91
-default	11:13:14.869792-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 0 device delegate listeners from device 91
-default	11:13:14.869811-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xaa6cc0040)
-default	11:13:14.878401-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:14.878418-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:14.878433-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:14.878463-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:14.884152-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:14.884721-0500	runningboardd	Assertion did invalidate due to timeout: 398-398-1504571 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850])
-default	11:13:14.884960-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:15.039340-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:15.039350-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:15.039359-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:15.039417-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:15.041979-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:15.042367-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:15.092557-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84854.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=84854, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
-default	11:13:15.093940-0500	tccd	AUTHREQ_SUBJECT: msgID=84854.1, subject=com.nexy.assistant,
-default	11:13:15.094516-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:15.107819-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.16888, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=84854, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
-default	11:13:15.108844-0500	tccd	AUTHREQ_SUBJECT: msgID=393.16888, subject=com.nexy.assistant,
-default	11:13:15.109457-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:15.142365-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:15.278964-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 84855: target_identity: {
-    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 3d272700 };
+default	14:51:09.775418-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0x76a0df140) nothing to setup
+default	14:51:09.775429-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 0 device listeners to device 0
+default	14:51:09.775435-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 0 device delegate listeners to device 0
+default	14:51:09.775443-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 7 device listeners from device 78
+default	14:51:09.775686-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 0 device delegate listeners from device 78
+default	14:51:09.775703-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x76a0df140)
+default	14:51:09.777503-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:09.778264-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:10.041780-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39695.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=39695, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
+default	14:51:10.046160-0500	tccd	AUTHREQ_SUBJECT: msgID=39695.1, subject=com.nexy.assistant,
+default	14:51:10.048937-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:10.065067-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.17740, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=39695, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
+default	14:51:10.066163-0500	tccd	AUTHREQ_SUBJECT: msgID=393.17740, subject=com.nexy.assistant,
+default	14:51:10.066860-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:10.108597-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:10.264210-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 39696: target_identity: {
+    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 2ffb2800 };
     kTCCCodeIdentityAuthority = kTCCCodeIdentityDesignatedRequirementAuthority;
     kTCCCodeIdentityCSFlags = 536941313;
     kTCCCodeIdentityCanSendToAnyTarget = 0;
@@ -580,780 +447,637 @@ default	11:13:15.278964-0500	System Events	TCCAccessRequestIndirect: TCCAccessRe
     kTCCCodeIdentitySDKVersion = 984064;
     kTCCCodeIdentityTeamID = 5NKLL2CLB9;
 }
-default	11:13:15.291188-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
-default	11:13:15.533790-0500	Nexy	[0xaa7a1d2c0] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
-default	11:13:15.534533-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.3, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:13:15.535782-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.3, subject=com.nexy.assistant,
-default	11:13:15.536428-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:15.549500-0500	Nexy	[0xaa7a1d2c0] invalidated after the last release of the connection object
-default	11:13:15.553066-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0xaa6cc0040) Selecting device 85 from constructor
-default	11:13:15.553081-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xaa6cc0040)
-default	11:13:15.553087-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xaa6cc0040) not already running
-default	11:13:15.553092-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0xaa6cc0040) nothing to teardown
-default	11:13:15.553097-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0xaa6cc0040) connecting device 85
-default	11:13:15.553214-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0xaa6cc0040) Device ID: 85 (Input:No | Output:Yes): true
-default	11:13:15.553343-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0xaa6cc0040) created ioproc 0xb for device 85
-default	11:13:15.553497-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 7 device listeners to device 85
-default	11:13:15.553695-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 0 device delegate listeners to device 85
-default	11:13:15.553704-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0xaa6cc0040)
-default	11:13:15.553791-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
-  output stream 0 [0x56]:  2 ch,  24000 Hz, Float32, interleaved
-default	11:13:15.553802-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
-default	11:13:15.553807-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
-  Output render format:  2 ch,  24000 Hz, Float32, interleaved
-default	11:13:15.553813-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
-default	11:13:15.553822-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:51:10.275298-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:51:10.514952-0500	Nexy	[0x768461180] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+default	14:51:10.515677-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.3, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:10.516882-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.3, subject=com.nexy.assistant,
+default	14:51:10.517498-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:10.530839-0500	Nexy	[0x768461180] invalidated after the last release of the connection object
+default	14:51:10.533941-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x76a0df140) Selecting device 71 from constructor
+default	14:51:10.533951-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x76a0df140)
+default	14:51:10.533957-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x76a0df140) not already running
+default	14:51:10.533961-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x76a0df140) nothing to teardown
+default	14:51:10.533965-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x76a0df140) connecting device 71
+default	14:51:10.534073-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x76a0df140) Device ID: 71 (Input:No | Output:Yes): true
+default	14:51:10.534226-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x76a0df140) created ioproc 0xb for device 71
+default	14:51:10.534348-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 7 device listeners to device 71
+default	14:51:10.534534-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 0 device delegate listeners to device 71
+default	14:51:10.534543-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x76a0df140)
+default	14:51:10.534610-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:51:10.534619-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:51:10.534625-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  2 ch,  48000 Hz, Float32, interleaved
+default	14:51:10.534632-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:51:10.534641-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
-default	11:13:15.553920-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0xaa6cc0040) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
-default	11:13:15.553930-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0xaa6cc0040) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
-default	11:13:15.553934-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
-default	11:13:15.553937-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 0 device listeners from device 0
-default	11:13:15.553941-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 0 device delegate listeners from device 0
-default	11:13:15.553946-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xaa6cc0040)
-default	11:13:15.553965-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
-default	11:13:15.554029-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0xaa6cc0040) caller requesting device change from 85 to 91
-default	11:13:15.554037-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xaa6cc0040)
-default	11:13:15.554050-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xaa6cc0040) not already running
-default	11:13:15.554058-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0xaa6cc0040) disconnecting device 85
-default	11:13:15.554064-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0xaa6cc0040) destroying ioproc 0xb for device 85
-default	11:13:15.554086-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {1C-77-54-18-C8-A3:output, 0xb}
-default	11:13:15.554133-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+default	14:51:10.534729-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x76a0df140) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:51:10.534744-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x76a0df140) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:51:10.534753-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:51:10.534756-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 0 device listeners from device 0
+default	14:51:10.534759-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 0 device delegate listeners from device 0
+default	14:51:10.534764-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x76a0df140)
+default	14:51:10.534779-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
+default	14:51:10.534852-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x76a0df140) caller requesting device change from 71 to 78
+default	14:51:10.534859-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x76a0df140)
+default	14:51:10.534863-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x76a0df140) not already running
+default	14:51:10.534868-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x76a0df140) disconnecting device 71
+default	14:51:10.534872-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x76a0df140) destroying ioproc 0xb for device 71
+default	14:51:10.534909-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {BuiltInSpeakerDevice, 0xb}
+default	14:51:10.534944-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
 )} Server update was not required.
-default	11:13:15.554212-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0xaa6cc0040) connecting device 91
-default	11:13:15.554286-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0xaa6cc0040) Device ID: 91 (Input:Yes | Output:No): true
-default	11:13:15.555650-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11382, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:15.556863-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11382, subject=com.nexy.assistant,
-default	11:13:15.557547-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:15.569596-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0xaa6cc0040) created ioproc 0xb for device 91
-default	11:13:15.569758-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 7 device listeners to device 91
-default	11:13:15.569964-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 0 device delegate listeners to device 91
-default	11:13:15.569977-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0xaa6cc0040)
-default	11:13:15.569987-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
-default	11:13:15.569998-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:51:10.535018-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x76a0df140) connecting device 78
+default	14:51:10.535094-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x76a0df140) Device ID: 78 (Input:Yes | Output:No): true
+default	14:51:10.536314-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11838, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:10.537353-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11838, subject=com.nexy.assistant,
+default	14:51:10.537945-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:10.550621-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x76a0df140) created ioproc 0xb for device 78
+default	14:51:10.550771-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 7 device listeners to device 78
+default	14:51:10.550971-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 0 device delegate listeners to device 78
+default	14:51:10.550980-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x76a0df140)
+default	14:51:10.550986-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
+default	14:51:10.550996-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Output render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
-default	11:13:15.570152-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
-  input stream 0 [0x5c]:  1 ch,  24000 Hz, Float32
-default	11:13:15.570163-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
-default	11:13:15.570169-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
-  Input render format:  1 ch,  24000 Hz, Float32
-default	11:13:15.570270-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0xaa6cc0040) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
-default	11:13:15.570283-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0xaa6cc0040) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
-default	11:13:15.570290-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
-default	11:13:15.570293-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 7 device listeners from device 85
-default	11:13:15.570462-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 0 device delegate listeners from device 85
-default	11:13:15.570473-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xaa6cc0040)
-default	11:13:15.571093-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
-default	11:13:15.572324-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11383, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:15.573282-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11383, subject=com.nexy.assistant,
-default	11:13:15.573997-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:15.586456-0500	Nexy	       ACv2Workarounds.mm:51    com.nexy.assistant: fix84702776_86723525_86479548_89800354_SinglePacketDesc: false
-default	11:13:15.586610-0500	Nexy	       AudioConverter.cpp:1042  Created a new in process converter -> 0xaa5f92a60, from  1 ch,  24000 Hz, Float32 to  1 ch,  16000 Hz, Float32
-default	11:13:15.586854-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
-default	11:13:15.588084-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11384, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:15.589071-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11384, subject=com.nexy.assistant,
-default	11:13:15.589675-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:15.603997-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11385, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:15.604964-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11385, subject=com.nexy.assistant,
-default	11:13:15.605528-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:15.622997-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2a1","name":"Nexy(84850)"}, "details":{"deviceUIDs":["1C-77-54-18-C8-A3:input"],"implicit_category":"Record","input_running":true,"output_running":false} }
-default	11:13:15.623116-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
-default	11:13:15.623152-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2a1, Nexy(84850), 'prim'/com.nexy.assistant was not correct. Old score = 201
-default	11:13:15.621891-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Input {1C-77-54-18-C8-A3:input, 0xb}
-default	11:13:15.623188-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:15.625946-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2a1, Nexy(84850), 'prim'', AudioCategory changed to 'Record_WithBluetooth'
-default	11:13:15.626250-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:13:15.626630-0500	audioaccessoryd	Audio state update Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:13:15.626322-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:15.626442-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:15.626686-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:13:15.626684-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> is going active
-default	11:13:15.626863-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] from originator [osservice<com.apple.powerd>:334] with description <RBSAssertionDescriptor| "App is holding power assertion" ID:398-334-1504587 target:84850 attributes:[
+default	14:51:10.551115-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  input stream 0 [0x4f]:  1 ch,  48000 Hz, Float32
+default	14:51:10.551126-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
+default	14:51:10.551132-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  1 ch,  48000 Hz, Float32
+default	14:51:10.551234-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x76a0df140) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:51:10.551249-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x76a0df140) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:51:10.551255-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:51:10.551259-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 7 device listeners from device 71
+default	14:51:10.551426-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 0 device delegate listeners from device 71
+default	14:51:10.551438-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x76a0df140)
+default	14:51:10.551858-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:51:10.552814-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11839, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:10.553647-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11839, subject=com.nexy.assistant,
+default	14:51:10.554223-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:10.566847-0500	Nexy	       ACv2Workarounds.mm:51    com.nexy.assistant: fix84702776_86723525_86479548_89800354_SinglePacketDesc: false
+default	14:51:10.566970-0500	Nexy	       AudioConverter.cpp:1042  Created a new in process converter -> 0x76a371a10, from  1 ch,  48000 Hz, Float32 to  1 ch,  16000 Hz, Float32
+default	14:51:10.567193-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:51:10.568346-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11840, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:10.569277-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11840, subject=com.nexy.assistant,
+default	14:51:10.569803-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:10.588186-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11841, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:10.588998-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11841, subject=com.nexy.assistant,
+default	14:51:10.589509-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:10.602808-0500	runningboardd	Acquiring assertion targeting [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] from originator [osservice<com.apple.powerd>:334] with description <RBSAssertionDescriptor| "App is holding power assertion" ID:398-334-1518727 target:39688 attributes:[
 	<RBSDomainAttribute| domain:"com.apple.appnap" name:"PowerAssertion" sourceEnvironment:"(null)">,
 	<RBSAcquisitionCompletionAttribute| policy:AfterApplication>
 	]>
-default	11:13:15.626667-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:10.602869-0500	runningboardd	Assertion 398-334-1518727 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688]) will be created as active
+default	14:51:10.603130-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:10.603142-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:10.603151-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:10.603168-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:10.606220-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:10.606614-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:10.627171-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Input {BuiltInMicrophoneDevice, 0xb}
+default	14:51:10.627963-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2bf","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"Record","input_running":true,"output_running":false} }
+default	14:51:10.628029-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:51:10.628051-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2bf, Nexy(39688), 'prim'/com.nexy.assistant was not correct. Old score = 201
+default	14:51:10.628074-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:10.628123-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2bf, Nexy(39688), 'prim'', AudioCategory changed to 'Record_WithBluetooth'
+default	14:51:10.628151-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:15.626705-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2a1, Nexy(84850), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 674 starting recording
-default	11:13:15.626945-0500	runningboardd	Assertion 398-334-1504587 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) will be created as active
-default	11:13:15.626810-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:10.628165-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:10.628192-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:10.628240-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:15.626835-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+default	14:51:10.628240-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> is going active
+default	14:51:10.628274-0500	audioaccessoryd	Audio state update Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:15.626929-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:15.627022-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
-default	11:13:15.627187-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2a1, Nexy(84850), 'prim'', displayID:'com.nexy.assistant'}
-default	11:13:15.627367-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 0]. BT device UIDS: {(
-    "1C-77-54-18-C8-A3:input"
+default	14:51:10.628285-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2bf, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 704 starting recording
+default	14:51:10.628313-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:10.628345-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:10.628357-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:10.628386-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:51:10.628427-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:10.628407-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2bf, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:51:10.628483-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 0]. BT device UIDS: {(
 )}
-default	11:13:15.627300-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:15.627342-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:15.627341-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 200, deviceID = <private>
-default	11:13:15.627382-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
-default	11:13:15.627368-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:15.627702-0500	audioaccessoryd	Routing request Wx 1C:77:54:18:C8:A3 score 200 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
-default	11:13:15.627659-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:15.627882-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+default	14:51:10.628498-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:51:10.628468-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
     "com.nexy.assistant" : 200,
 }
-default	11:13:15.627959-0500	audioaccessoryd	Audio state update Start apps {
+default	14:51:10.628547-0500	audioaccessoryd	Audio state update Start apps {
     "com.nexy.assistant" : 200,
 }
-default	11:13:15.627980-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+default	14:51:10.628568-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
     "com.nexy.assistant" : 200,
 }
-default	11:13:15.627990-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 200 count 1
-default	11:13:15.628056-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
-error	11:13:15.628128-0500	audioaccessoryd	Updating local audio category 100 -> 200 app com.nexy.assistant
-error	11:13:15.628251-0500	audioaccessoryd	Relaying via 24B92680-715A-E821-B5AF-358E78C2DAF9 inWxAddress 1C:77:54:18:C8:A3 to 88:20:0D:45:06:51 with options {
-    "playingApp" : "com.nexy.assistant",
-    "hostStreamingState" : "YES",
-    "btAddress" : "A0:9A:8E:0D:58:86",
-    "btName" : "Mac",
-    "otherDeviceAudioCategory" : 200,
+default	14:51:10.628577-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 200 count 1
+default	14:51:10.628586-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+error	14:51:10.628595-0500	audioaccessoryd	Updating local audio category 100 -> 200 app com.nexy.assistant
+default	14:51:10.628624-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:51:10.640086-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:51:10.640141-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
+default	14:51:10.640185-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
+default	14:51:10.640583-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.640599-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.640619-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:10.640628-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.640635-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:10.640656-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:10.640671-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.640681-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.640690-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:10.640722-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.640810-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:10.640830-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:10.640861-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:10.641443-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.641460-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.641470-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:10.641477-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:10.641485-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:10.641510-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:10.641535-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
+default	14:51:11.798542-0500	audioaccessoryd	AudioStateSnapshot: Route:Speaker App com.nexy.assistant, Score 200, Remote -1NumofApp 1
+default	14:51:11.907412-0500	Nexy	LSExceptions shared instance invalidated for timeout.
+default	14:51:14.798043-0500	audioaccessoryd	AudioStateSnapshot: Route:Speaker App com.nexy.assistant, Score 200, Remote -1NumofApp 1
+default	14:51:17.796802-0500	audioaccessoryd	AudioStateSnapshot: Route:Speaker App com.nexy.assistant, Score 200, Remote -1NumofApp 1
+default	14:51:20.796806-0500	audioaccessoryd	AudioStateSnapshot: Route:Speaker App com.nexy.assistant, Score 200, Remote -1NumofApp 1
+default	14:51:23.630530-0500	Nexy	         HALC_ProxyIOContext.cpp:1594  HALC_ProxyIOContext::IOWorkLoop: ending the transport, stopping the io thread
+default	14:51:23.638725-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xb}
+default	14:51:23.639188-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2bf","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
+default	14:51:23.639146-0500	runningboardd	Invalidating assertion 398-334-1518727 (target:[app<application.com.nexy.assistant.21074037.21074043(501)>:39688]) from originator [osservice<com.apple.powerd>:334]
+default	14:51:23.639420-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:23.639522-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:51:23.639590-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2bf, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:51:23.640244-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
 }
-default	11:13:15.628371-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
-default	11:13:15.631886-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:15.632479-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:15.643508-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
-default	11:13:15.643605-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
-default	11:13:15.643671-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:15.644396-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.644418-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.644435-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:15.644447-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.644495-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:15.644530-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:15.644567-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.644639-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.644695-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:15.644747-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.644817-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:15.644865-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:15.644963-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:15.645334-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.645347-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.645355-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:15.645363-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:15.645370-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:15.645378-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:15.645423-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
-default	11:13:18.029990-0500	audioaccessoryd	AudioStateSnapshot: Route:Bluetooth App com.nexy.assistant, Score 200, Remote 100NumofApp 1
-default	11:13:20.315701-0500	Nexy	NotifyToken::RegisterDispatch(user.uid.501.com.apple.LaunchServices.database) fired for session key <private>
-default	11:13:21.032098-0500	audioaccessoryd	AudioStateSnapshot: Route:Bluetooth App com.nexy.assistant, Score 200, Remote 100NumofApp 1
-default	11:13:21.286277-0500	Nexy	LSExceptions shared instance invalidated for timeout.
-default	11:13:22.457633-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
-default	11:13:22.457755-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
-default	11:13:24.032222-0500	audioaccessoryd	AudioStateSnapshot: Route:Bluetooth App com.nexy.assistant, Score 200, Remote 100NumofApp 1
-default	11:13:24.602432-0500	coreaudiod	IssueReporting.cpp:492   RTAID [ use_case=Generic report_type=RMS Generic Chain clientID=ADM node=ADM::com.nexy.assistant_61703.61532.0_airpods noise suppression studio::in-0 issue_detected_sample_time=0.000000 ] -- [ rms:[-36.528122], peaks:[-13.807059] ]
-default	11:13:24.605396-0500	coreaudiod	IssueReporting.cpp:492   RTAID [ use_case=Generic report_type=RMS Generic Chain clientID=ADM node=ADM::com.nexy.assistant_61703.61532.0_airpods noise suppression studio::out-0 issue_detected_sample_time=240000.000000 ] -- [ rms:[-38.870922], peaks:[-11.629615] ]
-default	11:13:27.031661-0500	audioaccessoryd	AudioStateSnapshot: Route:Bluetooth App com.nexy.assistant, Score 200, Remote 100NumofApp 1
-default	11:13:28.651161-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {1C-77-54-18-C8-A3:input, 0xb}
-default	11:13:28.651675-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2a1","name":"Nexy(84850)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
-default	11:13:28.651984-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:28.652113-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
-default	11:13:28.652194-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2a1, Nexy(84850), 'prim'', displayID:'com.nexy.assistant'}
-default	11:13:28.652306-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 200, deviceID = <private>
-default	11:13:28.652367-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2a1, Nexy(84850), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 674 stopping recording
-default	11:13:28.652450-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
-default	11:13:28.652518-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:28.652657-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:28.653301-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
+default	14:51:23.640319-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:23.639839-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2bf, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 704 stopping recording
+default	14:51:23.640353-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:51:23.639892-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:23.639976-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
+default	14:51:23.640441-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:51:23.640228-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:23.641030-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
 )}
-default	11:13:28.653325-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
-default	11:13:28.653698-0500	audioaccessoryd	Routing request Wx 1C:77:54:18:C8:A3 score 200 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
-default	11:13:28.659317-0500	audioaccessoryd	Audio state update Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:28.659470-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:28.659508-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
-default	11:13:28.659647-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
-default	11:13:28.660007-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:23.641056-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:51:23.640431-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:23.641388-0500	audioaccessoryd	Audio state update Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:28.660304-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+default	14:51:23.641452-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:28.660348-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 0
-default	11:13:28.660114-0500	runningboardd	Invalidating assertion 398-334-1504587 (target:[app<application.com.nexy.assistant.20931626.20931632(501)>:84850]) from originator [osservice<com.apple.powerd>:334]
-default	11:13:28.656467-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:28.656563-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:23.641480-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 0
+default	14:51:23.641071-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:28.677810-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:28.678596-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:28.678611-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:28.678633-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:28.678643-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:28.678652-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:28.678658-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:28.678772-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:28.752778-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0xaa6cc0040) Selecting device 0 from destructor
-default	11:13:28.752800-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xaa6cc0040)
-default	11:13:28.752813-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xaa6cc0040) not already running
-default	11:13:28.752820-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0xaa6cc0040) disconnecting device 91
-default	11:13:28.752839-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0xaa6cc0040) destroying ioproc 0xb for device 91
-default	11:13:28.752882-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {1C-77-54-18-C8-A3:input, 0xb}
-default	11:13:28.752923-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+default	14:51:23.660693-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
+default	14:51:23.661727-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:23.661755-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:23.661778-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:23.661797-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:23.661817-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:23.661834-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:23.662328-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:23.740238-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring jetsam update because this process is not memory-managed
+default	14:51:23.740259-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring suspend because this process is not lifecycle managed
+default	14:51:23.740286-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring GPU update because this process is not GPU managed
+default	14:51:23.740331-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] Ignoring memory limit update because this process is not memory-managed
+default	14:51:23.743230-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0x76a0df140) Selecting device 0 from destructor
+default	14:51:23.743252-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x76a0df140)
+default	14:51:23.743267-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x76a0df140) not already running
+default	14:51:23.743278-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x76a0df140) disconnecting device 78
+default	14:51:23.743293-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x76a0df140) destroying ioproc 0xb for device 78
+default	14:51:23.743336-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xb}
+default	14:51:23.743393-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
 )} Server update was not required.
-default	11:13:28.753134-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0xaa6cc0040) nothing to setup
-default	11:13:28.753146-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 0 device listeners to device 0
-default	11:13:28.753154-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xaa6cc0040) adding 0 device delegate listeners to device 0
-default	11:13:28.753163-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 7 device listeners from device 91
-default	11:13:28.753436-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xaa6cc0040) removing 0 device delegate listeners from device 91
-default	11:13:28.753452-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xaa6cc0040)
-default	11:13:28.766824-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring jetsam update because this process is not memory-managed
-default	11:13:28.766863-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring suspend because this process is not lifecycle managed
-default	11:13:28.766890-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring GPU update because this process is not GPU managed
-default	11:13:28.766943-0500	runningboardd	[app<application.com.nexy.assistant.20931626.20931632(501)>:84850] Ignoring memory limit update because this process is not memory-managed
-default	11:13:28.771320-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.20931626.20931632(501)>: running-active (role: UserInteractive) (endowments: <private>)
-default	11:13:28.772022-0500	gamepolicyd	Received state update for 84850 (app<application.com.nexy.assistant.20931626.20931632(501)>, running-active-NotVisible
-default	11:13:30.886846-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61702)
-default	11:13:30.886893-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61703)
-default	11:13:30.886917-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 0 0, id:61702 called from <private>
-default	11:13:30.886923-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61702 called from <private>
-default	11:13:30.886934-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 0 0, id:61703 called from <private>
-default	11:13:30.886940-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61703 called from <private>
-default	11:13:30.911736-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61703)
-default	11:13:30.911788-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61703 called from <private>
-default	11:13:30.911798-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 0 0 id:61703 called from <private>
-default	11:13:30.912549-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61702)
-default	11:13:30.914705-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:30.914724-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:30.925951-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 2 2, id:61702 called from <private>
-default	11:13:30.925981-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 3 3, id:61702 called from <private>
-default	11:13:30.926079-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61702)
-default	11:13:30.928491-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61702)
-default	11:13:30.928733-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 3 3 id:61702 called from <private>
-default	11:13:30.928745-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 2 2 id:61702 called from <private>
-default	11:13:30.928838-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61702)
-default	11:13:30.939482-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61702)
-default	11:13:30.939799-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:30.939811-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:30.940032-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:30.940042-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:30.940057-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:30.940068-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:30.940076-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:30.940082-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:30.940088-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:30.940109-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:30.940139-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:30.940141-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61702)
-default	11:13:30.940171-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:30.940212-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:30.940274-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:30.940313-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61702 called from <private>
-default	11:13:30.940360-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61702 called from <private>
-default	11:13:30.943523-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61702)
-default	11:13:30.943702-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61702 called from <private>
-default	11:13:30.943711-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61702 called from <private>
-default	11:13:30.943723-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61702 called from <private>
-default	11:13:30.943732-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 0 0 id:61702 called from <private>
-default	11:13:41.773972-0500	Nexy	[0xaa7a1d180] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
-default	11:13:41.775289-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.4, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:13:41.777576-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.4, subject=com.nexy.assistant,
-default	11:13:41.778506-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:41.797754-0500	tccd	Notifying for access  kTCCServiceScreenCapture for target PID[84850], responsiblePID[84850], responsiblePath: /Applications/Nexy.app to UID: 501
-default	11:13:41.798238-0500	Nexy	[0xaa7a1d180] invalidated after the last release of the connection object
-default	11:13:41.884394-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114600 at /Applications/Nexy.app
-default	11:13:41.915783-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116100 at /Applications/Nexy.app
-default	11:13:41.927495-0500	tccd	Publishing <TCCDEvent: type=Modify, service=kTCCServiceScreenCapture, identifier_type=Bundle ID, identifier=com.nexy.assistant> to 0 subscribers: {
+default	14:51:23.743827-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0x76a0df140) nothing to setup
+default	14:51:23.743851-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 0 device listeners to device 0
+default	14:51:23.743865-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x76a0df140) adding 0 device delegate listeners to device 0
+default	14:51:23.744018-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 7 device listeners from device 78
+default	14:51:23.744714-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x76a0df140) removing 0 device delegate listeners from device 78
+default	14:51:23.744745-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x76a0df140)
+default	14:51:23.751085-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: running-active (role: UserInteractive) (endowments: <private>)
+default	14:51:23.751790-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, running-active-NotVisible
+default	14:51:23.763155-0500	Nexy	[0x768461180] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+default	14:51:23.764312-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.4, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:23.766338-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.4, subject=com.nexy.assistant,
+default	14:51:23.767421-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:23.785394-0500	tccd	Notifying for access  kTCCServiceListenEvent for target PID[39688], responsiblePID[39688], responsiblePath: /Applications/Nexy.app to UID: 501
+default	14:51:23.785768-0500	Nexy	[0x768461180] invalidated after the last release of the connection object
+default	14:51:23.881684-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
+default	14:51:23.925909-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d115e00 at /Applications/Nexy.app
+default	14:51:23.933757-0500	tccd	Publishing <TCCDEvent: type=Modify, service=kTCCServiceListenEvent, identifier_type=Bundle ID, identifier=com.nexy.assistant> to 0 subscribers: {
 }
-default	11:13:41.959042-0500	nehelper	Received an apps uninstalled notification with bundle IDs (
+default	14:51:23.951853-0500	nehelper	Received an apps uninstalled notification with bundle IDs (
     "com.nexy.assistant"
 )
-default	11:13:41.961432-0500	nehelper	Received an apps uninstalled notification with bundle IDs (
+default	14:51:23.952289-0500	nehelper	Received an apps uninstalled notification with bundle IDs (
     "com.nexy.assistant"
 )
-default	11:13:42.560512-0500	nehelper	Removing UUIDs for (
+default	14:51:24.548151-0500	nehelper	Removing UUIDs for (
     "com.nexy.assistant"
 )
-default	11:13:42.566158-0500	nehelper	Handling an apps uninstalled notification with bundle IDs (
+default	14:51:24.553685-0500	nehelper	Handling an apps uninstalled notification with bundle IDs (
     "com.nexy.assistant"
 )
-default	11:13:42.589060-0500	nehelper	com.apple.preferences.networkprivacy-F67B3EA9-90A6-470B-B321-9BBD719C692B: Populating the cache with 1 UUID(s) for com.nexy.assistant
-default	11:13:48.834644-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116400 at /Applications/Nexy.app
-default	11:13:48.850709-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:13:48.861819-0500	tccd	Publishing <TCCDEvent: type=Modify, service=kTCCServiceScreenCapture, identifier_type=Bundle ID, identifier=com.nexy.assistant> to 0 subscribers: {
+default	14:51:24.575217-0500	nehelper	com.apple.preferences.networkprivacy-F67B3EA9-90A6-470B-B321-9BBD719C692B: Populating the cache with 1 UUID(s) for com.nexy.assistant
+default	14:51:31.277376-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
+default	14:51:31.292496-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:31.301523-0500	tccd	Publishing <TCCDEvent: type=Modify, service=kTCCServiceListenEvent, identifier_type=Bundle ID, identifier=com.nexy.assistant> to 0 subscribers: {
 }
-default	11:13:55.331465-0500	WindowServer	0[outside of RPC]: Process death: 0x0-0x1972971 (Nexy) connectionID: 1555D3 pid: 84850 in session 0x101
-default	11:13:55.331515-0500	WindowServer	<BSCompoundAssertion:0x7fb0154c0> ([FocusManager:257]-deferringPolicyEvaluationSuppression) acquire for reason:process death - 0x0-0x1972971 (Nexy) acq:0x8016ccde0 count:1
-default	11:13:55.331986-0500	audiomxd	  ServerSessionManager.mm:472   { "action":"destroy_session", "session":{"ID":"0x1ef2a1","name":"Nexy(84850)"}, "details":null }
-default	11:13:55.332050-0500	audiomxd	AudioApplicationInfoImpl.mm:690   Successfully removed session 0x1ef2a1 from AudioApp, recording state unchanged (app: {"name":"[implicit] Nexy","pid":84850})
-default	11:13:55.332075-0500	audiomxd	  ServerSessionManager.mm:1081  destroy audio app instance since was created implicitly by session creation and all sessions now gone (audio app: {"name":"[implicit] Nexy","pid":84850})
-default	11:13:55.332536-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:55.332684-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 674, PID = 84850, Name = sid:0x1ef2a1, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:55.335802-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:36.794878-0500	Nexy	[0x7684612c0] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+default	14:51:36.796370-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.5, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:36.800103-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.5, subject=com.nexy.assistant,
+default	14:51:36.801299-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:36.820348-0500	tccd	Notifying for access  kTCCServiceScreenCapture for target PID[39688], responsiblePID[39688], responsiblePath: /Applications/Nexy.app to UID: 501
+default	14:51:36.820745-0500	Nexy	[0x7684612c0] invalidated after the last release of the connection object
+default	14:51:36.874993-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
+default	14:51:36.890409-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:36.894372-0500	tccd	Publishing <TCCDEvent: type=Modify, service=kTCCServiceScreenCapture, identifier_type=Bundle ID, identifier=com.nexy.assistant> to 0 subscribers: {
+}
+default	14:51:39.979196-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
+default	14:51:40.999514-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:40.008229-0500	tccd	Publishing <TCCDEvent: type=Modify, service=kTCCServiceScreenCapture, identifier_type=Bundle ID, identifier=com.nexy.assistant> to 0 subscribers: {
+}
+default	14:51:50.356899-0500	audiomxd	  ServerSessionManager.mm:472   { "action":"destroy_session", "session":{"ID":"0x1ef2bf","name":"Nexy(39688)"}, "details":null }
+default	14:51:50.356936-0500	audiomxd	AudioApplicationInfoImpl.mm:690   Successfully removed session 0x1ef2bf from AudioApp, recording state unchanged (app: {"name":"[implicit] Nexy","pid":39688})
+default	14:51:50.356507-0500	WindowServer	0[outside of RPC]: Process death: 0x0-0x1a7aa79 (Nexy) connectionID: 19B46F pid: 39688 in session 0x101
+default	14:51:50.356947-0500	audiomxd	  ServerSessionManager.mm:1081  destroy audio app instance since was created implicitly by session creation and all sessions now gone (audio app: {"name":"[implicit] Nexy","pid":39688})
+default	14:51:50.356571-0500	WindowServer	<BSCompoundAssertion:0x7fb0154c0> ([FocusManager:257]-deferringPolicyEvaluationSuppression) acquire for reason:process death - 0x0-0x1a7aa79 (Nexy) acq:0x801b68d60 count:1
+default	14:51:50.357301-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:50.357431-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 704, PID = 39688, Name = sid:0x1ef2bf, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:50.357578-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:55.336971-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+default	14:51:50.357743-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:55.337549-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:50.357832-0500	audioaccessoryd	Audio state update Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:55.337651-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+default	14:51:50.357892-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:55.332804-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:50.357916-0500	audioaccessoryd	Audio state update Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:55.332986-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:13:55.337944-0500	WindowServer	0[outside of RPC]: [FocusManager:257] update to deferring policy requested for reason: permitted list updated - 0x0-0x1972971 removed - but we are suppressing evaluation for reasons: {(
-    "process death - 0x0-0x1972971 (Nexy)"
+default	14:51:50.357903-0500	WindowServer	0[outside of RPC]: [FocusManager:257] update to deferring policy requested for reason: permitted list updated - 0x0-0x1a7aa79 removed - but we are suppressing evaluation for reasons: {(
+    "process death - 0x0-0x1a7aa79 (Nexy)"
 )}
-default	11:13:55.338434-0500	WindowServer	0[outside of RPC]: [FocusManager:257] update to deferring policy requested for reason: permitted list updated - 0x1-0x14b72 removed - but we are suppressing evaluation for reasons: {(
-    "process death - 0x0-0x1972971 (Nexy)"
+default	14:51:50.358011-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:50.360814-0500	WindowServer	0[outside of RPC]: [FocusManager:257] update to deferring policy requested for reason: permitted list updated - 0x1-0x9b08 removed - but we are suppressing evaluation for reasons: {(
+    "process death - 0x0-0x1a7aa79 (Nexy)"
 )}
-default	11:13:55.344743-0500	runningboardd	XPC connection invalidated: [app<application.com.nexy.assistant.20931626.20931632(501)>:84850]
-default	11:13:55.348237-0500	coreaudiod	>>> NEGOTIATE [com.nexy.assistant]
-default	11:13:55.348570-0500	coreaudiod	<<< NEGOTIATE [com.nexy.assistant]
-default	11:13:55.350707-0500	coreaudiod	IssueReporting.cpp:492   RTAID [ use_case=Generic report_type=RMS Generic Chain clientID=ADM node=ADM::com.nexy.assistant_61703.61532.0_airpods noise suppression studio::out-0 issue_detected_sample_time=336960.000000 ] -- [ rms:[-42.947956], peaks:[-26.778086] ]
-default	11:13:55.350727-0500	coreaudiod	IssueReporting.cpp:492   RTAID [ use_case=Generic report_type=RMS Generic Chain clientID=ADM node=ADM::com.nexy.assistant_61703.61532.0_airpods noise suppression studio::in-0 issue_detected_sample_time=0.000000 ] -- [ rms:[-39.900780], peaks:[-23.753666] ]
-default	11:13:55.354389-0500	kernel	Nexy[84850] triggered unnest of range 0x1f6000000->0x1f8000000 of DYLD shared region in VM map 0x34951bf8d8b82587. While not abnormal for debuggers, this increases system memory footprint until the target exits.
-default	11:13:55.354408-0500	kernel	Nexy[84850] triggered unnest of range 0x1f8000000->0x1fa000000 of DYLD shared region in VM map 0x34951bf8d8b82587. While not abnormal for debuggers, this increases system memory footprint until the target exits.
-default	11:13:55.415535-0500	Nexy	[0x105e80c10] activating connection: mach=true listener=false peer=false name=com.apple.cfprefsd.daemon
-default	11:13:55.415613-0500	Nexy	[0x105e81150] activating connection: mach=true listener=false peer=false name=com.apple.cfprefsd.agent
-error	11:13:55.548264-0500	Nexy	dlsym cannot find symbol NSMakeRect in CFBundle 0x105e87320 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
-error	11:13:55.548496-0500	Nexy	dlsym cannot find symbol NSMakePoint in CFBundle 0x105e87320 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
-error	11:13:55.548706-0500	Nexy	dlsym cannot find symbol NSMakeSize in CFBundle 0x105e87320 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
-error	11:13:55.548918-0500	Nexy	dlsym cannot find symbol NSMakeRange in CFBundle 0x105e87320 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
-default	11:13:55.550096-0500	Nexy	[0x105e81870] activating connection: mach=true listener=false peer=false name=com.apple.coreservices.launchservicesd
-default	11:13:55.550873-0500	Nexy	[0xc9f3c4000] activating connection: mach=true listener=false peer=false name=com.apple.analyticsd
-default	11:13:55.551259-0500	Nexy	[0xc9f3c4140] activating connection: mach=true listener=false peer=false name=com.apple.pasteboard.1
-default	11:13:55.551690-0500	Nexy	[0xc9f3c4280] activating connection: mach=true listener=false peer=false name=com.apple.distributed_notifications@Uv3
-default	11:13:55.552073-0500	Nexy	Received configuration update from daemon (initial)
-default	11:13:55.553711-0500	Nexy	void _NSDisableAutomaticTerminationAndLog(NSString *) No windows open yet
-default	11:13:55.554066-0500	Nexy	[0xc9f3c43c0] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
-default	11:13:55.554743-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.1, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:13:55.557487-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.1, subject=com.nexy.assistant,
-default	11:13:55.558260-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:13:55.571264-0500	Nexy	[0xc9f3c43c0] invalidated after the last release of the connection object
-default	11:13:55.575098-0500	Nexy	server port 0x00003413, session port 0x00003413
-default	11:13:55.576272-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.16910, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
-default	11:13:55.576297-0500	tccd	requestor: TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
-default	11:13:55.577713-0500	tccd	AUTHREQ_SUBJECT: msgID=393.16910, subject=com.nexy.assistant,
-default	11:13:55.578708-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:13:55.594249-0500	Nexy	New connection 0xc79ff main
-default	11:13:55.596661-0500	Nexy	CHECKIN: pid=84850
-default	11:13:55.603532-0500	launchservicesd	CHECKIN:0x0-0x1972971 84850 com.nexy.assistant
-default	11:13:55.603646-0500	Nexy	CHECKEDIN: pid=84850 asn=0x0-0x1972971 foreground=0
-default	11:13:55.603893-0500	Nexy	[0xc9f3c43c0] activating connection: mach=false listener=true peer=false name=(anonymous)
-default	11:13:55.603902-0500	Nexy	[0xc9f3c43c0] Connection returned listener port: 0x5103
-default	11:13:55.604057-0500	Nexy	[0xc9efb8300] activating connection: mach=false listener=false peer=true name=com.apple.xpc.anonymous.0xc9f3c43c0.peer[363].0xc9efb8300
-default	11:13:55.604361-0500	loginwindow	-[Application updateInformation] | Got App URL: file:///Applications/Nexy.app/
-default	11:13:55.604487-0500	loginwindow	-[ApplicationManager checkInAppContext:eventData:] | ApplicationManager: Checked in app : Nexy
-default	11:13:55.605154-0500	Nexy	FRONTLOGGING: version 1
-default	11:13:55.605194-0500	Nexy	Registered, pid=84850 ASN=0x0,0x1972971
-default	11:13:55.605427-0500	WindowServer	c79ff[CreateApplication]: Process creation: 0x0-0x1972971 (Nexy) connectionID: C79FF pid: 84850 in session 0x101
-default	11:13:55.605740-0500	Nexy	[0xc9f3c4640] activating connection: mach=true listener=false peer=false name=com.apple.lsd.mapdb
-default	11:13:55.606796-0500	Nexy	[0xc9f3c43c0] Connection returned listener port: 0x5103
-default	11:13:55.607259-0500	Nexy	BringForward: pid=84850 asn=0x0-0x1972971 bringForward=0 foreground=0 uiElement=1 launchedByLS=1 modifiersCount=1 allDisabled=0
-default	11:13:55.607315-0500	Nexy	BringFrontModifier: pid=84850 asn=0x0-0x1972971 Modifier 0 hideAfter=0 hideOthers=0 dontMakeFrontmost=0 mouseDown=0/0 seed=0/0
-default	11:13:55.607883-0500	Nexy	Current system appearance, (HLTB: 1), (SLS: 0)
-default	11:13:55.609347-0500	Nexy	No persisted cache on this platform.
-default	11:13:55.610508-0500	Nexy	Current system appearance, (HLTB: 1), (SLS: 0)
-default	11:13:55.611435-0500	Nexy	Post-registration system appearance: (HLTB: 1)
-default	11:13:55.613195-0500	Nexy	FBSWorkspace: endpoint monitoring is disabled.
-default	11:13:55.613207-0500	Nexy	FBSWorkspace: default shell endpoint is disabled.
-default	11:13:55.613257-0500	Nexy	Initializing connection
-default	11:13:55.613300-0500	Nexy	Removing all cached process handles
-default	11:13:55.613321-0500	Nexy	Sending handshake request attempt #1 to server
-default	11:13:55.613331-0500	Nexy	Creating connection to com.apple.runningboard
-default	11:13:55.613337-0500	Nexy	[0xc9f3c4500] activating connection: mach=true listener=false peer=false name=com.apple.runningboard
-default	11:13:55.613682-0500	Nexy	[0xc9f3c43c0] Connection returned listener port: 0x5103
-default	11:13:55.613750-0500	runningboardd	Setting client for [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as ready
-default	11:13:55.614406-0500	Nexy	Handshake succeeded
-default	11:13:55.614422-0500	Nexy	Identity resolved as app<application.com.nexy.assistant.20931626.20931632(501)>
-default	11:13:55.614537-0500	distnoted	register name: com.apple.xctest.FakeForceTouchDevice object: com.nexy.assistant token: 1e0000001d pid: 84850
-default	11:13:55.617733-0500	Nexy	[0xc9f3c43c0] Connection returned listener port: 0x5103
-default	11:13:55.621067-0500	Nexy	Created a new Process Instance Registry XPC connection (inactive)
-default	11:13:55.621087-0500	Nexy	[0xc9f3c4780] activating connection: mach=true listener=false peer=false name=com.apple.linkd.autoShortcut
-default	11:13:55.621193-0500	Nexy	Activated connection to com.apple.linkd.autoShortcut (ApplicationService)
-default	11:13:55.621237-0500	Nexy	[0xc9f3c4a00] activating connection: mach=false listener=true peer=false name=(anonymous)
-default	11:13:55.622767-0500	Nexy	[0xc9f3c4a00] Connection returned listener port: 0x6e03
-default	11:13:55.623497-0500	Nexy	Registered process with identifier 84850-2566155
-default	11:13:55.751003-0500	Nexy	Registered notify signal com.apple.caulk.alloc.rtdump (0)
-default	11:13:55.753665-0500	Nexy	System_Input_Processing_Notification_Handler.mm:456   System_Input_Processing_Notification_Handler::is_vi_available(): Voice isolation DSP is available for client with bundle id com.nexy.assistant (AVFoundation is available, application is not in client deny list, application is not FaceTime variant)
-default	11:13:55.755220-0500	Nexy	[0xc9f3c4b40] activating connection: mach=true listener=false peer=false name=com.apple.cmio.registerassistantservice.system-extensions
-default	11:13:55.757272-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOInitializeListenersForBundleID: for <private> -> <private>
-default	11:13:55.758814-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> vpio_preferenceChangedListener: new value ((null)) for key AUVoiceIOClients/com-nexy-assistant/AUVoiceIOChatFlavor, translatedBundleID com.nexy.assistant, bundleIDs {(
+default	14:51:50.369420-0500	runningboardd	XPC connection invalidated: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:51:50.372524-0500	kernel	Nexy[39688] triggered unnest of range 0x1f6000000->0x1f8000000 of DYLD shared region in VM map 0xf06b0b459fa497b9. While not abnormal for debuggers, this increases system memory footprint until the target exits.
+default	14:51:50.372539-0500	kernel	Nexy[39688] triggered unnest of range 0x1f8000000->0x1fa000000 of DYLD shared region in VM map 0xf06b0b459fa497b9. While not abnormal for debuggers, this increases system memory footprint until the target exits.
+default	14:51:50.434282-0500	Nexy	[0x10545c950] activating connection: mach=true listener=false peer=false name=com.apple.cfprefsd.daemon
+default	14:51:50.434359-0500	Nexy	[0x105452d60] activating connection: mach=true listener=false peer=false name=com.apple.cfprefsd.agent
+error	14:51:50.566546-0500	Nexy	dlsym cannot find symbol NSMakeRect in CFBundle 0x10545e640 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
+error	14:51:50.566770-0500	Nexy	dlsym cannot find symbol NSMakePoint in CFBundle 0x10545e640 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
+error	14:51:50.566967-0500	Nexy	dlsym cannot find symbol NSMakeSize in CFBundle 0x10545e640 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
+error	14:51:50.567207-0500	Nexy	dlsym cannot find symbol NSMakeRange in CFBundle 0x10545e640 </System/Library/Frameworks/Foundation.framework> (framework, loaded): <private>
+default	14:51:50.568440-0500	Nexy	[0x10545ff30] activating connection: mach=true listener=false peer=false name=com.apple.coreservices.launchservicesd
+default	14:51:50.569278-0500	Nexy	[0x7be8b4000] activating connection: mach=true listener=false peer=false name=com.apple.analyticsd
+default	14:51:50.569674-0500	Nexy	[0x7be8b4140] activating connection: mach=true listener=false peer=false name=com.apple.pasteboard.1
+default	14:51:50.570207-0500	Nexy	[0x7be8b4280] activating connection: mach=true listener=false peer=false name=com.apple.distributed_notifications@Uv3
+default	14:51:50.572267-0500	Nexy	void _NSDisableAutomaticTerminationAndLog(NSString *) No windows open yet
+default	14:51:50.572619-0500	Nexy	[0x7be8b43c0] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+default	14:51:50.573273-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.1, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:50.576540-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.1, subject=com.nexy.assistant,
+default	14:51:50.576905-0500	Nexy	Received configuration update from daemon (initial)
+default	14:51:50.577730-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:50.593049-0500	Nexy	[0x7be8b43c0] invalidated after the last release of the connection object
+default	14:51:50.593386-0500	Nexy	server port 0x00003507, session port 0x00003507
+default	14:51:50.594480-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.17771, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
+default	14:51:50.594511-0500	tccd	requestor: TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:51:50.595659-0500	tccd	AUTHREQ_SUBJECT: msgID=393.17771, subject=com.nexy.assistant,
+default	14:51:50.596513-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:50.613435-0500	Nexy	New connection 0x19d0d3 main
+default	14:51:50.615964-0500	Nexy	CHECKIN: pid=39688
+default	14:51:50.622273-0500	launchservicesd	CHECKIN:0x0-0x1a7aa79 39688 com.nexy.assistant
+default	14:51:50.622383-0500	Nexy	CHECKEDIN: pid=39688 asn=0x0-0x1a7aa79 foreground=0
+default	14:51:50.622652-0500	Nexy	[0x7be8b43c0] activating connection: mach=false listener=true peer=false name=(anonymous)
+default	14:51:50.622662-0500	Nexy	[0x7be8b43c0] Connection returned listener port: 0x4703
+default	14:51:50.622778-0500	Nexy	[0x7be8d0300] activating connection: mach=false listener=false peer=true name=com.apple.xpc.anonymous.0x7be8b43c0.peer[363].0x7be8d0300
+default	14:51:50.623192-0500	loginwindow	-[Application updateInformation] | Got App URL: file:///Applications/Nexy.app/
+default	14:51:50.623307-0500	loginwindow	-[ApplicationManager checkInAppContext:eventData:] | ApplicationManager: Checked in app : Nexy
+default	14:51:50.623842-0500	Nexy	FRONTLOGGING: version 1
+default	14:51:50.623847-0500	Nexy	Registered, pid=39688 ASN=0x0,0x1a7aa79
+default	14:51:50.624069-0500	WindowServer	19d0d3[CreateApplication]: Process creation: 0x0-0x1a7aa79 (Nexy) connectionID: 19D0D3 pid: 39688 in session 0x101
+default	14:51:50.624345-0500	Nexy	[0x7be8b4500] activating connection: mach=true listener=false peer=false name=com.apple.lsd.mapdb
+default	14:51:50.625026-0500	Nexy	[0x7be8b43c0] Connection returned listener port: 0x4703
+default	14:51:50.625457-0500	Nexy	BringForward: pid=39688 asn=0x0-0x1a7aa79 bringForward=0 foreground=0 uiElement=1 launchedByLS=1 modifiersCount=1 allDisabled=0
+default	14:51:50.625480-0500	Nexy	BringFrontModifier: pid=39688 asn=0x0-0x1a7aa79 Modifier 0 hideAfter=0 hideOthers=0 dontMakeFrontmost=0 mouseDown=0/0 seed=0/0
+default	14:51:50.626023-0500	Nexy	Current system appearance, (HLTB: 1), (SLS: 0)
+default	14:51:50.628048-0500	Nexy	No persisted cache on this platform.
+default	14:51:50.629390-0500	Nexy	Current system appearance, (HLTB: 1), (SLS: 0)
+default	14:51:50.630187-0500	Nexy	Post-registration system appearance: (HLTB: 1)
+default	14:51:50.631956-0500	Nexy	FBSWorkspace: endpoint monitoring is disabled.
+default	14:51:50.631968-0500	Nexy	FBSWorkspace: default shell endpoint is disabled.
+default	14:51:50.632016-0500	Nexy	Initializing connection
+default	14:51:50.632060-0500	Nexy	Removing all cached process handles
+default	14:51:50.632081-0500	Nexy	Sending handshake request attempt #1 to server
+default	14:51:50.632090-0500	Nexy	Creating connection to com.apple.runningboard
+default	14:51:50.632097-0500	Nexy	[0x7be8b4640] activating connection: mach=true listener=false peer=false name=com.apple.runningboard
+default	14:51:50.632426-0500	runningboardd	Setting client for [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as ready
+default	14:51:50.632435-0500	Nexy	[0x7be8b43c0] Connection returned listener port: 0x4703
+default	14:51:50.633042-0500	Nexy	Handshake succeeded
+default	14:51:50.633060-0500	Nexy	Identity resolved as app<application.com.nexy.assistant.21074037.21074043(501)>
+default	14:51:50.633164-0500	distnoted	register name: com.apple.xctest.FakeForceTouchDevice object: com.nexy.assistant token: 1e0000001d pid: 39688
+default	14:51:50.635952-0500	Nexy	[0x7be8b43c0] Connection returned listener port: 0x4703
+default	14:51:50.639297-0500	Nexy	Created a new Process Instance Registry XPC connection (inactive)
+default	14:51:50.639317-0500	Nexy	[0x7be8b4780] activating connection: mach=true listener=false peer=false name=com.apple.linkd.autoShortcut
+default	14:51:50.639394-0500	Nexy	Activated connection to com.apple.linkd.autoShortcut (ApplicationService)
+default	14:51:50.639436-0500	Nexy	[0x7be8b4a00] activating connection: mach=false listener=true peer=false name=(anonymous)
+default	14:51:50.641129-0500	Nexy	[0x7be8b4a00] Connection returned listener port: 0x6803
+default	14:51:50.641763-0500	Nexy	Registered process with identifier 39688-2685832
+default	14:51:51.805746-0500	Nexy	Registered notify signal com.apple.caulk.alloc.rtdump (0)
+default	14:51:51.809211-0500	Nexy	System_Input_Processing_Notification_Handler.mm:456   System_Input_Processing_Notification_Handler::is_vi_available(): Voice isolation DSP is available for client with bundle id com.nexy.assistant (AVFoundation is available, application is not in client deny list, application is not FaceTime variant)
+default	14:51:51.810677-0500	Nexy	[0x7be8b4b40] activating connection: mach=true listener=false peer=false name=com.apple.cmio.registerassistantservice.system-extensions
+default	14:51:51.812824-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOInitializeListenersForBundleID: for <private> -> <private>
+default	14:51:51.814388-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> vpio_preferenceChangedListener: new value ((null)) for key AUVoiceIOClients/com-nexy-assistant/AUVoiceIOChatFlavor, translatedBundleID com.nexy.assistant, bundleIDs {(
     "com.nexy.assistant"
 )}
-default	11:13:55.758960-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> vpio_preferenceChangedListener: new value ((null)) for key AUVoiceIOClients/com-nexy-assistant/AUVoiceIOIsAutoChatFlavorEnabled, translatedBundleID com.nexy.assistant, bundleIDs {(
+default	14:51:51.814538-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> vpio_preferenceChangedListener: new value ((null)) for key AUVoiceIOClients/com-nexy-assistant/AUVoiceIOIsAutoChatFlavorEnabled, translatedBundleID com.nexy.assistant, bundleIDs {(
     "com.nexy.assistant"
 )}
-default	11:13:55.759079-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetSupportedChatFlavorsForBundleID: <private>-><private> get supported chat flavors: <private>
-default	11:13:55.759090-0500	Nexy	            HALSystem.cpp:134    Enabling HAL Voice Isolation support
-default	11:13:55.759124-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetHiddenChatFlavorsForBundleID: <private>-><private> setting to: <private>
-default	11:13:55.759241-0500	Nexy	[0xc9f3c4c80] activating connection: mach=true listener=false peer=false name=com.apple.tccd
-default	11:13:55.759429-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOHiddenChatFlavors newValue: (
+default	14:51:51.814657-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetSupportedChatFlavorsForBundleID: <private>-><private> get supported chat flavors: <private>
+default	14:51:51.814668-0500	Nexy	            HALSystem.cpp:134    Enabling HAL Voice Isolation support
+default	14:51:51.814698-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetHiddenChatFlavorsForBundleID: <private>-><private> setting to: <private>
+default	14:51:51.814834-0500	Nexy	[0x7be8b4c80] activating connection: mach=true listener=false peer=false name=com.apple.tccd
+default	14:51:51.815179-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOHiddenChatFlavors newValue: (
     1
 )
-default	11:13:55.759780-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.2, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:13:55.765645-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.2, subject=com.nexy.assistant,
-default	11:13:55.766259-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:55.777275-0500	Nexy	[0xc9f3c4c80] invalidated after the last release of the connection object
-default	11:13:55.777411-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetPreferredChatFlavorForBundleID: <private>-><private> get value: 0
-default	11:13:55.777455-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetSupportedChatFlavorsForBundleID: <private>-><private> setting to: <private>
-default	11:13:55.777782-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOSupportedChatFlavors newValue: (
+default	14:51:51.815396-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.2, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:51.821396-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.2, subject=com.nexy.assistant,
+default	14:51:51.822171-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:51.834453-0500	Nexy	[0x7be8b4c80] invalidated after the last release of the connection object
+default	14:51:51.834584-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetPreferredChatFlavorForBundleID: <private>-><private> get value: 0
+default	14:51:51.834621-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOSetSupportedChatFlavorsForBundleID: <private>-><private> setting to: <private>
+default	14:51:51.834922-0500	ControlCenter	<<<< AVControlCenterModules >>>> -[AVControlCenterModuleState _proprietaryDefaultChanged:keyPath:context:]: com.nexy.assistant:AUVoiceIOClients/com-nexy-assistant/AUVoiceIOSupportedChatFlavors newValue: (
     0,
     2
 )
-default	11:13:55.779068-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11386, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:55.779887-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11386, subject=com.nexy.assistant,
-default	11:13:55.780436-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-error	11:13:55.791536-0500	tccd	Request message contains a target_token to accessing_process (TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy) but TCCDProcess: identifier=com.apple.audio.coreaudiod, pid=401, auid=202, euid=202, binary_path=/usr/sbin/coreaudiod is not a TCC manager for service: kTCCServiceScreenCapture.
-default	11:13:55.792453-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11388, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:55.793328-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11388, subject=com.nexy.assistant,
-default	11:13:55.793885-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:55.807483-0500	Nexy	  HALPlugInManagement.cpp:440    HALPlugInManagement::RegisterPlugIns: skipping in-process plug-ins
-error	11:13:55.807513-0500	Nexy	AddInstanceForFactory: No factory registered for id <CFUUID 0xc9f2e24e0> F8BB1C28-BAE8-11D6-9C31-00039315CD46
-error	11:13:55.832427-0500	Nexy	         HALC_ProxyObjectMap.cpp:174   HALC_ProxyObjectMap::_CopyObjectByObjectID: failed to create the local object
-error	11:13:55.832441-0500	Nexy	            HALC_ShellDevice.cpp:2673  HALC_ShellDevice::RebuildControlList: couldn't find the control object
-default	11:13:55.835956-0500	coreaudiod	>>> SIMULATE [com.nexy.assistant]
-default	11:13:55.836097-0500	coreaudiod	<<< SIMULATE [com.nexy.assistant]
-default	11:13:55.840806-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetPreferredChatFlavorForBundleID: <private>-><private> get value: 0
-default	11:13:57.327835-0500	kernel	SK[6]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid E0D863E8-0B55-4365-892D-7A83A39423DE flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.63102,dst=<IPv4-redacted>.53,proto=0x06 mask=0x0000003f,hash=0x5ae28091 tp_proto=0x06"
-default	11:13:57.327944-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:63102<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933695 t_state: SYN_SENT process: Nexy:84850 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 14 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x83217cc3
-default	11:13:57.345442-0500	kernel	tcp connected: [<IPv4-redacted>:63102<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933695 t_state: ESTABLISHED process: Nexy:84850 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 14 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x83217cc3
-default	11:13:57.345738-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:63102<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933695 t_state: FIN_WAIT_1 process: Nexy:84850 Duration: 0.018 sec Conn_Time: 0.018 sec bytes in/out: 0/0 pkts in/out: 0/0 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
-rtt: 18.000 ms rttvar: 9.000 ms base rtt: 14 ms so_error: 0 svc/tc: 0 flow: 0x83217cc3
-default	11:13:57.345748-0500	kernel	tcp_connection_summary [<IPv4-redacted>:63102<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933695 t_state: FIN_WAIT_1 process: Nexy:84850 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
-default	11:13:57.363082-0500	Nexy	[0xc9f3c4c80] activating connection: mach=true listener=false peer=false name=com.apple.audio.AudioComponentRegistrar
-default	11:13:57.374511-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0xc9d4f1540) Selecting device 85 from constructor
-default	11:13:57.374525-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xc9d4f1540)
-default	11:13:57.374531-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xc9d4f1540) not already running
-default	11:13:57.374535-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0xc9d4f1540) nothing to teardown
-default	11:13:57.374537-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0xc9d4f1540) connecting device 85
-default	11:13:57.374654-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0xc9d4f1540) Device ID: 85 (Input:No | Output:Yes): true
-default	11:13:57.374758-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0xc9d4f1540) created ioproc 0xa for device 85
-default	11:13:57.374857-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d4f1540) adding 7 device listeners to device 85
-default	11:13:57.375011-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d4f1540) adding 0 device delegate listeners to device 85
-default	11:13:57.375020-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0xc9d4f1540)
-default	11:13:57.375091-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
-  output stream 0 [0x56]:  2 ch,  48000 Hz, Float32, interleaved
-default	11:13:57.375099-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
-default	11:13:57.375104-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:51:51.836498-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11842, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:51.837321-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11842, subject=com.nexy.assistant,
+default	14:51:51.837867-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+error	14:51:51.850063-0500	tccd	Request message contains a target_token to accessing_process (TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy) but TCCDProcess: identifier=com.apple.audio.coreaudiod, pid=401, auid=202, euid=202, binary_path=/usr/sbin/coreaudiod is not a TCC manager for service: kTCCServiceScreenCapture.
+default	14:51:51.851001-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11844, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:51.851830-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11844, subject=com.nexy.assistant,
+default	14:51:51.852395-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:51.866575-0500	Nexy	  HALPlugInManagement.cpp:440    HALPlugInManagement::RegisterPlugIns: skipping in-process plug-ins
+error	14:51:51.866599-0500	Nexy	AddInstanceForFactory: No factory registered for id <CFUUID 0x7beeee300> F8BB1C28-BAE8-11D6-9C31-00039315CD46
+default	14:51:51.882781-0500	Nexy	<<<< AVAUVoiceIOChatFlavor >>>> AVAUVoiceIOGetPreferredChatFlavorForBundleID: <private>-><private> get value: 0
+default	14:51:53.311582-0500	kernel	SK[6]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid E57063CB-293E-4442-BE6C-2E995F4141A1 flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.58165,dst=<IPv4-redacted>.53,proto=0x06 mask=0x0000003f,hash=0xe0978d53 tp_proto=0x06"
+default	14:51:53.311698-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:58165<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102366 t_state: SYN_SENT process: Nexy:39688 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0xa08fab48
+default	14:51:53.329782-0500	kernel	tcp connected: [<IPv4-redacted>:58165<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102366 t_state: ESTABLISHED process: Nexy:39688 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0xa08fab48
+default	14:51:53.330075-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:58165<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102366 t_state: FIN_WAIT_1 process: Nexy:39688 Duration: 0.018 sec Conn_Time: 0.018 sec bytes in/out: 0/0 pkts in/out: 0/0 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
+rtt: 18.000 ms rttvar: 9.000 ms base rtt: 18 ms so_error: 0 svc/tc: 0 flow: 0xa08fab48
+default	14:51:53.330085-0500	kernel	tcp_connection_summary [<IPv4-redacted>:58165<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102366 t_state: FIN_WAIT_1 process: Nexy:39688 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
+default	14:51:53.345547-0500	Nexy	[0x7be8b4c80] activating connection: mach=true listener=false peer=false name=com.apple.audio.AudioComponentRegistrar
+default	14:51:53.358176-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x7bf0a8e40) Selecting device 71 from constructor
+default	14:51:53.358186-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:51:53.358191-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:51:53.358196-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x7bf0a8e40) nothing to teardown
+default	14:51:53.358200-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 71
+default	14:51:53.358289-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 71 (Input:No | Output:Yes): true
+default	14:51:53.358397-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xa for device 71
+default	14:51:53.358511-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 71
+default	14:51:53.358690-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 71
+default	14:51:53.358702-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:51:53.358772-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:51:53.358782-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:51:53.358788-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Output render format:  2 ch,  48000 Hz, Float32, interleaved
-default	11:13:57.375111-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
-default	11:13:57.375118-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:51:53.358794-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:51:53.358803-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
-default	11:13:57.375206-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0xc9d4f1540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
-default	11:13:57.375215-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0xc9d4f1540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
-default	11:13:57.375220-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
-default	11:13:57.375224-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d4f1540) removing 0 device listeners from device 0
-default	11:13:57.375226-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d4f1540) removing 0 device delegate listeners from device 0
-default	11:13:57.375240-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xc9d4f1540)
-default	11:13:57.375253-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
-default	11:13:57.375345-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0xc9d4f1540) caller requesting device change from 85 to 91
-default	11:13:57.375353-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xc9d4f1540)
-default	11:13:57.375356-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xc9d4f1540) not already running
-default	11:13:57.375360-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0xc9d4f1540) disconnecting device 85
-default	11:13:57.375365-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0xc9d4f1540) destroying ioproc 0xa for device 85
-default	11:13:57.375422-0500	Nexy	  AVAudioSession_MacOS.mm:1021  initForMacOS
-default	11:13:57.375909-0500	Nexy	[0xc9f3c4f00] activating connection: mach=true listener=false peer=false name=com.apple.audio.AudioSession
-default	11:13:57.376777-0500	audiomxd	  ServerSessionManager.mm:315   { "action":"create_session", "session":{"ID":"0x1ef2a2","name":"Nexy(84850)"}, "details":{"PID":84850,"session_type":"Primary"} }
-default	11:13:57.376866-0500	audiomxd	AudioApplicationInfoImpl.mm:250   Setting initial isRecording state: 0 for newly-created AudioApp
-	app: {"name":"[implicit] Nexy","pid":84850}
+default	14:51:53.358889-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:51:53.358896-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:51:53.358900-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:51:53.358903-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device listeners from device 0
+default	14:51:53.358907-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 0
+default	14:51:53.358911-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:51:53.358932-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
+default	14:51:53.359028-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x7bf0a8e40) caller requesting device change from 71 to 78
+default	14:51:53.359036-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:51:53.359040-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:51:53.359045-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 71
+default	14:51:53.359049-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xa for device 71
+default	14:51:53.359108-0500	Nexy	  AVAudioSession_MacOS.mm:1021  initForMacOS
+default	14:51:53.359565-0500	Nexy	[0x7be8b4f00] activating connection: mach=true listener=false peer=false name=com.apple.audio.AudioSession
+default	14:51:53.360505-0500	audiomxd	  ServerSessionManager.mm:315   { "action":"create_session", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"PID":39688,"session_type":"Primary"} }
+default	14:51:53.360599-0500	audiomxd	AudioApplicationInfoImpl.mm:250   Setting initial isRecording state: 0 for newly-created AudioApp
+	app: {"name":"[implicit] Nexy","pid":39688}
 	AudioApp.isRecording: false
 [ 
-	{ sessionID: 0x1ef2a2, sessionType: 'prim', isRecording: false }, 
+	{ sessionID: 0x1ef2c0, sessionType: 'prim', isRecording: false }, 
 ]
-default	11:13:57.377207-0500	Nexy	    SessionCore_Create.mm:99    Created session 0xc9ee45280 with ID: 0x1ef2a2
-default	11:13:57.377785-0500	Nexy	[0xc9f3c5040] activating connection: mach=true listener=false peer=false name=com.apple.audioanalyticsd
-error	11:13:57.378192-0500	Nexy	Reporter disconnected. { function=sendMessage, reporterID=364427975065601 }
-default	11:13:57.378206-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {1C-77-54-18-C8-A3:output, 0xa}
-default	11:13:57.378256-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+default	14:51:53.360951-0500	Nexy	    SessionCore_Create.mm:99    Created session 0x7bef09280 with ID: 0x1ef2c0
+default	14:51:53.361532-0500	Nexy	[0x7be8b5040] activating connection: mach=true listener=false peer=false name=com.apple.audioanalyticsd
+error	14:51:53.361948-0500	Nexy	Reporter disconnected. { function=sendMessage, reporterID=170458662043649 }
+default	14:51:53.361963-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {BuiltInSpeakerDevice, 0xa}
+default	14:51:53.362013-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
 )} Server update was not required.
-default	11:13:57.378354-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0xc9d4f1540) connecting device 91
-default	11:13:57.378434-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0xc9d4f1540) Device ID: 91 (Input:Yes | Output:No): true
-default	11:13:57.379831-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11389, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:57.381077-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11389, subject=com.nexy.assistant,
-default	11:13:57.381695-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:57.393827-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0xc9d4f1540) created ioproc 0xa for device 91
-default	11:13:57.393956-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d4f1540) adding 7 device listeners to device 91
-default	11:13:57.394129-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d4f1540) adding 0 device delegate listeners to device 91
-default	11:13:57.394138-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0xc9d4f1540)
-default	11:13:57.394145-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
-default	11:13:57.394155-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:51:53.362112-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 78
+default	14:51:53.362185-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 78 (Input:Yes | Output:No): true
+default	14:51:53.363991-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11845, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:53.365175-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11845, subject=com.nexy.assistant,
+default	14:51:53.366024-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:53.379174-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xa for device 78
+default	14:51:53.379291-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 78
+default	14:51:53.379483-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 78
+default	14:51:53.379494-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:51:53.379502-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
+default	14:51:53.379513-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Output render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
-default	11:13:57.394275-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
-  input stream 0 [0x5c]:  1 ch,  24000 Hz, Float32
-default	11:13:57.394282-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
-default	11:13:57.394287-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
-  Input render format:  1 ch,  24000 Hz, Float32
-default	11:13:57.394371-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0xc9d4f1540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
-default	11:13:57.394378-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0xc9d4f1540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
-default	11:13:57.394385-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
-default	11:13:57.394388-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d4f1540) removing 7 device listeners from device 85
-default	11:13:57.394542-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d4f1540) removing 0 device delegate listeners from device 85
-default	11:13:57.394551-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xc9d4f1540)
-default	11:13:57.395181-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
-default	11:13:57.396209-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11390, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:57.397113-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11390, subject=com.nexy.assistant,
-default	11:13:57.397691-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:57.408648-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
-default	11:13:57.409591-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11391, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:57.410384-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11391, subject=com.nexy.assistant,
-default	11:13:57.410921-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:57.422136-0500	Nexy	Registered notify signal com.apple.caulk.alloc.audiodump (0)
-default	11:13:57.423496-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11392, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:57.424240-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11392, subject=com.nexy.assistant,
-default	11:13:57.424757-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:57.436024-0500	coreaudiod	>>> NEGOTIATE [com.nexy.assistant]
-default	11:13:57.436175-0500	coreaudiod	<<< NEGOTIATE [com.nexy.assistant]
-default	11:13:57.436943-0500	coreaudiod	>>> ADAPT [com.nexy.assistant]
-default	11:13:57.437259-0500	coreaudiod	[Detector.cpp:154   rtaid::Detector:0xbf7741e00] Created node ADM::com.nexy.assistant_61715.61532.0_airpods noise suppression studio::in-0 with nodeID 0 - reporting period = 10.000000, sample rate = 24000.000000
-default	11:13:57.437325-0500	coreaudiod	[Detector.cpp:154   rtaid::Detector:0xbf7741e00] Created node ADM::com.nexy.assistant_61715.61532.0_airpods noise suppression studio::out-0 with nodeID 1 - reporting period = 10.000000, sample rate = 24000.000000
-default	11:13:57.509291-0500	coreaudiod	<<< ADAPT [com.nexy.assistant]
-default	11:13:57.511284-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 1 0 0, id:61715 called from <private>
-default	11:13:57.511341-0500	Nexy	         HALC_ProxyIOContext.cpp:1594  HALC_ProxyIOContext::IOWorkLoop: ending the transport, stopping the io thread
-default	11:13:57.511382-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Input {1C-77-54-18-C8-A3:input, 0xa}
-default	11:13:57.513108-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61715 called from <private>
-default	11:13:57.513247-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61715)
-default	11:13:57.513267-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61715 called from <private>
-default	11:13:57.513851-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61714)
-default	11:13:57.516762-0500	runningboardd	ignoring [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as candidate for concrete target as it is terminating
-default	11:13:57.514668-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61715 called from <private>
-default	11:13:57.514740-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 0 0, id:61714 called from <private>
-default	11:13:57.514796-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61714 called from <private>
-fault	11:13:57.520771-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.20931626.20931632 AUID=501> and <type=Application identifier=application.com.nexy.assistant.20931626.20931632>
-default	11:13:57.521222-0500	coreaudiod	>>> SIMULATE [com.nexy.assistant]
-default	11:13:57.521967-0500	coreaudiod	<<< SIMULATE [com.nexy.assistant]
-fault	11:13:57.522243-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.20931626.20931632 AUID=501> and <type=Application identifier=application.com.nexy.assistant.20931626.20931632>
-default	11:13:57.523914-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61715)
-default	11:13:57.523936-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61715)
-default	11:13:57.523952-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 2 2, id:61715 called from <private>
-default	11:13:57.523979-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 3 3, id:61715 called from <private>
-default	11:13:57.523989-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 3 3 id:61715 called from <private>
-default	11:13:57.523989-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61715)
-default	11:13:57.523996-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 2 2 id:61715 called from <private>
-default	11:13:57.524002-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61715 called from <private>
-default	11:13:57.524002-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61715)
-default	11:13:57.524032-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61715 called from <private>
-default	11:13:57.524677-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61715 called from <private>
-default	11:13:57.524732-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61715 called from <private>
-default	11:13:57.528362-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61715 called from <private>
-default	11:13:57.528373-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61715 called from <private>
-default	11:13:57.528702-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2a2","name":"Nexy(84850)"}, "details":{"deviceUIDs":["1C-77-54-18-C8-A3:input"],"implicit_category":"Record","input_running":true,"output_running":false} }
-default	11:13:57.528803-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
-default	11:13:57.528862-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:57.529078-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2a2, Nexy(84850), 'prim'', AudioCategory changed to 'Record_WithBluetooth'
-default	11:13:57.529783-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:57.529874-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:57.529800-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:53.379640-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  input stream 0 [0x4f]:  1 ch,  48000 Hz, Float32
+default	14:51:53.379647-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
+default	14:51:53.379652-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  1 ch,  48000 Hz, Float32
+default	14:51:53.379761-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:51:53.379776-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:51:53.379782-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:51:53.379787-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 71
+default	14:51:53.379975-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 71
+default	14:51:53.379982-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:51:53.380422-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:51:53.381372-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11846, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:53.382165-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11846, subject=com.nexy.assistant,
+default	14:51:53.382699-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:53.394929-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:51:53.395834-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11847, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:53.396578-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11847, subject=com.nexy.assistant,
+default	14:51:53.397094-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:53.409368-0500	Nexy	Registered notify signal com.apple.caulk.alloc.audiodump (0)
+default	14:51:53.409746-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:51:53.410720-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11848, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:53.411559-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11848, subject=com.nexy.assistant,
+default	14:51:53.412111-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:53.424859-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11849, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:51:53.425621-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11849, subject=com.nexy.assistant,
+default	14:51:53.426147-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:51:53.439856-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:51:53.464916-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Input {BuiltInMicrophoneDevice, 0xa}
+default	14:51:53.465833-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"Record","input_running":true,"output_running":false} }
+default	14:51:53.465919-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:51:53.465969-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:53.466031-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2c0, Nexy(39688), 'prim'', AudioCategory changed to 'Record_WithBluetooth'
+default	14:51:53.466074-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:57.530220-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> is going active
-default	11:13:57.530292-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2a2, Nexy(84850), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 675 starting recording
-default	11:13:57.531008-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:57.530359-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:53.466100-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:53.466145-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:53.466195-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:57.531393-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
-default	11:13:57.531663-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2a2, Nexy(84850), 'prim'', displayID:'com.nexy.assistant'}
-default	11:13:57.530317-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:53.466198-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> is going active
+default	14:51:53.466213-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2c0, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 705 starting recording
+default	14:51:53.466263-0500	audioaccessoryd	Audio state update Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:57.531445-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:51:53.466324-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:57.531861-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 0]. BT device UIDS: {(
-    "1C-77-54-18-C8-A3:input"
+default	14:51:53.466291-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:53.466363-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:53.466320-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:51:53.466351-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:51:53.466437-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 0]. BT device UIDS: {(
 )}
-default	11:13:57.531869-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
-default	11:13:57.532526-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 200, deviceID = <private>
-default	11:13:57.540966-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61714 called from <private>
-default	11:13:57.540977-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61714 called from <private>
-default	11:13:57.542982-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61714)
-default	11:13:57.542996-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 2 2, id:61714 called from <private>
-default	11:13:57.543003-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 3 3, id:61714 called from <private>
-default	11:13:57.545589-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61715)
-default	11:13:57.545608-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61715 called from <private>
-default	11:13:57.547542-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61714)
-default	11:13:57.547616-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61714)
-default	11:13:57.547997-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 3 3 id:61714 called from <private>
-default	11:13:57.548007-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 2 2 id:61714 called from <private>
-default	11:13:57.549340-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11393, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
-default	11:13:57.551846-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11393, subject=com.nexy.assistant,
-default	11:13:57.552973-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:57.558212-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
-default	11:13:57.558559-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
-default	11:13:57.558758-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 2 2, id:61714 called from <private>
-default	11:13:57.558728-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:57.558796-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 3 3, id:61714 called from <private>
-default	11:13:57.560120-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 3 3, id:61714 called from <private>
-default	11:13:57.560134-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 4 4, id:61714 called from <private>
-default	11:13:57.560210-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61714)
-default	11:13:57.560383-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.560676-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.560831-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.560885-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.560909-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.561016-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:57.561371-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:57.565537-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61714)
-default	11:13:57.565795-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 4 4 id:61714 called from <private>
-default	11:13:57.565804-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 3 3 id:61714 called from <private>
-default	11:13:57.565922-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61714)
-default	11:13:57.567392-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.567406-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.567424-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.567430-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.567437-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.567466-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:57.567648-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:57.572957-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61714)
-default	11:13:57.573348-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 3 3 id:61714 called from <private>
-default	11:13:57.573360-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 2 2 id:61714 called from <private>
-default	11:13:57.573383-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61714 called from <private>
-default	11:13:57.573391-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61714 called from <private>
-default	11:13:57.573396-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61714 called from <private>
-default	11:13:57.573401-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 0 0 id:61714 called from <private>
-default	11:13:57.573487-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 0 0, id:61714 called from <private>
-default	11:13:57.573529-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61714 called from <private>
-default	11:13:57.573587-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61714 called from <private>
-default	11:13:57.573678-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 0 0 id:61714 called from <private>
-default	11:13:57.573748-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 0 0, id:61714 called from <private>
-default	11:13:57.573801-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61714 called from <private>
-default	11:13:57.573807-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61714 called from <private>
-default	11:13:57.579554-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+default	14:51:53.466412-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
     "com.nexy.assistant" : 200,
 }
-default	11:13:57.579775-0500	audioaccessoryd	Audio state update Start apps {
+default	14:51:53.466479-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:53.466449-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:51:53.466532-0500	audioaccessoryd	Audio state update Start apps {
     "com.nexy.assistant" : 200,
 }
-default	11:13:57.580856-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+default	14:51:53.466555-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
     "com.nexy.assistant" : 200,
 }
-default	11:13:57.580867-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 200 count 1
-default	11:13:57.580876-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
-error	11:13:57.580948-0500	audioaccessoryd	Updating local audio category 100 -> 200 app com.nexy.assistant
-default	11:13:57.598086-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11394, subject=com.nexy.assistant,
-default	11:13:57.599009-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138900 at /Applications/Nexy.app
-default	11:13:57.614443-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:57.627573-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.627583-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.627590-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.627597-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.627602-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.627607-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:57.627666-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:57.683648-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
-default	11:13:57.683713-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
-default	11:13:57.683784-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:57.684108-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684123-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684144-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.684150-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684158-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.684164-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:57.684195-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684254-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684299-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.684362-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684377-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.684386-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:57.684493-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:57.684653-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684668-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684675-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.684681-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.684689-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.684695-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:57.684699-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
-default	11:13:57.712606-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.712627-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.712640-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.712682-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:57.712724-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:57.712769-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:58.718482-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {1C-77-54-18-C8-A3:input, 0xa}
-default	11:13:58.718928-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2a2","name":"Nexy(84850)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
-default	11:13:58.719163-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:58.719280-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
-default	11:13:58.719352-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2a2, Nexy(84850), 'prim'', displayID:'com.nexy.assistant'}
-default	11:13:58.719461-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 200, deviceID = <private>
-default	11:13:58.719469-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2a2, Nexy(84850), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 675 stopping recording
-default	11:13:58.719544-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
-default	11:13:58.719608-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:13:58.719685-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:13:58.719985-0500	audioaccessoryd	Routing request Wx 1C:77:54:18:C8:A3 score 200 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
-default	11:13:58.719943-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
+default	14:51:53.466564-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 200 count 1
+default	14:51:53.466582-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+error	14:51:53.466590-0500	audioaccessoryd	Updating local audio category 100 -> 200 app com.nexy.assistant
+default	14:51:53.466626-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+fault	14:51:53.466890-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.21074037.21074043 AUID=501> and <type=Application identifier=application.com.nexy.assistant.21074037.21074043>
+fault	14:51:53.468744-0500	runningboardd	Two equal instances have unequal identities. <type=Application identifier=application.com.nexy.assistant.21074037.21074043 AUID=501> and <type=Application identifier=application.com.nexy.assistant.21074037.21074043>
+default	14:51:53.488871-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:51:53.488966-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[mic] Nexy (com.nexy.assistant)]
+default	14:51:53.489012-0500	ControlCenter	Active activity attributions changed to ["mic:com.nexy.assistant"]
+default	14:51:53.490436-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.490447-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.490461-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:53.490487-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.490494-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:53.490500-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:53.490602-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:53.493275-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.493288-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.493299-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:53.493307-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.493314-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:53.493319-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:53.493391-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:53.494864-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.494882-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.494893-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:53.494900-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:53.494918-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:53.494925-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:53.495079-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
+default	14:51:53.798707-0500	audioaccessoryd	AudioStateSnapshot: Route:Speaker App com.nexy.assistant, Score 200, Remote -1NumofApp 1
+default	14:51:54.451998-0500	Nexy	         HALC_ProxyIOContext.cpp:1594  HALC_ProxyIOContext::IOWorkLoop: ending the transport, stopping the io thread
+default	14:51:54.460401-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xa}
+default	14:51:54.461117-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
+default	14:51:54.461352-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:54.461477-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:51:54.461549-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:51:54.461672-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2c0, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 705 stopping recording
+default	14:51:54.461705-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:54.461729-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
+default	14:51:54.461797-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:51:54.461879-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:51:54.461971-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:54.462058-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:51:54.462095-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:51:54.462107-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:54.462188-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:51:54.462295-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:51:54.462136-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
 )}
-default	11:13:58.719969-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
-default	11:13:58.720480-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:58.720663-0500	audioaccessoryd	Audio state update Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:58.720571-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:51:54.462352-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:13:58.720741-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
-    "com.nexy.assistant" : 200,
-}
-default	11:13:58.720777-0500	audioaccessoryd	Audio state update Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:13:58.720823-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
-default	11:13:58.720949-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
-default	11:13:58.720978-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:13:58.721005-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 0
-default	11:13:58.749500-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
-default	11:13:58.750159-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:58.750180-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:58.750202-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:58.750214-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:13:58.750225-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:13:58.750236-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:13:58.750379-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:13:58.820125-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0xc9d4f1540) Selecting device 0 from destructor
-default	11:13:58.820154-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xc9d4f1540)
-default	11:13:58.820168-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xc9d4f1540) not already running
-default	11:13:58.820178-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0xc9d4f1540) disconnecting device 91
-default	11:13:58.820209-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0xc9d4f1540) destroying ioproc 0xa for device 91
-default	11:13:58.820262-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {1C-77-54-18-C8-A3:input, 0xa}
-default	11:13:58.820317-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+default	14:51:54.462163-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:51:54.462387-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 0
+default	14:51:54.477243-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
+default	14:51:54.477698-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:54.477714-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:54.477727-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:54.477741-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:54.477749-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:54.477755-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:54.477853-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:54.564673-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0x7bf0a8e40) Selecting device 0 from destructor
+default	14:51:54.564706-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:51:54.564722-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:51:54.564733-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 78
+default	14:51:54.564748-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xa for device 78
+default	14:51:54.564800-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xa}
+default	14:51:54.564847-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
 )} Server update was not required.
-default	11:13:58.820585-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0xc9d4f1540) nothing to setup
-default	11:13:58.820611-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d4f1540) adding 0 device listeners to device 0
-default	11:13:58.820622-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d4f1540) adding 0 device delegate listeners to device 0
-default	11:13:58.820636-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d4f1540) removing 7 device listeners from device 91
-default	11:13:58.821033-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d4f1540) removing 0 device delegate listeners from device 91
-default	11:13:58.821057-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xc9d4f1540)
-default	11:13:58.950943-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84928.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=84928, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
-default	11:13:58.952454-0500	tccd	AUTHREQ_SUBJECT: msgID=84928.1, subject=com.nexy.assistant,
-default	11:13:58.953094-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:13:58.967118-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.16914, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=84928, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
-default	11:13:58.968076-0500	tccd	AUTHREQ_SUBJECT: msgID=393.16914, subject=com.nexy.assistant,
-default	11:13:58.968686-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:13:59.003036-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:13:59.020905-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 84855: target_identity: {
-    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 0d282700 };
+default	14:51:54.565102-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0x7bf0a8e40) nothing to setup
+default	14:51:54.565123-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device listeners to device 0
+default	14:51:54.565134-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 0
+default	14:51:54.565145-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 78
+default	14:51:54.565578-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 78
+default	14:51:54.565608-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:51:54.702984-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39727.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=39727, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
+default	14:51:54.704444-0500	tccd	AUTHREQ_SUBJECT: msgID=39727.1, subject=com.nexy.assistant,
+default	14:51:54.705055-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:54.719887-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.17772, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=39727, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
+default	14:51:54.720716-0500	tccd	AUTHREQ_SUBJECT: msgID=393.17772, subject=com.nexy.assistant,
+default	14:51:54.721270-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:54.749790-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:54.769329-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 39696: target_identity: {
+    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 90fb2800 };
     kTCCCodeIdentityAuthority = kTCCCodeIdentityDesignatedRequirementAuthority;
     kTCCCodeIdentityCSFlags = 536941313;
     kTCCCodeIdentityCanSendToAnyTarget = 0;
@@ -1366,175 +1090,169 @@ default	11:13:59.020905-0500	System Events	TCCAccessRequestIndirect: TCCAccessRe
     kTCCCodeIdentitySDKVersion = 984064;
     kTCCCodeIdentityTeamID = 5NKLL2CLB9;
 }
-default	11:13:59.033891-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
-default	11:13:59.957432-0500	Nexy	[0xc9f3c5400] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
-error	11:13:59.958067-0500	tccd	TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy attempted to call TCCAccessRequest for kTCCServiceAccessibility without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement
-default	11:13:59.958255-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.3, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:13:59.959461-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.3, subject=com.nexy.assistant,
-default	11:13:59.960131-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:13:59.971998-0500	Nexy	[0xc9f3c5400] invalidated after the last release of the connection object
-default	11:13:59.972100-0500	Nexy	[0xc9f3c5400] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
-error	11:13:59.972511-0500	tccd	TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy attempted to call TCCAccessRequest for kTCCServiceAccessibility without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement
-default	11:13:59.972685-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.4, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:13:59.973596-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.4, subject=com.nexy.assistant,
-default	11:13:59.974195-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:13:59.985409-0500	Nexy	[0xc9f3c5400] invalidated after the last release of the connection object
-default	11:13:59.985471-0500	Nexy	[0xc9f3c5400] activating connection: mach=true listener=false peer=false name=com.apple.universalaccessAuthWarn
-default	11:13:59.985557-0500	Nexy	[0xc9f3c5400] invalidated after the last release of the connection object
-default	11:13:59.986275-0500	Nexy	server port 0x00014a03, session port 0x00003413
-default	11:14:00.014434-0500	kernel	SK[9]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 3F06420B-A0AB-49D5-B0E7-80ABE563B965 flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.63103,dst=<IPv4-redacted>.53,proto=0x06 mask=0x0000003f,hash=0x00631437 tp_proto=0x06"
-default	11:14:00.014558-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:63103<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933697 t_state: SYN_SENT process: Nexy:84850 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 13 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x9ff6ce4f
-default	11:14:00.016022-0500	Nexy	networkd_settings_read_from_file initialized networkd settings by reading plist directly
-default	11:14:00.016225-0500	Nexy	networkd_settings_read_from_file initialized networkd settings by reading plist directly
-default	11:14:00.017066-0500	Nexy	nw_path_libinfo_path_check [5909D792-43F4-4BE3-8F0E-F92F0191607E IPv4#11017815:443 tcp, legacy-socket, attribution: developer]
+default	14:51:54.781919-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:51:56.033030-0500	Nexy	[0x7be8b5400] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+error	14:51:56.033701-0500	tccd	TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy attempted to call TCCAccessRequest for kTCCServiceAccessibility without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement
+default	14:51:56.033879-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.3, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:56.035418-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.3, subject=com.nexy.assistant,
+default	14:51:56.036634-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:56.049803-0500	Nexy	[0x7be8b5400] invalidated after the last release of the connection object
+default	14:51:56.049907-0500	Nexy	[0x7be8b5400] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+error	14:51:56.050276-0500	tccd	TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy attempted to call TCCAccessRequest for kTCCServiceAccessibility without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement
+default	14:51:56.050431-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.4, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:56.051287-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.4, subject=com.nexy.assistant,
+default	14:51:56.051980-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:56.064552-0500	Nexy	[0x7be8b5400] invalidated after the last release of the connection object
+default	14:51:56.064616-0500	Nexy	[0x7be8b5400] activating connection: mach=true listener=false peer=false name=com.apple.universalaccessAuthWarn
+default	14:51:56.064708-0500	Nexy	[0x7be8b5400] invalidated after the last release of the connection object
+default	14:51:56.070112-0500	Nexy	server port 0x0001540f, session port 0x00003507
+default	14:51:56.072555-0500	kernel	SK[7]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 4D0CAB13-1FC9-47E1-A597-60C164627651 flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.58166,dst=<IPv4-redacted>.53,proto=0x06 mask=0x0000003f,hash=0xa3383a18 tp_proto=0x06"
+default	14:51:56.072679-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:58166<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102368 t_state: SYN_SENT process: Nexy:39688 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 14 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x92631849
+default	14:51:56.086338-0500	Nexy	networkd_settings_read_from_file initialized networkd settings by reading plist directly
+default	14:51:56.086519-0500	Nexy	networkd_settings_read_from_file initialized networkd settings by reading plist directly
+default	14:51:56.087428-0500	Nexy	nw_path_libinfo_path_check [54BE8A8E-A7E4-4BDA-AFB8-002546E62B4A IPv4#46030445:443 tcp, legacy-socket, attribution: developer]
 	libinfo check path: <private>
-default	11:14:00.018089-0500	kernel	SK[7]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid BF3ED4BD-B064-4B4B-8F5B-F1D38575FBBC flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.63104,dst=<IPv4-redacted>.443,proto=0x06 mask=0x0000003f,hash=0x1d24718c tp_proto=0x06"
-default	11:14:00.018142-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:63104<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
-so_gencnt: 5933698 t_state: SYN_SENT process: Nexy:84850 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0xb90d22f9
-default	11:14:00.029560-0500	kernel	tcp connected: [<IPv4-redacted>:63103<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933697 t_state: ESTABLISHED process: Nexy:84850 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 13 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x9ff6ce4f
-default	11:14:00.030143-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:63103<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933697 t_state: FIN_WAIT_1 process: Nexy:84850 Duration: 0.015 sec Conn_Time: 0.015 sec bytes in/out: 0/0 pkts in/out: 0/0 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
-rtt: 15.000 ms rttvar: 7.500 ms base rtt: 13 ms so_error: 0 svc/tc: 0 flow: 0x9ff6ce4f
-default	11:14:00.030153-0500	kernel	tcp_connection_summary [<IPv4-redacted>:63103<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933697 t_state: FIN_WAIT_1 process: Nexy:84850 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
-default	11:14:00.030579-0500	kernel	SK[7]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 04EFDB90-755E-4ADE-91CD-CFB563EF4855 flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.63105,dst=<IPv4-redacted>.53,proto=0x06 mask=0x0000003f,hash=0x5d14cd78 tp_proto=0x06"
-default	11:14:00.030599-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:63105<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933699 t_state: SYN_SENT process: Nexy:84850 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 13 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x9236f7d9
-default	11:14:00.039655-0500	kernel	tcp connected: [<IPv4-redacted>:63104<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
-so_gencnt: 5933698 t_state: ESTABLISHED process: Nexy:84850 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0xb90d22f9
-default	11:14:00.072200-0500	kernel	tcp connected: [<IPv4-redacted>:63105<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933699 t_state: ESTABLISHED process: Nexy:84850 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 13 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x9236f7d9
-default	11:14:00.072427-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:63105<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933699 t_state: FIN_WAIT_1 process: Nexy:84850 Duration: 0.042 sec Conn_Time: 0.041 sec bytes in/out: 0/0 pkts in/out: 0/0 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
-rtt: 41.000 ms rttvar: 20.500 ms base rtt: 13 ms so_error: 0 svc/tc: 0 flow: 0x9236f7d9
-default	11:14:00.072438-0500	kernel	tcp_connection_summary [<IPv4-redacted>:63105<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
-so_gencnt: 5933699 t_state: FIN_WAIT_1 process: Nexy:84850 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
-default	11:14:00.120450-0500	Nexy	[0xc9f3c5680] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
-default	11:14:00.121222-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.5, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:14:00.122637-0500	Nexy	[0xc9f3c57c0] activating connection: mach=true listener=false peer=false name=com.apple.usernoted.client
-default	11:14:00.128124-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.5, subject=com.nexy.assistant,
-default	11:14:00.128716-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:14:00.131236-0500	usernoted	Connection com.nexy.assistant with path: /Applications/Nexy.app
-default	11:14:00.135049-0500	distnoted	register name: com.apple.nsquiet_safe_quit_give_reason object: com.nexy.assistant token: 3100000032 pid: 84850
-default	11:14:00.139897-0500	Nexy	[0xc9f3c5680] invalidated after the last release of the connection object
-default	11:14:00.145471-0500	Nexy	NSApp cache appearance:
+default	14:51:56.088624-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
+default	14:51:56.088907-0500	kernel	SK[8]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 59064AAF-4125-4922-9D75-DE7696F4F319 flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.58167,dst=<IPv4-redacted>.443,proto=0x06 mask=0x0000003f,hash=0x24063b73 tp_proto=0x06"
+default	14:51:56.088989-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:58167<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
+so_gencnt: 6102369 t_state: SYN_SENT process: Nexy:39688 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x81df9cfb
+default	14:51:56.090033-0500	kernel	tcp connected: [<IPv4-redacted>:58166<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102368 t_state: ESTABLISHED process: Nexy:39688 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 14 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x92631849
+default	14:51:56.090393-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:58166<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102368 t_state: FIN_WAIT_1 process: Nexy:39688 Duration: 0.018 sec Conn_Time: 0.017 sec bytes in/out: 0/0 pkts in/out: 0/0 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
+rtt: 17.000 ms rttvar: 8.500 ms base rtt: 14 ms so_error: 0 svc/tc: 0 flow: 0x92631849
+default	14:51:56.090403-0500	kernel	tcp_connection_summary [<IPv4-redacted>:58166<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102368 t_state: FIN_WAIT_1 process: Nexy:39688 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
+default	14:51:56.090568-0500	kernel	SK[7]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 8607508D-3A0E-4B48-8113-23127716300C flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.58168,dst=<IPv4-redacted>.53,proto=0x06 mask=0x0000003f,hash=0xf769b3c8 tp_proto=0x06"
+default	14:51:56.090584-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:58168<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102370 t_state: SYN_SENT process: Nexy:39688 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 14 ms error: 0 so_error: 0 svc/tc: 0 flow: 0xb57f8314
+default	14:51:56.104146-0500	kernel	tcp connected: [<IPv4-redacted>:58168<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102370 t_state: ESTABLISHED process: Nexy:39688 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 13 ms error: 0 so_error: 0 svc/tc: 0 flow: 0xb57f8314
+default	14:51:56.104326-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:58168<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102370 t_state: FIN_WAIT_1 process: Nexy:39688 Duration: 0.014 sec Conn_Time: 0.013 sec bytes in/out: 0/0 pkts in/out: 0/0 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
+rtt: 13.000 ms rttvar: 6.500 ms base rtt: 13 ms so_error: 0 svc/tc: 0 flow: 0xb57f8314
+default	14:51:56.104336-0500	kernel	tcp_connection_summary [<IPv4-redacted>:58168<-><IPv4-redacted>:53] interface: en0 (skipped: 6843)
+so_gencnt: 6102370 t_state: FIN_WAIT_1 process: Nexy:39688 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
+default	14:51:56.110052-0500	kernel	tcp connected: [<IPv4-redacted>:58167<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
+so_gencnt: 6102369 t_state: ESTABLISHED process: Nexy:39688 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x81df9cfb
+default	14:51:56.110620-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:56.114476-0500	tccd	Publishing <TCCDEvent: type=Modify, service=kTCCServiceAccessibility, identifier_type=Bundle ID, identifier=com.nexy.assistant> to 0 subscribers: {
+}
+default	14:51:56.199974-0500	Nexy	[0x7be8b5540] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+default	14:51:56.200664-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.5, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:56.207300-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.5, subject=com.nexy.assistant,
+default	14:51:56.207916-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:56.220554-0500	Nexy	[0x7be8b5540] invalidated after the last release of the connection object
+default	14:51:56.398632-0500	Nexy	[0x7be8b57c0] activating connection: mach=true listener=false peer=false name=com.apple.usernoted.client
+default	14:51:56.416177-0500	usernoted	Connection com.nexy.assistant with path: /Applications/Nexy.app
+default	14:51:56.417037-0500	distnoted	register name: com.apple.nsquiet_safe_quit_give_reason object: com.nexy.assistant token: 2400000020 pid: 39688
+default	14:51:56.430146-0500	Nexy	NSApp cache appearance:
 -NSRequiresAquaSystemAppearance: 0
 -appearance: (null)
--effectiveAppearance: <NSCompositeAppearance: 0xc9f2e8640
+-effectiveAppearance: <NSCompositeAppearance: 0x7bf228780
  (
-    "<NSAquaAppearance: 0xc9f2e8820>",
-    "<NSSystemAppearance: 0xc9f2e8780>"
+    "<NSAquaAppearance: 0x7bf228640>",
+    "<NSSystemAppearance: 0x7bf2286e0>"
 )>
-default	11:14:00.151576-0500	Nexy	[0xc9f3c5cc0] activating connection: mach=true listener=false peer=false name=com.apple.dock.fullscreen
-default	11:14:00.151833-0500	Nexy	[0xc9f3c5e00] activating connection: mach=true listener=false peer=false name=com.apple.fonts
-default	11:14:00.154298-0500	Nexy	(<private>) deleteSearchableItemsWithDomainIdentifiers, protectionClass:(null), domainIdentifiers number:1
-default	11:14:00.154527-0500	Nexy	sConnectionName: com.apple.spotlight.IndexAgent
-default	11:14:00.154540-0500	Nexy	Start service name com.apple.spotlight.IndexAgent
-default	11:14:00.154562-0500	Nexy	[0xc9f3c5f40] activating connection: mach=true listener=false peer=false name=com.apple.spotlight.IndexAgent
-default	11:14:00.154640-0500	Nexy	[C:1] Alloc com.apple.controlcenter.statusitems
-default	11:14:00.154706-0500	Nexy	[0xc9f3c6080] activating connection: mach=false listener=false peer=false name=(anonymous)
-default	11:14:00.154773-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:00.155241-0500	suggestd	SGDSpotlightReceiver: deleting 1 domain identifiers (1 after removing overlaps) for com.nexy.assistant: <private>
-default	11:14:00.155896-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:00.155962-0500	Nexy	<FBSWorkspaceScenesClient:0xc9f2e9f40 <private>> attempting immediate handshake from activate
-default	11:14:00.156003-0500	Nexy	<FBSWorkspaceScenesClient:0xc9f2e9f40 <private>> sent handshake
-default	11:14:00.156097-0500	Nexy	Realizing settings extension __NSStatusItemSceneHostSettings__ on FBSSceneSettings
-default	11:14:00.160285-0500	Nexy	<FBSWorkspaceScenesClient:0xc9f2e9f40 <private>> was invalidated
-default	11:14:00.160303-0500	Nexy	FBSWorkspace unregistering source: <private>
-default	11:14:00.160567-0500	Nexy	Realizing settings extension __NSStatusItemSceneClientSettings__ on FBSSceneClientSettings
-default	11:14:00.161640-0500	Nexy	Realizing settings extension FBSSceneSettingsCore on FBSSceneSettings
-default	11:14:00.162693-0500	Nexy	Realizing settings extension FBSSceneClientSettingsCore on FBSSceneClientSettings
-default	11:14:00.163186-0500	Nexy	Requesting scene <FBSScene: 0xc9f2ea1c0; com.apple.controlcenter:AE2CE8AE-D0FC-45E4-A1A2-5EDA9E2DC1AE> from com.apple.controlcenter.statusitems
-error	11:14:00.163386-0500	Nexy	Error creating <FBSScene: 0xc9f2ea1c0; com.apple.controlcenter:AE2CE8AE-D0FC-45E4-A1A2-5EDA9E2DC1AE>: <NSError: 0xc9f8be790; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-default	11:14:00.164995-0500	Nexy	Request for <FBSScene: 0xc9f2ea1c0; com.apple.controlcenter:AE2CE8AE-D0FC-45E4-A1A2-5EDA9E2DC1AE> complete!
-default	11:14:00.179398-0500	Nexy	Warning: the app is using `-[NSStatusBarButton setHighlightsBy:]` to set the highlight behavior. Instead, consider removing that setting. That will enable macOS to highlight the status bar button as appropriate for all configurations (e.g., light, dark, and increased contrast modes).
-default	11:14:00.194081-0500	Nexy	Registering for test daemon availability notify post.
-default	11:14:00.194227-0500	Nexy	notify_get_state check indicated test daemon not ready.
-default	11:14:00.194318-0500	Nexy	notify_get_state check indicated test daemon not ready.
-default	11:14:00.194401-0500	Nexy	notify_get_state check indicated test daemon not ready.
-default	11:14:00.195585-0500	Nexy	[0xc9f3c6440] activating connection: mach=true listener=false peer=false name=com.apple.coreservices.appleevents
-default	11:14:00.195998-0500	Nexy	[0xc9f3c43c0] Connection returned listener port: 0x5103
-default	11:14:00.196333-0500	Nexy	SignalReady: pid=84850 asn=0x0-0x1972971
-default	11:14:00.196696-0500	Nexy	SIGNAL: pid=84850 asn=0x0x-0x1972971
-default	11:14:00.197139-0500	loginwindow	-[Application updateInformation] | Got App URL: file:///Applications/Nexy.app/
-default	11:14:00.198513-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-error	11:14:00.198862-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-default	11:14:00.201929-0500	Nexy	void _NSDisableAutomaticTerminationAndLog(NSString *) Restoring windows
-default	11:14:00.201935-0500	Nexy	-[NSApplication _reopenWindowsAsNecessaryIncludingRestorableState:withFullFidelity:completionHandler:] shouldRestoreState=1 hasPersistentStateToRestore=0 shouldStillRestoreStateAfterPrompting=0
-default	11:14:00.201948-0500	Nexy	[0xc9f3c5680] activating connection: mach=true listener=false peer=false name=com.apple.window_proxies
-default	11:14:00.202008-0500	Nexy	[0xc9f3c5680] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
-default	11:14:00.205517-0500	Nexy	void _NSEnableAutomaticTerminationAndLog(NSString *) Restoring windows
-default	11:14:00.207834-0500	Nexy	[C:2] Alloc <private>
-default	11:14:00.207873-0500	Nexy	[0xc9f3c5680] activating connection: mach=false listener=false peer=false name=(anonymous)
-default	11:14:00.208092-0500	Nexy	NSApplication._react(to:) dock
-default	11:14:00.208101-0500	Nexy	NSApplication._react(to:) reactions=83
-error	11:14:00.208031-0500	kernel	Sandbox: WindowManager(584) deny(1) mach-task-name others [Nexy(84850)]
-default	11:14:00.209036-0500	runningboardd	ignoring [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as candidate for concrete target as it is terminating
-default	11:14:00.209073-0500	runningboardd	Acquiring assertion targeting 84850 from originator [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-84850-1504675 target:84850 attributes:[
+default	14:51:56.437164-0500	Nexy	[0x7be8b5cc0] activating connection: mach=true listener=false peer=false name=com.apple.dock.fullscreen
+default	14:51:56.437784-0500	Nexy	[0x7be8b5e00] activating connection: mach=true listener=false peer=false name=com.apple.fonts
+default	14:51:56.440820-0500	Nexy	(<private>) deleteSearchableItemsWithDomainIdentifiers, protectionClass:(null), domainIdentifiers number:1
+default	14:51:56.441126-0500	Nexy	sConnectionName: com.apple.spotlight.IndexAgent
+default	14:51:56.441138-0500	Nexy	Start service name com.apple.spotlight.IndexAgent
+default	14:51:56.441174-0500	Nexy	[0x7be8b5f40] activating connection: mach=true listener=false peer=false name=com.apple.spotlight.IndexAgent
+default	14:51:56.441235-0500	Nexy	[C:1] Alloc com.apple.controlcenter.statusitems
+default	14:51:56.441309-0500	Nexy	[0x7be8b6080] activating connection: mach=false listener=false peer=false name=(anonymous)
+default	14:51:56.441379-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:51:56.442219-0500	suggestd	SGDSpotlightReceiver: deleting 1 domain identifiers (1 after removing overlaps) for com.nexy.assistant: <private>
+default	14:51:56.442591-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:51:56.443056-0500	Nexy	<FBSWorkspaceScenesClient:0x7bf229f40 <private>> attempting immediate handshake from activate
+default	14:51:56.443115-0500	Nexy	<FBSWorkspaceScenesClient:0x7bf229f40 <private>> sent handshake
+default	14:51:56.443269-0500	Nexy	Realizing settings extension __NSStatusItemSceneHostSettings__ on FBSSceneSettings
+default	14:51:56.447236-0500	Nexy	<FBSWorkspaceScenesClient:0x7bf229f40 <private>> was invalidated
+default	14:51:56.447253-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:51:56.447547-0500	Nexy	Realizing settings extension __NSStatusItemSceneClientSettings__ on FBSSceneClientSettings
+default	14:51:56.449089-0500	Nexy	Realizing settings extension FBSSceneSettingsCore on FBSSceneSettings
+default	14:51:56.450370-0500	Nexy	Realizing settings extension FBSSceneClientSettingsCore on FBSSceneClientSettings
+default	14:51:56.451019-0500	Nexy	Requesting scene <FBSScene: 0x7bf22a1c0; com.apple.controlcenter:0295F1CD-0E98-4ACF-9089-DA67A43885A4> from com.apple.controlcenter.statusitems
+error	14:51:56.451231-0500	Nexy	Error creating <FBSScene: 0x7bf22a1c0; com.apple.controlcenter:0295F1CD-0E98-4ACF-9089-DA67A43885A4>: <NSError: 0x7be9f0120; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+default	14:51:56.452692-0500	Nexy	Request for <FBSScene: 0x7bf22a1c0; com.apple.controlcenter:0295F1CD-0E98-4ACF-9089-DA67A43885A4> complete!
+default	14:51:56.459088-0500	Nexy	Warning: the app is using `-[NSStatusBarButton setHighlightsBy:]` to set the highlight behavior. Instead, consider removing that setting. That will enable macOS to highlight the status bar button as appropriate for all configurations (e.g., light, dark, and increased contrast modes).
+default	14:51:56.473748-0500	Nexy	Registering for test daemon availability notify post.
+default	14:51:56.473896-0500	Nexy	notify_get_state check indicated test daemon not ready.
+default	14:51:56.473979-0500	Nexy	notify_get_state check indicated test daemon not ready.
+default	14:51:56.474073-0500	Nexy	notify_get_state check indicated test daemon not ready.
+default	14:51:56.475204-0500	Nexy	[0x7be8b6440] activating connection: mach=true listener=false peer=false name=com.apple.coreservices.appleevents
+default	14:51:56.475610-0500	Nexy	[0x7be8b43c0] Connection returned listener port: 0x4703
+default	14:51:56.475931-0500	Nexy	SignalReady: pid=39688 asn=0x0-0x1a7aa79
+default	14:51:56.476290-0500	Nexy	SIGNAL: pid=39688 asn=0x0x-0x1a7aa79
+default	14:51:56.476727-0500	loginwindow	-[Application updateInformation] | Got App URL: file:///Applications/Nexy.app/
+default	14:51:56.478506-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+error	14:51:56.483549-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+default	14:51:56.487950-0500	Nexy	void _NSDisableAutomaticTerminationAndLog(NSString *) Restoring windows
+default	14:51:56.487956-0500	Nexy	-[NSApplication _reopenWindowsAsNecessaryIncludingRestorableState:withFullFidelity:completionHandler:] shouldRestoreState=1 hasPersistentStateToRestore=0 shouldStillRestoreStateAfterPrompting=0
+default	14:51:56.487970-0500	Nexy	[0x7be8b5540] activating connection: mach=true listener=false peer=false name=com.apple.window_proxies
+default	14:51:56.488037-0500	Nexy	[0x7be8b5540] invalidated because the current process cancelled the connection by calling xpc_connection_cancel()
+default	14:51:56.488841-0500	Nexy	void _NSEnableAutomaticTerminationAndLog(NSString *) Restoring windows
+default	14:51:56.491683-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:51:56.491720-0500	runningboardd	Acquiring assertion targeting 39688 from originator [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-39688-1518817 target:39688 attributes:[
 	<RBSDomainAttribute| domain:"com.apple.CoreAudio.HAL" name:"AudioHAL" sourceEnvironment:"(null)">
 	]>
-error	11:14:00.209300-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 84850 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 84850 does not exist}>
-error	11:14:00.209312-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 84850 with code: 2 - RBSAssertionErrorDomain
-default	11:14:00.209439-0500	WindowManager	Connection activated | (84850) Nexy
-default	11:14:00.209479-0500	runningboardd	ignoring [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as candidate for concrete target as it is terminating
-default	11:14:00.209508-0500	runningboardd	Acquiring assertion targeting 84850 from originator [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-84850-1504676 target:84850 attributes:[
-	<RBSDomainAttribute| domain:"com.apple.CoreAudio.HAL" name:"AudioHAL" sourceEnvironment:"(null)">
-	]>
-error	11:14:00.209660-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 84850 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 84850 does not exist}>
-error	11:14:00.209670-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 84850 with code: 2 - RBSAssertionErrorDomain
-default	11:14:00.209777-0500	runningboardd	ignoring [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as candidate for concrete target as it is terminating
-default	11:14:00.209808-0500	runningboardd	Acquiring assertion targeting 84850 from originator [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-84850-1504677 target:84850 attributes:[
-	<RBSDomainAttribute| domain:"com.apple.CoreAudio.HAL" name:"AudioHAL" sourceEnvironment:"(null)">
-	]>
-error	11:14:00.209907-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 84850 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 84850 does not exist}>
-error	11:14:00.209916-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 84850 with code: 2 - RBSAssertionErrorDomain
-default	11:14:00.210020-0500	runningboardd	ignoring [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as candidate for concrete target as it is terminating
-default	11:14:00.210042-0500	runningboardd	Acquiring assertion targeting 84850 from originator [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-84850-1504678 target:84850 attributes:[
-	<RBSDomainAttribute| domain:"com.apple.CoreAudio.HAL" name:"AudioHAL" sourceEnvironment:"(null)">
-	]>
-error	11:14:00.210165-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 84850 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 84850 does not exist}>
-error	11:14:00.210175-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 84850 with code: 2 - RBSAssertionErrorDomain
-default	11:14:00.302634-0500	Nexy	*warn* MailCS ======%%% _setMailMessageAttributes skip:1
-default	11:14:00.306687-0500	Nexy	Start service name com.apple.spotlightknowledged
-default	11:14:00.307468-0500	Nexy	[GMS] availability notification token 74
-default	11:14:00.498888-0500	kernel	udp connect: [<IPv4-redacted>:57713<-><IPv4-redacted>:443] interface:  (skipped: 1081)
-so_gencnt: 5933702 so_state: 0x0002 process: Nexy:84850 bytes in/out: 0/0 pkts in/out: 0/0 error: 0 so_error: 0 svc/tc: 0 flow: 0x9a6525fd
-default	11:14:00.498905-0500	kernel	udp_connection_summary [<IPv4-redacted>:57713<-><IPv4-redacted>:443] interface:  (skipped: 1081)
-so_gencnt: 5933702 so_state: 0x0002 process: Nexy:84850 Duration: 0.000 sec Conn_Time: 0.000 sec bytes in/out: 0/0 pkts in/out: 0/0 rxnospace pkts/bytes: 0/0 so_error: 0 svc/tc: 0 flow: 0x9a6525fd flowctl: 0us (0x)
-default	11:14:00.500968-0500	kernel	SK[9]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 3A9CEC99-51FC-420F-8F53-1442AA688D9F flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.63107,dst=<IPv4-redacted>.443,proto=0x06 mask=0x0000003f,hash=0x61461ccb tp_proto=0x06"
-default	11:14:00.501085-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:63107<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
-so_gencnt: 5933704 t_state: SYN_SENT process: Nexy:84850 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 22 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x84dce600
-default	11:14:00.527177-0500	kernel	tcp connected: [<IPv4-redacted>:63107<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
-so_gencnt: 5933704 t_state: ESTABLISHED process: Nexy:84850 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 22 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x84dce600
-default	11:14:00.552089-0500	Nexy	[0xc9f3c5400] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
-default	11:14:00.552795-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84850.6, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
-default	11:14:00.553939-0500	tccd	AUTHREQ_SUBJECT: msgID=84850.6, subject=com.nexy.assistant,
-default	11:14:00.554594-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:14:00.566653-0500	Nexy	[0xc9f3c5400] invalidated after the last release of the connection object
-default	11:14:00.567823-0500	Nexy	 [INFO] SLSHWCaptureDesktopProxying:485 request: <private>
-default	11:14:00.570532-0500	Nexy	[0xc9f3c5400] activating connection: mach=true listener=false peer=false name=com.apple.replayd
-default	11:14:00.570663-0500	Nexy	 [INFO] -[RPDaemonProxy consumeSandboxExtension:processNewConnection:]:568
-default	11:14:00.570753-0500	Nexy	 [INFO] -[RPDaemonProxy proxyCoreGraphicsWithMethodType:config:machPort:completionHandler:]:1486
-default	11:14:00.575535-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=87854.28, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.replayd, pid=87854, auid=501, euid=501, binary_path=/usr/libexec/replayd}, },
-default	11:14:00.575563-0500	tccd	requestor: TCCDProcess: identifier=com.apple.replayd, pid=87854, auid=501, euid=501, binary_path=/usr/libexec/replayd is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
-default	11:14:00.576466-0500	tccd	AUTHREQ_SUBJECT: msgID=87854.28, subject=com.nexy.assistant,
-default	11:14:00.577049-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d117600 at /Applications/Nexy.app
-default	11:14:00.578361-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84933.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=84933, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
-default	11:14:00.579541-0500	tccd	AUTHREQ_SUBJECT: msgID=84933.1, subject=com.nexy.assistant,
-default	11:14:00.580075-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114900 at /Applications/Nexy.app
-default	11:14:00.593116-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.16915, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=84933, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
-default	11:14:00.593935-0500	tccd	AUTHREQ_SUBJECT: msgID=393.16915, subject=com.nexy.assistant,
-default	11:14:00.594470-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114900 at /Applications/Nexy.app
-default	11:14:00.607100-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.16916, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
-default	11:14:00.607126-0500	tccd	requestor: TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
-default	11:14:00.608001-0500	tccd	AUTHREQ_SUBJECT: msgID=393.16916, subject=com.nexy.assistant,
-default	11:14:00.608578-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114900 at /Applications/Nexy.app
-default	11:14:00.636863-0500	Nexy	 [INFO] SLSHWCaptureDesktopProxying_block_invoke:506 request: <private>, error: (null), windowInfo: (null)
-default	11:14:00.652405-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114900 at /Applications/Nexy.app
-default	11:14:00.668154-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 84855: target_identity: {
-    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 17282700 };
+error	14:51:56.491962-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 39688 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 39688 does not exist}>
+error	14:51:56.491975-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 39688 with code: 2 - RBSAssertionErrorDomain
+default	14:51:56.500490-0500	Nexy	[C:2] Alloc <private>
+default	14:51:56.500524-0500	Nexy	[0x7be8b5400] activating connection: mach=false listener=false peer=false name=(anonymous)
+error	14:51:56.500698-0500	kernel	Sandbox: WindowManager(584) deny(1) mach-task-name others [Nexy(39688)]
+default	14:51:56.502218-0500	WindowManager	Connection activated | (39688) Nexy
+default	14:51:56.557374-0500	kernel	udp connect: [<IPv4-redacted>:59466<-><IPv4-redacted>:443] interface:  (skipped: 1081)
+so_gencnt: 6102373 so_state: 0x0002 process: Nexy:39688 bytes in/out: 0/0 pkts in/out: 0/0 error: 0 so_error: 0 svc/tc: 0 flow: 0xb03eedca
+default	14:51:56.557389-0500	kernel	udp_connection_summary [<IPv4-redacted>:59466<-><IPv4-redacted>:443] interface:  (skipped: 1081)
+so_gencnt: 6102373 so_state: 0x0002 process: Nexy:39688 Duration: 0.000 sec Conn_Time: 0.000 sec bytes in/out: 0/0 pkts in/out: 0/0 rxnospace pkts/bytes: 0/0 so_error: 0 svc/tc: 0 flow: 0xb03eedca flowctl: 0us (0x)
+default	14:51:56.559493-0500	kernel	SK[6]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 815976B6-6F93-4439-9640-5E57E9B919C9 flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.58170,dst=<IPv4-redacted>.443,proto=0x06 mask=0x0000003f,hash=0xf397a45c tp_proto=0x06"
+default	14:51:56.559565-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:58170<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
+so_gencnt: 6102375 t_state: SYN_SENT process: Nexy:39688 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 21 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x8e5a5b61
+default	14:51:56.585225-0500	kernel	tcp connected: [<IPv4-redacted>:58170<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
+so_gencnt: 6102375 t_state: ESTABLISHED process: Nexy:39688 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 21 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x8e5a5b61
+default	14:51:56.610573-0500	Nexy	[0x7be8b5540] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+default	14:51:56.611155-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39688.6, attribution={requesting={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, },
+default	14:51:56.612123-0500	tccd	AUTHREQ_SUBJECT: msgID=39688.6, subject=com.nexy.assistant,
+default	14:51:56.612720-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:56.620189-0500	Nexy	*warn* MailCS ======%%% _setMailMessageAttributes skip:1
+default	14:51:56.624164-0500	Nexy	Start service name com.apple.spotlightknowledged
+default	14:51:56.624895-0500	Nexy	[GMS] availability notification token 74
+default	14:51:56.625881-0500	Nexy	[0x7be8b5540] invalidated after the last release of the connection object
+default	14:51:56.627029-0500	Nexy	 [INFO] SLSHWCaptureDesktopProxying:485 request: <private>
+default	14:51:56.630271-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39733.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=39733, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
+default	14:51:56.630273-0500	Nexy	[0x7be8b5540] activating connection: mach=true listener=false peer=false name=com.apple.replayd
+default	14:51:56.630390-0500	Nexy	 [INFO] -[RPDaemonProxy consumeSandboxExtension:processNewConnection:]:568
+default	14:51:56.630933-0500	Nexy	 [INFO] -[RPDaemonProxy proxyCoreGraphicsWithMethodType:config:machPort:completionHandler:]:1486
+default	14:51:56.637654-0500	tccd	AUTHREQ_SUBJECT: msgID=39733.1, subject=com.nexy.assistant,
+default	14:51:56.639022-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114000 at /Applications/Nexy.app
+default	14:51:56.641937-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=31855.4, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.replayd, pid=31855, auid=501, euid=501, binary_path=/usr/libexec/replayd}, },
+default	14:51:56.641968-0500	tccd	requestor: TCCDProcess: identifier=com.apple.replayd, pid=31855, auid=501, euid=501, binary_path=/usr/libexec/replayd is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:51:56.642973-0500	tccd	AUTHREQ_SUBJECT: msgID=31855.4, subject=com.nexy.assistant,
+default	14:51:56.643593-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114300 at /Applications/Nexy.app
+default	14:51:56.653302-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.17773, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=39733, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
+default	14:51:56.654259-0500	tccd	AUTHREQ_SUBJECT: msgID=393.17773, subject=com.nexy.assistant,
+default	14:51:56.654834-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114600 at /Applications/Nexy.app
+default	14:51:56.671133-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.17774, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
+default	14:51:56.671164-0500	tccd	requestor: TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:51:56.672085-0500	tccd	AUTHREQ_SUBJECT: msgID=393.17774, subject=com.nexy.assistant,
+default	14:51:56.672679-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:51:56.699250-0500	Nexy	 [INFO] SLSHWCaptureDesktopProxying_block_invoke:506 request: <private>, error: (null), windowInfo: (null)
+default	14:51:56.719682-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:51:56.722330-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:51:56.722385-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[scr] Nexy (com.nexy.assistant)]
+default	14:51:56.722414-0500	ControlCenter	Active activity attributions changed to ["scr:com.nexy.assistant"]
+default	14:51:56.726739-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:56.726754-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:56.726767-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:56.726773-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:51:56.726783-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:51:56.726811-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:51:56.727154-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:51:56.740559-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 39696: target_identity: {
+    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 9cfb2800 };
     kTCCCodeIdentityAuthority = kTCCCodeIdentityDesignatedRequirementAuthority;
     kTCCCodeIdentityCSFlags = 536941313;
     kTCCCodeIdentityCanSendToAnyTarget = 0;
@@ -1547,422 +1265,266 @@ default	11:14:00.668154-0500	System Events	TCCAccessRequestIndirect: TCCAccessRe
     kTCCCodeIdentitySDKVersion = 984064;
     kTCCCodeIdentityTeamID = 5NKLL2CLB9;
 }
-default	11:14:00.678760-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
-default	11:14:00.949729-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61714)
-default	11:14:00.949800-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61715)
-default	11:14:00.949822-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 0 0, id:61714 called from <private>
-default	11:14:00.949834-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61714 called from <private>
-default	11:14:00.949846-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 0 0, id:61715 called from <private>
-default	11:14:00.949852-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 1 1, id:61715 called from <private>
-default	11:14:00.969765-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61714)
-default	11:14:00.976804-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61715)
-default	11:14:00.976860-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61715 called from <private>
-default	11:14:00.976867-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 0 0 id:61715 called from <private>
-default	11:14:00.977236-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61714 called from <private>
-default	11:14:00.977250-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61714 called from <private>
-default	11:14:00.991817-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 2 2, id:61714 called from <private>
-default	11:14:00.991833-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 3 3, id:61714 called from <private>
-default	11:14:00.991909-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61714)
-default	11:14:01.001708-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61714)
-default	11:14:01.002002-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 3 3 id:61714 called from <private>
-default	11:14:01.002011-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 2 2 id:61714 called from <private>
-default	11:14:01.002110-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61714)
-default	11:14:01.011598-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61714)
-default	11:14:01.011867-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61714 called from <private>
-default	11:14:01.011878-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61714 called from <private>
-default	11:14:01.012072-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61714 called from <private>
-default	11:14:01.012080-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61714 called from <private>
-default	11:14:01.012100-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61714 called from <private>
-default	11:14:01.012109-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61714 called from <private>
-default	11:14:01.012118-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61714 called from <private>
-default	11:14:01.012125-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61714 called from <private>
-default	11:14:01.012147-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61714 called from <private>
-default	11:14:01.012178-0500	Nexy	  HALC_ProxyIOContext.cpp:3376   HALC_IOContext_PauseIO(61714)
-default	11:14:01.012248-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61714 called from <private>
-default	11:14:01.012403-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61714 called from <private>
-default	11:14:01.012501-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61714 called from <private>
-default	11:14:01.012581-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61714 called from <private>
-default	11:14:01.012651-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61714 called from <private>
-default	11:14:01.012712-0500	Nexy	  HALC_ProxyIOContext.cpp:1146   HALC_ProxyIOContext::PauseIO: -> 0 1 1, id:61714 called from <private>
-default	11:14:01.012784-0500	Nexy	  HALC_ProxyIOContext.cpp:1159   HALC_ProxyIOContext::PauseIO: <- 0 2 2, id:61714 called from <private>
-default	11:14:01.015583-0500	Nexy	  HALC_ProxyIOContext.cpp:3410   HALC_IOContext_ResumeIO(61714)
-default	11:14:01.015923-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 2 2 id:61714 called from <private>
-default	11:14:01.015943-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 1 1 id:61714 called from <private>
-default	11:14:01.015958-0500	Nexy	  HALC_ProxyIOContext.cpp:1193   HALC_ProxyIOContext::ResumeIO: -> 0 1 1 id:61714 called from <private>
-default	11:14:01.015968-0500	Nexy	  HALC_ProxyIOContext.cpp:1210   HALC_ProxyIOContext::ResumeIO: <- 0 0 0 id:61714 called from <private>
-default	11:14:01.181451-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0xc9d5bd540) Selecting device 85 from constructor
-default	11:14:01.181476-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xc9d5bd540)
-default	11:14:01.181484-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xc9d5bd540) not already running
-default	11:14:01.181490-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0xc9d5bd540) nothing to teardown
-default	11:14:01.181495-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0xc9d5bd540) connecting device 85
-default	11:14:01.181617-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0xc9d5bd540) Device ID: 85 (Input:No | Output:Yes): true
-default	11:14:01.181759-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0xc9d5bd540) created ioproc 0xb for device 85
-default	11:14:01.181895-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d5bd540) adding 7 device listeners to device 85
-default	11:14:01.182100-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d5bd540) adding 0 device delegate listeners to device 85
-default	11:14:01.182111-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0xc9d5bd540)
-default	11:14:01.182190-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
-  output stream 0 [0x56]:  2 ch,  48000 Hz, Float32, interleaved
-default	11:14:01.182202-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
-default	11:14:01.182209-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:51:56.752203-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:51:57.485259-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:51:57.485330-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:51:57.485467-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> attempting immediate handshake from activate
+default	14:51:57.485537-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> sent handshake
+default	14:51:57.486151-0500	Nexy	Requesting scene <FBSScene: 0x7c0d346e0; com.apple.controlcenter:A9B1021A-BDEF-4843-AE5B-7F2FAB947A50> from com.apple.controlcenter.statusitems
+default	14:51:57.486804-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> was invalidated
+default	14:51:57.486905-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:51:57.487042-0500	Nexy	Error creating <FBSScene: 0x7c0d346e0; com.apple.controlcenter:A9B1021A-BDEF-4843-AE5B-7F2FAB947A50>: <NSError: 0x7bec07b40; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:51:57.487113-0500	Nexy	No scene exists for identity: com.apple.controlcenter:A9B1021A-BDEF-4843-AE5B-7F2FAB947A50
+default	14:51:57.488071-0500	Nexy	Request for <FBSScene: 0x7c0d346e0; com.apple.controlcenter:A9B1021A-BDEF-4843-AE5B-7F2FAB947A50> complete!
+default	14:51:57.488280-0500	Nexy	Realizing settings extension FBSSceneTransitionContextCore on FBSSceneTransitionContext
+default	14:51:57.491725-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:51:57.491772-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:51:57.491888-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> attempting immediate handshake from activate
+default	14:51:57.491934-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> sent handshake
+default	14:51:57.492093-0500	Nexy	Realizing settings extension __NSHostedViewSceneSettings__ on FBSSceneSettings
+default	14:51:57.492875-0500	Nexy	Realizing settings extension __NSClientHostedViewSceneSettings__ on FBSSceneClientSettings
+default	14:51:57.493145-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> was invalidated
+default	14:51:57.493177-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:51:57.493573-0500	Nexy	Realizing settings extension __NSStatusItemAuxiliaryViewSceneSettings__ on FBSSceneSettings
+default	14:51:57.493674-0500	Nexy	Realizing settings extension __NSClientStatusItemAuxiliaryViewSceneSettings__ on FBSSceneClientSettings
+default	14:51:57.494364-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34780; com.apple.controlcenter:A9B1021A-BDEF-4843-AE5B-7F2FAB947A50-Aux[1]-NSStatusItemView> from com.apple.controlcenter.statusitems
+error	14:51:57.494640-0500	Nexy	Error creating <FBSScene: 0x7c0d34780; com.apple.controlcenter:A9B1021A-BDEF-4843-AE5B-7F2FAB947A50-Aux[1]-NSStatusItemView>: <NSError: 0x7bec07a50; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+default	14:51:57.494712-0500	Nexy	Request for <FBSScene: 0x7c0d34780; com.apple.controlcenter:A9B1021A-BDEF-4843-AE5B-7F2FAB947A50-Aux[1]-NSStatusItemView> complete!
+error	14:51:57.495198-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:51:57.495232-0500	Nexy	[com.apple.controlcenter:A9B1021A-BDEF-4843-AE5B-7F2FAB947A50] No matching scene to invalidate for this identity.
+error	14:51:57.495295-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:51:57.495359-0500	Nexy	Unhandled disconnected scene <private>
+error	14:51:57.495493-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:51:58.496875-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:51:58.496934-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:51:58.497072-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> attempting immediate handshake from activate
+default	14:51:58.497127-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> sent handshake
+default	14:51:58.497611-0500	Nexy	Requesting scene <FBSScene: 0x7c0d346e0; com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942> from com.apple.controlcenter.statusitems
+default	14:51:58.498059-0500	Nexy	Request for <FBSScene: 0x7c0d346e0; com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942> complete!
+default	14:51:58.498389-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> was invalidated
+default	14:51:58.498425-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:51:58.498508-0500	Nexy	Error creating <FBSScene: 0x7c0d346e0; com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942>: <NSError: 0x7bec07120; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:51:58.498545-0500	Nexy	No scene exists for identity: com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942
+default	14:51:58.498599-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:51:58.498621-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:51:58.498682-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> attempting immediate handshake from activate
+default	14:51:58.498706-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> sent handshake
+default	14:51:58.498913-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34820; com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942-Aux[2]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:51:58.499264-0500	Nexy	Request for <FBSScene: 0x7c0d34820; com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942-Aux[2]-NSStatusItemView> complete!
+default	14:51:58.499332-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> was invalidated
+default	14:51:58.499361-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:51:58.499424-0500	Nexy	Error creating <FBSScene: 0x7c0d34820; com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942-Aux[2]-NSStatusItemView>: <NSError: 0x7bec07870; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:51:58.499449-0500	Nexy	No scene exists for identity: com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942-Aux[2]-NSStatusItemView
+default	14:51:58.500278-0500	Nexy	[com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942-Aux[2]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:51:58.500678-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:51:58.500703-0500	Nexy	[com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942] No matching scene to invalidate for this identity.
+error	14:51:58.500735-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:51:58.500754-0500	Nexy	[com.apple.controlcenter:655A4E39-D985-4CEB-B975-76140D132942-Aux[2]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:51:58.501267-0500	Nexy	Unhandled disconnected scene <private>
+error	14:51:58.501377-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:51:58.501468-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:51:58.501518-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:51:59.502219-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:51:59.502278-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:51:59.502461-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> attempting immediate handshake from activate
+default	14:51:59.502520-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> sent handshake
+default	14:51:59.503019-0500	Nexy	Requesting scene <FBSScene: 0x7c0d346e0; com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7> from com.apple.controlcenter.statusitems
+default	14:51:59.503452-0500	Nexy	Request for <FBSScene: 0x7c0d346e0; com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7> complete!
+default	14:51:59.503911-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> was invalidated
+default	14:51:59.503967-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:51:59.504065-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:51:59.504101-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:51:59.504193-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34d20 <private>> attempting immediate handshake from activate
+default	14:51:59.504235-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34d20 <private>> sent handshake
+error	14:51:59.504352-0500	Nexy	Error creating <FBSScene: 0x7c0d346e0; com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7>: <NSError: 0x7bec07a50; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:51:59.504390-0500	Nexy	No scene exists for identity: com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7
+default	14:51:59.504519-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34780; com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7-Aux[3]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:51:59.504856-0500	Nexy	Request for <FBSScene: 0x7c0d34780; com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7-Aux[3]-NSStatusItemView> complete!
+default	14:51:59.505122-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34d20 <private>> was invalidated
+default	14:51:59.505172-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:51:59.505278-0500	Nexy	Error creating <FBSScene: 0x7c0d34780; com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7-Aux[3]-NSStatusItemView>: <NSError: 0x7bec07690; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:51:59.505322-0500	Nexy	No scene exists for identity: com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7-Aux[3]-NSStatusItemView
+default	14:51:59.505685-0500	Nexy	[com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7-Aux[3]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:51:59.506129-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:51:59.506162-0500	Nexy	[com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7] No matching scene to invalidate for this identity.
+error	14:51:59.506218-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:51:59.506252-0500	Nexy	[com.apple.controlcenter:B05E2357-4E34-4FBB-A651-6AEA9F0C80C7-Aux[3]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:51:59.506820-0500	Nexy	Unhandled disconnected scene <private>
+error	14:51:59.506942-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:51:59.507050-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:51:59.507128-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:00.507621-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:00.507667-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:00.507780-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> attempting immediate handshake from activate
+default	14:52:00.507822-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> sent handshake
+default	14:52:00.508193-0500	Nexy	Requesting scene <FBSScene: 0x7c0d346e0; com.apple.controlcenter:EC2154FB-DFCF-4721-94D7-0D9624587FD6> from com.apple.controlcenter.statusitems
+default	14:52:00.508528-0500	Nexy	Request for <FBSScene: 0x7c0d346e0; com.apple.controlcenter:EC2154FB-DFCF-4721-94D7-0D9624587FD6> complete!
+default	14:52:00.508981-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> was invalidated
+default	14:52:00.509022-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:00.509150-0500	Nexy	Error creating <FBSScene: 0x7c0d346e0; com.apple.controlcenter:EC2154FB-DFCF-4721-94D7-0D9624587FD6>: <NSError: 0x7bec07990; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:00.509176-0500	Nexy	No scene exists for identity: com.apple.controlcenter:EC2154FB-DFCF-4721-94D7-0D9624587FD6
+default	14:52:00.509227-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34d20; com.apple.controlcenter:EC2154FB-DFCF-4721-94D7-0D9624587FD6-Aux[4]-NSStatusItemView> from com.apple.controlcenter.statusitems
+error	14:52:00.509394-0500	Nexy	Error creating <FBSScene: 0x7c0d34d20; com.apple.controlcenter:EC2154FB-DFCF-4721-94D7-0D9624587FD6-Aux[4]-NSStatusItemView>: <NSError: 0x7bec07930; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+default	14:52:00.509449-0500	Nexy	Request for <FBSScene: 0x7c0d34d20; com.apple.controlcenter:EC2154FB-DFCF-4721-94D7-0D9624587FD6-Aux[4]-NSStatusItemView> complete!
+error	14:52:00.509681-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:00.509708-0500	Nexy	[com.apple.controlcenter:EC2154FB-DFCF-4721-94D7-0D9624587FD6] No matching scene to invalidate for this identity.
+error	14:52:00.509747-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:00.509790-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:00.509874-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:00.541188-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x7bf0a8e40) Selecting device 71 from constructor
+default	14:52:00.541223-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:00.541239-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:00.541253-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x7bf0a8e40) nothing to teardown
+default	14:52:00.541264-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 71
+default	14:52:00.541500-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 71 (Input:No | Output:Yes): true
+default	14:52:00.541810-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xb for device 71
+default	14:52:00.542138-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 71
+default	14:52:00.542658-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 71
+default	14:52:00.542682-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:52:00.542880-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:00.542905-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:52:00.542922-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Output render format:  2 ch,  48000 Hz, Float32, interleaved
-default	11:14:01.182216-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
-default	11:14:01.182225-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:52:00.542942-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:52:00.542963-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
-default	11:14:01.182322-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0xc9d5bd540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
-default	11:14:01.182331-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0xc9d5bd540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
-default	11:14:01.182337-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
-default	11:14:01.182342-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d5bd540) removing 0 device listeners from device 0
-default	11:14:01.182348-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d5bd540) removing 0 device delegate listeners from device 0
-default	11:14:01.182352-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xc9d5bd540)
-default	11:14:01.182368-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0xc9d5bd540) caller requesting device change from 85 to 85
-default	11:14:01.182373-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xc9d5bd540)
-default	11:14:01.182377-0500	Nexy	                AUHAL.cpp:659   SelectDevice: <- (0xc9d5bd540) exiting with nothing to do
-default	11:14:01.182821-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
-default	11:14:01.183157-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
-default	11:14:01.184223-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
-default	11:14:01.185866-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0xc9d5bd540) Selecting device 0 from destructor
-default	11:14:01.185874-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xc9d5bd540)
-default	11:14:01.185880-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xc9d5bd540) not already running
-default	11:14:01.185884-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0xc9d5bd540) disconnecting device 85
-default	11:14:01.185890-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0xc9d5bd540) destroying ioproc 0xb for device 85
-default	11:14:01.185934-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Output {1C-77-54-18-C8-A3:output, 0xb}
-default	11:14:01.185992-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+default	14:52:00.543237-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:00.543267-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:00.543282-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:00.543297-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device listeners from device 0
+default	14:52:00.543308-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 0
+default	14:52:00.543320-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:00.543349-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x7bf0a8e40) caller requesting device change from 71 to 71
+default	14:52:00.543363-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:00.543375-0500	Nexy	                AUHAL.cpp:659   SelectDevice: <- (0x7bf0a8e40) exiting with nothing to do
+default	14:52:00.544378-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
+default	14:52:00.545083-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
+default	14:52:00.549458-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0x7bf0a8e40) Selecting device 0 from destructor
+default	14:52:00.549477-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:00.549489-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:00.549499-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 71
+default	14:52:00.549508-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xb for device 71
+default	14:52:00.549549-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Output {BuiltInSpeakerDevice, 0xb}
+default	14:52:00.549628-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
 )} Server update was not required.
-default	11:14:01.186110-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0xc9d5bd540) nothing to setup
-default	11:14:01.186122-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d5bd540) adding 0 device listeners to device 0
-default	11:14:01.186127-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d5bd540) adding 0 device delegate listeners to device 0
-default	11:14:01.186135-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d5bd540) removing 7 device listeners from device 85
-default	11:14:01.186322-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d5bd540) removing 0 device delegate listeners from device 85
-default	11:14:01.186336-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xc9d5bd540)
-default	11:14:01.187401-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0xc9d5bd540) Selecting device 85 from constructor
-default	11:14:01.187411-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xc9d5bd540)
-default	11:14:01.187417-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0xc9d5bd540) not already running
-default	11:14:01.187422-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0xc9d5bd540) nothing to teardown
-default	11:14:01.187427-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0xc9d5bd540) connecting device 85
-default	11:14:01.187515-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0xc9d5bd540) Device ID: 85 (Input:No | Output:Yes): true
-default	11:14:01.187614-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0xc9d5bd540) created ioproc 0xc for device 85
-default	11:14:01.187714-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d5bd540) adding 7 device listeners to device 85
-default	11:14:01.187886-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0xc9d5bd540) adding 0 device delegate listeners to device 85
-default	11:14:01.187896-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0xc9d5bd540)
-default	11:14:01.187974-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
-  output stream 0 [0x56]:  2 ch,  48000 Hz, Float32, interleaved
-default	11:14:01.187985-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
-default	11:14:01.187993-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:52:00.549838-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0x7bf0a8e40) nothing to setup
+default	14:52:00.549859-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device listeners to device 0
+default	14:52:00.549869-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 0
+default	14:52:00.549879-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 71
+default	14:52:00.550271-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 71
+default	14:52:00.550295-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:00.551808-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x7bf0a8e40) Selecting device 71 from constructor
+default	14:52:00.551827-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:00.551837-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:00.551846-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x7bf0a8e40) nothing to teardown
+default	14:52:00.551867-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 71
+default	14:52:00.552009-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 71 (Input:No | Output:Yes): true
+default	14:52:00.552175-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xc for device 71
+default	14:52:00.552359-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 71
+default	14:52:00.552670-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 71
+default	14:52:00.552687-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:52:00.552819-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:00.552835-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:52:00.552846-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Output render format:  2 ch,  48000 Hz, Float32, interleaved
-default	11:14:01.188000-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
-default	11:14:01.188009-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+default	14:52:00.552859-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:52:00.552871-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
   Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
-default	11:14:01.188110-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0xc9d5bd540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
-default	11:14:01.188119-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0xc9d5bd540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
-default	11:14:01.188127-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
-default	11:14:01.188132-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d5bd540) removing 0 device listeners from device 0
-default	11:14:01.188137-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0xc9d5bd540) removing 0 device delegate listeners from device 0
-default	11:14:01.188141-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0xc9d5bd540)
-default	11:14:01.188153-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0xc9d5bd540) caller requesting device change from 85 to 85
-default	11:14:01.188158-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0xc9d5bd540)
-default	11:14:01.188163-0500	Nexy	                AUHAL.cpp:659   SelectDevice: <- (0xc9d5bd540) exiting with nothing to do
-default	11:14:01.188169-0500	Nexy	AudioHardware-mac-imp.cpp:1299   AudioObjectAddPropertyListener: listener was already added
-default	11:14:01.188718-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
-default	11:14:01.189013-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
-default	11:14:01.191895-0500	runningboardd	ignoring [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as candidate for concrete target as it is terminating
-default	11:14:01.191961-0500	runningboardd	Acquiring assertion targeting 84850 from originator [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-84850-1504681 target:84850 attributes:[
+default	14:52:00.553049-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:00.553066-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:00.553076-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:00.553085-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device listeners from device 0
+default	14:52:00.553092-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 0
+default	14:52:00.553098-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:00.553117-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x7bf0a8e40) caller requesting device change from 71 to 71
+default	14:52:00.553123-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:00.553131-0500	Nexy	                AUHAL.cpp:659   SelectDevice: <- (0x7bf0a8e40) exiting with nothing to do
+default	14:52:00.553141-0500	Nexy	AudioHardware-mac-imp.cpp:1299   AudioObjectAddPropertyListener: listener was already added
+default	14:52:00.554018-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
+default	14:52:00.554435-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
+default	14:52:00.558012-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:52:00.558094-0500	runningboardd	Acquiring assertion targeting 39688 from originator [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-39688-1518821 target:39688 attributes:[
 	<RBSDomainAttribute| domain:"com.apple.CoreAudio.HAL" name:"AudioHAL" sourceEnvironment:"(null)">
 	]>
-default	11:14:01.192316-0500	runningboardd	ignoring [app<application.com.nexy.assistant.20931626.20931632(501)>:84850] as candidate for concrete target as it is terminating
-error	11:14:01.192389-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 84850 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 84850 does not exist}>
-error	11:14:01.192415-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 84850 with code: 2 - RBSAssertionErrorDomain
-default	11:14:01.200344-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:01.200387-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:01.200490-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> attempting immediate handshake from activate
-default	11:14:01.200526-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> sent handshake
-default	11:14:01.200916-0500	Nexy	Requesting scene <FBSScene: 0xca07a0aa0; com.apple.controlcenter:D8913A5A-24CE-410F-87DF-549017D1A8AF> from com.apple.controlcenter.statusitems
-default	11:14:01.201359-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> was invalidated
-default	11:14:01.201410-0500	Nexy	Request for <FBSScene: 0xca07a0aa0; com.apple.controlcenter:D8913A5A-24CE-410F-87DF-549017D1A8AF> complete!
-default	11:14:01.201427-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:01.201503-0500	Nexy	Error creating <FBSScene: 0xca07a0aa0; com.apple.controlcenter:D8913A5A-24CE-410F-87DF-549017D1A8AF>: <NSError: 0xc9f00e190; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:01.201559-0500	Nexy	No scene exists for identity: com.apple.controlcenter:D8913A5A-24CE-410F-87DF-549017D1A8AF
-default	11:14:01.201565-0500	Nexy	Realizing settings extension FBSSceneTransitionContextCore on FBSSceneTransitionContext
-default	11:14:01.204076-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:01.204092-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:01.204139-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> attempting immediate handshake from activate
-default	11:14:01.204159-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> sent handshake
-default	11:14:01.204231-0500	Nexy	Realizing settings extension __NSHostedViewSceneSettings__ on FBSSceneSettings
-default	11:14:01.204585-0500	Nexy	Realizing settings extension __NSClientHostedViewSceneSettings__ on FBSSceneClientSettings
-default	11:14:01.204669-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> was invalidated
-default	11:14:01.204683-0500	Nexy	FBSWorkspace unregistering source: <private>
-default	11:14:01.204931-0500	Nexy	Realizing settings extension __NSStatusItemAuxiliaryViewSceneSettings__ on FBSSceneSettings
-default	11:14:01.204977-0500	Nexy	Realizing settings extension __NSClientStatusItemAuxiliaryViewSceneSettings__ on FBSSceneClientSettings
-default	11:14:01.205324-0500	Nexy	Requesting scene <FBSScene: 0xca07a0820; com.apple.controlcenter:D8913A5A-24CE-410F-87DF-549017D1A8AF-Aux[1]-NSStatusItemView> from com.apple.controlcenter.statusitems
-error	11:14:01.205476-0500	Nexy	Error creating <FBSScene: 0xca07a0820; com.apple.controlcenter:D8913A5A-24CE-410F-87DF-549017D1A8AF-Aux[1]-NSStatusItemView>: <NSError: 0xc9f00ff90; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-default	11:14:01.205518-0500	Nexy	Request for <FBSScene: 0xca07a0820; com.apple.controlcenter:D8913A5A-24CE-410F-87DF-549017D1A8AF-Aux[1]-NSStatusItemView> complete!
-error	11:14:01.205857-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:01.205878-0500	Nexy	[com.apple.controlcenter:D8913A5A-24CE-410F-87DF-549017D1A8AF] No matching scene to invalidate for this identity.
-error	11:14:01.205902-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:01.205938-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:01.206032-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-default	11:14:01.764435-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Output {1C-77-54-18-C8-A3:output, 0xc}
-default	11:14:01.765491-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2a2","name":"Nexy(84850)"}, "details":{"deviceUIDs":["1C-77-54-18-C8-A3:output"],"implicit_category":"MediaPlayback","input_running":false,"output_running":true} }
-default	11:14:01.765600-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
-default	11:14:01.765635-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2a2, Nexy(84850), 'prim'/com.nexy.assistant was not correct. Old score = 201
-default	11:14:01.765670-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:14:01.765717-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2a2, Nexy(84850), 'prim'', AudioCategory changed to 'MediaPlayback'
-default	11:14:01.765726-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+default	14:52:00.558471-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+error	14:52:00.558593-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 39688 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 39688 does not exist}>
+error	14:52:00.558620-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 39688 with code: 2 - RBSAssertionErrorDomain
+default	14:52:00.585156-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Output {BuiltInSpeakerDevice, 0xc}
+default	14:52:00.586417-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"MediaPlayback","input_running":false,"output_running":true} }
+default	14:52:00.586519-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:52:00.586553-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2c0, Nexy(39688), 'prim'/com.nexy.assistant was not correct. Old score = 201
+default	14:52:00.586585-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:00.586633-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2c0, Nexy(39688), 'prim'', AudioCategory changed to 'MediaPlayback'
+default	14:52:00.586678-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:14:01.765786-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO> is going active
-default	11:14:01.765799-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsPlaying:]: MXCoreSession com.nexy.assistant with category/mode MediaPlayback/Default and coreSessionID = 675 starting playing
-default	11:14:01.765918-0500	audioaccessoryd	Audio state update Stop apps {
+default	14:52:00.586733-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO> is going active
+default	14:52:00.586757-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsPlaying:]: MXCoreSession com.nexy.assistant with category/mode MediaPlayback/Default and coreSessionID = 705 starting playing
+default	14:52:00.586863-0500	audioaccessoryd	Audio state update Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:14:01.765969-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+default	14:52:00.586901-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
     "com.nexy.assistant" : 201,
 }
-default	11:14:01.765939-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:14:01.765995-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO>
-default	11:14:01.766124-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2a2, Nexy(84850), 'prim'', displayID:'com.nexy.assistant'}
-default	11:14:01.766155-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Will try to see if we can get the shared route for session = <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO>. Old (200) and New (201) scores.
-default	11:14:01.766242-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 201, deviceID = <private>
-default	11:14:01.766300-0500	audiomxd	AudioApplicationInfoImpl.mm:395   Successfully updated session 0x1ef2a2 to isSessionRecording: 0
-	app: {"name":"[implicit] Nexy","pid":84850}
+default	14:52:00.586833-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:00.586913-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO>
+default	14:52:00.586975-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:00.587048-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Will try to see if we can get the shared route for session = <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO>. Old (200) and New (201) scores.
+default	14:52:00.587162-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 201, deviceID = <private>
+default	14:52:00.587244-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 1]. BT device UIDS: {(
+)}
+default	14:52:00.587172-0500	audiomxd	AudioApplicationInfoImpl.mm:395   Successfully updated session 0x1ef2c0 to isSessionRecording: 0
+	app: {"name":"[implicit] Nexy","pid":39688}
 	AudioApp.isRecording: false
 [ 
-	{ sessionID: 0x1ef2a2, sessionType: 'prim', isRecording: false }, 
+	{ sessionID: 0x1ef2c0, sessionType: 'prim', isRecording: false }, 
 ]
-default	11:14:01.766391-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 1]. BT device UIDS: {(
-    "1C-77-54-18-C8-A3:output"
-)}
-default	11:14:01.766412-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
-default	11:14:01.766488-0500	audioaccessoryd	Routing request Wx 1C:77:54:18:C8:A3 score 201 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
-default	11:14:01.766674-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+default	14:52:00.587258-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:00.588907-0500	audioaccessoryd	Routing request Wx NULL score 201 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
+default	14:52:00.589159-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
     "com.nexy.assistant" : 201,
 }
-default	11:14:01.766747-0500	audioaccessoryd	Audio state update Start apps {
+default	14:52:00.589253-0500	audioaccessoryd	Audio state update Start apps {
     "com.nexy.assistant" : 201,
 }
-default	11:14:01.766772-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+default	14:52:00.589282-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
     "com.nexy.assistant" : 201,
 }
-default	11:14:01.766787-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 201 count 1
-default	11:14:01.766796-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 201
-error	11:14:01.766805-0500	audioaccessoryd	Updating local audio category 100 -> 201 app com.nexy.assistant
-error	11:14:01.766851-0500	audioaccessoryd	Relaying via 24B92680-715A-E821-B5AF-358E78C2DAF9 inWxAddress 1C:77:54:18:C8:A3 to 88:20:0D:45:06:51 with options {
-    "playingApp" : "com.nexy.assistant",
-    "hostStreamingState" : "YES",
-    "btAddress" : "A0:9A:8E:0D:58:86",
-    "btName" : "Mac",
-    "otherDeviceAudioCategory" : 201,
-}
-default	11:14:01.766912-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 201 App com.nexy.assistant
-default	11:14:02.207474-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:02.207535-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:02.207684-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> attempting immediate handshake from activate
-default	11:14:02.207736-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> sent handshake
-default	11:14:02.208219-0500	Nexy	Requesting scene <FBSScene: 0xca07a0820; com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68> from com.apple.controlcenter.statusitems
-default	11:14:02.208661-0500	Nexy	Request for <FBSScene: 0xca07a0820; com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68> complete!
-default	11:14:02.209166-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> was invalidated
-default	11:14:02.209235-0500	Nexy	FBSWorkspace unregistering source: <private>
-default	11:14:02.209336-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:02.209371-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:02.209460-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> attempting immediate handshake from activate
-default	11:14:02.209500-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> sent handshake
-error	11:14:02.209611-0500	Nexy	Error creating <FBSScene: 0xca07a0820; com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68>: <NSError: 0xc9f00ff30; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:02.209649-0500	Nexy	No scene exists for identity: com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68
-default	11:14:02.209767-0500	Nexy	Requesting scene <FBSScene: 0xca07a0a00; com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68-Aux[2]-NSStatusItemView> from com.apple.controlcenter.statusitems
-default	11:14:02.210200-0500	Nexy	Request for <FBSScene: 0xca07a0a00; com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68-Aux[2]-NSStatusItemView> complete!
-default	11:14:02.210423-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> was invalidated
-default	11:14:02.210469-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:02.210561-0500	Nexy	Error creating <FBSScene: 0xca07a0a00; com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68-Aux[2]-NSStatusItemView>: <NSError: 0xc9f00fba0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:02.210592-0500	Nexy	No scene exists for identity: com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68-Aux[2]-NSStatusItemView
-default	11:14:02.211489-0500	Nexy	[com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68-Aux[2]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
-error	11:14:02.212042-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:02.212076-0500	Nexy	[com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68] No matching scene to invalidate for this identity.
-error	11:14:02.212132-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:02.212163-0500	Nexy	[com.apple.controlcenter:C2D8A201-4387-4BC8-93E9-C96B5CB09D68-Aux[2]-NSStatusItemView] No matching scene to invalidate for this identity.
-error	11:14:02.212810-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:02.212937-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-error	11:14:02.213072-0500	Nexy	Unhandled disconnected auxiliary scene <private>
-error	11:14:02.213145-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-default	11:14:03.028568-0500	audioaccessoryd	AudioStateSnapshot: Route:Bluetooth App com.nexy.assistant, Score 201, Remote 100NumofApp 1
-default	11:14:03.213623-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:03.213660-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:03.213748-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> attempting immediate handshake from activate
-default	11:14:03.213781-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> sent handshake
-default	11:14:03.214085-0500	Nexy	Requesting scene <FBSScene: 0xca07a0820; com.apple.controlcenter:3F759F76-FA82-4375-9BE5-738904D2E74C> from com.apple.controlcenter.statusitems
-default	11:14:03.214345-0500	Nexy	Request for <FBSScene: 0xca07a0820; com.apple.controlcenter:3F759F76-FA82-4375-9BE5-738904D2E74C> complete!
-default	11:14:03.214696-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> was invalidated
-default	11:14:03.214725-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:03.214807-0500	Nexy	Error creating <FBSScene: 0xca07a0820; com.apple.controlcenter:3F759F76-FA82-4375-9BE5-738904D2E74C>: <NSError: 0xc9f00fc90; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:03.214829-0500	Nexy	No scene exists for identity: com.apple.controlcenter:3F759F76-FA82-4375-9BE5-738904D2E74C
-default	11:14:03.214863-0500	Nexy	Requesting scene <FBSScene: 0xca07a0aa0; com.apple.controlcenter:3F759F76-FA82-4375-9BE5-738904D2E74C-Aux[3]-NSStatusItemView> from com.apple.controlcenter.statusitems
-error	11:14:03.214965-0500	Nexy	Error creating <FBSScene: 0xca07a0aa0; com.apple.controlcenter:3F759F76-FA82-4375-9BE5-738904D2E74C-Aux[3]-NSStatusItemView>: <NSError: 0xc9f00ff00; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-default	11:14:03.215004-0500	Nexy	Request for <FBSScene: 0xca07a0aa0; com.apple.controlcenter:3F759F76-FA82-4375-9BE5-738904D2E74C-Aux[3]-NSStatusItemView> complete!
-error	11:14:03.215184-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:03.215202-0500	Nexy	[com.apple.controlcenter:3F759F76-FA82-4375-9BE5-738904D2E74C] No matching scene to invalidate for this identity.
-error	11:14:03.215224-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:03.215257-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:03.215316-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-default	11:14:04.216499-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:04.216559-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:04.216716-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> attempting immediate handshake from activate
-default	11:14:04.216772-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> sent handshake
-default	11:14:04.217278-0500	Nexy	Requesting scene <FBSScene: 0xca07a0820; com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907> from com.apple.controlcenter.statusitems
-default	11:14:04.217703-0500	Nexy	Request for <FBSScene: 0xca07a0820; com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907> complete!
-default	11:14:04.218137-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> was invalidated
-default	11:14:04.218194-0500	Nexy	FBSWorkspace unregistering source: <private>
-default	11:14:04.218332-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:04.218364-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:04.218449-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> attempting immediate handshake from activate
-default	11:14:04.218480-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> sent handshake
-error	11:14:04.218585-0500	Nexy	Error creating <FBSScene: 0xca07a0820; com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907>: <NSError: 0xc9f00fea0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:04.218611-0500	Nexy	No scene exists for identity: com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907
-default	11:14:04.218707-0500	Nexy	Requesting scene <FBSScene: 0xca07a0be0; com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907-Aux[4]-NSStatusItemView> from com.apple.controlcenter.statusitems
-default	11:14:04.218998-0500	Nexy	Request for <FBSScene: 0xca07a0be0; com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907-Aux[4]-NSStatusItemView> complete!
-default	11:14:04.219294-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0a00 <private>> was invalidated
-default	11:14:04.219327-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:04.219420-0500	Nexy	Error creating <FBSScene: 0xca07a0be0; com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907-Aux[4]-NSStatusItemView>: <NSError: 0xc9f00e190; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:04.219445-0500	Nexy	No scene exists for identity: com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907-Aux[4]-NSStatusItemView
-default	11:14:04.219708-0500	Nexy	[com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907-Aux[4]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
-error	11:14:04.220057-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:04.220083-0500	Nexy	[com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907] No matching scene to invalidate for this identity.
-error	11:14:04.220124-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:04.220148-0500	Nexy	[com.apple.controlcenter:444A1CAE-4D2B-4399-A86E-51FDF57FC907-Aux[4]-NSStatusItemView] No matching scene to invalidate for this identity.
-error	11:14:04.220659-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:04.220762-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-error	11:14:04.220861-0500	Nexy	Unhandled disconnected auxiliary scene <private>
-error	11:14:04.220927-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-default	11:14:05.136742-0500	Nexy	void _updateToReflectAutomaticTerminationState(void) Setting _kLSApplicationWouldBeTerminatedByTALKey=1
-default	11:14:05.220930-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:05.220989-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:05.221127-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> attempting immediate handshake from activate
-default	11:14:05.221178-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> sent handshake
-default	11:14:05.221690-0500	Nexy	Requesting scene <FBSScene: 0xca07a0820; com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B> from com.apple.controlcenter.statusitems
-default	11:14:05.222045-0500	Nexy	Request for <FBSScene: 0xca07a0820; com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B> complete!
-default	11:14:05.222383-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> was invalidated
-default	11:14:05.222419-0500	Nexy	FBSWorkspace unregistering source: <private>
-default	11:14:05.222475-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:05.222498-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:05.222557-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0d20 <private>> attempting immediate handshake from activate
-default	11:14:05.222582-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0d20 <private>> sent handshake
-error	11:14:05.222671-0500	Nexy	Error creating <FBSScene: 0xca07a0820; com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B>: <NSError: 0xc9f00dcb0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:05.222707-0500	Nexy	No scene exists for identity: com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B
-default	11:14:05.222832-0500	Nexy	Requesting scene <FBSScene: 0xca07a0aa0; com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B-Aux[5]-NSStatusItemView> from com.apple.controlcenter.statusitems
-default	11:14:05.223125-0500	Nexy	Request for <FBSScene: 0xca07a0aa0; com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B-Aux[5]-NSStatusItemView> complete!
-default	11:14:05.223417-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0d20 <private>> was invalidated
-default	11:14:05.223458-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:05.223536-0500	Nexy	Error creating <FBSScene: 0xca07a0aa0; com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B-Aux[5]-NSStatusItemView>: <NSError: 0xc9f00fdb0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:05.223558-0500	Nexy	No scene exists for identity: com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B-Aux[5]-NSStatusItemView
-default	11:14:05.223745-0500	Nexy	[com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B-Aux[5]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
-error	11:14:05.224047-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:05.224076-0500	Nexy	[com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B] No matching scene to invalidate for this identity.
-error	11:14:05.224117-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:05.224142-0500	Nexy	[com.apple.controlcenter:9049E6D1-A9E0-4EF6-878F-A881E3B8580B-Aux[5]-NSStatusItemView] No matching scene to invalidate for this identity.
-error	11:14:05.224613-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:05.224724-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-error	11:14:05.224788-0500	Nexy	Unhandled disconnected auxiliary scene <private>
-error	11:14:05.224838-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-default	11:14:06.030205-0500	audioaccessoryd	AudioStateSnapshot: Route:Bluetooth App com.nexy.assistant, Score 201, Remote 100NumofApp 1
-default	11:14:06.225641-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:06.225697-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:06.225835-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> attempting immediate handshake from activate
-default	11:14:06.225886-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> sent handshake
-default	11:14:06.226346-0500	Nexy	Requesting scene <FBSScene: 0xca07a0820; com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5> from com.apple.controlcenter.statusitems
-default	11:14:06.226691-0500	Nexy	Request for <FBSScene: 0xca07a0820; com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5> complete!
-default	11:14:06.227015-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0aa0 <private>> was invalidated
-default	11:14:06.227052-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:06.227163-0500	Nexy	Error creating <FBSScene: 0xca07a0820; com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5>: <NSError: 0xc9f00dd70; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:06.227245-0500	Nexy	No scene exists for identity: com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5
-default	11:14:06.227324-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:06.227463-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:06.227617-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> attempting immediate handshake from activate
-default	11:14:06.227674-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> sent handshake
-default	11:14:06.227930-0500	Nexy	Requesting scene <FBSScene: 0xca07a0dc0; com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5-Aux[6]-NSStatusItemView> from com.apple.controlcenter.statusitems
-default	11:14:06.228143-0500	Nexy	Request for <FBSScene: 0xca07a0dc0; com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5-Aux[6]-NSStatusItemView> complete!
-default	11:14:06.228490-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> was invalidated
-default	11:14:06.228518-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:06.228586-0500	Nexy	Error creating <FBSScene: 0xca07a0dc0; com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5-Aux[6]-NSStatusItemView>: <NSError: 0xc9f00fd50; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:06.228637-0500	Nexy	No scene exists for identity: com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5-Aux[6]-NSStatusItemView
-default	11:14:06.228667-0500	Nexy	[com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5-Aux[6]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
-error	11:14:06.229012-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:06.229032-0500	Nexy	[com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5] No matching scene to invalidate for this identity.
-error	11:14:06.229110-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:06.229176-0500	Nexy	[com.apple.controlcenter:0C4077F1-17A3-4816-91A8-A9BD611EADF5-Aux[6]-NSStatusItemView] No matching scene to invalidate for this identity.
-error	11:14:06.229629-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:06.229727-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-error	11:14:06.229784-0500	Nexy	Unhandled disconnected auxiliary scene <private>
-error	11:14:06.229820-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-default	11:14:06.416268-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
-default	11:14:06.416332-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[scr] Nexy (com.nexy.assistant)]
-default	11:14:06.416368-0500	ControlCenter	Active activity attributions changed to ["scr:com.nexy.assistant"]
-default	11:14:06.417557-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:14:06.417583-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:14:06.417597-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:14:06.417606-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
-default	11:14:06.417613-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
-default	11:14:06.417619-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
-default	11:14:06.417720-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
-default	11:14:06.440958-0500	runningboardd	Periodic Run States <RBProcessState| identity:app<application.com.nexy.assistant.20931626.20931632(501)> role:UserInteractive gpuRole:None coalitionLevel:100 explicitJetsamBand:0 memoryLimit:Inactive(Default) flags:60 guaranteedRunning:NO legacyFinishTaskReason:0 inheritances:<RBMutableInheritanceCollection| inheritancesByEnvironment:{
-	
-	}> primitiveAssertions:[
-	<RBSProcessAssertionInfo| type:2 reason:20246 name:"Domain" domain:"com.apple.launchservicesd:RoleUserInteractive" expl:"uielement:84850">
-	] endowments:[
-	<RBSProcessEndowmentInfo| namespace:com.apple.launchservices.userfacing env:(null)  0>
-	]>
-default	11:14:06.826859-0500	Nexy	NSApplication._react(to:) dock
-default	11:14:06.826870-0500	Nexy	NSApplication._react(to:) reactions=83
-default	11:14:07.165983-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Output {1C-77-54-18-C8-A3:output, 0xc}
-default	11:14:07.166408-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2a2","name":"Nexy(84850)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
-default	11:14:07.166528-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsPlaying:]: MXCoreSession com.nexy.assistant with category/mode MediaPlayback/Default and coreSessionID = 675 stopping playing
-default	11:14:07.166588-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
-default	11:14:07.166630-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
-default	11:14:07.166702-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 675, PID = 84850, Name = sid:0x1ef2a2, Nexy(84850), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO>
-default	11:14:07.166793-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:14:07.166959-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
-)}
-default	11:14:07.166857-0500	audiomxd	AudioApplicationInfoImpl.mm:395   Successfully updated session 0x1ef2a2 to isSessionRecording: 0
-	app: {"name":"[implicit] Nexy","pid":84850}
-	AudioApp.isRecording: false
-[ 
-	{ sessionID: 0x1ef2a2, sessionType: 'prim', isRecording: false }, 
-]
-default	11:14:07.166973-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
-default	11:14:07.167013-0500	audioaccessoryd	Audio state update Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:14:07.167087-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
-    "com.nexy.assistant" : 201,
-}
-default	11:14:07.167113-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 0
-default	11:14:07.174959-0500	coreaudiod	Sending message. { reporterID=364427975065604, category=IO, type=error, message=["issue_type": Optional(overload), "wg_cycles": Optional(1668477), "smallest_buffer_frame_size": Optional(2147483647), "lateness": Optional(698), "wg_total_wakeups": Optional(5), "start_time": Optional(12960632909316), "wg_instructions": Optional(847860), "anchor_sample_time": Optional(2692), "is_prewarming": Optional(0), "wg_system_time_mach": Optional(3526), "cause": Optional(ClientHALIODurationExceededBudget,SafetyViolationOccurred), "wg_external_wakeups": Optional(3), "cause_set": Optional(12), "io_frame_counter": Optional(258048), "HostApplicationDisplayID": Optional(com.nexy.assistant), "is_recovering": Optional(0), "multi_cycle_io_page_faults_duration": Optional(0), "io_cycle": Optional(504), "other_page_faults": Optional(0), "time_since_prev_overload": Optional(540026397110166), "io_cycle_usage": Optional(1), "num_continuous_silent_io_cycles": Optional(85), "safety_violation_time_gap": Optional(0.015125), "io_page_faults": Optional(0), "num_continuous_nonzero_io<…> }
-default	11:14:07.229646-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:07.229686-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:07.229770-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0dc0 <private>> attempting immediate handshake from activate
-default	11:14:07.229804-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0dc0 <private>> sent handshake
-default	11:14:07.230119-0500	Nexy	Requesting scene <FBSScene: 0xca07a0be0; com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B> from com.apple.controlcenter.statusitems
-default	11:14:07.230387-0500	Nexy	Request for <FBSScene: 0xca07a0be0; com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B> complete!
-default	11:14:07.230792-0500	Nexy	Requesting scene <FBSScene: 0xca07a0a00; com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B-Aux[7]-NSStatusItemView> from com.apple.controlcenter.statusitems
-default	11:14:07.230823-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0dc0 <private>> was invalidated
-default	11:14:07.230854-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:07.230914-0500	Nexy	Error creating <FBSScene: 0xca07a0be0; com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B>: <NSError: 0xc9f00db00; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:07.230933-0500	Nexy	No scene exists for identity: com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B
-error	11:14:07.230969-0500	Nexy	Error creating <FBSScene: 0xca07a0a00; com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B-Aux[7]-NSStatusItemView>: <NSError: 0xc9f00e460; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-default	11:14:07.230974-0500	Nexy	Request for <FBSScene: 0xca07a0a00; com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B-Aux[7]-NSStatusItemView> complete!
-error	11:14:07.230982-0500	Nexy	No scene exists for identity: com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B-Aux[7]-NSStatusItemView
-error	11:14:07.231133-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:07.231149-0500	Nexy	[com.apple.controlcenter:8393A436-20A2-4D2F-BFF5-26985B81A08B] No matching scene to invalidate for this identity.
-error	11:14:07.231170-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:07.231194-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:07.231257-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-default	11:14:07.380003-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=84935.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=84935, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
-default	11:14:07.381591-0500	tccd	AUTHREQ_SUBJECT: msgID=84935.1, subject=com.nexy.assistant,
-default	11:14:07.382246-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114900 at /Applications/Nexy.app
-default	11:14:07.396198-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.16917, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=84850, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=84935, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
-default	11:14:07.397104-0500	tccd	AUTHREQ_SUBJECT: msgID=393.16917, subject=com.nexy.assistant,
-default	11:14:07.397716-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114900 at /Applications/Nexy.app
-default	11:14:07.426451-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d114900 at /Applications/Nexy.app
-default	11:14:07.446990-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 84855: target_identity: {
-    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 1c282700 };
+default	14:52:00.589299-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 201 count 2
+default	14:52:00.589312-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 201
+error	14:52:00.589334-0500	audioaccessoryd	Updating local audio category 100 -> 201 app com.nexy.assistant
+default	14:52:00.589379-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 201 App com.nexy.assistant
+default	14:52:01.419459-0500	Nexy	void _updateToReflectAutomaticTerminationState(void) Setting _kLSApplicationWouldBeTerminatedByTALKey=1
+default	14:52:01.511169-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:01.511198-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:01.511291-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> attempting immediate handshake from activate
+default	14:52:01.511322-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> sent handshake
+default	14:52:01.511590-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34d20; com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999> from com.apple.controlcenter.statusitems
+default	14:52:01.511832-0500	Nexy	Request for <FBSScene: 0x7c0d34d20; com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999> complete!
+default	14:52:01.512188-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34c80; com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999-Aux[5]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:01.512243-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> was invalidated
+default	14:52:01.512270-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:01.512326-0500	Nexy	Error creating <FBSScene: 0x7c0d34d20; com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999>: <NSError: 0x7be9f2790; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:01.512341-0500	Nexy	No scene exists for identity: com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999
+error	14:52:01.512372-0500	Nexy	Error creating <FBSScene: 0x7c0d34c80; com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999-Aux[5]-NSStatusItemView>: <NSError: 0x7be9f2af0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+default	14:52:01.512373-0500	Nexy	Request for <FBSScene: 0x7c0d34c80; com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999-Aux[5]-NSStatusItemView> complete!
+error	14:52:01.512383-0500	Nexy	No scene exists for identity: com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999-Aux[5]-NSStatusItemView
+error	14:52:01.512526-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:01.512542-0500	Nexy	[com.apple.controlcenter:7B2C1C28-8461-46E6-9187-5C378CFB2999] No matching scene to invalidate for this identity.
+error	14:52:01.512563-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:01.512630-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:01.512690-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:01.570144-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39735.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=39735, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
+default	14:52:01.571657-0500	tccd	AUTHREQ_SUBJECT: msgID=39735.1, subject=com.nexy.assistant,
+default	14:52:01.572314-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:52:01.588985-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.17778, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=39735, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
+default	14:52:01.589922-0500	tccd	AUTHREQ_SUBJECT: msgID=393.17778, subject=com.nexy.assistant,
+default	14:52:01.590500-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:52:01.619460-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:52:01.636432-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 39696: target_identity: {
+    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 a1fb2800 };
     kTCCCodeIdentityAuthority = kTCCCodeIdentityDesignatedRequirementAuthority;
     kTCCCodeIdentityCSFlags = 536941313;
     kTCCCodeIdentityCanSendToAnyTarget = 0;
@@ -1975,51 +1537,1226 @@ default	11:14:07.446990-0500	System Events	TCCAccessRequestIndirect: TCCAccessRe
     kTCCCodeIdentitySDKVersion = 984064;
     kTCCCodeIdentityTeamID = 5NKLL2CLB9;
 }
-default	11:14:07.463217-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
-default	11:14:08.232469-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:08.232541-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:08.232697-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0dc0 <private>> attempting immediate handshake from activate
-default	11:14:08.232772-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0dc0 <private>> sent handshake
-default	11:14:08.233279-0500	Nexy	Requesting scene <FBSScene: 0xca07a0c80; com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1> from com.apple.controlcenter.statusitems
-default	11:14:08.233747-0500	Nexy	Request for <FBSScene: 0xca07a0c80; com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1> complete!
-default	11:14:08.234225-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0dc0 <private>> was invalidated
-default	11:14:08.234287-0500	Nexy	FBSWorkspace unregistering source: <private>
-default	11:14:08.234388-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:08.234422-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:08.234515-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> attempting immediate handshake from activate
-default	11:14:08.234554-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> sent handshake
-error	11:14:08.234666-0500	Nexy	Error creating <FBSScene: 0xca07a0c80; com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1>: <NSError: 0xc9f00e0d0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:08.234703-0500	Nexy	No scene exists for identity: com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1
-default	11:14:08.234793-0500	Nexy	Requesting scene <FBSScene: 0xca07a0820; com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1-Aux[8]-NSStatusItemView> from com.apple.controlcenter.statusitems
-default	11:14:08.235033-0500	Nexy	Request for <FBSScene: 0xca07a0820; com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1-Aux[8]-NSStatusItemView> complete!
-default	11:14:08.235254-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0be0 <private>> was invalidated
-default	11:14:08.235277-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:08.235328-0500	Nexy	Error creating <FBSScene: 0xca07a0820; com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1-Aux[8]-NSStatusItemView>: <NSError: 0xc9f00db00; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:08.235343-0500	Nexy	No scene exists for identity: com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1-Aux[8]-NSStatusItemView
-default	11:14:08.235507-0500	Nexy	[com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1-Aux[8]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
-error	11:14:08.235722-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:08.235738-0500	Nexy	[com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1] No matching scene to invalidate for this identity.
-error	11:14:08.235764-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:08.235776-0500	Nexy	[com.apple.controlcenter:B0D85CD0-F418-4F31-9190-D740322B2EF1-Aux[8]-NSStatusItemView] No matching scene to invalidate for this identity.
-error	11:14:08.236213-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:08.236291-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-error	11:14:08.236341-0500	Nexy	Unhandled disconnected auxiliary scene <private>
-error	11:14:08.236371-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
-default	11:14:09.237205-0500	Nexy	FBSWorkspace registering source: <private>
-default	11:14:09.237253-0500	Nexy	FBSWorkspace connected to endpoint : <private>
-default	11:14:09.237344-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0820 <private>> attempting immediate handshake from activate
-default	11:14:09.237375-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0820 <private>> sent handshake
-default	11:14:09.237673-0500	Nexy	Requesting scene <FBSScene: 0xca07a0c80; com.apple.controlcenter:3BE2EBC9-0DC8-42BE-88A8-788080BA6259> from com.apple.controlcenter.statusitems
-default	11:14:09.237926-0500	Nexy	Request for <FBSScene: 0xca07a0c80; com.apple.controlcenter:3BE2EBC9-0DC8-42BE-88A8-788080BA6259> complete!
-default	11:14:09.238240-0500	Nexy	<FBSWorkspaceScenesClient:0xca07a0820 <private>> was invalidated
-default	11:14:09.238265-0500	Nexy	FBSWorkspace unregistering source: <private>
-error	11:14:09.238334-0500	Nexy	Error creating <FBSScene: 0xca07a0c80; com.apple.controlcenter:3BE2EBC9-0DC8-42BE-88A8-788080BA6259>: <NSError: 0xc9f00df80; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-error	11:14:09.238352-0500	Nexy	No scene exists for identity: com.apple.controlcenter:3BE2EBC9-0DC8-42BE-88A8-788080BA6259
-default	11:14:09.238401-0500	Nexy	Requesting scene <FBSScene: 0xca07a0dc0; com.apple.controlcenter:3BE2EBC9-0DC8-42BE-88A8-788080BA6259-Aux[9]-NSStatusItemView> from com.apple.controlcenter.statusitems
-error	11:14:09.238500-0500	Nexy	Error creating <FBSScene: 0xca07a0dc0; com.apple.controlcenter:3BE2EBC9-0DC8-42BE-88A8-788080BA6259-Aux[9]-NSStatusItemView>: <NSError: 0xc9f00e460; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
-default	11:14:09.238538-0500	Nexy	Request for <FBSScene: 0xca07a0dc0; com.apple.controlcenter:3BE2EBC9-0DC8-42BE-88A8-788080BA6259-Aux[9]-NSStatusItemView> complete!
-error	11:14:09.238681-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:09.238698-0500	Nexy	[com.apple.controlcenter:3BE2EBC9-0DC8-42BE-88A8-788080BA6259] No matching scene to invalidate for this identity.
-error	11:14:09.238723-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
-error	11:14:09.238748-0500	Nexy	Unhandled disconnected scene <private>
-error	11:14:09.238811-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:01.646840-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:52:02.080194-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Output {BuiltInSpeakerDevice, 0xc}
+default	14:52:02.080744-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
+default	14:52:02.080897-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsPlaying:]: MXCoreSession com.nexy.assistant with category/mode MediaPlayback/Default and coreSessionID = 705 stopping playing
+default	14:52:02.080981-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
+default	14:52:02.081058-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:02.081161-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:02.081319-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.081418-0500	audiomxd	AudioApplicationInfoImpl.mm:395   Successfully updated session 0x1ef2c0 to isSessionRecording: 0
+	app: {"name":"[implicit] Nexy","pid":39688}
+	AudioApp.isRecording: false
+[ 
+	{ sessionID: 0x1ef2c0, sessionType: 'prim', isRecording: false }, 
+]
+default	14:52:02.081537-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
+)}
+default	14:52:02.081561-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:02.081578-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.081671-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.081716-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 1
+default	14:52:02.186425-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0x7bf0a8e40) Selecting device 0 from destructor
+default	14:52:02.186455-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:02.186470-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:02.186485-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 71
+default	14:52:02.186501-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xc for device 71
+default	14:52:02.186558-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Output {BuiltInSpeakerDevice, 0xc}
+default	14:52:02.186630-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+)} Server update was not required.
+default	14:52:02.186955-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0x7bf0a8e40) nothing to setup
+default	14:52:02.186984-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device listeners to device 0
+default	14:52:02.186997-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 0
+default	14:52:02.187011-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 71
+default	14:52:02.187522-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 71
+default	14:52:02.187551-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:02.514209-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:02.514269-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:02.514425-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> attempting immediate handshake from activate
+default	14:52:02.514478-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> sent handshake
+default	14:52:02.514961-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34d20; com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6> from com.apple.controlcenter.statusitems
+default	14:52:02.515389-0500	Nexy	Request for <FBSScene: 0x7c0d34d20; com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6> complete!
+default	14:52:02.515896-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34780 <private>> was invalidated
+default	14:52:02.515965-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:52:02.516064-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:02.516102-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:02.516195-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> attempting immediate handshake from activate
+default	14:52:02.516236-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> sent handshake
+error	14:52:02.516349-0500	Nexy	Error creating <FBSScene: 0x7c0d34d20; com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6>: <NSError: 0x7bec078d0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:02.516385-0500	Nexy	No scene exists for identity: com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6
+default	14:52:02.516510-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34a00; com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6-Aux[6]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:02.516841-0500	Nexy	Request for <FBSScene: 0x7c0d34a00; com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6-Aux[6]-NSStatusItemView> complete!
+default	14:52:02.517122-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> was invalidated
+default	14:52:02.517174-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:02.517271-0500	Nexy	Error creating <FBSScene: 0x7c0d34a00; com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6-Aux[6]-NSStatusItemView>: <NSError: 0x7bec07720; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:02.517304-0500	Nexy	No scene exists for identity: com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6-Aux[6]-NSStatusItemView
+default	14:52:02.517689-0500	Nexy	[com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6-Aux[6]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:52:02.518079-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:02.518111-0500	Nexy	[com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6] No matching scene to invalidate for this identity.
+error	14:52:02.518168-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:02.518198-0500	Nexy	[com.apple.controlcenter:0CC90B34-2E1C-49C8-BAF9-4EC080F291F6-Aux[6]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:52:02.518832-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:02.518951-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:52:02.519046-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:52:02.519110-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:02.794503-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x7bf0a8e40) Selecting device 71 from constructor
+default	14:52:02.794533-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:02.794543-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:02.794552-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x7bf0a8e40) nothing to teardown
+default	14:52:02.794558-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 71
+default	14:52:02.794737-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 71 (Input:No | Output:Yes): true
+default	14:52:02.794941-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xd for device 71
+default	14:52:02.795120-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 71
+default	14:52:02.795435-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 71
+default	14:52:02.795458-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:52:02.795618-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:02.795633-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:52:02.795644-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:02.795658-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:52:02.795689-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:52:02.795851-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:02.795869-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:02.795876-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:02.795883-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device listeners from device 0
+default	14:52:02.795890-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 0
+default	14:52:02.795896-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:02.795917-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
+default	14:52:02.796025-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x7bf0a8e40) caller requesting device change from 71 to 78
+default	14:52:02.796036-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:02.796046-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:02.796051-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 71
+default	14:52:02.796058-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xd for device 71
+default	14:52:02.796089-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {BuiltInSpeakerDevice, 0xd}
+default	14:52:02.796143-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+)} Server update was not required.
+default	14:52:02.796267-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 78
+default	14:52:02.796411-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 78 (Input:Yes | Output:No): true
+default	14:52:02.798763-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11850, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:02.800611-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11850, subject=com.nexy.assistant,
+default	14:52:02.801661-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:02.819642-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xb for device 78
+default	14:52:02.819840-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 78
+default	14:52:02.820123-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 78
+default	14:52:02.820135-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:52:02.820147-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
+default	14:52:02.820161-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:52:02.820363-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  input stream 0 [0x4f]:  1 ch,  48000 Hz, Float32
+default	14:52:02.820372-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
+default	14:52:02.820378-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  1 ch,  48000 Hz, Float32
+default	14:52:02.820518-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:02.820532-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:02.820539-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:02.820544-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 71
+default	14:52:02.820734-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 71
+default	14:52:02.820744-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:02.821211-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:52:02.822815-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11851, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:02.824090-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11851, subject=com.nexy.assistant,
+default	14:52:02.824795-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:02.838764-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:52:02.839819-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11852, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:02.840678-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11852, subject=com.nexy.assistant,
+default	14:52:02.841227-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:02.854147-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0x7bf0a8e40) Selecting device 0 from destructor
+default	14:52:02.854154-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:02.854166-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:02.854170-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 78
+default	14:52:02.854176-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xb for device 78
+default	14:52:02.854201-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xb}
+default	14:52:02.854232-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+)} Server update was not required.
+default	14:52:02.854331-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0x7bf0a8e40) nothing to setup
+default	14:52:02.854341-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device listeners to device 0
+default	14:52:02.854348-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 0
+default	14:52:02.854352-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 78
+default	14:52:02.854526-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 78
+default	14:52:02.854533-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:02.855479-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x7bf0a8e40) Selecting device 71 from constructor
+default	14:52:02.855485-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:02.855489-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:02.855494-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x7bf0a8e40) nothing to teardown
+default	14:52:02.855498-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 71
+default	14:52:02.855590-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 71 (Input:No | Output:Yes): true
+default	14:52:02.855700-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xe for device 71
+default	14:52:02.855834-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 71
+default	14:52:02.856010-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 71
+default	14:52:02.856021-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:52:02.856093-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:02.856102-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:52:02.856107-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:02.856115-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:52:02.856122-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:52:02.856228-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:02.856244-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:02.856250-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:02.856255-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device listeners from device 0
+default	14:52:02.856259-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 0
+default	14:52:02.856262-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:02.856273-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
+default	14:52:02.856348-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x7bf0a8e40) caller requesting device change from 71 to 78
+default	14:52:02.856359-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:02.856364-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:02.856369-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 71
+default	14:52:02.856379-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xe for device 71
+default	14:52:02.856391-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {BuiltInSpeakerDevice, 0xe}
+default	14:52:02.856432-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+)} Server update was not required.
+default	14:52:02.856523-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 78
+default	14:52:02.856595-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 78 (Input:Yes | Output:No): true
+default	14:52:02.857579-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11853, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:02.858422-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11853, subject=com.nexy.assistant,
+default	14:52:02.858972-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:02.870907-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xc for device 78
+default	14:52:02.871011-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 78
+default	14:52:02.871156-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 78
+default	14:52:02.871164-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:52:02.871170-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
+default	14:52:02.871179-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:52:02.871304-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  input stream 0 [0x4f]:  1 ch,  48000 Hz, Float32
+default	14:52:02.871315-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
+default	14:52:02.871321-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  1 ch,  48000 Hz, Float32
+default	14:52:02.871416-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:02.871426-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:02.871432-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:02.871436-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 71
+default	14:52:02.871592-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 71
+default	14:52:02.871599-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:02.871606-0500	Nexy	AudioHardware-mac-imp.cpp:1299   AudioObjectAddPropertyListener: listener was already added
+default	14:52:02.871988-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:52:02.872883-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11854, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:02.873636-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11854, subject=com.nexy.assistant,
+default	14:52:02.874174-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:02.885925-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:52:02.886938-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11855, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:02.887826-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11855, subject=com.nexy.assistant,
+default	14:52:02.888396-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:02.900933-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:52:02.901845-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11856, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:02.902600-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11856, subject=com.nexy.assistant,
+default	14:52:02.903135-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:02.915857-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:52:02.915915-0500	runningboardd	Acquiring assertion targeting 39688 from originator [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-39688-1518829 target:39688 attributes:[
+	<RBSDomainAttribute| domain:"com.apple.CoreAudio.HAL" name:"AudioHAL" sourceEnvironment:"(null)">
+	]>
+error	14:52:02.916182-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 39688 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 39688 does not exist}>
+error	14:52:02.916198-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 39688 with code: 2 - RBSAssertionErrorDomain
+default	14:52:02.916507-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11857, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:02.917247-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11857, subject=com.nexy.assistant,
+default	14:52:02.917757-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:02.931396-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:52:02.956315-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Input {BuiltInMicrophoneDevice, 0xc}
+default	14:52:02.957174-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"Record","input_running":true,"output_running":false} }
+default	14:52:02.957271-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:52:02.957304-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2c0, Nexy(39688), 'prim'/com.nexy.assistant was not correct. Old score = 201
+default	14:52:02.957335-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:02.957393-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2c0, Nexy(39688), 'prim'', AudioCategory changed to 'Record_WithBluetooth'
+default	14:52:02.957432-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.957444-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:02.957479-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:02.957535-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.957547-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> is going active
+default	14:52:02.957562-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2c0, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 705 starting recording
+default	14:52:02.957600-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.957642-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:02.957655-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.957674-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:52:02.957706-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:02.957717-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.957772-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:02.957801-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 0]. BT device UIDS: {(
+)}
+default	14:52:02.957809-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:02.957833-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:02.957879-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:02.957916-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:02.957931-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 200 count 2
+default	14:52:02.957942-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+error	14:52:02.957966-0500	audioaccessoryd	Updating local audio category 100 -> 200 app com.nexy.assistant
+default	14:52:02.958002-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:52:02.997335-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:52:03.004312-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:52:03.004467-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[scr] Nexy (com.nexy.assistant), [mic] Nexy (com.nexy.assistant)]
+default	14:52:03.004575-0500	ControlCenter	Active activity attributions changed to ["scr:com.nexy.assistant", "mic:com.nexy.assistant"]
+default	14:52:03.006223-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006247-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006264-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.006275-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006287-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.006299-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:03.006411-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006462-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006520-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.006566-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006620-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:52:03.006612-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.006660-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:03.006735-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006747-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006759-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.006768-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.006778-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.006788-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:03.006910-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
+default	14:52:03.084863-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xc}
+default	14:52:03.085283-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
+default	14:52:03.085410-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:03.085470-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:52:03.085505-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:03.085576-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2c0, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 705 stopping recording
+default	14:52:03.085618-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
+default	14:52:03.085633-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.085655-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:03.085700-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:03.085769-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.085833-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.085869-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
+)}
+default	14:52:03.085897-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.085891-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:03.085937-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:52:03.086026-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.086062-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:52:03.086091-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.086110-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 1
+default	14:52:03.133398-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:52:03.133513-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[scr] Nexy (com.nexy.assistant)]
+default	14:52:03.133590-0500	ControlCenter	Active activity attributions changed to ["scr:com.nexy.assistant"]
+default	14:52:03.133611-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
+default	14:52:03.138686-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.138704-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.138731-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.138748-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.138766-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.138803-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:03.139023-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:52:03.191129-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0x7bf0a8e40) Selecting device 0 from destructor
+default	14:52:03.191164-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:03.191176-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:03.191188-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 78
+default	14:52:03.191211-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xc for device 78
+default	14:52:03.191271-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xc}
+default	14:52:03.191332-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+)} Server update was not required.
+default	14:52:03.191555-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0x7bf0a8e40) nothing to setup
+default	14:52:03.191570-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device listeners to device 0
+default	14:52:03.191576-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 0
+default	14:52:03.191584-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 78
+default	14:52:03.191824-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 78
+default	14:52:03.191839-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:03.195624-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x7bf0a8e40) Selecting device 71 from constructor
+default	14:52:03.195647-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:03.195666-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:03.195674-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x7bf0a8e40) nothing to teardown
+default	14:52:03.195686-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 71
+default	14:52:03.195875-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 71 (Input:No | Output:Yes): true
+default	14:52:03.196108-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xf for device 71
+default	14:52:03.196341-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 71
+default	14:52:03.196710-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 71
+default	14:52:03.196728-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:52:03.196880-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:03.196899-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:52:03.196913-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:03.196927-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:52:03.196944-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:52:03.197133-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:03.197154-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:03.197166-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:03.197176-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device listeners from device 0
+default	14:52:03.197185-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 0
+default	14:52:03.197192-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:03.197221-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is DISABLED
+default	14:52:03.197350-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x7bf0a8e40) caller requesting device change from 71 to 78
+default	14:52:03.197370-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:03.197381-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:03.197391-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 71
+default	14:52:03.197401-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xf for device 71
+default	14:52:03.197429-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped Unknown {BuiltInSpeakerDevice, 0xf}
+default	14:52:03.197489-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+)} Server update was not required.
+default	14:52:03.197654-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a8e40) connecting device 78
+default	14:52:03.197834-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a8e40) Device ID: 78 (Input:Yes | Output:No): true
+default	14:52:03.200083-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11858, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:03.201864-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11858, subject=com.nexy.assistant,
+default	14:52:03.202541-0500	Nexy	                AUHAL.cpp:420   AUHAL: (0x7bf0a9540) Selecting device 71 from constructor
+default	14:52:03.202562-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a9540)
+default	14:52:03.202569-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a9540) not already running
+default	14:52:03.202575-0500	Nexy	                AUHAL.cpp:752   SelectDevice: (0x7bf0a9540) nothing to teardown
+default	14:52:03.202581-0500	Nexy	                AUHAL.cpp:757   SelectDevice: (0x7bf0a9540) connecting device 71
+default	14:52:03.202699-0500	Nexy	                AUHAL.cpp:3413  IsDeviceUsable: (0x7bf0a9540) Device ID: 71 (Input:No | Output:Yes): true
+default	14:52:03.202852-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a9540) created ioproc 0x10 for device 71
+default	14:52:03.202879-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:03.202980-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a9540) adding 7 device listeners to device 71
+default	14:52:03.203192-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a9540) adding 0 device delegate listeners to device 71
+default	14:52:03.203202-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a9540)
+default	14:52:03.203305-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  output stream 0 [0x48]:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:03.203315-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 output streams; not all mono
+default	14:52:03.203324-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  2 ch,  48000 Hz, Float32, interleaved
+default	14:52:03.203335-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 input streams; not all mono
+default	14:52:03.203345-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:52:03.203457-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a9540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:03.203473-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a9540) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:03.203480-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:03.203485-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a9540) removing 0 device listeners from device 0
+default	14:52:03.203490-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a9540) removing 0 device delegate listeners from device 0
+default	14:52:03.203495-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a9540)
+default	14:52:03.203511-0500	Nexy	                AUHAL.cpp:2298  SetProperty: (0x7bf0a9540) caller requesting device change from 71 to 71
+default	14:52:03.203516-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a9540)
+default	14:52:03.203522-0500	Nexy	                AUHAL.cpp:659   SelectDevice: <- (0x7bf0a9540) exiting with nothing to do
+default	14:52:03.203530-0500	Nexy	AudioHardware-mac-imp.cpp:1299   AudioObjectAddPropertyListener: listener was already added
+default	14:52:03.203963-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
+default	14:52:03.204252-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Output stream enables: Stream 0 is ENABLED
+default	14:52:03.209158-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:52:03.209233-0500	runningboardd	Acquiring assertion targeting 39688 from originator [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-39688-1518831 target:39688 attributes:[
+	<RBSDomainAttribute| domain:"com.apple.CoreAudio.HAL" name:"AudioHAL" sourceEnvironment:"(null)">
+	]>
+error	14:52:03.210791-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 39688 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 39688 does not exist}>
+default	14:52:03.210906-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+error	14:52:03.210835-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 39688 with code: 2 - RBSAssertionErrorDomain
+default	14:52:03.229943-0500	Nexy	                AUHAL.cpp:769   SelectDevice: (0x7bf0a8e40) created ioproc 0xd for device 78
+default	14:52:03.230114-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 7 device listeners to device 78
+default	14:52:03.230340-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 78
+default	14:52:03.230350-0500	Nexy	                AUHAL.cpp:1581  UpdateStreamFormats: -> (0x7bf0a8e40)
+default	14:52:03.230362-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 0 output streams; not all mono
+default	14:52:03.230385-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Output render format:  0 ch,      0 Hz, lpcm (0x00000029) 32-bit little-endian float, deinterleaved
+default	14:52:03.230566-0500	Nexy	                AUHAL.cpp:1677  UpdateStreamFormats: 
+  input stream 0 [0x4f]:  1 ch,  48000 Hz, Float32
+default	14:52:03.230581-0500	Nexy	                AUHAL.cpp:1689  UpdateStreamFormats: 1 input streams; all mono
+default	14:52:03.230588-0500	Nexy	                AUHAL.cpp:1701  UpdateStreamFormats: 
+  Input render format:  1 ch,  48000 Hz, Float32
+default	14:52:03.230717-0500	Nexy	                AUHAL.cpp:1771  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Output, Bus:Output
+default	14:52:03.230737-0500	Nexy	                AUHAL.cpp:1777  UpdateStreamFormats: AUHAL(0x7bf0a8e40) Calling PropertyChanged() for kAudioUnitProperty_StreamFormat, Scope:Input, Bus:Input
+default	14:52:03.230746-0500	Nexy	                AUHAL.cpp:1787  UpdateStreamFormats: <-
+default	14:52:03.230751-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 71
+default	14:52:03.230948-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 71
+default	14:52:03.230958-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:03.230972-0500	Nexy	AudioHardware-mac-imp.cpp:1299   AudioObjectAddPropertyListener: listener was already added
+default	14:52:03.231457-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:52:03.232973-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11859, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:03.234190-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11859, subject=com.nexy.assistant,
+default	14:52:03.234848-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:03.235517-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Output {BuiltInSpeakerDevice, 0x10}
+default	14:52:03.236445-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"MediaPlayback","input_running":false,"output_running":true} }
+default	14:52:03.236552-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:52:03.236579-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2c0, Nexy(39688), 'prim'/com.nexy.assistant was not correct. Old score = 201
+default	14:52:03.236617-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:03.236680-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2c0, Nexy(39688), 'prim'', AudioCategory changed to 'MediaPlayback'
+default	14:52:03.236732-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO> is going active
+default	14:52:03.236732-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.236747-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsPlaying:]: MXCoreSession com.nexy.assistant with category/mode MediaPlayback/Default and coreSessionID = 705 starting playing
+default	14:52:03.236825-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:03.236864-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO>
+default	14:52:03.236892-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:03.236921-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Will try to see if we can get the shared route for session = <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO>. Old (200) and New (201) scores.
+default	14:52:03.236915-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.236985-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.236974-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 201, deviceID = <private>
+default	14:52:03.237001-0500	audiomxd	AudioApplicationInfoImpl.mm:395   Successfully updated session 0x1ef2c0 to isSessionRecording: 0
+	app: {"name":"[implicit] Nexy","pid":39688}
+	AudioApp.isRecording: false
+[ 
+	{ sessionID: 0x1ef2c0, sessionType: 'prim', isRecording: false }, 
+]
+default	14:52:03.237071-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 1]. BT device UIDS: {(
+)}
+default	14:52:03.237087-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:03.237220-0500	audioaccessoryd	Routing request Wx NULL score 201 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
+default	14:52:03.237392-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.237474-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.237503-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.237517-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 201 count 2
+default	14:52:03.237528-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 201
+error	14:52:03.237550-0500	audioaccessoryd	Updating local audio category 100 -> 201 app com.nexy.assistant
+default	14:52:03.237588-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 201 App com.nexy.assistant
+default	14:52:03.248975-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:52:03.250077-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11860, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:03.251014-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11860, subject=com.nexy.assistant,
+default	14:52:03.251593-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:03.264256-0500	Nexy	                AUHAL.cpp:1893  SetStreamUsage: Input stream enables: Stream 0 is ENABLED
+default	14:52:03.265216-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11861, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:03.266052-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11861, subject=com.nexy.assistant,
+default	14:52:03.266603-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:03.279387-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=401.11862, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.tccd, pid=394, auid=0, euid=0, binary_path=/System/Library/PrivateFrameworks/TCC.framework/Support/tccd}, },
+default	14:52:03.280127-0500	tccd	AUTHREQ_SUBJECT: msgID=401.11862, subject=com.nexy.assistant,
+default	14:52:03.280632-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0xc37138c00 at /Applications/Nexy.app
+default	14:52:03.319149-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Input {BuiltInMicrophoneDevice, 0xd}
+default	14:52:03.320310-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"PlayAndRecord","input_running":true,"output_running":true} }
+default	14:52:03.320396-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:52:03.320425-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2c0, Nexy(39688), 'prim'/com.nexy.assistant was not correct. Old score = 201
+default	14:52:03.320452-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = NO>
+default	14:52:03.320477-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:03.320528-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2c0, Nexy(39688), 'prim'', AudioCategory changed to 'PlayAndRecord_WithBluetooth'
+default	14:52:03.320554-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:03.320579-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320595-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = NO>
+default	14:52:03.320621-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:03.320674-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:03.320691-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320705-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = NO>
+default	14:52:03.320730-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:03.320741-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320775-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2c0, Nexy(39688), 'prim' with category(PlayAndRecord_WithBluetooth)/mode(Default) and coreSessionID = 705 starting recording
+default	14:52:03.320796-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320794-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320827-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: Bumping the mode to Voice chat for session as session started recording = <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = YES>
+default	14:52:03.320831-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 201
+default	14:52:03.320852-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = VoiceChat, Active = YES, Playing = YES, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:52:03.320875-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2c0, Nexy(39688), 'prim'/com.nexy.assistant was not correct. Old score = 201
+default	14:52:03.320899-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 501 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = VoiceChat, Active = YES, Playing = YES, Recording = YES>
+default	14:52:03.320909-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320940-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 201 App com.nexy.assistant
+default	14:52:03.320955-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320977-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320916-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:03.320996-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 201
+default	14:52:03.321011-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 1]. BT device UIDS: {(
+)}
+default	14:52:03.321019-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:03.320935-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Will try to see if we can get the shared route for session = <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = PlayAndRecord_WithBluetooth, Mode = VoiceChat, Active = YES, Playing = YES, Recording = YES>. Old (201) and New (501) scores.
+default	14:52:03.321042-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 201 App com.nexy.assistant
+default	14:52:03.321060-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:03.320986-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 501, deviceID = <private>
+default	14:52:03.321068-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 201
+default	14:52:03.321098-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 201 App com.nexy.assistant
+default	14:52:03.321178-0500	audioaccessoryd	Routing request Wx NULL score 501 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
+default	14:52:03.321320-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 501,
+}
+default	14:52:03.321382-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 501,
+}
+default	14:52:03.321403-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 501,
+}
+default	14:52:03.321414-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant 201 -> 501 count 2
+default	14:52:03.321420-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 501
+error	14:52:03.321436-0500	audioaccessoryd	Updating local audio category 201 -> 501 app com.nexy.assistant
+default	14:52:03.321463-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 501 App com.nexy.assistant
+default	14:52:03.355707-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:52:03.362948-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:52:03.363112-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[scr] Nexy (com.nexy.assistant), [mic] Nexy (com.nexy.assistant)]
+default	14:52:03.363199-0500	ControlCenter	Active activity attributions changed to ["scr:com.nexy.assistant", "mic:com.nexy.assistant"]
+default	14:52:03.364165-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364185-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364202-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.364212-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364223-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.364234-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:03.364356-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364371-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:52:03.364418-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364473-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.364512-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364553-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.364592-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:03.364665-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364698-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364712-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.364728-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:03.364737-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:03.364746-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:03.364814-0500	ControlCenter	Navigating to new application [com.nexy.assistant]
+default	14:52:03.481817-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Output {BuiltInSpeakerDevice, 0x10}
+default	14:52:03.483305-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"Record","input_running":true,"output_running":false} }
+default	14:52:03.483504-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:52:03.483557-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2c0, Nexy(39688), 'prim'/com.nexy.assistant was not correct. Old score = 501
+default	14:52:03.483639-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = YES>
+default	14:52:03.483690-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:03.483771-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2c0, Nexy(39688), 'prim'', AudioCategory changed to 'Record_WithBluetooth'
+default	14:52:03.483807-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.483840-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:03.483894-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = YES, Recording = YES>
+default	14:52:03.483931-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:03.484004-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsPlaying:]: MXCoreSession com.nexy.assistant with category/mode Record_WithBluetooth/Default and coreSessionID = 705 stopping playing
+default	14:52:03.484009-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.484050-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.484124-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.484055-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:03.484157-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant 501 -> 200 count 2
+default	14:52:03.484102-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:52:03.484184-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:52:03.484148-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+error	14:52:03.484230-0500	audioaccessoryd	Updating local audio category 501 -> 200 app com.nexy.assistant
+default	14:52:03.484260-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.484348-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:52:03.484441-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [1, 0]. BT device UIDS: {(
+)}
+default	14:52:03.484374-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.484471-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:03.484394-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:52:03.484220-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.484303-0500	audiomxd	AudioApplicationInfoImpl.mm:395   Successfully updated session 0x1ef2c0 to isSessionRecording: 1
+	app: {"name":"[implicit] Nexy","pid":39688}
+	AudioApp.isRecording: true
+[ 
+	{ sessionID: 0x1ef2c0, sessionType: 'prim', isRecording: true }, 
+]
+default	14:52:03.484473-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.484503-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:52:03.484527-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:03.484543-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:52:03.484724-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:52:03.519495-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:03.519543-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:03.519654-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> attempting immediate handshake from activate
+default	14:52:03.519696-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> sent handshake
+default	14:52:03.520070-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34d20; com.apple.controlcenter:29AEB987-FF8D-453E-9C9D-FF77F4D5B4B2> from com.apple.controlcenter.statusitems
+default	14:52:03.520384-0500	Nexy	Request for <FBSScene: 0x7c0d34d20; com.apple.controlcenter:29AEB987-FF8D-453E-9C9D-FF77F4D5B4B2> complete!
+default	14:52:03.520845-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34820 <private>> was invalidated
+default	14:52:03.520881-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:03.520998-0500	Nexy	Error creating <FBSScene: 0x7c0d34d20; com.apple.controlcenter:29AEB987-FF8D-453E-9C9D-FF77F4D5B4B2>: <NSError: 0x7bec07e10; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:03.521022-0500	Nexy	No scene exists for identity: com.apple.controlcenter:29AEB987-FF8D-453E-9C9D-FF77F4D5B4B2
+default	14:52:03.521064-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34a00; com.apple.controlcenter:29AEB987-FF8D-453E-9C9D-FF77F4D5B4B2-Aux[7]-NSStatusItemView> from com.apple.controlcenter.statusitems
+error	14:52:03.521193-0500	Nexy	Error creating <FBSScene: 0x7c0d34a00; com.apple.controlcenter:29AEB987-FF8D-453E-9C9D-FF77F4D5B4B2-Aux[7]-NSStatusItemView>: <NSError: 0x7bec07690; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+default	14:52:03.521254-0500	Nexy	Request for <FBSScene: 0x7c0d34a00; com.apple.controlcenter:29AEB987-FF8D-453E-9C9D-FF77F4D5B4B2-Aux[7]-NSStatusItemView> complete!
+error	14:52:03.524568-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:03.524662-0500	Nexy	[com.apple.controlcenter:29AEB987-FF8D-453E-9C9D-FF77F4D5B4B2] No matching scene to invalidate for this identity.
+error	14:52:03.524827-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:03.524899-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:03.525118-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:04.396444-0500	Nexy	 [INFO] SLSHWCaptureDesktopProxying:485 request: <private>
+default	14:52:04.396576-0500	Nexy	 [INFO] -[RPDaemonProxy proxyCoreGraphicsWithMethodType:config:machPort:completionHandler:]:1486
+default	14:52:04.400576-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=31855.5, attribution={accessing={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.replayd, pid=31855, auid=501, euid=501, binary_path=/usr/libexec/replayd}, },
+default	14:52:04.400650-0500	tccd	requestor: TCCDProcess: identifier=com.apple.replayd, pid=31855, auid=501, euid=501, binary_path=/usr/libexec/replayd is checking access for accessor TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:52:04.403764-0500	tccd	AUTHREQ_SUBJECT: msgID=31855.5, subject=com.nexy.assistant,
+default	14:52:04.405642-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:52:04.460314-0500	Nexy	 [INFO] SLSHWCaptureDesktopProxying_block_invoke:506 request: <private>, error: (null), windowInfo: (null)
+default	14:52:04.526145-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:04.526176-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:04.526247-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> attempting immediate handshake from activate
+default	14:52:04.526267-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> sent handshake
+default	14:52:04.526489-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34d20; com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529> from com.apple.controlcenter.statusitems
+default	14:52:04.526681-0500	Nexy	Request for <FBSScene: 0x7c0d34d20; com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529> complete!
+default	14:52:04.527008-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34be0; com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529-Aux[8]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:04.527147-0500	Nexy	Request for <FBSScene: 0x7c0d34be0; com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529-Aux[8]-NSStatusItemView> complete!
+default	14:52:04.527553-0500	Nexy	[com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529-Aux[8]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+default	14:52:04.527571-0500	Nexy	[com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529-Aux[8]-NSStatusItemView] Dropping transition context because the scene is reconnecting
+default	14:52:04.527657-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34a00 <private>> was invalidated
+default	14:52:04.527687-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:04.527757-0500	Nexy	Error creating <FBSScene: 0x7c0d34d20; com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529>: <NSError: 0x7be9f2bb0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:04.527771-0500	Nexy	No scene exists for identity: com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529
+error	14:52:04.527796-0500	Nexy	Error creating <FBSScene: 0x7c0d34be0; com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529-Aux[8]-NSStatusItemView>: <NSError: 0x7be9f29a0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:04.527810-0500	Nexy	No scene exists for identity: com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529-Aux[8]-NSStatusItemView
+error	14:52:04.528126-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:04.528142-0500	Nexy	[com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529] No matching scene to invalidate for this identity.
+error	14:52:04.528162-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:04.528179-0500	Nexy	[com.apple.controlcenter:84E70E14-DD58-4367-9FF1-CF882ECB1529-Aux[8]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:52:04.528206-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:04.528260-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:52:04.528299-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:52:04.528323-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:04.553455-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:52:04.553618-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:52:04.553710-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:52:04.553869-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:52:04.594636-0500	Nexy	         HALC_ProxyIOContext.cpp:1594  HALC_ProxyIOContext::IOWorkLoop: ending the transport, stopping the io thread
+default	14:52:04.599286-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
+default	14:52:04.599129-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xd}
+default	14:52:04.599356-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:04.599391-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 200 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = YES, Playing = NO, Recording = YES>
+default	14:52:04.599701-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:04.599971-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsRecording:]: MXCoreSession sid:0x1ef2c0, Nexy(39688), 'prim' with category(Record_WithBluetooth)/mode(Default) and coreSessionID = 705 stopping recording
+default	14:52:04.600056-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
+default	14:52:04.600147-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:04.600210-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = Record_WithBluetooth, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:04.600370-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
+)}
+default	14:52:04.600380-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:04.600375-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:04.600420-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:04.600476-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:04.600518-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 200,
+}
+default	14:52:04.600544-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 200
+default	14:52:04.600586-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:04.600610-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 200 App com.nexy.assistant
+default	14:52:04.600626-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:04.600639-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 0
+default	14:52:04.652333-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:52:04.652513-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[scr] Nexy (com.nexy.assistant)]
+default	14:52:04.652626-0500	ControlCenter	Active activity attributions changed to ["scr:com.nexy.assistant"]
+default	14:52:04.652666-0500	ControlCenter	Recent activity attributions changed to ["mic:com.nexy.assistant"]
+default	14:52:04.654328-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:04.654351-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:04.654377-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:04.654392-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:04.654405-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:04.654417-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:04.654644-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:52:04.706690-0500	Nexy	                AUHAL.cpp:473   ~AUHAL: (0x7bf0a8e40) Selecting device 0 from destructor
+default	14:52:04.706720-0500	Nexy	                AUHAL.cpp:624   SelectDevice: -> (0x7bf0a8e40)
+default	14:52:04.706734-0500	Nexy	                AUHAL.cpp:676   SelectDevice: (0x7bf0a8e40) not already running
+default	14:52:04.706748-0500	Nexy	                AUHAL.cpp:682   SelectDevice: (0x7bf0a8e40) disconnecting device 78
+default	14:52:04.706762-0500	Nexy	                AUHAL.cpp:746   SelectDevice: (0x7bf0a8e40) destroying ioproc 0xd for device 78
+default	14:52:04.706815-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Input {BuiltInMicrophoneDevice, 0xd}
+default	14:52:04.706880-0500	Nexy	SessionCore_macOS_Legacy.mm:162   <-- setPlayState IOState: [0, 0]. BT device UIDS: {(
+)} Server update was not required.
+default	14:52:04.707217-0500	Nexy	                AUHAL.cpp:848   SelectDevice: (0x7bf0a8e40) nothing to setup
+default	14:52:04.707251-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device listeners to device 0
+default	14:52:04.707267-0500	Nexy	                AUHAL.cpp:858   SelectDevice: (0x7bf0a8e40) adding 0 device delegate listeners to device 0
+default	14:52:04.707283-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 7 device listeners from device 78
+default	14:52:04.707875-0500	Nexy	                AUHAL.cpp:895   SelectDevice: (0x7bf0a8e40) removing 0 device delegate listeners from device 78
+default	14:52:04.707906-0500	Nexy	                AUHAL.cpp:911   SelectDevice: <- (0x7bf0a8e40)
+default	14:52:04.980508-0500	Nexy	nw_path_libinfo_path_check [E3EF8511-6321-4C83-94D6-B8B26AF47E76 Hostname#8ac90fa8:80 tcp, legacy-socket, attribution: developer]
+	libinfo check path: <private>
+default	14:52:04.980664-0500	mDNSResponder	[R635454] DNSServiceCreateConnection START PID[39688](Nexy)
+default	14:52:04.980732-0500	mDNSResponder	[R635455] DNSServiceQueryRecord START -- qname: <mask.hash: 'lETfDsfMRrhKUOGbaqIqQA=='>, qtype: A, flags: 0x1D000, interface index: 0, client pid: 39688 (Nexy), name hash: b360ab20
+default	14:52:04.981240-0500	mDNSResponder	[R635456] DNSServiceQueryRecord START -- qname: <mask.hash: 'lETfDsfMRrhKUOGbaqIqQA=='>, qtype: AAAA, flags: 0x1D000, interface index: 0, client pid: 39688 (Nexy), name hash: b360ab20
+default	14:52:05.015208-0500	kernel	SK[3]: flow_entry_alloc               fe "0 proc kernel_task(0)Nexy nx_port 1 flow_uuid 3B74D186-F38B-4246-91B7-1C095088CEE1 flags 0x14120<CONNECTED,QOS_MARKING,EXT_PORT,EXT_FLOWID> ipver=4,src=<IPv4-redacted>.58172,dst=<IPv4-redacted>.80,proto=0x06 mask=0x0000003f,hash=0x7d768592 tp_proto=0x06"
+default	14:52:05.015515-0500	kernel	tcp connect outgoing: [<IPv4-redacted>:58172<-><IPv4-redacted>:80] interface: en0 (skipped: 6843)
+so_gencnt: 6102404 t_state: SYN_SENT process: Nexy:39688 SYN in/out: 0/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x8f37693c
+default	14:52:05.029954-0500	kernel	tcp connected: [<IPv4-redacted>:58172<-><IPv4-redacted>:80] interface: en0 (skipped: 6843)
+so_gencnt: 6102404 t_state: ESTABLISHED process: Nexy:39688 SYN in/out: 1/1 bytes in/out: 0/0 pkts in/out: 0/0 rtt: 0.0 ms rttvar: 250.0 ms base_rtt: 0 ms error: 0 so_error: 0 svc/tc: 0 flow: 0x8f37693c
+default	14:52:05.236000-0500	kernel	tcp_connection_summary (tcp_usrclosed:3220)[<IPv4-redacted>:58172<-><IPv4-redacted>:80] interface: en0 (skipped: 6843)
+so_gencnt: 6102404 t_state: LAST_ACK process: Nexy:39688 Duration: 0.221 sec Conn_Time: 0.015 sec bytes in/out: 398/25046 pkts in/out: 3/8 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
+rtt: 16.218 ms rttvar: 1.875 ms base rtt: 15 ms so_error: 0 svc/tc: 0 flow: 0x8f37693c
+default	14:52:05.236030-0500	kernel	tcp_connection_summary [<IPv4-redacted>:58172<-><IPv4-redacted>:80] interface: en0 (skipped: 6843)
+so_gencnt: 6102404 t_state: LAST_ACK process: Nexy:39688 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 1/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
+default	14:52:05.252404-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:52:05.252528-0500	runningboardd	Acquiring assertion targeting 39688 from originator [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] with description <RBSAssertionDescriptor| "AudioHAL" ID:398-39688-1518833 target:39688 attributes:[
+	<RBSDomainAttribute| domain:"com.apple.CoreAudio.HAL" name:"AudioHAL" sourceEnvironment:"(null)">
+	]>
+error	14:52:05.253139-0500	Nexy	Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 39688 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 39688 does not exist}>
+default	14:52:05.253211-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+error	14:52:05.253182-0500	Nexy	          HALRBSAssertionGlue.mm:98    Failed to acquire the AudioHAL RBSAssertion for pid: 39688 with code: 2 - RBSAssertionErrorDomain
+default	14:52:05.280627-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Started  Output {BuiltInSpeakerDevice, 0x10}
+default	14:52:05.281744-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"MediaPlayback","input_running":false,"output_running":true} }
+default	14:52:05.281826-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = YES
+default	14:52:05.281856-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Category/Mode changed -- The score for sid:0x1ef2c0, Nexy(39688), 'prim'/com.nexy.assistant was not correct. Old score = 201
+default	14:52:05.281888-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:05.281938-0500	audiomxd	-CMSMNotificationUtilities- CMSMNotificationUtility_PostSessionAudioCategoryDidChange_block_invoke: Posting AudioCategoryDidChange to session 'sid:0x1ef2c0, Nexy(39688), 'prim'', AudioCategory changed to 'MediaPlayback'
+default	14:52:05.281960-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.281991-0500	audiomxd	-MXCoreSession- -[MXCoreSession beginInterruption]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO> is going active
+default	14:52:05.282016-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsPlaying:]: MXCoreSession com.nexy.assistant with category/mode MediaPlayback/Default and coreSessionID = 705 starting playing
+default	14:52:05.282084-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.282123-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:05.282160-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.282200-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO>
+default	14:52:05.282263-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Found only 1 session={clientName:'sid:0x1ef2c0, Nexy(39688), 'prim'', displayID:'com.nexy.assistant'}
+default	14:52:05.282321-0500	audiomxd	-MXSessionManager- -[MXSessionManager shouldRequestForForceHijack]: Will try to see if we can get the shared route for session = <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = YES, Playing = YES, Recording = NO>. Old (200) and New (201) scores.
+default	14:52:05.282495-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 1]. BT device UIDS: {(
+)}
+default	14:52:05.282507-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:05.282426-0500	audiomxd	AudioApplicationInfoImpl.mm:395   Successfully updated session 0x1ef2c0 to isSessionRecording: 0
+	app: {"name":"[implicit] Nexy","pid":39688}
+	AudioApp.isRecording: false
+[ 
+	{ sessionID: 0x1ef2c0, sessionType: 'prim', isRecording: false }, 
+]
+default	14:52:05.282433-0500	audiomxd	-MXAudioAccessoryServices- -[MXAudioAccessoryServices requestForSharedRoute:audioScore:bundleID:startIO:forceHijack:]_block_invoke: Calling to request for ownership on shared route com.nexy.assistant, isDoingIO = YES, score = 201, deviceID = <private>
+default	14:52:05.282634-0500	audioaccessoryd	Routing request Wx NULL score 201 flag 0x1 < Hijack > app com.nexy.assistant CID 0xD310001 category Not set
+default	14:52:05.282804-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.282871-0500	audioaccessoryd	Audio state update Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.282895-0500	audioaccessoryd	AudioStateChanged: Received audioState Start apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.282907-0500	audioaccessoryd	AudioStateChanged: Added audio session app com.nexy.assistant NULL -> 201 count 2
+default	14:52:05.282917-0500	audioaccessoryd	AudioStateChanged: Updated audio session com.nexy.assistant 201
+error	14:52:05.282934-0500	audioaccessoryd	Updating local audio category 100 -> 201 app com.nexy.assistant
+default	14:52:05.282970-0500	audioaccessoryd	PredictiveRoute: Skip, Mac is not idle. LocalScore 201 App com.nexy.assistant
+default	14:52:05.313647-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:52:05.313986-0500	WindowServer	19d0d3[SetFrontProcessWithInfo]: [DeferringManager] Updating policy {
+    advicePolicy: .frontmost;
+    frontmostProcess: 0x0-0x1a7aa79 (Nexy) mainConnectionID: 19D0D3;
+} for reason: updated frontmost process
+default	14:52:05.314100-0500	WindowServer	19d0d3[SetFrontProcessWithInfo]: [DeferringManager] Deferring events from frontmost process PSN 0x0-0x1a7aa79 (Nexy) -> <pid: 39688>
+default	14:52:05.314258-0500	WindowServer	new deferring rules for pid:393: [
+    [393-EEC5]; <keyboardFocus; Nexy:0x0-0x1a7aa79>; () -> <pid: 39688>; reason: frontmost PSN --> outbound target,
+    [393-EEC4]; <keyboardFocus; <frontmost>>; () -> <token: Nexy:0x0-0x1a7aa79; pid: 393>; reason: frontmost PSN,
+    [393-EEC3]; <keyboardFocus>; () -> <token: <frontmost>; pid: 393>; reason: Deferring to <frontmost>
+]
+default	14:52:05.314313-0500	WindowServer	[keyboardFocus 0x7facf2b20] setRules:forPID(393): [
+    [393-EEC5]; <keyboardFocus; Nexy:0x0-0x1a7aa79>; () -> <pid: 39688>; reason: frontmost PSN --> outbound target,
+    [393-EEC4]; <keyboardFocus; <frontmost>>; () -> <token: Nexy:0x0-0x1a7aa79; pid: 393>; reason: frontmost PSN,
+    [393-EEC3]; <keyboardFocus>; () -> <token: <frontmost>; pid: 393>; reason: Deferring to <frontmost>
+]
+default	14:52:05.314826-0500	runningboardd	ignoring [app<application.com.nexy.assistant.21074037.21074043(501)>:39688] as candidate for concrete target as it is terminating
+default	14:52:05.315191-0500	WindowServer	chain did update (setDeferringRules) <keyboardFocus; display: null> containsEndOfChain: YES; [
+    <token: <frontmost>; pid: 393>,
+    <token: Nexy:0x0-0x1a7aa79; pid: 393>,
+    <pid: 39688>
+]
+default	14:52:05.323487-0500	Nexy	[0x7be8b6580] activating connection: mach=false listener=false peer=false name=com.apple.ViewBridgeAuxiliary
+default	14:52:05.332741-0500	Nexy	[0x7be8b66c0] activating connection: mach=false listener=false peer=false name=(anonymous)
+default	14:52:05.333219-0500	Nexy	[0x7be8b6800] activating connection: mach=false listener=true peer=false name=(anonymous)
+default	14:52:05.333228-0500	Nexy	[0x7be8b6800] Connection returned listener port: 0x1f623
+default	14:52:05.334275-0500	Nexy	[0x7be8b6580] invalidated after the last release of the connection object
+default	14:52:05.392513-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=39740.1, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, requesting={TCCDProcess: identifier=com.apple.osascript, pid=39740, auid=501, euid=501, binary_path=/usr/bin/osascript}, },
+default	14:52:05.393815-0500	tccd	AUTHREQ_SUBJECT: msgID=39740.1, subject=com.nexy.assistant,
+default	14:52:05.394378-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:52:05.408303-0500	tccd	AUTHREQ_ATTRIBUTION: msgID=393.17781, attribution={responsible={TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, responsible_path=/Applications/Nexy.app/Contents/MacOS/Nexy, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy}, accessing={TCCDProcess: identifier=com.apple.osascript, pid=39740, auid=501, euid=501, binary_path=/usr/bin/osascript}, requesting={TCCDProcess: identifier=com.apple.WindowServer, pid=393, auid=88, euid=88, binary_path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer}, },
+default	14:52:05.409153-0500	tccd	AUTHREQ_SUBJECT: msgID=393.17781, subject=com.nexy.assistant,
+default	14:52:05.409708-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:52:05.436661-0500	tccd	-[TCCDAccessIdentity staticCode]: static code for: identifier com.nexy.assistant, type: 0: 0x97d116700 at /Applications/Nexy.app
+default	14:52:05.454255-0500	System Events	TCCAccessRequestIndirect: TCCAccessRequestIndirect with pid 39696: target_identity: {
+    kTCCCodeIdentityAuditToken = {length = 32, bytes = 0xf5010000 f5010000 14000000 f5010000 ... b7860100 aefb2800 };
+    kTCCCodeIdentityAuthority = kTCCCodeIdentityDesignatedRequirementAuthority;
+    kTCCCodeIdentityCSFlags = 536941313;
+    kTCCCodeIdentityCanSendToAnyTarget = 0;
+    kTCCCodeIdentityDesignatedRequirementData = {length = 160, bytes = 0xfade0c00 000000a0 00000001 00000006 ... 4c32434c 42390000 };
+    kTCCCodeIdentityExecutableURL = "file:///Applications/Nexy.app/Contents/MacOS/Nexy";
+    kTCCCodeIdentityIdentifier = "com.nexy.assistant";
+    kTCCCodeIdentityIdentifierType = 0;
+    kTCCCodeIdentityPlatformType = 1;
+    kTCCCodeIdentityPromptPolicy = 2;
+    kTCCCodeIdentitySDKVersion = 984064;
+    kTCCCodeIdentityTeamID = 5NKLL2CLB9;
+}
+default	14:52:05.464919-0500	tccd	target_executable_path_URL: file:///Applications/Nexy.app/Contents/MacOS/Nexy
+default	14:52:05.485794-0500	WindowServer	0[outside of RPC]: [DeferringManager] Updating policy {
+    advicePolicy: .frontmost;
+    frontmostProcess: 0x0-0x1a7aa79 (Nexy) mainConnectionID: 19D0D3;
+} for reason: deferringPolicyEvaluationSuppression
+default	14:52:05.485872-0500	WindowServer	0[outside of RPC]: [DeferringManager] Deferring events from frontmost process PSN 0x0-0x1a7aa79 (Nexy) -> <pid: 39688>
+default	14:52:05.485975-0500	WindowServer	new deferring rules for pid:393: [
+    [393-EEC8]; <keyboardFocus; Nexy:0x0-0x1a7aa79>; () -> <pid: 39688>; reason: frontmost PSN --> outbound target,
+    [393-EEC7]; <keyboardFocus; <frontmost>>; () -> <token: Nexy:0x0-0x1a7aa79; pid: 393>; reason: frontmost PSN,
+    [393-EEC6]; <keyboardFocus>; () -> <token: <frontmost>; pid: 393>; reason: Deferring to <frontmost>
+]
+default	14:52:05.486010-0500	WindowServer	[keyboardFocus 0x7facf2b20] setRules:forPID(393): [
+    [393-EEC8]; <keyboardFocus; Nexy:0x0-0x1a7aa79>; () -> <pid: 39688>; reason: frontmost PSN --> outbound target,
+    [393-EEC7]; <keyboardFocus; <frontmost>>; () -> <token: Nexy:0x0-0x1a7aa79; pid: 393>; reason: frontmost PSN,
+    [393-EEC6]; <keyboardFocus>; () -> <token: <frontmost>; pid: 393>; reason: Deferring to <frontmost>
+]
+default	14:52:05.486594-0500	WindowServer	chain did update (setDeferringRules) <keyboardFocus; display: null> containsEndOfChain: YES; [
+    <token: <frontmost>; pid: 393>,
+    <token: Nexy:0x0-0x1a7aa79; pid: 393>,
+    <pid: 39688>
+]
+default	14:52:05.529413-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:05.529443-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:05.529503-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34d20 <private>> attempting immediate handshake from activate
+default	14:52:05.529525-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34d20 <private>> sent handshake
+default	14:52:05.529752-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34c80; com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7> from com.apple.controlcenter.statusitems
+default	14:52:05.529937-0500	Nexy	Request for <FBSScene: 0x7c0d34c80; com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7> complete!
+default	14:52:05.530241-0500	Nexy	Requesting scene <FBSScene: 0x7c0d34e60; com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7-Aux[9]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:05.530375-0500	Nexy	Request for <FBSScene: 0x7c0d34e60; com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7-Aux[9]-NSStatusItemView> complete!
+default	14:52:05.530534-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d34d20 <private>> was invalidated
+default	14:52:05.530559-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:05.530616-0500	Nexy	Error creating <FBSScene: 0x7c0d34c80; com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7>: <NSError: 0x7be9f2610; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:05.530631-0500	Nexy	No scene exists for identity: com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7
+error	14:52:05.530654-0500	Nexy	Error creating <FBSScene: 0x7c0d34e60; com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7-Aux[9]-NSStatusItemView>: <NSError: 0x7be9f20a0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:05.530664-0500	Nexy	No scene exists for identity: com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7-Aux[9]-NSStatusItemView
+default	14:52:05.530755-0500	Nexy	[com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7-Aux[9]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:52:05.530906-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:05.530919-0500	Nexy	[com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7] No matching scene to invalidate for this identity.
+error	14:52:05.530936-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:05.530945-0500	Nexy	[com.apple.controlcenter:04D7E9DD-CD5C-49EC-B683-529961E06FF7-Aux[9]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:52:05.531280-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:52:05.531325-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:52:05.531347-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:05.531371-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:05.573410-0500	Nexy	[0x7be8b6580] activating connection: mach=false listener=false peer=false name=com.apple.hiservices-xpcservice
+default	14:52:05.576867-0500	Nexy	+[IMKClient subclass]: chose IMKClient_Modern
+default	14:52:05.576896-0500	Nexy	+[IMKInputSession subclass]: chose IMKInputSession_Modern
+default	14:52:05.579011-0500	Nexy	[0x7be8b6940] activating connection: mach=true listener=false peer=false name=com.apple.inputmethodkit.getxpcendpoint
+default	14:52:05.580069-0500	Nexy	[0x7be8b6a80] activating connection: mach=true listener=false peer=false name=com.apple.inputmethodkit.getxpcendpoint
+default	14:52:05.580668-0500	Nexy	[0x7be8b6bc0] activating connection: mach=false listener=false peer=false name=(anonymous)
+default	14:52:05.580835-0500	Nexy	[0x7be8b6e40] activating connection: mach=false listener=false peer=false name=(anonymous)
+default	14:52:05.581149-0500	DictationIM	setting current input controller = com.nexy.assistant
+default	14:52:05.581716-0500	Nexy	[0x7be8b6d00] activating connection: mach=true listener=false peer=false name=com.apple.tccd.system
+error	14:52:05.582931-0500	tccd	TCCDProcess: identifier=com.nexy.assistant, pid=39688, auid=501, euid=501, binary_path=/Applications/Nexy.app/Contents/MacOS/Nexy attempted to call TCCAccessRequest for kTCCServiceAccessibility without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement
+default	14:52:05.583039-0500	Nexy	[0x7be8b6d00] invalidated after the last release of the connection object
+default	14:52:05.587135-0500	Nexy	void _NSDisableAutomaticTerminationAndLog(NSString *) NSAccessibility Request Received
+default	14:52:05.666404-0500	Nexy	SessionCore_macOS_Legacy.mm:131   --> setPlayState Stopped  Output {BuiltInSpeakerDevice, 0x10}
+default	14:52:05.666735-0500	audiomxd	AVAudioSessionXPCServer.mm:2171  { "action":"update_running_state", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":{"deviceUIDs":[],"implicit_category":"","input_running":false,"output_running":false} }
+default	14:52:05.666804-0500	audiomxd	-MXCoreSession- -[MXCoreSession updateIsPlaying:]: MXCoreSession com.nexy.assistant with category/mode MediaPlayback/Default and coreSessionID = 705 stopping playing
+default	14:52:05.666841-0500	audiomxd	-MXCoreSession- -[MXCoreSession endInterruption:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> is going inactive
+default	14:52:05.666876-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:05.666918-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:05.666974-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.667012-0500	audiomxd	AudioApplicationInfoImpl.mm:395   Successfully updated session 0x1ef2c0 to isSessionRecording: 0
+	app: {"name":"[implicit] Nexy","pid":39688}
+	AudioApp.isRecording: false
+[ 
+	{ sessionID: 0x1ef2c0, sessionType: 'prim', isRecording: false }, 
+]
+default	14:52:05.667078-0500	Nexy	SessionCore_macOS_Legacy.mm:124   Sent updated IOState to server: [0, 0]. BT device UIDS: {(
+)}
+default	14:52:05.667088-0500	Nexy	SessionCore_macOS_Legacy.mm:167   <-- setPlayState Server update was required.
+default	14:52:05.667083-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.667120-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:05.667136-0500	audioaccessoryd	AudioStateChanged: Removed audio session app com.nexy.assistant 201 count 1
+default	14:52:06.532865-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:06.532958-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:06.533164-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> attempting immediate handshake from activate
+default	14:52:06.533267-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> sent handshake
+default	14:52:06.534080-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35400; com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14> from com.apple.controlcenter.statusitems
+default	14:52:06.534666-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> was invalidated
+default	14:52:06.534775-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:52:06.534895-0500	Nexy	Request for <FBSScene: 0x7c0d35400; com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14> complete!
+error	14:52:06.534975-0500	Nexy	Error creating <FBSScene: 0x7c0d35400; com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14>: <NSError: 0x7bec06dc0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+default	14:52:06.534972-0500	Nexy	LSExceptions shared instance invalidated for timeout.
+error	14:52:06.535046-0500	Nexy	No scene exists for identity: com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14
+default	14:52:06.535247-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:06.535286-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:06.535375-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> attempting immediate handshake from activate
+default	14:52:06.535414-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> sent handshake
+default	14:52:06.535675-0500	Nexy	Requesting scene <FBSScene: 0x7c0d355e0; com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14-Aux[10]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:06.536079-0500	Nexy	Request for <FBSScene: 0x7c0d355e0; com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14-Aux[10]-NSStatusItemView> complete!
+default	14:52:06.536375-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> was invalidated
+default	14:52:06.536426-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:06.536539-0500	Nexy	Error creating <FBSScene: 0x7c0d355e0; com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14-Aux[10]-NSStatusItemView>: <NSError: 0x7bec07900; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:06.536573-0500	Nexy	No scene exists for identity: com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14-Aux[10]-NSStatusItemView
+default	14:52:06.537379-0500	Nexy	[com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14-Aux[10]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:52:06.537688-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:06.537748-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:06.537786-0500	Nexy	[com.apple.controlcenter:50661DBD-19F8-40E0-9294-6450531E8D14-Aux[10]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:52:06.538685-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:52:06.538811-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:07.539309-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:07.539370-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:07.539509-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> attempting immediate handshake from activate
+default	14:52:07.539560-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> sent handshake
+default	14:52:07.540081-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35400; com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E> from com.apple.controlcenter.statusitems
+default	14:52:07.540577-0500	Nexy	Request for <FBSScene: 0x7c0d35400; com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E> complete!
+default	14:52:07.541125-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> was invalidated
+default	14:52:07.541181-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:52:07.541289-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:07.541325-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:07.541421-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> attempting immediate handshake from activate
+default	14:52:07.541460-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> sent handshake
+error	14:52:07.541577-0500	Nexy	Error creating <FBSScene: 0x7c0d35400; com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E>: <NSError: 0x7bec075d0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:07.541615-0500	Nexy	No scene exists for identity: com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E
+default	14:52:07.541739-0500	Nexy	Requesting scene <FBSScene: 0x7c0d354a0; com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E-Aux[11]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:07.542062-0500	Nexy	Request for <FBSScene: 0x7c0d354a0; com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E-Aux[11]-NSStatusItemView> complete!
+default	14:52:07.542438-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> was invalidated
+default	14:52:07.542486-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:07.542608-0500	Nexy	Error creating <FBSScene: 0x7c0d354a0; com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E-Aux[11]-NSStatusItemView>: <NSError: 0x7bec06e80; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:07.542654-0500	Nexy	No scene exists for identity: com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E-Aux[11]-NSStatusItemView
+default	14:52:07.542800-0500	Nexy	[com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E-Aux[11]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:52:07.543204-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:07.543219-0500	Nexy	[com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E] No matching scene to invalidate for this identity.
+error	14:52:07.543243-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:07.543256-0500	Nexy	[com.apple.controlcenter:07A10DEB-D703-46D8-93FA-653F1FB7A46E-Aux[11]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:52:07.543682-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:07.543818-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:52:07.543906-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:52:07.543971-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:08.544831-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:08.544891-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:08.545027-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> attempting immediate handshake from activate
+default	14:52:08.545077-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> sent handshake
+default	14:52:08.545528-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35400; com.apple.controlcenter:C10D7364-6C62-497E-9F08-5B121ECEB9E3> from com.apple.controlcenter.statusitems
+default	14:52:08.545941-0500	Nexy	Request for <FBSScene: 0x7c0d35400; com.apple.controlcenter:C10D7364-6C62-497E-9F08-5B121ECEB9E3> complete!
+default	14:52:08.546551-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> was invalidated
+default	14:52:08.546608-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:08.546767-0500	Nexy	Error creating <FBSScene: 0x7c0d35400; com.apple.controlcenter:C10D7364-6C62-497E-9F08-5B121ECEB9E3>: <NSError: 0x7bec07900; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:08.546809-0500	Nexy	No scene exists for identity: com.apple.controlcenter:C10D7364-6C62-497E-9F08-5B121ECEB9E3
+default	14:52:08.546880-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35360; com.apple.controlcenter:C10D7364-6C62-497E-9F08-5B121ECEB9E3-Aux[12]-NSStatusItemView> from com.apple.controlcenter.statusitems
+error	14:52:08.547097-0500	Nexy	Error creating <FBSScene: 0x7c0d35360; com.apple.controlcenter:C10D7364-6C62-497E-9F08-5B121ECEB9E3-Aux[12]-NSStatusItemView>: <NSError: 0x7bec075d0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+default	14:52:08.547179-0500	Nexy	Request for <FBSScene: 0x7c0d35360; com.apple.controlcenter:C10D7364-6C62-497E-9F08-5B121ECEB9E3-Aux[12]-NSStatusItemView> complete!
+error	14:52:08.547441-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:08.547477-0500	Nexy	[com.apple.controlcenter:C10D7364-6C62-497E-9F08-5B121ECEB9E3] No matching scene to invalidate for this identity.
+error	14:52:08.547529-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:08.547585-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:08.547689-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:08.563627-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:52:08.563750-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[scr] Nexy (com.nexy.assistant)]
+default	14:52:09.548791-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:09.548841-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:09.548955-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> attempting immediate handshake from activate
+default	14:52:09.548996-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> sent handshake
+default	14:52:09.549385-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35400; com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805> from com.apple.controlcenter.statusitems
+default	14:52:09.549731-0500	Nexy	Request for <FBSScene: 0x7c0d35400; com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805> complete!
+default	14:52:09.550198-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> was invalidated
+default	14:52:09.550242-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:52:09.550324-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:09.550348-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:09.550417-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> attempting immediate handshake from activate
+default	14:52:09.550445-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> sent handshake
+error	14:52:09.550534-0500	Nexy	Error creating <FBSScene: 0x7c0d35400; com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805>: <NSError: 0x7bec06d90; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:09.550560-0500	Nexy	No scene exists for identity: com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805
+default	14:52:09.550633-0500	Nexy	Requesting scene <FBSScene: 0x7c0d355e0; com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805-Aux[13]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:09.550879-0500	Nexy	Request for <FBSScene: 0x7c0d355e0; com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805-Aux[13]-NSStatusItemView> complete!
+default	14:52:09.551239-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d354a0 <private>> was invalidated
+default	14:52:09.551275-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:09.551354-0500	Nexy	Error creating <FBSScene: 0x7c0d355e0; com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805-Aux[13]-NSStatusItemView>: <NSError: 0x7bec06940; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:09.551382-0500	Nexy	No scene exists for identity: com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805-Aux[13]-NSStatusItemView
+default	14:52:09.551551-0500	Nexy	[com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805-Aux[13]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:52:09.551873-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:09.551899-0500	Nexy	[com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805] No matching scene to invalidate for this identity.
+error	14:52:09.551940-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:09.551961-0500	Nexy	[com.apple.controlcenter:5C08B202-E4F9-4E28-81D3-96941D227805-Aux[13]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:52:09.552393-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:09.552500-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:52:09.552567-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:52:09.552613-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:10.553529-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:10.553589-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:10.553725-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> attempting immediate handshake from activate
+default	14:52:10.553776-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> sent handshake
+default	14:52:10.554249-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35400; com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2> from com.apple.controlcenter.statusitems
+default	14:52:10.554666-0500	Nexy	Request for <FBSScene: 0x7c0d35400; com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2> complete!
+default	14:52:10.555197-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> was invalidated
+default	14:52:10.555252-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:52:10.555341-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:10.555376-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:10.555463-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35540 <private>> attempting immediate handshake from activate
+default	14:52:10.555501-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35540 <private>> sent handshake
+error	14:52:10.555613-0500	Nexy	Error creating <FBSScene: 0x7c0d35400; com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2>: <NSError: 0x7bec07e70; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:10.555649-0500	Nexy	No scene exists for identity: com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2
+default	14:52:10.555777-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35360; com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2-Aux[14]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:10.556123-0500	Nexy	Request for <FBSScene: 0x7c0d35360; com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2-Aux[14]-NSStatusItemView> complete!
+default	14:52:10.556380-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35540 <private>> was invalidated
+default	14:52:10.556425-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:10.556525-0500	Nexy	Error creating <FBSScene: 0x7c0d35360; com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2-Aux[14]-NSStatusItemView>: <NSError: 0x7bec079c0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:10.556556-0500	Nexy	No scene exists for identity: com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2-Aux[14]-NSStatusItemView
+default	14:52:10.556824-0500	Nexy	[com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2-Aux[14]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:52:10.557145-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:10.557172-0500	Nexy	[com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2] No matching scene to invalidate for this identity.
+error	14:52:10.557214-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:10.557236-0500	Nexy	[com.apple.controlcenter:AECCE344-FF21-48BA-A3F4-35FB1628A6F2-Aux[14]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:52:10.557702-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:10.557815-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:52:10.557887-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:52:10.557936-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:10.750369-0500	ControlCenter	SystemStatus attributed attribution to com.nexy.assistant, displayName: <private>, bundlePath: <private>, executablePath: <private>, isSystemExecutable: false
+default	14:52:10.750483-0500	ControlCenter	Sorted active attributions from SystemStatus update: [[scr] Nexy (com.nexy.assistant)]
+default	14:52:11.558765-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:11.558825-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:11.558959-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> attempting immediate handshake from activate
+default	14:52:11.559007-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> sent handshake
+default	14:52:11.559470-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35400; com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125> from com.apple.controlcenter.statusitems
+default	14:52:11.559880-0500	Nexy	Request for <FBSScene: 0x7c0d35400; com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125> complete!
+default	14:52:11.560430-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35360 <private>> was invalidated
+default	14:52:11.560487-0500	Nexy	FBSWorkspace unregistering source: <private>
+default	14:52:11.560580-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:11.560616-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:11.560709-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35540 <private>> attempting immediate handshake from activate
+default	14:52:11.560750-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35540 <private>> sent handshake
+error	14:52:11.560862-0500	Nexy	Error creating <FBSScene: 0x7c0d35400; com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125>: <NSError: 0x7bec072a0; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:11.560899-0500	Nexy	No scene exists for identity: com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125
+default	14:52:11.561019-0500	Nexy	Requesting scene <FBSScene: 0x7c0d355e0; com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125-Aux[15]-NSStatusItemView> from com.apple.controlcenter.statusitems
+default	14:52:11.561338-0500	Nexy	Request for <FBSScene: 0x7c0d355e0; com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125-Aux[15]-NSStatusItemView> complete!
+default	14:52:11.561630-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d35540 <private>> was invalidated
+default	14:52:11.561669-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:11.561754-0500	Nexy	Error creating <FBSScene: 0x7c0d355e0; com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125-Aux[15]-NSStatusItemView>: <NSError: 0x7bec07960; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:11.561784-0500	Nexy	No scene exists for identity: com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125-Aux[15]-NSStatusItemView
+default	14:52:11.562073-0500	Nexy	[com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125-Aux[15]-NSStatusItemView] Sending action(s) in update: NSSceneFenceAction
+error	14:52:11.562479-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:11.562519-0500	Nexy	[com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125] No matching scene to invalidate for this identity.
+error	14:52:11.562575-0500	Nexy	auxiliary scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:11.562604-0500	Nexy	[com.apple.controlcenter:FBF0385C-8FCF-4AAB-8AE1-D5F01611D125-Aux[15]-NSStatusItemView] No matching scene to invalidate for this identity.
+error	14:52:11.563157-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:11.563282-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+error	14:52:11.563374-0500	Nexy	Unhandled disconnected auxiliary scene <private>
+error	14:52:11.563436-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:12.564150-0500	Nexy	FBSWorkspace registering source: <private>
+default	14:52:12.564212-0500	Nexy	FBSWorkspace connected to endpoint : <private>
+default	14:52:12.564366-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> attempting immediate handshake from activate
+default	14:52:12.564415-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> sent handshake
+default	14:52:12.564726-0500	Nexy	Requesting scene <FBSScene: 0x7c0d35400; com.apple.controlcenter:4D7A5909-E1ED-4089-B05C-3987FF146255> from com.apple.controlcenter.statusitems
+default	14:52:12.565009-0500	Nexy	Request for <FBSScene: 0x7c0d35400; com.apple.controlcenter:4D7A5909-E1ED-4089-B05C-3987FF146255> complete!
+default	14:52:12.565458-0500	Nexy	<FBSWorkspaceScenesClient:0x7c0d355e0 <private>> was invalidated
+default	14:52:12.565490-0500	Nexy	FBSWorkspace unregistering source: <private>
+error	14:52:12.565587-0500	Nexy	Error creating <FBSScene: 0x7c0d35400; com.apple.controlcenter:4D7A5909-E1ED-4089-B05C-3987FF146255>: <NSError: 0x7bec04420; domain: BSServiceConnectionErrorDomain; code: 3 ("OperationFailed"); "XPC error received on message reply handler">
+error	14:52:12.565607-0500	Nexy	No scene exists for identity: com.apple.controlcenter:4D7A5909-E1ED-4089-B05C-3987FF146255
+error	14:52:12.565676-0500	Nexy	Error creating <FBSScene: 0x7c0d354a0; com.apple.controlcenter:4D7A5909-E1ED-4089-B05C-3987FF146255-Aux[16]-NSStatusItemView>: <NSError: 0x7bec055c0; domain: FBSWorkspaceErrorDomain; code: 1 ("InvalidScene"); "scene <FBSScene: 0x7c0d354a0; com.apple.controlcenter:4D7A5909-E1ED-4089-B05C-3987FF146255-Aux[16]-NSStatusItemView> was invalidated before activation com.apple.controlcenter.statusitems">
+error	14:52:12.565696-0500	Nexy	No scene exists for identity: com.apple.controlcenter:4D7A5909-E1ED-4089-B05C-3987FF146255-Aux[16]-NSStatusItemView
+error	14:52:12.565857-0500	Nexy	scene activation failed: Error Domain=BSServiceConnectionErrorDomain Code=3 "XPC error received on message reply handler" UserInfo={BSErrorCodeDescription=OperationFailed, NSLocalizedFailureReason=XPC error received on message reply handler}
+error	14:52:12.565872-0500	Nexy	[com.apple.controlcenter:4D7A5909-E1ED-4089-B05C-3987FF146255] No matching scene to invalidate for this identity.
+error	14:52:12.565916-0500	Nexy	auxiliary scene activation failed: Error Domain=FBSWorkspaceErrorDomain Code=1 UserInfo={BSErrorCodeDescription=InvalidScene, NSLocalizedFailureReason=<private>}
+error	14:52:12.565992-0500	Nexy	Unhandled disconnected scene <private>
+error	14:52:12.566056-0500	Nexy	[BSBlockSentinel:FBSWorkspaceScenesClient] failed!
+default	14:52:13.300122-0500	WindowServer	0[outside of RPC]: Process death: 0x0-0x1a7aa79 (Nexy) connectionID: 19D0D3 pid: 39688 in session 0x101
+default	14:52:13.300165-0500	WindowServer	<BSCompoundAssertion:0x7fb0154c0> ([FocusManager:257]-deferringPolicyEvaluationSuppression) acquire for reason:process death - 0x0-0x1a7aa79 (Nexy) acq:0x80278b8c0 count:1
+default	14:52:13.303639-0500	audiomxd	  ServerSessionManager.mm:472   { "action":"destroy_session", "session":{"ID":"0x1ef2c0","name":"Nexy(39688)"}, "details":null }
+default	14:52:13.303675-0500	audiomxd	AudioApplicationInfoImpl.mm:690   Successfully removed session 0x1ef2c0 from AudioApp, recording state unchanged (app: {"name":"[implicit] Nexy","pid":39688})
+default	14:52:13.303687-0500	audiomxd	  ServerSessionManager.mm:1081  destroy audio app instance since was created implicitly by session creation and all sessions now gone (audio app: {"name":"[implicit] Nexy","pid":39688})
+default	14:52:13.303963-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO> requesting for shared ownership, didNowPlayingInfoChanged = NO, didCategoryOrModeChange = NO
+default	14:52:13.304054-0500	audiomxd	-MXSessionManager- -[MXSessionManager requestForSharedOwnership:didNowPlayingInfoChange:didCategoryOrModeChange:]: Setting score as 201 for session <ID: 705, PID = 39688, Name = sid:0x1ef2c0, Nexy(39688), 'prim', BundleID = com.nexy.assistant, Category = MediaPlayback, Mode = Default, Active = NO, Playing = NO, Recording = NO>
+default	14:52:13.304270-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:13.304371-0500	audiomxd	UpdateAudioState CID 0xD310001 audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:13.304466-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:13.304157-0500	WindowManager	Connection invalidated | (39688) Nexy
+default	14:52:13.304574-0500	WindowServer	0[outside of RPC]: [FocusManager:257] update to deferring policy requested for reason: permitted list updated - 0x0-0x1a7aa79 removed - but we are suppressing evaluation for reasons: {(
+    "process death - 0x0-0x1a7aa79 (Nexy)"
+)}
+default	14:52:13.304526-0500	audioaccessoryd	Audio state update Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:13.304939-0500	WindowServer	0[outside of RPC]: [FocusManager:257] update to deferring policy requested for reason: permitted list updated - 0x1-0x9b08 removed - but we are suppressing evaluation for reasons: {(
+    "process death - 0x0-0x1a7aa79 (Nexy)"
+)}
+default	14:52:13.307349-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:13.307506-0500	audioaccessoryd	AudioStateChanged: Received audioState Stop apps {
+    "com.nexy.assistant" : 201,
+}
+default	14:52:13.313487-0500	runningboardd	XPC connection invalidated: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:52:13.324017-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:58170<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
+so_gencnt: 6102375 t_state: FIN_WAIT_1 process: Nexy:39688 Duration: 16.764 sec Conn_Time: 0.026 sec bytes in/out: 510211/936 pkts in/out: 43/7 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 24 delayed ACKs sent: 0
+rtt: 26.781 ms rttvar: 11.562 ms base rtt: 20 ms so_error: 0 svc/tc: 0 flow: 0x8e5a5b61
+default	14:52:13.324037-0500	kernel	tcp_connection_summary [<IPv4-redacted>:58170<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
+so_gencnt: 6102375 t_state: FIN_WAIT_1 process: Nexy:39688 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
+default	14:52:13.324237-0500	kernel	tcp_connection_summary (tcp_usrclosed:3210)[<IPv4-redacted>:58167<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
+so_gencnt: 6102369 t_state: FIN_WAIT_1 process: Nexy:39688 Duration: 17.235 sec Conn_Time: 0.021 sec bytes in/out: 3360/1734 pkts in/out: 3/4 pkt rxmit: 0 ooo pkts: 0 dup bytes in: 0 ACKs delayed: 0 delayed ACKs sent: 0
+rtt: 21.468 ms rttvar: 6.687 ms base rtt: 20 ms so_error: 0 svc/tc: 0 flow: 0x81df9cfb
+default	14:52:13.324245-0500	kernel	tcp_connection_summary [<IPv4-redacted>:58167<-><IPv4-redacted>:443] interface: en0 (skipped: 6843)
+so_gencnt: 6102369 t_state: FIN_WAIT_1 process: Nexy:39688 flowctl: 0us (0x) SYN in/out: 1/1 FIN in/out: 0/0 RST in/out: 0/0 AccECN (client/server): Disabled/Disabled
+default	14:52:13.324243-0500	mDNSResponder	[R635454] DNSServiceCreateConnection STOP PID[39688](Nexy)
+default	14:52:13.325819-0500	runningboardd	[app<application.com.nexy.assistant.21074037.21074043(501)>:39688] termination reported by launchd (2, 15, 15)
+default	14:52:13.325858-0500	runningboardd	Removing process: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:52:13.326131-0500	runningboardd	Removing launch job for: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:52:13.326355-0500	runningboardd	Removed job for [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:52:13.326397-0500	runningboardd	Removing assertions for terminated process: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:52:13.331506-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: none (role: None) (endowments: (null))
+default	14:52:13.331967-0500	audiomxd	  ServerSessionManager.mm:1322  Monitored process died, pid = 39688, name = Nexy
+default	14:52:13.331806-0500	runningboardd	Calculated state for app<application.com.nexy.assistant.21074037.21074043(501)>: none (role: None) (endowments: (null))
+default	14:52:13.332571-0500	gamepolicyd	Received state update for 39688 (app<application.com.nexy.assistant.21074037.21074043(501)>, none-NotVisible
+default	14:52:13.332681-0500	launchservicesd	Hit the server for a process handle 8c0137200009b08 that resolved to: [app<application.com.nexy.assistant.21074037.21074043(501)>:39688]
+default	14:52:13.336050-0500	loginwindow	-[ApplicationManager handleCASEvent:withData:] | CAS notification for appDeath for com.nexy.assistant with asn: LSASN:{hi=0x0;lo=0x1a7aa79} for bundle path: /Applications/Nexy.app with URL: file:///Applications/Nexy.app/
+default	14:52:13.336087-0500	loginwindow	-[ApplicationManager(AppDeathHandler) appDeathCleanupHandler:forApp:] | Termination handler for: Nexy : 27765369
+default	14:52:13.336162-0500	loginwindow	-[PersistentAppsSupport applicationQuit:] | for app:Nexy, _appTrackingState = 2
+default	14:52:16.893537-0500	ControlCenter	Recent activity attributions changed to ["scr:com.nexy.assistant", "mic:com.nexy.assistant"]
+default	14:52:16.894968-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:16.894984-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:16.895000-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterVideoEffectsModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:16.895010-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: called for bundleID: com.nexy.assistant
+default	14:52:16.895023-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterMicrophoneModuleShouldBeShownForBundleID: com.nexy.assistant active:1
+default	14:52:16.895044-0500	ControlCenter	<<<< AVControlCenterModules >>>> AVControlCenterModulesShouldBeShownForBundleID: com.nexy.assistant videoEffectsShouldBeShown:1 micModesShouldBeShown:1
+default	14:52:16.895201-0500	ControlCenter	com.nexy.assistant supportedModes: [standard, voiceIsolation], unsupported: [], hidden: [wideSpectrum], enabled: true, _mode: standard
+default	14:52:24.654324-0500	ControlCenter	Recent activity attributions changed to ["scr:com.nexy.assistant"]
+default	14:53:13.338036-0500	loginwindow	-[ApplicationManager(AppDeathHandler) _appQuitTimer:] | _appQuitTimer fired for: ASN: 27765369, name: Nexy with url: file:///Applications/Nexy.app/
+default	14:53:13.338272-0500	loginwindow	-[ApplicationManager(AppDeathHandler) _handleLingeringSubordinateProcesses:forApp:] | Last instance of app Nexy at /Applications/Nexy.app, handle lingering spawns.
+default	14:53:13.338304-0500	loginwindow	-[ApplicationManager(AppDeathHandler) _handleLingeringSubordinateProcesses:forApp:] | Child applications for Nexy : (
+)
+default	14:53:13.338844-0500	loginwindow	-[ApplicationManager(AppDeathHandler) _handleLingeringSubordinateProcesses:forApp:] | App Nexy is fully cleaned up.  No user notification is necessary.  Done with handling.

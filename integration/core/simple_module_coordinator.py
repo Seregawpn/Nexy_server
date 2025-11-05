@@ -94,6 +94,10 @@ class SimpleModuleCoordinator:
         # Состояние процесса разрешений
         self._permissions_in_progress = False
         self._restart_pending = False  # Флаг ожидания перезапуска после first_run
+
+        # Состояние tray (gate-механизм для блокирующих операций)
+        self._tray_ready = False
+        self._tray_start_time = None
         
     async def initialize(self) -> bool:
         """Инициализация всех компонентов и интеграций"""
@@ -509,6 +513,9 @@ class SimpleModuleCoordinator:
             # Подписываемся на события пользовательского завершения
             await self.event_bus.subscribe("tray.quit_clicked", self._on_user_quit, EventPriority.HIGH)
 
+            # Подписываемся на готовность tray (gate-механизм)
+            await self.event_bus.subscribe("tray.integration_ready", self._on_tray_ready, EventPriority.CRITICAL)
+
             # НЕ подписываемся на keyboard.* события - они обрабатываются напрямую
             # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus)
 
@@ -542,12 +549,14 @@ class SimpleModuleCoordinator:
             print("🚀 Запуск всех интеграций...")
             
             # Запускаем интеграции в правильном порядке (с учетом зависимостей)
+            # КРИТИЧНО: tray должен быть ВТОРЫМ (сразу после instance_manager)
+            # чтобы иконка появилась ДО блокирующих операций (first_run_permissions)
             startup_order = [
                 'instance_manager',        # 1. Управление экземплярами (ПЕРВЫЙ - блокирующий)
-                'hardware_id',             # 2. Получить уникальный ID
-                'first_run_permissions',   # 3. Запрос разрешений при первом запуске (блокирующий)
-                'permission_restart',      # 4. Автоматический перезапуск после выдачи критических разрешений
-                'tray',                    # 5. GUI и меню-бар
+                'tray',                    # 2. GUI и меню-бар (ВТОРОЙ - неблокирующий, критично для UX)
+                'hardware_id',             # 3. Получить уникальный ID
+                'first_run_permissions',   # 4. Запрос разрешений при первом запуске (блокирующий - ПОСЛЕ tray!)
+                'permission_restart',      # 5. Автоматический перезапуск после выдачи критических разрешений
                 'mode_management',         # 6. Управление режимами
                 'input',                   # 7. Обработка ввода (использует accessibility)
                 'voice_recognition',       # 8. Распознавание речи (использует microphone)
@@ -565,8 +574,33 @@ class SimpleModuleCoordinator:
             ]
             
             # Запускаем в правильном порядке
+            import time
             for name in startup_order:
                 if name in self.integrations:
+                    # GATE: Для tray устанавливаем время старта
+                    if name == "tray":
+                        self._tray_start_time = time.time()
+                        logger.info("[TRAY_GATE] Starting tray integration...")
+                        print("🚀 [TRAY_GATE] Запуск tray integration...")
+
+                    # GATE: Блокирующие операции ждут готовности tray (но не дольше 10 сек)
+                    if name in ["first_run_permissions", "permission_restart"] and not self._tray_ready:
+                        max_wait_sec = 10.0
+                        wait_start = time.time()
+                        logger.info(f"⏳ [TRAY_GATE] Waiting for tray before starting {name} (max {max_wait_sec}s)...")
+                        print(f"⏳ [TRAY_GATE] Ожидание tray перед запуском {name} (максимум {max_wait_sec}s)...")
+
+                        while not self._tray_ready and (time.time() - wait_start) < max_wait_sec:
+                            await asyncio.sleep(0.1)
+
+                        waited_ms = int((time.time() - wait_start) * 1000)
+                        if self._tray_ready:
+                            logger.info(f"✅ [TRAY_GATE] Tray ready after {waited_ms}ms wait - proceeding with {name}")
+                            print(f"✅ [TRAY_GATE] Tray готов после {waited_ms}ms ожидания - продолжаем с {name}")
+                        else:
+                            logger.warning(f"⚠️ [TRAY_GATE] Tray not ready after {waited_ms}ms - proceeding anyway with {name}")
+                            print(f"⚠️ [TRAY_GATE] Tray не готов после {waited_ms}ms - продолжаем с {name}")
+
                     print(f"🚀 Запуск {name}...")
                     success = await self.integrations[name].start()
                     
@@ -941,6 +975,22 @@ class SimpleModuleCoordinator:
             self._permissions_in_progress = False
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_failed: {e}")
+
+    async def _on_tray_ready(self, event):
+        """Обработка готовности tray - снятие gate для блокирующих операций"""
+        try:
+            import time
+            if self._tray_start_time:
+                duration_ms = int((time.time() - self._tray_start_time) * 1000)
+                logger.info(f"✅ [TRAY_GATE] Tray ready in {duration_ms}ms - releasing gate for blocking operations")
+                print(f"✅ [TRAY_GATE] Tray готов за {duration_ms}ms - разрешаем блокирующие операции")
+            else:
+                logger.info("✅ [TRAY_GATE] Tray ready - releasing gate for blocking operations")
+                print("✅ [TRAY_GATE] Tray готов - разрешаем блокирующие операции")
+
+            self._tray_ready = True
+        except Exception as e:
+            logger.error(f"❌ [TRAY_GATE] Ошибка обработки tray.integration_ready: {e}")
 
     async def _on_permissions_restart_pending(self, event):
         """Обработка события перезапуска после первого запуска"""

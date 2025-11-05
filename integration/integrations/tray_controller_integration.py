@@ -104,7 +104,11 @@ class TrayControllerIntegration:
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
         try:
-            logger.info("🔧 Инициализация TrayControllerIntegration...")
+            import time
+            init_start = time.time()
+            logger.info("🔧 [TRAY_METRICS] tray.will_init - начало инициализации TrayControllerIntegration")
+            print("🔧 [TRAY_METRICS] tray.will_init - начало инициализации")
+
             if self._disabled_due_to_errors:
                 self.is_initialized = True
                 if self._disabled_by_env:
@@ -119,21 +123,32 @@ class TrayControllerIntegration:
             max_retries = 3
             backoff_sec = 0.5
             for attempt in range(1, max_retries + 1):
+                attempt_start = time.time()
                 success = await self.tray_controller.initialize()
+                attempt_duration_ms = int((time.time() - attempt_start) * 1000)
+
                 if success:
+                    logger.info(f"✅ [TRAY_METRICS] Initialize succeeded (attempt {attempt}/{max_retries}, {attempt_duration_ms}ms)")
+                    print(f"✅ [TRAY_METRICS] Инициализация успешна (попытка {attempt}/{max_retries}, {attempt_duration_ms}ms)")
                     break
+
                 self._init_failures += 1
                 logger.warning(
-                    "[TRAY] Initialize failed (attempt %d/%d). Backing off %.1fs",
+                    "[TRAY_METRICS] tray.retry(init, attempt=%d/%d, duration=%dms) - backing off %.1fs",
                     attempt,
                     max_retries,
+                    attempt_duration_ms,
                     backoff_sec,
                 )
+                print(f"⚠️ [TRAY_METRICS] tray.retry (попытка {attempt}/{max_retries}, {attempt_duration_ms}ms) - пауза {backoff_sec}s")
                 await asyncio.sleep(backoff_sec)
                 backoff_sec = min(backoff_sec * 2.0, 4.0)
 
+            init_duration_ms = int((time.time() - init_start) * 1000)
+
             if not success:
-                logger.error("[TRAY] Initialization failed after retries – auto-disabling tray for this session")
+                logger.error(f"❌ [TRAY_METRICS] Initialization failed after retries ({init_duration_ms}ms total) – auto-disabling tray")
+                print(f"❌ [TRAY_METRICS] Инициализация не удалась после {init_duration_ms}ms - отключаем tray")
                 self._disabled_due_to_errors = True
                 self.tray_controller = None
                 # Не считаем это фатальной ошибкой: позволяем приложению работать без меню-бара
@@ -153,61 +168,78 @@ class TrayControllerIntegration:
     async def start(self) -> bool:
         """Запуск интеграции"""
         try:
+            import time
+            start_time = time.time()
+
             if not self.is_initialized:
                 logger.error("TrayControllerIntegration не инициализирован")
                 return False
-            
+
             if self.is_running:
                 logger.warning("TrayControllerIntegration уже запущен")
                 return True
-            
+
             if self._disabled_due_to_errors:
                 if self._disabled_by_env:
                     logger.info("[TRAY] Start skipped (disabled by env)")
                 logger.warning("[TRAY] Disabled due to previous errors – skipping start")
                 return True
 
-            logger.info("🚀 Запуск TrayControllerIntegration...")
-            
+            logger.info("🚀 [TRAY_METRICS] Запуск TrayControllerIntegration...")
+            print("🚀 [TRAY_METRICS] Запуск TrayControllerIntegration...")
+
             # Запускаем TrayController с повторами и бэк-оффом
             max_retries = 3
             backoff_sec = 0.5
             success = False
             for attempt in range(1, max_retries + 1):
+                attempt_start = time.time()
                 success = await (self.tray_controller.start() if self.tray_controller else asyncio.sleep(0))
+                attempt_duration_ms = int((time.time() - attempt_start) * 1000)
+
                 if success:
+                    logger.info(f"✅ [TRAY_METRICS] Start succeeded (attempt {attempt}/{max_retries}, {attempt_duration_ms}ms)")
+                    print(f"✅ [TRAY_METRICS] Запуск успешен (попытка {attempt}/{max_retries}, {attempt_duration_ms}ms)")
                     break
+
                 self._start_failures += 1
                 logger.warning(
-                    "[TRAY] Start failed (attempt %d/%d). Backing off %.1fs",
+                    "[TRAY_METRICS] tray.retry(start, attempt=%d/%d, duration=%dms) - backing off %.1fs",
                     attempt,
                     max_retries,
+                    attempt_duration_ms,
                     backoff_sec,
                 )
+                print(f"⚠️ [TRAY_METRICS] tray.retry (попытка {attempt}/{max_retries}, {attempt_duration_ms}ms) - пауза {backoff_sec}s")
                 await asyncio.sleep(backoff_sec)
                 backoff_sec = min(backoff_sec * 2.0, 4.0)
 
+            start_duration_ms = int((time.time() - start_time) * 1000)
+
             if not success:
-                logger.error("[TRAY] Start failed after retries – auto-disabling tray for this session")
+                logger.error(f"❌ [TRAY_METRICS] Start failed after retries ({start_duration_ms}ms total) – auto-disabling tray")
+                print(f"❌ [TRAY_METRICS] Запуск не удался после {start_duration_ms}ms - отключаем tray")
                 self._disabled_due_to_errors = True
                 self.tray_controller = None
                 return True
-            
+
             # Синхронизируем статус с текущим режимом приложения
             await self._sync_with_app_mode()
-            
+
             self.is_running = True
-            
+
             # Больше не используем периодический таймер для критичных обновлений иконки
             self._ui_timer = None
 
             # Публикуем событие готовности
             await self.event_bus.publish("tray.integration_ready", {
                 "integration": "tray_controller",
-                "status": "running"
+                "status": "running",
+                "duration_ms": start_duration_ms
             })
-            
-            logger.info("✅ TrayControllerIntegration запущен")
+
+            logger.info(f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms")
+            print(f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms")
 
             # Обработчик клика по пункту Quit
             try:

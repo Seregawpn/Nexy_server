@@ -10,6 +10,8 @@
 | `NEXY_KS_PERMISSION_RESTART_V2` | Kill-Switch | `unified_config.yaml: permission_restart.enabled` | `modules/permission_restart/core/restart_scheduler.py:69` | `if not self._config.enabled: return None` | `true` | Отключить автоматический перезапуск (откат) |
 | `NEXY_DISABLE_AUTO_RESTART` | Kill-Switch | Environment variable | `permission_restart_integration.py` | `_do_start()` | `false` | Dry-run mode (перезапуск не выполняется) |
 | `NEXY_FEATURE_FIRST_RUN_V2` | Feature Flag | `unified_config.yaml: first_run_permissions.enabled` | `integration/integrations/first_run_permissions_integration.py` | `FirstRunPermissionsIntegration.initialize()` | `true` | Включить систему первого запуска |
+| `NEXY_FEATURE_DEFER_HEAVY_UNTIL_STATUS_READY` | Feature Flag | `unified_config.yaml: integrations.tray_controller.defer_heavy_until_status_ready` | `integration/core/simple_module_coordinator.py` | `SimpleModuleCoordinator.start()` | `true` | Отложить тяжёлые операции до появления иконки в меню-баре |
+| `NEXY_KS_DEFER_HEAVY_UNTIL_STATUS_READY` | Kill-Switch | `unified_config.yaml: integrations.tray_controller.defer_heavy_until_status_ready` | `integration/core/simple_module_coordinator.py` | `SimpleModuleCoordinator.start()` | `false` | Отключить отложенный запуск тяжёлых операций (откат) |
 
 ## Использование
 

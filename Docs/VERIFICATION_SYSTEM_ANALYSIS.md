@@ -266,3 +266,4 @@ value = state_manager.get_state_data(axis_name)  # Паттерн не найд�
 
 
 
+
