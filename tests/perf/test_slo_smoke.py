@@ -165,3 +165,4 @@ class TestSLOSmoke:
                 f"Metric '{metric_name}' must have either 'min' or 'p95_max' threshold"
 
 
+

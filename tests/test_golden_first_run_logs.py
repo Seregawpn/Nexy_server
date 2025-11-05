@@ -157,3 +157,4 @@ def test_actual_log_file_validation():
         pytest.fail(f"Log validation failed:\n" + "\n".join(f"  • {e}" for e in errors))
 
 
+

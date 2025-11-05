@@ -81,17 +81,30 @@ try:
     else:
         print("⚠️ AppKit.NSMakeRect не найден")
 
-    # КРИТИЧНО: Активируем NSApplication для LSUIElement приложений
-    # Без этого menu bar иконка не появляется при запуске из .app на macOS Sequoia
-    # Должно быть вызвано ДО создания rumps.App и NSStatusItem
+    # CRITICAL: Activate NSApplication for LSUIElement applications
+    # Without this, menu bar icon doesn't appear when launched from .app on macOS Sequoia
+    # Must be called BEFORE creating rumps.App and NSStatusItem
     try:
+        print("[NEXY_INIT] Activating NSApplication for menu bar app...")
         app = AppKit.NSApplication.sharedApplication()
-        # Устанавливаем activation policy для menu bar приложения
-        # NSApplicationActivationPolicyAccessory = 1 (скрыть из Dock, показать в menu bar)
-        app.setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
-        print("✅ NSApplication активирован для menu bar приложения")
+        print(f"[NEXY_INIT] NSApplication instance: {app}")
+        print(f"[NEXY_INIT] Current activation policy: {app.activationPolicy()}")
+
+        # Set activation policy for menu bar application
+        # NSApplicationActivationPolicyAccessory (hide from Dock, show in menu bar)
+        result = app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+        print(f"[NEXY_INIT] setActivationPolicy(Accessory) returned: {result}")
+        print(f"[NEXY_INIT] New activation policy: {app.activationPolicy()}")
+
+        # Активируем приложение - ВАЖНО: True заставляет приложение стать активным
+        app.activateIgnoringOtherApps_(True)
+        print("[NEXY_INIT] Called activateIgnoringOtherApps_(True)")
+
+        print("[NEXY_INIT] SUCCESS: NSApplication activated for menu bar app")
     except Exception as e:
-        print(f"⚠️ Ошибка активации NSApplication: {e}")
+        print(f"[NEXY_INIT] ERROR: NSApplication activation failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 except ImportError as e:
     print(f"⚠️ PyObjC недоступен: {e}")
@@ -99,11 +112,28 @@ except Exception as e:
     print(f"⚠️ Ошибка инициализации PyObjC: {e}")
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# ВАЖНО: Для .app bundle логи должны писаться в файл, т.к. stdout недоступен
+import tempfile
+log_file = os.path.join(tempfile.gettempdir(), 'nexy_debug.log')
+
+# Создаем два handler'а: один для файла, один для консоли
+file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Настраиваем root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
+
 logger = logging.getLogger(__name__)
+logger.info(f"📝 Логи записываются в: {log_file}")
+print(f"📝 Логи записываются в: {log_file}")
 
 async def main():
     """Главная функция"""

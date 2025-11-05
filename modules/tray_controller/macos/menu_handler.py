@@ -4,8 +4,11 @@ macOS реализация меню трея
 
 import os
 import rumps
+import logging
 from typing import List, Optional, Callable, Dict, Any
 from ..core.tray_types import TrayMenuItem, TrayMenu, TrayStatus
+
+logger = logging.getLogger(__name__)
 
 class MacOSTrayMenu:
     """macOS реализация меню трея"""
@@ -25,24 +28,49 @@ class MacOSTrayMenu:
     def create_app(self, icon_path: str) -> rumps.App:
         """Создать приложение с иконкой в трее"""
         try:
+            logger.info(f"🔍 ДИАГНОСТИКА: create_app вызван с icon_path='{icon_path}'")
+            logger.info(f"🔍 ДИАГНОСТИКА: os.path.exists(icon_path)={os.path.exists(icon_path) if icon_path else 'N/A'}")
+            logger.info(f"🔍 ДИАГНОСТИКА: os.path.abspath(icon_path)='{os.path.abspath(icon_path) if icon_path else 'N/A'}'")
+            logger.info(f"🔍 ДИАГНОСТИКА: Current working directory={os.getcwd()}")
+            logger.info(f"🔍 ДИАГНОСТИКА: TMPDIR={os.environ.get('TMPDIR', 'NOT SET')}")
+
             # Создаем приложение
             self.app = rumps.App(
                 name=self.app_name,
                 quit_button=None  # Убираем стандартную кнопку выхода
             )
+            logger.info(f"✅ ДИАГНОСТИКА: rumps.App создан успешно")
+
             # Включаем цветные иконки (отключаем шаблонный режим)
             try:
                 self.app.template = False
-            except Exception:
-                pass
-            
+                logger.info(f"✅ ДИАГНОСТИКА: template=False установлен")
+            except Exception as e:
+                logger.warning(f"⚠️ ДИАГНОСТИКА: Не удалось установить template=False: {e}")
+
             # Изначально меню заполняется интеграцией через TrayController._create_default_menu()
             # Здесь не создаём собственных пунктов меню, чтобы избежать дублирования и несинхронности.
             self.app.menu = []
 
             # Устанавливаем иконку если есть
             if icon_path and os.path.exists(icon_path):
+                logger.info(f"✅ ДИАГНОСТИКА: Иконка существует, устанавливаем...")
                 self.app.icon = icon_path
+                logger.info(f"✅ ДИАГНОСТИКА: Иконка установлена успешно")
+            else:
+                logger.error(f"❌ ДИАГНОСТИКА: Иконка НЕ существует или путь пустой!")
+                logger.error(f"❌ ДИАГНОСТИКА: icon_path='{icon_path}'")
+                if icon_path:
+                    # Проверяем содержимое директории
+                    parent_dir = os.path.dirname(icon_path)
+                    if os.path.exists(parent_dir):
+                        logger.info(f"🔍 ДИАГНОСТИКА: Содержимое {parent_dir}:")
+                        try:
+                            files = os.listdir(parent_dir)
+                            for f in files[:10]:  # Первые 10 файлов
+                                logger.info(f"  - {f}")
+                        except Exception as e:
+                            logger.error(f"❌ ДИАГНОСТИКА: Ошибка чтения директории: {e}")
             
             # Добавляем метод applicationShouldTerminate если его нет
             if not hasattr(self.app, 'applicationShouldTerminate'):
@@ -193,12 +221,18 @@ class MacOSTrayMenu:
     def update_icon(self, icon_path: str):
         """Обновить иконку"""
         if not self.app:
+            logger.warning("⚠️ ДИАГНОСТИКА update_icon: self.app is None")
             return
-        
+
         try:
+            logger.info(f"🔍 ДИАГНОСТИКА update_icon: icon_path='{icon_path}'")
+            logger.info(f"🔍 ДИАГНОСТИКА update_icon: os.path.exists(icon_path)={os.path.exists(icon_path)}")
+            if os.path.exists(icon_path):
+                logger.info(f"🔍 ДИАГНОСТИКА update_icon: размер файла={os.path.getsize(icon_path)} bytes")
             self.app.icon = icon_path
+            logger.info("✅ ДИАГНОСТИКА update_icon: Иконка обновлена успешно")
         except Exception as e:
-            print(f"Ошибка обновления иконки: {e}")
+            logger.error(f"❌ ДИАГНОСТИКА update_icon: Ошибка обновления иконки: {e}", exc_info=True)
     
     def run(self):
         """Запустить приложение"""

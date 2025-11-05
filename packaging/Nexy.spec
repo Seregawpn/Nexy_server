@@ -43,6 +43,8 @@ a = Analysis(
         (str(client_dir / "modules" / "grpc_client" / "proto"), "modules/grpc_client/proto"),
         # Utils (preserve directory structure)
         (str(client_dir / "integration" / "utils"), "integration/utils"),
+        # КРИТИЧНО: rumps пакет (PyInstaller не подхватывает его автоматически)
+        ("/opt/homebrew/lib/python3.13/site-packages/rumps", "rumps"),
     ],
     hiddenimports=[
         # System monitoring (must be first)
@@ -92,8 +94,49 @@ a = Analysis(
         
         # Tray helper на rumps
         "rumps",
+        "rumps.rumps",
+        "rumps.notifications",
+        "rumps.text_field",
+        "rumps.compat",
+
+        # PyObjC базовые
         "pyobjc_core",
         "pyobjc_framework_Cocoa",
+        "objc",
+
+        # AppKit подмодули (нужны для rumps)
+        "AppKit",
+        "AppKit.NSApplication",
+        "AppKit.NSStatusBar",
+        "AppKit.NSMenu",
+        "AppKit.NSMenuItem",
+        "AppKit.NSImage",
+        "AppKit.NSAlert",
+        "AppKit.NSTextField",
+        "AppKit.NSSecureTextField",
+        "AppKit.NSSlider",
+        "AppKit.NSSize",
+        "AppKit.NSWorkspace",
+        "AppKit.NSWorkspaceWillSleepNotification",
+        "AppKit.NSWorkspaceDidWakeNotification",
+        "AppKit.NSKeyDown",
+        "AppKit.NSCommandKeyMask",
+
+        # Foundation подмодули (нужны для rumps)
+        "Foundation",
+        "Foundation.NSObject",
+        "Foundation.NSRunLoop",
+        "Foundation.NSTimer",
+        "Foundation.NSDate",
+        "Foundation.NSLog",
+        "Foundation.NSDefaultRunLoopMode",
+        "Foundation.NSUserDefaults",
+        "Foundation.NSString",
+        "Foundation.NSMutableDictionary",
+        "Foundation.NSMakeRect",
+        "Foundation.NSSearchPathForDirectoriesInDomains",
+        "Foundation.NSUserNotification",
+        "Foundation.NSUserNotificationCenter",
         
         # gRPC
         "grpc",

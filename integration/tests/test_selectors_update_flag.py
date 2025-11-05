@@ -74,3 +74,4 @@ class TestIsUpdateInProgress:
         assert result is True  # 1 is truthy
 
 
+

@@ -238,3 +238,4 @@ class TestShadowModeDiagnostics:
         assert "trigger=test_trigger" in log_text
 
 
+

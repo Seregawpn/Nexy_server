@@ -199,3 +199,4 @@ class TestLogDecisionFormat:
         assert len(caplog.records) > 0
         assert caplog.records[0].levelname == "WARNING"
 
+
