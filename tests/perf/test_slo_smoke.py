@@ -164,3 +164,4 @@ class TestSLOSmoke:
             assert has_min or has_p95_max, \
                 f"Metric '{metric_name}' must have either 'min' or 'p95_max' threshold"
 
+

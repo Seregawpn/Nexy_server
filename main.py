@@ -74,13 +74,25 @@ try:
     if hasattr(AppKit, 'NSMakeRect'):
         # Копируем символы из AppKit в Foundation для совместимости
         Foundation.NSMakeRect = AppKit.NSMakeRect
-        Foundation.NSMakePoint = AppKit.NSMakePoint  
+        Foundation.NSMakePoint = AppKit.NSMakePoint
         Foundation.NSMakeSize = AppKit.NSMakeSize
         Foundation.NSMakeRange = AppKit.NSMakeRange
         print("✅ AppKit символы успешно скопированы в Foundation")
     else:
         print("⚠️ AppKit.NSMakeRect не найден")
-        
+
+    # КРИТИЧНО: Активируем NSApplication для LSUIElement приложений
+    # Без этого menu bar иконка не появляется при запуске из .app на macOS Sequoia
+    # Должно быть вызвано ДО создания rumps.App и NSStatusItem
+    try:
+        app = AppKit.NSApplication.sharedApplication()
+        # Устанавливаем activation policy для menu bar приложения
+        # NSApplicationActivationPolicyAccessory = 1 (скрыть из Dock, показать в menu bar)
+        app.setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
+        print("✅ NSApplication активирован для menu bar приложения")
+    except Exception as e:
+        print(f"⚠️ Ошибка активации NSApplication: {e}")
+
 except ImportError as e:
     print(f"⚠️ PyObjC недоступен: {e}")
 except Exception as e:

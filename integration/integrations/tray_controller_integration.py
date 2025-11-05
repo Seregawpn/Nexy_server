@@ -351,7 +351,8 @@ class TrayControllerIntegration:
                 logger.info(f"🔄 Режим приложения изменен: {new_mode.value} → {target_status.value}")
                 # Применяем на главном UI-потоке через AppHelper.callAfter
                 try:
-                    AppHelper.callAfter(self._apply_status_ui, target_status)
+                    # Прямой вызов _apply_status_ui_sync (убрано двойное планирование)
+                    AppHelper.callAfter(self._apply_status_ui_sync, target_status)
                 except Exception:
                     pass
         
@@ -401,14 +402,6 @@ class TrayControllerIntegration:
         except Exception as e:
             logger.error(f"❌ Ошибка обработки voice.mic_closed: {e}")
 
-    def _apply_status_ui(self, status: TrayStatus):
-        """Применение статуса в UI на главном потоке (через AppHelper.callAfter)."""
-        try:
-            # Вызов фактического обновления в UI-потоке
-            AppHelper.callAfter(self._apply_status_ui_sync, status)
-        except Exception as e:
-            logger.error(f"❌ Ошибка планирования UI-обновления: {e}")
-
     def _apply_status_ui_sync(self, status: TrayStatus):
         """Фактическое обновление UI. ДОЛЖНО выполняться в главном UI-потоке."""
         logger.info(f"🎯 TRAY DEBUG: _apply_status_ui_sync ВЫЗВАН! status={status} (type: {type(status)})")
@@ -423,7 +416,9 @@ class TrayControllerIntegration:
         try:
             icon_path = self.tray_controller.tray_icon.create_icon_file(status)
             if not icon_path:
-                logger.error("_apply_status_ui_sync: не удалось создать иконку")
+                logger.error(f"❌ КРИТИЧНО: Не удалось создать иконку для status={status}. "
+                            f"Иконка может не отображаться корректно.")
+                # Всё равно продолжаем — fallback уже был попробован
                 return
             self.tray_controller.tray_menu.update_icon(icon_path)
             human_names = {
@@ -439,7 +434,7 @@ class TrayControllerIntegration:
             prev_value = getattr(prev_status, 'value', str(prev_status)) if prev_status else 'None'
             logger.info(f"✅ Tray UI applied: {prev_value} -> {status.value}")
         except Exception as e:
-            logger.error(f"❌ Ошибка _apply_status_ui_sync: {e}")
+            logger.error(f"❌ Ошибка _apply_status_ui_sync: {e}", exc_info=True)
 
     # ---------- UI helper (runs in main rumps thread via Timer) ----------
     def _ui_tick(self, _timer):
@@ -534,7 +529,8 @@ class TrayControllerIntegration:
                 mode = self.state_manager.get_current_mode()
                 status = self.mode_to_status.get(mode)
                 if status:
-                    AppHelper.callAfter(self._apply_status_ui, status)
+                    # Прямой вызов _apply_status_ui_sync (убрано двойное планирование)
+                    AppHelper.callAfter(self._apply_status_ui_sync, status)
             except Exception:
                 pass
             

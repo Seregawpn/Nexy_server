@@ -6,6 +6,9 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Callable
 import base64
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TrayStatus(Enum):
     """Статусы иконки в трее (соответствуют режимам приложения)"""
@@ -87,9 +90,9 @@ class TrayIconGenerator:
         }
         
         # 🎯 TRAY DEBUG: Логируем генерацию иконки
-        print(f"🎯 TRAY DEBUG: TrayIconGenerator.create_circle_icon status={status} (type: {type(status)})")
-        print(f"🎯 TRAY DEBUG: Available colors: {colors}")
-        print(f"🎯 TRAY DEBUG: Selected color: {colors.get(status, 'NOT_FOUND')}")
+        logger.debug(f"🎯 TRAY DEBUG: TrayIconGenerator.create_circle_icon status={status} (type: {type(status)})")
+        logger.debug(f"🎯 TRAY DEBUG: Available colors: {colors}")
+        logger.debug(f"🎯 TRAY DEBUG: Selected color: {colors.get(status, 'NOT_FOUND')}")
         
         icon_types = {
             TrayStatus.SLEEPING: TrayIconType.STATIC,

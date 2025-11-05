@@ -151,3 +151,4 @@ def decide_start_listening(s: Snapshot) -> Decision:
 **Владелец**: Tech Lead клиента  
 **Последнее обновление**: 2025-01-30
 
+

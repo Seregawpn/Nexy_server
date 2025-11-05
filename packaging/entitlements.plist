@@ -31,5 +31,12 @@
   <!-- БЕЗОПАСНЫЕ флаги для PyInstaller (минимальный набор) -->
   <!-- Отключаем Library Validation ТОЛЬКО для PyInstaller onefile -->
   <key>com.apple.security.cs.disable-library-validation</key><true/>
+
+  <!-- UI/Menu Bar Access (КРИТИЧНО для NSStatusItem в Sequoia/Sonoma) -->
+  <!-- Разрешаем доступ к UI-элементам и Status Bar -->
+  <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+  <array>
+    <string>com.apple.controlcenter.statusitems</string>
+  </array>
 </dict>
 </plist>

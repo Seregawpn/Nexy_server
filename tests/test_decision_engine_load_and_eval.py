@@ -105,3 +105,4 @@ def test_decision_engine_no_match_defaults_to_start():
     
     d = eng.decide(s, source="test", ctx=ctx)
     assert d == Decision.START
+

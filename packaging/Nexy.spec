@@ -115,7 +115,10 @@ a = Analysis(
     ],
            hookspath=[],
            hooksconfig={},
-           runtime_hooks=["packaging/runtime_hook_flac.py"],
+           runtime_hooks=[
+               "packaging/runtime_hook_pyobjc_fix.py",
+               "packaging/runtime_hook_flac.py",
+           ],
     excludes=[
         # GUI and dev tooling
         "tkinter",
@@ -234,6 +237,8 @@ app = BUNDLE(
 
         # Background mode - Menu Bar App (не показывать в Dock)
         "LSUIElement": True,  # Скрыть из Dock, показать только в Menu Bar
+        # ВАЖНО: При LSUIElement=True нужно активировать NSApplication.sharedApplication()
+        # в коде ДО создания menu bar иконки (см. main.py)
 
         # Permissions
         "NSMicrophoneUsageDescription": "Nexy needs access to your microphone to hear your commands.",

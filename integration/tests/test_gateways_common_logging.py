@@ -198,3 +198,4 @@ class TestLogDecisionFormat:
         # Check that log was written at warning level
         assert len(caplog.records) > 0
         assert caplog.records[0].levelname == "WARNING"
+
