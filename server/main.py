@@ -1,8 +1,13 @@
 import asyncio
+import inspect
 import logging
 import signal
 import sys
 import os
+from contextlib import suppress
+from dataclasses import asdict
+from typing import Awaitable, Callable, List
+
 from aiohttp import web
 from modules.grpc_service.core.grpc_server import run_server as serve
 from dotenv import load_dotenv
@@ -23,6 +28,7 @@ load_dotenv('config.env')
 
 # Загружаем конфигурацию
 unified_config = get_config()
+server_metadata = unified_config.get_server_metadata()
 
 # Настройка структурированного логирования (PR-4)
 log_level = unified_config.logging.level if hasattr(unified_config, 'logging') else 'INFO'
@@ -30,8 +36,8 @@ setup_structured_logging(level=log_level)
 logger = logging.getLogger(__name__)
 
 # Версия сервера (единая точка истины для health/status эндпоинтов)
-# TODO: Интегрировать с UpdateManager для динамического получения версии
-SERVER_VERSION = os.getenv("SERVER_VERSION", "3.11.0")
+SERVER_VERSION = server_metadata.version
+SERVER_BUILD = server_metadata.build
 
 # Импорт системы обновлений
 try:
@@ -55,8 +61,8 @@ async def health_handler(request):
     """
     return web.json_response({
         "status": "OK",
-        "latest_version": SERVER_VERSION,  # String type (PR-7)
-        "latest_build": SERVER_VERSION      # String type, equals version (PR-7)
+        "latest_version": SERVER_VERSION,
+        "latest_build": SERVER_BUILD
     })
 
 async def root_handler(request):
@@ -77,14 +83,18 @@ async def status_handler(request):
     return web.json_response({
         "status": "running",
         "service": "voice-assistant",
-        "latest_version": SERVER_VERSION,  # String type (PR-7)
-        "latest_build": SERVER_VERSION,    # String type, equals version (PR-7)
+        "latest_version": SERVER_VERSION,
+        "latest_build": SERVER_BUILD,
         "update_server": "enabled" if UPDATE_SERVER_AVAILABLE else "disabled",
         "endpoints": {
             "health": "/health",
             "status": "/status",
             "grpc": "port 50051",
-            "updates": "port 8081" if UPDATE_SERVER_AVAILABLE else "disabled"
+            "updates": (
+                f"port {unified_config.get_update_service_config().port}"
+                if UPDATE_SERVER_AVAILABLE
+                else "disabled"
+            )
         }
     })
 
@@ -106,8 +116,23 @@ async def periodic_metrics_logging():
             })
 
 # Глобальные переменные для graceful shutdown
+CleanupCallback = Callable[[], Awaitable[None] | None]
 shutdown_event = asyncio.Event()
-servers_cleanup = []
+servers_cleanup: List[CleanupCallback] = []
+
+
+def register_cleanup(callback: CleanupCallback) -> None:
+    """Регистрирует функцию очистки для graceful shutdown"""
+
+    servers_cleanup.append(callback)
+
+
+async def cancel_task(task: asyncio.Task) -> None:
+    """Отменяет asyncio.Task с подавлением CancelledError"""
+
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 def setup_signal_handlers():
@@ -143,13 +168,17 @@ async def graceful_shutdown():
     # Очищаем все серверы
     for cleanup_func in servers_cleanup:
         try:
-            await cleanup_func()
+            result = cleanup_func()
+            if inspect.isawaitable(result):
+                await result
         except Exception as e:
             logger.error(f"Error during cleanup: {e}", extra={
                 'scope': 'server',
                 'decision': 'error',
                 'ctx': {'error': str(e)}
             })
+
+    servers_cleanup.clear()
     
     log_server_stop(logger, reason="graceful_shutdown")
 
@@ -164,11 +193,12 @@ async def main():
     await backpressure_manager.start()
     
     # Логируем старт сервера (PR-4)
-    log_server_start(logger, port=8080, version="1.0.0")
+    log_server_start(logger, port=8080, version=SERVER_VERSION)
     
     # Запускаем периодическое логирование метрик (PR-4)
     metrics_task = asyncio.create_task(periodic_metrics_logging())
-    
+    register_cleanup(lambda: cancel_task(metrics_task))
+
     # HTTP сервер для health checks (порт 8080)
     app = web.Application()
     app.router.add_get('/health', health_handler)
@@ -180,6 +210,7 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
+    register_cleanup(runner.cleanup)
     
     logger.info("HTTP server started", extra={
         'scope': 'server',
@@ -192,15 +223,22 @@ async def main():
     if UPDATE_SERVER_AVAILABLE:
         logger.info("Starting update server", extra={'scope': 'update', 'decision': 'start'})
         try:
-            config = UpdateConfig()
-            update_manager = UpdateManager(config)
-            await update_manager.initialize()
-            await update_manager.start()
-            logger.info("Update server started", extra={
-                'scope': 'update',
-                'decision': 'start',
-                'ctx': {'port': 8081}
-            })
+            update_config_dict = asdict(unified_config.get_update_service_config())
+            update_config = UpdateConfig.from_dict(update_config_dict)
+            update_manager = UpdateManager(update_config)
+            await update_manager.initialize(update_config_dict)
+
+            started = await update_manager.start()
+            if started:
+                register_cleanup(update_manager.cleanup)
+                logger.info("Update server started", extra={
+                    'scope': 'update',
+                    'decision': 'start',
+                    'ctx': {'port': update_config.port}
+                })
+            else:
+                log_degradation(logger, "Update server failed to start")
+                update_manager = None
         except Exception as e:
             logger.error(f"Update server startup failed: {e}", extra={
                 'scope': 'update',
@@ -213,36 +251,43 @@ async def main():
         log_degradation(logger, "Update server module not available")
     
     # Запускаем gRPC сервер на порту 50051
+    grpc_port = getattr(unified_config.grpc, 'port', 50051)
+    max_workers = getattr(unified_config.grpc, 'max_workers', 100)
+
     logger.info("Starting gRPC server", extra={
         'scope': 'grpc',
         'decision': 'start',
-        'ctx': {'port': 50051}
+        'ctx': {'port': grpc_port}
     })
-    
+
     try:
         # Запускаем gRPC сервер в фоне
-        serve_task = asyncio.create_task(serve())
-        
-        # Регистрируем cleanup функцию
-        servers_cleanup.append(lambda: metrics_task.cancel())
-        servers_cleanup.append(lambda: serve_task.cancel())
-        
-        # Ждем сигнала завершения или ошибки
-        await asyncio.wait(
-            [serve_task, asyncio.create_task(shutdown_event.wait())],
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        
+        serve_task = asyncio.create_task(serve(port=grpc_port, max_workers=max_workers))
+        register_cleanup(lambda: cancel_task(serve_task))
+
+        def _on_serve_task_done(task: asyncio.Task) -> None:
+            if shutdown_event.is_set():
+                return
+            try:
+                result = task.result()
+                if result is False:
+                    log_degradation(logger, "gRPC server failed to start")
+            except Exception as exc:
+                logger.error(
+                    f"Critical gRPC server failure: {exc}",
+                    extra={'scope': 'grpc', 'decision': 'error', 'ctx': {'error': str(exc)}}
+                )
+            finally:
+                shutdown_event.set()
+
+        serve_task.add_done_callback(_on_serve_task_done)
+
+        # Ждем сигнала завершения
+        await shutdown_event.wait()
+
     finally:
         # Graceful shutdown
         await graceful_shutdown()
-        
-        # Останавливаем периодическое логирование метрик
-        metrics_task.cancel()
-        try:
-            await metrics_task
-        except asyncio.CancelledError:
-            pass
 
 if __name__ == "__main__":
     try:

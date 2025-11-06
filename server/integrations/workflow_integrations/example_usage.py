@@ -16,6 +16,7 @@ from integrations.workflow_integrations.memory_workflow_integration import Memor
 
 # Импорт интеграции
 from integrations.workflow_integrations.streaming_workflow_integration import StreamingWorkflowIntegration
+from config.unified_config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,8 @@ async def create_streaming_workflow() -> StreamingWorkflowIntegration:
             text_processor=text_processor,
             audio_processor=audio_processor,
             memory_workflow=memory_workflow,
-            text_filter_manager=text_filter_manager  # Ключевое добавление!
+            text_filter_manager=text_filter_manager,
+            workflow_config=get_config().get_workflow_thresholds()
         )
         
         # 3. Инициализируем интеграцию

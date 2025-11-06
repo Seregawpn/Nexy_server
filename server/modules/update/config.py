@@ -29,7 +29,7 @@ class UpdateConfig:
     
     # Настройки манифестов
     default_version: str = "1.0.0"
-    default_build: int = 10000
+    default_build: str = "1.0.0"
     default_arch: str = "universal2"
     default_min_os: str = "11.0"
     
@@ -56,11 +56,14 @@ class UpdateConfig:
         
         if self.manifests_dir is None:
             self.manifests_dir = str(Path(self.updates_dir) / "manifests")
-        
+
         # Создаем директории если не существуют
         Path(self.downloads_dir).mkdir(parents=True, exist_ok=True)
         Path(self.keys_dir).mkdir(parents=True, exist_ok=True)
         Path(self.manifests_dir).mkdir(parents=True, exist_ok=True)
+
+        if not self.default_build:
+            self.default_build = self.default_version
     
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'UpdateConfig':

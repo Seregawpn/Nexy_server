@@ -231,16 +231,21 @@ curl -sk https://20.151.51.172/status
 # Ожидаемый результат: JSON с информацией о сервисе, включая latest_version и latest_build
 ```
 
-### **3. Internal Health Check (для локальной диагностики):**
+### **3. Cache-Control на AppCast (PUBLIC - через Nginx/HTTPS):**
+```bash
+curl -sI https://20.151.51.172/appcast.xml | grep -i "Cache-Control"  # ожидаем max-age=60
+```
+
+### **4. Internal Health Check (для локальной диагностики):**
 ```bash
 # ВНУТРЕННЯЯ проверка (только с VM, не доступна извне)
-curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/health  # INTERNAL loopback
 # Ожидаемый результат: JSON с полями: status, latest_version, latest_build
 ```
 
 **Примечание:** Все публичные проверки (из внешней сети) ДОЛЖНЫ идти через HTTPS (443). HTTP порты (8080, 8081, 50051) слушают только localhost и недоступны извне.
 
-### **3. Проверка на сервере:**
+### **5. Проверка на сервере:**
 ```bash
 # Проверить, что изменения применились
 az vm run-command invoke \
@@ -453,7 +458,7 @@ az vm run-command invoke \
 
 **📞 Поддержка:** Документация в `Docs/` папке  
 **🔗 Репозиторий:** `https://github.com/Seregawpn/Nexy_server`  
-**🌐 Сервер:** `http://20.151.51.172`  
+**🌐 Сервер:** `https://20.151.51.172`
 **📊 GitHub Actions:** `https://github.com/Seregawpn/Nexy_server/actions`
 
 ---
@@ -491,6 +496,6 @@ cd scripts/
 
 ### **🔗 Ссылки:**
 - **📥 Скачать:** `https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg`
-- **📰 AppCast:** `http://20.151.51.172:8081/appcast.xml`
-- **📋 Манифест:** `http://20.151.51.172:8081/manifests/manifest_1.0.0.json`
+- **📰 AppCast (PUBLIC через 443):** `https://20.151.51.172/appcast.xml`
+- **📋 Манифест (PUBLIC через 443):** `https://20.151.51.172/manifests/manifest_1.0.0.json`
 - **📁 Релиз:** `https://github.com/Seregawpn/Nexy_production/releases/tag/Update`

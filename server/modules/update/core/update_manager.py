@@ -6,7 +6,8 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, AsyncGenerator
 
-from integrations.core.universal_module_interface import UniversalModuleInterface, ModuleStatus
+from integrations.core.universal_module_interface import UniversalModuleInterface
+from integrations.core.module_status import ModuleStatus, ModuleState
 from ..config import UpdateConfig
 from ..providers.version_provider import VersionProvider
 from ..providers.manifest_provider import ManifestProvider
@@ -20,13 +21,10 @@ class UpdateManager(UniversalModuleInterface):
     """Основной координатор Update Module"""
     
     def __init__(self, config: Optional[UpdateConfig] = None):
-        # Преобразуем конфигурацию в словарь для UniversalModuleInterface
-        config_dict = (config or UpdateConfig()).to_dict()
-        
-        # Инициализируем базовый класс
-        super().__init__(name="update", config=config_dict)
-        
-        # Сохраняем оригинальную конфигурацию
+        super().__init__(name="update")
+
+        # Сохраняем исходную конфигурацию (может быть переопределена при initialize)
+        self._initial_config = config
         self.config = config or UpdateConfig()
         
         # Провайдеры
@@ -43,33 +41,46 @@ class UpdateManager(UniversalModuleInterface):
         
         # Статус
         self.is_running = False
+        self.is_initialized = False
+        self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
     
-    async def initialize(self) -> bool:
+    async def initialize(self, config: Dict[str, Any]) -> None:
         """Инициализация модуля"""
         try:
             logger.info("🔧 Инициализация UpdateManager...")
-            
+            self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
+
+            if config:
+                self.config = UpdateConfig.from_dict(config)
+            elif self._initial_config:
+                self.config = self._initial_config
+            else:
+                self.config = UpdateConfig()
+
             if not self.config.enabled:
                 logger.info("⏭️ Update Module отключен в конфигурации")
                 self.is_initialized = True
-                self.set_status(ModuleStatus.READY)
-                return True
-            
-            # Валидируем конфигурацию
+                self._status = ModuleStatus(state=ModuleState.READY, health="degraded")
+                return
+
             if not self.config.is_valid():
-                logger.error("❌ Неверная конфигурация Update Module")
-                return False
-            
-            # Инициализируем провайдеры
+                raise ValueError("Неверная конфигурация Update Module")
+
             await self._initialize_providers()
-            
+
             self.is_initialized = True
+            self._status = ModuleStatus(state=ModuleState.READY, health="ok")
             logger.info("✅ UpdateManager инициализирован")
-            return True
-            
+
         except Exception as e:
+            self.is_initialized = False
+            self._status = ModuleStatus(
+                state=ModuleState.ERROR,
+                health="down",
+                last_error=str(e)
+            )
             logger.error(f"❌ Ошибка инициализации UpdateManager: {e}")
-            return False
+            raise
     
     async def _initialize_providers(self):
         """Инициализация всех провайдеров"""
@@ -134,13 +145,63 @@ class UpdateManager(UniversalModuleInterface):
             
             self.is_running = True
             self.start_time = asyncio.get_event_loop().time()
-            
+            self._status = ModuleStatus(state=ModuleState.READY, health="ok")
+
             logger.info("✅ UpdateManager запущен")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка запуска UpdateManager: {e}")
+            self._status = ModuleStatus(
+                state=ModuleState.ERROR,
+                health="down",
+                last_error=str(e)
+            )
             return False
+
+    async def check_update(self, current_version: str) -> Dict[str, Any]:
+        """Проверка наличия обновлений"""
+
+        if not self.manifest_provider or not self.version_provider:
+            return {
+                "update_available": False,
+                "latest_version": self.config.default_version,
+                "latest_build": self.config.default_build,
+            }
+
+        latest_manifest = self.manifest_provider.get_latest_manifest()
+        if not latest_manifest:
+            return {
+                "update_available": False,
+                "latest_version": self.config.default_version,
+                "latest_build": self.config.default_build,
+            }
+
+        latest_version = str(latest_manifest.get("version", self.config.default_version))
+        latest_build = str(latest_manifest.get("build", latest_version))
+
+        update_available = self.version_provider.is_newer_version(current_version, latest_version)
+
+        return {
+            "update_available": update_available,
+            "latest_version": latest_version,
+            "latest_build": latest_build,
+            "manifest": latest_manifest if update_available else None,
+        }
+
+    async def get_manifest(self, platform: str = "macos") -> Optional[Dict[str, Any]]:
+        """Получение актуального манифеста"""
+
+        if not self.manifest_provider:
+            return None
+
+        manifest = self.manifest_provider.get_latest_manifest()
+        if not manifest:
+            return None
+
+        manifest_copy = manifest.copy()
+        manifest_copy["platform"] = platform
+        return manifest_copy
     
     async def stop(self) -> bool:
         """Остановка модуля"""
@@ -164,13 +225,19 @@ class UpdateManager(UniversalModuleInterface):
                 await self.artifact_provider.stop()
             if self.update_server_provider:
                 await self.update_server_provider.stop()
-            
+
             self.is_running = False
+            self._status = ModuleStatus(state=ModuleState.STOPPED, health="down")
             logger.info("✅ UpdateManager остановлен")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка остановки UpdateManager: {e}")
+            self._status = ModuleStatus(
+                state=ModuleState.ERROR,
+                health="down",
+                last_error=str(e)
+            )
             return False
     
     def get_status(self) -> Dict[str, Any]:
@@ -261,7 +328,7 @@ class UpdateManager(UniversalModuleInterface):
     def get_latest_version(self) -> Optional[str]:
         """Получение последней версии"""
         try:
-            latest_manifest = self.manifest_provider.get_latest_manifest()
+            latest_manifest = self.manifest_provider.get_latest_manifest() if self.manifest_provider else None
             return latest_manifest.get("version") if latest_manifest else None
         except Exception as e:
             logger.error(f"❌ Ошибка получения последней версии: {e}")
@@ -270,6 +337,8 @@ class UpdateManager(UniversalModuleInterface):
     def get_version_history(self, limit: int = 10) -> list:
         """Получение истории версий"""
         try:
+            if not self.manifest_provider:
+                return []
             return self.manifest_provider.get_all_manifests()[:limit]
         except Exception as e:
             logger.error(f"❌ Ошибка получения истории версий: {e}")
@@ -321,6 +390,24 @@ class UpdateManager(UniversalModuleInterface):
             return {
                 "error": str(e)
             }
+
+    def get_current_version(self) -> Dict[str, str]:
+        """Возвращает текущую версию и сборку"""
+
+        manifest = self.manifest_provider.get_latest_manifest() if self.manifest_provider else None
+        if manifest:
+            version = str(manifest.get("version", self.config.default_version))
+            build = str(manifest.get("build", version))
+        else:
+            version = self.config.default_version
+            build = self.config.default_build
+
+        return {"version": version, "build": build}
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Совместимость с адаптером"""
+
+        return self.get_statistics()
     
     def _format_uptime(self, uptime_seconds: float) -> str:
         """Форматирование времени работы"""
@@ -355,10 +442,12 @@ class UpdateManager(UniversalModuleInterface):
             Результаты обработки
         """
         try:
+            self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
+
             # Для Update Module process не используется активно,
             # так как основная работа происходит через HTTP сервер
             logger.debug(f"UpdateManager.process вызван с данными: {input_data}")
-            
+
             # Возвращаем информацию о статусе
             yield {
                 "status": "processed",
@@ -366,41 +455,53 @@ class UpdateManager(UniversalModuleInterface):
                 "message": "Update Module работает в режиме HTTP сервера",
                 "data": input_data
             }
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка в process: {e}")
+            self._status = ModuleStatus(
+                state=ModuleState.ERROR,
+                health="down",
+                last_error=str(e)
+            )
             yield {
                 "status": "error",
                 "module": "update",
                 "error": str(e),
                 "data": input_data
             }
+        finally:
+            if not self._status.is_error():
+                self._status = ModuleStatus(state=ModuleState.READY, health="ok")
     
-    async def cleanup(self) -> bool:
-        """
-        Очистка ресурсов модуля (требуется UniversalModuleInterface)
-        
-        Returns:
-            True если очистка успешна, False иначе
-        """
+    async def cleanup(self) -> None:
+        """Очистка ресурсов модуля (требуется UniversalModuleInterface)"""
         try:
             logger.info("🧹 Очистка ресурсов UpdateManager...")
-            
+
             # Вызываем stop для остановки всех компонентов
             await self.stop()
-            
+
             # Дополнительная очистка ресурсов
             if self.start_time:
                 self.start_time = None
-            
+
             # Сброс статистики
             self.total_requests = 0
             self.total_downloads = 0
             self.total_errors = 0
-            
+
+            self._status = ModuleStatus(state=ModuleState.STOPPED, health="down")
             logger.info("✅ Ресурсы UpdateManager очищены")
-            return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка очистки ресурсов UpdateManager: {e}")
-            return False
+            self._status = ModuleStatus(
+                state=ModuleState.ERROR,
+                health="down",
+                last_error=str(e)
+            )
+
+    def status(self) -> ModuleStatus:
+        """Текущий статус модуля"""
+
+        return self._status

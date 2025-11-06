@@ -31,7 +31,7 @@ class ManifestProvider:
             logger.error(f"❌ Ошибка инициализации ManifestProvider: {e}")
             return False
     
-    def create_manifest(self, version: str, build: int, artifact_info: Dict[str, Any]) -> Dict[str, Any]:
+    def create_manifest(self, version: str, build: str, artifact_info: Dict[str, Any]) -> Dict[str, Any]:
         """
         Создание манифеста для версии
         
@@ -159,8 +159,16 @@ class ManifestProvider:
                 if manifest:
                     manifests.append(manifest)
             
-            # Сортируем по номеру сборки (новые сначала)
-            manifests.sort(key=lambda x: x.get("build", 0), reverse=True)
+            # Сортируем по версии (новые сначала)
+            def version_key(data: Dict[str, Any]) -> tuple:
+                version_str = str(data.get("version", "0.0.0"))
+                try:
+                    major, minor, patch = [int(part) for part in version_str.split('.')]
+                    return major, minor, patch
+                except ValueError:
+                    return 0, 0, 0
+
+            manifests.sort(key=version_key, reverse=True)
             
             return manifests
             

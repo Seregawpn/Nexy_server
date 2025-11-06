@@ -174,7 +174,7 @@ class UpdateServerProvider:
             health_data = {
                 "status": "healthy",
                 "timestamp": datetime.now().isoformat(),
-                "version": "1.0.0",
+                "version": self.config.default_version,
                 "latest_version": latest_version,  # Строка (PR-7)
                 "latest_build": latest_build,  # Строка (PR-7)
                 "artifacts_available": len(artifacts),
