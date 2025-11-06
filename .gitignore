@@ -76,3 +76,15 @@ client/build/
 client/
 ai-assistant-system/
 update-server/
+
+# Игнорировать всё в корне, кроме server/ и необходимых файлов
+# Это нужно для экспорта только server/ в GitHub
+# Локальная структура остается с папкой server/
+
+# Игнорировать все файлы в корне (кроме server/)
+/*
+!.gitignore
+!.github/
+!LICENSE
+!README.md
+!server/
