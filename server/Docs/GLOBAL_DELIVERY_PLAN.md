@@ -422,7 +422,7 @@ ls -la client/packaging/distribution.xml
 ```bash
 ls -la server/
 ls -la server/main.py
-ls -la server/grpc_server.py
+ls -la server/modules/grpc_service/core/grpc_server.py
 ls -la server/requirements.txt
 ls -la server/config.env
 ```

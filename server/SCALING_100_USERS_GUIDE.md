@@ -22,13 +22,6 @@ text_processing:
 memory:
   max_long_term_memory_size: 102400   # Было: 10240 (x10 увеличение)
   max_short_term_memory_size: 51200   # Было: 10240 (x5 увеличение)
-
-# Новые защитные лимиты
-protection:
-  max_requests_per_minute: 1000
-  max_requests_per_user: 10
-  circuit_breaker_threshold: 5
-  max_memory_usage: 80
 ```
 
 ### **✅ 2. ОБНОВЛЕНЫ ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ**
@@ -40,10 +33,6 @@ MAX_WORKERS=100
 MAX_CONCURRENT_REQUESTS=50
 MAX_SESSIONS=200
 MAX_ACTIVE_SESSIONS=100
-MAX_REQUESTS_PER_MINUTE=1000
-MAX_REQUESTS_PER_USER=10
-CIRCUIT_BREAKER_THRESHOLD=5
-MAX_MEMORY_USAGE=80
 
 # Memory limits
 MAX_SHORT_TERM_MEMORY_SIZE=51200
@@ -52,7 +41,7 @@ MAX_LONG_TERM_MEMORY_SIZE=102400
 
 ### **✅ 3. ОПТИМИЗИРОВАН gRPC СЕРВЕР**
 
-#### **Файл: `server/grpc_server.py`**
+#### **Файл: `server/modules/grpc_service/core/grpc_server.py`**
 - **Увеличены воркеры:** с 10 до 100
 - **Добавлен connection pooling** с оптимизированными настройками
 - **Keep-alive настройки:** 30 секунд
@@ -90,18 +79,17 @@ options = [
 - **Использование CPU и памяти**
 - **Автоматические предупреждения при превышении лимитов**
 
-### **✅ 5. СОЗДАН СКРИПТ НАГРУЗОЧНОГО ТЕСТИРОВАНИЯ**
+### **✅ 5. ДОБАВЛЕНЫ СКРИПТЫ ДЛЯ ПРОВЕРОК НАГРУЗКИ**
 
-#### **Новые файлы:**
-- `server/load_testing/load_test.py` - основной скрипт тестирования
-- `server/load_testing/run_load_test.sh` - скрипт запуска
-- `server/load_testing/__init__.py` - экспорты
+#### **Актуальные утилиты:**
+- `server/scripts/grpc_smoke.py` — быстрый прогон StreamAudio и InterruptSession
+- `server/scripts/test_backpressure.py` — проверка лимитов `max_concurrent_streams`, rate limit и idle timeout
+- `server/scripts/check_ramp_guardrails.sh` — агрегированная проверка метрик перед канареечным раскатом
 
 #### **Возможности тестирования:**
-- **Тестирование до 100 пользователей**
-- **Измерение RPS и времени ответа**
-- **Анализ успешности запросов**
-- **Автоматическая оценка готовности**
+- **Smoke-проверка** gRPC соединения и потоков
+- **Валидация лимитов** backpressure и корректных ответов сервера при перегрузке
+- **Анализ логов и метрик** для подготовки к канареечному раскату
 
 ---
 
@@ -113,22 +101,22 @@ cd server
 python main.py
 ```
 
-### **2. Запуск быстрого теста:**
+### **2. Smoke-проверка gRPC:**
 ```bash
 cd server
-python -m load_testing.load_test --quick
+python scripts/grpc_smoke.py localhost 50051
 ```
 
-### **3. Запуск полного теста масштабирования:**
+### **3. Тест лимитов backpressure:**
 ```bash
 cd server
-python -m load_testing.load_test --users 100
+python scripts/test_backpressure.py localhost 50051 --max-streams 10
 ```
 
-### **4. Запуск через скрипт:**
+### **4. Проверка канареечных guardrails:**
 ```bash
 cd server
-./load_testing/run_load_test.sh
+./scripts/check_ramp_guardrails.sh
 ```
 
 ---
