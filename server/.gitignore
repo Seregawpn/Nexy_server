@@ -42,3 +42,8 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+
+# Client directories (should not be in server repository)
+client/
+ai-assistant-system/
+update-server/
