@@ -65,32 +65,32 @@ _user_initiated_shutdown = False
 
 class SimpleModuleCoordinator:
     """Центральный координатор модулей для Nexy AI Assistant"""
-    
+
     def __init__(self):
         # Core компоненты (центральные)
         self.event_bus: Optional[EventBus] = None
         self.state_manager: Optional[ApplicationStateManager] = None
         self.error_handler: Optional[ErrorHandler] = None
-        
+
         # Интеграции (обертки для модулей)
         self.integrations: Dict[str, Any] = {}
-        
+
         # Workflows (координаторы режимов)
         self.workflows: Dict[str, Any] = {}
-        
+
         # Конфигурация
         self.config = UnifiedConfigLoader()
 
         # Очередь разрешений (по умолчанию отсутствует)
         self.permissions_queue: Optional[Any] = None
-        
+
         # Состояние
         self.is_initialized = False
         self.is_running = False
         # Фоновый asyncio loop и поток для асинхронных интеграций
         self._bg_loop = None
         self._bg_thread = None
-        
+
         # Состояние процесса разрешений
         self._permissions_in_progress = False
         self._restart_pending = False  # Флаг ожидания перезапуска после first_run
@@ -98,6 +98,9 @@ class SimpleModuleCoordinator:
         # Состояние tray (gate-механизм для блокирующих операций)
         self._tray_ready = False
         self._tray_start_time = None
+
+        # NSApplication activator callback (устанавливается из main.py)
+        self.nsapp_activator = None
         
     async def initialize(self) -> bool:
         """Инициализация всех компонентов и интеграций"""
@@ -828,6 +831,23 @@ class SimpleModuleCoordinator:
 
             print("🎯 Запуск приложения с иконкой в меню-баре...")
 
+            # CRITICAL: Активируем NSApplication непосредственно ПЕРЕД app.run()
+            # Это необходимо для корректного отображения иконки в menu bar,
+            # особенно при первом запуске после перезагрузки системы
+            print("="*80)
+            print("CRITICAL CHECKPOINT: About to activate NSApplication")
+            print("="*80)
+            if self.nsapp_activator:
+                print("🔧 Активация NSApplication перед запуском menu bar...")
+                logger.info("🔧 CRITICAL: Activating NSApplication before app.run()")
+                try:
+                    self.nsapp_activator()
+                    print("✅ NSApplication активирован успешно")
+                    logger.info("✅ CRITICAL: NSApplication activated successfully")
+                except Exception as e:
+                    print(f"⚠️ Ошибка активации NSApplication: {e}")
+                    logger.warning(f"Failed to activate NSApplication: {e}")
+
             # Запускаем UI-таймер ПОСЛЕ того как rumps приложение готово
             # Используем rumps.Timer для запуска таймера в UI-потоке (однократно)
             import rumps
@@ -845,8 +865,28 @@ class SimpleModuleCoordinator:
             startup_timer = rumps.Timer(start_timer_callback, 1.0)
             startup_timer.start()
 
+            # CRITICAL FIX: Задержка перед app.run() для готовности ControlCenter
+            # При первом запуске после перезагрузки ControlCenter может не успеть
+            # инициализироваться и создание NSStatusItem внутри app.run() провалится
+            print("="*80)
+            print("⏳ CRITICAL: Waiting 2 seconds for ControlCenter to be ready...")
+            print("="*80)
+            logger.info("⏳ CRITICAL: Задержка 2 секунды перед app.run() для готовности ControlCenter")
+            await asyncio.sleep(2.0)
+            print("="*80)
+            print("✅ CRITICAL: Delay completed, starting app.run()...")
+            print("="*80)
+            logger.info("✅ CRITICAL: Задержка завершена, запуск app.run()")
+
             # Запускаем приложение rumps (блокирующий вызов)
-            app.run()
+            # ВАЖНО: Используем tray_controller.run_app() который настраивает
+            # отложенную установку иконки ПОСЛЕ создания StatusItem
+            tray_controller = tray_integration.get_tray_controller()
+            if tray_controller:
+                tray_controller.run_app()
+            else:
+                logger.error("❌ Не удалось получить tray_controller")
+                app.run()  # Fallback на прямой запуск
             
         except KeyboardInterrupt:
             print("\n⏹️ Приложение прервано пользователем")

@@ -172,20 +172,19 @@ print(f"📝 Логи записываются в: {log_file}")
 async def main():
     """Главная функция"""
     try:
-        # CRITICAL: Активируем NSApplication ДО создания любых UI компонентов
-        # Это необходимо для корректного отображения иконки в menu bar,
-        # особенно после перезапуска через os.execv()
-        activate_nsapplication_for_menu_bar()
-
         # Импортируем SimpleModuleCoordinator
         from integration.core.simple_module_coordinator import SimpleModuleCoordinator
 
         # Создаем координатор
         coordinator = SimpleModuleCoordinator()
 
+        # Передаем функцию активации NSApplication координатору
+        # Она будет вызвана непосредственно перед app.run()
+        coordinator.nsapp_activator = activate_nsapplication_for_menu_bar
+
         # Запускаем (run() сам вызовет initialize() и проверку дублирования)
-        await coordinator.run()                                                         
-        
+        await coordinator.run()
+
     except Exception as e:
         print(f"💥 Критическая ошибка: {e}")
         import traceback

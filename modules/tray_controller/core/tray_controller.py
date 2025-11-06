@@ -299,6 +299,15 @@ class TrayController:
         return None
     
     def run_app(self):
-        """Запустить приложение в главном потоке"""
+        """Запустить приложение в главном потоке.
+
+        ВАЖНО: Перед вызовом этого метода должны быть выполнены:
+        1. activate_nsapplication_for_menu_bar()
+        2. asyncio.sleep(2.0) для готовности ControlCenter
+        3. setup_delayed_icon_setting() для отложенной установки иконки
+        """
         if self.tray_menu and self.tray_menu.app:
+            # Настраиваем отложенную установку иконки (таймер запустится после app.run())
+            self.tray_menu.setup_delayed_icon_setting()
+            # Запускаем приложение (блокирующий вызов)
             self.tray_menu.app.run()

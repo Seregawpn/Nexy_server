@@ -24,6 +24,9 @@ class MacOSTrayMenu:
         # UI таймер/очередь не используются на уровне модуля (обновления делает интеграция)
         # Callback для обработки завершения приложения
         self._quit_callback: Optional[Callable] = None
+        # Путь к иконке для отложенной установки (после создания StatusItem)
+        self._pending_icon_path: Optional[str] = None
+        self._icon_timer: Optional[rumps.Timer] = None
     
     def create_app(self, icon_path: str) -> rumps.App:
         """Создать приложение с иконкой в трее"""
@@ -34,7 +37,19 @@ class MacOSTrayMenu:
             logger.info(f"🔍 ДИАГНОСТИКА: Current working directory={os.getcwd()}")
             logger.info(f"🔍 ДИАГНОСТИКА: TMPDIR={os.environ.get('TMPDIR', 'NOT SET')}")
 
+            # Проверяем статус NSApplication перед созданием rumps.App
+            try:
+                import AppKit
+                nsapp = AppKit.NSApplication.sharedApplication()
+                logger.info(f"🔍 ДИАГНОСТИКА: NSApplication instance exists: {nsapp is not None}")
+                logger.info(f"🔍 ДИАГНОСТИКА: NSApplication activation policy: {nsapp.activationPolicy() if nsapp else 'N/A'}")
+                logger.info(f"🔍 ДИАГНОСТИКА: NSApplication isActive: {nsapp.isActive() if nsapp else 'N/A'}")
+            except Exception as e:
+                logger.warning(f"⚠️ ДИАГНОСТИКА: Не удалось проверить NSApplication: {e}")
+
             # Создаем приложение
+            # NOTE: StatusItem создаётся не здесь, а в app.run() -> initializeStatusBar()
+            # поэтому retry здесь не нужен - он сделан на уровне coordinator перед app.run()
             self.app = rumps.App(
                 name=self.app_name,
                 quit_button=None  # Убираем стандартную кнопку выхода
@@ -52,11 +67,15 @@ class MacOSTrayMenu:
             # Здесь не создаём собственных пунктов меню, чтобы избежать дублирования и несинхронности.
             self.app.menu = []
 
-            # Устанавливаем иконку если есть
+            # ВАЖНО: НЕ устанавливаем иконку здесь!
+            # StatusItem создаётся только внутри app.run() -> initializeStatusBar()
+            # Сохраняем путь для отложенной установки через setup_delayed_icon_setting()
             if icon_path and os.path.exists(icon_path):
-                logger.info(f"✅ ДИАГНОСТИКА: Иконка существует, устанавливаем...")
-                self.app.icon = icon_path
-                logger.info(f"✅ ДИАГНОСТИКА: Иконка установлена успешно")
+                logger.info(f"✅ ДИАГНОСТИКА: Иконка существует, сохраняем путь для отложенной установки")
+                print("="*80)
+                print(f"CRITICAL: Icon path saved for delayed setting: {icon_path}")
+                print("="*80)
+                self._pending_icon_path = icon_path
             else:
                 logger.error(f"❌ ДИАГНОСТИКА: Иконка НЕ существует или путь пустой!")
                 logger.error(f"❌ ДИАГНОСТИКА: icon_path='{icon_path}'")
@@ -219,7 +238,7 @@ class MacOSTrayMenu:
             print(f"Ошибка обновления устройства в меню: {e}")
     
     def update_icon(self, icon_path: str):
-        """Обновить иконку"""
+        """Обновить иконку с retry механизмом"""
         if not self.app:
             logger.warning("⚠️ ДИАГНОСТИКА update_icon: self.app is None")
             return
@@ -229,11 +248,81 @@ class MacOSTrayMenu:
             logger.info(f"🔍 ДИАГНОСТИКА update_icon: os.path.exists(icon_path)={os.path.exists(icon_path)}")
             if os.path.exists(icon_path):
                 logger.info(f"🔍 ДИАГНОСТИКА update_icon: размер файла={os.path.getsize(icon_path)} bytes")
-            self.app.icon = icon_path
-            logger.info("✅ ДИАГНОСТИКА update_icon: Иконка обновлена успешно")
+
+            # Retry механизм для обновления иконки (на случай временных сбоев XPC)
+            max_retries = 2
+            retry_delay = 0.2
+            import time
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    self.app.icon = icon_path
+                    logger.info(f"✅ ДИАГНОСТИКА update_icon: Иконка обновлена успешно (попытка {attempt})")
+                    break
+                except Exception as e:
+                    logger.warning(f"⚠️ update_icon попытка {attempt} не удалась: {e}")
+                    if attempt < max_retries:
+                        time.sleep(retry_delay)
+                    else:
+                        raise  # Перебрасываем исключение после последней попытки
+
         except Exception as e:
             logger.error(f"❌ ДИАГНОСТИКА update_icon: Ошибка обновления иконки: {e}", exc_info=True)
     
+    def setup_delayed_icon_setting(self):
+        """Настроить отложенную установку иконки после создания StatusItem.
+
+        ВАЖНО: Этот метод должен быть вызван ПЕРЕД app.run().
+        StatusItem создаётся внутри app.run() -> initializeStatusBar(),
+        поэтому мы используем Timer для установки иконки ПОСЛЕ его создания.
+        """
+        if not self.app or not self._pending_icon_path:
+            logger.warning("⚠️ setup_delayed_icon_setting: app или pending_icon_path отсутствуют")
+            return
+
+        print("="*80)
+        print("CRITICAL: Setting up delayed icon setting timer")
+        print(f"CRITICAL: Icon path: {self._pending_icon_path}")
+        print("="*80)
+
+        attempt_count = [0]  # Используем список для изменяемой переменной в closure
+        max_attempts = 5
+
+        def try_set_icon(timer):
+            """Попытка установить иконку с retry"""
+            attempt_count[0] += 1
+            try:
+                print(f"🔄 CRITICAL: Delayed icon setting attempt {attempt_count[0]}/{max_attempts}")
+                logger.info(f"🔄 Отложенная установка иконки, попытка {attempt_count[0]}/{max_attempts}")
+
+                self.app.icon = self._pending_icon_path
+
+                print(f"✅ CRITICAL: Icon set successfully on delayed attempt {attempt_count[0]}")
+                logger.info(f"✅ Иконка установлена успешно на отложенной попытке {attempt_count[0]}")
+
+                # Останавливаем таймер после успешной установки
+                if self._icon_timer:
+                    self._icon_timer.stop()
+                    self._icon_timer = None
+
+            except Exception as e:
+                print(f"⚠️ CRITICAL: Delayed attempt {attempt_count[0]} failed: {e}")
+                logger.warning(f"⚠️ Отложенная попытка {attempt_count[0]} не удалась: {e}")
+
+                # Останавливаем таймер после максимального числа попыток
+                if attempt_count[0] >= max_attempts:
+                    print(f"❌ CRITICAL: All {max_attempts} delayed attempts failed!")
+                    logger.error(f"❌ Все {max_attempts} отложенные попытки установки иконки не удались")
+                    if self._icon_timer:
+                        self._icon_timer.stop()
+                        self._icon_timer = None
+
+        # Создаём таймер с интервалом 0.2 секунды
+        # Первая попытка будет через 0.2s после запуска app.run()
+        self._icon_timer = rumps.Timer(try_set_icon, 0.2)
+        self._icon_timer.start()
+        logger.info("✅ Таймер отложенной установки иконки настроен")
+
     def run(self):
         """Запустить приложение"""
         if self.app:

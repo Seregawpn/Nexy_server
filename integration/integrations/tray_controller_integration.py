@@ -615,7 +615,11 @@ class TrayControllerIntegration:
         if self.tray_controller:
             return self.tray_controller.get_app()
         return None
-    
+
+    def get_tray_controller(self):
+        """Получить экземпляр TrayController"""
+        return self.tray_controller
+
     def start_ui_timer(self):
         """Запустить UI-таймер после app.run() - вызывается из главного потока rumps"""
         try:
