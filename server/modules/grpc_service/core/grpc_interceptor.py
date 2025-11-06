@@ -122,24 +122,32 @@ class LoggingInterceptor(aio.ServerInterceptor):
         
         # Получаем оригинальный обработчик
         handler = await continuation(handler_call_details)
-        
+
         if handler is None:
             return None
-        
-        # Обёртываем в логирующий обработчик
+
+        # Обёртываем в логирующий обработчик и возвращаем обновлённый RpcMethodHandler
         if handler.request_streaming and handler.response_streaming:
             # Bidirectional streaming
-            return self._wrap_bidi_streaming(handler, method_name)
+            return handler._replace(
+                stream_stream=self._wrap_bidi_streaming(handler.stream_stream, method_name)
+            )
         elif handler.request_streaming:
             # Request streaming
-            return self._wrap_request_streaming(handler, method_name)
+            return handler._replace(
+                stream_unary=self._wrap_request_streaming(handler.stream_unary, method_name)
+            )
         elif handler.response_streaming:
             # Response streaming
-            return self._wrap_response_streaming(handler, method_name)
+            return handler._replace(
+                unary_stream=self._wrap_response_streaming(handler.unary_stream, method_name)
+            )
         else:
             # Unary
-            return self._wrap_unary(handler, method_name)
-    
+            return handler._replace(
+                unary_unary=self._wrap_unary(handler.unary_unary, method_name)
+            )
+
     def _wrap_unary(self, handler, method_name: str):
         """Обёртка для unary RPC"""
         async def wrapper(request, context):

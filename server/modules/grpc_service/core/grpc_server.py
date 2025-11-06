@@ -472,12 +472,8 @@ async def run_server(port: int = 50051, max_workers: int = 100):
         ('grpc.client_idle_timeout_ms', 300000),  # 5 минут
     ]
     
-    # Создаем сервер с оптимизированными настройками
-    server = grpc.aio.server(executor, options=options)
-    
-    # Добавляем интерсептор для единой обработки ошибок и логирования (PR-7)
-    interceptor = get_interceptor()
-    server.interceptors(interceptor)
+    # Создаем сервер с оптимизированными настройками и интерцепторами
+    server = grpc.aio.server(executor, options=options, interceptors=[get_interceptor()])
     
     # Создаем сервис
     servicer = NewStreamingServicer()
