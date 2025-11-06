@@ -10,7 +10,11 @@ import time
 from typing import Dict, Any, Optional, Set, Callable
 from datetime import datetime
 
-from integrations.core.universal_module_interface import UniversalModuleInterface, ModuleStatus
+from integrations.core.universal_module_interface import (
+    UniversalModuleInterface,
+    ModuleStatus,
+)
+from integrations.core.module_status import ModuleState
 from modules.interrupt_handling.config import InterruptHandlingConfig
 
 logger = logging.getLogger(__name__)
@@ -25,12 +29,12 @@ class InterruptManager(UniversalModuleInterface):
     def __init__(self, config: Optional[InterruptHandlingConfig] = None):
         """
         Инициализация менеджера прерываний
-        
+
         Args:
             config: Конфигурация модуля прерываний
         """
-        super().__init__("interrupt_handling", config.config if config else {})
-        
+        super().__init__("interrupt_handling", config.config if config else None)
+
         self.config = config or InterruptHandlingConfig()
         
         # Глобальные флаги прерывания
@@ -54,35 +58,42 @@ class InterruptManager(UniversalModuleInterface):
         self.failed_interrupts = 0
         
         logger.info("Interrupt Manager created")
-    
-    async def initialize(self) -> bool:
+
+        self.set_status(ModuleStatus.for_state(ModuleState.INIT))
+
+    async def initialize(self, config_override: Optional[Dict[str, Any]] = None) -> bool:
         """
         Инициализация модуля прерываний
-        
+
         Returns:
             True если инициализация успешна, False иначе
         """
         try:
             logger.info("Initializing Interrupt Manager...")
-            
-            self.set_status(ModuleStatus.INITIALIZING)
-            
+
+            if config_override:
+                self.update_config(config_override)
+                if isinstance(config_override, dict):
+                    self.config.config.update(config_override)
+
+            self.set_status(ModuleStatus.for_state(ModuleState.INITIALIZING))
+
             # Проверяем конфигурацию
             if not self.config.get("global_interrupt_enabled", True):
                 logger.warning("Global interrupt is disabled in configuration")
-            
+
             # Инициализируем базовые компоненты
             await self._initialize_components()
-            
-            self.set_status(ModuleStatus.READY)
+
+            self.set_status(ModuleStatus.for_state(ModuleState.READY))
             self.is_initialized = True
-            
+
             logger.info("Interrupt Manager initialized successfully")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize Interrupt Manager: {e}")
-            self.set_status(ModuleStatus.ERROR)
+            self.set_status(ModuleStatus.for_state(ModuleState.ERROR, last_error=str(e)))
             return False
     
     async def _initialize_components(self):
@@ -437,15 +448,21 @@ class InterruptManager(UniversalModuleInterface):
             if hasattr(self, 'session_tracker_provider'):
                 await self.session_tracker_provider.cleanup()
             
-            self.set_status(ModuleStatus.STOPPED)
+            self.set_status(ModuleStatus.for_state(ModuleState.STOPPED))
             self.is_initialized = False
-            
+
             logger.info("Interrupt Manager cleaned up successfully")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error cleaning up Interrupt Manager: {e}")
+            self.set_status(ModuleStatus.for_state(ModuleState.ERROR, last_error=str(e)))
             return False
+
+    def status(self) -> ModuleStatus:
+        """Текущий статус менеджера прерываний."""
+
+        return super().status()
     
     def get_statistics(self) -> Dict[str, Any]:
         """Получение статистики прерываний"""

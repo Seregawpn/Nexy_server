@@ -10,7 +10,11 @@ import time
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 
-from integrations.core.universal_module_interface import UniversalModuleInterface, ModuleStatus
+from integrations.core.universal_module_interface import (
+    UniversalModuleInterface,
+    ModuleStatus,
+)
+from integrations.core.module_status import ModuleState
 from modules.text_filtering.config import TextFilteringConfig
 
 logger = logging.getLogger(__name__)
@@ -25,12 +29,12 @@ class TextFilterManager(UniversalModuleInterface):
     def __init__(self, config: Optional[TextFilteringConfig] = None):
         """
         Инициализация менеджера фильтрации текста
-        
+
         Args:
             config: Конфигурация модуля фильтрации текста
         """
-        super().__init__("text_filtering", config.config if config else {})
-        
+        super().__init__("text_filtering", config.config if config else None)
+
         self.config = config or TextFilteringConfig()
         
         # Кэш для производительности
@@ -44,31 +48,38 @@ class TextFilterManager(UniversalModuleInterface):
         self.processing_times = []
         
         logger.info("Text Filter Manager created")
-    
-    async def initialize(self) -> bool:
+
+        self.set_status(ModuleStatus.for_state(ModuleState.INIT))
+
+    async def initialize(self, config_override: Optional[Dict[str, Any]] = None) -> bool:
         """
         Инициализация модуля фильтрации текста
-        
+
         Returns:
             True если инициализация успешна, False иначе
         """
         try:
             logger.info("Initializing Text Filter Manager...")
-            
-            self.set_status(ModuleStatus.INITIALIZING)
-            
+
+            if config_override:
+                self.update_config(config_override)
+                if isinstance(config_override, dict):
+                    self.config.config.update(config_override)
+
+            self.set_status(ModuleStatus.for_state(ModuleState.INITIALIZING))
+
             # Инициализируем провайдеры фильтрации
             await self._initialize_providers()
-            
-            self.set_status(ModuleStatus.READY)
+
+            self.set_status(ModuleStatus.for_state(ModuleState.READY))
             self.is_initialized = True
-            
+
             logger.info("Text Filter Manager initialized successfully")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize Text Filter Manager: {e}")
-            self.set_status(ModuleStatus.ERROR)
+            self.set_status(ModuleStatus.for_state(ModuleState.ERROR, last_error=str(e)))
             return False
     
     async def _initialize_providers(self):
@@ -449,15 +460,21 @@ class TextFilterManager(UniversalModuleInterface):
             self.total_errors = 0
             self.processing_times.clear()
             
-            self.set_status(ModuleStatus.STOPPED)
+            self.set_status(ModuleStatus.for_state(ModuleState.STOPPED))
             self.is_initialized = False
-            
+
             logger.info("Text Filter Manager cleaned up successfully")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error cleaning up Text Filter Manager: {e}")
+            self.set_status(ModuleStatus.for_state(ModuleState.ERROR, last_error=str(e)))
             return False
+
+    def status(self) -> ModuleStatus:
+        """Текущий статус менеджера фильтрации."""
+
+        return super().status()
     
     def get_statistics(self) -> Dict[str, Any]:
         """Получение статистики фильтрации"""

@@ -22,15 +22,18 @@ class UniversalModuleInterface(ABC):
     взаимодействия через координатор модулей.
     """
     
-    def __init__(self, name: str):
+    def __init__(self, name: str, default_config: Optional[Dict[str, Any]] = None):
         """
         Инициализация модуля
-        
+
         Args:
             name: Имя модуля
         """
         self.name = name
-        self._status = ModuleStatus(state=ModuleState.INIT)
+        self._default_config = default_config or {}
+        self._config: Dict[str, Any] = dict(self._default_config)
+        self._status = ModuleStatus.for_state(ModuleState.INIT)
+        self.is_initialized: bool = False
         logger.info(f"Module {self.name} created")
     
     @abstractmethod
@@ -71,15 +74,32 @@ class UniversalModuleInterface(ABC):
         """
         pass
     
-    @abstractmethod
     def status(self) -> ModuleStatus:
         """
         Получение статуса модуля
-        
+
         Returns:
             ModuleStatus с текущим состоянием модуля
         """
-        pass
+        return self._status
+
+    def set_status(self, status: ModuleStatus) -> None:
+        """Обновление статуса модуля."""
+
+        if not isinstance(status, ModuleStatus):
+            raise TypeError("status должен быть экземпляром ModuleStatus")
+
+        self._status = status
+
+    def get_config(self) -> Dict[str, Any]:
+        """Текущая конфигурация модуля."""
+
+        return self._config
+
+    def update_config(self, config: Optional[Dict[str, Any]]) -> None:
+        """Обновляет активную конфигурацию модуля."""
+
+        self._config = dict(config or {})
     
     def get_status_dict(self) -> Dict[str, Any]:
         """
