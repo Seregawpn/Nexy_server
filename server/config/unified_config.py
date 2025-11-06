@@ -233,6 +233,99 @@ class InterruptConfig:
         )
 
 @dataclass
+class WorkflowConfig:
+    """Конфигурация потокового workflow"""
+
+    stream_min_chars: int = 15
+    stream_min_words: int = 3
+    stream_first_sentence_min_words: int = 2
+    stream_punct_flush_strict: bool = True
+    force_flush_max_chars: int = 0
+
+    @classmethod
+    def from_env(cls) -> 'WorkflowConfig':
+        return cls(
+            stream_min_chars=int(os.getenv('STREAM_MIN_CHARS', os.getenv('TTS_MIN_CHARS', '15'))),
+            stream_min_words=int(os.getenv('STREAM_MIN_WORDS', os.getenv('TTS_MIN_WORDS', '3'))),
+            stream_first_sentence_min_words=int(
+                os.getenv(
+                    'STREAM_FIRST_SENTENCE_MIN_WORDS',
+                    os.getenv('TTS_FIRST_SENTENCE_MIN_WORDS', '2')
+                )
+            ),
+            stream_punct_flush_strict=os.getenv(
+                'STREAM_PUNCT_FLUSH_STRICT', os.getenv('TTS_PUNCT_FLUSH_STRICT', 'true')
+            ).lower() == 'true',
+            force_flush_max_chars=int(os.getenv('STREAM_FORCE_FLUSH_MAX_CHARS', '0') or 0)
+        )
+
+
+@dataclass
+class UpdateServiceConfig:
+    """Конфигурация сервиса обновлений"""
+
+    enabled: bool = True
+    host: str = '0.0.0.0'
+    port: int = 8081
+    cors_enabled: bool = True
+    cache_control: str = 'no-cache, no-store, must-revalidate'
+    require_https: bool = False
+    verify_signatures: bool = True
+    log_requests: bool = True
+    log_downloads: bool = True
+    updates_dir: Optional[str] = None
+    downloads_dir: Optional[str] = None
+    keys_dir: Optional[str] = None
+    manifests_dir: Optional[str] = None
+    default_version: str = '1.0.0'
+    default_build: str = '1.0.0'
+    default_arch: str = 'universal2'
+    default_min_os: str = '11.0'
+
+    @classmethod
+    def from_env(cls) -> 'UpdateServiceConfig':
+        base_dir = Path(__file__).parent.parent / 'updates'
+        return cls(
+            enabled=os.getenv('UPDATE_ENABLED', 'true').lower() == 'true',
+            host=os.getenv('UPDATE_HOST', '0.0.0.0'),
+            port=int(os.getenv('UPDATE_PORT', '8081')),
+            cors_enabled=os.getenv('UPDATE_CORS', 'true').lower() == 'true',
+            cache_control=os.getenv('UPDATE_CACHE_CONTROL', 'no-cache, no-store, must-revalidate'),
+            require_https=os.getenv('UPDATE_REQUIRE_HTTPS', 'false').lower() == 'true',
+            verify_signatures=os.getenv('UPDATE_VERIFY_SIGNATURES', 'true').lower() == 'true',
+            log_requests=os.getenv('UPDATE_LOG_REQUESTS', 'true').lower() == 'true',
+            log_downloads=os.getenv('UPDATE_LOG_DOWNLOADS', 'true').lower() == 'true',
+            updates_dir=os.getenv('UPDATE_DIR') or str(base_dir),
+            downloads_dir=os.getenv('UPDATE_DOWNLOADS_DIR') or str(base_dir / 'downloads'),
+            keys_dir=os.getenv('UPDATE_KEYS_DIR') or str(base_dir / 'keys'),
+            manifests_dir=os.getenv('UPDATE_MANIFESTS_DIR') or str(base_dir / 'manifests'),
+            default_version=os.getenv('SERVER_VERSION', '1.0.0'),
+            default_build=os.getenv('SERVER_BUILD', os.getenv('SERVER_VERSION', '1.0.0')),
+            default_arch=os.getenv('UPDATE_DEFAULT_ARCH', 'universal2'),
+            default_min_os=os.getenv('UPDATE_DEFAULT_MIN_OS', '11.0')
+        )
+
+
+@dataclass
+class ServerMetadataConfig:
+    """Метаданные сервера"""
+
+    version: str = '1.0.0'
+    build: str = '1.0.0'
+    channel: str = 'stable'
+
+    @classmethod
+    def from_env(cls) -> 'ServerMetadataConfig':
+        version = os.getenv('SERVER_VERSION', '1.0.0')
+        build = os.getenv('SERVER_BUILD', version)
+        return cls(
+            version=version,
+            build=build,
+            channel=os.getenv('SERVER_CHANNEL', 'stable')
+        )
+
+
+@dataclass
 class LoggingConfig:
     """Конфигурация логирования"""
     level: str = "INFO"
@@ -338,6 +431,9 @@ class UnifiedServerConfig:
     memory: MemoryConfig = field(default_factory=MemoryConfig.from_env)
     session: SessionConfig = field(default_factory=SessionConfig.from_env)
     interrupt: InterruptConfig = field(default_factory=InterruptConfig.from_env)
+    workflow: WorkflowConfig = field(default_factory=WorkflowConfig.from_env)
+    update: UpdateServiceConfig = field(default_factory=UpdateServiceConfig.from_env)
+    server: ServerMetadataConfig = field(default_factory=ServerMetadataConfig.from_env)
     logging: LoggingConfig = field(default_factory=LoggingConfig.from_env)
     features: FeaturesConfig = field(default_factory=FeaturesConfig.from_env)
     kill_switches: KillSwitchesConfig = field(default_factory=KillSwitchesConfig.from_env)
@@ -370,7 +466,16 @@ class UnifiedServerConfig:
             
         if self.audio.sample_rate not in [8000, 16000, 22050, 44100, 48000]:
             errors.append("sample_rate должен быть одним из: 8000, 16000, 22050, 44100, 48000")
-        
+
+        if self.server.build != self.server.version:
+            errors.append("SERVER_BUILD должен совпадать с SERVER_VERSION")
+
+        if self.update.default_version != self.server.version:
+            errors.append("Update.default_version должен совпадать с SERVER_VERSION")
+
+        if self.update.default_build != self.server.build:
+            errors.append("Update.default_build должен совпадать с SERVER_BUILD")
+
         # Выводим предупреждения
         for error in errors:
             logger.warning(f"⚠️ {error}")
@@ -381,10 +486,10 @@ class UnifiedServerConfig:
     def get_module_config(self, module_name: str) -> Dict[str, Any]:
         """
         Получение конфигурации для конкретного модуля
-        
+
         Args:
             module_name: Имя модуля
-            
+
         Returns:
             Словарь с конфигурацией модуля
         """
@@ -396,11 +501,29 @@ class UnifiedServerConfig:
             'memory': self.memory.__dict__,
             'session': self.session.__dict__,
             'interrupt': self.interrupt.__dict__,
+            'workflow': self.workflow.__dict__,
+            'update': self.update.__dict__,
+            'server': self.server.__dict__,
             'logging': self.logging.__dict__
         }
-        
+
         return config_mapping.get(module_name, {})
-    
+
+    def get_workflow_thresholds(self) -> WorkflowConfig:
+        """Возвращает конфигурацию потокового workflow"""
+
+        return self.workflow
+
+    def get_update_service_config(self) -> UpdateServiceConfig:
+        """Возвращает конфигурацию сервиса обновлений"""
+
+        return self.update
+
+    def get_server_metadata(self) -> ServerMetadataConfig:
+        """Возвращает метаданные сервера"""
+
+        return self.server
+
     def is_feature_enabled(self, feature_name: str) -> bool:
         """
         Проверка, включен ли фича-флаг
@@ -529,6 +652,9 @@ class UnifiedServerConfig:
             'memory': self.memory.__dict__,
             'session': self.session.__dict__,
             'interrupt': self.interrupt.__dict__,
+            'workflow': self.workflow.__dict__,
+            'update': self.update.__dict__,
+            'server': self.server.__dict__,
             'logging': self.logging.__dict__
         }
         
@@ -559,6 +685,9 @@ class UnifiedServerConfig:
         memory = MemoryConfig(**config_dict.get('memory', {}))
         session = SessionConfig(**config_dict.get('session', {}))
         interrupt = InterruptConfig(**config_dict.get('interrupt', {}))
+        workflow = WorkflowConfig(**config_dict.get('workflow', {}))
+        update = UpdateServiceConfig(**config_dict.get('update', {}))
+        server_meta = ServerMetadataConfig(**config_dict.get('server', {}))
         logging_config = LoggingConfig(**config_dict.get('logging', {}))
         features = FeaturesConfig(**config_dict.get('features', {}))
         kill_switches = KillSwitchesConfig(**config_dict.get('kill_switches', {}))
@@ -580,6 +709,9 @@ class UnifiedServerConfig:
             memory=memory,
             session=session,
             interrupt=interrupt,
+            workflow=workflow,
+            update=update,
+            server=server_meta,
             logging=logging_config,
             features=features,
             kill_switches=kill_switches,
@@ -625,6 +757,9 @@ class UnifiedServerConfig:
             },
             'session': self.session.__dict__,
             'interrupt': self.interrupt.__dict__,
+            'workflow': self.workflow.__dict__,
+            'update': self.update.__dict__,
+            'server': self.server.__dict__,
             'logging': self.logging.__dict__
         }
 

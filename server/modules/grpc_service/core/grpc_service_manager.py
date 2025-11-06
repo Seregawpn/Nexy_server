@@ -205,7 +205,8 @@ class GrpcServiceManager(UniversalModuleInterface):
                 text_processor=text_processor,
                 audio_processor=audio_processor,
                 memory_workflow=None,  # Будет установлен ниже
-                text_filter_manager=filter_manager
+                text_filter_manager=filter_manager,
+                workflow_config=self.unified_config.get_workflow_thresholds()
             )
 
             self.memory_workflow = MemoryWorkflowIntegration(
