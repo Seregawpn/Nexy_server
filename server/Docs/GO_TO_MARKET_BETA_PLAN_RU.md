@@ -71,7 +71,7 @@
 
 - ✅ **ВЫПОЛНЕНО:**
   - `client/main.py`: EventBus привязан к event loop, `app.startup` публикуется
-  - `SimpleModuleCoordinator`: все 18 интеграций инициализированы и запущены
+  - `ModuleCoordinatorIntegration`: все 18 интеграций инициализированы и запущены
   - PTT работает: удержание Space → LISTENING, отпускание → PROCESSING
   - VoiceOver интеграция: автоматическое управление через Command+F5
   - Все интеграции включены: HardwareId, GrpcClient, SpeechPlayback, Signal, ModeManagement
@@ -105,7 +105,7 @@
 Цель: стабильный e2e с удалённым сервером.
 
 - Что делаем:
-  - Поднять `server/grpc_server.py` на Azure VM (IP 20.151.51.172), открыть порт, настроить процессы и логи.
+  - Поднять `server/modules/grpc_service/core/grpc_server.py` на Azure VM (IP 20.151.51.172), открыть порт, настроить процессы и логи.
   - Проверить совместимость по `server/streaming.proto`: клиент отправляет `prompt + screenshot(base64 WebP) + hardware_id`, сервер стримит текст/аудио (48 kHz mono int16) и завершает `end_message`.
   - `client/config/unified_config.yaml`: выставить `grpc_host`, `grpc_port`, `use_tls` (если нет домена с валидным сертификатом — временно без TLS на бете).
   - Таймауты/ретраи и корректное закрытие in‑flight задач при обрыве сети.
@@ -156,8 +156,8 @@
 - ⏳ **Инструкция:** для тестеров готова, канал фидбека работает
 
 ### 8) Материалы в репозитории
-- Клиент: `client/main.py`, `client/integration/core/simple_module_coordinator.py`, `client/integration/integrations/*.py`, `client/config/unified_config.yaml`.
-- Сервер: `server/grpc_server.py`, `server/streaming.proto`, `server/integrations/workflow_integrations/streaming_workflow_integration.py`.
+- Клиент: `client/main.py`, `client/integration/core/module_coordinator_integration.py`, `client/integration/integrations/*.py`, `client/config/unified_config.yaml`.
+- Сервер: `server/modules/grpc_service/core/grpc_server.py`, `server/modules/grpc_service/streaming.proto`, `server/integrations/workflow_integrations/streaming_workflow_integration.py`.
 - Пакетирование: `client/packaging/*`, Sparkle настройки.
 
 — Этот документ — ориентир. Двигаемся по циклам, закрываем DoD каждого этапа, выпускаем PKG тестерам, собираем данные и быстро улучшаем.
@@ -190,7 +190,7 @@
   1) Верификация Packaging: проверить `entitlements.plist`, Team ID/Bundle ID неизменны, повторная нотаризация при нужных микроправках.
   2) Sparkle: опубликовать тестовый appcast, проверить скачивание и установку обновления из установленной версии.
   3) TCC‑потоки: пройти сценарий первого запуска (Mic/Screen/Input Monitoring/Notifications), убедиться, что после обновления разрешения не сбрасываются.
-  4) Azure: развернуть `server/grpc_server.py` как сервис (systemd/pm2), открыть порт, включить ротацию логов.
+  4) Azure: развернуть `server/modules/grpc_service/core/grpc_server.py` как сервис (systemd/pm2), открыть порт, включить ротацию логов.
   5) gRPC healthcheck: `grpc_host/port/use_tls` в `unified_config.yaml`; при SNI‑проблемах — временно `use_tls=false` или домен с валидным сертификатом.
   6) Smoke‑сценарии e2e: «экран/картинка/график» по 3 прогона; оффлайн/восстановление/прерывание.
   7) Производительность: снять TTV и длительность ответа; при превышении порогов — уменьшить размер/частоту чанков или оптимизировать обработку на сервере.
@@ -198,8 +198,8 @@
 ### Этап 1 — Локальный клиент из исходников (без внешнего сервера) ✅ **ЗАВЕРШЕН**
 - ✅ **Критерии «ГОТОВО»:** DoD Цикл 1 достигнут
 - ✅ **ВЫПОЛНЕНО:**
-  1) ✅ `client/main.py`: EventBus привязан к loop, `app.startup` публикуется, `SimpleModuleCoordinator.run()` работает
-  2) ✅ `SimpleModuleCoordinator`: все 18 интеграций инициализированы и запущены, включая Workflows
+  1) ✅ `client/main.py`: EventBus привязан к loop, `app.startup` публикуется, `ModuleCoordinatorIntegration.run()` работает
+  2) ✅ `ModuleCoordinatorIntegration`: все 18 интеграций инициализированы и запущены, включая Workflows
   3) ✅ PTT/режимы: Space → LISTENING/PROCESSING работает, VoiceOver интеграция через Command+F5
   4) ✅ Скриншот: Screen Recording разрешение, корректные размеры, base64 WebP кодировка
   5) ✅ Воспроизведение: `playback.started` и `playback.completed` события работают корректно
