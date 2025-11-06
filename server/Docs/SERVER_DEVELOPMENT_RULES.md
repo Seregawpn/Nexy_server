@@ -21,6 +21,15 @@
 
 ---
 
+## 0. Архитектурные правила (обязательные)
+
+- `server/modules/*` — только бизнес-логика. Оркестрация и сценарии располагаются в `server/integrations/{core,service_integrations,workflow_integrations}`.
+- Прямых импортов между модулями нет; все обращения идут через `ModuleCoordinator` (`server/integrations/service_integrations/module_coordinator.py`).
+- Единственный proto-файл — `server/modules/grpc_service/streaming.proto`. Изменения обновляют его и `Docs/GRPC_PROTOCOL_AUDIT.md`.
+- Лимиты, таймауты и флаги читаются из `server/config/unified_config.py` или env-override; хардкоды запрещены.
+
+---
+
 ## 1. Гейты перед мерджем
 
 ### **SIMPLE-гейт (до Impact)**
@@ -78,7 +87,7 @@
 bash scripts/validate_updates.sh [HOST] [PORT]
 
 # Или вручную
-APPCAST_SIZE=$(curl -s http://20.151.51.172:8081/appcast.xml | grep -o 'length="[^"]*"' | cut -d'"' -f2)
+APPCAST_SIZE=$(curl -s https://20.151.51.172/appcast.xml | grep -o 'length="[^"]*"' | cut -d'"' -f2)
 GITHUB_SIZE=$(curl -s -L -I https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg | grep -i "content-length:" | tail -1 | awk '{print $2}' | tr -d '\r\n')
 echo "AppCast: $APPCAST_SIZE байт"
 echo "GitHub:  $GITHUB_SIZE байт"
@@ -100,6 +109,8 @@ test "$APPCAST_SIZE" = "$GITHUB_SIZE"
 
 ## 6. gRPC Compatibility Policy (PR-3)
 
+**Канон:** proto-файл хранится только в `server/modules/grpc_service/streaming.proto`; альтернативные пути запрещены.
+
 1. Допускается только **добавление optional полей** или новых RPC с backward-совместимой сигнатурой.
 2. Для breaking-изменений — отдельный `v2` сервис/метод + feature-флаг на сервере.
 3. Поддерживаем обе версии минимум **2 релиза**; общие клиенты переключаются флагом.
@@ -117,7 +128,7 @@ test "$APPCAST_SIZE" = "$GITHUB_SIZE"
 
 **Регенерация protobuf:**
 ```bash
-cd modules/grpc_service
+cd server/modules/grpc_service
 python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. streaming.proto
 ```
 

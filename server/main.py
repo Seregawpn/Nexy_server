@@ -3,6 +3,7 @@ import logging
 import signal
 import sys
 import os
+from dataclasses import asdict
 from aiohttp import web
 from modules.grpc_service.core.grpc_server import run_server as serve
 from dotenv import load_dotenv
@@ -23,6 +24,7 @@ load_dotenv('config.env')
 
 # Загружаем конфигурацию
 unified_config = get_config()
+server_metadata = unified_config.get_server_metadata()
 
 # Настройка структурированного логирования (PR-4)
 log_level = unified_config.logging.level if hasattr(unified_config, 'logging') else 'INFO'
@@ -30,8 +32,8 @@ setup_structured_logging(level=log_level)
 logger = logging.getLogger(__name__)
 
 # Версия сервера (единая точка истины для health/status эндпоинтов)
-# TODO: Интегрировать с UpdateManager для динамического получения версии
-SERVER_VERSION = os.getenv("SERVER_VERSION", "3.11.0")
+SERVER_VERSION = server_metadata.version
+SERVER_BUILD = server_metadata.build
 
 # Импорт системы обновлений
 try:
@@ -55,8 +57,8 @@ async def health_handler(request):
     """
     return web.json_response({
         "status": "OK",
-        "latest_version": SERVER_VERSION,  # String type (PR-7)
-        "latest_build": SERVER_VERSION      # String type, equals version (PR-7)
+        "latest_version": SERVER_VERSION,
+        "latest_build": SERVER_BUILD
     })
 
 async def root_handler(request):
@@ -77,14 +79,18 @@ async def status_handler(request):
     return web.json_response({
         "status": "running",
         "service": "voice-assistant",
-        "latest_version": SERVER_VERSION,  # String type (PR-7)
-        "latest_build": SERVER_VERSION,    # String type, equals version (PR-7)
+        "latest_version": SERVER_VERSION,
+        "latest_build": SERVER_BUILD,
         "update_server": "enabled" if UPDATE_SERVER_AVAILABLE else "disabled",
         "endpoints": {
             "health": "/health",
             "status": "/status",
             "grpc": "port 50051",
-            "updates": "port 8081" if UPDATE_SERVER_AVAILABLE else "disabled"
+            "updates": (
+                f"port {unified_config.get_update_service_config().port}"
+                if UPDATE_SERVER_AVAILABLE
+                else "disabled"
+            )
         }
     })
 
@@ -192,7 +198,7 @@ async def main():
     if UPDATE_SERVER_AVAILABLE:
         logger.info("Starting update server", extra={'scope': 'update', 'decision': 'start'})
         try:
-            config = UpdateConfig()
+            config = UpdateConfig.from_dict(asdict(unified_config.get_update_service_config()))
             update_manager = UpdateManager(config)
             await update_manager.initialize()
             await update_manager.start()

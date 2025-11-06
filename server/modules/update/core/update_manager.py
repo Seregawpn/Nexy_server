@@ -141,6 +141,50 @@ class UpdateManager(UniversalModuleInterface):
         except Exception as e:
             logger.error(f"❌ Ошибка запуска UpdateManager: {e}")
             return False
+
+    async def check_update(self, current_version: str) -> Dict[str, Any]:
+        """Проверка наличия обновлений"""
+
+        if not self.manifest_provider or not self.version_provider:
+            return {
+                "update_available": False,
+                "latest_version": self.config.default_version,
+                "latest_build": self.config.default_build,
+            }
+
+        latest_manifest = self.manifest_provider.get_latest_manifest()
+        if not latest_manifest:
+            return {
+                "update_available": False,
+                "latest_version": self.config.default_version,
+                "latest_build": self.config.default_build,
+            }
+
+        latest_version = str(latest_manifest.get("version", self.config.default_version))
+        latest_build = str(latest_manifest.get("build", latest_version))
+
+        update_available = self.version_provider.is_newer_version(current_version, latest_version)
+
+        return {
+            "update_available": update_available,
+            "latest_version": latest_version,
+            "latest_build": latest_build,
+            "manifest": latest_manifest if update_available else None,
+        }
+
+    async def get_manifest(self, platform: str = "macos") -> Optional[Dict[str, Any]]:
+        """Получение актуального манифеста"""
+
+        if not self.manifest_provider:
+            return None
+
+        manifest = self.manifest_provider.get_latest_manifest()
+        if not manifest:
+            return None
+
+        manifest_copy = manifest.copy()
+        manifest_copy["platform"] = platform
+        return manifest_copy
     
     async def stop(self) -> bool:
         """Остановка модуля"""
@@ -261,7 +305,7 @@ class UpdateManager(UniversalModuleInterface):
     def get_latest_version(self) -> Optional[str]:
         """Получение последней версии"""
         try:
-            latest_manifest = self.manifest_provider.get_latest_manifest()
+            latest_manifest = self.manifest_provider.get_latest_manifest() if self.manifest_provider else None
             return latest_manifest.get("version") if latest_manifest else None
         except Exception as e:
             logger.error(f"❌ Ошибка получения последней версии: {e}")
@@ -270,6 +314,8 @@ class UpdateManager(UniversalModuleInterface):
     def get_version_history(self, limit: int = 10) -> list:
         """Получение истории версий"""
         try:
+            if not self.manifest_provider:
+                return []
             return self.manifest_provider.get_all_manifests()[:limit]
         except Exception as e:
             logger.error(f"❌ Ошибка получения истории версий: {e}")
@@ -321,6 +367,24 @@ class UpdateManager(UniversalModuleInterface):
             return {
                 "error": str(e)
             }
+
+    def get_current_version(self) -> Dict[str, str]:
+        """Возвращает текущую версию и сборку"""
+
+        manifest = self.manifest_provider.get_latest_manifest() if self.manifest_provider else None
+        if manifest:
+            version = str(manifest.get("version", self.config.default_version))
+            build = str(manifest.get("build", version))
+        else:
+            version = self.config.default_version
+            build = self.config.default_build
+
+        return {"version": version, "build": build}
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Совместимость с адаптером"""
+
+        return self.get_statistics()
     
     def _format_uptime(self, uptime_seconds: float) -> str:
         """Форматирование времени работы"""

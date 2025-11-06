@@ -4,9 +4,10 @@ StreamingWorkflowIntegration - управляет потоком: текст →
 """
 
 import logging
-import os
-from typing import Dict, Any, AsyncGenerator, Optional
+from typing import Dict, Any, AsyncGenerator, Optional, Union
 from datetime import datetime
+
+from config.unified_config import WorkflowConfig, get_config
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,14 @@ class StreamingWorkflowIntegration:
     Управляет потоком обработки: получение текста → обработка → генерация аудио → стриминг клиенту
     """
     
-    def __init__(self, text_processor=None, audio_processor=None, memory_workflow=None, text_filter_manager=None):
+    def __init__(
+        self,
+        text_processor=None,
+        audio_processor=None,
+        memory_workflow=None,
+        text_filter_manager=None,
+        workflow_config: Optional[Union[WorkflowConfig, Dict[str, Any]]] = None,
+    ):
         """
         Инициализация StreamingWorkflowIntegration
         
@@ -37,11 +45,20 @@ class StreamingWorkflowIntegration:
         self._has_emitted: bool = False
         self._pending_segment: str = ""
         self._processed_sentences: set = set()  # Для дедупликации
-        # Централизованные пороги (STREAM_*), с бэквард-фоллбеком на TTS_* (уменьшены для естественного воспроизведения)
-        self.stream_min_chars: int = int(os.getenv("STREAM_MIN_CHARS", os.getenv("TTS_MIN_CHARS", "15")))
-        self.stream_min_words: int = int(os.getenv("STREAM_MIN_WORDS", os.getenv("TTS_MIN_WORDS", "3")))
-        self.stream_first_sentence_min_words: int = int(os.getenv("STREAM_FIRST_SENTENCE_MIN_WORDS", os.getenv("TTS_FIRST_SENTENCE_MIN_WORDS", "2")))
-        self.stream_punct_flush_strict: bool = os.getenv("STREAM_PUNCT_FLUSH_STRICT", os.getenv("TTS_PUNCT_FLUSH_STRICT", "true")).lower() == "true"
+        # Централизованные пороги
+        if workflow_config is None:
+            workflow_config = get_config().get_workflow_thresholds()
+
+        if isinstance(workflow_config, WorkflowConfig):
+            cfg = workflow_config
+        else:
+            cfg = WorkflowConfig(**workflow_config)
+
+        self.stream_min_chars: int = cfg.stream_min_chars
+        self.stream_min_words: int = cfg.stream_min_words
+        self.stream_first_sentence_min_words: int = cfg.stream_first_sentence_min_words
+        self.stream_punct_flush_strict: bool = bool(cfg.stream_punct_flush_strict)
+        self.force_flush_max_chars: int = cfg.force_flush_max_chars
         self.sentence_joiner: str = " "
         self.end_punctuations = ('.', '!', '?')
         
@@ -225,7 +242,7 @@ class StreamingWorkflowIntegration:
                         self._pending_segment = candidate
 
             # Если остался незавершенный агрегат, можно форс-флаш, если очень длинный
-            force_max = int(os.getenv("STREAM_FORCE_FLUSH_MAX_CHARS", "0") or 0)
+            force_max = self.force_flush_max_chars
             if self._pending_segment and force_max > 0 and len(self._pending_segment) >= force_max:
                 emitted_segment_counter += 1
                 to_emit = self._pending_segment

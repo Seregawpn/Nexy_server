@@ -1,86 +1,120 @@
-audio:
-  azure_audio_format: riff-48khz-16bit-mono-pcm
-  azure_speech_key: ''
-  azure_speech_pitch: 1.0
-  azure_speech_rate: 1.0
-  azure_speech_region: ''
-  azure_speech_volume: 1.0
-  azure_voice_name: en-US-AriaNeural
-  azure_voice_style: friendly
-  bits_per_sample: 16
-  channels: 1
-  chunk_size: 1024
-  format: int16
-  sample_rate: 48000
-  streaming_chunk_size: 4096
-  streaming_enabled: true
 database:
   host: localhost
-  name: voice_assistant_db
-  password: ''
   port: 5432
+  name: voice_assistant_db
   user: postgres
+  password: ''
+
 grpc:
   host: 0.0.0.0
-  max_workers: 100
   port: 50051
-interrupt:
-  global_interrupt_timeout: 300
-  max_active_sessions: 100
-  session_interrupt_timeout: 60
-logging:
-  backup_count: 5
-  level: INFO
-  log_file: server.log
-  log_requests: true
-  log_responses: false
-  max_file_size: 10485760
-memory:
-  analysis_timeout: 5.0
-  gemini_api_key: ''
-  max_long_term_memory_size: 102400
-  max_short_term_memory_size: 51200
-  memory_analysis_model: gemini-2.5-flash-lite
-  memory_analysis_temperature: 0.3
-  memory_timeout: 2.0
-session:
-  hardware_id_length: 32
-  max_sessions: 200
-  session_timeout: 3600
+  max_workers: 10
+
+audio:
+  sample_rate: 48000
+  chunk_size: 1024
+  format: int16
+  channels: 1
+  bits_per_sample: 16
+  azure_speech_key: ''
+  azure_speech_region: ''
+  azure_voice_name: en-US-AriaNeural
+  azure_voice_style: friendly
+  azure_speech_rate: 1.0
+  azure_speech_pitch: 1.0
+  azure_speech_volume: 1.0
+  azure_audio_format: riff-48khz-16bit-mono-pcm
+  streaming_chunk_size: 4096
+  streaming_enabled: true
+
 text_processing:
+  gemini_api_key: ''
+  gemini_live_model: gemini-live-2.5-flash-preview
+  gemini_live_temperature: 0.7
+  gemini_live_max_tokens: 2048
+  gemini_live_tools:
+    - google_search
+  gemini_system_prompt: |
+    You are Nexy Assistant — a friendly, empathetic, conversational AI for blind and low-vision users.
+  image_format: jpeg
+  image_mime_type: image/jpeg
+  image_max_size: 10485760
+  streaming_chunk_size: 8192
+  fallback_timeout: 30
   circuit_breaker_threshold: 3
   circuit_breaker_timeout: 300
-  fallback_timeout: 30
-  gemini_api_key: ''
-  gemini_max_tokens: 2048
-  gemini_model: gemini-2.0-flash-exp
-  gemini_temperature: 0.7
-  langchain_model: gemini-pro
-  langchain_temperature: 0.7
-  max_concurrent_requests: 50
+  max_concurrent_requests: 10
   request_timeout: 60
 
-# Защитные лимиты для масштабирования
-protection:
-  max_requests_per_minute: 1000
-  max_requests_per_user: 10
-  circuit_breaker_threshold: 5
-  max_memory_usage: 80
+memory:
+  gemini_api_key: ''
+  max_short_term_memory_size: 10240
+  max_long_term_memory_size: 10240
+  memory_timeout: 2.0
+  analysis_timeout: 5.0
+  memory_analysis_model: gemini-2.5-flash-lite
+  memory_analysis_temperature: 0.3
 
-# Фича-флаги
+session:
+  max_sessions: 100
+  session_timeout: 3600
+  hardware_id_length: 32
+
+interrupt:
+  global_interrupt_timeout: 300
+  session_interrupt_timeout: 60
+  max_active_sessions: 50
+
+workflow:
+  stream_min_chars: 15
+  stream_min_words: 3
+  stream_first_sentence_min_words: 2
+  stream_punct_flush_strict: true
+  force_flush_max_chars: 0
+
+update:
+  enabled: true
+  host: 0.0.0.0
+  port: 8081
+  cors_enabled: true
+  cache_control: no-cache, no-store, must-revalidate
+  require_https: false
+  verify_signatures: true
+  log_requests: true
+  log_downloads: true
+  updates_dir: server/updates
+  downloads_dir: server/updates/downloads
+  keys_dir: server/updates/keys
+  manifests_dir: server/updates/manifests
+  default_version: 1.0.0
+  default_build: 1.0.0
+  default_arch: universal2
+  default_min_os: 11.0
+
+server:
+  version: 1.0.0
+  build: 1.0.0
+  channel: stable
+
+logging:
+  level: INFO
+  log_requests: true
+  log_responses: false
+  log_file: server.log
+  max_file_size: 10485760
+  backup_count: 5
+
 features:
   use_module_coordinator: true
   use_workflow_integrations: true
   use_fallback_manager: true
 
-# Kill-switches (для экстренного отключения)
 kill_switches:
   disable_module_coordinator: false
   disable_workflow_integrations: false
 
-# Backpressure конфигурация (лимиты для стримов)
 backpressure:
-  max_concurrent_streams: 50      # Максимум одновременно открытых StreamAudio
-  idle_timeout_seconds: 300        # Таймаут для неактивных стримов (5 минут)
-  max_message_rate_per_second: 10 # Максимум сообщений в секунду на стрим
-  grace_period_seconds: 30        # Период ожидания перед принудительным закрытием
+  max_concurrent_streams: 50
+  idle_timeout_seconds: 300
+  max_message_rate_per_second: 10
+  grace_period_seconds: 30

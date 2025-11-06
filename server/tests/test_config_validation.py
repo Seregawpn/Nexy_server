@@ -76,6 +76,9 @@ def test_unified_config_has_all_modules():
             'memory',
             'session',
             'interrupt',
+            'workflow',
+            'update',
+            'server',
             'logging'
         ]
         

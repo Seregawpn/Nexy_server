@@ -25,18 +25,11 @@ class UpdateAdapter(UniversalModuleInterface):
     """
 
     def __init__(self, config: Optional[UpdateConfig] = None):
-        """
-        Инициализация адаптера
+        """Инициализация адаптера"""
 
-        Args:
-            config: Конфигурация update модуля (опционально)
-        """
         super().__init__(name="update")
-
-        # Создаём экземпляр UpdateManager
-        self._manager = UpdateManager(config=config)
-
-        # Начальный статус
+        self._initial_config = config
+        self._manager: Optional[UpdateManager] = None
         self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
 
         logger.info("UpdateAdapter создан")
@@ -51,6 +44,9 @@ class UpdateAdapter(UniversalModuleInterface):
         try:
             self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
             logger.info("Инициализация UpdateAdapter...")
+
+            update_config = self._initial_config or UpdateConfig.from_dict(config or {})
+            self._manager = UpdateManager(config=update_config)
 
             # Делегируем инициализацию в UpdateManager
             success = await self._manager.initialize()
@@ -93,6 +89,9 @@ class UpdateAdapter(UniversalModuleInterface):
         - get_stats: Получение статистики
         """
         try:
+            if not self._manager:
+                raise RuntimeError("UpdateManager не инициализирован")
+
             self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
 
             action = request.get('action')
@@ -141,7 +140,8 @@ class UpdateAdapter(UniversalModuleInterface):
             logger.info("Очистка UpdateAdapter...")
 
             # Делегируем очистку в UpdateManager
-            await self._manager.cleanup()
+            if self._manager:
+                await self._manager.cleanup()
 
             self._status = ModuleStatus(state=ModuleState.STOPPED, health="down")
             logger.info("✅ UpdateAdapter очищен")
@@ -163,7 +163,7 @@ class UpdateAdapter(UniversalModuleInterface):
         """
         return self._status
 
-    def get_manager(self) -> UpdateManager:
+    def get_manager(self) -> Optional[UpdateManager]:
         """
         Получение внутреннего UpdateManager (для compatibility)
 

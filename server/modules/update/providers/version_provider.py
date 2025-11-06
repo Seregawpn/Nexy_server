@@ -4,7 +4,7 @@ Version Provider - управление версиями и сборками
 
 import logging
 import re
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -46,35 +46,22 @@ class VersionProvider:
         major, minor, patch = map(int, match.groups())
         return major, minor, patch
     
-    def version_to_build(self, version: str) -> int:
-        """
-        Преобразование версии в номер сборки
-        
-        Формула: major * 10000 + minor * 100 + patch
-        
-        Args:
-            version: Строка версии
-            
-        Returns:
-            int: Номер сборки
-        """
-        major, minor, patch = self.parse_version(version)
-        return major * 10000 + minor * 100 + patch
-    
-    def build_to_version(self, build: int) -> str:
-        """
-        Преобразование номера сборки в версию
-        
-        Args:
-            build: Номер сборки
-            
-        Returns:
-            str: Строка версии
-        """
+    def version_to_build(self, version: str) -> str:
+        """Возвращает каноническое строковое представление сборки"""
+
+        return version
+
+    def build_to_version(self, build: Union[str, int]) -> str:
+        """Преобразует номер сборки в строку версии"""
+
+        if isinstance(build, str):
+            if self.version_pattern.match(build):
+                return build
+            raise ValueError(f"Неверный формат build: {build}")
+
         major = build // 10000
         minor = (build % 10000) // 100
         patch = build % 100
-        
         return f"{major}.{minor}.{patch}"
     
     def compare_versions(self, version1: str, version2: str) -> int:
@@ -128,7 +115,7 @@ class VersionProvider:
         try:
             major, minor, patch = self.parse_version(version)
             build = self.version_to_build(version)
-            
+
             return {
                 "version": version,
                 "major": major,
@@ -143,7 +130,7 @@ class VersionProvider:
                 "major": 0,
                 "minor": 0,
                 "patch": 0,
-                "build": 0,
+                "build": "",
                 "is_valid": False
             }
     
@@ -151,7 +138,7 @@ class VersionProvider:
         """Получение версии по умолчанию"""
         return self.config.default_version
     
-    def get_default_build(self) -> int:
+    def get_default_build(self) -> str:
         """Получение номера сборки по умолчанию"""
         return self.config.default_build
     
@@ -208,8 +195,11 @@ class VersionProvider:
                 except Exception as e:
                     logger.warning(f"Ошибка чтения манифеста {manifest_file}: {e}")
             
-            # Сортируем по номеру сборки (по убыванию)
-            versions.sort(key=lambda x: x["build"], reverse=True)
+            # Сортируем по версии (по убыванию)
+            versions.sort(
+                key=lambda entry: self.parse_version(entry["version"]) if self.version_pattern.match(entry["version"]) else (0, 0, 0),
+                reverse=True
+            )
             
             return versions[:limit]
             
