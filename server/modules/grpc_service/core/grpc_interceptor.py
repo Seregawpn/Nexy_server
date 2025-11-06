@@ -6,11 +6,11 @@ gRPC Interceptor с единой картой ошибок (PR-7)
 import logging
 import time
 import asyncio
-from typing import Callable, Any, Optional
+from typing import Awaitable, Callable, Optional
 from contextlib import asynccontextmanager
 
 import grpc
-from grpc import aio
+from grpc import HandlerCallDetails, aio
 
 from utils.logging_formatter import log_rpc_error, log_decision
 from utils.metrics_collector import record_metric, record_decision_metric
@@ -105,9 +105,9 @@ class LoggingInterceptor(aio.ServerInterceptor):
     
     async def intercept_service(
         self,
-        continuation: Callable,
-        handler_call_details: aio.HandlerCallDetails
-    ) -> aio.UnaryUnaryHandler:
+        continuation: Callable[[HandlerCallDetails], Awaitable[Optional[aio.RpcMethodHandler]]],
+        handler_call_details: HandlerCallDetails,
+    ) -> Optional[aio.RpcMethodHandler]:
         """
         Перехват вызова сервиса
         
