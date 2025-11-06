@@ -71,3 +71,8 @@ client/build/
 # Temporary files
 *.tmp
 *.temp
+
+# Client directories (should not be in server repository)
+client/
+ai-assistant-system/
+update-server/
