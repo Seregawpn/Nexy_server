@@ -109,6 +109,24 @@ def activate_nsapplication_for_menu_bar():
         print(f"[NEXY_INIT] NSApplication instance: {app}")
         print(f"[NEXY_INIT] Current activation policy: {app.activationPolicy()}")
 
+        # ДИАГНОСТИКА: Проверяем статус автоматической терминации
+        try:
+            import Foundation
+            process_info = Foundation.NSProcessInfo.processInfo()
+            auto_term_enabled = process_info.automaticTerminationSupportEnabled()
+            print(f"[NEXY_INIT] 🔍 DIAGNOSTICS: automaticTerminationSupportEnabled = {auto_term_enabled}")
+            print(f"[NEXY_INIT] 🔍 DIAGNOSTICS: System uptime = {process_info.systemUptime():.2f}s")
+            print(f"[NEXY_INIT] 🔍 DIAGNOSTICS: Process ID = {process_info.processIdentifier()}")
+
+            # Пытаемся отключить автоматическую терминацию на время старта
+            if auto_term_enabled:
+                process_info.disableAutomaticTermination_("Waiting for tray icon")
+                print(f"[NEXY_INIT] 🛡️  ANTI-TAL: Disabled automatic termination until tray ready")
+            else:
+                print(f"[NEXY_INIT] ℹ️  INFO: Automatic termination was already disabled")
+        except Exception as diag_err:
+            print(f"[NEXY_INIT] ⚠️  WARNING: Could not check/modify termination status: {diag_err}")
+
         # Set activation policy for menu bar application
         # NSApplicationActivationPolicyAccessory (hide from Dock, show in menu bar)
         result = app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)

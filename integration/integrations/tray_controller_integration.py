@@ -241,6 +241,16 @@ class TrayControllerIntegration:
             logger.info(f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms")
             print(f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms")
 
+            # ANTI-TAL: Включаем автоматическую терминацию обратно теперь когда tray готов
+            try:
+                import Foundation
+                process_info = Foundation.NSProcessInfo.processInfo()
+                process_info.enableAutomaticTermination_("Tray icon is active")
+                logger.info("🛡️ [ANTI-TAL] Re-enabled automatic termination (tray icon active)")
+                print("🛡️ [ANTI-TAL] Re-enabled automatic termination (tray icon active)")
+            except Exception as tal_err:
+                logger.warning(f"⚠️ [ANTI-TAL] Could not re-enable automatic termination: {tal_err}")
+
             # Обработчик клика по пункту Quit
             try:
                 if self.tray_controller and hasattr(self.tray_controller, 'set_event_callback'):
