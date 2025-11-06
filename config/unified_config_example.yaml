@@ -66,3 +66,21 @@ protection:
   max_requests_per_user: 10
   circuit_breaker_threshold: 5
   max_memory_usage: 80
+
+# Фича-флаги
+features:
+  use_module_coordinator: true
+  use_workflow_integrations: true
+  use_fallback_manager: true
+
+# Kill-switches (для экстренного отключения)
+kill_switches:
+  disable_module_coordinator: false
+  disable_workflow_integrations: false
+
+# Backpressure конфигурация (лимиты для стримов)
+backpressure:
+  max_concurrent_streams: 50      # Максимум одновременно открытых StreamAudio
+  idle_timeout_seconds: 300        # Таймаут для неактивных стримов (5 минут)
+  max_message_rate_per_second: 10 # Максимум сообщений в секунду на стрим
+  grace_period_seconds: 30        # Период ожидания перед принудительным закрытием

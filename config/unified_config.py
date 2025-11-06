@@ -254,6 +254,81 @@ class LoggingConfig:
         )
 
 @dataclass
+class FeaturesConfig:
+    """Конфигурация фича-флагов"""
+    use_module_coordinator: bool = True
+    use_workflow_integrations: bool = True
+    use_fallback_manager: bool = True
+    
+    @classmethod
+    def from_env(cls) -> 'FeaturesConfig':
+        return cls(
+            use_module_coordinator=os.getenv('USE_MODULE_COORDINATOR', 'true').lower() == 'true',
+            use_workflow_integrations=os.getenv('USE_WORKFLOW_INTEGRATIONS', 'true').lower() == 'true',
+            use_fallback_manager=os.getenv('USE_FALLBACK_MANAGER', 'true').lower() == 'true'
+        )
+
+@dataclass
+class BackpressureConfig:
+    """Конфигурация backpressure для стримов"""
+    max_concurrent_streams: int = 50
+    idle_timeout_seconds: int = 300
+    max_message_rate_per_second: int = 10
+    grace_period_seconds: int = 30
+    
+    @classmethod
+    def from_env(cls) -> 'BackpressureConfig':
+        return cls(
+            max_concurrent_streams=int(os.getenv('BACKPRESSURE_MAX_STREAMS', '50')),
+            idle_timeout_seconds=int(os.getenv('BACKPRESSURE_IDLE_TIMEOUT', '300')),
+            max_message_rate_per_second=int(os.getenv('BACKPRESSURE_MAX_RATE', '10')),
+            grace_period_seconds=int(os.getenv('BACKPRESSURE_GRACE_PERIOD', '30'))
+        )
+    
+    @classmethod
+    def from_env_dev(cls) -> 'BackpressureConfig':
+        """Конфигурация для dev окружения"""
+        return cls(
+            max_concurrent_streams=10,
+            idle_timeout_seconds=60,
+            max_message_rate_per_second=5,
+            grace_period_seconds=10
+        )
+    
+    @classmethod
+    def from_env_stage(cls) -> 'BackpressureConfig':
+        """Конфигурация для stage окружения"""
+        return cls(
+            max_concurrent_streams=25,
+            idle_timeout_seconds=180,
+            max_message_rate_per_second=8,
+            grace_period_seconds=20
+        )
+    
+    @classmethod
+    def from_env_prod(cls) -> 'BackpressureConfig':
+        """Конфигурация для prod окружения"""
+        return cls(
+            max_concurrent_streams=50,
+            idle_timeout_seconds=300,
+            max_message_rate_per_second=10,
+            grace_period_seconds=30
+        )
+
+@dataclass
+class KillSwitchesConfig:
+    """Конфигурация kill-switch"""
+    disable_module_coordinator: bool = False
+    disable_workflow_integrations: bool = False
+    
+    @classmethod
+    def from_env(cls) -> 'KillSwitchesConfig':
+        return cls(
+            disable_module_coordinator=os.getenv('NEXY_KS_DISABLE_MODULE_COORDINATOR', 'false').lower() == 'true',
+            disable_workflow_integrations=os.getenv('NEXY_KS_DISABLE_WORKFLOW_INTEGRATIONS', 'false').lower() == 'true'
+        )
+
+@dataclass
 class UnifiedServerConfig:
     """Централизованная конфигурация всего сервера"""
     database: DatabaseConfig = field(default_factory=DatabaseConfig.from_env)
@@ -264,6 +339,9 @@ class UnifiedServerConfig:
     session: SessionConfig = field(default_factory=SessionConfig.from_env)
     interrupt: InterruptConfig = field(default_factory=InterruptConfig.from_env)
     logging: LoggingConfig = field(default_factory=LoggingConfig.from_env)
+    features: FeaturesConfig = field(default_factory=FeaturesConfig.from_env)
+    kill_switches: KillSwitchesConfig = field(default_factory=KillSwitchesConfig.from_env)
+    backpressure: BackpressureConfig = field(default_factory=BackpressureConfig.from_env)
     
     def __post_init__(self):
         """Пост-инициализация для валидации"""
@@ -322,6 +400,47 @@ class UnifiedServerConfig:
         }
         
         return config_mapping.get(module_name, {})
+    
+    def is_feature_enabled(self, feature_name: str) -> bool:
+        """
+        Проверка, включен ли фича-флаг
+        
+        Args:
+            feature_name: Имя фича-флага
+            
+        Returns:
+            True если фича включена, False иначе
+        """
+        if not hasattr(self, 'features'):
+            return False
+        
+        feature_map = {
+            'use_module_coordinator': self.features.use_module_coordinator,
+            'use_workflow_integrations': self.features.use_workflow_integrations,
+            'use_fallback_manager': self.features.use_fallback_manager
+        }
+        
+        return feature_map.get(feature_name, False)
+    
+    def is_kill_switch_active(self, kill_switch_name: str) -> bool:
+        """
+        Проверка, активен ли kill-switch
+        
+        Args:
+            kill_switch_name: Имя kill-switch
+            
+        Returns:
+            True если kill-switch активен, False иначе
+        """
+        if not hasattr(self, 'kill_switches'):
+            return False
+        
+        kill_switch_map = {
+            'disable_module_coordinator': self.kill_switches.disable_module_coordinator,
+            'disable_workflow_integrations': self.kill_switches.disable_workflow_integrations
+        }
+        
+        return kill_switch_map.get(kill_switch_name, False)
     
     def get_provider_config(self, provider_name: str) -> Dict[str, Any]:
         """
@@ -441,6 +560,17 @@ class UnifiedServerConfig:
         session = SessionConfig(**config_dict.get('session', {}))
         interrupt = InterruptConfig(**config_dict.get('interrupt', {}))
         logging_config = LoggingConfig(**config_dict.get('logging', {}))
+        features = FeaturesConfig(**config_dict.get('features', {}))
+        kill_switches = KillSwitchesConfig(**config_dict.get('kill_switches', {}))
+        
+        # Backpressure config с учетом окружения
+        env = os.getenv('NEXY_ENV', 'prod').lower()
+        if env == 'dev':
+            backpressure = BackpressureConfig.from_env_dev()
+        elif env == 'stage':
+            backpressure = BackpressureConfig.from_env_stage()
+        else:
+            backpressure = BackpressureConfig(**config_dict.get('backpressure', {}))
         
         return cls(
             database=database,
@@ -450,7 +580,10 @@ class UnifiedServerConfig:
             memory=memory,
             session=session,
             interrupt=interrupt,
-            logging=logging_config
+            logging=logging_config,
+            features=features,
+            kill_switches=kill_switches,
+            backpressure=backpressure
         )
     
     def get_status(self) -> Dict[str, Any]:

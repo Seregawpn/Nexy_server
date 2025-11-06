@@ -4,19 +4,12 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, AsyncGenerator
-from enum import Enum
+from typing import Dict, Any, Optional, AsyncIterator, Union
+
+from .module_status import ModuleStatus, ModuleState
 
 logger = logging.getLogger(__name__)
 
-class ModuleStatus(Enum):
-    """Статус модуля"""
-    UNINITIALIZED = "uninitialized"
-    INITIALIZING = "initializing"
-    READY = "ready"
-    PROCESSING = "processing"
-    ERROR = "error"
-    STOPPED = "stopped"
 
 class UniversalModuleInterface(ABC):
     """
@@ -24,85 +17,90 @@ class UniversalModuleInterface(ABC):
     
     Обеспечивает стандартный способ взаимодействия между модулями
     без знания о конкретной реализации.
+    
+    Все модули должны реализовывать этот интерфейс для единообразного
+    взаимодействия через координатор модулей.
     """
     
-    def __init__(self, name: str, config: Dict[str, Any]):
+    def __init__(self, name: str):
         """
         Инициализация модуля
         
         Args:
             name: Имя модуля
-            config: Конфигурация модуля
         """
         self.name = name
-        self.config = config
-        self.status = ModuleStatus.UNINITIALIZED
-        self.is_initialized = False
-        
+        self._status = ModuleStatus(state=ModuleState.INIT)
         logger.info(f"Module {self.name} created")
     
     @abstractmethod
-    async def initialize(self) -> bool:
+    async def initialize(self, config: dict) -> None:
         """
         Инициализация модуля
         
-        Returns:
-            True если инициализация успешна, False иначе
+        Args:
+            config: Конфигурация модуля (из unified_config)
+        
+        Raises:
+            Exception: Если инициализация не удалась
         """
         pass
     
     @abstractmethod
-    async def process(self, input_data: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
+    async def process(self, request: Any) -> Union[Any, AsyncIterator[Any]]:
         """
-        Основная обработка данных
+        Основная обработка запроса
         
         Args:
-            input_data: Входные данные для обработки
+            request: Входной запрос (тип зависит от модуля)
             
-        Yields:
-            Результаты обработки
+        Returns:
+            Результат обработки (может быть обычным значением или AsyncIterator для streaming)
+            
+        Raises:
+            Exception: Если обработка не удалась
         """
         pass
     
     @abstractmethod
-    async def cleanup(self) -> bool:
+    async def cleanup(self) -> None:
         """
         Очистка ресурсов модуля
         
-        Returns:
-            True если очистка успешна, False иначе
+        Вызывается при остановке сервера или перезагрузке модуля.
         """
         pass
     
-    def get_status(self) -> Dict[str, Any]:
+    @abstractmethod
+    def status(self) -> ModuleStatus:
         """
         Получение статуса модуля
         
         Returns:
+            ModuleStatus с текущим состоянием модуля
+        """
+        pass
+    
+    def get_status_dict(self) -> Dict[str, Any]:
+        """
+        Получение статуса модуля в виде словаря
+        
+        Returns:
             Словарь со статусом модуля
         """
-        return {
-            "name": self.name,
-            "status": self.status.value,
-            "is_initialized": self.is_initialized,
-            "config_keys": list(self.config.keys()) if self.config else []
-        }
-    
-    def set_status(self, status: ModuleStatus):
-        """Установка статуса модуля"""
-        self.status = status
-        logger.debug(f"Module {self.name} status changed to {status.value}")
+        status_dict = self.status().to_dict()
+        status_dict["name"] = self.name
+        return status_dict
     
     def __str__(self) -> str:
         """Строковое представление модуля"""
-        return f"Module({self.name}, status={self.status.value})"
+        return f"Module({self.name}, state={self.status().state.value})"
     
     def __repr__(self) -> str:
         """Представление модуля для отладки"""
         return (
             f"UniversalModuleInterface("
             f"name='{self.name}', "
-            f"status='{self.status.value}', "
-            f"initialized={self.is_initialized}"
+            f"state='{self.status().state.value}'"
             f")"
         )

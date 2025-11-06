@@ -1,58 +1,53 @@
-#!/usr/bin/env python3
 """
-Новый GrpcServiceManager с интеграцией всех service интеграций
+Новый GrpcServiceManager с использованием ModuleCoordinator
+Реализует PR-2.1: миграция на координатор модулей
 """
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional, AsyncGenerator, List
+from typing import Dict, Any, Optional, AsyncGenerator
 from datetime import datetime
 
-from integrations.core.universal_module_interface import UniversalModuleInterface, ModuleStatus
+from integrations.core.universal_module_interface import UniversalModuleInterface
+from integrations.core.module_status import ModuleStatus, ModuleState
+from integrations.service_integrations.module_coordinator import ModuleCoordinator
 from integrations.service_integrations.grpc_service_integration import GrpcServiceIntegration
-from integrations.service_integrations.module_coordinator_integration import ModuleCoordinatorIntegration
 from integrations.workflow_integrations.streaming_workflow_integration import StreamingWorkflowIntegration
 from integrations.workflow_integrations.memory_workflow_integration import MemoryWorkflowIntegration
 from integrations.workflow_integrations.interrupt_workflow_integration import InterruptWorkflowIntegration
 
-# Импорты модулей
-from modules.text_processing import TextProcessor
-from modules.audio_generation import AudioProcessor
-from modules.memory_management import MemoryManager
-from modules.database import DatabaseManager
-from modules.session_management import SessionManager
-from modules.interrupt_handling import InterruptManager
-from modules.text_filtering import TextFilterManager
+from config.unified_config import get_config
+from integrations.core.module_factory import ModuleFactory
 
 from modules.grpc_service.config import GrpcServiceConfig
 
 logger = logging.getLogger(__name__)
 
+
 class GrpcServiceManager(UniversalModuleInterface):
     """
-    Новый GrpcServiceManager с полной интеграцией всех service интеграций
+    GrpcServiceManager с использованием ModuleCoordinator
     
-    Использует новую архитектуру:
-    - Service интеграции для координации
-    - Workflow интеграции для потоков данных
-    - Модули для бизнес-логики
+    Использует новый подход:
+    - ModuleCoordinator для управления модулями
+    - Все модули регистрируются через координатор
+    - Прямые импорты модулей убраны
     """
     
     def __init__(self, config: Optional[GrpcServiceConfig] = None):
         """
-        Инициализация нового менеджера gRPC сервиса
+        Инициализация менеджера gRPC сервиса
         
         Args:
             config: Конфигурация gRPC сервиса
         """
-        # Инициализируем базовый класс
-        config_dict = config.__dict__ if config else {}
-        super().__init__("grpc_service", config_dict)
+        super().__init__(name="grpc_service")
         
         self.config = config or GrpcServiceConfig()
+        self.unified_config = get_config()
         
-        # Модули
-        self.modules: Dict[str, UniversalModuleInterface] = {}
+        # ModuleCoordinator (новый подход)
+        self.coordinator: Optional[ModuleCoordinator] = None
         
         # Workflow интеграции
         self.streaming_workflow: Optional[StreamingWorkflowIntegration] = None
@@ -61,365 +56,330 @@ class GrpcServiceManager(UniversalModuleInterface):
         
         # Service интеграции
         self.grpc_service_integration: Optional[GrpcServiceIntegration] = None
-        self.module_coordinator: Optional[ModuleCoordinatorIntegration] = None
+        
+        # Статус
+        self._status = ModuleStatus(state=ModuleState.INIT)
+        self._use_coordinator = False  # Определяется при инициализации
         
         logger.info("gRPC Service Manager created")
     
-    async def initialize(self) -> bool:
+    async def initialize(self, config: dict) -> None:
         """
-        Инициализация нового менеджера gRPC сервиса
+        Инициализация менеджера gRPC сервиса
         
-        Returns:
-            True если инициализация успешна, False иначе
+        Args:
+            config: Конфигурация модуля (из unified_config)
+        
+        Raises:
+            Exception: Если инициализация не удалась
         """
         try:
-            logger.info("Initializing gRPC Service Manager...")
+            self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
+            logger.info("Инициализация gRPC Service Manager...")
             
-            # 1. Инициализируем все модули
-            await self._initialize_modules()
+            # Проверяем фича-флаг и kill-switch
+            use_coordinator = (
+                self.unified_config.is_feature_enabled('use_module_coordinator') and
+                not self.unified_config.is_kill_switch_active('disable_module_coordinator')
+            )
             
-            # 2. Создаем workflow интеграции
-            await self._create_workflow_integrations()
+            self._use_coordinator = use_coordinator
             
-            # 3. Создаем service интеграции
-            await self._create_service_integrations()
+            if use_coordinator:
+                logger.info("✅ Используется ModuleCoordinator (новый подход)")
+                await self._initialize_with_coordinator()
+            else:
+                logger.warning("⚠️ Используется legacy подход (прямые импорты)")
+                await self._initialize_legacy()
             
-            # 4. Инициализируем все интеграции
-            await self._initialize_integrations()
-            
-            # Устанавливаем флаг инициализации и статус
-            self.is_initialized = True
-            self.set_status(ModuleStatus.READY)
-            
-            logger.info("gRPC Service Manager initialized successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize gRPC Service Manager: {e}")
-            return False
-    
-    async def _initialize_modules(self):
-        """Инициализация всех модулей"""
-        logger.info("Initializing modules...")
-        
-        try:
-            # Создаем модули
-            self.modules['text_processing'] = TextProcessor()
-            self.modules['audio_generation'] = AudioProcessor()
-            self.modules['memory_management'] = MemoryManager()
-            self.modules['database'] = DatabaseManager()
-            self.modules['session_management'] = SessionManager()
-            self.modules['interrupt_handling'] = InterruptManager()
-            self.modules['text_filtering'] = TextFilterManager()
-            
-            # Инициализируем модули
-            for name, module in self.modules.items():
-                try:
-                    logger.info(f"🔍 ДИАГНОСТИКА: Инициализация модуля {name}")
-                    logger.info(f"   → module type: {type(module)}")
-                    logger.info(f"   → module object: {module}")
-                    
-                    result = await module.initialize()
-                    logger.info(f"   → initialize() result: {result}")
-                    
-                    # Проверяем состояние после инициализации
-                    if hasattr(module, 'is_initialized'):
-                        logger.info(f"   → module.is_initialized: {module.is_initialized}")
-                    
-                    # Подключаем DatabaseManager к MemoryManager после инициализации базы
-                    if name == 'database':
-                        memory_manager = self.modules.get('memory_management')
-                        if memory_manager and hasattr(memory_manager, 'set_database_manager'):
-                            memory_manager.set_database_manager(module)
-
-                    logger.info(f"✅ Module {name} initialized")
-                except Exception as e:
-                    logger.error(f"❌ Failed to initialize module {name}: {e}")
-                    import traceback
-                    logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            self._status = ModuleStatus(state=ModuleState.READY, health="ok")
+            logger.info("✅ gRPC Service Manager инициализирован")
             
         except Exception as e:
-            logger.error(f"❌ Error initializing modules: {e}")
+            self._status = ModuleStatus(
+                state=ModuleState.ERROR,
+                health="down",
+                last_error=str(e)
+            )
+            logger.error(f"❌ Ошибка инициализации gRPC Service Manager: {e}")
             raise
     
-    async def _create_workflow_integrations(self):
-        """Создание workflow интеграций"""
-        logger.info("Creating workflow integrations...")
+    async def _initialize_with_coordinator(self) -> None:
+        """Инициализация с использованием ModuleCoordinator (новый подход)"""
+        logger.info("Инициализация с ModuleCoordinator...")
         
+        # Создаем координатор
+        self.coordinator = ModuleCoordinator(self.unified_config.__dict__)
+        
+        # Регистрируем модули через координатор
+        await self._register_modules()
+        
+        # Инициализируем координатор
+        await self.coordinator.initialize_all()
+        
+        # Создаем workflow интеграции (используют модули из координатора)
+        await self._create_workflow_integrations_with_coordinator()
+        
+        # Создаем service интеграции
+        await self._create_service_integrations()
+        
+        # Инициализируем интеграции
+        await self._initialize_integrations()
+    
+    async def _initialize_legacy(self) -> None:
+        """Legacy инициализация (для отката)"""
+        logger.warning("⚠️ Используется legacy подход - прямой импорт модулей")
+        # Здесь можно оставить старую логику для отката
+        # Но для PR-2.1 мы не реализуем это, так как цель - убрать legacy
+        raise NotImplementedError("Legacy подход не поддерживается в PR-2.1")
+    
+    async def _register_modules(self) -> None:
+        """Регистрация модулей в координаторе через фабрику"""
+        logger.info("Регистрация модулей в координаторе через ModuleFactory...")
+
+        # Получаем конфигурации модулей из unified_config
+        modules_config = {
+            'text_processing': self.unified_config.get_module_config('text_processing'),
+            'audio_generation': self.unified_config.get_module_config('audio'),
+            'memory_management': self.unified_config.get_module_config('memory'),
+            'database': self.unified_config.get_module_config('database'),
+            'session_management': self.unified_config.get_module_config('session'),
+            'interrupt_handling': self.unified_config.get_module_config('interrupt'),
+            'text_filtering': {},  # Конфигурация будет из TextFilteringConfig
+        }
+
+        # Список модулей для регистрации
+        capabilities = [
+            'text_processing',
+            'audio_generation',
+            'memory_management',
+            'database',
+            'session_management',
+            'interrupt_handling',
+            'text_filtering',
+        ]
+
+        # Создаём и регистрируем модули через фабрику
+        for capability in capabilities:
+            try:
+                # Создаём модуль через фабрику (без прямого импорта!)
+                module = ModuleFactory.create(capability)
+
+                # Регистрируем в координаторе
+                module_config = modules_config.get(capability, {})
+                await self.coordinator.register(capability, module, module_config)
+                logger.info(f"✅ Модуль '{capability}' создан через фабрику и зарегистрирован")
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка регистрации модуля '{capability}': {e}")
+                raise
+    
+    async def _create_workflow_integrations_with_coordinator(self) -> None:
+        """Создание workflow интеграций с использованием координатора"""
+        logger.info("Создание workflow интеграций с координатором...")
+
         try:
-            # ДИАГНОСТИКА: проверяем модули перед созданием интеграций
-            logger.info(f"🔍 ДИАГНОСТИКА: Создание workflow интеграций")
-            text_processor = self.modules.get('text_processing')
-            audio_processor = self.modules.get('audio_generation')
-            
-            logger.info(f"   → text_processor: {text_processor}")
-            logger.info(f"   → audio_processor: {audio_processor}")
-            
-            if text_processor:
-                logger.info(f"   → text_processor.is_initialized: {getattr(text_processor, 'is_initialized', 'NO_ATTR')}")
-            if audio_processor:
-                logger.info(f"   → audio_processor.is_initialized: {getattr(audio_processor, 'is_initialized', 'NO_ATTR')}")
-            
+            # Получаем модули из координатора
+            text_module = self.coordinator.get('text_processing')
+            audio_module = self.coordinator.get('audio_generation')
+            memory_module = self.coordinator.get('memory_management')
+            interrupt_module = self.coordinator.get('interrupt_handling')
+            filter_module = self.coordinator.get('text_filtering')
+
+            # TODO (TECH-DEBT): Workflow интеграции требуют рефакторинга
+            # Они должны работать через module.process(), а не напрямую с процессорами
+            # ВРЕМЕННОЕ РЕШЕНИЕ: используем get_processor/get_manager для совместимости
+            # ISSUE: https://github.com/nexy/server/issues/XXX
+            # Причина: StreamingWorkflowIntegration/MemoryWorkflowIntegration/InterruptWorkflowIntegration
+            #          ожидают внутренние объекты (text_processor, audio_processor, etc.)
+            #          вместо работы через UniversalModuleInterface.process()
+
+            text_processor = text_module.get_processor() if hasattr(text_module, 'get_processor') else None
+            audio_processor = audio_module.get_processor() if hasattr(audio_module, 'get_processor') else None
+            memory_manager = memory_module.get_manager() if hasattr(memory_module, 'get_manager') else None
+            interrupt_manager = interrupt_module.get_manager() if hasattr(interrupt_module, 'get_manager') else None
+            filter_manager = filter_module.get_manager() if hasattr(filter_module, 'get_manager') else None
+
             # Создаем workflow интеграции с модулями
-            text_filter_manager = self.modules.get('text_filtering')
             self.streaming_workflow = StreamingWorkflowIntegration(
                 text_processor=text_processor,
                 audio_processor=audio_processor,
                 memory_workflow=None,  # Будет установлен ниже
-                text_filter_manager=text_filter_manager
+                text_filter_manager=filter_manager
             )
-            
+
             self.memory_workflow = MemoryWorkflowIntegration(
-                memory_manager=self.modules.get('memory_management')
+                memory_manager=memory_manager
             )
-            
+
             self.interrupt_workflow = InterruptWorkflowIntegration(
-                interrupt_manager=self.modules.get('interrupt_handling')
+                interrupt_manager=interrupt_manager
             )
-            
+
             # Устанавливаем memory_workflow в streaming_workflow
             self.streaming_workflow.memory_workflow = self.memory_workflow
-            
-            logger.info("✅ Workflow integrations created")
-            
+
+            logger.info("✅ Workflow интеграции созданы с использованием координатора")
+            logger.warning("⚠️ TECH-DEBT: Workflow интеграции используют legacy get_processor/get_manager")
+
         except Exception as e:
-            logger.error(f"❌ Error creating workflow integrations: {e}")
+            logger.error(f"❌ Ошибка создания workflow интеграций: {e}")
             raise
     
-    async def _create_service_integrations(self):
+    async def _create_service_integrations(self) -> None:
         """Создание service интеграций"""
-        logger.info("Creating service integrations...")
+        logger.info("Создание service интеграций...")
         
         try:
-            # Создаем service интеграции
             self.grpc_service_integration = GrpcServiceIntegration(
                 streaming_workflow=self.streaming_workflow,
                 memory_workflow=self.memory_workflow,
                 interrupt_workflow=self.interrupt_workflow
             )
             
-            self.module_coordinator = ModuleCoordinatorIntegration(self.modules)
-            
-            logger.info("✅ Service integrations created")
+            logger.info("✅ Service интеграции созданы")
             
         except Exception as e:
-            logger.error(f"❌ Error creating service integrations: {e}")
+            logger.error(f"❌ Ошибка создания service интеграций: {e}")
             raise
     
-    async def _initialize_integrations(self):
+    async def _initialize_integrations(self) -> None:
         """Инициализация всех интеграций"""
-        logger.info("Initializing integrations...")
+        logger.info("Инициализация интеграций...")
         
         try:
             # Инициализируем workflow интеграции
             if self.streaming_workflow:
                 await self.streaming_workflow.initialize()
-                logger.info("✅ StreamingWorkflowIntegration initialized")
+                logger.info("✅ StreamingWorkflowIntegration инициализирован")
             
             if self.memory_workflow:
                 await self.memory_workflow.initialize()
-                logger.info("✅ MemoryWorkflowIntegration initialized")
+                logger.info("✅ MemoryWorkflowIntegration инициализирован")
             
             if self.interrupt_workflow:
                 await self.interrupt_workflow.initialize()
-                logger.info("✅ InterruptWorkflowIntegration initialized")
+                logger.info("✅ InterruptWorkflowIntegration инициализирован")
             
             # Инициализируем service интеграции
             if self.grpc_service_integration:
                 await self.grpc_service_integration.initialize()
-                logger.info("✅ GrpcServiceIntegration initialized")
-            
-            if self.module_coordinator:
-                await self.module_coordinator.initialize()
-                logger.info("✅ ModuleCoordinatorIntegration initialized")
+                logger.info("✅ GrpcServiceIntegration инициализирован")
             
         except Exception as e:
-            logger.error(f"❌ Error initializing integrations: {e}")
+            logger.error(f"❌ Ошибка инициализации интеграций: {e}")
             raise
     
-    async def start(self) -> bool:
-        """Запуск gRPC сервиса"""
-        try:
-            logger.info("Starting gRPC Service Manager...")
-            
-            # Запускаем все модули через ModuleCoordinatorIntegration
-            if self.module_coordinator:
-                start_result = await self.module_coordinator.start_all_modules()
-                if not start_result.get('success', False):
-                    logger.error("Failed to start some modules")
-                    return False
-            
-            logger.info("gRPC Service Manager started successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error starting gRPC Service Manager: {e}")
-            return False
-    
-    async def stop(self) -> bool:
-        """Остановка gRPC сервиса"""
-        try:
-            logger.info("Stopping gRPC Service Manager...")
-            
-            # Останавливаем все модули через ModuleCoordinatorIntegration
-            if self.module_coordinator:
-                stop_result = await self.module_coordinator.stop_all_modules()
-                if not stop_result.get('success', False):
-                    logger.error("Failed to stop some modules")
-                    return False
-            
-            logger.info("gRPC Service Manager stopped successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error stopping gRPC Service Manager: {e}")
-            return False
-    
-    async def process(self, input_data: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
+    async def process(self, request: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Основная обработка данных через gRPC сервис
+        Обработка запроса через gRPC сервис
         
         Args:
-            input_data: Входные данные для обработки
+            request: Входные данные для обработки
             
         Yields:
             Результаты обработки
         """
         try:
-            self.set_status(ModuleStatus.PROCESSING)
+            self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
             
             # Обрабатываем через GrpcServiceIntegration
             if self.grpc_service_integration:
-                async for result in self.grpc_service_integration.process_request_complete(input_data):
+                async for result in self.grpc_service_integration.process_request_complete(request):
                     yield result
             else:
-                logger.error("GrpcServiceIntegration not available")
+                logger.error("GrpcServiceIntegration не доступен")
                 yield {
                     'success': False,
-                    'text_response': '',
-                    'audio_chunks': [],
                     'error': 'GrpcServiceIntegration not available'
                 }
                 
         except Exception as e:
-            logger.error(f"Error in gRPC Service Manager process: {e}")
+            logger.error(f"Ошибка обработки в gRPC Service Manager: {e}")
             yield {
                 'success': False,
-                'text_response': '',
-                'audio_chunks': [],
                 'error': str(e)
             }
         finally:
-            self.set_status(ModuleStatus.READY)
+            self._status = ModuleStatus(state=ModuleState.READY, health="ok")
     
-    async def process_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def cleanup(self) -> None:
         """
-        Обработка запроса через новые интеграции (для совместимости)
-        
-        Args:
-            request_data: Данные запроса
-            
-        Returns:
-            Результат обработки
+        Очистка ресурсов gRPC сервиса
         """
         try:
-            logger.info(f"🔄 Processing request through integrated architecture...")
-            
-            # Получаем первый результат из process()
-            async for result in self.process(request_data):
-                return result
-                
-        except Exception as e:
-            logger.error(f"Error in process_request: {e}")
-            return {
-                'success': False,
-                'text_response': '',
-                'audio_chunks': [],
-                'error': str(e)
-            }
-    
-    async def get_status(self) -> Dict[str, Any]:
-        """
-        Получение статуса gRPC сервиса
-        
-        Returns:
-            Словарь со статусом
-        """
-        try:
-            status = {
-                'module_name': 'grpc_service',
-                'is_initialized': self.is_initialized,
-                'status': 'ready' if self.is_initialized else 'not_initialized',
-                'modules_count': len(self.modules),
-                'modules_status': {}
-            }
-            
-            # Получаем статус модулей
-            for name, module in self.modules.items():
-                try:
-                    if hasattr(module, 'get_status'):
-                        module_status = await module.get_status()
-                        status['modules_status'][name] = module_status
-                    else:
-                        status['modules_status'][name] = 'no_status_method'
-                except Exception as e:
-                    status['modules_status'][name] = f'error: {str(e)}'
-            
-            # Получаем статус service интеграций
-            if self.grpc_service_integration:
-                status['grpc_service_integration'] = await self.grpc_service_integration.get_status()
-            
-            if self.module_coordinator:
-                status['module_coordinator'] = await self.module_coordinator.get_status()
-            
-            return status
-            
-        except Exception as e:
-            logger.error(f"Error getting status: {e}")
-            return {
-                'module_name': 'grpc_service',
-                'is_initialized': False,
-                'error': str(e)
-            }
-    
-    async def cleanup(self):
-        """Очистка ресурсов gRPC сервиса"""
-        try:
-            logger.info("Cleaning up gRPC Service Manager...")
+            logger.info("Очистка gRPC Service Manager...")
             
             # Очищаем service интеграции
             if self.grpc_service_integration:
                 await self.grpc_service_integration.cleanup()
-                logger.info("✅ GrpcServiceIntegration cleaned up")
-            
-            if self.module_coordinator:
-                await self.module_coordinator.cleanup()
-                logger.info("✅ ModuleCoordinatorIntegration cleaned up")
-            
-            # Очищаем модули
-            for name, module in self.modules.items():
-                try:
-                    if hasattr(module, 'cleanup'):
-                        await module.cleanup()
-                        logger.info(f"✅ Module {name} cleaned up")
-                except Exception as e:
-                    logger.error(f"❌ Error cleaning up module {name}: {e}")
+                logger.info("✅ GrpcServiceIntegration очищен")
             
             # Очищаем workflow интеграции
             if self.streaming_workflow:
                 await self.streaming_workflow.cleanup()
-                logger.info("✅ StreamingWorkflowIntegration cleaned up")
+                logger.info("✅ StreamingWorkflowIntegration очищен")
             
             if self.memory_workflow:
                 await self.memory_workflow.cleanup()
-                logger.info("✅ MemoryWorkflowIntegration cleaned up")
+                logger.info("✅ MemoryWorkflowIntegration очищен")
             
             if self.interrupt_workflow:
                 await self.interrupt_workflow.cleanup()
-                logger.info("✅ InterruptWorkflowIntegration cleaned up")
+                logger.info("✅ InterruptWorkflowIntegration очищен")
             
-            self.is_initialized = False
-            logger.info("✅ gRPC Service Manager cleaned up")
+            # Очищаем координатор (это очистит все модули)
+            if self.coordinator:
+                await self.coordinator.cleanup_all()
+                logger.info("✅ ModuleCoordinator очищен")
+            
+            self._status = ModuleStatus(state=ModuleState.STOPPED, health="down")
+            logger.info("✅ gRPC Service Manager очищен")
             
         except Exception as e:
-            logger.error(f"❌ Error cleaning up gRPC Service Manager: {e}")
+            logger.error(f"❌ Ошибка очистки gRPC Service Manager: {e}")
+            self._status = ModuleStatus(
+                state=ModuleState.ERROR,
+                health="down",
+                last_error=str(e)
+            )
+    
+    def status(self) -> ModuleStatus:
+        """
+        Получение статуса gRPC сервиса
+        
+        Returns:
+            ModuleStatus с текущим состоянием
+        """
+        return self._status
+    
+    def get_status_dict(self) -> Dict[str, Any]:
+        """
+        Получение статуса в виде словаря
+        
+        Returns:
+            Словарь со статусом
+        """
+        status_obj = self.status()
+        status_dict = status_obj.to_dict() if hasattr(status_obj, 'to_dict') else {
+            'state': status_obj.state.value if hasattr(status_obj.state, 'value') else str(status_obj.state),
+            'health': status_obj.health if hasattr(status_obj, 'health') else 'unknown'
+        }
+        status_dict['name'] = self.name
+        status_dict['use_coordinator'] = self._use_coordinator
+        
+        # Добавляем статус координатора
+        if self.coordinator:
+            status_dict['coordinator'] = self.coordinator.get_status()
+        
+        return status_dict
+    
+    def get_coordinator(self) -> Optional[ModuleCoordinator]:
+        """
+        Получение координатора (для совместимости)
+        
+        Returns:
+            Экземпляр ModuleCoordinator или None
+        """
+        return self.coordinator
+

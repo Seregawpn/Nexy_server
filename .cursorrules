@@ -1,208 +1,309 @@
-# Nexy AI Assistant - Development Rules
+ # Nexy Server Development Rules
 
-> Детализированные правила лежат в `client/.cursorrules` и `server/.cursorrules`. Этот файл фиксирует общие принципы и минимальный shared-контекст.
-
-## 1. Контекст перед изменениями
-Перед началом работы обязательно изучи актуальные материалы проекта:
-- `Docs/PRODUCT_CONCEPT.md` — концепт продукта, UX и сценарии SLEEPING/LISTENING/PROCESSING
-- `Docs/GLOBAL_DELIVERY_PLAN.md` — глобальный план поставки, Azure VM, требования к подписи
+## 1. Базовый контекст
+Перед изменениями обнови контекст по ключевым файлам:
+- `Docs/PRODUCT_CONCEPT.md` — пользовательские сценарии и режимы
+- `Docs/ARCHITECTURE_OVERVIEW.md` — связь модулей и интеграций
+- `Docs/PACKAGING_FINAL_GUIDE.md` и `client/modules/*/MACOS_PACKAGING_GUIDE.md` — пайплайн сборки и подписи
+- `Docs/CURRENT_STATUS_REPORT.md` — актуальные истории и фичи
+- `Docs/GLOBAL_DELIVERY_PLAN.md` — требования к доставке и Azure VM
 - `Docs/GO_TO_MARKET_BETA_PLAN_RU.md` — план выхода на рынок
-- `Docs/PACKAGING_FINAL_GUIDE.md` — финальный гайд по упаковке PKG
-- `Docs/ARCHITECTURE_OVERVIEW.md` — архитектура клиента и сервера
-- `Docs/CURRENT_STATUS_REPORT.md` — актуальные пользовательские истории
 
-## 2. Технический baseline (клиент)
-- macOS меню-бар приложение (rumps)
-- Обязательные разрешения: microphone, screen_capture, network, notifications
-- gRPC клиент для связи с сервером (async/await)
-- Автообновления через Sparkle (silent)
-- Azure VM: 20.151.51.172, Team ID: 5NKLL2CLB9, Bundle ID: com.nexy.assistant
+## 2. Среда и запуск
+- Python 3.11+, разворачивай в отдельном `venv`; зависимости — `server/requirements.txt`
+- Точка входа: `python server/main.py` (внутренние порты: aiohttp health-check 8080, gRPC 50051, update-сервер 8081 при доступности)
+- Перед запуском загрузи переменные окружения из `server/config.env`
+- **Внешний доступ:** HTTPS порт 443 через Nginx (HTTP/2) — gRPC корневой путь `/`, Updates префикс `/updates/`
+- Внутренние порты (8080, 50051, 8081) слушаются на localhost; доступ наружу только через Nginx reverse proxy
+- Для регенерации gRPC артефактов (из корня server репозитория):
+  ```bash
+  cd modules/grpc_service
+  python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. streaming.proto
+  ```
+  **Канон пути:** `modules/grpc_service/streaming.proto` (без префикса `server/`, совпадает с CI)
+- Health-check `/health` и `/status` должны оставаться доступными для Azure Container Apps
+- **Nginx/HTTP инварианты:**
+  - `/updates/appcast.xml` → `Cache-Control: public, max-age=60`
+  - `/health` и `/updates/health` → `Cache-Control: public, max-age=30`
+- **Внешние vs внутренние эндпоинты:**
+  - Публичные проверки `health/status/appcast` выполняются только через `https:443` (Nginx)
+  - Внутренние порты (8080/8081/50051) доступны локально или через bastion и не используются в публичных скриптах
 
-Полный набор правил см. в `client/.cursorrules`.
+## 3. Архитектурный каркас
+- `server/modules/` — чистые модули (text_processing, audio_generation, session_management, database, memory_management, interrupt_handling, text_filtering, update, grpc_service)
+- `server/integrations/`
+  - `core/` — универсальные интерфейсы (`UniversalModuleInterface`, `UniversalGrpcIntegration`, `UniversalProviderInterface`, `UniversalFallbackManager`)
+  - `service_integrations/` — обвязка gRPC (`GrpcServiceIntegration`, `ModuleCoordinatorIntegration`)
+  - `workflow_integrations/` — сценарные пайплайны (streaming, memory, interrupt и т.д.)
+- gRPC менеджер собирает активные модули через Module Coordinator; прямых вызовов между модулями быть не должно
+- Модули считаются стабильными; расширяем их конфигурацией, провайдерами или событиями. Новый модуль/интеграция допускается только когда нужного поведения нет и нельзя разумно добавить его в существующие блоки. В таком случае документируй мотивацию и зависимости в `Docs/ARCHITECTURE_OVERVIEW.md` и обновляй конфиг/тесты.
 
-## 3. Технический baseline (сервер)
-- Python 3.11+, запуск через `server/main.py`
-- gRPC сервис из `server/modules/grpc_service/core/grpc_server.py`, протокол описан в `server/modules/grpc_service/streaming.proto`
-- HTTP health-check на 8080 (aiohttp) обязателен для Azure Container Apps
-- Опциональный update-сервер на 8081 из каталога `update-server`
-- Конфигурация из `server/config` и `config.env`; секреты хранятся вне репозитория
-- Модули и интеграции завершены, архитектура описана в `Docs/ARCHITECTURE_OVERVIEW.md`
-- Масштабирование до 100 пользователей с мониторингом в `server/monitoring/`
+## 4. Паттерны модулей и интеграций
+- Каждый модуль наследует `UniversalModuleInterface`: реализуй `initialize`, `process`, `cleanup`, обновляй `ModuleStatus`
+- Интеграции наследуют `UniversalGrpcIntegration` или профильные базовые классы; вся координация идёт через них
+- Влияние на выполнение пайплайнов фиксируй через workflow-интеграции, а не внутри модулей
+- Fallback-логика и провайдеры подключаются через `UniversalFallbackManager`
 
-Подробные серверные требования см. в `server/.cursorrules`.
+## 5. gRPC контракт и взаимодействие с клиентом
+- Любые правки `streaming.proto` → регенерация `streaming_pb2*.py`, обновление клиента, запись изменений в CHANGELOG/документацию
+- Поддерживай обратную совместимость; если невозможна — объяви версию и уведомь клиентскую команду
+- Тестируй новые методы и поля вместе с клиентом (минимум локальный smoke-тест)
 
-## 4. Текущий статус
-Следующие интеграции завершены и должны оставаться стабильными:
-InstanceManagerIntegration, AutostartManagerIntegration, TrayControllerIntegration,
-PermissionsIntegration, InputProcessingIntegration, UpdaterIntegration,
-NetworkManagerIntegration, AudioDeviceIntegration, InterruptManagementIntegration,
-VoiceRecognitionIntegration, ScreenshotCaptureIntegration, HardwareIdIntegration,
-GrpcClientIntegration, SpeechPlaybackIntegration, ModeManagementIntegration,
-SignalIntegration, WelcomeMessageIntegration, VoiceOverDuckingIntegration.
+### 5.1 gRPC Compatibility Policy
+- **Только добавление optional полей** в протокол (breaking изменения запрещены без версионирования)
+- Breaking изменения → `v2` сервис/метод + feature-флаг на сервере
+- **Поддержка обеих версий ≥ 2 релиза** (старая и новая параллельно)
+- **Smoke-тест с текущим клиентом обязателен** перед мерджем
+- **Полный аудит протокола:** `Docs/GRPC_PROTOCOL_AUDIT.md` (таблицы полей, правила совместимости)
+- **CI-проверки протокола:** `Docs/CI_GRPC_CHECKS.md` (smoke/health/port, отсутствие breaking изменений)
 
-### Workflows (новая архитектура):
-- **ListeningWorkflow** - координатор LISTENING режима, дебаунс, умные таймауты
-- **ProcessingWorkflow** - координатор PROCESSING: capture→grpc→playback→SLEEPING
-- **BaseWorkflow** - базовый класс для всех workflows
+## 6. Конфигурация и секреты
+- Основные настройки: `server/config/unified_config_example.yaml` и `server/config/unified_config.py`
+- Ожидаемые переменные берутся из `.env`/`config.env`; секреты (API-ключи, токены) храним вне репозитория
+- Новые параметры документируй в `Docs/ARCHITECTURE_OVERVIEW.md` и добавляй в пример конфигурации
+- Не создавай рассыпанные YAML/JSON; используй существующие загрузчики
 
-### Серверная часть (завершена):
-- 9 модулей полностью реализованы и протестированы
-- Масштабирование до 100 пользователей настроено
-- Система мониторинга активна (`server/monitoring/`)
-- gRPC сервер оптимизирован для высокой нагрузки
-
-## 5. Архитектура и режимы работы
-- Поддерживаются только три режима: SLEEPING (серый, микрофон выключен, фоновое обновление), LISTENING (синий пульс, распознавание речи, обновления остановлены), PROCESSING (желтый спиннер, отправка данных, воспроизведение ответа, обновления остановлены).
-- Переход LISTENING активируется долгим удержанием пробела, отпускание переводит в PROCESSING.
-- Все подсистемы общаются через EventBus.
-- Интеграции тонкие: управляют существующими модулями и не дублируют бизнес-логику.
-- Workflows координируют сложные переходы между режимами: ListeningWorkflow (LISTENING), ProcessingWorkflow (PROCESSING).
-- Перед созданием нового модуля/интеграции повторно используй существующие компоненты. Расширяй их конфигурацией, событиями или провайдерами. Новый блок допускается только когда требуемого поведения нет и его нельзя разумно добавить в текущие; документируй обоснование и зависимости в профильных отчетах.
-
-## 6. Критические запреты
-- Не нарушай EventBus архитектуру и не создавай прямых связей между модулями.
-- Не меняй режим напрямую, используй только события `mode.request`.
-- Не дублируй функционал модулей и не добавляй новые режимы.
-- Не работай с модулями напрямую (только через интеграции) и не дублируй конфигурацию.
-- Не меняй порядок запуска SimpleModuleCoordinator без согласования.
-- Не правь Bundle ID, Team ID и структуру проекта без подтверждения.
-
-## 7. Приоритеты разработки
-Высокий: используй существующие модули, создавай тонкие интеграции, строго следуй EventBus.
-Средний: расширяй интеграции и добавляй события только при реальной необходимости.
-Низкий: создание новых модулей и изменение core архитектуры — только в крайних случаях.
-
-## 8. Паттерн интеграции
-```python
-"""
-Интеграция для <описание>
-Тонкая обертка над существующим модулем
-"""
-import asyncio
-import logging
-from typing import Any, Dict, Optional
-
-from integration.core.base_integration import BaseIntegration
-from modules.<module>.core.<module_class> import <ModuleClass>
-
-logger = logging.getLogger(__name__)
-
-class <FeatureName>Integration(BaseIntegration):
-    def __init__(self, event_bus, state_manager, error_handler, config=None):
-        super().__init__(event_bus, state_manager, error_handler)
-        self.config = config
-        self.module = <ModuleClass>()
-
-    async def initialize(self) -> bool:
-        try:
-            await self.event_bus.subscribe("<event>", self.handle_event)
-            return True
-        except Exception as exc:
-            logger.error("Failed to initialize %s: %s", self.__class__.__name__, exc)
-            return False
-
-    async def start(self) -> bool:
-        try:
-            return await self.module.start()
-        except Exception as exc:
-            logger.error("Failed to start %s: %s", self.__class__.__name__, exc)
-            return False
-
-    async def stop(self) -> bool:
-        try:
-            return await self.module.stop()
-        except Exception as exc:
-            logger.error("Failed to stop %s: %s", self.__class__.__name__, exc)
-            return False
-
-    async def handle_event(self, event: Dict[str, Any]) -> None:
-        try:
-            result = await self.module.process(event)
-            await self.event_bus.publish("<result.event>", result)
-        except Exception as exc:
-            await self.error_handler.handle_error(exc, "handle_event")
+### 6.1 Пример `config.env` (template)
+```
+NEXY_ENV=prod
+GITHUB_TOKEN=...
+# Внутренние порты (localhost через Nginx reverse proxy):
+UPDATE_PORT=8081
+GRPC_PORT=50051
+HEALTH_PORT=8080
+# Внешний доступ клиента: HTTPS 443 (gRPC: корневой путь /, Updates: /updates/...)
 ```
 
-## 9. Работа с событиями и режимами
-- Все публикации и подписки выполняются через EventBus.
-- Режимы запрашиваются событием `mode.request` со ссылкой на источник.
-- Каждая операция, запускающая цепочку действий, должна включать `session_id`.
-- Ошибки публикуются отдельными событиями `<feature>.error` с контекстом.
-
-## 10. Конфигурация
-- Клиент: единственный источник — `client/config/unified_config.yaml`; дополнительные YAML допускаются только после согласования и не должны дублировать параметры.
-- Сервер: параметры в `server/config/` и переменных окружения, секреты вне репозитория.
-- Загружай конфигурацию только через существующие loaders/утилиты, не создавай обособленных глобальных singletons.
-- Пример клиентского раздела:
+### 6.2 Backpressure (unified_config.yaml)
 ```yaml
-my_feature:
-  enabled: true
-  timeout_sec: 5.0
-  retry_attempts: 3
+backpressure:
+  max_concurrent_streams: <int>      # Максимум одновременно открытых StreamAudio
+  idle_timeout_seconds: <int>        # Таймаут для неактивных стримов
+  max_message_rate_per_second: <int> # Максимум сообщений в секунду на стрим
+  grace_period_seconds: <int>        # Период ожидания перед принудительным закрытием
+```
+Дефолты зависят от `NEXY_ENV` (dev/stage/prod). Переменные окружения:
+- `BACKPRESSURE_MAX_STREAMS`
+- `BACKPRESSURE_IDLE_TIMEOUT`
+- `BACKPRESSURE_MAX_RATE`
+- `BACKPRESSURE_GRACE_PERIOD`
+
+**Команды проверок отказов/idle timeout:** см. `Docs/BACKPRESSURE_README.md`
+
+## 7. Логирование и мониторинг
+- **Единый формат (структурированный, без PII):**
+  ```
+  ts=<unix_ts> level=<INFO|WARNING|ERROR> scope=<grpc|module|update|...>
+  method=<rpc> decision=<start|abort|retry|degrade|error|...>
+  ctx={<ключевые оси: mic, screen, device, network, firstRun, appMode, ...}>
+  dur_ms=<int>
+  ```
+- Секреты (ключи, токены) обязаны маскироваться в форматтере; PII не логируется
+- Обязательно логируй старт/остановку сервисов, сигналы обновлений, ошибки gRPC и статусы модулей
+- При расширении логгирования используй стандартный `logging` и централизованные настройки из `main.py`
+- Система мониторинга: используй `server/monitoring/` для отслеживания производительности и ошибок
+- Масштабирование: сервер настроен на 100 пользователей с оптимизированными параметрами
+- **Канон формата/примеров:** см. `Docs/ARCHITECTURE_OVERVIEW.md` и `Docs/BACKPRESSURE_README.md`
+- **Публичные проверки:** `health/status/appcast` выполняются только через `https:443` (Nginx). Внутренние порты доступны локально или через bastion и не используются в публичных скриптах
+
+## 8. Тестирование
+- Для каждого модуля есть сценарий тестирования (например, `python modules/text_processing/test_text_processing.py`)
+- Сохраняй последовательность тестов, указанную в гиде, чтобы не нарушить зависимости
+- Для регрессии gRPC сервиса используй `modules/grpc_service/test_grpc_service.py`
+- При добавлении модулей/интеграций обеспечь отдельный тестовый скрипт и обнови гайд
+- **Update-скрипты:** обязательная сверка `length` из appcast с фактическим размером GitHub-артефакта перед деплоем (предотвращает «битые» установки)
+- **Backpressure тесты:** добавь проверки backpressure/idle-timeout по логам (отказы `stream_limit_exceeded`/`rate_limit_exceeded`; события `stream_idle_timeout`)
+
+## 9. Чеклист изменений
+**Перед началом**
+- Проверь актуальность модульного плана и зависимостей между модулями
+- Уточни, затрагивает ли задача gRPC контракт или конфиг, и подготовь план уведомления клиента
+- Обнови `config.env`/секреты локально (не коммить)
+
+**Во время**
+- Соблюдай разделение: бизнес-логика в модулях, координация в интеграциях
+- Не нарушай статусы модулей (инициализация → ready → processing → cleanup)
+- При необходимости fallback/провайдера — используй `UniversalProviderInterface`
+- Поддерживай чистое async-API, избегай блокирующих вызовов
+
+**SIMPLE-гейт (до Impact-гейта)**
+- [ ] v0 ≤60 LOC, ≤1 файл, без новых фича-флагов/демонов/зависимостей
+- [ ] 1 happy + 1 негативный тест
+- Если не выполняется — микро-ADR (7 строк)
+
+**Перед мерджем — Impact-гейт**
+
+- [ ] Приложен `change_impact.yaml` (оси условий, инварианты, guards, тест-стратегия, метрики, роллаут)
+- [ ] Обновлены `Docs/STATE_CATALOG.md` и/или `client/config/interaction_matrix.yaml` (если задето) — приложена ссылка/дифф на клиентский репозиторий
+- [ ] Есть минимум 8–14 pairwise тестов по выбранным осям + 2 негативных
+- [ ] Логи решений видны локально: `decision=<...> ctx={...} source=<domain>`
+- [ ] Фича-флаг + kill-switch прописаны (см. раздел «Роллаут»)
+- [ ] `/health` и `/updates/health` отдаёт `latest_version` и `latest_build` (строки), `/updates/appcast.xml` содержит тот же номер; логи апдейта без ошибок (HTTPS эндпоинты)
+- [ ] **CI/проверки gRPC:** регенерация protobuf, smoke/health/port, отсутствие breaking изменений в proto (см. `Docs/CI_GRPC_CHECKS.md`)
+- [ ] Проверено, что в логах есть решения/агрегаты метрик
+
+**После**
+- Прогоняй релевантные модульные тесты + smoke gRPC (`modules/grpc_service/test_grpc_service.py`)
+- Проверь, что health-checkи и статусы модулей возвращают ожидаемые данные
+- Обнови документацию/планы, если тронул архитектуру, контракты или конфиг
+- Синхронизируй изменения с клиентской командой, если есть новые поля/события
+
+## 10. Наблюдаемые риски
+- Несогласованные правки `streaming.proto`
+- Отключение health-check (Azure Container Apps остановит сервис)
+- Вмешательство в последовательность инициализации Module Coordinator
+- Утечка секретов через коммиты или логи
+- Отсутствие тестов/обновления гида после изменений
+
+## 11. Напоминание
+Все серверные изменения должны оставаться совместимыми с актуальной клиентской реализацией и не ломать уже завершённые модули. При сомнениях — синхронизируйся с владельцем клиентской части до мержа.
+
+## 11.1 Версионирование и обновления: один канон
+- **Все поля версий всегда строковые**: `CFBundleVersion`, `manifest.version`, `manifest.build`, `sparkle:version`. `build` == `version` (например `"1.0.1"`).
+- **Источник правил:** `Docs/VERSION_FORMAT_CRITICAL_FIX.md` — единственный источник истины (любые прежние ссылки на fixes считаются устаревшими)
+
+**Чеклист перед деплоем:**
+- [ ] `manifest_*.json`: `jq '.version'`, `jq '.build'` возвращают строки
+- [ ] AppCast: `sparkle:version="X.Y.Z"` (строка, совпадает с manifest)
+- [ ] Health: `.latest_version` и `.latest_build` строки, равны manifest/appcast
+- [ ] Размер и SHA файла совпадают с GitHub релизом
+- [ ] Локальные DMG/артефакты не лежат на сервере
+- [ ] **Контроль размеров/подписей:**
+  - `Content-Length` и SHA GitHub артефакта совпадают с AppCast
+  - Локальные DMG/артефакты на сервере запрещены (enforced в CI)
+
+```bash
+# Проверка формата версий
+cat updates/manifests/manifest_*.json | jq '.version, .build'
+# Внешние эндпоинты через HTTPS (внутренние 8081 доступны только через Nginx)
+curl -s https://20.151.51.172/updates/appcast.xml | grep sparkle:version
+curl -s https://20.151.51.172/updates/health | jq '.latest_version, .latest_build'
 ```
 
-## 11. Обработка ошибок и логирование
-- Все ошибки проходят через `error_handler`, прямые `print` запрещены.
-- Логируй значимые события через `logging_manager.py` в формате `YYYY-MM-DD HH:MM:SS - Nexy - LEVEL - Message`.
-- Не записывай PII или секреты в логи.
+## 11.2 Permission Restart Logic — единственная точка решения
+- Решение о рестарте после разрешений — **только** через `permission_restart_gateway(snap)`
+- Запрещена повторная проверка апдейтов в ожидании (убирает гонки)
+- Если используется периодический опрос — он должен быть зафлажен (feature-flag) и выключен по умолчанию
 
-## 12. Чеклист изменений
-Перед началом:
-- Изучи `client/modules/` и актуальные интеграции.
-- Посмотри `unified_config.yaml` и план запуска `SimpleModuleCoordinator`.
-- Определи необходимые события EventBus.
-- Если задача серверная: изучи `server/modules/`, `server/integrations/`, `Docs/ARCHITECTURE_OVERVIEW.md` и актуальные gRPC контракты.
+## 11.3 Only Facts — измеримые критерии
+- Для статусов/отчётов ссылайся на тест-планы и прогоны (скрипт, лог, хэш билда), а не на общие оценки готовности
+- Запрещены формулировки типа «всё готово» без конкретных метрик/прогонов
 
-Во время:
-- Создавай только интеграции, не новые модули.
-- Используй существующие модули и конфигурацию.
-- Все коммуникации выполняй через EventBus и `mode.request` для смены режима.
-- Сохраняй именование в стиле проекта.
-- На сервере: не смешивай клиентскую логику, соблюдай границы API, обновляй `streaming.proto` и генерируй stubs при изменениях.
-- Перед добавлением новой интеграции/модуля проверь возможность расширить существующую; если создаёшь новый компонент, заранее согласуй и задокументируй его необходимость.
 
-После:
-- Добавь интеграцию в `SimpleModuleCoordinator` и проверь порядок.
-- Прогони тесты/моки, чтобы убедиться в отсутствии регрессий.
-- Обнови документацию при необходимости и проверь импорты.
-- Для серверных изменений: обнови `requirements.txt` при добавлении зависимостей, перегенерируй gRPC артефакты и зафиксируй health-checks.
-- **ВЕРСИОНИРОВАНИЕ: При загрузке кода на GitHub ВСЕГДА создавай новую версию через `./scripts/create_version_release.sh vX.Y.Z "Описание"`. НИКОГДА не изменяй текущий код напрямую - только через систему версионирования.**
+## 12. Каталог состояний и матрица взаимодействий
 
-## 13. Стандарты кода и тестирования
-- Python 3.11+, обязательны type hints.
-- gRPC и сетевые операции реализуй с async/await.
-- Конфигурацию загружай через существующие утилиты, секреты храни во внешних источниках (env или Keychain).
-- Для каждой интеграции нужны unit-тесты в `integration/tests/`, мокай внешние зависимости и проверяй переходы между режимами.
-- Sparkle: `appcast_url`, `check_interval` настраиваются через конфиг.
-- Мониторинг: используй `server/monitoring/` для отслеживания производительности и ошибок.
-- Масштабирование: сервер настроен на 100 пользователей с оптимизированными параметрами.
+### 12.1 STATE_CATALOG (Docs/STATE_CATALOG.md)
+- Оси/флаги: `permissions.mic|screen|accessibility`, `device.input`, `network`, `firstRun`, `appMode`, ...
+- Для каждой оси: допустимые состояния, владелец, кто пишет/читает, источник истины, метрики.
+- Ответственный: один владелец документа (по умолчанию: Tech Lead клиента).
 
-## 13.1. Система версионирования (КРИТИЧНО!)
-- **ПРАВИЛО #1:** При загрузке кода на GitHub ВСЕГДА создавай новую версию через `./scripts/create_version_release.sh vX.Y.Z "Описание"`
-- **ПРАВИЛО #2:** НИКОГДА не изменяй текущий код напрямую - только через систему версионирования
-- **ПРАВИЛО #3:** Каждая версия должна иметь уникальный номер и описание изменений
-- **ПРАВИЛО #4:** Используй семантическое версионирование: v1.0.0 (major.minor.patch)
-- **ПРАВИЛО #5:** Все изменения автоматически коммитятся и создается Git тег
-- **ПРАВИЛО #6:** Автоматически создаются архивы и GitHub Release (если установлен gh CLI)
-- **ПРАВИЛО #7:** Доступ к версиям: Git теги, GitHub Releases, архивы
-- **ПРАВИЛО #8:** Переключение между версиями: `git checkout vX.Y.Z`
-- **ПРАВИЛО #9:** Просмотр всех версий: `./scripts/list_releases.sh`
-- **ПРАВИЛО #10:** Документация по версионированию: `RELEASE_MANAGEMENT.md`
+Примечание: путь `client/config/interaction_matrix.yaml` относится к клиентскому репозиторию (кросс-реп).
 
-## 14. Основные принципы
-Архитектура: модульность, событийность, конфигурируемость, тестируемость, расширяемость.
-Разработка: DRY, SOLID, KISS, YAGNI.
-Безопасность: минимальные привилегии, защита данных, валидация входа, TLS/HTTPS для коммуникаций.
+### 12.2 INTERACTION_MATRIX (client/config/interaction_matrix.yaml)
+- Фиксирует только взаимозависимые оси (без полного перебора).
+- Формат правила:
+  - `when: {Permission.mic: denied, appMode: listen} -> decision: abort_listen`
+  - `priority: hard_stop | graceful | preference`
+- Любое изменение >2 осей должно обновлять эту матрицу.
 
-## 15. Золотые правила для ассистента
-1. Сначала изучай существующие решения, потом создавай новое.
-2. Интеграции остаются тонкими — только координация.
-3. EventBus используется для всех коммуникаций.
-4. Смена режимов выполняется через `mode.request`.
-5. Конфигурация хранится в `unified_config.yaml` и не дублируется.
-6. Соблюдай порядок SimpleModuleCoordinator.
-7. Любые ошибки проходят через error_handler.
-8. Логируй существенные действия, избегая чувствительных данных.
-9. Тестируй поведение через события.
-10. Поддерживай документацию в актуальном состоянии.
-11. **ВЕРСИОНИРОВАНИЕ: При загрузке кода на GitHub ВСЕГДА создавай новую версию через `./scripts/create_version_release.sh vX.Y.Z "Описание"`. НИКОГДА не изменяй текущий код напрямую - только через систему версионирования.**
+Пример `interaction_matrix.yaml`:
+
+```yaml
+axes:
+  Permission.mic: [granted, denied, prompt_blocked]
+  Device.input: [default_ok, busy]
+  Network: [online, offline]
+  FirstRun: [true, false]
+rules:
+  - when: {Permission.mic: denied}
+    decision: abort_listen
+    priority: hard_stop
+  - when: {Permission.mic: granted, Device.input: busy, appMode: LISTENING}
+    decision: retry_backoff
+    priority: graceful
+  - when: {Network: offline, appMode: PROCESSING}
+    decision: degrade_offline
+    priority: graceful
+```
+
+
+## 13. FSM + guard-условия на домены
+
+- Для доменов `audio`, `permissions`, `mode_management` решения принимаются через FSM-таблицы: `(state, event) --[guard]--> (new_state, action)`.
+- Guard-условия обязаны проверять критичные оси: permissions, device, network, firstRun.
+- Запрещены скрытые записи состояний в чужие домены — только через EventBus.
+
+Мини-образец решения из снапшота состояния:
+
+```python
+def decide_listen_action(s):
+    if s.perm.mic != "granted":
+        return Abort("mic_denied", ui="open_settings_mic")
+    if s.device.input == "busy" and s.appMode == "LISTENING":
+        return Retry("device_busy_backoff")
+    if s.network == "offline":
+        return Degrade("offline_mode")
+    return Start()
+```
+
+
+## 14. Decision-логи (наблюдаемость решений)
+
+Обязательны для FSM/интеграций:
+
+`decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=...,firstRun=...,appMode=...} source=<domain> duration_ms=<int>`
+
+**Метрики:**
+- `decision_rate{type}` — распределение решений (start/abort/retry/degrade)
+- `stream_open_success_rate` — доля удачных запусков аудио
+- `tcc_prompt_duration_ms` — длительность последовательности разрешений (p95)
+- `p95_latency_ms` — ключевая метрика CI (по `dur_ms` из логов, p95 latency по RPC методам)
+
+
+## 15. Политика роллаута изменяющих взаимодействия
+
+- Любое изменение, затрагивающее >2 осей, включается через фича-флаг.
+- Этапы: 1% → 25% → 100% (config-driven), с возможностью shadow-mode (считаем решение, но не применяем).
+- Kill-switch: `NEXY_KS_<FEATURE>` в окружении/конфиге, выключает поведение немедленно без релиза.
+- В `change_impact.yaml` обязательно указать: флаг, план раскатки, условие отката.
+
+**Гвардрайлы canary на каждом этапе:**
+- `p95 StreamAudio ≤ 1000ms` (warn), ≤ 1500ms (page)
+- `error-rate ≤ 5%` (warn), ≤ 10% (page)
+- отказов backpressure ≤ 1% попыток
+- нет всплеска `decision=retry|abort` > ×1.5 от базовой линии
+
+**Скрипты проверки:**
+- `./scripts/check_ramp_guardrails.sh` — автоматическая проверка порогов
+- `./scripts/monitoring_jq.sh` — jq-выражения для метрик
+
+**План раскатки:** см. `Docs/RAMP_PLAN.md` (этапы, гвардрайлы, метрики)
+
+
+## 16. SLO и стоп-релизы (beta)
+
+- `p95 start_listening ≤ 600ms`
+- `stream_open_success_rate ≥ 98%`
+- `permission_flow_success ≥ 99%` (микрофон+экран на first-run)
+- Если SLO пробит на beta-канале — стоп всех функциональных релизов до восстановления.
+
+
+## 17. Дополнительные улучшения
+
+- ADR-минимум: один абзац «что/почему/альтернативы/дата» для любого изменения модуля или матрицы взаимодействий.
+- Правила приоритетов условий (для 12.2):
+  1. `hard_stop`: безопасность/разрешения/инварианты — всегда прерывают действие;
+  2. `graceful`: деградация (сеть/квоты) — урезаем функционал, но живём;
+  3. `preference`: UX-предпочтения — только если не конфликтуют с 1–2.
+- Назначить владельца `STATE_CATALOG.md` и `interaction_matrix.yaml` (иначе зачерствеют).
+- Контракт-тесты как decision-tables: входной снапшот → ожидаемое решение, без знания внутренностей модуля.
+
+---
+
+## 18. Ссылки
+
+**Источники истины:**
+- **Версионирование:** `Docs/VERSION_FORMAT_CRITICAL_FIX.md` — единственный источник истины (любые прежние ссылки на fixes считаются устаревшими)
+- **Backpressure:** `Docs/BACKPRESSURE_README.md`
+- **gRPC Protocol:** `Docs/GRPC_PROTOCOL_AUDIT.md`
+- **CI Checks:** `Docs/CI_GRPC_CHECKS.md`
