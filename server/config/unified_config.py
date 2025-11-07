@@ -284,7 +284,7 @@ class UpdateServiceConfig:
 
     @classmethod
     def from_env(cls) -> 'UpdateServiceConfig':
-        base_dir = Path(__file__).parent.parent / 'updates'
+        base_dir = Path(__file__).resolve().parent.parent / 'updates'
         return cls(
             enabled=os.getenv('UPDATE_ENABLED', 'true').lower() == 'true',
             host=os.getenv('UPDATE_HOST', '0.0.0.0'),

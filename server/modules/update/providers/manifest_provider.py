@@ -126,6 +126,13 @@ class ManifestProvider:
             Optional[Dict[str, Any]]: Последний манифест или None
         """
         try:
+            # Canonical файл manifest.json имеет приоритет
+            canonical_manifest = self.manifests_dir / "manifest.json"
+            if canonical_manifest.exists():
+                manifest = self.load_manifest("manifest.json")
+                if manifest:
+                    return manifest
+            
             manifest_files = list(self.manifests_dir.glob("manifest_*.json"))
             
             if not manifest_files:
@@ -153,6 +160,9 @@ class ManifestProvider:
         
         try:
             manifest_files = list(self.manifests_dir.glob("manifest_*.json"))
+            canonical_manifest = self.manifests_dir / "manifest.json"
+            if canonical_manifest.exists():
+                manifest_files.append(canonical_manifest)
             
             for manifest_file in manifest_files:
                 manifest = self.load_manifest(manifest_file.name)
@@ -163,7 +173,10 @@ class ManifestProvider:
             def version_key(data: Dict[str, Any]) -> tuple:
                 version_str = str(data.get("version", "0.0.0"))
                 try:
-                    major, minor, patch = [int(part) for part in version_str.split('.')]
+                    parts = version_str.split('.')
+                    major = int(parts[0]) if len(parts) > 0 else 0
+                    minor = int(parts[1]) if len(parts) > 1 else 0
+                    patch = int(parts[2]) if len(parts) > 2 else 0
                     return major, minor, patch
                 except ValueError:
                     return 0, 0, 0
@@ -182,7 +195,7 @@ class ManifestProvider:
         
         Args:
             manifest: Манифест для валидации
-            
+        
         Returns:
             bool: True если манифест валиден
         """
@@ -209,9 +222,18 @@ class ManifestProvider:
             logger.error("❌ Неверная версия")
             return False
         
-        # Проверяем номер сборки
-        build = manifest.get("build", 0)
-        if not isinstance(build, int) or build <= 0:
+        # build может быть строкой (например, совпадать с версией) или числом
+        build = manifest.get("build")
+        if build is None:
+            logger.error("❌ Отсутствует номер сборки")
+            return False
+        if not isinstance(build, (int, str)):
+            logger.error("❌ Неверный тип номера сборки")
+            return False
+        if isinstance(build, str) and not build.strip():
+            logger.error("❌ Пустой номер сборки")
+            return False
+        if isinstance(build, int) and build <= 0:
             logger.error("❌ Неверный номер сборки")
             return False
         
