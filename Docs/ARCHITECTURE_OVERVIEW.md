@@ -801,7 +801,7 @@ sequenceDiagram
     participant Grpc as GrpcClientIntegration
     participant Speech as SpeechPlaybackIntegration
 
-    User->>Input: Long press (SPACE)
+    User->>Input: Long press (LEFT_SHIFT)
     Input->>Bus: voice.recording_start(session_id)
     Input->>Bus: mode.request(LISTENING)
     Bus->>ModeMgmt: mode.request
@@ -811,7 +811,7 @@ sequenceDiagram
     State->>Bus: app.mode_changed(mode=LISTENING)
     Bus-->>VRec: start listening
 
-    User->>Input: Release (SPACE)
+    User->>Input: Release (LEFT_SHIFT)
     Input->>Bus: voice.recording_stop(session_id)
     Input->>Bus: mode.request(PROCESSING)
     Bus->>ModeMgmt: mode.request

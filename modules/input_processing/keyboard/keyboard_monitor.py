@@ -259,19 +259,12 @@ class KeyboardMonitor:
             if not self.keyboard_available:
                 return False
                 
-            if self.key_to_monitor == 'space':
-                return key == self.keyboard.Key.space
-            elif self.key_to_monitor == 'ctrl':
-                return key == self.keyboard.Key.ctrl
-            elif self.key_to_monitor == 'alt':
-                return key == self.keyboard.Key.alt
-            elif self.key_to_monitor == 'shift':
+            if self.key_to_monitor == 'left_shift':
+                # pynput не различает левый/правый Shift, используем общий shift
+                logger.warning("⚠️ pynput не различает левый/правый Shift, используем общий shift")
                 return key == self.keyboard.Key.shift
-            elif self.key_to_monitor == 'enter':
-                return key == self.keyboard.Key.enter
-            elif self.key_to_monitor == 'esc':
-                return key == self.keyboard.Key.esc
             else:
+                logger.warning(f"⚠️ Неподдерживаемая клавиша для pynput: {self.key_to_monitor}")
                 return False
                 
         except Exception as e:

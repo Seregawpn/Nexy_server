@@ -8,11 +8,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shlex
 import subprocess
 import sys
+import textwrap
 import time
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 from modules.updater.migrate import get_user_app_path
 from modules.permission_restart.core.config import PermissionRestartConfig
@@ -186,90 +188,192 @@ class PermissionsRestartHandler:
         Try to relaunch a packaged Nexy.app. Returns True on success,
         False when we should fall back to dev mode.
 
-        Uses `open -n -a` and verifies the spawned process via `pgrep`.
+        Schedules a lightweight helper that waits for the current PID to exit
+        before invoking `open -n -a`, which prevents Control Center races.
         """
         bundle_path = self._derive_bundle_path()
         if bundle_path is None:
             logger.debug("[PERMISSION_RESTART] Unable to determine Nexy.app bundle path")
+            self._packaged_unavailable = True
+            return False
+        if not bundle_path.exists():
+            logger.debug("[PERMISSION_RESTART] Bundle path does not exist: %s", bundle_path)
+            self._packaged_unavailable = True
             return False
 
         try:
-            logger.info("[PERMISSION_RESTART] Relaunching packaged app at %s", bundle_path)
-            start_ts = time.time()
+            verify_target = self._resolve_bundle_binary_path(bundle_path)
+            post_delay = max(0.0, self._config.packaged_launch_grace_ms / 1000.0)
 
-            # Запускаем новый экземпляр Nexy.app напрямую.
-            # Ранее использовался флаг -W (wait-apps), из-за чего команда `open`
-            # блокировала выполнение до закрытия нового процесса и регулярно
-            # завершалась по таймауту. Это приводило к тому, что перезапуск
-            # распознавался как неуспешный и текущий процесс не завершался.
-            result = subprocess.run(
-                ["/usr/bin/open", "-n", "-a", str(bundle_path)],
-                check=False,  # Не падаем на non-zero exit code
-                timeout=5.0,
-                capture_output=True,
-                text=True,
+            helper_started = self._spawn_delayed_launch_helper(
+                command=["/usr/bin/open", "-n", "-a", str(bundle_path)],
+                env=None,
+                label="packaged",
+                timeout_sec=self._config.graceful_shutdown_timeout_sec,
+                poll_interval_sec=self._config.graceful_shutdown_poll_interval_sec,
+                post_exit_delay_sec=post_delay,
+                verification_target=verify_target,
             )
+
+            if not helper_started:
+                logger.error("[PERMISSION_RESTART] Failed to schedule packaged relaunch helper")
+                return False
+
+            self._persist_restart_signal()
             logger.info(
-                "[PERMISSION_RESTART] open -n -a returned code=%s elapsed=%.2fs",
-                result.returncode,
-                time.time() - start_ts,
+                "[PERMISSION_RESTART] Scheduled delayed packaged relaunch (bundle=%s, delay=%.2fs)",
+                bundle_path,
+                post_delay,
             )
-
-            # Проверяем exit code
-            if result.returncode != 0:
-                stderr = result.stderr.strip() if result.stderr else ""
-                logger.error(
-                    "[PERMISSION_RESTART] open command failed (exit_code=%d, stderr=%s)",
-                    result.returncode,
-                    stderr
-                )
-                # Специальная обработка kLSNoExecutableErr (10810) - нет исполняемого файла в bundle
-                if "10810" in stderr or "kLSNoExecutableErr" in stderr:
-                    logger.error(
-                        "[PERMISSION_RESTART] Bundle missing executable (kLSNoExecutableErr) - "
-                        "check packaging/build_final.sh creates Contents/MacOS/Nexy"
-                    )
-                    self._packaged_unavailable = True
-                return False
-
-            if not self._verify_app_launched(bundle_path):
-                logger.error("[PERMISSION_RESTART] Unable to verify launched process for %s", bundle_path)
-                return False
-
-            # Даём дополнительное время для PyInstaller unpacking и инициализации
-            grace_sec = self._config.packaged_launch_grace_ms / 1000.0
-            time.sleep(grace_sec)
-            
-            # КРИТИЧНО: Создаем атомарный флаг перезапуска ПЕРЕД завершением старого процесса
-            # Это позволяет новому процессу обнаружить перезапуск даже если env переменные не передаются
-            flag_success = self._restart_flag.write(
-                reason=self._last_reason,
-                permissions=list(self._last_permissions)
-            )
-            if flag_success:
-                logger.info(
-                    "[PERMISSION_RESTART] ✅ Atomic restart flag written: %s "
-                    "(reason=%s, permissions=%s)",
-                    self._restart_flag.flag_path,
-                    self._last_reason,
-                    list(self._last_permissions)
-                )
-            else:
-                logger.warning(
-                    "[PERMISSION_RESTART] ⚠️ Failed to write atomic restart flag - "
-                    "new process may not detect restart"
-                )
-
-            logger.info("[PERMISSION_RESTART] Packaged app launch verified")
             return True
 
-        except subprocess.TimeoutExpired:
-            logger.error("[PERMISSION_RESTART] Launch timeout (>5 seconds) - app may not have started")
-            logger.debug("[PERMISSION_RESTART] Timeout context: bundle_path=%s", bundle_path)
-            return False
         except Exception as exc:
-            logger.error("[PERMISSION_RESTART] Failed to relaunch packaged app: %s", exc)
+            logger.error("[PERMISSION_RESTART] Failed to schedule packaged relaunch: %s", exc)
             logger.debug("[PERMISSION_RESTART] Exception context: bundle_path=%s", bundle_path)
+            return False
+
+    def _persist_restart_signal(self) -> None:
+        flag_success = self._restart_flag.write(
+            reason=self._last_reason,
+            permissions=list(self._last_permissions),
+        )
+        if flag_success:
+            logger.info(
+                "[PERMISSION_RESTART] ✅ Atomic restart flag written: %s (reason=%s, permissions=%s)",
+                self._restart_flag.flag_path,
+                self._last_reason,
+                list(self._last_permissions),
+            )
+        else:
+            logger.warning(
+                "[PERMISSION_RESTART] ⚠️ Failed to write atomic restart flag - "
+                "new process may not detect restart"
+            )
+
+    def _resolve_bundle_binary_path(self, bundle_path: Path) -> Optional[str]:
+        executable_dir = bundle_path / "Contents" / "MacOS"
+        if not executable_dir.exists():
+            return None
+
+        candidate = executable_dir / bundle_path.stem
+        if candidate.exists():
+            return str(candidate)
+
+        binaries = sorted(executable_dir.glob("*"))
+        if not binaries:
+            return None
+        return str(binaries[0])
+
+    def _spawn_delayed_launch_helper(
+        self,
+        *,
+        command: Sequence[str],
+        env: Optional[Dict[str, str]],
+        label: str,
+        timeout_sec: float,
+        poll_interval_sec: float,
+        post_exit_delay_sec: float,
+        verification_target: Optional[str],
+    ) -> bool:
+        if not command:
+            return False
+
+        target_pid = os.getpid()
+        timeout_s = max(1, int(round(timeout_sec)))
+        poll_interval = max(0.05, float(poll_interval_sec))
+        post_delay = max(0.0, float(post_exit_delay_sec))
+        verify_timeout = max(1, int(round(self._config.graceful_shutdown_timeout_sec)))
+        command_str = " ".join(shlex.quote(part) for part in command)
+        log_tag = f"NexyRestartHelper-{label}"
+
+        env_exports = ""
+        if env:
+            lines = []
+            for key, value in env.items():
+                if value is None:
+                    continue
+                lines.append(f"export {key}={shlex.quote(str(value))}")
+            if lines:
+                env_exports = "\n".join(lines) + "\n"
+
+        verification_block = ""
+        if verification_target:
+            verification_block = textwrap.dedent(
+                f"""
+                VERIFY_TARGET={shlex.quote(verification_target)}
+                VERIFY_TIMEOUT={verify_timeout}
+                VERIFY_INTERVAL=0.5
+                VERIFY_SUCCESS=0
+                log "verifying new process for $VERIFY_TARGET"
+                VERIFY_DEADLINE=$(( $(date +%s) + VERIFY_TIMEOUT ))
+                while [ $(date +%s) -lt $VERIFY_DEADLINE ]; do
+                    FOUND=$(pgrep -f "$VERIFY_TARGET" 2>/dev/null || true)
+                    for pid in $FOUND; do
+                        if [ "$pid" != "$TARGET_PID" ]; then
+                            log "detected new pid $pid for $VERIFY_TARGET"
+                            VERIFY_SUCCESS=1
+                            break
+                        fi
+                    done
+                    if [ $VERIFY_SUCCESS -eq 1 ]; then
+                        break
+                    fi
+                    sleep $VERIFY_INTERVAL
+                done
+                if [ $VERIFY_SUCCESS -ne 1 ]; then
+                    log "failed to detect new pid for $VERIFY_TARGET"
+                fi
+                """
+            )
+
+        script = textwrap.dedent(
+            f"""
+            TARGET_PID={target_pid}
+            TIMEOUT={timeout_s}
+            INTERVAL={poll_interval:.2f}
+            POST_DELAY={post_delay:.2f}
+            LOG_TAG={shlex.quote(log_tag)}
+
+            log() {{
+                /usr/bin/logger -t "$LOG_TAG" "$1" 2>/dev/null || echo "$LOG_TAG: $1" >&2
+            }}
+
+            log "waiting for process $TARGET_PID to exit (timeout=${{TIMEOUT}}s)"
+            START=$(date +%s)
+            while kill -0 $TARGET_PID 2>/dev/null; do
+                NOW=$(date +%s)
+                if [ $((NOW - START)) -ge $TIMEOUT ]; then
+                    log "timeout waiting for $TARGET_PID; continuing with relaunch"
+                    break
+                fi
+                sleep $INTERVAL
+            done
+
+            sleep $POST_DELAY
+            {env_exports}log "launching: {command_str}"
+            {command_str}
+            LAUNCH_STATUS=$?
+            if [ $LAUNCH_STATUS -ne 0 ]; then
+                log "launch command exited with status $LAUNCH_STATUS"
+            else
+                log "launch command finished successfully"
+            fi
+            {verification_block}
+            """
+        )
+
+        try:
+            subprocess.Popen(
+                ["/bin/sh", "-c", script],
+                start_new_session=True,
+                close_fds=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.debug("[PERMISSION_RESTART] Spawned delayed relaunch helper (label=%s)", label)
+            return True
+        except Exception as exc:
+            logger.error("[PERMISSION_RESTART] Failed to spawn relaunch helper (%s): %s", label, exc)
             return False
 
     def _launch_dev_process(self) -> None:
@@ -289,25 +393,7 @@ class PermissionsRestartHandler:
         # даже если флаг restart_completed.flag не создался из-за PermissionError
         env = os.environ.copy()
         env["NEXY_FIRST_RUN_RESTARTED"] = "1"
-        
-        # КРИТИЧНО: Создаем атомарный флаг перезапуска (fallback для production)
-        flag_success = self._restart_flag.write(
-            reason=self._last_reason,
-            permissions=list(self._last_permissions)
-        )
-        if flag_success:
-            logger.info(
-                "[PERMISSION_RESTART] ✅ Atomic restart flag written: %s "
-                "(reason=%s, permissions=%s)",
-                self._restart_flag.flag_path,
-                self._last_reason,
-                list(self._last_permissions)
-            )
-        else:
-            logger.warning(
-                "[PERMISSION_RESTART] ⚠️ Failed to write atomic restart flag - "
-                "will rely on env variable only"
-            )
+        self._persist_restart_signal()
 
         logger.info("[PERMISSION_RESTART] Launching dev process: %s (cwd=%s)", cmd, cwd)
         logger.info("[PERMISSION_RESTART] Setting NEXY_FIRST_RUN_RESTARTED=1 for new process")
@@ -349,77 +435,6 @@ class PermissionsRestartHandler:
 
         return None
 
-    def _verify_app_launched(self, bundle_path: Path, timeout: float = 5.0, interval: float = 0.5) -> bool:
-        """
-        Проверяем, что стартовал новый процесс приложения.
-
-        Используем pgrep -f с путём к бинарнику в Contents/MacOS.
-        """
-        executable_dir = bundle_path / "Contents" / "MacOS"
-        if not executable_dir.exists():
-            logger.debug("[PERMISSION_RESTART] Executable directory missing: %s", executable_dir)
-            return False
-
-        candidate = executable_dir / bundle_path.stem
-        if not candidate.exists():
-            binaries = list(executable_dir.glob("*"))
-            if not binaries:
-                logger.debug("[PERMISSION_RESTART] No binaries found in %s", executable_dir)
-                return False
-            candidate = binaries[0]
-
-        executable_str = str(candidate)
-        deadline = time.time() + timeout
-
-        current_pid = os.getpid()
-
-        while time.time() < deadline:
-            try:
-                result = subprocess.run(
-                    ["pgrep", "-f", executable_str],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    try:
-                        pids = {
-                            int(pid.strip())
-                            for pid in result.stdout.strip().splitlines()
-                            if pid.strip().isdigit()
-                        }
-                    except ValueError:
-                        pids = set()
-
-                    # Считаем запуск успешным только если появился новый PID,
-                    # отличный от текущего процесса.
-                    for pid in pids:
-                        if pid != current_pid:
-                            logger.debug(
-                                "[PERMISSION_RESTART] Verified new process %s for %s",
-                                pid,
-                                executable_str,
-                            )
-                            return True
-
-                    logger.debug(
-                        "[PERMISSION_RESTART] pgrep matched current process only (pid=%s), waiting for new instance...",
-                        current_pid,
-                    )
-                logger.debug(
-                    "[PERMISSION_RESTART] pgrep pending (rc=%s stdout=%s)",
-                    result.returncode,
-                    result.stdout.strip(),
-                )
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.debug("[PERMISSION_RESTART] pgrep failed: %s", exc)
-                break
-
-            time.sleep(interval)
-
-        logger.debug("[PERMISSION_RESTART] pgrep did not detect process for %s", executable_str)
-        return False
-
     def _exec_current_bundle(self) -> bool:
         """Попытка перезапустить текущий PyInstaller-бандл через execve."""
         if not getattr(sys, "frozen", False):
@@ -432,25 +447,7 @@ class PermissionsRestartHandler:
         # Это позволяет FirstRunPermissionsIntegration обнаружить завершённый рестарт
         env = os.environ.copy()
         env["NEXY_FIRST_RUN_RESTARTED"] = "1"
-        
-        # КРИТИЧНО: Создаем атомарный флаг перезапуска (fallback для production)
-        flag_success = self._restart_flag.write(
-            reason=self._last_reason,
-            permissions=list(self._last_permissions)
-        )
-        if flag_success:
-            logger.info(
-                "[PERMISSION_RESTART] ✅ Atomic restart flag written: %s "
-                "(reason=%s, permissions=%s)",
-                self._restart_flag.flag_path,
-                self._last_reason,
-                list(self._last_permissions)
-            )
-        else:
-            logger.warning(
-                "[PERMISSION_RESTART] ⚠️ Failed to write atomic restart flag - "
-                "will rely on env variable only"
-            )
+        self._persist_restart_signal()
 
         try:
             logger.info("[PERMISSION_RESTART] Restarting current bundle via execve (%s)", exe_path)

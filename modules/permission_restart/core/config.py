@@ -33,7 +33,9 @@ class PermissionRestartConfig:
     respect_active_sessions: bool = True
     respect_updates: bool = True
     handler_launch_delay_ms: float = 1000.0  # Delay after dev process launch (default: 1.0 sec)
-    packaged_launch_grace_ms: float = 3000.0  # Delay after packaged app launch (default: 3.0 sec)
+    packaged_launch_grace_ms: float = 3000.0  # Delay after process exit before launching packaged app
+    graceful_shutdown_timeout_sec: float = 10.0  # Max wait before relaunch helper gives up
+    graceful_shutdown_poll_interval_sec: float = 0.25  # Poll step while waiting for PID to exit
 
     @classmethod
     def from_dict(cls, raw: Optional[Dict[str, object]]) -> "PermissionRestartConfig":
@@ -52,6 +54,8 @@ class PermissionRestartConfig:
         respect_updates = bool(raw.get("respect_updates", True))
         handler_launch_delay_ms = float(raw.get("handler_launch_delay_ms", 1000.0))
         packaged_launch_grace_ms = float(raw.get("packaged_launch_grace_ms", 3000.0))
+        graceful_shutdown_timeout_sec = float(raw.get("graceful_shutdown_timeout_sec", 10.0))
+        graceful_shutdown_poll_interval_sec = float(raw.get("graceful_shutdown_poll_interval_sec", 0.25))
 
         critical_raw: Optional[Iterable[object]] = raw.get("critical_permissions")  # type: ignore[assignment]
         critical_permissions = _parse_permission_list(critical_raw)
@@ -66,6 +70,8 @@ class PermissionRestartConfig:
             respect_updates=respect_updates,
             handler_launch_delay_ms=handler_launch_delay_ms,
             packaged_launch_grace_ms=packaged_launch_grace_ms,
+            graceful_shutdown_timeout_sec=graceful_shutdown_timeout_sec,
+            graceful_shutdown_poll_interval_sec=graceful_shutdown_poll_interval_sec,
         )
 
 

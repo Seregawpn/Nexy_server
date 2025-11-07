@@ -25,10 +25,13 @@ try:
         kCGEventTapOptionListenOnly,
         kCGEventKeyDown,
         kCGEventKeyUp,
+        kCGEventFlagsChanged,
         kCFRunLoopCommonModes,
         kCFRunLoopDefaultMode,
         CGEventGetIntegerValueField,
+        CGEventGetFlags,
         kCGKeyboardEventKeycode,
+        kCGEventFlagMaskShift,
     )
     QUARTZ_AVAILABLE = True
 except Exception as e:  # pragma: no cover
@@ -42,11 +45,10 @@ logger = logging.getLogger(__name__)
 class QuartzKeyboardMonitor:
     """Глобальный монитор клавиатуры на macOS через Quartz Event Tap."""
 
-    # Минимальная карта key_to_monitor -> keycode (US). Сейчас нужен только пробел.
+    # Минимальная карта key_to_monitor -> keycode (US). Сейчас нужен только left_shift.
     KEYCODES = {
-        "space": 49,
         "left_shift": 56,  # Левый Shift
-        # При необходимости можно расширить: enter(36), esc(53), shift(60=правый), ctrl(59/62), alt(58/61)
+        # При необходимости можно расширить: space(49), enter(36), esc(53), right_shift(60), ctrl(59/62), alt(58/61)
     }
 
     def __init__(self, config: KeyboardConfig):
@@ -78,6 +80,9 @@ class QuartzKeyboardMonitor:
         # Quartz объекты
         self._tap = None
         self._tap_source = None
+        
+        # Отслеживание предыдущего состояния модификаторов (для kCGEventFlagsChanged)
+        self._previous_left_shift_pressed = False
 
         # Доступность
         self.keyboard_available = QUARTZ_AVAILABLE
@@ -141,18 +146,97 @@ class QuartzKeyboardMonitor:
             # Создаем Event Tap
             def _tap_callback(proxy, event_type, event, refcon):
                 try:
-                    logger.debug(f"🔍 Quartz tap вызван: event_type={event_type}")
+                    # Логируем только события flagsChanged (для модификаторов) - это наша целевая клавиша
+                    # Остальные события (keyDown/keyUp для обычных клавиш) обрабатываем без логирования
+
+                    # Для модификаторов (Shift, Ctrl, Alt) может использоваться kCGEventFlagsChanged
+                    # В kCGEventFlagsChanged можно получить keycode события, чтобы определить, какой модификатор изменился
+                    if event_type == kCGEventFlagsChanged:
+                        # Получаем keycode события - это указывает, какой именно модификатор изменился
+                        keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+                        flags = CGEventGetFlags(event)
+                        shift_pressed = bool(flags & kCGEventFlagMaskShift)
+                        
+                        # Обрабатываем только Левый Shift (keycode=56), если это целевая клавиша
+                        # Игнорируем все остальные модификаторы (Right Shift, Ctrl, Alt и т.д.)
+                        if keycode == 56 and self._target_keycode == 56:
+                            logger.debug(f"🔍 FlagsChanged: Left Shift, shift_pressed={shift_pressed} (было {self._previous_left_shift_pressed})")
+                            # Отслеживаем изменение состояния: нажатие (False → True) или отпускание (True → False)
+                            if shift_pressed and not self._previous_left_shift_pressed:
+                                # Это keyDown для Левого Shift (состояние изменилось с False на True)
+                                logger.info(f"✅ Найден Левый Shift через FlagsChanged (keyDown)")
+                                with self.state_lock:
+                                    if not self.key_pressed:  # Защита от повторных событий
+                                        self.key_pressed = True
+                                        self.press_start_time = time.time()
+                                        self._long_sent = False  # Сбрасываем флаг для нового нажатия
+                                        
+                                        # PRESS
+                                        ev = KeyEvent(
+                                            key=self.key_to_monitor,
+                                            event_type=KeyEventType.PRESS,
+                                            timestamp=self.press_start_time,
+                                        )
+                                        self._trigger_event(KeyEventType.PRESS, 0.0, ev)
+                            elif not shift_pressed and self._previous_left_shift_pressed:
+                                # Это keyUp для Левого Shift (состояние изменилось с True на False)
+                                logger.info(f"✅ Отпущен Левый Shift через FlagsChanged (keyUp)")
+                                with self.state_lock:
+                                    if self.key_pressed:  # Защита от повторных событий
+                                        now = time.time()
+                                        duration = now - (self.press_start_time or now)
+                                        
+                                        # КРИТИЧНО: Сбрасываем состояние ПОСЛЕ определения типа события,
+                                        # но ДО вызова _trigger_event, чтобы hold_monitor прекратил работу
+                                        long_sent_snapshot = self._long_sent
+                                        self.key_pressed = False
+                                        self.press_start_time = None
+                                        self.last_event_time = now
+                                        
+                                        # Определяем тип события (SHORT_PRESS или LONG_PRESS)
+                                        if duration >= self.long_press_threshold:
+                                            event_type_out = KeyEventType.LONG_PRESS
+                                        else:
+                                            event_type_out = KeyEventType.SHORT_PRESS
+                                        
+                                        # Создаем событие
+                                        ev = KeyEvent(
+                                            key=self.key_to_monitor,
+                                            event_type=event_type_out,
+                                            timestamp=now,
+                                            duration=duration,
+                                        )
+                                        
+                                        # Отправляем событие (SHORT_PRESS или LONG_PRESS)
+                                        self._trigger_event(event_type_out, duration, ev)
+                                        
+                                        # RELEASE всегда отправляется после SHORT_PRESS или LONG_PRESS
+                                        ev_release = KeyEvent(
+                                            key=self.key_to_monitor,
+                                            event_type=KeyEventType.RELEASE,
+                                            timestamp=now,
+                                            duration=duration,
+                                        )
+                                        self._trigger_event(KeyEventType.RELEASE, duration, ev_release)
+                            
+                            # Обновляем предыдущее состояние только для Левого Shift
+                            if keycode == 56:
+                                self._previous_left_shift_pressed = shift_pressed
+                        return event
 
                     if event_type not in (kCGEventKeyDown, kCGEventKeyUp):
+                        # Игнорируем все события, кроме keyDown/keyUp/flagsChanged (для модификаторов)
                         return event
 
                     keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-                    logger.debug(f"🔍 Keycode={keycode}, target={self._target_keycode}")
-
+                    
+                    # Игнорируем все клавиши, кроме целевой (left_shift = 56)
+                    # Не логируем игнорируемые клавиши, чтобы не засорять логи
                     if keycode != self._target_keycode:
                         return event
-
-                    logger.debug(f"🔑 Целевая клавиша обнаружена! keycode={keycode}")
+                    
+                    # Только для целевой клавиши (left_shift) логируем
+                    logger.debug(f"🔑 Целевая клавиша обнаружена через keyDown/keyUp: keycode={keycode}")
 
                     now = time.time()
 
@@ -218,11 +302,14 @@ class QuartzKeyboardMonitor:
                     logger.error(f"❌ Ошибка в tap callback: {e}")
                     return event
 
+            # Маска событий: keyDown, keyUp для обычных клавиш, flagsChanged для модификаторов (Shift, Ctrl, Alt)
+            event_mask = (1 << kCGEventKeyDown) | (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged)
+            
             self._tap = CGEventTapCreate(
                 kCGHIDEventTap,
                 kCGHeadInsertEventTap,
                 kCGEventTapOptionListenOnly,
-                (1 << kCGEventKeyDown) | (1 << kCGEventKeyUp),
+                event_mask,
                 _tap_callback,
                 None,
             )
@@ -243,13 +330,22 @@ class QuartzKeyboardMonitor:
                 self.keyboard_available = False
                 return False
 
+            print(f"✅ CGEventTap создан успешно: {self._tap}")  # Для отладки
+            logger.info(f"✅ CGEventTap создан успешно: {self._tap}")
+
             self._tap_source = CFMachPortCreateRunLoopSource(None, self._tap, 0)
+            print(f"✅ CFRunLoopSource создан: {self._tap_source}")  # Для отладки
+            logger.info(f"✅ CFRunLoopSource создан: {self._tap_source}")
 
             # Добавляем в главный run loop (AppKit)
             # Важно: сохранить ссылку на callback, иначе он может быть собран GC
             self._tap_callback = _tap_callback  # type: ignore[attr-defined]
-            CFRunLoopAddSource(CFRunLoopGetMain(), self._tap_source, kCFRunLoopDefaultMode)
+            main_loop = CFRunLoopGetMain()
+            print(f"✅ Добавляем source в главный run loop: {main_loop}")  # Для отладки
+            CFRunLoopAddSource(main_loop, self._tap_source, kCFRunLoopDefaultMode)
+            print(f"✅ Source добавлен в run loop")  # Для отладки
             CGEventTapEnable(self._tap, True)
+            print(f"✅ CGEventTap включен для keycode={self._target_keycode}")  # Для отладки
             logger.info(f"QuartzMonitor: CGEventTap включен для keycode={self._target_keycode}")
 
             # Запускаем поток мониторинга удержания (для long press)
