@@ -98,6 +98,7 @@ class SimpleModuleCoordinator:
         # Состояние tray (gate-механизм для блокирующих операций)
         self._tray_ready = False
         self._tray_start_time = None
+        self._tal_hold_start: Optional[float] = None  # Время начала TAL удержания
 
         # NSApplication activator callback (устанавливается из main.py)
         self.nsapp_activator = None
@@ -865,14 +866,20 @@ class SimpleModuleCoordinator:
             startup_timer = rumps.Timer(start_timer_callback, 1.0)
             startup_timer.start()
 
+            # КРИТИЧНО: Анти-TAL удержание до tray.ready
+            # Предотвращаем автоматическую терминацию приложения до готовности tray
+            self._hold_tal_until_tray_ready()
+            
             # CRITICAL FIX: Задержка перед app.run() для готовности ControlCenter
             # При первом запуске после перезагрузки ControlCenter может не успеть
             # инициализироваться и создание NSStatusItem внутри app.run() провалится
+            # NOTE: Теперь tray имеет собственную retry-логику с косвенным признаком готовности
+            # поэтому задержка здесь минимальна (только для совместимости)
             print("="*80)
-            print("⏳ CRITICAL: Waiting 2 seconds for ControlCenter to be ready...")
+            print("⏳ CRITICAL: Waiting for ControlCenter to be ready...")
             print("="*80)
-            logger.info("⏳ CRITICAL: Задержка 2 секунды перед app.run() для готовности ControlCenter")
-            await asyncio.sleep(2.0)
+            logger.info("⏳ CRITICAL: Ожидание готовности ControlCenter (tray имеет собственную retry-логику)")
+            await asyncio.sleep(1.0)  # Минимальная задержка для совместимости
             print("="*80)
             print("✅ CRITICAL: Delay completed, starting app.run()...")
             print("="*80)
@@ -882,10 +889,12 @@ class SimpleModuleCoordinator:
             # ВАЖНО: Используем tray_controller.run_app() который настраивает
             # отложенную установку иконки ПОСЛЕ создания StatusItem
             tray_controller = tray_integration.get_tray_controller()
+            logger.info(f"🔍 CRITICAL DEBUG: tray_controller={tray_controller}, type={type(tray_controller)}")
             if tray_controller:
+                logger.info("✅ CRITICAL: Вызываем tray_controller.run_app()")
                 tray_controller.run_app()
             else:
-                logger.error("❌ Не удалось получить tray_controller")
+                logger.error("❌ Не удалось получить tray_controller - используем fallback app.run()")
                 app.run()  # Fallback на прямой запуск
             
         except KeyboardInterrupt:
@@ -1017,7 +1026,7 @@ class SimpleModuleCoordinator:
             logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_failed: {e}")
 
     async def _on_tray_ready(self, event):
-        """Обработка готовности tray - снятие gate для блокирующих операций"""
+        """Обработка готовности tray - снятие gate для блокирующих операций и TAL удержания"""
         try:
             import time
             if self._tray_start_time:
@@ -1029,8 +1038,86 @@ class SimpleModuleCoordinator:
                 print("✅ [TRAY_GATE] Tray готов - разрешаем блокирующие операции")
 
             self._tray_ready = True
+            
+            # КРИТИЧНО: Снимаем TAL удержание после tray.ready
+            self._release_tal_hold()
+            
         except Exception as e:
             logger.error(f"❌ [TRAY_GATE] Ошибка обработки tray.integration_ready: {e}")
+    
+    def _hold_tal_until_tray_ready(self):
+        """
+        Устанавливает TAL удержание до tray.ready.
+        
+        Предотвращает автоматическую терминацию приложения до готовности tray.
+        Снимается автоматически после tray.ready или по таймауту 60s.
+        """
+        try:
+            import Foundation
+            process_info = Foundation.NSProcessInfo.processInfo()
+            
+            if process_info.automaticTerminationSupportEnabled():
+                import time
+                process_info.disableAutomaticTermination_("Waiting for tray icon")
+                self._tal_hold_start = time.time()
+                # КРИТИЧНО: Логируем TAL=hold в формате для приёмки
+                logger.info(f"TAL=hold (ts={self._tal_hold_start:.2f})")
+                print("🛡️ [ANTI_TAL] TAL удержание установлено - будет снято после tray.ready или через 60s")
+                
+                # Планируем автоматическое снятие по таймауту (60s)
+                asyncio.create_task(self._release_tal_hold_after_timeout())
+            else:
+                logger.debug("[ANTI_TAL] Automatic termination already disabled")
+                
+        except Exception as exc:
+            logger.warning(f"⚠️ [ANTI_TAL] Failed to set TAL hold: {exc}")
+    
+    def _release_tal_hold(self):
+        """
+        Снимает TAL удержание после tray.ready.
+        """
+        try:
+            if not hasattr(self, '_tal_hold_start') or self._tal_hold_start is None:
+                return  # TAL удержание не было установлено
+            
+            import Foundation
+            process_info = Foundation.NSProcessInfo.processInfo()
+            
+            if process_info.automaticTerminationSupportEnabled():
+                import time
+                process_info.enableAutomaticTermination_("Tray icon ready")
+                hold_duration = time.time() - self._tal_hold_start
+                self._tal_hold_start = None
+                
+                # КРИТИЧНО: Логируем TAL=released в формате для приёмки
+                logger.info(
+                    f"TAL=released (ts={time.time():.2f}, duration={hold_duration:.2f}s)"
+                )
+                print(f"🛡️ [ANTI_TAL] TAL удержание снято (длительность={hold_duration:.2f}s)")
+            else:
+                logger.debug("[ANTI_TAL] Automatic termination already enabled")
+                
+        except Exception as exc:
+            logger.warning(f"⚠️ [ANTI_TAL] Failed to release TAL hold: {exc}")
+    
+    async def _release_tal_hold_after_timeout(self):
+        """
+        Автоматически снимает TAL удержание по таймауту (60s).
+        """
+        try:
+            await asyncio.sleep(60.0)  # Таймаут 60 секунд
+            
+            # Проверяем, не было ли уже снято
+            if hasattr(self, '_tal_hold_start') and self._tal_hold_start is not None:
+                logger.warning(
+                    f"⚠️ [ANTI_TAL] TAL hold timeout (60s) - releasing automatically "
+                    f"(tray may not be ready yet)"
+                )
+                print("⚠️ [ANTI_TAL] Таймаут TAL удержания (60s) - снимаем автоматически")
+                self._release_tal_hold()
+                
+        except Exception as exc:
+            logger.error(f"❌ [ANTI_TAL] Error in TAL hold timeout task: {exc}")
 
     async def _on_permissions_restart_pending(self, event):
         """Обработка события перезапуска после первого запуска"""

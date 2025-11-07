@@ -3,10 +3,12 @@ macOS реализация меню трея
 """
 
 import os
+import time
 import rumps
 import logging
 from typing import List, Optional, Callable, Dict, Any
 from ..core.tray_types import TrayMenuItem, TrayMenu, TrayStatus
+from .status_item_manager import StatusItemManager, CircuitState
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,19 @@ class MacOSTrayMenu:
         # Путь к иконке для отложенной установки (после создания StatusItem)
         self._pending_icon_path: Optional[str] = None
         self._icon_timer: Optional[rumps.Timer] = None
+        
+        # Менеджер создания NSStatusItem с single-flight и circuit-breaker
+        # Загружаем конфиг из unified_config.yaml
+        try:
+            from config.unified_config_loader import UnifiedConfigLoader
+            unified_config = UnifiedConfigLoader()
+            config_data = unified_config._load_config()
+            tray_cfg = config_data.get('tray', {})
+            status_item_cfg = tray_cfg.get('status_item', {})
+            self._status_item_manager = StatusItemManager(config=status_item_cfg)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load status_item config, using defaults: {e}")
+            self._status_item_manager = StatusItemManager()
     
     def create_app(self, icon_path: str) -> rumps.App:
         """Создать приложение с иконкой в трее"""
@@ -275,53 +290,231 @@ class MacOSTrayMenu:
         ВАЖНО: Этот метод должен быть вызван ПЕРЕД app.run().
         StatusItem создаётся внутри app.run() -> initializeStatusBar(),
         поэтому мы используем Timer для установки иконки ПОСЛЕ его создания.
+        
+        Реализует:
+        - Single-flight: одна попытка в момент времени
+        - Circuit-breaker: пауза после серии ошибок
+        - Экспоненциальный backoff с jitter
+        - Косвенный признак готовности Control Center
         """
         if not self.app or not self._pending_icon_path:
             logger.warning("⚠️ setup_delayed_icon_setting: app или pending_icon_path отсутствуют")
             return
 
+        # КРИТИЧНО: Логируем начало setup_delayed_icon_setting
+        logger.info("="*80)
+        logger.info("CRITICAL: Setting up delayed icon setting with single-flight + circuit-breaker")
+        logger.info(f"CRITICAL: Icon path: {self._pending_icon_path}")
+        logger.info(f"CRITICAL: Series ID: {self._status_item_manager._metrics.series_id}")
+        logger.info("="*80)
         print("="*80)
-        print("CRITICAL: Setting up delayed icon setting timer")
+        print("CRITICAL: Setting up delayed icon setting with single-flight + circuit-breaker")
         print(f"CRITICAL: Icon path: {self._pending_icon_path}")
+        print(f"CRITICAL: Series ID: {self._status_item_manager._metrics.series_id}")
         print("="*80)
 
-        attempt_count = [0]  # Используем список для изменяемой переменной в closure
-        max_attempts = 5
+        # Ждем готовности Control Center (косвенный признак)
+        # КРИТИЧНО: Логируем начало ожидания Control Center
+        logger.info("[STATUS_ITEM_MANAGER] Waiting for Control Center ready...")
+        control_center_ready = self._status_item_manager.wait_for_control_center_ready()
+        if not control_center_ready:
+            logger.warning(
+                "[STATUS_ITEM_MANAGER] ⚠️ Control Center not ready - proceeding anyway"
+            )
+        else:
+            logger.info("[STATUS_ITEM_MANAGER] ✅ Control Center is ready")
 
         def try_set_icon(timer):
-            """Попытка установить иконку с retry"""
-            attempt_count[0] += 1
+            """Попытка установить иконку с single-flight и circuit-breaker"""
+            # Single-flight: проверяем, не идет ли уже создание
+            if not self._status_item_manager.start_creation():
+                logger.debug("[STATUS_ITEM_MANAGER] Creation already in progress (single-flight)")
+                return
+            
+            attempt_start = time.monotonic()
+            attempt = self._status_item_manager._metrics.attempt_count
+            series_id = self._status_item_manager._metrics.series_id
+            
             try:
-                print(f"🔄 CRITICAL: Delayed icon setting attempt {attempt_count[0]}/{max_attempts}")
-                logger.info(f"🔄 Отложенная установка иконки, попытка {attempt_count[0]}/{max_attempts}")
-
+                logger.info(
+                    f"TRAY_ATTEMPT{attempt} start (series_id={series_id})"
+                )
+                
+                # Пытаемся установить иконку
                 self.app.icon = self._pending_icon_path
-
-                print(f"✅ CRITICAL: Icon set successfully on delayed attempt {attempt_count[0]}")
-                logger.info(f"✅ Иконка установлена успешно на отложенной попытке {attempt_count[0]}")
-
-                # Останавливаем таймер после успешной установки
-                if self._icon_timer:
-                    self._icon_timer.stop()
-                    self._icon_timer = None
+                
+                # Проверяем, что иконка действительно установлена
+                if hasattr(self.app, 'icon') and self.app.icon:
+                    duration_ms = int((time.monotonic() - attempt_start) * 1000)
+                    self._status_item_manager.finish_creation(
+                        success=True,
+                        error_code=None,
+                        duration_ms=duration_ms
+                    )
+                    
+                    # КРИТИЧНО: Логируем результат в формате для приёмки
+                    logger.info(
+                        f"TRAY_ATTEMPT{attempt} result=ok "
+                        f"(series_id={series_id}, duration={duration_ms}ms)"
+                    )
+                    print(f"✅ CRITICAL: Icon set successfully on attempt {attempt}")
+                    
+                    # Останавливаем таймер после успешной установки
+                    if self._icon_timer:
+                        self._icon_timer.stop()
+                        self._icon_timer = None
+                else:
+                    # Иконка не установлена - считаем ошибкой
+                    raise RuntimeError("Icon not set after assignment")
 
             except Exception as e:
-                print(f"⚠️ CRITICAL: Delayed attempt {attempt_count[0]} failed: {e}")
-                logger.warning(f"⚠️ Отложенная попытка {attempt_count[0]} не удалась: {e}")
-
-                # Останавливаем таймер после максимального числа попыток
-                if attempt_count[0] >= max_attempts:
-                    print(f"❌ CRITICAL: All {max_attempts} delayed attempts failed!")
-                    logger.error(f"❌ Все {max_attempts} отложенные попытки установки иконки не удались")
+                duration_ms = int((time.monotonic() - attempt_start) * 1000)
+                error_code = self._extract_error_code(str(e))
+                error_msg = str(e)
+                
+                self._status_item_manager.finish_creation(
+                    success=False,
+                    error_code=error_code,
+                    duration_ms=duration_ms
+                )
+                
+                # КРИТИЧНО: Логируем результат в формате для приёмки
+                logger.warning(
+                    f"TRAY_ATTEMPT{attempt} result=error "
+                    f"(series_id={series_id}, code={error_code}, duration={duration_ms}ms, "
+                    f"error={error_msg})"
+                )
+                
+                # Проверяем circuit-breaker
+                metrics = self._status_item_manager.get_metrics()
+                if metrics.circuit_state == CircuitState.OPEN:
+                    # КРИТИЧНО: Логируем CIRCUIT_OPEN в формате для приёмки
+                    logger.warning(
+                        f"CIRCUIT_OPEN reason={metrics.circuit_open_reason}, "
+                        f"series_errors={StatusItemManager.CIRCUIT_OPEN_THRESHOLD}, "
+                        f"after={int(StatusItemManager.CIRCUIT_OPEN_DURATION_SEC * 1000)}ms"
+                    )
+                    # Останавливаем таймер - следующая попытка будет после circuit закрытия
+                    if self._icon_timer:
+                        self._icon_timer.stop()
+                        self._icon_timer = None
+                    
+                    # Планируем следующую попытку после circuit закрытия
+                    self._schedule_next_attempt_after_circuit()
+                    return
+                
+                # Планируем следующую попытку с backoff
+                if attempt < StatusItemManager.MAX_ATTEMPTS_PER_SERIES:
+                    backoff_ms = self._status_item_manager.calculate_backoff_ms(attempt)
+                    # КРИТИЧНО: Логируем TRAY_BACKOFF_NEXT в формате для приёмки
+                    logger.info(
+                        f"TRAY_BACKOFF_NEXT={backoff_ms}ms "
+                        f"(attempt={attempt}, series_id={series_id}, jitter=±15%)"
+                    )
+                    
+                    # Создаем новый таймер с backoff
+                    if self._icon_timer:
+                        self._icon_timer.stop()
+                    self._icon_timer = rumps.Timer(try_set_icon, backoff_ms / 1000.0)
+                    self._icon_timer.start()
+                else:
+                    logger.error(
+                        f"[STATUS_ITEM_MANAGER] ❌ All {StatusItemManager.MAX_ATTEMPTS_PER_SERIES} "
+                        f"attempts failed (series_id={series_id})"
+                    )
+                    print(f"❌ CRITICAL: All {StatusItemManager.MAX_ATTEMPTS_PER_SERIES} attempts failed!")
                     if self._icon_timer:
                         self._icon_timer.stop()
                         self._icon_timer = None
 
-        # Создаём таймер с интервалом 0.2 секунды
-        # Первая попытка будет через 0.2s после запуска app.run()
-        self._icon_timer = rumps.Timer(try_set_icon, 0.2)
+        # КРИТИЧНО: Логируем TRAY_SERIES_ID при старте (для приёмки)
+        series_id = self._status_item_manager._metrics.series_id
+        logger.info(f"TRAY_SERIES_ID={series_id}")
+        print(f"TRAY_SERIES_ID={series_id}")
+        
+        # Первая попытка через 800-1200ms после старта (или после готовности Control Center)
+        first_delay_sec = StatusItemManager.FIRST_ATTEMPT_DELAY_MS / 1000.0
+        self._icon_timer = rumps.Timer(try_set_icon, first_delay_sec)
         self._icon_timer.start()
-        logger.info("✅ Таймер отложенной установки иконки настроен")
+        logger.info(
+            f"✅ [STATUS_ITEM_MANAGER] Delayed icon setting timer started "
+            f"(first_attempt_delay={first_delay_sec}s, series_id={series_id})"
+        )
+    
+    def _extract_error_code(self, error_msg: str) -> str:
+        """Извлекает код ошибки из сообщения об ошибке"""
+        error_msg_lower = error_msg.lower()
+        
+        if "operationfailed" in error_msg_lower or "xpc error" in error_msg_lower:
+            return "OPERATION_FAILED"
+        elif "invalidscene" in error_msg_lower or "no scene exists" in error_msg_lower:
+            return "INVALID_SCENE"
+        elif "permission" in error_msg_lower:
+            return "PERMISSION_DENIED"
+        elif "timeout" in error_msg_lower:
+            return "TIMEOUT"
+        else:
+            return "UNKNOWN"
+    
+    def _schedule_next_attempt_after_circuit(self):
+        """Планирует следующую попытку после закрытия circuit"""
+        # Сохраняем ссылку на функцию try_set_icon для повторного использования
+        if not hasattr(self, '_try_set_icon_func'):
+            # Создаем замыкание для try_set_icon
+            def try_set_icon_wrapper(timer):
+                # Переиспользуем логику из setup_delayed_icon_setting
+                if not self._status_item_manager.start_creation():
+                    return
+                
+                attempt_start = time.monotonic()
+                attempt = self._status_item_manager._metrics.attempt_count
+                series_id = self._status_item_manager._metrics.series_id
+                
+                try:
+                    self.app.icon = self._pending_icon_path
+                    if hasattr(self.app, 'icon') and self.app.icon:
+                        duration_ms = int((time.monotonic() - attempt_start) * 1000)
+                        self._status_item_manager.finish_creation(True, None, duration_ms)
+                        logger.info(f"[STATUS_ITEM_MANAGER] ✅ TRAY_ATTEMPT{attempt} succeeded after circuit close")
+                        if self._icon_timer:
+                            self._icon_timer.stop()
+                            self._icon_timer = None
+                    else:
+                        raise RuntimeError("Icon not set")
+                except Exception as e:
+                    duration_ms = int((time.monotonic() - attempt_start) * 1000)
+                    error_code = self._extract_error_code(str(e))
+                    self._status_item_manager.finish_creation(False, error_code, duration_ms)
+                    logger.warning(f"[STATUS_ITEM_MANAGER] ❌ TRAY_ATTEMPT{attempt} failed after circuit close: {e}")
+            
+            self._try_set_icon_func = try_set_icon_wrapper
+        
+        def retry_after_circuit(timer):
+            metrics = self._status_item_manager.get_metrics()
+            if metrics.circuit_state != CircuitState.OPEN:
+                # Circuit закрыт - можно пробовать снова
+                # КРИТИЧНО: Логируем CIRCUIT_CLOSE в формате для приёмки
+                logger.info(
+                    f"CIRCUIT_CLOSE after={int(StatusItemManager.CIRCUIT_OPEN_DURATION_SEC * 1000)}ms, "
+                    f"series_id={metrics.series_id}"
+                )
+                # Перезапускаем серию попыток
+                if self._icon_timer:
+                    self._icon_timer.stop()
+                self._icon_timer = rumps.Timer(self._try_set_icon_func, 0.1)
+                self._icon_timer.start()
+            else:
+                # Circuit еще открыт - проверяем снова через 1s
+                if self._icon_timer:
+                    self._icon_timer.stop()
+                self._icon_timer = rumps.Timer(retry_after_circuit, 1.0)
+                self._icon_timer.start()
+        
+        # Проверяем circuit каждую секунду
+        if self._icon_timer:
+            self._icon_timer.stop()
+        self._icon_timer = rumps.Timer(retry_after_circuit, 1.0)
+        self._icon_timer.start()
 
     def run(self):
         """Запустить приложение"""

@@ -23,8 +23,12 @@ def _apply_fix():
 def _activate_nsapplication():
     """
     CRITICAL: Activate NSApplication for LSUIElement applications.
-    Without this, menu bar icon doesn't appear when launched from .app on macOS Sequoia.
-    Must be called BEFORE creating rumps.App and NSStatusItem.
+
+    Эта активация происходит РАНО (в runtime hook) для .app bundle.
+    Это необходимо для создания NSApplication instance до импорта rumps.
+
+    ВАЖНО: Задержка для ControlCenter происходит ПОЗЖЕ в main.py (2 сек),
+    перед app.run(). Здесь мы только создаем NSApplication и устанавливаем policy.
     """
     import sys
     try:

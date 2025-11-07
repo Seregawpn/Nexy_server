@@ -333,6 +333,23 @@ tray:
     label: Статус
   show_notifications: true
   tooltip: Nexy AI Assistant
+  # Настройки создания NSStatusItem (для приёмки можно подкручивать без перекомпиляции)
+  status_item:
+    # Circuit-breaker
+    circuit_open_threshold: 3  # Количество ошибок для открытия circuit
+    circuit_open_duration_ms: 8000  # Длительность открытого состояния (8s)
+    # Retry-логика
+    max_attempts_per_series: 10  # Максимум попыток в серии
+    initial_backoff_ms: 800  # Начальный backoff (800-1200ms)
+    max_backoff_ms: 10000  # Максимальный backoff
+    backoff_multiplier: 1.5  # Множитель для экспоненциального backoff
+    jitter_percent: 0.15  # Jitter ±15%
+    # Готовность Control Center
+    control_center_ready_timeout_sec: 10.0  # Максимальное ожидание готовности
+    first_attempt_delay_ms: 1000  # Задержка первой попытки (800-1200ms)
+    # Fallback поведение
+    final_timeout_ms: 60000  # Таймаут для перехода в режим без tray (60s)
+    background_retry_interval_sec: 45  # Интервал фонового retry (30-60s)
 updater:
   default:
     enabled: true

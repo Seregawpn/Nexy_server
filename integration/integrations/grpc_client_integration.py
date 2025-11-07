@@ -377,45 +377,58 @@ class GrpcClientIntegration:
                 hardware_id=hwid,
             ):
                 chunk_count += 1
-                if chunk_count % 10 == 0:  # Логируем каждый 10-й чанк
-                    logger.debug(f"gRPC stream progress: {chunk_count} chunks received")
-                # oneof content
-                if hasattr(resp, 'text_chunk') and resp.text_chunk:
-                    logger.info(f"gRPC received text_chunk len={len(resp.text_chunk)} for session {session_id}")
-                    await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": resp.text_chunk})
-                elif hasattr(resp, 'audio_chunk') and resp.audio_chunk:
+
+                # Проверяем, какой тип content установлен (oneof) - ВСЕГДА используем WhichOneof для protobuf!
+                which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None
+
+                # Диагностика: логируем только важные события
+                if chunk_count == 1 or chunk_count % 10 == 0 or which_oneof in ('end_message', 'error_message'):
+                    logger.info(f"🔍 gRPC response #{chunk_count}: WhichOneof('content')={which_oneof}")
+
+                # Обрабатываем СТРОГО по типу oneof
+                if which_oneof == 'text_chunk':
+                    text = resp.text_chunk
+                    logger.info(f"gRPC received text_chunk len={len(text)} for session {session_id}")
+                    await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
+
+                elif which_oneof == 'audio_chunk':
                     ch = resp.audio_chunk
-                    data = bytes(getattr(ch, 'audio_data', b""))
-                    dtype = getattr(ch, 'dtype', 'int16')
-                    shape = list(getattr(ch, 'shape', []))
-                    logger.info(f"gRPC received audio_chunk bytes={len(data)} dtype={dtype} shape={shape} for session {session_id}")
-                    
-                    # Если получен пустой аудио чанк - это признак завершения потока
+                    data = bytes(ch.audio_data) if ch.audio_data else b""
+                    dtype = ch.dtype or 'int16'
+                    shape = list(ch.shape) if ch.shape else []
+
+                    # Пустой audio_chunk больше НЕ считаем завершением, т.к. сервер должен слать end_message
                     if len(data) == 0:
-                        logger.info(f"gRPC received empty audio_chunk - stream completed for session {session_id}")
-                        await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
-                        got_terminal = True
-                        break
-                    
+                        logger.warning(f"⚠️ Received empty audio_chunk - skipping (waiting for end_message)")
+                        continue
+
+                    logger.info(f"gRPC received audio_chunk bytes={len(data)} dtype={dtype} shape={shape} for session {session_id}")
+
                     await self.event_bus.publish("grpc.response.audio", {
                         "session_id": session_id,
                         "dtype": dtype,
-                        # Явно передаём метаданные формата, чтобы избежать искажений при воспроизведении
                         "sample_rate": getattr(ch, 'sample_rate', None),
                         "channels": getattr(ch, 'channels', None),
                         "shape": shape,
                         "bytes": data,
                     })
-                elif hasattr(resp, 'end_message') and resp.end_message:
-                    logger.info(f"gRPC received end_message for session {session_id}")
+
+                elif which_oneof == 'end_message':
+                    end_msg = resp.end_message
+                    logger.info(f"gRPC received end_message: '{end_msg}' for session {session_id}")
                     await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
                     got_terminal = True
                     break
-                elif hasattr(resp, 'error_message') and resp.error_message:
-                    logger.error(f"gRPC received error_message='{resp.error_message}' for session {session_id}")
-                    await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": resp.error_message})
+
+                elif which_oneof == 'error_message':
+                    err_msg = resp.error_message
+                    logger.error(f"gRPC received error_message: '{err_msg}' for session {session_id}")
+                    await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": err_msg})
                     got_terminal = True
                     break
+
+                else:
+                    logger.warning(f"⚠️ Unknown response type: which_oneof={which_oneof}")
             # Если стрим завершился БЕЗ явного end_message/error — завершаем запрос сами,
             # чтобы UI не зависал в состоянии PROCESSING.
             if not got_terminal:

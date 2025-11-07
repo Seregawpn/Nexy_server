@@ -7,6 +7,7 @@ FirstRunPermissionsIntegration - запрос разрешений при пер
 
 import asyncio
 import logging
+import time
 from typing import Optional, Dict, Any
 from pathlib import Path
 import uuid
@@ -15,9 +16,10 @@ import os
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
-from integration.utils.resource_path import get_user_data_dir
+from integration.utils.resource_path import get_user_data_dir, get_user_cache_dir
 
 from modules.permissions.core.types import PermissionType
+from modules.permission_restart.core.atomic_flag import AtomicRestartFlag
 from modules.permissions.first_run.status_checker import (
     PermissionStatus,
     check_microphone_status,
@@ -67,9 +69,13 @@ class FirstRunPermissionsIntegration:
             self.activation_hold_seconds,
         )
 
-        # Путь к флагу
+        # Путь к флагу первого запуска (Application Support)
         self.flag_file = get_user_data_dir("Nexy") / "permissions_first_run_completed.flag"
-        self._restart_flag = self.flag_file.parent / "restart_completed.flag"
+        
+        # Атомарный флаг перезапуска в доступной директории (Caches)
+        cache_dir = get_user_cache_dir("Nexy")
+        restart_flag_path = cache_dir / "restart_completed.flag"
+        self._restart_flag = AtomicRestartFlag(restart_flag_path)
 
         self._initialized = False
         self._running = False
@@ -89,17 +95,30 @@ class FirstRunPermissionsIntegration:
             # КРИТИЧНО: Проверяем был ли перезапуск после first_run
             # Это позволяет опубликовать completed ТОЛЬКО после успешного перезапуска
             # Также проверяем env переменную NEXY_FIRST_RUN_RESTARTED (для dev-режима)
-            restarted_via_flag = self._restart_flag.exists()
+            # Используем атомарный флаг для чтения-и-удаления
+            restart_flag_data = self._restart_flag.read_and_remove()
+            restarted_via_flag = restart_flag_data is not None
             restarted_via_env = os.environ.get("NEXY_FIRST_RUN_RESTARTED") == "1"
             
             # 🧪 ТЕСТОВЫЙ РЕЖИМ: эмулируем перезапуск если флаги существуют
             test_mode = os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1"
-            if test_mode and self.flag_file.exists() and self._restart_flag.exists():
+            if test_mode and self.flag_file.exists() and restart_flag_data:
                 logger.info("🧪 [FIRST_RUN_PERMISSIONS] ТЕСТОВЫЙ РЕЖИМ: эмулируем перезапуск")
                 restarted_via_flag = True  # Принудительно активируем логику перезапуска
 
             if restarted_via_flag or restarted_via_env:
                 logger.info("✅ [FIRST_RUN_PERMISSIONS] Перезапуск после first_run завершён успешно")
+                if restarted_via_flag and restart_flag_data:
+                    age_sec = time.monotonic() - restart_flag_data.timestamp if hasattr(time, 'monotonic') else 0
+                    age_ms = int(age_sec * 1000)
+                    # КРИТИЧНО: Логируем RESTART_FLAG в формате для приёмки
+                    # Фиксируем возраст флага и PID инициатора для диагностики
+                    logger.info(
+                        f"RESTART_FLAG seen_ts={restart_flag_data.timestamp:.2f}, "
+                        f"age_ms={age_ms}, pid={restart_flag_data.pid}, "
+                        f"reason={restart_flag_data.reason}, "
+                        f"permissions={restart_flag_data.permissions}"
+                    )
                 if restarted_via_env:
                     logger.info("   (обнаружено через NEXY_FIRST_RUN_RESTARTED env)")
                 if test_mode:
@@ -109,13 +128,17 @@ class FirstRunPermissionsIntegration:
                 await self.event_bus.publish("permissions.first_run_completed", {
                     "session_id": "restarted",
                     "source": "first_run_permissions_integration",
-                    "note": "Published after successful restart" + (" (test mode)" if test_mode else "")
+                    "note": "Published after successful restart" + (" (test mode)" if test_mode else ""),
+                    "restart_flag_data": {
+                        "pid": restart_flag_data.pid if restart_flag_data else None,
+                        "reason": restart_flag_data.reason if restart_flag_data else None,
+                        "timestamp": restart_flag_data.timestamp if restart_flag_data else None,
+                    } if restart_flag_data else None
                 })
 
                 # КРИТИЧНО: Обновляем флаги после публикации
-                # restart_completed.flag удаляем, чтобы событие не публиковалось повторно
+                # restart_completed.flag уже удален через read_and_remove()
                 # permissions_first_run_completed.flag сохраняем для пропуска повторной процедуры
-                self._clear_restart_flag()
                 self._clear_first_run_flag()
                 logger.info(
                     "[FIRST_RUN_PERMISSIONS] ✅ Флаги обработаны: restart_completed.flag удалён, "
@@ -595,15 +618,17 @@ class FirstRunPermissionsIntegration:
 
     def _clear_restart_flag(self) -> None:
         """Удаляем restart_completed.flag после успешного перезапуска."""
+        # Флаг уже удален через read_and_remove() в initialize()
+        # Этот метод оставлен для обратной совместимости
         try:
             if self._restart_flag.exists():
-                self._restart_flag.unlink()
+                self._restart_flag.remove()
                 logger.info(
-                    f"[FIRST_RUN_PERMISSIONS] restart_completed.flag удалён: {self._restart_flag}"
+                    f"[FIRST_RUN_PERMISSIONS] restart_completed.flag удалён: {self._restart_flag.flag_path}"
                 )
             else:
                 logger.debug(
-                    f"[FIRST_RUN_PERMISSIONS] restart_completed.flag отсутствует: {self._restart_flag}"
+                    f"[FIRST_RUN_PERMISSIONS] restart_completed.flag отсутствует: {self._restart_flag.flag_path}"
                 )
         except Exception as exc:
             logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Ошибка удаления restart_completed.flag: {exc}")

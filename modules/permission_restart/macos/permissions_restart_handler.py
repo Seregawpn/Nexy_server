@@ -16,6 +16,8 @@ from typing import Optional, Sequence
 
 from modules.updater.migrate import get_user_app_path
 from modules.permission_restart.core.config import PermissionRestartConfig
+from modules.permission_restart.core.atomic_flag import AtomicRestartFlag
+from integration.utils.resource_path import get_user_cache_dir
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,11 @@ class PermissionsRestartHandler:
         self._last_reason: str = "unknown"
         self._last_permissions: Sequence[str] = ()
         self._config = config or PermissionRestartConfig()  # Default config if not provided
+        
+        # Атомарный флаг перезапуска в доступной директории (Caches вместо Application Support)
+        cache_dir = get_user_cache_dir("Nexy")
+        flag_path = cache_dir / "restart_completed.flag"
+        self._restart_flag = AtomicRestartFlag(flag_path)
 
         # Разрешено ли скатываться в dev-фолбэк (перезапуск python-командой)
         if config is None and getattr(sys, "frozen", False):
@@ -232,6 +239,26 @@ class PermissionsRestartHandler:
             # Даём дополнительное время для PyInstaller unpacking и инициализации
             grace_sec = self._config.packaged_launch_grace_ms / 1000.0
             time.sleep(grace_sec)
+            
+            # КРИТИЧНО: Создаем атомарный флаг перезапуска ПЕРЕД завершением старого процесса
+            # Это позволяет новому процессу обнаружить перезапуск даже если env переменные не передаются
+            flag_success = self._restart_flag.write(
+                reason=self._last_reason,
+                permissions=list(self._last_permissions)
+            )
+            if flag_success:
+                logger.info(
+                    "[PERMISSION_RESTART] ✅ Atomic restart flag written: %s "
+                    "(reason=%s, permissions=%s)",
+                    self._restart_flag.flag_path,
+                    self._last_reason,
+                    list(self._last_permissions)
+                )
+            else:
+                logger.warning(
+                    "[PERMISSION_RESTART] ⚠️ Failed to write atomic restart flag - "
+                    "new process may not detect restart"
+                )
 
             logger.info("[PERMISSION_RESTART] Packaged app launch verified")
             return True
@@ -262,6 +289,25 @@ class PermissionsRestartHandler:
         # даже если флаг restart_completed.flag не создался из-за PermissionError
         env = os.environ.copy()
         env["NEXY_FIRST_RUN_RESTARTED"] = "1"
+        
+        # КРИТИЧНО: Создаем атомарный флаг перезапуска (fallback для production)
+        flag_success = self._restart_flag.write(
+            reason=self._last_reason,
+            permissions=list(self._last_permissions)
+        )
+        if flag_success:
+            logger.info(
+                "[PERMISSION_RESTART] ✅ Atomic restart flag written: %s "
+                "(reason=%s, permissions=%s)",
+                self._restart_flag.flag_path,
+                self._last_reason,
+                list(self._last_permissions)
+            )
+        else:
+            logger.warning(
+                "[PERMISSION_RESTART] ⚠️ Failed to write atomic restart flag - "
+                "will rely on env variable only"
+            )
 
         logger.info("[PERMISSION_RESTART] Launching dev process: %s (cwd=%s)", cmd, cwd)
         logger.info("[PERMISSION_RESTART] Setting NEXY_FIRST_RUN_RESTARTED=1 for new process")
@@ -375,18 +421,44 @@ class PermissionsRestartHandler:
         return False
 
     def _exec_current_bundle(self) -> bool:
-        """Попытка перезапустить текущий PyInstaller-бандл через execv."""
+        """Попытка перезапустить текущий PyInstaller-бандл через execve."""
         if not getattr(sys, "frozen", False):
             return False
 
         exe_path = Path(sys.executable).resolve()
         args = [str(exe_path), *sys.argv[1:]]
+
+        # КРИТИЧНО: Передаём env переменную NEXY_FIRST_RUN_RESTARTED для нового процесса
+        # Это позволяет FirstRunPermissionsIntegration обнаружить завершённый рестарт
+        env = os.environ.copy()
+        env["NEXY_FIRST_RUN_RESTARTED"] = "1"
+        
+        # КРИТИЧНО: Создаем атомарный флаг перезапуска (fallback для production)
+        flag_success = self._restart_flag.write(
+            reason=self._last_reason,
+            permissions=list(self._last_permissions)
+        )
+        if flag_success:
+            logger.info(
+                "[PERMISSION_RESTART] ✅ Atomic restart flag written: %s "
+                "(reason=%s, permissions=%s)",
+                self._restart_flag.flag_path,
+                self._last_reason,
+                list(self._last_permissions)
+            )
+        else:
+            logger.warning(
+                "[PERMISSION_RESTART] ⚠️ Failed to write atomic restart flag - "
+                "will rely on env variable only"
+            )
+
         try:
-            logger.info("[PERMISSION_RESTART] Restarting current bundle via execv (%s)", exe_path)
-            os.execv(str(exe_path), args)
-            # execv не возвращается при успехе - процесс заменяется
+            logger.info("[PERMISSION_RESTART] Restarting current bundle via execve (%s)", exe_path)
+            logger.info("[PERMISSION_RESTART] Setting NEXY_FIRST_RUN_RESTARTED=1 for new process")
+            os.execve(str(exe_path), args, env)
+            # execve не возвращается при успехе - процесс заменяется
             # Эта строка недостижима, но нужна для type checker
         except Exception as exc:  # pragma: no cover - defensive
-            logger.error("[PERMISSION_RESTART] execv failed: %s", exc)
+            logger.error("[PERMISSION_RESTART] execve failed: %s", exc)
 
         return False
