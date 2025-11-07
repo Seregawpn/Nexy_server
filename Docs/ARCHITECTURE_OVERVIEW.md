@@ -380,12 +380,12 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 
 ## 4) Главные потоки данных (PTT от клавиши до ответа)
 
-1. Пользователь удерживает пробел (LONG_PRESS)
+1. Пользователь удерживает Левый Shift (LONG_PRESS)
    - InputProcessingIntegration публикует `voice.recording_start(session_id)` и `mode.request(LISTENING)`
    - ModeManagementIntegration валидирует переход → ModeController → StateManager → `app.mode_changed`
    - VoiceRecognitionIntegration инициализирует запись/распознавание
 
-2. Пользователь отпускает пробел (RELEASE)
+2. Пользователь отпускает Левый Shift (RELEASE)
    - InputProcessingIntegration публикует `voice.recording_stop(session_id)` и `mode.request(PROCESSING)`
    - VoiceRecognitionIntegration завершает распознавание → `voice.recognition_completed|failed|timeout`
 
