@@ -45,7 +45,8 @@ class QuartzKeyboardMonitor:
     # Минимальная карта key_to_monitor -> keycode (US). Сейчас нужен только пробел.
     KEYCODES = {
         "space": 49,
-        # При необходимости можно расширить: enter(36), esc(53), shift(56/60), ctrl(59/62), alt(58/61)
+        "left_shift": 56,  # Левый Shift
+        # При необходимости можно расширить: enter(36), esc(53), shift(60=правый), ctrl(59/62), alt(58/61)
     }
 
     def __init__(self, config: KeyboardConfig):
