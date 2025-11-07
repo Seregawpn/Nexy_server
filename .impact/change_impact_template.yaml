@@ -1,0 +1,82 @@
+# Nexy Server change impact template
+#
+# Copy this file to `.impact/change_impact.yaml` in your branch and fill in all
+# sections before requesting review. The CI fail-fast workflow checks for the
+# presence of a populated change impact file when a PR touches more than the
+# SIMPLE gate. Every field is required unless explicitly marked optional.
+
+feature: <concise-feature-name>
+feature_flag: NEXY_FEAT_<FEATURE_NAME>
+kill_switch: NEXY_KS_<FEATURE_NAME>
+axes:
+  - permissions.mic
+  - device.input
+  - network
+  - firstRun
+summary:
+  objective: |
+    <Why this change exists and what outcome it enables>
+  scope:
+    code:
+      - <list primary modules/directories>
+    docs:
+      - <list docs/adr updates>
+  rollout:
+    stages: [1, 25, 50, 100]
+    guardrails_script: scripts/check_ramp_guardrails.sh
+    abort_conditions:
+      - <metric and threshold that force rollback>
+
+invariants:
+  - no direct imports between server/modules domains
+  - versions are strings; health == appcast == manifest
+  - ingress remains HTTPS:443 only
+
+risk_analysis:
+  potential_failures:
+    - name: <failure-mode>
+      impact: <user_visible | operational | data>
+      detection: <metric/log/signal>
+      mitigation: <plan>
+  negative_tests:
+    - <scenario>
+    - <scenario>
+
+guards:
+  - name: mic_required
+    when:
+      permissions.mic: denied
+    action: abort_listen
+  - name: network_offline
+    when:
+      network: offline
+    action: degrade_to_offline_mode
+
+metrics:
+  - name: p95_latency_ms(StreamAudio)
+    target: "<= 1000"
+  - name: error_rate(StreamAudio)
+    target: "<= 5%"
+  - name: backpressure_refusal_rate
+    target: "<= 1%"
+
+tests:
+  unit:
+    - pytest
+  contract:
+    pairwise: 12
+    negative: 2
+  smoke:
+    - python scripts/grpc_smoke.py localhost 50051 --insecure
+
+rollback_plan: |
+  Toggle the kill-switch, verify /health and /updates/health, rerun smoke
+  checks, collect 5-minute decision logs, publish post-mortem template.
+
+approvals:
+  - role: Tech Lead Server
+    owner: @server-platform
+  - role: gRPC Lead
+    owner: @grpc-core
+  - role: Release Manager
+    owner: @release-ops

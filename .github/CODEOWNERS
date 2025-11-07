@@ -1,0 +1,19 @@
+# Nexy Server axis ownership mapping
+# Aligns with Docs/ARCHITECTURE_OVERVIEW.md (Single Source of Truth principle)
+
+*                               @server-platform
+/server/modules/grpc_service/   @grpc-core
+/server/modules/update/         @release-ops
+/server/modules/interrupt_handling/ @reliability
+/server/modules/text_filtering/ @reliability
+/server/modules/session_management/ @server-platform
+/server/modules/memory_management/  @server-platform
+/server/integrations/           @server-platform
+/server/config/                 @server-platform
+/server/Docs/GRPC_PROTOCOL_AUDIT.md @grpc-core
+/server/Docs/UPDATE_SYSTEM_FIXES.md @release-ops
+/server/Docs/BACKPRESSURE_README.md @reliability
+/server/Docs/CI_GRPC_CHECKS.md  @sre-duty
+/server/Docs/STATE_CATALOG.md   @client-lead
+/.impact/                       @server-platform
+/.github/workflows/             @sre-duty
