@@ -1,0 +1,85 @@
+feature: grpc_update_guardrails
+feature_flag: NEXY_FEAT_GRPC_UPDATE_GUARDRAILS
+kill_switch: NEXY_KS_GRPC_UPDATE_GUARDRAILS
+axes:
+  - permissions.mic
+  - network
+  - device.input
+  - release.pipeline
+summary:
+  objective: |
+    Согласовать версии gRPC/protobuf, расширить workflow-интеграции конфигурацией
+    порогов и включить fail-fast CI-guardrails, чтобы зафиксировать архитектурные
+    инварианты (границы модулей, appcast/health консистентность, impact gate).
+  scope:
+    code:
+      - server/modules/grpc_service
+      - server/modules/update
+      - server/integrations/workflow_integrations
+      - server/scripts
+      - server/config
+      - .github/workflows
+    docs:
+      - server/Docs/CI_GRPC_CHECKS.md
+      - server/Docs/ARCHITECTURE_OVERVIEW.md
+      - server/Docs/SERVER_DEVELOPMENT_RULES.md
+  rollout:
+    stages: [1, 25, 50, 100]
+    guardrails_script: scripts/check_ramp_guardrails.sh
+    abort_conditions:
+      - error_rate(StreamAudio) > 5% в течение 5 минут
+      - updates/health latest_version != manifest.version
+      - CI guardrails fail-fast workflow сигнализирует regression
+invariants:
+  - gRPC runtime == generated stub version (5.29.x)
+  - health/status/updates endpoints отражают единые latest_version/latest_build
+  - между server/modules/* отсутствуют прямые импорты
+risk_analysis:
+  potential_failures:
+    - name: grpc_runtime_mismatch
+      impact: operational
+      detection: gRPC interceptor ошибки ValidateProtobufRuntimeVersion, CI fail-fast
+      mitigation: зафиксировать зависимости, пересобрать stubs, откатить kill-switch
+    - name: update_manifest_drift
+      impact: user_visible
+      detection: мониторинг /updates/health на null latest_version, журналы UpdateServerProvider
+      mitigation: восстановить корректный manifest.json, перезапустить службу обновлений
+  negative_tests:
+    - запуск grpc_smoke при отсутствующем workflow_config
+    - проверка /updates/health без артефактов для graceful degradation
+guards:
+  - name: grpc_runtime_guard
+    when:
+      grpc_runtime: mismatch
+    action: trigger_kill_switch
+  - name: update_manifest_guard
+    when:
+      updates_manifest: missing
+    action: degrade_to_default_version
+metrics:
+  - name: p95_latency_ms(StreamAudio)
+    target: "<= 1000"
+  - name: error_rate(StreamAudio)
+    target: "<= 5%"
+  - name: updates_health_success_rate
+    target: ">= 99%"
+tests:
+  unit:
+    - pytest
+  contract:
+    pairwise: 12
+    negative: 2
+  smoke:
+    - python server/scripts/grpc_smoke.py localhost 50051
+    - python server/scripts/check_grpc_health.py 127.0.0.1 8080
+rollback_plan: |
+  Активировать kill-switch NEXY_KS_GRPC_UPDATE_GUARDRAILS, остановить rollout,
+  проверить /health и /updates/health, откатить зависимости gRPC/protobuf, собрать
+  журналы интерцепторов и подготовить post-mortem отчёт.
+approvals:
+  - role: Tech Lead Server
+    owner: @server-platform
+  - role: gRPC Lead
+    owner: @grpc-core
+  - role: Release Manager
+    owner: @release-ops

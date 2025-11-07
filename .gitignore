@@ -85,6 +85,7 @@ update-server/
 /*
 !.gitignore
 !.github/
+!.impact/
 !LICENSE
 !README.md
 !pytest.ini

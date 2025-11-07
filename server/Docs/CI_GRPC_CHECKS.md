@@ -6,6 +6,20 @@
 
 ## GitHub Actions Workflow
 
+### Канонический fail-fast workflow
+
+Файл: `.github/workflows/ci-fail-fast.yml`
+
+- `grpc_tools.protoc` пересобирает Python-стабы и `git diff --exit-code`
+  гарантирует отсутствие непроизведённых артефактов.
+- `server/scripts/verify_cache_control_headers.py` валидирует `Cache-Control`
+  значения в `server/nginx/grpc-passthrough.conf`.
+- `server/scripts/check_change_impact_gate.py` требует `.impact/change_impact.yaml`
+  при изменениях, выходящих за рамки SIMPLE-гейта (более 1 файла или >60 LOC).
+- `server/scripts/verify_no_direct_module_calls.py` подтверждает, что между
+  `server/modules/*` нет прямых импортов.
+- `pytest` выполняет весь unit-контур (см. `pytest.ini` и `server/conftest.py`).
+
 ### Пример полного workflow для проверки gRPC
 
 ```yaml

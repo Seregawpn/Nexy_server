@@ -1,0 +1,58 @@
+name: CI - Fail Fast Guardrails
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  guardrails:
+    name: Fail-fast guardrails
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r server/requirements.txt
+          pip install pytest
+
+      - name: Regenerate protobuf stubs
+        run: |
+          python -m grpc_tools.protoc \
+            -I server/modules/grpc_service \
+            --python_out=server/modules/grpc_service \
+            --grpc_python_out=server/modules/grpc_service \
+            server/modules/grpc_service/streaming.proto
+
+      - name: Ensure protobuf artefacts are committed
+        run: |
+          git diff --exit-code -- server/modules/grpc_service/streaming_pb2.py server/modules/grpc_service/streaming_pb2_grpc.py
+
+      - name: Validate ingress Cache-Control headers
+        run: python server/scripts/verify_cache_control_headers.py
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
+
+      - name: Enforce impact gate artefact
+        if: github.event_name == 'pull_request'
+        run: python server/scripts/check_change_impact_gate.py --base origin/${{ github.base_ref }}
+
+      - name: Verify module boundary rules
+        run: python server/scripts/verify_no_direct_module_calls.py
+
+      - name: Run pytest suite
+        env:
+          PYTHONPATH: server
+        run: pytest

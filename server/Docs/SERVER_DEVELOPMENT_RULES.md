@@ -39,13 +39,13 @@
 Если условия не выполняются — обязательна микро-ADR (не менее 7 строк: контекст, альтернатива «попроще», обоснование, ожидаемый эффект).
 
 ### **Impact-гейт (перед мерджем)**
-- [ ] Приложен `.impact/change_impact.yaml` (оси, инварианты, guards, тест-стратегия, метрики, роллаут)
+- [ ] Приложен `.impact/change_impact.yaml` (шаблон: `.impact/change_impact_template.yaml`, проверяется `server/scripts/check_change_impact_gate.py`)
 - [ ] `Docs/STATE_CATALOG.md` обновлён, если затронуты оси/читатели/писатели; приложена ссылка или дифф на `client/config/interaction_matrix.yaml` в клиентском репозитории
 - [ ] 8–14 pairwise тестов + ≥2 негативных по заявленным осям / сценариям
 - [ ] Логи решений/апдейтов собираются и доступны локально
 - [ ] `/health` отдаёт `latest_version` и `latest_build` как строки, `/appcast.xml` содержит тот же номер; логи апдейта без ошибок
 - [ ] Фича-флаг + kill-switch прописаны (если релиз инкрементальный)
-- [ ] CI-проверки (lint, contract, validate_release_size) выполняются по `Docs/CI_GRPC_CHECKS.md`
+- [ ] CI-проверки (lint, contract, validate_release_size) выполняются по `Docs/CI_GRPC_CHECKS.md` (workflow: `.github/workflows/ci-fail-fast.yml`)
 
 ---
 
@@ -303,7 +303,7 @@ HEALTH_PORT=8080
 
 ### Дополнительные ссылки
 
-- Шаблон change impact: `.impact/change_impact.client_template.yaml`
+- Шаблон change impact: `.impact/change_impact_template.yaml`
 - План приведения к принципам: выполнен (PR-0..PR-8 завершены)
 - Шаблон PR-чеклиста: `Docs/PR_CHECKLIST_TEMPLATE.md`
 - Корневой README: `README.md` (навигационная матрица)
