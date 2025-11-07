@@ -39,3 +39,6 @@ pydub
 
 # Мониторинг системы
 psutil
+
+# Тестовые и dev-зависимости
+pytest-asyncio

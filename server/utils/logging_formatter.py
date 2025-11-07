@@ -8,12 +8,11 @@
 Секреты автоматически маскируются (PR-8).
 """
 
-import logging
-import time
 import json
+import logging
 import re
-from datetime import datetime
-from typing import Optional, Dict, Any
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 
 class StructuredFormatter(logging.Formatter):
@@ -26,14 +25,43 @@ class StructuredFormatter(logging.Formatter):
     """
     
     # Паттерны для маскировки секретов
-    SECRET_PATTERNS = [
-        (r'api[_-]?key["\s:=]+([a-zA-Z0-9_-]{20,})', r'api_key="****"'),
-        (r'token["\s:=]+([a-zA-Z0-9_-]{20,})', r'token="****"'),
-        (r'password["\s:=]+([^\s,"}]+)', r'password="****"'),
-        (r'secret["\s:=]+([^\s,"}]+)', r'secret="****"'),
-        (r'GEMINI_API_KEY["\s:=]+([a-zA-Z0-9_-]+)', r'GEMINI_API_KEY="****"'),
-        (r'AZURE_SPEECH_KEY["\s:=]+([a-zA-Z0-9_-]+)', r'AZURE_SPEECH_KEY="****"'),
-        (r'GITHUB_TOKEN["\s:=]+([a-zA-Z0-9_-]+)', r'GITHUB_TOKEN="****"'),
+    SECRET_KEY_PATTERN = re.compile(
+        r"(?i)(api[\s_-]?key|token|password|secret|authorization|bearer|"
+        r"gemini[\s_-]?api[\s_-]?key|azure[\s_-]?speech[\s_-]?key|github[\s_-]?token|client[\s_-]?secret|key)"
+    )
+
+    ALWAYS_MASK_KEYWORDS = {"password", "secret"}
+
+    KEY_VALUE_PATTERNS = [
+        re.compile(
+            r"(?i)((?:api|client)[\s_-]?key(?:\s*[:=]\s*|\s+))(\"?)([A-Za-z0-9_\-]{8,})(\"?)"
+        ),
+        re.compile(
+            r"(?i)(gemini[\s_-]?api[\s_-]?key(?:\s*[:=]\s*|\s+))(\"?)([A-Za-z0-9_\-]{8,})(\"?)"
+        ),
+        re.compile(
+            r"(?i)(azure[\s_-]?speech[\s_-]?key(?:\s*[:=]\s*|\s+))(\"?)([A-Za-z0-9_\-]{8,})(\"?)"
+        ),
+        re.compile(
+            r"(?i)(github[\s_-]?token(?:\s*[:=]\s*|\s+))(\"?)([A-Za-z0-9_\-]{8,})(\"?)"
+        ),
+        re.compile(
+            r"(?i)(token(?:\s*[:=]\s*|\s+))(\"?)([A-Za-z0-9_\.-]{8,})(\"?)"
+        ),
+        re.compile(
+            r"(?i)(password|secret)(?:\s*[:=]\s*|\s+)(\"?)([^\s\"']{6,})(\"?)"
+        ),
+        re.compile(
+            r"(?i)(authorization(?:\s*[:=]\s*|\s+)(?:bearer\s+))([A-Za-z0-9_\.-]{10,})"
+        ),
+    ]
+
+    SECRET_VALUE_PATTERNS = [
+        re.compile(r"sk_(?:live|test)_[A-Za-z0-9]{12,}", re.IGNORECASE),
+        re.compile(r"AIza[0-9A-Za-z\-_]{20,}"),
+        re.compile(r"ya29\.[0-9A-Za-z\-_]{20,}"),
+        re.compile(r"(?<=Bearer\s)[A-Za-z0-9_\.-]{10,}"),
+        re.compile(r"[A-Za-z0-9_\-]{32,}"),
     ]
     
     def _mask_secrets(self, text: str) -> str:
@@ -47,8 +75,20 @@ class StructuredFormatter(logging.Formatter):
             Текст с замаскированными секретами
         """
         masked = text
-        for pattern, replacement in self.SECRET_PATTERNS:
-            masked = re.sub(pattern, replacement, masked, flags=re.IGNORECASE)
+
+        for pattern in self.KEY_VALUE_PATTERNS:
+            def _replace(match: re.Match[str]) -> str:
+                prefix = match.group(1)
+                quote_start = match.group(2) or ""
+                quote_end = match.group(4) if match.lastindex and match.lastindex >= 4 else ""
+                masked_value = "****"
+                return f"{prefix}{quote_start}{masked_value}{quote_end}"
+
+            masked = pattern.sub(_replace, masked)
+
+        for pattern in self.SECRET_VALUE_PATTERNS:
+            masked = pattern.sub("****", masked)
+
         return masked
     
     def format(self, record: logging.LogRecord) -> str:
@@ -63,7 +103,7 @@ class StructuredFormatter(logging.Formatter):
         """
         # Базовые поля
         parts = [
-            f"ts={datetime.utcnow().isoformat()}",
+            f"ts={datetime.now(timezone.utc).isoformat()}",
             f"level={record.levelname}",
         ]
         
@@ -96,7 +136,7 @@ class StructuredFormatter(logging.Formatter):
         ctx = getattr(record, 'ctx', None)
         if ctx:
             # Маскируем секреты в контексте перед сериализацией
-            masked_ctx = self._mask_secrets_in_dict(ctx) if isinstance(ctx, dict) else ctx
+            masked_ctx = self._mask_secrets_in_dict(ctx) if isinstance(ctx, dict) else self._mask_secrets(str(ctx))
             
             # Сериализуем контекст в JSON
             try:
@@ -138,18 +178,39 @@ class StructuredFormatter(logging.Formatter):
         Returns:
             Словарь с замаскированными секретами
         """
-        masked = {}
-        secret_keys = ['api_key', 'token', 'password', 'secret', 'key', 'GEMINI_API_KEY', 'AZURE_SPEECH_KEY', 'GITHUB_TOKEN']
-        
+        masked: Dict[str, Any] = {}
+
         for key, value in d.items():
-            if any(sk in key.lower() for sk in secret_keys) and isinstance(value, str) and len(value) > 10:
-                masked[key] = "****"
-            elif isinstance(value, dict):
+            if isinstance(value, dict):
                 masked[key] = self._mask_secrets_in_dict(value)
-            else:
-                masked[key] = value
-        
+                continue
+
+            if isinstance(value, str):
+                key_lower = key.lower()
+                key_matches_secret = bool(self.SECRET_KEY_PATTERN.search(key))
+                if key_lower in self.ALWAYS_MASK_KEYWORDS:
+                    masked[key] = "****"
+                elif key_matches_secret and len(value) <= 10:
+                    masked[key] = value
+                elif key_matches_secret or self._looks_like_secret(value):
+                    masked[key] = "****"
+                else:
+                    masked[key] = self._mask_secrets(value)
+                continue
+
+            masked[key] = value
+
         return masked
+
+    def _looks_like_secret(self, value: str) -> bool:
+        """Return True if the string resembles a secret token."""
+
+        if len(value) < 10:
+            return False
+        for pattern in self.SECRET_VALUE_PATTERNS:
+            if pattern.search(value):
+                return True
+        return False
 
 
 def setup_structured_logging(level: str = "INFO") -> None:

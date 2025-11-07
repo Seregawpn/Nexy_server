@@ -87,4 +87,5 @@ update-server/
 !.github/
 !LICENSE
 !README.md
+!pytest.ini
 !server/
