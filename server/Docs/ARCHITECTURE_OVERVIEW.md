@@ -25,6 +25,7 @@
 
 ```
 server/
+├── main.py                      # Точка входа сервера
 ├── modules/                     # Чистая бизнес-логика
 │   ├── grpc_service/            # gRPC сервер, интерсепторы, streaming.proto
 │   ├── audio_generation/
@@ -33,7 +34,8 @@ server/
 │   ├── memory_management/
 │   ├── interrupt_handling/
 │   ├── text_filtering/
-│   └── update/
+│   ├── database/                # Управление базой данных
+│   └── update/                  # Система обновлений
 ├── integrations/                # Обвязка и orchestration
 │   ├── core/
 │   ├── service_integrations/
@@ -42,6 +44,9 @@ server/
 ├── scripts/                     # smoke/contract/гвардрайлы
 ├── tests/                       # unit/contract сценарии
 ├── config/                      # unified_config + пример
+├── utils/                       # Утилиты (логирование, метрики, текст)
+├── updates/                     # Артефакты обновлений (manifests, downloads, keys)
+├── nginx/                       # Конфигурация Nginx для ingress
 └── Docs/                        # Канон документов
 ```
 
