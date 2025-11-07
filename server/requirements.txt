@@ -18,9 +18,11 @@ langchain-core
 python-dotenv
 
 # gRPC и Protocol Buffers
-grpcio
-grpcio-tools
-protobuf
+# Используем согласованные версии, чтобы protobuf runtime совпадал с gencode 5.29.x.
+grpcio==1.76.0
+# grpcio-tools 1.71.2 ships protoc 5.29.x, matching the checked-in gencode.
+grpcio-tools==1.71.2
+protobuf>=5.29.0,<6.0.0
 
 # Edge TTS (бесплатный, без API ключей)
 edge-tts
