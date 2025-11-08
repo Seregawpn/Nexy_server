@@ -113,3 +113,4 @@ log stream --predicate 'process == "Nexy"' --level debug --style compact
 tail -f ~/nexy_current.log
 ```
 
+

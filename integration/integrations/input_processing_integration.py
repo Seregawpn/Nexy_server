@@ -796,6 +796,20 @@ class InputProcessingIntegration:
                     self._pending_session_id = None
                     return
 
+            # ЗАЩИТА 4: Проверяем, что микрофон НЕ активен (защита от повторных LONG_PRESS)
+            if self._mic_active:
+                logger.warning(f"⚠️ LONG_PRESS пришел, но микрофон УЖЕ активен (_mic_active=True) - игнорируем повторную активацию")
+                logger.warning(f"⚠️ LONG_PRESS: _recording_started={self._recording_started}, _current_session_id={self._current_session_id}")
+                # НЕ сбрасываем _pending_session_id - он может быть нужен для RELEASE
+                return
+
+            # ЗАЩИТА 5: Проверяем, что запись НЕ начата (защита от повторных LONG_PRESS)
+            if self._recording_started:
+                logger.warning(f"⚠️ LONG_PRESS пришел, но запись УЖЕ начата (_recording_started=True) - игнорируем повторную активацию")
+                logger.warning(f"⚠️ LONG_PRESS: _mic_active={self._mic_active}, _current_session_id={self._current_session_id}")
+                # НЕ сбрасываем _pending_session_id - он может быть нужен для RELEASE
+                return
+
             # НЕ публикуем keyboard.long_press - это создает бесконечный цикл!
             # Событие уже пришло к нам через SimpleModuleCoordinator
 
@@ -883,27 +897,50 @@ class InputProcessingIntegration:
             # НЕ публикуем keyboard.release - это создает бесконечный цикл!
             # Событие обрабатывается напрямую от QuartzKeyboardMonitor
 
-            # WARNING: RELEASE без активной записи
-            if not self._recording_started:
-                logger.warning(f"⚠️ RELEASE пришёл без активной записи: session={self._current_session_id}, duration={duration_ms:.0f}ms")
-
-            # Останавливаем запись, только если она была начата (после LONG_PRESS)
-            if self._recording_started and self._current_session_id is not None:
-                logger.debug(f"RELEASE: публикуем voice.recording_stop для session {self._current_session_id}")
-                await self.event_bus.publish(
-                    "voice.recording_stop",
-                    {
+            # КРИТИЧНО: Гарантируем остановку микрофона при RELEASE, даже если _recording_started == False
+            # Это защищает от залипания микрофона при race conditions
+            was_recording = self._recording_started  # Сохраняем состояние ДО обработки
+            
+            if self._mic_active or self._recording_started:
+                logger.info(f"🛑 RELEASE: микрофон активен (_mic_active={self._mic_active}) или запись начата (_recording_started={self._recording_started}) - принудительно останавливаем")
+                
+                # Если есть активная сессия, останавливаем её
+                if self._current_session_id is not None:
+                    logger.debug(f"RELEASE: публикуем voice.recording_stop для session {self._current_session_id}")
+                    await self.event_bus.publish(
+                        "voice.recording_stop",
+                        {
+                            "source": "keyboard",
+                            "timestamp": event.timestamp,
+                            "duration": event.duration,
+                            "session_id": self._current_session_id,
+                        }
+                    )
+                    logger.debug("RELEASE: voice.recording_stop опубликовано ✓")
+                else:
+                    # Если нет активной сессии, но микрофон активен - принудительно закрываем
+                    logger.warning(f"⚠️ RELEASE: микрофон активен, но нет активной сессии - принудительно закрываем микрофон")
+                    # Публикуем событие закрытия микрофона напрямую
+                    await self.event_bus.publish("voice.mic_closed", {
                         "source": "keyboard",
                         "timestamp": event.timestamp,
-                        "duration": event.duration,
-                        "session_id": self._current_session_id,
-                    }
-                )
-                logger.debug("RELEASE: voice.recording_stop опубликовано ✓")
+                        "reason": "force_close_on_release"
+                    })
+                    # Принудительно сбрасываем состояние микрофона
+                    self._mic_active = False
+                    self._last_mic_closed_ts = time.monotonic()
+                
+                # КРИТИЧНО: Сбрасываем _recording_started СРАЗУ после публикации voice.recording_stop,
+                # чтобы предотвратить race condition при быстром повторном нажатии
+                self._recording_started = False
+                logger.debug(f"🛑 RELEASE: _recording_started сброшен в False (было {was_recording})")
+                
                 await self._wait_for_mic_closed()
+            elif not self._recording_started:
+                logger.debug(f"ℹ️ RELEASE пришёл без активной записи: session={self._current_session_id}, duration={duration_ms:.0f}ms, _mic_active={self._mic_active}")
 
             # Переходим в PROCESSING только если запись велась; иначе остаёмся в текущем режиме (обычно SLEEPING)
-            if self._recording_started:
+            if was_recording:  # Используем сохраненное значение, а не текущее состояние
                 logger.debug(f"RELEASE: публикуем mode.request(PROCESSING) для session {self._current_session_id}")
                 await self.event_bus.publish("mode.request", {
                     "target": AppMode.PROCESSING,
@@ -912,9 +949,6 @@ class InputProcessingIntegration:
                 logger.info("RELEASE: запрос на PROCESSING отправлен ✓")
 
             # Смена режима публикуется централизованно через ApplicationStateManager
-
-            was_recording = self._recording_started
-            self._recording_started = False
 
             if was_recording:
                 self._session_waiting_grpc = True

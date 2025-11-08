@@ -193,10 +193,15 @@ class QuartzKeyboardMonitor:
                                         self.press_start_time = None
                                         self.last_event_time = now
                                         
-                                        # Определяем тип события (SHORT_PRESS или LONG_PRESS)
-                                        if duration >= self.long_press_threshold:
-                                            event_type_out = KeyEventType.LONG_PRESS
+                                        # КРИТИЧНО: LONG_PRESS генерируется ТОЛЬКО из hold_monitor (во время удержания)
+                                        # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE
+                                        if long_sent_snapshot:
+                                            # LONG_PRESS уже был отправлен из hold_monitor - генерируем только RELEASE
+                                            logger.debug(f"🔑 keyUp: LONG_PRESS уже был отправлен из hold_monitor, генерируем только RELEASE")
+                                            event_type_out = KeyEventType.RELEASE
                                         else:
+                                            # Если LONG_PRESS не был отправлен из hold_monitor, значит это было короткое нажатие
+                                            # Генерируем SHORT_PRESS (LONG_PRESS генерируется ТОЛЬКО из hold_monitor)
                                             event_type_out = KeyEventType.SHORT_PRESS
                                         
                                         # Создаем событие
@@ -207,17 +212,20 @@ class QuartzKeyboardMonitor:
                                             duration=duration,
                                         )
                                         
-                                        # Отправляем событие (SHORT_PRESS или LONG_PRESS)
+                                        # Отправляем событие (SHORT_PRESS или RELEASE)
+                                        # LONG_PRESS генерируется ТОЛЬКО из hold_monitor, не при keyUp
                                         self._trigger_event(event_type_out, duration, ev)
                                         
-                                        # RELEASE всегда отправляется после SHORT_PRESS или LONG_PRESS
-                                        ev_release = KeyEvent(
-                                            key=self.key_to_monitor,
-                                            event_type=KeyEventType.RELEASE,
-                                            timestamp=now,
-                                            duration=duration,
-                                        )
-                                        self._trigger_event(KeyEventType.RELEASE, duration, ev_release)
+                                        # RELEASE всегда отправляется после SHORT_PRESS
+                                        # НО: если event_type_out уже RELEASE, не отправляем его повторно
+                                        if event_type_out != KeyEventType.RELEASE:
+                                            ev_release = KeyEvent(
+                                                key=self.key_to_monitor,
+                                                event_type=KeyEventType.RELEASE,
+                                                timestamp=now,
+                                                duration=duration,
+                                            )
+                                            self._trigger_event(KeyEventType.RELEASE, duration, ev_release)
                             
                             # Обновляем предыдущее состояние только для Левого Shift
                             if keycode == 56:
@@ -278,7 +286,9 @@ class QuartzKeyboardMonitor:
                             self.press_start_time = None
                             self.last_event_time = now
 
-                            # Если уже отправили LONG_PRESS — это RELEASE
+                            # КРИТИЧНО: LONG_PRESS генерируется ТОЛЬКО из hold_monitor (во время удержания)
+                            # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE
+                            # Если уже отправили LONG_PRESS из hold_monitor — это RELEASE
                             # Иначе (короткое нажатие) — это SHORT_PRESS
                             event_type_out = (
                                 KeyEventType.RELEASE if long_sent_snapshot
