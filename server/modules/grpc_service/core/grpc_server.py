@@ -70,6 +70,9 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
 
         # Инициализируем менеджеры модулей
         self.grpc_service_manager = GrpcServiceManager()
+        
+        # Загружаем unified_config для доступа к конфигурации
+        self.unified_config = get_config()
 
         # Флаг инициализации
         self.is_initialized = False
