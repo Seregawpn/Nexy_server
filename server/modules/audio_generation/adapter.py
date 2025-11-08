@@ -88,7 +88,7 @@ class AudioGenerationAdapter(UniversalModuleInterface):
             
             # Используем метод генерации аудио из процессора
             async def stream_audio():
-                async for audio_chunk in self._processor.generate_audio_streaming(text):
+                async for audio_chunk in self._processor.generate_speech_streaming(text):
                     yield {"audio": audio_chunk, "type": "audio_chunk"}
             
             return stream_audio()
