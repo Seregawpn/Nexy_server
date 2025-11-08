@@ -495,9 +495,19 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 "rate": None
             }
             
-            # Генерируем аудио через модуль (process возвращает async iterator)
+            # Генерируем аудио через модуль
+            # process() возвращает async generator, но нужно сначала получить его
             sent_any = False
-            async for item in audio_module.process(request_data):
+            result = audio_module.process(request_data)
+            # Проверяем, является ли результат async iterator или coroutine
+            if hasattr(result, '__aiter__'):
+                # Это async iterator - используем напрямую
+                async_iterator = result
+            else:
+                # Это coroutine - await его, чтобы получить async iterator
+                async_iterator = await result
+            
+            async for item in async_iterator:
                 if isinstance(item, dict):
                     audio_chunk = item.get("audio")
                     if audio_chunk and isinstance(audio_chunk, (bytes, bytearray)) and len(audio_chunk) > 0:
