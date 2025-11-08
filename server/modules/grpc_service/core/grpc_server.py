@@ -441,6 +441,112 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 message=f"Ошибка обработки прерывания: {str(e)}",
                 interrupted_sessions=[]
             )
+    
+    async def GenerateWelcomeAudio(self, request: streaming_pb2.WelcomeAudioRequest, context) -> AsyncGenerator[streaming_pb2.WelcomeAudioResponse, None]:
+        """Генерация приветственного аудио сообщения"""
+        start_time = time.time()
+        hardware_id = request.hardware_id or "unknown"
+        welcome_message = request.message or "Hello! Welcome to Nexy Assistant. How can I help you today?"
+        
+        logger.info(f"📨 Получен WelcomeAudioRequest: hardware_id={hardware_id}, message_len={len(welcome_message)}")
+        
+        # Структурированное логирование начала обработки (PR-4)
+        log_decision(
+            logger,
+            decision="start",
+            method="GenerateWelcomeAudio",
+            ctx={"hardware_id": hardware_id, "message": welcome_message[:50]}
+        )
+        
+        try:
+            # Получаем модуль audio_generation через координатор
+            coordinator = self.grpc_service_manager.coordinator
+            if not coordinator:
+                logger.error("Module coordinator недоступен")
+                yield streaming_pb2.WelcomeAudioResponse(
+                    error_message="Module coordinator unavailable"
+                )
+                return
+            
+            # Получаем модуль через координатор
+            try:
+                audio_module = coordinator.get("audio_generation")
+            except KeyError:
+                logger.error("Audio generation module не зарегистрирован в координаторе")
+                yield streaming_pb2.WelcomeAudioResponse(
+                    error_message="Audio generation module not registered"
+                )
+                return
+            
+            # Проверяем, что модуль инициализирован
+            if not hasattr(audio_module, 'process'):
+                logger.error("Audio generation module не имеет метода process")
+                yield streaming_pb2.WelcomeAudioResponse(
+                    error_message="Audio generation module missing process method"
+                )
+                return
+            
+            # Генерируем аудио через модуль
+            logger.info(f"🔄 Генерация приветственного аудио для hardware_id={hardware_id}")
+            
+            request_data = {
+                "text": welcome_message,
+                "voice": None,  # Используем настройки по умолчанию
+                "rate": None
+            }
+            
+            sent_any = False
+            async for item in audio_module.process(request_data):
+                if isinstance(item, dict):
+                    audio_chunk = item.get("audio")
+                    if audio_chunk and isinstance(audio_chunk, (bytes, bytearray)) and len(audio_chunk) > 0:
+                        logger.info(f"→ GenerateWelcomeAudio: sending audio_chunk bytes={len(audio_chunk)} for hardware_id={hardware_id}")
+                        yield streaming_pb2.WelcomeAudioResponse(
+                            audio_chunk=streaming_pb2.AudioChunk(
+                                audio_data=audio_chunk,
+                                dtype='int16',
+                                shape=[]
+                            )
+                        )
+                        sent_any = True
+            
+            # Завершение стрима
+            dur_ms = (time.time() - start_time) * 1000
+            log_decision(
+                logger,
+                decision="complete",
+                method="GenerateWelcomeAudio",
+                dur_ms=dur_ms,
+                ctx={"hardware_id": hardware_id, "sent_any": sent_any}
+            )
+            record_metric("GenerateWelcomeAudio", dur_ms, is_error=False)
+            
+            yield streaming_pb2.WelcomeAudioResponse(end_message="Приветственное аудио сгенерировано")
+            
+        except Exception as e:
+            # Структурированное логирование ошибки (PR-4)
+            dur_ms = (time.time() - start_time) * 1000
+            log_rpc_error(
+                logger,
+                method="GenerateWelcomeAudio",
+                error_code="INTERNAL",
+                error_message=f"Ошибка генерации приветственного аудио: {str(e)}",
+                dur_ms=dur_ms,
+                ctx={"hardware_id": hardware_id}
+            )
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}", extra={
+                'scope': 'grpc',
+                'method': 'GenerateWelcomeAudio',
+                'decision': 'error',
+                'ctx': {'error': str(e)}
+            })
+            
+            record_metric("GenerateWelcomeAudio", dur_ms, is_error=True)
+            
+            yield streaming_pb2.WelcomeAudioResponse(
+                error_message=f"Ошибка генерации приветственного аудио: {str(e)}"
+            )
 
 async def run_server(port: int = 50051, max_workers: int = 100):
     """Запуск оптимизированного gRPC сервера для 100 пользователей"""
