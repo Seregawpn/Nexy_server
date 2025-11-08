@@ -174,7 +174,32 @@ server {
     ssl_certificate     /etc/nginx/ssl/server.crt;
     ssl_certificate_key /etc/nginx/ssl/server.key;
 
-    # gRPC по умолчанию (корневой путь)
+    # Health checks (HTTP) - КРИТИЧНО: должны быть ПЕРЕД location /
+    location /health {
+        proxy_pass http://127.0.0.1:8080/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Кеширование для health (короткий TTL)
+        add_header Cache-Control "public, max-age=30";
+    }
+    
+    location /status {
+        proxy_pass http://127.0.0.1:8080/status;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Кеширование для status (короткий TTL)
+        add_header Cache-Control "public, max-age=30";
+    }
+
+    # gRPC по умолчанию (корневой путь) - должен быть ПОСЛЕ location /health и /status
     location / {
         grpc_pass grpc://127.0.0.1:50051;
         grpc_read_timeout 300s;
@@ -244,6 +269,72 @@ curl http://127.0.0.1:8080/health  # INTERNAL loopback
 ```
 
 **Примечание:** Все публичные проверки (из внешней сети) ДОЛЖНЫ идти через HTTPS (443). HTTP порты (8080, 8081, 50051) слушают только localhost и недоступны извне.
+
+**⚠️ ВАЖНО:** Конфигурация Nginx должна содержать `location /health` и `/status` **перед** `location /`, иначе запросы попадут в gRPC прокси вместо HTTP прокси, что вызовет ошибку 502 Bad Gateway.
+
+---
+
+## 🔧 **КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ (2 ОКТЯБРЯ 2025)**
+
+### **1. Ошибка `get_config` не определен**
+
+**Проблема:**
+- В `grpc_server.py` использовался `get_config()` без импорта
+- Ошибка: `NameError: name 'get_config' is not defined`
+- Сервер падал при инициализации и cleanup
+
+**Исправление:**
+- ✅ Добавлен импорт `from config.unified_config import get_config` в `grpc_server.py`
+- ✅ Сервер теперь может корректно инициализироваться
+
+**Файл:** `server/modules/grpc_service/core/grpc_server.py`
+
+**Код:**
+```python
+# Импорт unified_config для доступа к конфигурации
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
+from config.unified_config import get_config
+```
+
+---
+
+### **2. Права доступа для updates директорий**
+
+**Проблема:**
+- Update Server не мог создать директории
+- Ошибка: `Permission denied: '/home/azureuser/voice-assistant/server/updates/downloads'`
+
+**Исправление:**
+- ✅ Добавлена обработка `PermissionError` в `update/config.py`
+- ✅ Созданы директории на сервере с правильными правами
+- ✅ Сервер работает даже если Update Server недоступен
+
+**Файл:** `server/modules/update/config.py`
+
+**Создание директорий на сервере:**
+```bash
+sudo mkdir -p server/updates/{downloads,keys,manifests}
+sudo chown -R azureuser:azureuser server/updates
+sudo chmod -R 755 server/updates
+```
+
+---
+
+### **3. Конфигурация Nginx для `/health` и `/status`**
+
+**Проблема:**
+- В конфигурации Nginx отсутствовали `location /health` и `/status`
+- Запросы попадали в gRPC прокси вместо HTTP прокси
+- Ошибка: 502 Bad Gateway
+
+**Исправление:**
+- ✅ Добавлены `location /health` и `/status` в конфигурацию Nginx
+- ✅ `location /health` и `/status` размещены **перед** `location /`
+- ✅ Публичные endpoints теперь работают корректно
+
+**Файл:** `/etc/nginx/sites-available/nexy`
+
+**Подробности:** `Docs/TROUBLESHOOTING_502.md`
 
 ### **5. Проверка на сервере:**
 ```bash
