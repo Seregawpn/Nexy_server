@@ -115,10 +115,24 @@ class PermissionsRestartHandler:
                 self._last_permissions,
             )
 
-            if self._exec_current_bundle():
+            # ПРИОРИТЕТ 1: Полное закрытие/открытие для packaged .app
+            if not self._packaged_unavailable:
+                if self._launch_packaged_app():
+                    logger.info("[PERMISSION_RESTART] Packaged app launch verified (full restart)")
+                    restart_successful = True
+                    return
+                else:
+                    self._packaged_unavailable = True
+                    logger.info(
+                        "[PERMISSION_RESTART] Packaged app unavailable - will use execve fallback (bundle_path=%s)",
+                        self._derive_bundle_path(),
+                    )
+
+            # ПРИОРИТЕТ 2: os.execve() как fallback (только для PyInstaller bundle)
+            if getattr(sys, "frozen", False) and self._exec_current_bundle():
                 return  # os.execv не возвращается при успехе
 
-            # В dev-режиме (запуск через python main.py) предпочитаем перезапустить текущую команду
+            # ПРИОРИТЕТ 3: Dev fallback (запуск через python main.py)
             if not getattr(sys, "frozen", False) and self._allow_dev_fallback:
                 logger.info(
                     "[PERMISSION_RESTART] Dev restart path active (non-frozen build, restarting python command)"
@@ -132,20 +146,6 @@ class PermissionsRestartHandler:
                 )
                 time.sleep(delay_sec)
                 return
-
-            # Пропускаем packaged app если уже знаем что он недоступен
-            if not self._packaged_unavailable:
-                if self._launch_packaged_app():
-                    logger.info("[PERMISSION_RESTART] Packaged app launch verified (fallback)")
-                    restart_successful = True
-                    return
-                else:
-                    # Запоминаем что packaged app недоступен для следующих попыток
-                    self._packaged_unavailable = True
-                    logger.info(
-                        "[PERMISSION_RESTART] Packaged app unavailable - will use dev fallback (bundle_path=%s)",
-                        self._derive_bundle_path(),
-                    )
 
             if not self._allow_dev_fallback:
                 logger.error(

@@ -219,36 +219,42 @@ decision=abort reason=first_run_restart_pending ctx={firstRun=True,restart_pendi
 
 ### ✅ Ожидаемые логи (в зависимости от метода перезапуска):
 
-**Вариант A: os.execv() (PyInstaller bundle - предпочтительный метод)**
+**Вариант A: open -n -a (packaged .app - предпочтительный метод, ПРИОРИТЕТ 1)**
 
 ```log
-[PERMISSION_RESTART] Restarting current bundle via execv (/Applications/Nexy.app/Contents/MacOS/Nexy)
+[PERMISSION_RESTART] Scheduled delayed packaged relaunch (bundle=/Applications/Nexy.app, delay=3.00s)
+[PERMISSION_RESTART] ✅ Atomic restart flag written: .../restart_completed.flag
+[PERMISSION_RESTART] Packaged app launch verified (full restart)
+[PERMISSION_RESTART] Exiting current process (reason=first_run_completed, permissions=...)
+```
+
+**После этого лога helper-скрипт ждет завершения процесса, затем запускает `open -n -a`**
+
+**КРИТИЧНЫЕ ПРОВЕРКИ:**
+- ✅ `_launch_packaged_app()` вызывается первым (ПРИОРИТЕТ 1)
+- ✅ Helper-скрипт создан и запущен
+- ✅ Флаг `restart_completed.flag` создан ДО выхода
+- ✅ `restart_successful = True` установлен
+- ✅ `os._exit(0)` вызван в finally блоке
+- ✅ Новый процесс верифицирован через `pgrep`
+
+---
+
+**Вариант B: os.execv() (PyInstaller bundle - fallback, ПРИОРИТЕТ 2)**
+
+```log
+[PERMISSION_RESTART] Packaged app unavailable - will use execve fallback (bundle_path=/Applications/Nexy.app)
+[PERMISSION_RESTART] Restarting current bundle via execve (/Applications/Nexy.app/Contents/MacOS/Nexy)
+[PERMISSION_RESTART] Setting NEXY_FIRST_RUN_RESTARTED=1 for new process
 ```
 
 **После этого лога процесс **заменяется** новым, логи прерываются**
 
-**КРИТИЧНЫЕ ПРОВЕРКИ (Fix #2):**
-- ✅ `_exec_current_bundle()` вызывает `os.execv()` и заменяет процесс
-- ✅ После `os.execv()` код **НЕ выполняется** (процесс заменён)
-- ✅ НЕТ необходимости устанавливать `restart_successful = True` (процесс уже заменён)
-
----
-
-**Вариант B: open -W (packaged .app доступен)**
-
-```log
-[PERMISSION_RESTART] Relaunching packaged app at /Applications/Nexy.app
-[PERMISSION_RESTART] Verified process launched for /Applications/Nexy.app/Contents/MacOS/Nexy
-[PERMISSION_RESTART] Packaged app launch verified
-[PERMISSION_RESTART] Packaged app launch verified (fallback)
-[PERMISSION_RESTART] Exiting current process (new process should be running)
-```
-
-**КРИТИЧНЫЕ ПРОВЕРКИ (Fix #3):**
-- ✅ `_verify_app_launched()` вызывается после `open -W`
-- ✅ Лог: `Verified process launched` (через pgrep)
-- ✅ `restart_successful = True` установлен
-- ✅ `os._exit(0)` вызван в finally блоке
+**КРИТИЧНЫЕ ПРОВЕРКИ:**
+- ✅ `_exec_current_bundle()` вызывается как fallback (ПРИОРИТЕТ 2)
+- ✅ `os.execve()` заменяет процесс
+- ✅ После `os.execve()` код **НЕ выполняется** (процесс заменён)
+- ✅ Env переменная `NEXY_FIRST_RUN_RESTARTED=1` передана новому процессу
 
 ---
 
@@ -490,9 +496,10 @@ T=60s   [OLD PROCESS] ✅ Флаг restart_completed.flag установлен (
 T=61s   [OLD PROCESS] 🔄 Запрос перезапуска приложения
 T=61s   [OLD PROCESS] decision=abort (Gateway)
 T=62s   [OLD PROCESS] 🔄 Инициирован перезапуск
-T=62s   [OLD PROCESS] Attempting restart via execv/open -W
-T=63s   [OLD PROCESS] Verified process launched (FIX #3 - pgrep)
-T=63s   [OLD PROCESS] restart_successful = True (FIX #2 - fallback)
+T=62s   [OLD PROCESS] Attempting restart via open -n -a (PRIORITY 1) / execve (PRIORITY 2)
+T=63s   [OLD PROCESS] Packaged app launch verified (full restart) OR Restarting via execve
+T=63s   [OLD PROCESS] Verified process launched (pgrep verification)
+T=63s   [OLD PROCESS] restart_successful = True
 T=63s   [OLD PROCESS] os._exit(0)
 --- ПРОЦЕСС ЗАМЕНЁН ---
 T=70s   [NEW PROCESS] 🚀 Запуск нового процесса

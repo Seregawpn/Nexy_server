@@ -14,8 +14,9 @@ updater coordination hook.
 - **`core.restart_scheduler`** — debounces restart requests, waits for safe
   application state (no active sessions, no ongoing updates) and publishes
   diagnostic events before triggering the actual relaunch.
-- **`macos.restart_handler`** — macOS specific helper that reuses the updater
-  relaunch strategy (`open -a Nexy.app` + `os._exit(0)`). Supports
+- **`macos.restart_handler`** — macOS specific helper that uses full restart
+  strategy (`open -n -a Nexy.app` + `os._exit(0)`) as PRIORITY 1, with `os.execve()`
+  fallback (PRIORITY 2) if packaged .app unavailable. Supports
   `NEXY_DISABLE_AUTO_RESTART=true` for dry‑run testing.
 
 ## Event Contract
