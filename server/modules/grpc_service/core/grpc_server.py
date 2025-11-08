@@ -442,20 +442,20 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 interrupted_sessions=[]
             )
     
-    async def GenerateWelcomeAudio(self, request: streaming_pb2.WelcomeAudioRequest, context) -> AsyncGenerator[streaming_pb2.WelcomeAudioResponse, None]:
-        """Генерация приветственного аудио сообщения"""
+    async def GenerateWelcomeAudio(self, request: streaming_pb2.WelcomeRequest, context) -> AsyncGenerator[streaming_pb2.WelcomeResponse, None]:
+        """Генерация приветственного аудио сообщения согласно спецификации"""
         start_time = time.time()
-        hardware_id = request.hardware_id or "unknown"
-        welcome_message = request.message or "Hello! Welcome to Nexy Assistant. How can I help you today?"
+        session_id = request.session_id or f"welcome_{int(time.time() * 1000)}"
+        welcome_text = request.text or "Hello! Welcome to Nexy Assistant. How can I help you today?"
         
-        logger.info(f"📨 Получен WelcomeAudioRequest: hardware_id={hardware_id}, message_len={len(welcome_message)}")
+        logger.info(f"📨 Получен WelcomeRequest: session_id={session_id}, text_len={len(welcome_text)}")
         
         # Структурированное логирование начала обработки (PR-4)
         log_decision(
             logger,
             decision="start",
             method="GenerateWelcomeAudio",
-            ctx={"hardware_id": hardware_id, "message": welcome_message[:50]}
+            ctx={"session_id": session_id, "text": welcome_text[:50]}
         )
         
         try:
@@ -463,7 +463,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             coordinator = self.grpc_service_manager.coordinator
             if not coordinator:
                 logger.error("Module coordinator недоступен")
-                yield streaming_pb2.WelcomeAudioResponse(
+                yield streaming_pb2.WelcomeResponse(
                     error_message="Module coordinator unavailable"
                 )
                 return
@@ -473,7 +473,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 audio_module = coordinator.get("audio_generation")
             except KeyError:
                 logger.error("Audio generation module не зарегистрирован в координаторе")
-                yield streaming_pb2.WelcomeAudioResponse(
+                yield streaming_pb2.WelcomeResponse(
                     error_message="Audio generation module not registered"
                 )
                 return
@@ -481,58 +481,93 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             # Проверяем, что модуль инициализирован
             if not hasattr(audio_module, 'process'):
                 logger.error("Audio generation module не имеет метода process")
-                yield streaming_pb2.WelcomeAudioResponse(
+                yield streaming_pb2.WelcomeResponse(
                     error_message="Audio generation module missing process method"
                 )
                 return
             
+            # Получаем информацию об аудио из конфигурации
+            audio_config = self.unified_config.audio
+            sample_rate = getattr(audio_config, 'sample_rate', 22050)
+            channels = getattr(audio_config, 'channels', 1)
+            
             # Генерируем аудио через модуль
-            logger.info(f"🔄 Генерация приветственного аудио для hardware_id={hardware_id}")
+            logger.info(f"🔄 Генерация приветственного аудио для session_id={session_id}")
             
             request_data = {
-                "text": welcome_message,
-                "voice": None,  # Используем настройки по умолчанию
+                "text": welcome_text,
+                "voice": request.voice if request.voice else None,
                 "rate": None
             }
             
-            # Генерируем аудио через модуль
-            # process() возвращает async generator, но нужно сначала получить его
+            # Собираем все аудио данные для вычисления duration
+            all_audio_data = bytearray()
             sent_any = False
+            
+            # Генерируем аудио через модуль
             result = audio_module.process(request_data)
             # Проверяем, является ли результат async iterator или coroutine
             if hasattr(result, '__aiter__'):
-                # Это async iterator - используем напрямую
                 async_iterator = result
             else:
-                # Это coroutine - await его, чтобы получить async iterator
                 async_iterator = await result
             
+            # Собираем аудио данные
             async for item in async_iterator:
                 if isinstance(item, dict):
                     audio_chunk = item.get("audio")
                     if audio_chunk and isinstance(audio_chunk, (bytes, bytearray)) and len(audio_chunk) > 0:
-                        logger.info(f"→ GenerateWelcomeAudio: sending audio_chunk bytes={len(audio_chunk)} for hardware_id={hardware_id}")
-                        yield streaming_pb2.WelcomeAudioResponse(
-                            audio_chunk=streaming_pb2.AudioChunk(
-                                audio_data=audio_chunk,
-                                dtype='int16',
-                                shape=[]
-                            )
-                        )
-                        sent_any = True
+                        all_audio_data.extend(audio_chunk)
             
-            # Завершение стрима
+            # Вычисляем duration_sec на основе размера аудио данных
+            # int16 = 2 bytes per sample, channels = количество каналов
+            bytes_per_sample = 2  # int16
+            total_samples = len(all_audio_data) // (bytes_per_sample * channels)
+            duration_sec = total_samples / sample_rate if sample_rate > 0 else 0.0
+            
+            # 1. Отправляем метаданные (опционально, но рекомендуется)
+            metadata = streaming_pb2.WelcomeMetadata(
+                method="server",
+                duration_sec=duration_sec,
+                sample_rate=sample_rate,
+                channels=channels
+            )
+            yield streaming_pb2.WelcomeResponse(metadata=metadata)
+            logger.info(f"→ GenerateWelcomeAudio: отправлены метаданные: duration={duration_sec:.2f}s, sample_rate={sample_rate}, channels={channels}")
+            
+            # 2. Отправляем аудио чанками (разбиваем на чанки по 16KB)
+            chunk_size = 16384
+            total_bytes = len(all_audio_data)
+            
+            for i in range(0, total_bytes, chunk_size):
+                chunk = all_audio_data[i:i+chunk_size]
+                if len(chunk) > 0:
+                    # Вычисляем shape для чанка
+                    chunk_samples = len(chunk) // (bytes_per_sample * channels)
+                    shape = [chunk_samples, channels] if channels > 1 else [chunk_samples]
+                    
+                    logger.info(f"→ GenerateWelcomeAudio: sending audio_chunk #{i//chunk_size + 1}: {len(chunk)} bytes")
+                    yield streaming_pb2.WelcomeResponse(
+                        audio_chunk=streaming_pb2.AudioChunk(
+                            audio_data=bytes(chunk),
+                            dtype='int16',
+                            shape=shape
+                        )
+                    )
+                    sent_any = True
+            
+            # 3. Отправляем завершение
             dur_ms = (time.time() - start_time) * 1000
             log_decision(
                 logger,
                 decision="complete",
                 method="GenerateWelcomeAudio",
                 dur_ms=dur_ms,
-                ctx={"hardware_id": hardware_id, "sent_any": sent_any}
+                ctx={"session_id": session_id, "sent_any": sent_any, "total_bytes": total_bytes}
             )
             record_metric("GenerateWelcomeAudio", dur_ms, is_error=False)
             
-            yield streaming_pb2.WelcomeAudioResponse(end_message="Приветственное аудио сгенерировано")
+            yield streaming_pb2.WelcomeResponse(end_message="done")
             
         except Exception as e:
             # Структурированное логирование ошибки (PR-4)
@@ -543,7 +578,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 error_code="INTERNAL",
                 error_message=f"Ошибка генерации приветственного аудио: {str(e)}",
                 dur_ms=dur_ms,
-                ctx={"hardware_id": hardware_id}
+                ctx={"session_id": session_id}
             )
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}", extra={
@@ -555,7 +590,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             
             record_metric("GenerateWelcomeAudio", dur_ms, is_error=True)
             
-            yield streaming_pb2.WelcomeAudioResponse(
+            yield streaming_pb2.WelcomeResponse(
                 error_message=f"Ошибка генерации приветственного аудио: {str(e)}"
             )
 

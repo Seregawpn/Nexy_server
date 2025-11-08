@@ -11,7 +11,7 @@ service StreamingService {
   rpc InterruptSession(InterruptRequest) returns (InterruptResponse);
   
   // Генерация приветственного аудио сообщения
-  rpc GenerateWelcomeAudio(WelcomeAudioRequest) returns (stream WelcomeAudioResponse);
+  rpc GenerateWelcomeAudio(WelcomeRequest) returns (stream WelcomeResponse);
 }
 
 // Запрос на стриминг
@@ -54,16 +54,27 @@ message InterruptResponse {
 }
 
 // Запрос на генерацию приветственного аудио
-message WelcomeAudioRequest {
-  string hardware_id = 1;      // Hardware ID пользователя
-  optional string message = 2;  // Кастомное приветственное сообщение (опционально)
+message WelcomeRequest {
+  string text = 1;                    // ОБЯЗАТЕЛЬНО: Текст приветствия
+  optional string session_id = 2;     // Опционально: ID сессии
+  optional string voice = 3;          // Опционально: Голос (например, "en-US")
+  optional string language = 4;       // Опционально: Язык/локаль
 }
 
 // Ответ с приветственным аудио
-message WelcomeAudioResponse {
+message WelcomeResponse {
   oneof content {
-    AudioChunk audio_chunk = 1;  // Аудио чанк
-    string end_message = 2;       // Сообщение о завершении
-    string error_message = 3;  // Сообщение об ошибке
+    AudioChunk audio_chunk = 1;      // Аудио данные чанком
+    WelcomeMetadata metadata = 2;    // Метаданные о сессии генерации
+    string end_message = 3;          // Сообщение о завершении стрима
+    string error_message = 4;        // Сообщение об ошибке
   }
+}
+
+// Метаданные о генерации приветственного аудио
+message WelcomeMetadata {
+  string method = 1;          // ОБЯЗАТЕЛЬНО: Метод генерации (например, "server")
+  double duration_sec = 2;    // ОБЯЗАТЕЛЬНО: Оценочная длительность в секундах
+  int32 sample_rate = 3;      // ОБЯЗАТЕЛЬНО: Частота дискретизации (например, 16000, 22050, 44100)
+  int32 channels = 4;         // ОБЯЗАТЕЛЬНО: Количество каналов (1 = mono, 2 = stereo)
 }
