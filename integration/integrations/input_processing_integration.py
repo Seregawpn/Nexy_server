@@ -227,6 +227,13 @@ class InputProcessingIntegration:
             await self.event_bus.subscribe("voice.mic_closed", self._on_mic_closed, EventPriority.HIGH)
         except Exception:
             pass
+        # КРИТИЧНО: Подписываемся на события first_run для синхронизации состояния микрофона
+        try:
+            await self.event_bus.subscribe("permissions.first_run_started", self._on_first_run_started, EventPriority.CRITICAL)
+            await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.CRITICAL)
+            await self.event_bus.subscribe("permissions.first_run_failed", self._on_first_run_completed, EventPriority.CRITICAL)
+        except Exception as e:
+            logger.warning(f"⚠️ [INPUT_PROCESSING] Ошибка подписки на события first_run: {e}")
 
     async def _on_recognition_completed(self, event):
         """Фиксируем факт распознавания для текущей сессии"""
@@ -392,6 +399,49 @@ class InputProcessingIntegration:
             fut = self._mic_waiters.pop(0)
             if not fut.done():
                 fut.set_result(True)
+    
+    async def _on_first_run_started(self, event):
+        """Обработчик начала процедуры first_run - синхронизируем состояние микрофона"""
+        try:
+            logger.info(
+                "🔒 [INPUT_PROCESSING] First run начат - синхронизация состояния микрофона"
+            )
+            # Принудительно сбрасываем состояние микрофона
+            if self._mic_active:
+                logger.warning("⚠️ [INPUT_PROCESSING] Микрофон был активен при начале first_run - принудительно закрываем")
+                self._mic_active = False
+                self._last_mic_closed_ts = time.monotonic()
+            
+            # Разрешаем все ожидающие Future для предотвращения залипания
+            while self._mic_waiters:
+                fut = self._mic_waiters.pop(0)
+                if not fut.done():
+                    fut.set_result(True)
+                    logger.debug("🔓 [INPUT_PROCESSING] Разрешён ожидающий Future при first_run_started")
+        except Exception as e:
+            logger.error(f"❌ [INPUT_PROCESSING] Ошибка обработки first_run_started: {e}")
+    
+    async def _on_first_run_completed(self, event):
+        """Обработчик завершения/ошибки процедуры first_run - гарантируем синхронизацию состояния"""
+        try:
+            logger.info(
+                "🔓 [INPUT_PROCESSING] First run завершён - гарантируем синхронизацию состояния микрофона"
+            )
+            # Гарантируем, что состояние микрофона синхронизировано
+            # После first_run микрофон должен быть закрыт
+            if self._mic_active:
+                logger.warning("⚠️ [INPUT_PROCESSING] Микрофон был активен при завершении first_run - принудительно закрываем")
+                self._mic_active = False
+                self._last_mic_closed_ts = time.monotonic()
+            
+            # Разрешаем все ожидающие Future для предотвращения залипания
+            while self._mic_waiters:
+                fut = self._mic_waiters.pop(0)
+                if not fut.done():
+                    fut.set_result(True)
+                    logger.debug("🔓 [INPUT_PROCESSING] Разрешён ожидающий Future при first_run_completed")
+        except Exception as e:
+            logger.error(f"❌ [INPUT_PROCESSING] Ошибка обработки first_run_completed: {e}")
 
     async def _ensure_playback_idle(self, *, for_recording: bool = True):
         """Ждет завершения воспроизведения. Для запуска записи добавляет паузу."""
@@ -425,9 +475,13 @@ class InputProcessingIntegration:
 
     async def _wait_for_mic_closed(self):
         """Ждет закрытия микрофона после voice.recording_stop."""
+        logger.debug(f"🎤 [INPUT_PROCESSING] _wait_for_mic_closed: _mic_active={self._mic_active}")
+        
         if not self._mic_active:
+            logger.debug("🎤 [INPUT_PROCESSING] Микрофон уже закрыт, пропускаем ожидание")
             await self._sleep_after_mic_close()
             return
+        
         loop = asyncio.get_running_loop()
         waiter = loop.create_future()
         self._mic_waiters.append(waiter)
@@ -435,9 +489,14 @@ class InputProcessingIntegration:
             await asyncio.wait_for(waiter, self._mic_wait_timeout)
         except asyncio.TimeoutError:
             logger.warning(
-                "⚠️ Timeout %.1fs ожидания закрытия микрофона",
+                "⚠️ [INPUT_PROCESSING] Timeout %.1fs ожидания закрытия микрофона - принудительно сбрасываем состояние",
                 self._mic_wait_timeout,
             )
+            # КРИТИЧНО: При таймауте принудительно сбрасываем состояние для предотвращения залипания
+            if self._mic_active:
+                logger.warning("⚠️ [INPUT_PROCESSING] Принудительный сброс _mic_active из-за таймаута")
+                self._mic_active = False
+                self._last_mic_closed_ts = time.monotonic()
             if not waiter.done():
                 waiter.set_result(False)
         finally:
