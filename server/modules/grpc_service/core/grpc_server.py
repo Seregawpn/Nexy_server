@@ -495,6 +495,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 "rate": None
             }
             
+            # Генерируем аудио через модуль (process возвращает async iterator)
             sent_any = False
             async for item in audio_module.process(request_data):
                 if isinstance(item, dict):
