@@ -124,6 +124,27 @@
 - **shadow-mode**: параллельно с записью `state_data` публикуются события для постепенной миграции на selectors
 - **связанные документы**: `integration/integrations/updater_integration.py`, `integration/core/selectors.py`, `integration/core/gateways/permission_gateways.py`
 
+#### 11) session_id **[ОБНОВЛЕНО - 09.11.2025]**
+- **владелец**: Tech Lead клиента
+- **пишет**: `input_processing_integration`, `voice_recognition_integration`, `speech_playback_integration` (через `state_manager.update_session_id()` или `state_manager.set_mode()`)
+- **читает**: все интеграции через `state_manager.get_current_session_id()`
+- **источник истины**: `ApplicationStateManager.current_session_id` (централизованное состояние)
+- **метрики**: `session_id_consistency_rate`, `session_id_duplication_rate`
+- **состояния**: `Optional[str]` (может быть None для сброса)
+- **правила управления**:
+  - `set_mode(mode, session_id)` - для изменения режима с установкой session_id (публикует `app.mode_changed`)
+  - `update_session_id(session_id)` - для синхронизации session_id БЕЗ публикации событий (предотвращает ложные прерывания)
+  - Все интеграции используют `state_manager.get_current_session_id()` вместо локальных переменных
+- **миграция завершена (09.11.2025)**:
+  - Удалены локальные переменные `_current_session_id` из `InputProcessingIntegration`, `SpeechPlaybackIntegration`, `VoiceRecognitionIntegration`
+  - Все интеграции используют `ApplicationStateManager` как единый источник истины
+  - При получении `audio_chunk` session_id синхронизируется через `update_session_id()` БЕЗ публикации `app.mode_changed`
+- **защита от ложных прерываний**:
+  - `ProcessingWorkflow` нормализует session_id для корректного сравнения (str vs float)
+  - Игнорирование событий `app.mode_changed` с тем же session_id и режимом
+  - Защита от ложных прерываний при синхронизации session_id (например, при audio_chunk)
+- **связанные документы**: `integration/core/state_manager.py`, `integration/workflows/processing_workflow.py`, `integration/integrations/input_processing_integration.py`
+
 ### Связь с interaction_matrix.yaml
 
 **Обязательная синхронизация**: Каждая ось, влияющая на принятие решений, должна иметь соответствующее правило в `interaction_matrix.yaml`:
@@ -207,6 +228,7 @@ decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=
 | **Gateway layer** | Tech Lead клиента | Разработчики (после синхронизации с interaction_matrix.yaml) | Все интеграции | `integration/core/gateways/` (decision_engine.py, rule_loader.py, predicates.py, base.py, common.py, permission_gateways.py) | Tech Lead клиента |
 | `permission_restart` | Tech Lead клиента | `permission_restart_integration` | Все интеграции, влияющие на перезапуск | `modules/permission_restart/core/restart_scheduler.py` | Tech Lead клиента |
 | `update_in_progress` | UpdaterIntegration owner | `updater_integration` | `permission_restart_integration`, `simple_module_coordinator` | `UpdaterIntegration.is_update_in_progress()` | Tech Lead клиента |
+| `session_id` | Tech Lead клиента | `input_processing_integration`, `voice_recognition_integration`, `speech_playback_integration` | Все интеграции через `state_manager.get_current_session_id()` | `ApplicationStateManager.current_session_id` | Tech Lead клиента |
 
 **Правило разрешения споров**: При любом разногласии по оси/артефакту — окончательное решение принимает Owner из этой таблицы.
 

@@ -57,6 +57,9 @@ class ProcessingWorkflow(BaseWorkflow):
         self.grpc_completed = False
         self.playback_completed = False
         self.interrupted = False
+        
+        # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager
+        # EventBus уже обеспечивает последовательную обработку событий, блокировки не нужны
     
     async def _setup_subscriptions(self):
         """Подписка на события цепочки PROCESSING"""
@@ -138,6 +141,8 @@ class ProcessingWorkflow(BaseWorkflow):
     
     async def _on_mode_changed(self, event):
         """Обработка смены режима"""
+        # КРИТИЧНО: Все изменения идут через единый источник истины (ApplicationStateManager)
+        # EventBus уже обеспечивает последовательную обработку событий, блокировки не нужны
         try:
             data = event.get("data", {})
             new_mode = data.get("mode")
@@ -151,6 +156,27 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.debug(f"⚙️ ProcessingWorkflow: режим изменен на {mode_value}")
             
             if mode_value == "processing":
+                # КРИТИЧНО: Нормализуем session_id для сравнения (может быть str или float)
+                normalized_session_id = str(session_id) if session_id is not None else None
+                normalized_current = str(self.current_session_id) if self.current_session_id is not None else None
+                
+                # КРИТИЧНО: Если workflow уже активен с тем же session_id - игнорируем событие
+                # Это защищает от ложных прерываний при синхронизации session_id (например, при audio_chunk)
+                if self.current_session_id is not None and normalized_session_id == normalized_current and self.state == WorkflowState.ACTIVE:
+                    logger.debug(f"⚙️ ProcessingWorkflow: событие app.mode_changed для текущего session_id={session_id} (уже обрабатывается), игнорируем")
+                    return
+                
+                # КРИТИЧНО: Проверяем, это новый запрос с другим session_id?
+                # Если workflow уже активен с другим session_id, прерываем предыдущий запрос
+                if self.state == WorkflowState.ACTIVE and self.current_session_id is not None:
+                    if normalized_session_id != normalized_current:
+                        logger.info(f"⚙️ ProcessingWorkflow: новый запрос с другим session_id (active={self.current_session_id}, request={session_id}) - прерываем предыдущий")
+                        # Прерываем предыдущий запрос через внутренний метод
+                        self.interrupted = True
+                        await self._cancel_timeout_tasks()
+                        await self._cancel_active_processes()
+                        # НЕ возвращаемся в SLEEPING - сразу начинаем новый запрос
+                
                 # НАЧИНАЕМ координацию цепочки PROCESSING
                 await self._start_processing_chain(session_id)
                 
@@ -394,14 +420,25 @@ class ProcessingWorkflow(BaseWorkflow):
     
     async def _on_interrupt_request(self, event):
         """Обработка запроса прерывания"""
-        if not self.is_active() or self.interrupted:
+        # КРИТИЧНО: Прерывание должно работать даже если workflow не активен (но воспроизведение идет)
+        # Проверяем только interrupted, чтобы избежать повторной обработки
+        if self.interrupted:
+            logger.debug(f"⚙️ ProcessingWorkflow: прерывание уже обработано, игнорируем дубликат")
             return
             
         try:
             data = event.get("data", {})
             reason = data.get("reason", "user_interrupt")
+            session_id = data.get("session_id")
             
-            logger.info(f"⚙️ ProcessingWorkflow: получен запрос ПРЕРЫВАНИЯ, reason={reason}, stage={self.current_stage.value}")
+            # КРИТИЧНО: Проверяем, что прерывание относится к текущей активной сессии
+            # Если workflow активен с другой сессией, игнорируем прерывание
+            if self.is_active() and self.current_session_id is not None and session_id is not None:
+                if session_id != self.current_session_id:
+                    logger.debug(f"⚙️ ProcessingWorkflow: игнорируем прерывание для другой сессии (current={self.current_session_id}, interrupt={session_id})")
+                    return
+            
+            logger.info(f"⚙️ ProcessingWorkflow: получен запрос ПРЕРЫВАНИЯ, reason={reason}, stage={self.current_stage.value if hasattr(self, 'current_stage') else 'unknown'}, active={self.is_active()}")
             
             self.interrupted = True
             
@@ -411,8 +448,18 @@ class ProcessingWorkflow(BaseWorkflow):
             # Публикуем события отмены для всех активных процессов
             await self._cancel_active_processes()
             
-            # Немедленный возврат в SLEEPING
-            await self._return_to_sleeping("interrupted")
+            # Немедленный возврат в SLEEPING (только если workflow активен)
+            if self.is_active():
+                await self._return_to_sleeping("interrupted")
+            else:
+                # Если workflow не активен, просто публикуем запрос на SLEEPING
+                logger.info(f"⚙️ ProcessingWorkflow: workflow не активен, публикуем прямой запрос на SLEEPING")
+                await self.event_bus.publish("mode.request", {
+                    "target": AppMode.SLEEPING,
+                    "source": "processing_workflow",
+                    "reason": "interrupted",
+                    "priority": EventPriority.HIGH
+                })
             
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки прерывания - {e}")

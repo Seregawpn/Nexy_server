@@ -55,8 +55,8 @@ class ModeManagementIntegration:
         self._processing_timeout_sec = 0.0
         self._processing_timeout_task: Optional[asyncio.Task] = None
 
-        # Текущая активная сессия (для фильтрации заявок)
-        self._active_session_id: Optional[Any] = None
+        # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager
+        # Не храним дублирующие переменные здесь
 
         # Таймаут LISTENING (0.0 = отключено по требованиям)
         self._listening_timeout_sec = 0.0
@@ -93,10 +93,17 @@ class ModeManagementIntegration:
 
             # Мост: при смене режима контроллером — обновляем StateManager,
             # который централизованно публикует события (app.mode_changed/app.state_changed)
+            # КРИТИЧНО: Храним session_id для передачи в set_mode через callback
+            self._pending_session_id_for_callback: Optional[str] = None
+            
             async def _on_controller_mode_changed(event):
                 try:
                     # event.mode — это AppMode из централизованного модуля
-                    self.state_manager.set_mode(event.mode)
+                    # Используем сохраненный session_id из последнего mode.request
+                    session_id = getattr(self, '_pending_session_id_for_callback', None)
+                    self.state_manager.set_mode(event.mode, session_id=session_id)
+                    # Сбрасываем после использования
+                    self._pending_session_id_for_callback = None
                 except Exception as e:
                     logger.error(f"StateManager bridging failed: {e}")
             self.controller.register_mode_change_callback(_on_controller_mode_changed)
@@ -146,6 +153,8 @@ class ModeManagementIntegration:
 
     # ---------------- Event handlers ----------------
     async def _on_mode_request(self, event):
+        # КРИТИЧНО: Все изменения идут через единый источник истины (ApplicationStateManager)
+        # EventBus уже обеспечивает последовательную обработку событий, блокировки не нужны
         try:
             data = (event or {}).get("data", {})
             target = data.get("target")  # может быть AppMode или str
@@ -174,14 +183,43 @@ class ModeManagementIntegration:
             current_mode = self.state_manager.get_current_mode()
             logger.info(f"🔄 MODE_REQUEST: current_mode={current_mode}, target={target}, source={source}")
 
-            # Идемпотентность: если запрашивают тот же режим — игнорируем
+            # КРИТИЧНО: Для PROCESSING разрешаем повторные запросы с новым session_id
+            # Это позволяет обрабатывать новый запрос пользователя, даже если приложение
+            # еще обрабатывает предыдущий запрос
+            if target == AppMode.PROCESSING and current_mode == AppMode.PROCESSING:
+                # Проверяем, это новый запрос с другим session_id?
+                current_session_id = self.state_manager.get_current_session_id()
+                if session_id is not None and current_session_id is not None:
+                    if session_id != current_session_id:
+                        # КРИТИЧНО: Просто вызываем set_mode() с новым session_id
+                        # set_mode() сам опубликует app.mode_changed если session_id изменился
+                        logger.info(f"🔄 MODE_REQUEST: новый запрос на PROCESSING с другим session_id (active={current_session_id}, request={session_id}) - разрешаем")
+                        self.state_manager.set_mode(target, session_id=session_id)
+                        return
+                    else:
+                        # Тот же session_id - идемпотентность
+                        logger.debug(f"Mode request ignored (same mode and session): {target}, session_id={session_id}")
+                        return
+                elif session_id is not None:
+                    # Новый запрос без активной сессии - разрешаем
+                    logger.info(f"🔄 MODE_REQUEST: новый запрос на PROCESSING без активной сессии (request={session_id}) - разрешаем")
+                    self.state_manager.set_mode(target, session_id=session_id)
+                    return
+                else:
+                    # Нет session_id - идемпотентность
+                    logger.debug(f"Mode request ignored (same mode, no session_id): {target}")
+                    return
+            
+            # Идемпотентность: если запрашивают тот же режим — игнорируем (для других режимов)
             if target == current_mode:
                 logger.debug(f"Mode request ignored (same mode): {target}")
                 return
+            
             if current_mode == AppMode.PROCESSING and source != 'interrupt':
-                logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={self._active_session_id}, request={session_id})")
-                if self._active_session_id is not None and session_id is not None:
-                    if session_id != self._active_session_id:
+                current_session_id = self.state_manager.get_current_session_id()
+                logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={current_session_id}, request={session_id})")
+                if current_session_id is not None and session_id is not None:
+                    if session_id != current_session_id:
                         logger.debug("Mode request ignored due to session mismatch in PROCESSING")
                         return
 
@@ -189,17 +227,13 @@ class ModeManagementIntegration:
             # Упрощённая модель: interrupt всегда применяется, остальное — напрямую
             if source == 'interrupt' or priority >= 90:
                 logger.info(f"🔄 MODE_REQUEST: применяем как interrupt (source={source}, priority={priority}) → {target}")
-                await self._apply_mode(target, source="interrupt")
+                # КРИТИЧНО: Все изменения идут через set_mode() - единый источник истины
+                await self._apply_mode(target, source="interrupt", session_id=session_id)
                 return
 
             logger.info(f"🔄 MODE_REQUEST: применяем mode → {target}")
-            await self._apply_mode(target, source=source)
-
-            # Обновляем активную сессию
-            if target == AppMode.LISTENING:
-                self._active_session_id = session_id
-            elif target == AppMode.SLEEPING:
-                self._active_session_id = None
+            # КРИТИЧНО: Все изменения идут через set_mode() - единый источник истины
+            await self._apply_mode(target, source=source, session_id=session_id)
 
         except Exception as e:
             logger.error(f"Mode request handling error: {e}")
@@ -245,13 +279,9 @@ class ModeManagementIntegration:
 
     async def _on_voice_recording_start(self, event):
         """Фиксируем session_id для контекста LISTENING/PROCESSING."""
-        try:
-            data = (event or {}).get("data", {})
-            sid = data.get("session_id")
-            if sid is not None:
-                self._active_session_id = sid
-        except Exception:
-            pass
+        # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager
+        # Не нужно обновлять дублирующие переменные
+        pass
 
     # --------------- Bridges (temporary during migration) ---------------
     async def _bridge_keyboard_long(self, event):
@@ -312,13 +342,17 @@ class ModeManagementIntegration:
             pass
 
     # ---------------- Internals ----------------
-    async def _apply_mode(self, target: AppMode, *, source: str):
+    async def _apply_mode(self, target: AppMode, *, source: str, session_id: Optional[str] = None):
         try:
+            # КРИТИЧНО: Сохраняем session_id для передачи в set_mode через callback
+            self._pending_session_id_for_callback = session_id
             # Поручаем переход контроллеру; он сам проверит доступность перехода
             # и при успехе через callback обновит StateManager (публикация событий сохранится централизованной)
             await self.controller.switch_mode(target)
         except Exception as e:
             logger.error(f"Apply mode error: {e}")
+            # Сбрасываем session_id при ошибке
+            self._pending_session_id_for_callback = None
 
     async def _processing_timeout_guard(self):
         try:
@@ -355,5 +389,5 @@ class ModeManagementIntegration:
             "running": self._running,
             "processing_timeout_sec": self._processing_timeout_sec,
             "listening_timeout_sec": self._listening_timeout_sec,
-            "active_session_id": self._active_session_id,
+            "active_session_id": self.state_manager.get_current_session_id(),
         }

@@ -37,6 +37,8 @@ class ApplicationStateManager:
         self.previous_mode = None
         self.mode_history = []
         self.state_data = {}
+        # КРИТИЧНО: Единый источник истины для session_id
+        self.current_session_id: Optional[str] = None
         # EventBus (необязателен). Устанавливается координатором.
         self._event_bus = None
         self._loop = None  # основной asyncio loop, на который публикуем события
@@ -52,10 +54,19 @@ class ApplicationStateManager:
         except Exception:
             self._loop = None
         
-    def set_mode(self, mode: AppMode):
-        """Установить режим приложения"""
+    def set_mode(self, mode: AppMode, session_id: Optional[str] = None):
+        """Установить режим приложения
+        
+        Публикует app.mode_changed если:
+        - Режим изменился, ИЛИ
+        - session_id изменился (даже если режим не изменился)
+        """
         try:
-            if self.current_mode != mode:
+            mode_changed = self.current_mode != mode
+            session_changed = session_id is not None and self.current_session_id != session_id
+            
+            # Обновляем режим если изменился
+            if mode_changed:
                 self.previous_mode = self.current_mode
                 self.current_mode = mode
                 
@@ -71,9 +82,16 @@ class ApplicationStateManager:
                     self.mode_history.pop(0)
                 
                 logger.info(f"🔄 Режим изменен: {self.previous_mode.value} → {mode.value}")
-
+            
+            # Обновляем session_id если передан
+            if session_id is not None:
+                self.current_session_id = session_id
+            
+            # Публикуем событие ТОЛЬКО если режим изменился
+            # session_id обновляется через update_session_id() без публикации события
+            if mode_changed:
                 # 🎯 TRAY DEBUG: Синхронный лог ПЕРЕД публикацией
-                logger.info(f"🎯 TRAY DEBUG: set_mode() готов публиковать app.mode_changed: {mode}")
+                logger.info(f"🎯 TRAY DEBUG: set_mode() готов публиковать app.mode_changed: {mode}, session_id={session_id}")
                 logger.info(f"🎯 TRAY DEBUG: EventBus подключен: {self._event_bus is not None}")
 
                 # Публикуем централизованные события (если EventBus подключен)
@@ -91,6 +109,8 @@ class ApplicationStateManager:
                                 f"🎯 TRAY DEBUG: StateManager публикует app.mode_changed: {mode} (type: {type(mode)})"
                             )
                             event_data = {"mode": mode}
+                            if session_id is not None:
+                                event_data["session_id"] = session_id
                             logger.info(f"🎯 TRAY DEBUG: StateManager event_data: {event_data}")
                             await self._event_bus.publish("app.mode_changed", event_data)
                             logger.info("🎯 TRAY DEBUG: StateManager app.mode_changed опубликовано успешно")
@@ -129,6 +149,37 @@ class ApplicationStateManager:
             
         except Exception as e:
             logger.error(f"❌ Ошибка установки режима: {e}")
+    
+    def update_session_id(self, session_id: Optional[str]) -> bool:
+        """
+        Обновить session_id БЕЗ публикации app.mode_changed.
+        
+        Используется для синхронизации session_id без побочных эффектов
+        (например, при получении audio_chunk во время активной обработки).
+        
+        Args:
+            session_id: Новый session_id (может быть None для сброса)
+            
+        Returns:
+            True если session_id изменился, False если остался прежним
+        """
+        try:
+            if session_id != self.current_session_id:
+                old_session_id = self.current_session_id
+                self.current_session_id = session_id
+                logger.debug(
+                    f"🔄 Session ID обновлен (без публикации события): "
+                    f"{old_session_id} → {session_id}"
+                )
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка обновления session_id: {e}")
+            return False
+    
+    def get_current_session_id(self) -> Optional[str]:
+        """Получить текущий session_id"""
+        return self.current_session_id
     
     def get_current_mode(self) -> AppMode:
         """Получить текущий режим"""

@@ -56,7 +56,7 @@ class VoiceRecognitionIntegration:
         self.config = config or VoiceRecognitionConfig()
 
         # Текущее состояние распознавания
-        self._current_session_id: Optional[float] = None
+        # КРИТИЧНО: _current_session_id удален - используем только state_manager.get_current_session_id()
         self._recording_active: bool = False
         self._recognition_task: Optional[asyncio.Task] = None
         self._initialized: bool = False
@@ -216,6 +216,69 @@ class VoiceRecognitionIntegration:
             logger.error(f"Error stopping VoiceRecognitionIntegration: {e}")
             return False
 
+    # ========== МЕТОДЫ-ПОМОЩНИКИ ДЛЯ ПРОВЕРКИ СОСТОЯНИЯ ==========
+    # Эти методы упрощают логику проверок и делают код более читаемым.
+    # Они не изменяют логику, а только инкапсулируют проверки состояния.
+    # Шаг 1: Добавление методов-помощников для подготовки к миграции на state_manager.
+    
+    def _has_active_session(self) -> bool:
+        """
+        Проверка: есть ли активная сессия.
+        
+        Returns:
+            True если есть активная сессия (из state_manager - единый источник истины)
+        """
+        # Используем state_manager как единый источник истины
+        session_id = self.state_manager.get_current_session_id()
+        return session_id is not None
+    
+    def _get_active_session_id(self) -> Optional[float]:
+        """
+        Получить активный session_id из state_manager (единый источник истины).
+        
+        Returns:
+            Активный session_id или None (конвертируется в float для совместимости)
+        """
+        # Используем state_manager как единый источник истины
+        session_id = self.state_manager.get_current_session_id()
+        if session_id is not None:
+            # Конвертируем в float для совместимости (state_manager хранит строки)
+            try:
+                return float(session_id)
+            except (ValueError, TypeError):
+                return None
+        return None
+    
+    def _set_session_id(self, session_id: Optional[float], reason: str = "unknown"):
+        """
+        Установить session_id в state_manager (единый источник истины).
+        
+        КРИТИЧНО: Используем state_manager как единственный источник истины.
+        Локальная переменная _current_session_id удалена - все через state_manager.
+        
+        Args:
+            session_id: Session ID для установки (может быть float или None)
+            reason: Причина установки (для логирования)
+        """
+        # Устанавливаем в state_manager (единый источник истины)
+        if session_id is not None:
+            # Конвертируем в строку для state_manager (он хранит строки)
+            session_id_str = str(session_id)
+            # Обновляем state_manager только если session_id изменился
+            current_state_session = self.state_manager.get_current_session_id()
+            if current_state_session != session_id_str:
+                # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
+                # Это предотвращает ложные прерывания в ProcessingWorkflow
+                self.state_manager.update_session_id(session_id_str)
+                logger.debug(f"🔄 [VOICE] Session ID синхронизирован с state_manager: {session_id_str} (reason: {reason})")
+        else:
+            # Сбрасываем session_id в state_manager только если он был установлен
+            if self.state_manager.get_current_session_id() is not None:
+                # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
+                # Это предотвращает ложные прерывания в ProcessingWorkflow
+                self.state_manager.update_session_id(None)
+                logger.debug(f"🔄 [VOICE] Session ID сброшен в state_manager (reason: {reason})")
+
     # События записи
     async def _on_recording_start(self, event: Dict[str, Any]):
         try:
@@ -234,7 +297,8 @@ class VoiceRecognitionIntegration:
                 data = event
             session_id = data.get("session_id")
             # Началась запись — фиксируем сессию
-            self._current_session_id = session_id
+            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+            self._set_session_id(session_id, reason="recording_start")
             self._recording_active = True
             # Любое предыдущие распознавание отменяем
             await self._cancel_recognition(reason="new_recording_start")
@@ -296,7 +360,8 @@ class VoiceRecognitionIntegration:
 
                             # КРИТИЧНО: Сбрасываем флаг записи при неудаче
                             self._recording_active = False
-                            self._current_session_id = None
+                            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+                            self._set_session_id(None, reason="recording_failed")
                             # НЕ блокируем приложение - переключаемся на симуляцию
                             self.config.simulate = True
                             await self.event_bus.publish("voice.recognition_failed", {
@@ -319,7 +384,9 @@ class VoiceRecognitionIntegration:
             logger.debug(f"VOICE: recording_stop, session={session_id}")
 
             # Останавливаем запись — запускаем распознавание для этой сессии
-            if session_id is None or self._current_session_id != session_id:
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id (единый источник истины)
+            active_session_id = self._get_active_session_id()
+            if session_id is None or active_session_id != session_id:
                 # Не наша сессия — игнорируем
                 logger.debug("VOICE: recording_stop ignored (session mismatch)")
                 return
@@ -388,7 +455,8 @@ class VoiceRecognitionIntegration:
                     # Если в классе нет cancel_listening, игнорируем
                     pass
             # Сбрасываем текущую сессию целиком
-            self._current_session_id = None
+            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+            self._set_session_id(None, reason="cancel_requested")
             self._recording_active = False
         except Exception as e:
             logger.error(f"VOICE: error in cancel handler: {e}")
@@ -517,10 +585,12 @@ class VoiceRecognitionIntegration:
         self._recognition_task = None
 
     def get_status(self) -> Dict[str, Any]:
+        # КРИТИЧНО: Используем _get_active_session_id для получения session_id (единый источник истины)
+        active_session_id = self._get_active_session_id()
         return {
             "initialized": self._initialized,
             "running": self._running,
-            "session_id": self._current_session_id,
+            "session_id": active_session_id,
             "recording": self._recording_active,
             "recognizing": self._recognition_task is not None and not self._recognition_task.done(),
             "config": {

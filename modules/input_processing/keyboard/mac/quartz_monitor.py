@@ -65,6 +65,9 @@ class QuartzKeyboardMonitor:
         self.press_start_time: Optional[float] = None
         self.last_event_time = 0.0
         self._long_sent = False
+        # КРИТИЧНО: Флаг для предотвращения двойной обработки между flagsChanged и keyUp
+        self._event_processed = False
+        self._last_event_timestamp = 0.0
 
         # Потоки
         self.hold_monitor_thread: Optional[threading.Thread] = None
@@ -170,6 +173,8 @@ class QuartzKeyboardMonitor:
                                         self.key_pressed = True
                                         self.press_start_time = time.time()
                                         self._long_sent = False  # Сбрасываем флаг для нового нажатия
+                                        self._event_processed = False  # Сбрасываем флаг обработки для нового нажатия
+                                        self._last_event_timestamp = 0.0
                                         
                                         # PRESS
                                         ev = KeyEvent(
@@ -182,8 +187,16 @@ class QuartzKeyboardMonitor:
                                 # Это keyUp для Левого Shift (состояние изменилось с True на False)
                                 logger.info(f"✅ Отпущен Левый Shift через FlagsChanged (keyUp)")
                                 with self.state_lock:
+                                    # КРИТИЧНО: Защита от двойной обработки - проверяем, что событие не было обработано через keyUp
+                                    now = time.time()
+                                    if self._event_processed and (now - self._last_event_timestamp) < 0.1:
+                                        logger.debug(f"🔒 FlagsChanged keyUp: событие уже обработано через keyUp, пропускаем")
+                                        # Обновляем состояние, но не генерируем события
+                                        if keycode == 56:
+                                            self._previous_left_shift_pressed = shift_pressed
+                                        return event
+                                    
                                     if self.key_pressed:  # Защита от повторных событий
-                                        now = time.time()
                                         duration = now - (self.press_start_time or now)
                                         
                                         # КРИТИЧНО: Сбрасываем состояние ПОСЛЕ определения типа события,
@@ -192,6 +205,8 @@ class QuartzKeyboardMonitor:
                                         self.key_pressed = False
                                         self.press_start_time = None
                                         self.last_event_time = now
+                                        self._event_processed = True
+                                        self._last_event_timestamp = now
                                         
                                         # КРИТИЧНО: LONG_PRESS генерируется ТОЛЬКО из hold_monitor (во время удержания)
                                         # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE
@@ -263,6 +278,8 @@ class QuartzKeyboardMonitor:
                             self.key_pressed = True
                             self.press_start_time = now
                             self._long_sent = False  # Сбрасываем флаг для нового нажатия
+                            self._event_processed = False  # Сбрасываем флаг обработки для нового нажатия
+                            self._last_event_timestamp = 0.0
                             self.last_event_time = now  # Обновляем время последнего события
 
                         # PRESS
@@ -275,6 +292,11 @@ class QuartzKeyboardMonitor:
                     else:  # kCGEventKeyUp
                         logger.debug("Quartz tap: keyUp detected for target key")
                         with self.state_lock:
+                            # КРИТИЧНО: Защита от двойной обработки - проверяем, что событие не было обработано через flagsChanged
+                            if self._event_processed and (now - self._last_event_timestamp) < 0.1:
+                                logger.debug(f"🔒 keyUp: событие уже обработано через flagsChanged, пропускаем")
+                                return event
+                            
                             if not self.key_pressed:
                                 return event
                             duration = now - (self.press_start_time or now)
@@ -285,6 +307,8 @@ class QuartzKeyboardMonitor:
                             self.key_pressed = False
                             self.press_start_time = None
                             self.last_event_time = now
+                            self._event_processed = True
+                            self._last_event_timestamp = now
 
                             # КРИТИЧНО: LONG_PRESS генерируется ТОЛЬКО из hold_monitor (во время удержания)
                             # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE

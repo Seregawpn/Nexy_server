@@ -51,8 +51,7 @@ class SpeechPlaybackIntegration:
         self._silence_task: Optional[asyncio.Task] = None
         # Пометка завершённых сервером сессий (получен grpc.request_completed/failed)
         self._grpc_done_sessions: Dict[Any, bool] = {}
-        # Текущая активная сессия воспроизведения (последняя)
-        self._current_session_id: Optional[Any] = None
+        # КРИТИЧНО: _current_session_id удален - используем только state_manager.get_current_session_id()
         # Пометки отменённых сессий для фильтрации поздних чанков
         self._cancelled_sessions: set = set()
         # Защита от WAV: пометка, что заголовок уже отброшен для сессии
@@ -151,8 +150,11 @@ class SpeechPlaybackIntegration:
             if sid is not None and (sid in self._cancelled_sessions):
                 logger.debug(f"Ignoring audio chunk for cancelled sid={sid}")
                 return
+            # КРИТИЧНО: Используем state_manager для синхронизации session_id (единый источник истины)
             if sid is not None:
-                self._current_session_id = sid
+                # Синхронизируем session_id с state_manager БЕЗ публикации app.mode_changed
+                # Это предотвращает ложные прерывания в ProcessingWorkflow
+                self.state_manager.update_session_id(str(sid))
             audio_bytes: bytes = data.get("bytes") or b""
             dtype: str = (data.get("dtype") or 'int16').lower()
             shape = data.get("shape") or []
@@ -409,8 +411,10 @@ class SpeechPlaybackIntegration:
             logger.info(f"SpeechPlayback: ЕДИНЫЙ канал прерывания, source={source}, reason={reason}")
             
             # Помечаем текущую сессию как отменённую (если есть)
-            if self._current_session_id is not None:
-                self._cancelled_sessions.add(self._current_session_id)
+            # КРИТИЧНО: Используем state_manager для получения session_id (единый источник истины)
+            current_session_id = self.state_manager.get_current_session_id()
+            if current_session_id is not None:
+                self._cancelled_sessions.add(current_session_id)
                 
             # Отменяем таймер тишины, если активен
             try:
@@ -419,9 +423,28 @@ class SpeechPlaybackIntegration:
             except Exception:
                 pass
             
-            # Останавливаем воспроизведение только если реально играем/на паузе
-            if self._player and self._player.state_manager.current_state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
-                self._player.stop_playback()
+            # КРИТИЧНО: Останавливаем воспроизведение, если плеер существует
+            # Проверяем состояние, но останавливаем даже если состояние не обновлено (кроме IDLE/STOPPED)
+            if self._player:
+                try:
+                    current_state = self._player.state_manager.current_state
+                    if current_state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+                        logger.info(f"SpeechPlayback: останавливаем воспроизведение (state={current_state})")
+                        self._player.stop_playback()
+                    elif current_state not in (PlaybackState.IDLE, PlaybackState.STOPPING):
+                        # КРИТИЧНО: Останавливаем даже если состояние не PLAYING/PAUSED (может быть не обновлено)
+                        # Но пропускаем IDLE и STOPPING, чтобы избежать избыточных вызовов
+                        logger.warning(f"SpeechPlayback: принудительно останавливаем воспроизведение (state={current_state}, может быть не обновлено)")
+                        self._player.stop_playback()
+                    else:
+                        logger.debug(f"SpeechPlayback: воспроизведение уже остановлено (state={current_state})")
+                except Exception as e:
+                    # КРИТИЧНО: Останавливаем даже при ошибке проверки состояния (безопасно, метод идемпотентный)
+                    logger.warning(f"SpeechPlayback: ошибка проверки состояния, принудительно останавливаем: {e}")
+                    try:
+                        self._player.stop_playback()
+                    except Exception:
+                        pass
             
             # Очищаем все сессии
             self._finalized_sessions.clear()
@@ -484,7 +507,9 @@ class SpeechPlaybackIntegration:
                 session_id = f"raw:{pattern}:{int(time.time() * 1000)}"
                 raw_session = True
 
-            self._current_session_id = session_id
+            # КРИТИЧНО: Используем state_manager для синхронизации session_id БЕЗ публикации app.mode_changed
+            # Это предотвращает ложные прерывания в ProcessingWorkflow
+            self.state_manager.update_session_id(str(session_id))
             self._had_audio_for_session[session_id] = True
             if raw_session:
                 self._grpc_done_sessions[session_id] = True
@@ -621,8 +646,10 @@ class SpeechPlaybackIntegration:
                 self._player.stop_playback()
             except Exception:
                 pass
+            # КРИТИЧНО: Используем state_manager для получения session_id (единый источник истины)
+            current_session_id = self.state_manager.get_current_session_id()
             await self.event_bus.publish("playback.cancelled", {
-                "session_id": self._current_session_id,
+                "session_id": current_session_id,
                 "source": "grpc_cancel"
             })
         except Exception as e:
@@ -731,7 +758,8 @@ class SpeechPlaybackIntegration:
     def _on_player_completed(self):
         """Коллбек плеера: воспроизведение завершено (буфер пуст, поток завершён)."""
         try:
-            sid = self._current_session_id
+            # КРИТИЧНО: Используем state_manager для получения session_id (единый источник истины)
+            sid = self.state_manager.get_current_session_id()
             if sid is None:
                 logger.debug("SpeechPlayback: _on_player_completed вызван, но session_id=None")
                 return

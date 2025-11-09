@@ -24,15 +24,14 @@
 |----------|-----------|----------|
 | `Docs/PRODUCT_CONCEPT.md` | Концепция продукта, UX сценарии, 3 режима работы | `Docs/ARCHITECTURE_OVERVIEW.md` |
 | `Docs/ARCHITECTURE_OVERVIEW.md` | Обзор архитектуры, роли компонентов, жизненные циклы | `Docs/PRODUCT_CONCEPT.md`, `Docs/STATE_CATALOG.md` |
-| `Docs/CURRENT_STATUS_REPORT.md` | Текущий статус разработки, завершенные интеграции | `Docs/GLOBAL_DELIVERY_PLAN.md` |
+| `Docs/first_run_flow_spec.md` | Спецификация первого запуска и запроса разрешений | `Docs/ARCHITECTURE_OVERVIEW.md` |
 
 ### 3. Планы и процессы
 
 | Документ | Назначение | Связан с |
 |----------|-----------|----------|
-| `Docs/GLOBAL_DELIVERY_PLAN.md` | Глобальный план поставки, Definition of Ready для TCC/перезапуска | — |
-<!-- FIRST_RUN_TESTING_PLAN.md перенесён в _archive -->
-| `Docs/PACKAGING_FINAL_GUIDE.md` | Единственная инструкция по упаковке (PyInstaller + подпись + нотарификация) | `.cursorrules` (раздел 2) |
+<!-- GLOBAL_DELIVERY_PLAN.md удалён как временный план -->
+| `Docs/first_run_flow_spec.md` | Спецификация первого запуска и запроса разрешений | `Docs/ARCHITECTURE_OVERVIEW.md` |
 
 ### 4. Permission Restart (детали реализации)
 

@@ -120,7 +120,7 @@ class PermissionsRestartHandler:
                 if self._launch_packaged_app():
                     logger.info("[PERMISSION_RESTART] Packaged app launch verified (full restart)")
                     restart_successful = True
-                    return
+                    # НЕ делаем return здесь - нужно дойти до finally блока для os._exit(0)
                 else:
                     self._packaged_unavailable = True
                     logger.info(
@@ -128,8 +128,12 @@ class PermissionsRestartHandler:
                         self._derive_bundle_path(),
                     )
 
+            # Если packaged app успешно запущен, не пытаемся использовать другие методы
+            if restart_successful:
+                # Код дойдет до finally блока для os._exit(0)
+                pass
             # ПРИОРИТЕТ 2: os.execve() как fallback (только для PyInstaller bundle)
-            if getattr(sys, "frozen", False) and self._exec_current_bundle():
+            elif getattr(sys, "frozen", False) and self._exec_current_bundle():
                 return  # os.execv не возвращается при успехе
 
             # ПРИОРИТЕТ 3: Dev fallback (запуск через python main.py)
@@ -145,22 +149,22 @@ class PermissionsRestartHandler:
                     delay_sec,
                 )
                 time.sleep(delay_sec)
-                return
-
-            if not self._allow_dev_fallback:
+                # НЕ делаем return здесь - нужно дойти до finally блока для os._exit(0)
+            elif not self._allow_dev_fallback:
                 logger.error(
                     "[PERMISSION_RESTART] Dev fallback disabled (allow_dev_fallback=False). Restart aborted (reason=%s, permissions=%s)",
                     self._last_reason,
                     self._last_permissions,
                 )
-                return
-
-            logger.info("[PERMISSION_RESTART] Restarting via dev process (python command)")
-            self._launch_dev_process()
-            restart_successful = True
+                # НЕ делаем return здесь - нужно дойти до finally блока для os._exit(0)
+            else:
+                logger.info("[PERMISSION_RESTART] Restarting via dev process (python command)")
+                self._launch_dev_process()
+                restart_successful = True
             delay_sec = self._config.handler_launch_delay_ms / 1000.0
             logger.debug("[PERMISSION_RESTART] Sleeping %.2fs to allow dev process to boot", delay_sec)
             time.sleep(delay_sec)
+                # НЕ делаем return здесь - нужно дойти до finally блока для os._exit(0)
 
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Critical error during restart: %s", exc)

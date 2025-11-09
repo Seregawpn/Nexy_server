@@ -580,13 +580,21 @@ class FirstRunPermissionsIntegration:
         Returns:
             True если флаг успешно создан, False в противном случае
         """
-        logger.info(f"[FIRST_RUN_PERMISSIONS] Установка restart_completed.flag: {self._restart_flag}")
-        result = self._safe_touch_flag(self._restart_flag, "restart_completed")
-        if result:
-            logger.info(f"[FIRST_RUN_PERMISSIONS] ✅ restart_completed.flag установлен: {self._restart_flag}")
-        else:
-            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ restart_completed.flag не удалось установить: {self._restart_flag}")
-        return result
+        logger.info(f"[FIRST_RUN_PERMISSIONS] Установка restart_completed.flag: {self._restart_flag.flag_path}")
+        try:
+            # Используем метод write() из AtomicRestartFlag вместо _safe_touch_flag
+            result = self._restart_flag.write(
+                reason="first_run_completed",
+                permissions=["microphone", "accessibility", "input_monitoring", "screen_capture"]
+            )
+            if result:
+                logger.info(f"[FIRST_RUN_PERMISSIONS] ✅ restart_completed.flag установлен: {self._restart_flag.flag_path}")
+            else:
+                logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ restart_completed.flag не удалось установить: {self._restart_flag.flag_path}")
+            return result
+        except Exception as exc:
+            logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Не удалось установить restart_completed: {exc}")
+            return False
 
     def _safe_touch_flag(self, flag_path: Path, flag_name: str) -> bool:
         """

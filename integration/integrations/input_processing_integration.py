@@ -40,7 +40,7 @@ class InputProcessingIntegration:
         # Состояние
         self.is_initialized = False
         self.is_running = False
-        self._current_session_id: Optional[float] = None
+        # КРИТИЧНО: _current_session_id удален - используем только state_manager.get_current_session_id()
         self._session_recognized: bool = False
         self._recording_started: bool = False
         # Debounce для short press в LISTENING
@@ -67,6 +67,8 @@ class InputProcessingIntegration:
         self._mic_waiters: List[asyncio.Future] = []
         self._last_mic_closed_ts: float = time.monotonic()
         self._mic_wait_timeout: float = max(0.5, float(self.config.playback_wait_timeout_sec))
+        # КРИТИЧНО: Флаг для отмены pending записи при RELEASE до завершения LONG_PRESS
+        self._pending_recording_cancelled: bool = False
         
     async def initialize(self) -> bool:
         """Инициализация input_processing (клавиатура)"""
@@ -159,11 +161,14 @@ class InputProcessingIntegration:
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         try:
             logger.info(f"🎤 PTT: keyDown(left_shift) → PRESS, timestamp={event.timestamp}")
-            logger.debug(f"PRESS: current_session={self._current_session_id}, pending_session={self._pending_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            active_session_id = self._get_active_session_id()
+            logger.debug(f"PRESS: current_session={active_session_id}, pending_session={self._pending_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
             print(f"🔑 PRESS EVENT: {event.timestamp} - начинаем запись")  # Для отладки
             
             # Запоминаем текущую сессию для возможной отмены (short_press)
-            previous_session = self._active_grpc_session_id or self._current_session_id
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            previous_session = self._active_grpc_session_id or self._get_active_session_id()
             if previous_session is not None:
                 self._cancel_session_id = previous_session
                 logger.debug("PRESS: сохранён session_id для отмены: %s", previous_session)
@@ -240,7 +245,9 @@ class InputProcessingIntegration:
         try:
             data = event.get("data") or {}
             session_id = data.get("session_id")
-            if self._current_session_id is not None and session_id == self._current_session_id:
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            active_session_id = self._get_active_session_id()
+            if active_session_id is not None and session_id == active_session_id:
                 self._session_recognized = True
         except Exception as e:
             await self.error_handler.handle_error(
@@ -253,6 +260,24 @@ class InputProcessingIntegration:
     async def _on_recognition_failed(self, event):
         """Возврат в SLEEPING при неудаче/таймауте распознавания."""
         try:
+            # КРИТИЧНО: Проверяем, не ожидается ли обработка через RELEASE
+            # Если запись была активна (_recording_started=True) и RELEASE еще не опубликовал
+            # mode.request(PROCESSING), значит RELEASE еще обрабатывается.
+            # В этом случае НЕ сбрасываем session_id, чтобы RELEASE мог опубликовать
+            # mode.request(PROCESSING) с правильным session_id.
+            has_active_session = self._has_active_session() or (self._active_grpc_session_id is not None)
+            was_recording = self._is_recording_active() or has_active_session
+            
+            if was_recording and has_active_session:
+                logger.info("⚠️ RECOGNITION_FAILED: запись была активна, RELEASE еще обрабатывается - НЕ сбрасываем session_id")
+                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                active_session_id = self._get_active_session_id()
+                logger.info(f"⚠️ RECOGNITION_FAILED: сохраняем session_id={active_session_id or self._active_grpc_session_id} для RELEASE")
+                # НЕ вызываем _reset_session - RELEASE сам опубликует mode.request(PROCESSING)
+                # НЕ публикуем mode.request(SLEEPING) - RELEASE сам решит, что делать
+                return
+            
+            # Если запись не была активна или RELEASE уже обработался - сбрасываем сессию
             self._reset_session("recognition_failed")
             # Переходим в SLEEPING через централизованный запрос
             await self.event_bus.publish("mode.request", {
@@ -285,13 +310,14 @@ class InputProcessingIntegration:
                             "source": "session_reset",
                             "timestamp": time.time(),
                             "reason": reason,
-                            "session_id": self._current_session_id,
+                            "session_id": self._get_active_session_id(),
                         }
                     ))
             except Exception as e:
                 logger.error(f"❌ Ошибка принудительной остановки микрофона: {e}")
         
-        self._current_session_id = None
+        # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+        self._set_session_id(None, reason=reason)
         self._active_grpc_session_id = None
         self._session_waiting_grpc = False
         self._session_recognized = False
@@ -299,6 +325,87 @@ class InputProcessingIntegration:
         self._pending_session_id = None
         self._cancel_session_id = None
         self._recording_start_time = 0.0
+        self._pending_recording_cancelled = False  # Сбрасываем флаг отмены pending записи
+
+    # ========== МЕТОДЫ-ПОМОЩНИКИ ДЛЯ ПРОВЕРКИ СОСТОЯНИЯ ==========
+    # Эти методы упрощают логику проверок и делают код более читаемым.
+    # Они не изменяют логику, а только инкапсулируют проверки состояния.
+    
+    def _is_recording_active(self) -> bool:
+        """
+        Проверка: активна ли запись (микрофон или запись начата).
+        
+        Returns:
+            True если запись активна (микрофон открыт или запись начата)
+        """
+        return self._recording_started or self._mic_active
+    
+    def _has_active_session(self) -> bool:
+        """
+        Проверка: есть ли активная сессия.
+        
+        Returns:
+            True если есть активная сессия (из state_manager - единый источник истины)
+        """
+        # Используем state_manager как единый источник истины
+        session_id = self.state_manager.get_current_session_id()
+        return session_id is not None
+    
+    def _should_stop_recording(self) -> bool:
+        """
+        Проверка: нужно ли остановить запись.
+        
+        Returns:
+            True если нужно остановить запись (микрофон активен, запись начата или есть сессия)
+        """
+        return self._is_recording_active() or self._has_active_session()
+    
+    def _get_active_session_id(self) -> Optional[float]:
+        """
+        Получить активный session_id из state_manager (единый источник истины).
+        
+        Returns:
+            Активный session_id или None (конвертируется в float для совместимости)
+        """
+        # Используем state_manager как единый источник истины
+        session_id = self.state_manager.get_current_session_id()
+        if session_id is not None:
+            # Конвертируем в float для совместимости (state_manager хранит строки)
+            try:
+                return float(session_id)
+            except (ValueError, TypeError):
+                return None
+        return None
+    
+    def _set_session_id(self, session_id: Optional[float], reason: str = "unknown"):
+        """
+        Установить session_id в state_manager (единый источник истины).
+        
+        КРИТИЧНО: Используем state_manager как единственный источник истины.
+        Локальная переменная _current_session_id удалена - все через state_manager.
+        
+        Args:
+            session_id: Session ID для установки (может быть float или None)
+            reason: Причина установки (для логирования)
+        """
+        # Устанавливаем в state_manager (единый источник истины)
+        if session_id is not None:
+            # Конвертируем в строку для state_manager (он хранит строки)
+            session_id_str = str(session_id)
+            # Обновляем state_manager только если session_id изменился
+            current_state_session = self.state_manager.get_current_session_id()
+            if current_state_session != session_id_str:
+                # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
+                # Это предотвращает ложные прерывания в ProcessingWorkflow
+                self.state_manager.update_session_id(session_id_str)
+                logger.debug(f"🔄 Session ID синхронизирован с state_manager: {session_id_str} (reason: {reason})")
+        else:
+            # Сбрасываем session_id в state_manager только если он был установлен
+            if self.state_manager.get_current_session_id() is not None:
+                # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
+                # Это предотвращает ложные прерывания в ProcessingWorkflow
+                self.state_manager.update_session_id(None)
+                logger.debug(f"🔄 Session ID сброшен в state_manager (reason: {reason})")
 
     async def _on_grpc_completed(self, event):
         """Сбрасывает сессию при штатном завершении gRPC."""
@@ -308,14 +415,16 @@ class InputProcessingIntegration:
             if session_id is None:
                 return
 
-            if session_id in {self._active_grpc_session_id, self._current_session_id}:
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            active_session_id = self._get_active_session_id()
+            if session_id in {self._active_grpc_session_id, active_session_id}:
                 logger.debug(f"gRPC completed for session {session_id}")
                 self._reset_session("grpc_completed")
             else:
                 logger.debug(
                     "gRPC completed for session %s, ignored (current=%s, active=%s)",
                     session_id,
-                    self._current_session_id,
+                    self._get_active_session_id(),
                     self._active_grpc_session_id,
                 )
         except Exception as e:
@@ -334,14 +443,16 @@ class InputProcessingIntegration:
             if session_id is None:
                 return
 
-            if session_id in {self._active_grpc_session_id, self._current_session_id}:
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            active_session_id = self._get_active_session_id()
+            if session_id in {self._active_grpc_session_id, active_session_id}:
                 logger.debug(f"gRPC failed for session {session_id}")
                 self._reset_session("grpc_failed")
             else:
                 logger.debug(
                     "gRPC failed for session %s, ignored (current=%s, active=%s)",
                     session_id,
-                    self._current_session_id,
+                    self._get_active_session_id(),
                     self._active_grpc_session_id,
                 )
         except Exception as e:
@@ -610,22 +721,50 @@ class InputProcessingIntegration:
                 logger.info(f"🛑 SHORT_PRESS без записи - отменяем pending session {self._pending_session_id}")
 
                 # КРИТИЧНО: Прерываем воспроизведение при SHORT_PRESS
+                # Проверяем как режим, так и активность воспроизведения (для надежности)
                 try:
                     current_mode = self.state_manager.get_current_mode()
                 except Exception:
                     current_mode = None
 
-                # Если идет воспроизведение (PROCESSING) - прерываем его через ProcessingWorkflow
-                if current_mode == AppMode.PROCESSING:
-                    logger.info("🛑 SHORT_PRESS: публикуем событие прерывания для ProcessingWorkflow")
-                    # ProcessingWorkflow подписан на keyboard.short_press и сам обработает прерывание
-                    await self.event_bus.publish("keyboard.short_press", {
+                # КРИТИЧНО: Прерываем воспроизведение если:
+                # 1. Режим PROCESSING, ИЛИ
+                # 2. Воспроизведение активно (_playback_active), ИЛИ
+                # 3. Есть активная gRPC сессия (_active_grpc_session_id)
+                should_interrupt = (
+                    current_mode == AppMode.PROCESSING or
+                    self._playback_active or
+                    self._active_grpc_session_id is not None
+                )
+                
+                # КРИТИЧНО: Логируем состояние для диагностики
+                logger.info(f"🛑 SHORT_PRESS: проверка прерывания (mode={current_mode}, playback_active={self._playback_active}, grpc_session={self._active_grpc_session_id}, should_interrupt={should_interrupt})")
+
+                if should_interrupt:
+                    logger.info(f"🛑 SHORT_PRESS: МГНОВЕННО прерываем воспроизведение (mode={current_mode}, playback_active={self._playback_active}, grpc_session={self._active_grpc_session_id})")
+                    # КРИТИЧНО: Публикуем playback.cancelled НАПРЯМУЮ для гарантированного прерывания
+                    # ProcessingWorkflow также публикует playback.cancelled, но прямая публикация гарантирует мгновенное прерывание
+                    # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                    active_session_id = self._get_active_session_id()
+                    await self.event_bus.publish("playback.cancelled", {
+                        "session_id": active_session_id or self._active_grpc_session_id,
+                        "reason": "keyboard",
+                        "source": "input_processing",
+                        "timestamp": event.timestamp,
+                        "duration": event.duration
+                    })
+                    logger.info("🛑 SHORT_PRESS: playback.cancelled опубликовано НАПРЯМУЮ для мгновенного прерывания")
+                    
+                    # Публикуем событие для ProcessingWorkflow (для координации перехода в SLEEPING)
+                    # ProcessingWorkflow может также опубликовать playback.cancelled, но это безопасно (идемпотентная операция)
+                    await self.event_bus.publish("interrupt.request", {
                         "source": "keyboard",
                         "timestamp": event.timestamp,
                         "duration": event.duration,
-                        "reason": "user_interrupt"
+                        "reason": "user_interrupt",
+                        "session_id": self._get_active_session_id() or self._active_grpc_session_id
                     })
-                    logger.info("🛑 SHORT_PRESS: событие прерывания опубликовано, ProcessingWorkflow обработает")
+                    logger.info("🛑 SHORT_PRESS: interrupt.request опубликовано для ProcessingWorkflow")
                     
                     # Дополнительно публикуем прямой запрос на SLEEPING для гарантии
                     await self.event_bus.publish("mode.request", {
@@ -640,7 +779,8 @@ class InputProcessingIntegration:
                 self._pending_session_id = None
                 self._cancel_session_id = None
                 self._active_grpc_session_id = None  # Сбрасываем активную gRPC сессию
-                self._current_session_id = None  # Сбрасываем текущую сессию
+                # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+                self._set_session_id(None, reason="short_press_reset")
 
                 # Публикуем событие отмены для других модулей
                 await self.event_bus.publish(
@@ -670,7 +810,9 @@ class InputProcessingIntegration:
 
             # В режиме Quartz SHORT_PRESS генерируется вместо RELEASE.
             # Если запись успели начать (после LONG_PRESS), останавливаем её.
-            if self._recording_started and self._current_session_id is not None:
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            active_session_id = self._get_active_session_id()
+            if self._recording_started and active_session_id is not None:
                 # КРИТИЧНО: Проверяем минимальную длительность записи
                 duration = time.time() - self._recording_start_time
                 try:
@@ -684,23 +826,25 @@ class InputProcessingIntegration:
                     logger.warning(f"⚠️ Запись слишком короткая ({duration:.3f}s < {self._min_recording_duration}s), игнорируем SHORT_PRESS")
                     return
 
-                logger.info(f"🛑 PTT: keyUp(left_shift) → RECORDING_STOP, session={self._current_session_id}, duration={duration*1000:.0f}ms, reason=short_press")
+                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                active_session_id = self._get_active_session_id()
+                logger.info(f"🛑 PTT: keyUp(left_shift) → RECORDING_STOP, session={active_session_id}, duration={duration*1000:.0f}ms, reason=short_press")
                 await self.event_bus.publish(
                     "voice.recording_stop",
                     {
                         "source": "keyboard",
                         "timestamp": event.timestamp,
                         "duration": event.duration,
-                        "session_id": self._current_session_id,
+                        "session_id": active_session_id,
                     }
                 )
                 logger.debug("SHORT_PRESS: voice.recording_stop опубликовано")
                 await self._wait_for_mic_closed()
                 self._session_waiting_grpc = True
-                self._active_grpc_session_id = self._current_session_id
+                self._active_grpc_session_id = active_session_id
                 logger.debug(
                     "SHORT_PRESS: session_id=%s удерживаем до завершения gRPC",
-                    self._current_session_id,
+                    active_session_id,
                 )
 
                 # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Переходим в PROCESSING, а не в SLEEPING!
@@ -710,41 +854,74 @@ class InputProcessingIntegration:
                     "source": "input_processing"
                 })
                 logger.info("SHORT_PRESS: запрос на PROCESSING отправлен (после записи)")
-                logger.debug(f"SHORT_PRESS: проверяем публикацию voice.recognition_started для session {self._current_session_id}")
+                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                active_session_id = self._get_active_session_id()
+                logger.debug(f"SHORT_PRESS: проверяем публикацию voice.recognition_started для session {active_session_id}")
 
                 # Прерывание записи
                 self._recording_started = False
                 self._pending_session_id = None
 
                 # Состояние сбросится по событию завершения gRPC
-                logger.debug("SHORT_PRESS: удерживаем session_id=%s до завершения gRPC", self._current_session_id)
+                logger.debug("SHORT_PRESS: удерживаем session_id=%s до завершения gRPC", active_session_id)
                 return  # Важно! Выходим, не отменяя gRPC и не переходя в SLEEPING
 
             # Если запись НЕ велась - это настоящий короткий tap для отмены
             # Отменяем активный gRPC поток, если он идёт
             logger.debug("SHORT_PRESS: запрашиваем отмену активного gRPC стрима (отмена)")
-            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._current_session_id
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._get_active_session_id()
             await self.event_bus.publish("grpc.request_cancel", {
                 "session_id": cancel_sid
             })
 
             # МГНОВЕННО останавливаем воспроизведение через единый канал прерывания
-            # Публикуем только если мы реально в PROCESSING, чтобы избежать дублей в LISTENING/SLEEPING
+            # Публикуем если воспроизведение активно или режим PROCESSING, чтобы избежать пропусков
             try:
                 current_mode = None
                 try:
                     current_mode = self.state_manager.get_current_mode()
                 except Exception:
                     current_mode = None
-                if current_mode == AppMode.PROCESSING:
+                
+                # КРИТИЧНО: Прерываем воспроизведение если:
+                # 1. Режим PROCESSING, ИЛИ
+                # 2. Воспроизведение активно (_playback_active), ИЛИ
+                # 3. Есть активная gRPC сессия (_active_grpc_session_id)
+                should_interrupt = (
+                    current_mode == AppMode.PROCESSING or
+                    self._playback_active or
+                    self._active_grpc_session_id is not None
+                )
+                
+                # КРИТИЧНО: Логируем состояние для диагностики
+                logger.info(f"🛑 SHORT_PRESS: проверка прерывания (блок 2, mode={current_mode}, playback_active={self._playback_active}, grpc_session={self._active_grpc_session_id}, should_interrupt={should_interrupt})")
+                
+                if should_interrupt:
+                    logger.info(f"🛑 SHORT_PRESS: МГНОВЕННО прерываем воспроизведение (блок 2, mode={current_mode}, playback_active={self._playback_active}, grpc_session={self._active_grpc_session_id})")
+                    # КРИТИЧНО: Публикуем playback.cancelled НАПРЯМУЮ для гарантированного прерывания
+                    # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                    active_session_id = self._get_active_session_id()
                     await self.event_bus.publish("playback.cancelled", {
-                        "session_id": self._current_session_id,
+                        "session_id": active_session_id or self._active_grpc_session_id,
                         "reason": "keyboard",
-                        "source": "input_processing"
+                        "source": "input_processing",
+                        "timestamp": event.timestamp,
+                        "duration": event.duration
                     })
-                    logger.debug("SHORT_PRESS: playback.cancelled опубликовано (PROCESSING)")
-            except Exception:
-                pass
+                    logger.info("🛑 SHORT_PRESS: playback.cancelled опубликовано НАПРЯМУЮ (блок 2) для мгновенного прерывания")
+                    
+                    # Публикуем interrupt.request для ProcessingWorkflow
+                    await self.event_bus.publish("interrupt.request", {
+                        "source": "keyboard",
+                        "timestamp": event.timestamp,
+                        "duration": event.duration,
+                        "reason": "user_interrupt",
+                        "session_id": self._get_active_session_id() or self._active_grpc_session_id
+                    })
+                    logger.info("🛑 SHORT_PRESS: interrupt.request опубликовано (блок 2) для ProcessingWorkflow")
+            except Exception as e:
+                logger.error(f"❌ SHORT_PRESS: ошибка при публикации playback.cancelled: {e}")
 
             await self._ensure_playback_idle(for_recording=False)
 
@@ -762,7 +939,8 @@ class InputProcessingIntegration:
             self._pending_session_id = None
             self._cancel_session_id = None
             self._active_grpc_session_id = None
-            self._current_session_id = None
+            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+            self._set_session_id(None, reason="short_press_reset_2")
             self._session_waiting_grpc = False
             
         except Exception as e:
@@ -782,7 +960,9 @@ class InputProcessingIntegration:
             logger.info(f"🔑 LONG_PRESS: {event.duration:.3f}с")
             print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
             print(f"🔑 LONG_PRESS: event.key={event.key}, event.timestamp={event.timestamp}")  # Для отладки
-            print(f"🔑 LONG_PRESS: _recording_started={self._recording_started}, _current_session_id={self._current_session_id}")  # Для отладки
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            active_session_id = self._get_active_session_id()
+            print(f"🔑 LONG_PRESS: _recording_started={self._recording_started}, active_session_id={active_session_id}")  # Для отладки
 
             # ЗАЩИТА 2: Проверяем, что pending_session валиден
             if self._pending_session_id is None:
@@ -799,14 +979,18 @@ class InputProcessingIntegration:
             # ЗАЩИТА 4: Проверяем, что микрофон НЕ активен (защита от повторных LONG_PRESS)
             if self._mic_active:
                 logger.warning(f"⚠️ LONG_PRESS пришел, но микрофон УЖЕ активен (_mic_active=True) - игнорируем повторную активацию")
-                logger.warning(f"⚠️ LONG_PRESS: _recording_started={self._recording_started}, _current_session_id={self._current_session_id}")
+                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                active_session_id = self._get_active_session_id()
+                logger.warning(f"⚠️ LONG_PRESS: _recording_started={self._recording_started}, active_session_id={active_session_id}")
                 # НЕ сбрасываем _pending_session_id - он может быть нужен для RELEASE
                 return
 
             # ЗАЩИТА 5: Проверяем, что запись НЕ начата (защита от повторных LONG_PRESS)
             if self._recording_started:
                 logger.warning(f"⚠️ LONG_PRESS пришел, но запись УЖЕ начата (_recording_started=True) - игнорируем повторную активацию")
-                logger.warning(f"⚠️ LONG_PRESS: _mic_active={self._mic_active}, _current_session_id={self._current_session_id}")
+                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                active_session_id = self._get_active_session_id()
+                logger.warning(f"⚠️ LONG_PRESS: _mic_active={self._mic_active}, active_session_id={active_session_id}")
                 # НЕ сбрасываем _pending_session_id - он может быть нужен для RELEASE
                 return
 
@@ -814,7 +998,8 @@ class InputProcessingIntegration:
             # Событие уже пришло к нам через SimpleModuleCoordinator
 
             # Перед стартом новой записи обязательно прерываем текущую озвучку/стрим
-            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._current_session_id
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._get_active_session_id()
             if cancel_sid is not None:
                 logger.debug("LONG_PRESS: запрашиваем отмену gRPC перед открытием микрофона (sid=%s)", cancel_sid)
                 await self.event_bus.publish("grpc.request_cancel", {"session_id": cancel_sid})
@@ -832,25 +1017,56 @@ class InputProcessingIntegration:
                 })
 
             # Дожидаемся полной остановки воспроизведения и закрытия микрофона
-            await self._ensure_playback_idle()
-            await self._wait_for_mic_closed()
+            # КРИТИЧНО: Используем таймаут для предотвращения блокировки LONG_PRESS
+            try:
+                await asyncio.wait_for(self._ensure_playback_idle(), timeout=2.0)
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ LONG_PRESS: таймаут ожидания остановки воспроизведения, продолжаем")
+            
+            try:
+                await asyncio.wait_for(self._wait_for_mic_closed(), timeout=1.0)
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ LONG_PRESS: таймаут ожидания закрытия микрофона, продолжаем")
+                # Принудительно сбрасываем состояние микрофона
+                if self._mic_active:
+                    logger.warning("⚠️ LONG_PRESS: принудительный сброс _mic_active из-за таймаута")
+                    self._mic_active = False
+                    self._last_mic_closed_ts = time.monotonic()
 
+            # КРИТИЧНО: Проверяем, не был ли отменен pending recording через RELEASE
+            if self._pending_recording_cancelled:
+                logger.warning("⚠️ LONG_PRESS: pending recording был отменен через RELEASE - игнорируем публикацию voice.recording_start")
+                self._pending_recording_cancelled = False  # Сбрасываем флаг
+                self._pending_session_id = None
+                return
+            
+            # КРИТИЧНО: Проверяем, что клавиша ВСЕ ЕЩЕ нажата перед публикацией voice.recording_start
+            if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
+                if not self.keyboard_monitor.key_pressed:
+                    logger.warning("⚠️ LONG_PRESS: клавиша уже отпущена перед публикацией voice.recording_start - отменяем запись")
+                    self._pending_session_id = None
+                    return
+            
             # На LONG_PRESS стартуем запись и переходим в LISTENING (push-to-talk)
             new_session_id = self._pending_session_id or event.timestamp or time.monotonic()
             # Полностью очищаем предыдущее состояние перед новой записью
             self._reset_session("long_press_start")
-            self._current_session_id = new_session_id
+            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+            self._set_session_id(new_session_id, reason="long_press_start")
             self._pending_session_id = None
             self._cancel_session_id = None
+            self._pending_recording_cancelled = False  # Сбрасываем флаг отмены
             if not self._recording_started:
                 # Запоминаем время начала записи для проверки минимальной длительности
                 self._recording_start_time = time.time()
+                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                active_session_id = self._get_active_session_id()
                 await self.event_bus.publish(
                     "voice.recording_start",
                     {
                         "source": "keyboard",
                         "timestamp": event.timestamp,
-                        "session_id": self._current_session_id,
+                        "session_id": active_session_id,
                     }
                 )
                 self._recording_started = True
@@ -892,7 +1108,9 @@ class InputProcessingIntegration:
         try:
             duration_ms = event.duration * 1000 if event.duration else 0
             logger.info(f"🛑 PTT: keyUp(left_shift) → RELEASE, duration={duration_ms:.0f}ms")
-            logger.debug(f"RELEASE: session={self._current_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            active_session_id = self._get_active_session_id()
+            logger.debug(f"RELEASE: session={active_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
 
             # НЕ публикуем keyboard.release - это создает бесконечный цикл!
             # Событие обрабатывается напрямую от QuartzKeyboardMonitor
@@ -900,27 +1118,50 @@ class InputProcessingIntegration:
             # КРИТИЧНО: Гарантируем остановку микрофона при RELEASE, даже если _recording_started == False
             # Это защищает от залипания микрофона при race conditions
             was_recording = self._recording_started  # Сохраняем состояние ДО обработки
+            # КРИТИЧНО: Сохраняем session_id ДО обработки, чтобы он не был потерян при _on_recognition_failed
+            # Используем _get_active_session_id для получения session_id
+            saved_session_id = self._get_active_session_id()  # Сохраняем session_id ДО обработки
             
-            if self._mic_active or self._recording_started:
-                logger.info(f"🛑 RELEASE: микрофон активен (_mic_active={self._mic_active}) или запись начата (_recording_started={self._recording_started}) - принудительно останавливаем")
+            # КРИТИЧНО: Отменяем pending recording, если LONG_PRESS еще не завершился
+            # Это предотвращает публикацию voice.recording_start после RELEASE
+            if self._pending_session_id is not None and not self._recording_started:
+                logger.info("🛑 RELEASE: отменяем pending recording (LONG_PRESS еще не завершился)")
+                self._pending_recording_cancelled = True
+                self._pending_session_id = None
+            
+            # КРИТИЧНО: Всегда проверяем состояние микрофона и публикуем voice.recording_stop,
+            # даже если _recording_started == False, чтобы гарантировать закрытие микрофона
+            should_stop_recording = self._should_stop_recording()
+            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            active_session_id = self._get_active_session_id()
+            
+            if should_stop_recording:
+                logger.info(f"🛑 RELEASE: микрофон активен (_mic_active={self._mic_active}) или запись начата (_recording_started={self._recording_started}) или есть сессия (session={active_session_id}) - принудительно останавливаем")
                 
                 # Если есть активная сессия, останавливаем её
-                if self._current_session_id is not None:
-                    logger.debug(f"RELEASE: публикуем voice.recording_stop для session {self._current_session_id}")
+                if active_session_id is not None:
+                    logger.debug(f"RELEASE: публикуем voice.recording_stop для session {active_session_id}")
                     await self.event_bus.publish(
                         "voice.recording_stop",
                         {
                             "source": "keyboard",
                             "timestamp": event.timestamp,
                             "duration": event.duration,
-                            "session_id": self._current_session_id,
+                            "session_id": active_session_id,
                         }
                     )
                     logger.debug("RELEASE: voice.recording_stop опубликовано ✓")
-                else:
+                elif self._mic_active or self._recording_started:
                     # Если нет активной сессии, но микрофон активен - принудительно закрываем
                     logger.warning(f"⚠️ RELEASE: микрофон активен, но нет активной сессии - принудительно закрываем микрофон")
-                    # Публикуем событие закрытия микрофона напрямую
+                    # КРИТИЧНО: Публикуем voice.recording_stop даже без session_id для гарантированного закрытия микрофона
+                    await self.event_bus.publish("voice.recording_stop", {
+                        "source": "keyboard",
+                        "timestamp": event.timestamp,
+                        "duration": event.duration,
+                        "session_id": None,  # Нет активной сессии, но нужно закрыть микрофон
+                    })
+                    # Также публикуем событие закрытия микрофона напрямую
                     await self.event_bus.publish("voice.mic_closed", {
                         "source": "keyboard",
                         "timestamp": event.timestamp,
@@ -935,16 +1176,27 @@ class InputProcessingIntegration:
                 self._recording_started = False
                 logger.debug(f"🛑 RELEASE: _recording_started сброшен в False (было {was_recording})")
                 
-                await self._wait_for_mic_closed()
+                # КРИТИЧНО: Используем таймаут для предотвращения блокировки RELEASE
+                try:
+                    await asyncio.wait_for(self._wait_for_mic_closed(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ RELEASE: таймаут ожидания закрытия микрофона, принудительно сбрасываем состояние")
+                    if self._mic_active:
+                        self._mic_active = False
+                        self._last_mic_closed_ts = time.monotonic()
             elif not self._recording_started:
-                logger.debug(f"ℹ️ RELEASE пришёл без активной записи: session={self._current_session_id}, duration={duration_ms:.0f}ms, _mic_active={self._mic_active}")
+                logger.debug(f"ℹ️ RELEASE пришёл без активной записи: session={active_session_id}, duration={duration_ms:.0f}ms, _mic_active={self._mic_active}")
 
             # Переходим в PROCESSING только если запись велась; иначе остаёмся в текущем режиме (обычно SLEEPING)
             if was_recording:  # Используем сохраненное значение, а не текущее состояние
-                logger.debug(f"RELEASE: публикуем mode.request(PROCESSING) для session {self._current_session_id}")
+                # КРИТИЧНО: Используем saved_session_id (уже получен через _get_active_session_id)
+                # так как _on_recognition_failed мог сбросить session_id
+                session_id_for_processing = saved_session_id or self._get_active_session_id()
+                logger.debug(f"RELEASE: публикуем mode.request(PROCESSING) для session {session_id_for_processing}")
                 await self.event_bus.publish("mode.request", {
                     "target": AppMode.PROCESSING,
-                    "source": "input_processing"
+                    "source": "input_processing",
+                    "session_id": session_id_for_processing  # КРИТИЧНО: Передаем session_id в mode.request
                 })
                 logger.info("RELEASE: запрос на PROCESSING отправлен ✓")
 
@@ -952,10 +1204,11 @@ class InputProcessingIntegration:
 
             if was_recording:
                 self._session_waiting_grpc = True
-                self._active_grpc_session_id = self._current_session_id
-                logger.debug("RELEASE: удерживаем session_id=%s до завершения gRPC", self._current_session_id)
+                # КРИТИЧНО: Используем saved_session_id (уже получен через _get_active_session_id)
+                self._active_grpc_session_id = saved_session_id or active_session_id
+                logger.debug("RELEASE: удерживаем session_id=%s до завершения gRPC", self._active_grpc_session_id)
             elif self._session_waiting_grpc:
-                logger.debug("RELEASE: session_id=%s уже ожидает завершения gRPC", self._current_session_id)
+                logger.debug("RELEASE: session_id=%s уже ожидает завершения gRPC", active_session_id)
             # НЕ вызываем _reset_session - состояние уже сброшено в _handle_press
         except Exception as e:
             await self.error_handler.handle_error(
