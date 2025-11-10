@@ -1,325 +1,93 @@
-# 🚀 Система развертывания обновлений Nexy
+# 🎤 Nexy Server
 
-## 🎯 Назначение
-Автоматизированная система для развертывания обновлений через GitHub Releases с фиксированным тегом "Update".
+**Серверная часть Nexy: gRPC-потоки, модульная обработка команд и инфраструктура обновлений**
 
----
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## 📁 Файлы
+## ✨ Основные возможности
 
-### `deploy.sh` - Развертывание обновления
+- 📡 **gRPC streaming** — двусторонние аудио-стримы через `StreamingService`.
+- 🧠 **Модульная обработка** — бизнес-логика живёт в `server/modules/*`, оркестрация разнесена по интеграциям.
+- 🛡️ **Backpressure** — лимиты и коды отказов описаны в `Docs/BACKPRESSURE_README.md`.
+- 📊 **Наблюдаемость** — структурированные decision-логи и метрики p95/error-rate/backpressure.
+- ♻️ **Обновления** — подписанные манифесты и проверка размеров артефактов с GitHub CDN.
+
+## 📚 Канонические документы
+
+| Ось | Canon | Owner |
+| --- | --- | --- |
+| gRPC и протокол | `server/Docs/GRPC_PROTOCOL_AUDIT.md` | @grpc-core |
+| Обновления | `server/Docs/UPDATE_SYSTEM_FIXES.md` | @release-ops |
+| Backpressure | `server/Docs/BACKPRESSURE_README.md` | @reliability |
+| Health & наблюдаемость | `server/Docs/CI_GRPC_CHECKS.md` | @sre-duty |
+| Конфигурация | `server/config/unified_config.py` + `server/config/unified_config_example.yaml` | @server-platform |
+
+Каждая ось имеет один источник истины и назначенного владельца. Изменения требуют обновления соответствующего документа.
+
+## 🚀 Быстрый старт
+
+### Предварительные требования
+
+- Python 3.8+
+- Доступ к API-ключам Gemini и Azure Speech
+- Возможность открыть порт `50051` локально (только для INTERNAL тестов)
+
+### Установка
+
 ```bash
-./deploy.sh Nexy.dmg
+git clone https://github.com/Seregawpn/Nexy_server.git
+cd Nexy_server/server
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp config.env.example config.env  # заполните секреты и порты под окружение
 ```
 
-**Что делает:**
-- ✅ Создает релиз с тегом "Update" в GitHub
-- ✅ Загружает DMG файл в релиз
-- ✅ **Получает фактический размер файла с GitHub** (критично!)
-- ✅ Вычисляет SHA256 хеш автоматически
-- ✅ Обновляет манифест на Azure сервере с правильными данными
-- ✅ **Проверяет соответствие всех данных** (размер, хеш, доступность)
-- ✅ Обновляет AppCast XML автоматически
-- ✅ **Валидирует корректность установки обновлений**
+### Запуск (INTERNAL)
 
----
-
-## 🚀 Использование
-
-### 1. Подготовка
 ```bash
-# Установить GitHub CLI
-brew install gh
-gh auth login
-
-# Установить Azure CLI
-brew install azure-cli
-az login
-
-# Перейти в папку скриптов
-cd scripts/
-
-# Сделать скрипт исполняемым
-chmod +x deploy.sh
+python main.py  # gRPC поднимается на 0.0.0.0:50051
 ```
 
-### 2. Развертывание
-```bash
-# Развернуть обновление
-./deploy.sh ../Nexy.dmg
-```
+Публичный доступ всегда идёт через Nginx на 443/HTTPS; внутренние порты 8080/8081/50051 не публикуются вовне.
 
-**Готово!** Обновление развернуто.
+## ⚙️ Конфигурация (единый источник — `unified_config`)
 
-### 3. Проверка результата
-```bash
-# Проверить доступность файла
-curl -I https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
+| Ключ | Тип | dev | stage | prod | Env override |
+| --- | --- | --- | --- | --- | --- |
+| `grpc.port` | int | 50051 | 50051 | 50051 | `GRPC_PORT` |
+| `grpc.max_workers` | int | 10 | — (inherit prod) | 100 | `MAX_WORKERS` |
+| `backpressure.max_concurrent_streams` | int | 10 | 25 | 50 | `BACKPRESSURE_MAX_STREAMS` |
+| `backpressure.max_message_rate_per_second` | int | 5 | 8 | 10 | `BACKPRESSURE_MAX_RATE` |
+| `features.use_module_coordinator` | bool | true | true | true | `USE_MODULE_COORDINATOR` |
+| `kill_switches.disable_module_coordinator` | bool | false | false | false | `NEXY_KS_DISABLE_MODULE_COORDINATOR` |
+| `update.port` | int | 8081 | 8081 | 8081 | `UPDATE_PORT` |
 
-# Проверить AppCast XML
-curl -s http://20.151.51.172:8081/appcast.xml | grep -A 5 "enclosure"
-```
+> Stage наследует prod значения, если не указано иное в `unified_config_example.yaml`. Все лимиты и флаги переопределяются только через unified_config или переменные окружения.
 
----
+## 🏗️ Архитектура и границы
 
-## 🔒 КРИТИЧЕСКИ ВАЖНО: Соответствие данных
+- **Слои не протекают:** бизнес-логика живёт в `server/modules/*`, интеграции — в `server/integrations/{core,service_integrations,workflow_integrations}`. Прямых импортов между модулями нет; доступ идёт через `ModuleCoordinator`.
+- **gRPC сервер:** канонический протокол описан в `server/modules/grpc_service/streaming.proto`. Регенирация — `python -m grpc_tools.protoc -I server/modules/grpc_service --python_out=server/modules/grpc_service --grpc_python_out=server/modules/grpc_service server/modules/grpc_service/streaming.proto` (см. `Docs/SERVER_DEVELOPMENT_RULES.md`).
+- **Конфигурация:** все флаги, таймауты и лимиты берутся из `server/config/unified_config.py`. Код не держит хардкоды.
+- **Наблюдаемость:** обязательны decision-логи (`ts`, `level`, `scope`, `method`, `decision`, `ctx`, `dur_ms`) и метрики `p95_latency_ms`, `error_rate`, `backpressure_refusal_rate`.
+- **Ingress:** наружный трафик проходит через Nginx (HTTPS:443). Внутренние сервисы (`50051`, `8080`, `8081`) доступны только внутри инфраструктуры.
 
-**Система обновлений Sparkle строго проверяет соответствие данных:**
+Подробный обзор — в `server/Docs/ARCHITECTURE_OVERVIEW.md`.
 
-### ✅ Что проверяется:
-- **Размер файла** - должен точно совпадать между GitHub и манифестом
-- **SHA256 хеш** - проверка целостности файла
-- **Ed25519 подпись** - проверка подлинности
-- **Доступность файла** - файл должен быть доступен для скачивания
-- **🔴 ФОРМАТ ВЕРСИЙ** - критически важно для предотвращения бесконечных циклов
+## 🐛 Известные проблемы
 
-### ❌ Что происходит при несоответствии:
-- **Установка блокируется** - Sparkle не установит обновление
-- **Ошибка валидации** - клиент получит ошибку "размер файла не соответствует"
-- **🔴 БЕСКОНЕЧНЫЕ ЦИКЛЫ** - updater будет постоянно пытаться обновиться
-- **Пользователи не смогут обновиться** - до исправления проблемы
+- **Self-signed сертификат для 443 (prod):** пока не установлен публичный сертификат. Клиентам требуется доверить сертификат вручную.
+- **`config.env` не входит в git:** создайте его из `config.env.example` и заполните секреты.
+- **Конфликты порта 50051:** перед локальным запуском убедитесь, что порт свободен или задайте `GRPC_PORT` в `config.env`.
 
-### 🛠️ Как скрипт решает эту проблему:
-1. **Получает фактический размер** с GitHub после загрузки
-2. **Использует размер с GitHub** в манифесте (не локальный)
-3. **Проверяет соответствие** всех данных перед завершением
-4. **Прерывает выполнение** при обнаружении несоответствий
-5. **🔴 СИНХРОНИЗИРУЕТ ФОРМАТЫ ВЕРСИЙ** - использует строковый формат везде
+## 🤝 Вклад
 
----
+1. Форкните репозиторий и создайте ветку (`git checkout -b feature/<name>`).
+2. Выполните Impact/SIMPLE-гейты из `server/Docs/SERVER_DEVELOPMENT_RULES.md`.
+3. Запустите smoke и contract проверки (`python -m pytest`, `python scripts/grpc_smoke.py`) — результаты приложите в PR.
+4. Откройте Pull Request с ссылками на обновлённые канонические документы.
 
-## 🚨 Частые ошибки
+## 📄 Лицензия
 
-### GitHub CLI не установлен
-```
-❌ GitHub CLI не установлен
-```
-**Решение:** `brew install gh && gh auth login`
-
-### Azure CLI не установлен
-```
-❌ Azure CLI не установлен
-```
-**Решение:** `brew install azure-cli && az login`
-
-### Файл не найден
-```
-❌ Файл не найден: Nexy.dmg
-```
-**Решение:** Проверьте путь к файлу
-
-### Релиз уже существует
-```
-❌ Release Update already exists
-```
-**Решение:** 
-```bash
-# Удалить существующий релиз
-gh release delete Update --repo Seregawpn/Nexy_production
-
-# Или пересоздать релиз
-gh release delete Update --repo Seregawpn/Nexy_production --yes
-./deploy.sh ../Nexy.dmg
-```
-
-### Не авторизован в GitHub
-```
-❌ Не авторизован в GitHub CLI
-```
-**Решение:** `gh auth login`
-
-### Не авторизован в Azure
-```
-❌ Не авторизован в Azure CLI
-```
-**Решение:** `az login`
-
-### Несоответствие размера файла
-```
-❌ КРИТИЧЕСКАЯ ОШИБКА: Размер файла не соответствует!
-Ожидалось: 97356894 байт
-Фактически: 97368441 байт
-Это приведет к блокировке установки обновлений!
-```
-**Причина:** GitHub изменил размер файла при обработке
-**Решение:** Скрипт автоматически исправляет это, используя размер с GitHub
-
-### AppCast XML содержит неправильный размер
-```
-❌ КРИТИЧЕСКАЯ ОШИБКА: AppCast XML содержит неправильный размер!
-```
-**Причина:** Манифест не обновился с правильным размером
-**Решение:** Скрипт автоматически проверяет и исправляет это
-
-### 🔴 БЕСКОНЕЧНЫЕ ЦИКЛЫ ОБНОВЛЕНИЙ
-```
-❌ КРИТИЧЕСКАЯ ОШИБКА: Updater постоянно пытается обновиться!
-Логи: ~/Library/Logs/Nexy/updater.log показывает десятки циклов
-```
-**Причина:** Несоответствие форматов версий
-- Приложение: `CFBundleVersion = "1.0.1"` (строка)
-- AppCast: `sparkle:version="1001"` (число)
-- Результат: `Version("1001") > Version("1.0.1")` = `True` → бесконечный цикл
-
-**Решение:** 
-```bash
-# Обновить манифест с правильным форматом версии
-az vm run-command invoke --resource-group "Nexy" --name "nexy-regular" \
-  --command-id RunShellScript --scripts "
-cd /home/azureuser/voice-assistant/updates/manifests
-# Изменить build с числа на строку
-sed -i 's/\"build\": 1001/\"build\": \"1.0.1\"/' manifest_1.0.0.json
-"
-```
-
-**Проверка:** `curl -s http://20.151.51.172:8081/appcast.xml | grep sparkle:version`
-
----
-
-## 🛡️ ПРЕДОТВРАЩЕНИЕ ОШИБОК
-
-### 🔴 Критические правила для предотвращения проблем:
-
-#### 1. **Форматы версий должны быть синхронизированы**
-```bash
-# ✅ ПРАВИЛЬНО - строковый формат везде
-{
-  "version": "1.0.1",
-  "build": "1.0.1"  # Строка, как CFBundleVersion
-}
-
-# ❌ НЕПРАВИЛЬНО - смешанные форматы
-{
-  "version": "1.0.1",
-  "build": 1001  # Число - вызовет бесконечные циклы!
-}
-```
-
-#### 2. **Размеры файлов должны точно совпадать**
-```bash
-# Проверка перед деплоем:
-LOCAL_SIZE=$(stat -f%z "$FILE_PATH")
-GITHUB_SIZE=$(curl -s -L -I "$DOWNLOAD_URL" | grep -i "content-length:" | tail -1 | awk '{print $2}')
-echo "Локальный: $LOCAL_SIZE, GitHub: $GITHUB_SIZE"
-```
-
-#### 3. **Никогда не оставляйте локальные файлы на сервере**
-```bash
-# После перехода на GitHub CDN:
-rm -f /home/azureuser/voice-assistant/updates/downloads/*.dmg
-```
-
-#### 4. **Всегда проверяйте AppCast XML после деплоя**
-```bash
-curl -s http://20.151.51.172:8081/appcast.xml | grep -E "(sparkle:version|length)"
-```
-
-### 🧪 Чеклист перед деплоем:
-- [ ] Версия в манифесте - строка (не число)
-- [ ] Build в манифесте - строка (не число)  
-- [ ] Размер файла получен с GitHub
-- [ ] Локальные файлы удалены с сервера
-- [ ] AppCast XML содержит правильные данные
-- [ ] Health check возвращает корректные версии
-
----
-
-## ✅ Успешное развертывание
-
-```
-🚀 Развертывание обновления...
-✅ GitHub релиз создан
-✅ Фактический размер файла на GitHub: 97368441 байт
-⚠️  ВАЖНО: Размер изменился при загрузке на GitHub:
-   📏 Локальный размер: 97356894 байт
-   📏 GitHub размер:    97368441 байт
-   📊 Разница:          +11547 байт
-ℹ️  Это нормально - GitHub может изменять размер файлов при обработке.
-ℹ️  Используем размер с GitHub для корректной работы обновлений.
-✅ Манифест обновлен на сервере
-✅ GitHub релиз доступен
-✅ Размер файла соответствует: 97368441 байт
-✅ AppCast XML содержит правильный размер: 97368441 байт
-🎉 ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ - ДАННЫЕ СООТВЕТСТВУЮТ!
-
-🎉 ОБНОВЛЕНИЕ РАЗВЕРНУТО УСПЕШНО!
-
-📊 Результат:
-   🏷️  Тег: Update
-   📁 Файл: Nexy.dmg
-   📏 Размер: 97368441 байт (проверен на GitHub)
-   🔐 SHA256: e62a4571190d94e68a0c95a793729c96610e5c5267945b794f7dfa45bb9cf480
-   🔗 GitHub: https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
-   🖥️  Сервер: http://20.151.51.172:8081
-
-🔗 Ссылки:
-   📥 Скачать: https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
-   📰 AppCast: http://20.151.51.172:8081/appcast.xml
-   📋 Манифест: http://20.151.51.172:8081/manifests/manifest_1.0.0.json
-   📁 Релиз: https://github.com/Seregawpn/Nexy_production/releases/tag/Update
-
-✅ Система обновлений готова!
-
-🔒 ВАЖНО: Все данные проверены на соответствие:
-   ✅ Размер файла на GitHub соответствует манифесту
-   ✅ AppCast XML содержит правильные метаданные
-   ✅ SHA256 хеш проверен
-   ✅ Установка обновлений будет работать корректно
-```
-
----
-
-## 🔧 Требования
-
-- ✅ **GitHub CLI** (`brew install gh && gh auth login`)
-- ✅ **Azure CLI** (`brew install azure-cli && az login`)
-- ✅ **DMG файл** готов к загрузке
-- ✅ **Права доступа** к репозиторию `Seregawpn/Nexy_production`
-- ✅ **Права доступа** к Azure VM `nexy-regular`
-
----
-
-## 📝 Важные моменты
-
-- **Тег релиза**: `Update` (фиксированный, перезаписывается при каждом развертывании)
-- **Файлы**: DMG (любой размер, поддерживается до 2GB)
-- **GitHub CDN**: Быстрая загрузка через глобальную сеть доставки
-- **Автоматика**: Размер, SHA256, дата - все вычисляется автоматически
-- **Безопасность**: SHA256 проверка целостности файлов
-- **Совместимость**: macOS 11.0+ (Intel + Apple Silicon)
-- **🔒 КРИТИЧНО**: Размер файла получается с GitHub, не локально
-- **🔒 КРИТИЧНО**: Все данные проверяются на соответствие перед завершением
-- **🔒 КРИТИЧНО**: Скрипт прерывается при обнаружении несоответствий
-
----
-
-## 🎯 Результат
-
-После развертывания:
-- ✅ **GitHub релиз** создан с тегом `Update`
-- ✅ **DMG файл** доступен по прямой ссылке
-- ✅ **Azure сервер** обновлен с новой ссылкой
-- ✅ **AppCast XML** обновлен автоматически
-- ✅ **Клиенты** получают обновления через GitHub CDN
-- ✅ **Проверка целостности** работает (SHA256)
-
-**Система готова к использованию!**
-
----
-
-## 🔄 Обновление существующего релиза
-
-Если релиз `Update` уже существует:
-```bash
-# Удалить старый релиз
-gh release delete Update --repo Seregawpn/Nexy_production --yes
-
-# Создать новый
-./deploy.sh ../Nexy.dmg
-```
-
-**Или просто перезаписать:**
-```bash
-# Скрипт автоматически перезапишет существующий релиз
-./deploy.sh ../Nexy.dmg
-```
+Проект распространяется под лицензией MIT — см. [LICENSE](LICENSE).
