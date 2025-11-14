@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RestartFlagData:
     """Данные флага перезапуска"""
-    timestamp: float  # Монотонное время создания
+    timestamp: float  # Unix timestamp создания
     pid: int  # PID процесса, создавшего флаг
     reason: str  # Причина перезапуска
     permissions: list  # Список разрешений, для которых был перезапуск
@@ -64,7 +64,7 @@ class AtomicRestartFlag:
             
             # Подготавливаем данные
             data = RestartFlagData(
-                timestamp=time.monotonic(),
+                timestamp=time.time(),
                 pid=os.getpid(),
                 reason=reason,
                 permissions=permissions
@@ -128,7 +128,7 @@ class AtomicRestartFlag:
                     if not self._is_valid(data):
                         logger.warning(
                             f"⚠️ [ATOMIC_FLAG] Flag is invalid or expired: "
-                            f"age={time.monotonic() - data.timestamp:.2f}s, "
+                            f"age={time.time() - data.timestamp:.2f}s, "
                             f"pid={data.pid}"
                         )
                         # Удаляем невалидный флаг
@@ -146,8 +146,8 @@ class AtomicRestartFlag:
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                     flag_path.unlink(missing_ok=True)
                     
-                    age_sec = time.monotonic() - data.timestamp
-                    age_ms = int(age_sec * 1000)
+                    age_sec = time.time() - data.timestamp
+                    age_ms = max(0, int(age_sec * 1000))
                     # КРИТИЧНО: Логируем чтение-и-удаление для приёмки
                     logger.info(
                         f"✅ [ATOMIC_FLAG] Restart flag read and removed (atomic read-and-remove): "
@@ -187,8 +187,8 @@ class AtomicRestartFlag:
             True если флаг валиден, False в противном случае
         """
         # Проверяем возраст флага (TTL = 10 минут по умолчанию)
-        age_sec = time.monotonic() - data.timestamp
-        age_ms = int(age_sec * 1000)
+        age_sec = time.time() - data.timestamp
+        age_ms = max(0, int(age_sec * 1000))
         if age_sec > self.MAX_FLAG_AGE_SEC:
             logger.warning(
                 f"⚠️ [ATOMIC_FLAG] Flag is too old (TTL expired): "
@@ -228,4 +228,3 @@ class AtomicRestartFlag:
                 exc_info=True
             )
             return False
-

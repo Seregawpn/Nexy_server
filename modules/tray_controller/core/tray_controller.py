@@ -44,7 +44,7 @@ class TrayController:
                 size=self.config.icon_size
             )
             
-            self.tray_menu = MacOSTrayMenu("Nexy")
+            self.tray_menu = MacOSTrayMenu("")
             
             # Создаем базовое меню
             await self._create_default_menu()
@@ -305,9 +305,68 @@ class TrayController:
         1. activate_nsapplication_for_menu_bar()
         2. asyncio.sleep(2.0) для готовности ControlCenter
         3. setup_delayed_icon_setting() для отложенной установки иконки
+        
+        КРИТИЧНО: После перезапуска NSApplication может быть не активирован,
+        поэтому проверяем и активируем его непосредственно перед app.run().
         """
-        if self.tray_menu and self.tray_menu.app:
-            # Настраиваем отложенную установку иконки (таймер запустится после app.run())
-            self.tray_menu.setup_delayed_icon_setting()
-            # Запускаем приложение (блокирующий вызов)
+        if not self.tray_menu or not self.tray_menu.app:
+            logger.error("❌ КРИТИЧНО: tray_menu или app не готовы для запуска")
+            return
+        
+        # КРИТИЧНО: Проверяем и активируем NSApplication перед app.run()
+        # После перезапуска NSApplication может быть не активирован,
+        # что приводит к падению при создании NSStatusItem внутри app.run()
+        try:
+            import AppKit
+            nsapp = AppKit.NSApplication.sharedApplication()
+            current_policy = nsapp.activationPolicy()
+            target_policy = AppKit.NSApplicationActivationPolicyAccessory
+            
+            if current_policy != target_policy:
+                logger.warning(
+                    f"⚠️ NSApplication activation policy не установлен перед app.run() "
+                    f"(current={current_policy}, target={target_policy}), устанавливаем..."
+                )
+                result = nsapp.setActivationPolicy_(target_policy)
+                logger.info(f"✅ setActivationPolicy вернул: {result}")
+                logger.info(f"✅ Новый activation policy: {nsapp.activationPolicy()}")
+            
+            # Активируем приложение
+            nsapp.activateIgnoringOtherApps_(True)
+            logger.info("✅ NSApplication активирован перед app.run()")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось проверить/активировать NSApplication перед app.run(): {e}")
+            # Продолжаем выполнение - возможно, NSApplication уже активирован
+        
+        # Настраиваем отложенную установку иконки (таймер запустится после app.run())
+        self.tray_menu.setup_delayed_icon_setting()
+        
+        # Запускаем приложение (блокирующий вызов)
+        logger.info("🚀 КРИТИЧНО: Запуск app.run()...")
+        print("🚀 КРИТИЧНО: Запуск app.run()...")
+        print(f"🔍 DEBUG: app object: {self.tray_menu.app}")
+        print(f"🔍 DEBUG: app type: {type(self.tray_menu.app)}")
+        try:
+            # Дополнительная диагностика перед запуском
+            import AppKit
+            nsapp = AppKit.NSApplication.sharedApplication()
+            print(f"🔍 DEBUG: NSApplication activation policy before app.run(): {nsapp.activationPolicy()}")
+            print(f"🔍 DEBUG: NSApplication is active: {nsapp.isActive()}")
+            
             self.tray_menu.app.run()
+            logger.info("✅ app.run() завершился нормально")
+            print("✅ app.run() завершился нормально")
+        except KeyboardInterrupt:
+            logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt)")
+            print("⏹️ Приложение прервано пользователем (KeyboardInterrupt)")
+            raise
+        except Exception as e:
+            logger.error(f"❌ КРИТИЧНО: Ошибка при запуске app.run(): {e}")
+            import traceback
+            logger.error(f"Stacktrace:\n{traceback.format_exc()}")
+            print(f"❌ КРИТИЧНО: Ошибка при запуске app.run(): {e}")
+            print(f"Stacktrace:\n{traceback.format_exc()}")
+            # НЕ поднимаем исключение дальше - приложение должно продолжать работать
+            # даже если tray не удалось запустить
+            print(f"❌ КРИТИЧНО: Ошибка запуска menu bar: {e}")
+            print("⚠️ Приложение продолжит работу без иконки в menu bar")

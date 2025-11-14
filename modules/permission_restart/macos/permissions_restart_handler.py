@@ -19,7 +19,7 @@ from typing import Dict, Optional, Sequence
 from modules.updater.migrate import get_user_app_path
 from modules.permission_restart.core.config import PermissionRestartConfig
 from modules.permission_restart.core.atomic_flag import AtomicRestartFlag
-from integration.utils.resource_path import get_user_cache_dir
+from integration.utils.resource_path import get_user_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +56,17 @@ class PermissionsRestartHandler:
         self._last_permissions: Sequence[str] = ()
         self._config = config or PermissionRestartConfig()  # Default config if not provided
         
-        # Атомарный флаг перезапуска в доступной директории (Caches вместо Application Support)
-        cache_dir = get_user_cache_dir("Nexy")
-        flag_path = cache_dir / "restart_completed.flag"
+        # Атомарный флаг перезапуска в persistent директории
+        data_dir = get_user_data_dir("Nexy")
+        flag_path = data_dir / "restart_completed.flag"
         self._restart_flag = AtomicRestartFlag(flag_path)
+        logger.info("[PERMISSION_RESTART] restart_completed.flag path: %s", flag_path)
+        if str(flag_path).startswith("/tmp"):
+            logger.warning(
+                "[PERMISSION_RESTART] ⚠️ restart_completed.flag лежит во временной директории (%s) - "
+                "проверьте доступ к Application Support",
+                flag_path,
+            )
 
         # Разрешено ли скатываться в dev-фолбэк (перезапуск python-командой)
         if config is None and getattr(sys, "frozen", False):

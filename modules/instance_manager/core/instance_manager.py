@@ -136,29 +136,50 @@ class InstanceManager:
             # Проверяем PID процесса
             if self.pid_check and 'pid' in lock_info:
                 pid = lock_info['pid']
+                current_pid = os.getpid()
+                
+                # КРИТИЧНО: Если PID в lock-файле совпадает с текущим PID - это не дублирование
+                # Это может произойти при быстром перезапуске или если lock-файл не был очищен
+                if pid == current_pid:
+                    print(f"⚠️ DEBUG: Lock file PID ({pid}) совпадает с текущим PID ({current_pid}) - это не дублирование")
+                    return False  # Не дублирование - это тот же процесс
+                
                 try:
                     # Проверяем что процесс существует и это наш процесс
                     process = psutil.Process(pid)
                     cmdline = ' '.join(process.cmdline())
+                    process_name = process.name()
+                    
+                    print(f"🔍 DEBUG: Checking lock PID {pid}: name={process_name}, cmdline={cmdline[:100]}")
                     
                     # Проверяем что это наш процесс
                     # Варианты: Nexy.app, python3 main.py, Python debug_script.py, Python test_script.py
-                    is_nexy_app = process.name() == "Nexy"
-                    is_python_main = process.name() in ["python3", "Python"] and "main.py" in cmdline
-                    is_debug_script = process.name() in ["python3", "Python"] and "debug_lock_validation.py" in cmdline
-                    is_test_script = process.name() in ["python3", "Python"] and "test_duplicate_detection.py" in cmdline
+                    is_nexy_app = process_name == "Nexy"
+                    is_python_main = process_name in ["python3", "Python"] and "main.py" in cmdline
+                    is_debug_script = process_name in ["python3", "Python"] and "debug_lock_validation.py" in cmdline
+                    is_test_script = process_name in ["python3", "Python"] and "test_duplicate_detection.py" in cmdline
+                    
+                    print(f"🔍 DEBUG: Process checks: is_nexy_app={is_nexy_app}, is_python_main={is_python_main}")
                     
                     if not (is_nexy_app or is_python_main or is_debug_script or is_test_script):
+                        print(f"⚠️ DEBUG: Process {pid} is not Nexy - lock invalid")
                         return False  # Не наш процесс
                         
                     # Дополнительная проверка через bundle_id или скрипты
                     cmdline_check = ('com.nexy.assistant' in cmdline or 'main.py' in cmdline or 
                                    'debug_lock_validation.py' in cmdline or 'test_duplicate_detection.py' in cmdline)
                     
+                    print(f"🔍 DEBUG: cmdline_check={cmdline_check}")
+                    
                     if not cmdline_check:
+                        print(f"⚠️ DEBUG: cmdline_check failed - lock invalid")
                         return False  # Не наш процесс
+                    
+                    print(f"✅ DEBUG: Lock valid - duplicate instance detected (PID {pid})")
+                    return True  # Дублирование обнаружено
                         
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                    print(f"⚠️ DEBUG: Process {pid} not found or access denied: {e}")
                     return False  # Процесс не существует
             
             return True

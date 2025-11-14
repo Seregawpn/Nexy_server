@@ -241,15 +241,10 @@ class TrayControllerIntegration:
             logger.info(f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms")
             print(f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms")
 
-            # ANTI-TAL: Включаем автоматическую терминацию обратно теперь когда tray готов
-            try:
-                import Foundation
-                process_info = Foundation.NSProcessInfo.processInfo()
-                process_info.enableAutomaticTermination_("Tray icon is active")
-                logger.info("🛡️ [ANTI-TAL] Re-enabled automatic termination (tray icon active)")
-                print("🛡️ [ANTI-TAL] Re-enabled automatic termination (tray icon active)")
-            except Exception as tal_err:
-                logger.warning(f"⚠️ [ANTI-TAL] Could not re-enable automatic termination: {tal_err}")
+            # КРИТИЧНО: НЕ включаем автоматическую терминацию здесь!
+            # Это делает SimpleModuleCoordinator в _on_tray_ready() после получения события tray.integration_ready
+            # Дублирование может привести к преждевременному включению TAL до готовности tray icon
+            # Оставляем управление TAL только в SimpleModuleCoordinator для единообразия
 
             # Обработчик клика по пункту Quit
             try:

@@ -69,9 +69,8 @@ def clear_flags():
     # 2. Очистка restart_completed.flag
     print("\n📋 Проверка restart_completed.flag:")
     
-    # Стандартный путь (Caches)
-    cache_dir = get_user_cache_dir("Nexy")
-    restart_flag_file = cache_dir / "restart_completed.flag"
+    # Стандартный путь (Application Support, не Caches!)
+    restart_flag_file = data_dir / "restart_completed.flag"
     checked_paths.append(restart_flag_file)
     
     if restart_flag_file.exists():
@@ -85,8 +84,7 @@ def clear_flags():
         print(f"  ℹ️  Не найден: {restart_flag_file}")
     
     # Sandbox путь (если отличается)
-    sandbox_cache_dir = Path.home() / "Library" / "Containers" / bundle_id / "Data" / "Library" / "Caches" / "Nexy"
-    sandbox_restart_flag_file = sandbox_cache_dir / "restart_completed.flag"
+    sandbox_restart_flag_file = sandbox_data_dir / "restart_completed.flag"
     if sandbox_restart_flag_file != restart_flag_file and sandbox_restart_flag_file.exists():
         checked_paths.append(sandbox_restart_flag_file)
         try:
@@ -97,7 +95,7 @@ def clear_flags():
             print(f"  ❌ Ошибка удаления {sandbox_restart_flag_file}: {e}")
     
     # /tmp fallback
-    tmp_restart_flag_file = Path("/tmp") / "Nexy_cache" / "restart_completed.flag"
+    tmp_restart_flag_file = Path("/tmp") / "Nexy" / "restart_completed.flag"
     if tmp_restart_flag_file.exists():
         checked_paths.append(tmp_restart_flag_file)
         try:

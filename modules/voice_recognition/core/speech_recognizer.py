@@ -13,7 +13,7 @@ import speech_recognition as sr
 
 from .types import (
     RecognitionConfig, RecognitionResult, RecognitionState, 
-    RecognitionEventType, RecognitionMetrics
+    RecognitionEventType, RecognitionMetrics, AudioStreamState
 )
 from .audio_device_monitor import AudioDeviceMonitor
 from .audio_recovery_manager import AudioRecoveryManager, preflight_check
@@ -52,6 +52,12 @@ class SpeechRecognizer:
         self._initializing = False
         self._cooldown_until = 0.0
         self._last_successful_start = 0.0
+        
+        # State machine для аудио-потока (предотвращение гонок)
+        self._stream_state = AudioStreamState.IDLE
+        self._stream_state_lock = threading.RLock()  # RLock для многопоточного доступа
+        self._last_stop_time = 0.0  # Время последней остановки для дебаунса
+        self._min_stop_start_interval = 0.3  # Минимальный интервал между stop→start (300мс)
         
         # Audio Recovery Manager
         self.recovery_manager: Optional[AudioRecoveryManager] = None
@@ -233,6 +239,14 @@ class SpeechRecognizer:
         except Exception:
             pass
 
+        # ✅ FIX: Обновляем состояние аудио-потока
+        with self._stream_state_lock:
+            if self._stream_state == AudioStreamState.RUNNING:
+                old_state = self._stream_state
+                self._stream_state = AudioStreamState.STOPPING
+                self._last_stop_time = time.time()
+                logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value} (graceful stop: {reason})")
+
         # ВАЖНО: Принудительно закрываем аудио поток перед join треда
         if self._current_stream:
             try:
@@ -258,6 +272,12 @@ class SpeechRecognizer:
         self.first_chunk_received = False
         self.empty_chunk_counter = 0
         self.state = RecognitionState.IDLE
+        
+        # ✅ FIX: Возвращаемся в IDLE после graceful stop
+        with self._stream_state_lock:
+            old_state = self._stream_state
+            self._stream_state = AudioStreamState.IDLE
+            logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value} (graceful stop завершен)")
 
         # Сбрасываем stop_event, чтобы следующий запуск получил чистый объект
         self.stop_event = threading.Event()
@@ -312,12 +332,35 @@ class SpeechRecognizer:
         async with self._start_lock:
             start_time = time.time()
             try:
+                # ✅ FIX: Проверка всех условий ПЕРЕД переходом в STARTING
+                with self._stream_state_lock:
+                    if self._stream_state != AudioStreamState.IDLE:
+                        logger.warning(
+                            f"⚠️ Невозможно начать прослушивание: аудио-поток в состоянии {self._stream_state.value}"
+                        )
+                        return False
+                    
+                    # Дебаунс: проверяем минимальный интервал между stop→start
+                    time_since_stop = start_time - self._last_stop_time
+                    if time_since_stop < self._min_stop_start_interval:
+                        wait_for = self._min_stop_start_interval - time_since_stop
+                        logger.debug(f"⏳ Дебаунс stop→start: ожидаем {wait_for:.3f}с")
+                        await asyncio.sleep(wait_for)
+                        start_time = time.time()  # Обновляем время после ожидания
+                
+                # Проверяем RecognitionState ДО перехода в STARTING
                 if self.state != RecognitionState.IDLE:
                     logger.warning(f"⚠️ Невозможно начать прослушивание в состоянии {self.state.value}")
                     return False
                 if self._initializing:
                     logger.debug("🔁 Запуск прослушивания уже выполняется, пропускаем повторный вызов")
                     return False
+                
+                # ✅ FIX: Переходим в состояние STARTING только после всех проверок
+                with self._stream_state_lock:
+                    old_state = self._stream_state
+                    self._stream_state = AudioStreamState.STARTING
+                    logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value}")
 
                 if start_time < self._cooldown_until:
                     wait_for = self._cooldown_until - start_time
@@ -347,6 +390,11 @@ class SpeechRecognizer:
                 device_id = self._prepare_input_device()
                 if device_id is None:
                     logger.error("❌ Входное устройство недоступно, запись не запущена")
+                    # ✅ FIX: Возвращаемся в IDLE при ошибке устройства
+                    with self._stream_state_lock:
+                        old_state = self._stream_state
+                        self._stream_state = AudioStreamState.IDLE
+                        logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value} (устройство недоступно)")
                     self._device_priority = []
                     self._schedule_cooldown(0.5)
                     return False
@@ -394,6 +442,12 @@ class SpeechRecognizer:
                     daemon=True
                 )
                 self.listen_thread.start()
+                
+                # ✅ FIX: Переходим в состояние RUNNING после успешного запуска потока
+                with self._stream_state_lock:
+                    old_state = self._stream_state
+                    self._stream_state = AudioStreamState.RUNNING
+                    logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value}")
 
                 logger.info("🎤 Прослушивание микрофона начато")
                 return True
@@ -401,6 +455,10 @@ class SpeechRecognizer:
             except Exception as e:
                 logger.warning(f"⚠️ Ошибка начала прослушивания (продолжаем работу): {e}")
                 # НЕ устанавливаем ERROR - возвращаемся в IDLE для повторных попыток
+                with self._stream_state_lock:
+                    old_state = self._stream_state
+                    self._stream_state = AudioStreamState.IDLE
+                    logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value} (ошибка)")
                 self.state = RecognitionState.IDLE
                 self._device_priority = []
                 await self._notify_state_change(RecognitionState.IDLE, error=str(e))
@@ -412,9 +470,25 @@ class SpeechRecognizer:
     async def stop_listening(self) -> RecognitionResult:
         """Останавливает прослушивание и возвращает результат распознавания"""
         try:
+            # ✅ FIX: Проверка всех условий ПЕРЕД переходом в STOPPING
+            with self._stream_state_lock:
+                if self._stream_state != AudioStreamState.RUNNING:
+                    logger.warning(
+                        f"⚠️ Невозможно остановить прослушивание: аудио-поток в состоянии {self._stream_state.value}"
+                    )
+                    return RecognitionResult(text="", error="Not listening")
+            
+            # Проверяем RecognitionState ДО перехода в STOPPING
             if self.state != RecognitionState.LISTENING:
                 logger.warning(f"⚠️ Невозможно остановить прослушивание в состоянии {self.state.value}")
                 return RecognitionResult(text="", error="Not listening")
+            
+            # ✅ FIX: Переходим в состояние STOPPING только после всех проверок
+            with self._stream_state_lock:
+                old_state = self._stream_state
+                self._stream_state = AudioStreamState.STOPPING
+                self._last_stop_time = time.time()  # Сохраняем время остановки для дебаунса
+                logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value}")
                 
             self.state = RecognitionState.PROCESSING
             self.is_listening = False
@@ -455,6 +529,12 @@ class SpeechRecognizer:
             # Обновляем метрики
             self._update_metrics(result)
             
+            # ✅ FIX: Переходим в состояние IDLE после успешной остановки
+            with self._stream_state_lock:
+                old_state = self._stream_state
+                self._stream_state = AudioStreamState.IDLE
+                logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value}")
+            
             self.state = RecognitionState.IDLE
             await self._notify_state_change(RecognitionState.IDLE)
             self._device_priority = []
@@ -468,6 +548,11 @@ class SpeechRecognizer:
             
         except Exception as e:
             logger.error(f"❌ Ошибка остановки прослушивания: {e}")
+            # ✅ FIX: Возвращаемся в IDLE при ошибке
+            with self._stream_state_lock:
+                old_state = self._stream_state
+                self._stream_state = AudioStreamState.IDLE
+                logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value} (ошибка)")
             self.state = RecognitionState.ERROR
             await self._notify_state_change(RecognitionState.ERROR, error=str(e))
             return RecognitionResult(text="", error=str(e))
@@ -607,11 +692,23 @@ class SpeechRecognizer:
                 self.input_device_info = device_info or {}
                 self.input_device_id = device_id
 
+                # ✅ FIX: Используем формат устройства (не принуждаем для BT, чтобы не конфликтовать с воспроизведением)
+                device_name = device_info.get('name', '')
                 samplerate = device_info.get('default_samplerate') or self.config.sample_rate
                 channels_available = int(device_info.get('max_input_channels') or 1)
                 channels_target = max(1, self.config.channels)
-                self.actual_input_rate = float(samplerate)
-                self.actual_input_channels = max(1, min(channels_available, channels_target))
+                
+                # Для Bluetooth устройств используем формат устройства, но ограничиваем каналы до моно если нужно
+                if self._is_bluetooth_device(device_name):
+                    # Используем формат устройства, но для BT предпочитаем моно
+                    self.actual_input_rate = float(samplerate)
+                    # Для BT устройств предпочитаем моно, но не принуждаем
+                    self.actual_input_channels = 1 if channels_available >= 1 else max(1, min(channels_available, channels_target))
+                    logger.info(f"🔵 Bluetooth устройство обнаружено - формат: {self.actual_input_rate}Hz, {self.actual_input_channels} канал(ов)")
+                else:
+                    # Для проводных/встроенных устройств используем формат устройства
+                    self.actual_input_rate = float(samplerate)
+                    self.actual_input_channels = max(1, min(channels_available, channels_target))
 
                 first_chunk_timeout, retry_delay = self._get_stream_start_timing()
                 max_silence_start = (
@@ -766,6 +863,11 @@ class SpeechRecognizer:
 
         except Exception as e:
             logger.error(f"❌ Ошибка прослушивания микрофона: {e}")
+            # ✅ FIX: Обновляем состояние при ошибке
+            with self._stream_state_lock:
+                old_state = self._stream_state
+                self._stream_state = AudioStreamState.IDLE
+                logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value} (ошибка в _run_listening)")
             self.state = RecognitionState.ERROR
             self._schedule_cooldown(0.6)
         finally:
@@ -779,6 +881,15 @@ class SpeechRecognizer:
 
             # ВАЖНО: Очищаем ссылку на поток для предотвращения утечек ресурсов
             self._current_stream = None
+            
+            # ✅ FIX: Возвращаемся в IDLE после завершения потока
+            with self._stream_state_lock:
+                if self._stream_state == AudioStreamState.RUNNING:
+                    old_state = self._stream_state
+                    self._stream_state = AudioStreamState.IDLE
+                    self._last_stop_time = time.time()
+                    logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value} (поток завершен)")
+            
             logger.debug("🧹 Аудио поток очищен (_current_stream = None)")
 
     def _get_stream_start_timing(self) -> tuple[float, float]:

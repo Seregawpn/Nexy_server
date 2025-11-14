@@ -5,8 +5,10 @@ SimpleModuleCoordinator - Центральный координатор моду
 """
 
 import asyncio
+import ctypes
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -62,6 +64,7 @@ logger = logging.getLogger(__name__)
 # Глобальная защита от множественного запуска
 _app_running = False
 _user_initiated_shutdown = False
+_XPC_LIB = None
 
 class SimpleModuleCoordinator:
     """Центральный координатор модулей для Nexy AI Assistant"""
@@ -99,6 +102,10 @@ class SimpleModuleCoordinator:
         self._tray_ready = False
         self._tray_start_time = None
         self._tal_hold_start: Optional[float] = None  # Время начала TAL удержания
+        self._tal_hold_active: bool = False  # Флаг активного TAL hold (для идемпотентности)
+        self._tal_refresh_task: Optional[asyncio.Task] = None  # Задача периодического обновления
+        self._launch_activity_token = None
+        self._xpc_transaction_active = False
 
         # NSApplication activator callback (устанавливается из main.py)
         self.nsapp_activator = None
@@ -756,6 +763,14 @@ class SimpleModuleCoordinator:
             
             print("⏹️ Остановка всех интеграций...")
             
+            # КРИТИЧНО: Если TAL hold активен (tray ещё не готов), явно снимаем его
+            # Это важно для корректного завершения при фатальных ошибках
+            if self._tal_hold_active:
+                tray_status = "ready" if self._tray_ready else "not_ready"
+                reason = f"shutdown_before_tray_ready" if not self._tray_ready else "shutdown_after_tray_ready"
+                logger.warning(f"⚠️ [SHUTDOWN] TAL hold активен при остановке (tray={tray_status}) - явно снимаем")
+                self._release_tal_hold(reason=reason)
+            
             # Публикуем событие остановки
             await self.event_bus.publish("app.shutdown", {
                 "coordinator": "simple_module_coordinator"
@@ -803,6 +818,7 @@ class SimpleModuleCoordinator:
                 return
             
             _app_running = True
+            self._begin_launch_activity()
                 
             # Инициализируем
             success = await self.initialize()
@@ -868,7 +884,19 @@ class SimpleModuleCoordinator:
 
             # КРИТИЧНО: Анти-TAL удержание до tray.ready
             # Предотвращаем автоматическую терминацию приложения до готовности tray
-            self._hold_tal_until_tray_ready()
+            print("="*80)
+            print("🛡️ [ANTI_TAL] Вызов _hold_tal_until_tray_ready()...")
+            print("="*80)
+            logger.info("🛡️ [ANTI_TAL] Вызов _hold_tal_until_tray_ready()")
+            try:
+                self._hold_tal_until_tray_ready()
+                print("✅ [ANTI_TAL] _hold_tal_until_tray_ready() завершён успешно")
+                logger.info("✅ [ANTI_TAL] _hold_tal_until_tray_ready() завершён успешно")
+            except Exception as e:
+                print(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
+                logger.error(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
+                import traceback
+                traceback.print_exc()
             
             # CRITICAL FIX: Задержка перед app.run() для готовности ControlCenter
             # При первом запуске после перезагрузки ControlCenter может не успеть
@@ -890,22 +918,48 @@ class SimpleModuleCoordinator:
             # отложенную установку иконки ПОСЛЕ создания StatusItem
             tray_controller = tray_integration.get_tray_controller()
             logger.info(f"🔍 CRITICAL DEBUG: tray_controller={tray_controller}, type={type(tray_controller)}")
+            print(f"🔍 CRITICAL DEBUG: tray_controller={tray_controller}, type={type(tray_controller)}")
             if tray_controller:
                 logger.info("✅ CRITICAL: Вызываем tray_controller.run_app()")
+                print("✅ CRITICAL: Вызываем tray_controller.run_app()")
                 tray_controller.run_app()
+                logger.info("🔍 CRITICAL: tray_controller.run_app() завершился")
+                print("🔍 CRITICAL: tray_controller.run_app() завершился")
             else:
                 logger.error("❌ Не удалось получить tray_controller - используем fallback app.run()")
+                print("❌ Не удалось получить tray_controller - используем fallback app.run()")
                 app.run()  # Fallback на прямой запуск
+                logger.info("🔍 CRITICAL: app.run() (fallback) завершился")
+                print("🔍 CRITICAL: app.run() (fallback) завершился")
             
         except KeyboardInterrupt:
             print("\n⏹️ Приложение прервано пользователем")
+            logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt)")
         except Exception as e:
             print(f"❌ Критическая ошибка: {e}")
+            logger.error(f"❌ Критическая ошибка в coordinator.run(): {e}", exc_info=True)
             import traceback
             traceback.print_exc()
         finally:
+            print("🔍 CRITICAL: Entering finally block in coordinator.run()")
+            logger.info("🔍 CRITICAL: Entering finally block in coordinator.run()")
+            
+            # КРИТИЧНО: Если TAL hold активен (фатальная ошибка до tray.ready), явно снимаем его
+            if self._tal_hold_active:
+                tray_status = "ready" if self._tray_ready else "not_ready"
+                reason = "fatal_before_tray" if not self._tray_ready else "fatal_after_tray"
+                logger.warning(f"⚠️ [FATAL] TAL hold активен в finally блоке (tray={tray_status}) - явно снимаем")
+                try:
+                    self._release_tal_hold(reason=reason)
+                except Exception as release_exc:
+                    logger.error(f"❌ [FATAL] Failed to release TAL hold in finally: {release_exc}")
+            self._end_launch_activity(reason="run.finally")
             _app_running = False
+            print("🔍 CRITICAL: Calling coordinator.stop()")
+            logger.info("🔍 CRITICAL: Calling coordinator.stop()")
             await self.stop()
+            print("🔍 CRITICAL: coordinator.stop() completed")
+            logger.info("🔍 CRITICAL: coordinator.stop() completed")
     
     # Обработчики событий (только координация, не дублирование логики)
     
@@ -1040,7 +1094,8 @@ class SimpleModuleCoordinator:
             self._tray_ready = True
             
             # КРИТИЧНО: Снимаем TAL удержание после tray.ready
-            self._release_tal_hold()
+            self._release_tal_hold(reason="tray_ready")
+            self._end_launch_activity(reason="tray_ready")
             
         except Exception as e:
             logger.error(f"❌ [TRAY_GATE] Ошибка обработки tray.integration_ready: {e}")
@@ -1050,74 +1105,270 @@ class SimpleModuleCoordinator:
         Устанавливает TAL удержание до tray.ready.
         
         Предотвращает автоматическую терминацию приложения до готовности tray.
-        Снимается автоматически после tray.ready или по таймауту 60s.
+        Снимается автоматически после tray.ready или по таймауту 120s (увеличено с 60s).
+        
+        КРИТИЧНО: Периодически обновляет assertion чтобы предотвратить timeout.
+        
+        ВАЖНО: Всегда устанавливает TAL hold, даже если automaticTerminationSupportEnabled()
+        возвращает False (например, если TAL уже отключен в main.py). Это необходимо для
+        периодического обновления assertion после перезапуска приложения.
+        
+        ИДЕМПОТЕНТНОСТЬ: Безопасна к повторным вызовам - если TAL hold уже установлен,
+        только обновляет assertion и логирует повторный вызов.
         """
         try:
             import Foundation
+            import time
+            
+            print(f"🛡️ [ANTI_TAL] _hold_tal_until_tray_ready() ВХОД (tal_hold_active={self._tal_hold_active})")
+            logger.info(f"🛡️ [ANTI_TAL] _hold_tal_until_tray_ready() ВХОД (tal_hold_active={self._tal_hold_active})")
+            
             process_info = Foundation.NSProcessInfo.processInfo()
             
-            if process_info.automaticTerminationSupportEnabled():
-                import time
-                process_info.disableAutomaticTermination_("Waiting for tray icon")
-                self._tal_hold_start = time.time()
-                # КРИТИЧНО: Логируем TAL=hold в формате для приёмки
-                logger.info(f"TAL=hold (ts={self._tal_hold_start:.2f})")
-                print("🛡️ [ANTI_TAL] TAL удержание установлено - будет снято после tray.ready или через 60s")
+            # ИДЕМПОТЕНТНОСТЬ: Если TAL hold уже установлен, только обновляем assertion
+            if self._tal_hold_active:
+                logger.debug(f"TAL=hold (ts={time.time():.2f}, reason=duplicate_call, already_active=True)")
+                print(f"🛡️ [ANTI_TAL] TAL hold уже активен - обновляем assertion")
+                # Обновляем assertion для продления времени
+                process_info.disableAutomaticTermination_("Waiting for tray icon (refreshing)")
+                return
+            
+            # КРИТИЧНО: Всегда устанавливаем TAL hold, даже если automaticTerminationSupportEnabled()
+            # возвращает False. Это необходимо для периодического обновления assertion после перезапуска.
+            # Если TAL уже отключен (например, в main.py), мы всё равно вызываем disableAutomaticTermination_()
+            # для обновления assertion и запуска периодического обновления.
+            auto_term_enabled = process_info.automaticTerminationSupportEnabled()
+            print(f"🛡️ [ANTI_TAL] auto_term_enabled={auto_term_enabled}")
+            logger.info(f"🛡️ [ANTI_TAL] auto_term_enabled={auto_term_enabled}")
+            
+            # Всегда вызываем disableAutomaticTermination_() для установки/обновления assertion
+            print(f"🛡️ [ANTI_TAL] Вызов disableAutomaticTermination_()...")
+            logger.info(f"🛡️ [ANTI_TAL] Вызов disableAutomaticTermination_()")
+            process_info.disableAutomaticTermination_("Waiting for tray icon")
+            
+            self._tal_hold_start = time.time()
+            self._tal_hold_active = True
+            
+            # КРИТИЧНО: Логируем TAL=hold в формате для приёмки
+            logger.info(f"TAL=hold (ts={self._tal_hold_start:.2f}, auto_term_enabled={auto_term_enabled})")
+            print(f"🛡️ [ANTI_TAL] TAL удержание установлено (auto_term_enabled={auto_term_enabled}) - будет снято после tray.ready или через 120s")
+            
+            # КРИТИЧНО: Периодически обновляем assertion чтобы предотвратить timeout
+            # Обновляем каждые 30 секунд до готовности tray
+            # ВАЖНО: Проверяем, что event loop активен
+            try:
+                loop = asyncio.get_running_loop()
+                print(f"🛡️ [ANTI_TAL] Event loop активен: {loop}")
+                logger.info(f"🛡️ [ANTI_TAL] Event loop активен: {loop}")
                 
-                # Планируем автоматическое снятие по таймауту (60s)
-                asyncio.create_task(self._release_tal_hold_after_timeout())
-            else:
-                logger.debug("[ANTI_TAL] Automatic termination already disabled")
+                self._tal_refresh_task = asyncio.create_task(self._periodically_refresh_tal_hold())
+                print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана: {self._tal_refresh_task}")
+                logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана")
+                
+                # Планируем автоматическое снятие по таймауту (120s - увеличено)
+                timeout_task = asyncio.create_task(self._release_tal_hold_after_timeout())
+                print(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана: {timeout_task}")
+                logger.info(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана")
+            except RuntimeError as loop_err:
+                # Event loop не активен - это критическая проблема
+                print(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен! {loop_err}")
+                logger.error(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен! {loop_err}")
+                # Продолжаем работу, но периодическое обновление не будет работать
+                # Это может привести к timeout assertion
                 
         except Exception as exc:
-            logger.warning(f"⚠️ [ANTI_TAL] Failed to set TAL hold: {exc}")
+            logger.error(f"❌ [ANTI_TAL] Failed to set TAL hold: {exc}")
+            print(f"❌ [ANTI_TAL] Failed to set TAL hold: {exc}")
+            import traceback
+            traceback.print_exc()
     
-    def _release_tal_hold(self):
+    def _release_tal_hold(self, reason: str = "tray_ready"):
         """
-        Снимает TAL удержание после tray.ready.
+        Снимает TAL удержание после tray.ready или при фатальной ошибке.
+        
+        ВАЖНО: Для menu bar приложения мы НЕ включаем automatic termination обратно,
+        так как приложение должно работать постоянно в фоне. TAL hold был нужен только
+        для предотвращения завершения до готовности tray icon.
+        
+        После tray.ready приложение уже активно (tray icon виден), поэтому система
+        не будет автоматически завершать его.
+        
+        ИДЕМПОТЕНТНОСТЬ: Безопасна к повторным вызовам - если TAL hold уже снят,
+        только логирует повторный вызов.
+        
+        Args:
+            reason: Причина снятия TAL hold (tray_ready, fatal_before_tray, timeout, duplicate_call)
         """
         try:
-            if not hasattr(self, '_tal_hold_start') or self._tal_hold_start is None:
-                return  # TAL удержание не было установлено
-            
             import Foundation
+            import time
+            
+            # ИДЕМПОТЕНТНОСТЬ: Если TAL hold уже снят, только логируем
+            if not self._tal_hold_active:
+                if reason == "duplicate_call":
+                    logger.debug(f"TAL=released (ts={time.time():.2f}, reason={reason}, had_active_hold=False)")
+                else:
+                    logger.debug(f"TAL=released (ts={time.time():.2f}, reason={reason}, had_active_hold=False, duplicate_release=True)")
+                return
+            
+            if not hasattr(self, '_tal_hold_start') or self._tal_hold_start is None:
+                logger.debug(f"TAL=released (ts={time.time():.2f}, reason={reason}, had_active_hold=False, no_start_time)")
+                self._tal_hold_active = False
+                return
             process_info = Foundation.NSProcessInfo.processInfo()
             
-            if process_info.automaticTerminationSupportEnabled():
-                import time
+            hold_duration = time.time() - self._tal_hold_start
+            self._tal_hold_start = None
+            self._tal_hold_active = False
+            
+            # Останавливаем задачу периодического обновления, если она запущена
+            if self._tal_refresh_task and not self._tal_refresh_task.done():
+                self._tal_refresh_task.cancel()
+                self._tal_refresh_task = None
+            
+            # КРИТИЧНО: Логируем TAL=released в формате для приёмки
+            # ВАЖНО: Для menu bar приложения мы НЕ включаем automatic termination обратно,
+            # так как приложение должно работать постоянно. TAL hold был нужен только
+            # для предотвращения завершения до готовности tray icon.
+            auto_term_enabled = process_info.automaticTerminationSupportEnabled()
+            
+            if auto_term_enabled:
+                # Если automatic termination включен, включаем его обратно
                 process_info.enableAutomaticTermination_("Tray icon ready")
-                hold_duration = time.time() - self._tal_hold_start
-                self._tal_hold_start = None
-                
-                # КРИТИЧНО: Логируем TAL=released в формате для приёмки
                 logger.info(
-                    f"TAL=released (ts={time.time():.2f}, duration={hold_duration:.2f}s)"
+                    f"TAL=released (ts={time.time():.2f}, duration={hold_duration:.2f}s, reason={reason}, auto_term_re-enabled=True)"
                 )
-                print(f"🛡️ [ANTI_TAL] TAL удержание снято (длительность={hold_duration:.2f}s)")
+                print(f"🛡️ [ANTI_TAL] TAL удержание снято (длительность={hold_duration:.2f}s, причина={reason}, auto_term re-enabled)")
             else:
-                logger.debug("[ANTI_TAL] Automatic termination already enabled")
+                # Если automatic termination уже отключен (например, в main.py),
+                # мы не включаем его обратно - это нормально для menu bar приложения
+                logger.info(
+                    f"TAL=released (ts={time.time():.2f}, duration={hold_duration:.2f}s, reason={reason}, auto_term_re-enabled=False, menu_bar_app=True)"
+                )
+                print(f"🛡️ [ANTI_TAL] TAL удержание снято (длительность={hold_duration:.2f}s, причина={reason}, auto_term остаётся disabled - нормально для menu bar)")
                 
         except Exception as exc:
             logger.warning(f"⚠️ [ANTI_TAL] Failed to release TAL hold: {exc}")
+            import traceback
+            traceback.print_exc()
+            # Сбрасываем флаг даже при ошибке
+            self._tal_hold_active = False
+    
+    async def _periodically_refresh_tal_hold(self):
+        """
+        Периодически обновляет TAL assertion чтобы предотвратить timeout.
+        Обновляет каждые 30 секунд до готовности tray или до таймаута.
+        """
+        try:
+            import Foundation
+            process_info = Foundation.NSProcessInfo.processInfo()
+            
+            refresh_interval = 30.0  # Обновляем каждые 30 секунд
+            max_wait = 120.0  # Максимальное время ожидания (120 секунд)
+            start_time = time.time()
+            
+            while (time.time() - start_time) < max_wait:
+                await asyncio.sleep(refresh_interval)
+                
+                # Проверяем, не было ли уже снято
+                if not hasattr(self, '_tal_hold_start') or self._tal_hold_start is None:
+                    break  # TAL удержание уже снято
+                
+                # Проверяем, готов ли tray
+                if self._tray_ready:
+                    break  # Tray готов, больше не нужно обновлять
+                
+                # КРИТИЧНО: Всегда обновляем assertion, даже если automaticTerminationSupportEnabled()
+                # возвращает False. Это необходимо для поддержания assertion после перезапуска.
+                try:
+                    process_info.disableAutomaticTermination_("Waiting for tray icon (refreshing)")
+                    elapsed = time.time() - start_time
+                    # КРИТИЧНО: Логируем TAL=refresh в формате для приёмки
+                    logger.info(f"TAL=refresh (ts={time.time():.2f}, elapsed={elapsed:.1f}s)")
+                    logger.debug(f"🔄 [ANTI_TAL] TAL assertion обновлён (tray ещё не готов, elapsed={elapsed:.1f}s)")
+                except Exception as refresh_err:
+                    logger.warning(f"⚠️ [ANTI_TAL] Failed to refresh TAL hold: {refresh_err}")
+                    
+        except Exception as exc:
+            logger.error(f"❌ [ANTI_TAL] Error in TAL hold refresh task: {exc}")
     
     async def _release_tal_hold_after_timeout(self):
         """
-        Автоматически снимает TAL удержание по таймауту (60s).
+        Автоматически снимает TAL удержание по таймауту (120s - увеличено с 60s).
         """
         try:
-            await asyncio.sleep(60.0)  # Таймаут 60 секунд
+            await asyncio.sleep(120.0)  # Таймаут 120 секунд (увеличено)
             
             # Проверяем, не было ли уже снято
-            if hasattr(self, '_tal_hold_start') and self._tal_hold_start is not None:
+            if self._tal_hold_active:
                 logger.warning(
-                    f"⚠️ [ANTI_TAL] TAL hold timeout (60s) - releasing automatically "
+                    f"⚠️ [ANTI_TAL] TAL hold timeout (120s) - releasing automatically "
                     f"(tray may not be ready yet)"
                 )
-                print("⚠️ [ANTI_TAL] Таймаут TAL удержания (60s) - снимаем автоматически")
-                self._release_tal_hold()
+                print("⚠️ [ANTI_TAL] Таймаут TAL удержания (120s) - снимаем автоматически")
+                self._release_tal_hold(reason="timeout")
                 
         except Exception as exc:
             logger.error(f"❌ [ANTI_TAL] Error in TAL hold timeout task: {exc}")
+
+    def _begin_launch_activity(self):
+        """Держит процесс активным, пока не появится tray."""
+        if self._launch_activity_token is not None:
+            return
+        try:
+            import Foundation
+            process_info = Foundation.NSProcessInfo.processInfo()
+            options = (
+                Foundation.NSActivityUserInitiatedAllowingIdleSystemSleep
+                | Foundation.NSActivityLatencyCritical
+            )
+            self._launch_activity_token = process_info.beginActivityWithOptions_reason_(
+                options, "Nexy tray bootstrap"
+            )
+            logger.info("ACTIVITY=begin reason=tray_bootstrap")
+        except Exception as exc:
+            logger.warning(f"⚠️ [ACTIVITY] Failed to begin NSActivity: {exc}")
+
+        self._ensure_xpc_transaction()
+
+    def _ensure_xpc_transaction(self):
+        """Запускает xpc_transaction_begin для удержания RunningBoard."""
+        global _XPC_LIB
+        if self._xpc_transaction_active:
+            return
+        try:
+            if _XPC_LIB is None:
+                _XPC_LIB = ctypes.CDLL("/usr/lib/system/libxpc.dylib")
+                _XPC_LIB.xpc_transaction_begin.restype = None
+                _XPC_LIB.xpc_transaction_end.restype = None
+            _XPC_LIB.xpc_transaction_begin()
+            self._xpc_transaction_active = True
+            logger.info("ACTIVITY=xpc_transaction_begin")
+        except Exception as exc:
+            logger.warning(f"⚠️ [ACTIVITY] Failed to start xpc transaction: {exc}")
+
+    def _end_launch_activity(self, *, reason: str = "unknown"):
+        """Завершает NSActivity и xpc transaction."""
+        if self._launch_activity_token is not None:
+            try:
+                import Foundation
+                process_info = Foundation.NSProcessInfo.processInfo()
+                process_info.endActivity_(self._launch_activity_token)
+                logger.info(f"ACTIVITY=end reason={reason}")
+            except Exception as exc:
+                logger.warning(f"⚠️ [ACTIVITY] Failed to end NSActivity: {exc}")
+            finally:
+                self._launch_activity_token = None
+
+        if self._xpc_transaction_active:
+            try:
+                if _XPC_LIB is not None:
+                    _XPC_LIB.xpc_transaction_end()
+                    logger.info(f"ACTIVITY=xpc_transaction_end reason={reason}")
+            except Exception as exc:
+                logger.warning(f"⚠️ [ACTIVITY] Failed to end xpc transaction: {exc}")
+            finally:
+                self._xpc_transaction_active = False
 
     async def _on_permissions_restart_pending(self, event):
         """Обработка события перезапуска после первого запуска"""

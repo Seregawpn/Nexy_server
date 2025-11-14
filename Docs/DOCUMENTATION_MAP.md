@@ -24,7 +24,8 @@
 |----------|-----------|----------|
 | `Docs/PRODUCT_CONCEPT.md` | Концепция продукта, UX сценарии, 3 режима работы | `Docs/ARCHITECTURE_OVERVIEW.md` |
 | `Docs/ARCHITECTURE_OVERVIEW.md` | Обзор архитектуры, роли компонентов, жизненные циклы | `Docs/PRODUCT_CONCEPT.md`, `Docs/STATE_CATALOG.md` |
-| `Docs/first_run_flow_spec.md` | Спецификация первого запуска и запроса разрешений | `Docs/ARCHITECTURE_OVERVIEW.md` |
+| `Docs/first_run_flow_spec.md` | Спецификация первого запуска и запроса разрешений | `Docs/ARCHITECTURE_OVERVIEW.md`, `PERMISSIONS_REPORT.md` |
+| `Docs/CURRENT_STATUS_REPORT.md` | Живой статус релизов, критичные риски, тесты | `.cursorrules`, `Docs/PRE_PACKAGING_VERIFICATION.md` |
 
 ### 3. Планы и процессы
 
@@ -47,8 +48,19 @@
 | `client/metrics/registry.md` | Реестр метрик с SLO порогами | `tests/perf/test_slo.py`, `Docs/GLOBAL_DELIVERY_PLAN.md` |
 | `Docs/templates/change_impact.yaml` | Шаблон для Impact-гейт | `.cursorrules` (раздел 11) |
 | `Docs/templates/ADR_MIN.md` | Шаблон микро-ADR | `.cursorrules` (раздел 14.7) |
+| `Docs/TAL_TESTING_CHECKLIST.md` | Единый гайд по TAL hold/refresh, диагностике и тестам | `integration/core/simple_module_coordinator.py`, `scripts/check_tal_after_restart.py` |
 
-### 6. ADR (Architecture Decision Records)
+### 6. Packaging & Delivery
+
+| Документ | Назначение | Связан с |
+|----------|-----------|----------|
+| `Docs/PACKAGING_FINAL_GUIDE.md` | Единственная инструкция по сборке .app/PKG, notarization | `.cursorrules` §2, §11.2 |
+| `Docs/PRE_PACKAGING_VERIFICATION.md` | Канонический чек-лист и логи готовности перед упаковкой | `Docs/PACKAGING_FINAL_GUIDE.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md` |
+| `Docs/PACKAGING_READINESS_CHECKLIST.md` | Короткое резюме статуса упаковки, указывает на `PRE_PACKAGING_VERIFICATION.md` | `.cursorrules` §11.2 |
+| `Docs/GLOBAL_DELIVERY_PLAN.md` | Фазы rollout, Azure/AppCast, release гейты | `Docs/PACKAGING_FINAL_GUIDE.md`, `Docs/CURRENT_STATUS_REPORT.md` |
+| `PERMISSIONS_REPORT.md` | Актуальные статусы TCC, открытые задачи | `Docs/STATE_CATALOG.md`, `Docs/TAL_TESTING_CHECKLIST.md` |
+
+### 7. ADR (Architecture Decision Records)
 
 | Документ | Назначение | Связан с |
 |----------|-----------|----------|
@@ -143,7 +155,7 @@
 → `Docs/ARCHITECTURE_OVERVIEW.md` + `Docs/PRODUCT_CONCEPT.md`
 
 **Хочу упаковать приложение:**
-→ `Docs/PACKAGING_FINAL_GUIDE.md` (единственная инструкция)
+→ `Docs/PACKAGING_FINAL_GUIDE.md` (инструкция) + `Docs/PRE_PACKAGING_VERIFICATION.md` (детальный чек-лист) + `Docs/PACKAGING_READINESS_CHECKLIST.md` (резюме статуса)
 
 **Хочу проверить метрики:**
 → `client/metrics/registry.md` + `tests/perf/test_slo.py`
@@ -168,4 +180,3 @@
 
 **Владелец**: Tech Lead клиента  
 **Последнее обновление**: 2025-01-15
-

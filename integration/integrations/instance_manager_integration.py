@@ -6,6 +6,7 @@ Instance Manager Integration
 """
 
 import sys
+import os
 import asyncio
 import logging
 from typing import Optional, Dict, Any
@@ -29,7 +30,6 @@ class InstanceManagerIntegration:
         self.config = config or {}
         
         # Позволяем переопределять путь lock-файла через окружение (удобно в dev/sandbox)
-        import os
         env_lock_file = os.environ.get("NEXY_INSTANCE_LOCK_FILE")
         if env_lock_file:
             logger.info("[INSTANCE_MANAGER] Using lock file from env NEXY_INSTANCE_LOCK_FILE=%s", env_lock_file)
@@ -75,6 +75,12 @@ class InstanceManagerIntegration:
             
             # КРИТИЧНО: Проверка дублирования при старте
             print("🔍 Проверка дублирования экземпляров...")
+            print(f"🔍 DEBUG: Lock file path: {self.instance_manager.lock_file}")
+            print(f"🔍 DEBUG: Lock file exists: {os.path.exists(self.instance_manager.lock_file)}")
+            print(f"🔍 DEBUG: Current PID: {os.getpid()}")
+            print(f"🔍 DEBUG: Current process name: {os.path.basename(sys.argv[0])}")
+            print(f"🔍 DEBUG: Is running from .app: {sys.argv[0].endswith('.app/Contents/MacOS/Nexy') if sys.argv else False}")
+            
             status = await self.instance_manager.check_single_instance()
             print(f"🔍 Результат проверки дублирования: {status}")
             

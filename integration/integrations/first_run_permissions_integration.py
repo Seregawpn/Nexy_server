@@ -16,7 +16,7 @@ import os
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
-from integration.utils.resource_path import get_user_data_dir, get_user_cache_dir
+from integration.utils.resource_path import get_user_data_dir
 
 from modules.permissions.core.types import PermissionType
 from modules.permission_restart.core.atomic_flag import AtomicRestartFlag
@@ -69,13 +69,24 @@ class FirstRunPermissionsIntegration:
             self.activation_hold_seconds,
         )
 
-        # Путь к флагу первого запуска (Application Support)
-        self.flag_file = get_user_data_dir("Nexy") / "permissions_first_run_completed.flag"
+        # Путь к флагам первого запуска (Application Support)
+        data_dir = get_user_data_dir("Nexy")
+        self.flag_file = data_dir / "permissions_first_run_completed.flag"
         
-        # Атомарный флаг перезапуска в доступной директории (Caches)
-        cache_dir = get_user_cache_dir("Nexy")
-        restart_flag_path = cache_dir / "restart_completed.flag"
+        # Атомарный флаг перезапуска в persistent директории
+        restart_flag_path = data_dir / "restart_completed.flag"
         self._restart_flag = AtomicRestartFlag(restart_flag_path)
+        logger.info(
+            "[FIRST_RUN_PERMISSIONS] Флаги: permissions=%s restart=%s",
+            self.flag_file,
+            restart_flag_path,
+        )
+        if str(restart_flag_path).startswith("/tmp"):
+            logger.warning(
+                "[FIRST_RUN_PERMISSIONS] ⚠️ restart_completed.flag расположен во временной директории (%s) "
+                "- перезапуск может не зафиксироваться",
+                restart_flag_path,
+            )
 
         self._initialized = False
         self._running = False

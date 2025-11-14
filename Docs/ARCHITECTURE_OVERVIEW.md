@@ -156,10 +156,12 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  └─ icons/                    # 🎯 Иконки для tray
 └─ Docs/                        # 📚 Документация
    ├─ ARCHITECTURE_OVERVIEW.md  # 🏗️ Обзор архитектуры
-   ├─ CURRENT_STATUS_REPORT.md  # 📊 Текущий статус
-   ├─ GLOBAL_DELIVERY_PLAN.md   # 🚀 План развертывания
-   ├─ PACKAGING_FINAL_GUIDE.md  # 📦 План упаковки PKG
-   └─ PRODUCT_CONCEPT.md        # 💡 Концепция продукта
+   ├─ PRODUCT_CONCEPT.md        # 💡 Концепция продукта и UX
+   ├─ CURRENT_STATUS_REPORT.md  # 📊 Актуальные статусы и тесты
+   ├─ GLOBAL_DELIVERY_PLAN.md   # 🚀 План поставки / Azure / AppCast
+   ├─ PERMISSIONS_REPORT.md     # 🔐 Статусы TCC / first-run
+   ├─ PACKAGING_FINAL_GUIDE.md  # 📦 Инструкция по сборке PKG
+   └─ PRE_PACKAGING_VERIFICATION.md  # ✅ Чек-листы перед упаковкой
 
 server/                         # 🖥️ СЕРВЕРНАЯ ЧАСТЬ (Python)
 ├─ main.py                      # 🎯 Точка входа сервера
@@ -544,10 +546,10 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 
 ---
 
-### 📚 **Документация:**
 - **Текущий статус:** `Docs/CURRENT_STATUS_REPORT.md`
 - **План развертывания:** `Docs/GLOBAL_DELIVERY_PLAN.md`
-- **План упаковки:** `Docs/PACKAGING_FINAL_GUIDE.md`
+- **Права и first-run:** `PERMISSIONS_REPORT.md`, `Docs/first_run_flow_spec.md`
+- **План упаковки:** `Docs/PACKAGING_FINAL_GUIDE.md` + `Docs/PRE_PACKAGING_VERIFICATION.md`
 - **Концепция продукта:** `Docs/PRODUCT_CONCEPT.md`
 - **Масштабирование:** `server/SCALING_100_USERS_GUIDE.md`
 - **Модуляризация сервера:** `server/SERVER_MODULARIZATION_PLAN.md`

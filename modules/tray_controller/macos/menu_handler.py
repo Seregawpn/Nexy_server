@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class MacOSTrayMenu:
     """macOS реализация меню трея"""
     
-    def __init__(self, app_name: str = "Nexy"):
+    def __init__(self, app_name: str = ""):
         self.app_name = app_name
         self.app: Optional[rumps.App] = None
         self.menu_items: List[TrayMenuItem] = []
@@ -62,14 +62,33 @@ class MacOSTrayMenu:
             except Exception as e:
                 logger.warning(f"⚠️ ДИАГНОСТИКА: Не удалось проверить NSApplication: {e}")
 
+            # КРИТИЧНО: Убеждаемся, что NSApplication активирован перед созданием rumps.App
+            # После перезапуска NSApplication может быть не активирован
+            try:
+                import AppKit
+                nsapp = AppKit.NSApplication.sharedApplication()
+                if nsapp.activationPolicy() != AppKit.NSApplicationActivationPolicyAccessory:
+                    logger.warning("⚠️ NSApplication activation policy не установлен, устанавливаем...")
+                    nsapp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+                    nsapp.activateIgnoringOtherApps_(True)
+                    logger.info("✅ NSApplication активирован перед созданием rumps.App")
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось проверить/активировать NSApplication: {e}")
+
             # Создаем приложение
             # NOTE: StatusItem создаётся не здесь, а в app.run() -> initializeStatusBar()
             # поэтому retry здесь не нужен - он сделан на уровне coordinator перед app.run()
-            self.app = rumps.App(
-                name=self.app_name,
-                quit_button=None  # Убираем стандартную кнопку выхода
-            )
-            logger.info(f"✅ ДИАГНОСТИКА: rumps.App создан успешно")
+            try:
+                self.app = rumps.App(
+                    name=self.app_name,
+                    quit_button=None  # Убираем стандартную кнопку выхода
+                )
+                logger.info(f"✅ ДИАГНОСТИКА: rumps.App создан успешно")
+            except Exception as e:
+                logger.error(f"❌ КРИТИЧНО: Ошибка создания rumps.App: {e}")
+                import traceback
+                logger.debug(f"Stacktrace: {traceback.format_exc()}")
+                raise
 
             # Включаем цветные иконки (отключаем шаблонный режим)
             try:
@@ -80,7 +99,16 @@ class MacOSTrayMenu:
 
             # Изначально меню заполняется интеграцией через TrayController._create_default_menu()
             # Здесь не создаём собственных пунктов меню, чтобы избежать дублирования и несинхронности.
-            self.app.menu = []
+            # КРИТИЧНО: Инициализируем меню безопасно
+            try:
+                if not hasattr(self.app, 'menu') or self.app.menu is None:
+                    self.app.menu = []
+                    logger.info("✅ ДИАГНОСТИКА: Меню инициализировано")
+            except Exception as e:
+                logger.error(f"❌ КРИТИЧНО: Ошибка инициализации меню: {e}")
+                import traceback
+                logger.debug(f"Stacktrace: {traceback.format_exc()}")
+                # Продолжаем работу - меню будет создано позже
 
             # ВАЖНО: НЕ устанавливаем иконку здесь!
             # StatusItem создаётся только внутри app.run() -> initializeStatusBar()
@@ -106,13 +134,9 @@ class MacOSTrayMenu:
                         except Exception as e:
                             logger.error(f"❌ ДИАГНОСТИКА: Ошибка чтения директории: {e}")
             
-            # Добавляем метод applicationShouldTerminate если его нет
-            if not hasattr(self.app, 'applicationShouldTerminate'):
-                def applicationShouldTerminate(sender):
-                    return True
-                self.app.applicationShouldTerminate = applicationShouldTerminate
-            
-            # Настраиваем обработчик завершения приложения
+            # КРИТИЧНО: Настраиваем обработчик завершения
+            # Это предотвращает автоматическое завершение приложения
+            # _setup_quit_handler() сам установит fallback если нужно
             self._setup_quit_handler()
             
             return self.app
@@ -131,28 +155,50 @@ class MacOSTrayMenu:
     def add_menu_item(self, item: TrayMenuItem):
         """Добавить элемент меню"""
         if not self.app:
+            logger.warning("⚠️ add_menu_item: self.app is None")
+            return
+        
+        # КРИТИЧНО: Проверяем готовность меню перед добавлением элементов
+        # После перезапуска app.menu может быть не готов
+        if not hasattr(self.app, 'menu') or self.app.menu is None:
+            logger.warning("⚠️ add_menu_item: app.menu не готов, откладываем добавление")
+            # Сохраняем элемент для отложенного добавления
+            if not hasattr(self, '_pending_menu_items'):
+                self._pending_menu_items = []
+            self._pending_menu_items.append(item)
             return
         
         try:
             if item.separator:
                 # Добавляем разделитель в меню приложения
+                # ВАЖНО: rumps.separator это объект, а не функция - не вызываем его!
                 try:
-                    self.app.menu.add(rumps.separator())
-                except Exception:
+                    self.app.menu.add(rumps.separator)
+                except Exception as e:
+                    logger.warning(f"⚠️ Ошибка добавления разделителя: {e}")
+                    import traceback
+                    logger.debug(f"Stacktrace: {traceback.format_exc()}")
                     pass
             else:
                 # Создаем элемент меню
-                menu_item = rumps.MenuItem(
-                    title=item.title,
-                    callback=item.action,
-                    key=item.shortcut
-                )
-                
-                if not item.enabled:
-                    menu_item.state = 0  # Отключен
-                
-                # Добавляем в меню
-                self.app.menu.add(menu_item)
+                try:
+                    menu_item = rumps.MenuItem(
+                        title=item.title,
+                        callback=item.action,
+                        key=item.shortcut
+                    )
+                    
+                    if not item.enabled:
+                        menu_item.state = 0  # Отключен
+                    
+                    # Добавляем в меню с обработкой ошибок
+                    self.app.menu.add(menu_item)
+                except Exception as e:
+                    logger.error(f"❌ Ошибка создания/добавления элемента меню '{item.title}': {e}")
+                    import traceback
+                    logger.debug(f"Stacktrace: {traceback.format_exc()}")
+                    # Не добавляем элемент в menu_items если не удалось создать
+                    return
 
                 # Сохраняем ссылки на изменяемые элементы (по префиксу заголовка)
                 try:
@@ -178,7 +224,8 @@ class MacOSTrayMenu:
         try:
             for sub_item in submenu.items:
                 if sub_item.separator:
-                    parent_item.add(rumps.separator())
+                    # ВАЖНО: rumps.separator это объект, а не функция - не вызываем его!
+                    parent_item.add(rumps.separator)
                 else:
                     sub_menu_item = rumps.MenuItem(
                         title=sub_item.title,
@@ -201,19 +248,40 @@ class MacOSTrayMenu:
     def update_menu(self, menu: TrayMenu):
         """Обновить меню"""
         if not self.app:
+            logger.warning("⚠️ update_menu: self.app is None")
+            return
+        
+        # КРИТИЧНО: Проверяем готовность меню перед обновлением
+        if not hasattr(self.app, 'menu') or self.app.menu is None:
+            logger.warning("⚠️ update_menu: app.menu не готов, откладываем обновление")
+            # Сохраняем меню для отложенного обновления
+            self._pending_menu = menu
             return
         
         try:
             # Очищаем существующее меню
-            self.app.menu.clear()
+            try:
+                self.app.menu.clear()
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка очистки меню: {e}")
+            
             self.menu_items.clear()
             
             # Добавляем новые элементы
             for item in menu.items:
                 self.add_menu_item(item)
+            
+            # Пытаемся добавить отложенные элементы, если они есть
+            if hasattr(self, '_pending_menu_items') and self._pending_menu_items:
+                logger.info(f"🔄 Добавляем {len(self._pending_menu_items)} отложенных элементов меню")
+                for pending_item in self._pending_menu_items:
+                    self.add_menu_item(pending_item)
+                self._pending_menu_items = []
         
         except Exception as e:
-            print(f"Ошибка обновления меню: {e}")
+            logger.error(f"❌ Ошибка обновления меню: {e}")
+            import traceback
+            logger.debug(f"Stacktrace: {traceback.format_exc()}")
     
     def set_status_callback(self, event_type: str, callback: Callable):
         """Установить обработчик статуса"""
@@ -519,11 +587,35 @@ class MacOSTrayMenu:
     def run(self):
         """Запустить приложение"""
         if self.app:
-            # Добавляем метод applicationShouldTerminate если его нет
+            # КРИТИЧНО: Проверяем готовность меню перед запуском
+            # После перезапуска меню может быть не готово
+            if not hasattr(self.app, 'menu') or self.app.menu is None:
+                logger.warning("⚠️ run: app.menu не готов, пытаемся инициализировать")
+                try:
+                    # Пытаемся инициализировать меню
+                    self.app.menu = []
+                except Exception as e:
+                    logger.error(f"❌ Ошибка инициализации меню: {e}")
+            
+            # Добавляем отложенные элементы меню, если они есть
+            if hasattr(self, '_pending_menu_items') and self._pending_menu_items:
+                logger.info(f"🔄 Добавляем {len(self._pending_menu_items)} отложенных элементов меню перед запуском")
+                for pending_item in self._pending_menu_items:
+                    self.add_menu_item(pending_item)
+                self._pending_menu_items = []
+            
+            # КРИТИЧНО: Настраиваем обработчик завершения ПЕРЕД app.run()
+            # Это предотвращает автоматическое завершение приложения
+            self._setup_quit_handler()
+            
+            # Добавляем метод applicationShouldTerminate если его нет (fallback)
             if not hasattr(self.app, 'applicationShouldTerminate'):
                 def applicationShouldTerminate(sender):
-                    return True
+                    # КРИТИЧНО: Возвращаем False чтобы предотвратить автоматическое завершение
+                    # Приложение должно завершаться только через явный вызов quit()
+                    return False
                 self.app.applicationShouldTerminate = applicationShouldTerminate
+            
             self.app.run()
     
     def set_quit_callback(self, callback: Callable):
@@ -535,20 +627,34 @@ class MacOSTrayMenu:
         if not self.app:
             return
         
-        # Переопределяем метод applicationShouldTerminate для предотвращения автоматического завершения
-        original_should_terminate = self.app.applicationShouldTerminate
+        # КРИТИЧНО: Сначала устанавливаем fallback, если его нет
+        if not hasattr(self.app, 'applicationShouldTerminate'):
+            def applicationShouldTerminate(sender):
+                # КРИТИЧНО: Возвращаем False чтобы предотвратить автоматическое завершение
+                return False
+            self.app.applicationShouldTerminate = applicationShouldTerminate
+        
+        # Теперь можем безопасно получить original (если он был установлен ранее)
+        original_should_terminate = getattr(self.app, 'applicationShouldTerminate', None)
         
         def custom_should_terminate(sender):
             """Кастомный обработчик завершения приложения"""
             try:
+                logger.info("🔍 applicationShouldTerminate вызван - проверяем callback")
                 # Если есть callback, вызываем его
                 if self._quit_callback:
+                    logger.info("🔍 Вызываем quit_callback")
                     self._quit_callback()
-                # Возвращаем False чтобы предотвратить завершение
+                # КРИТИЧНО: Возвращаем False чтобы предотвратить автоматическое завершение
+                # Приложение должно завершаться только через явный вызов quit() или через меню
+                logger.info("🔍 applicationShouldTerminate: возвращаем False (предотвращаем завершение)")
                 return False
             except Exception as e:
-                print(f"Ошибка в обработчике завершения: {e}")
-                return True  # Разрешаем завершение в случае ошибки
+                logger.error(f"❌ Ошибка в обработчике завершения: {e}")
+                import traceback
+                logger.error(f"Stacktrace:\n{traceback.format_exc()}")
+                # В случае ошибки тоже возвращаем False - лучше не завершать приложение
+                return False
         
         # Устанавливаем наш обработчик
         self.app.applicationShouldTerminate = custom_should_terminate

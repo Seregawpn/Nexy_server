@@ -2,13 +2,15 @@
 
 ## 1. Документы перед началом
 Перед изменениями обнови контекст по ключевым файлам:
+- `Docs/PROJECT_REQUIREMENTS.md` — единый snapshot требований (обязательно при изменении логики)
+- `Docs/REQUIREMENTS_SOURCE_MAP.md` — карта всех документов требований с их статусом
 - `Docs/PRODUCT_CONCEPT.md` — пользовательские сценарии и режимы
 - `Docs/ARCHITECTURE_OVERVIEW.md` — связь модулей и интеграций
+- `Docs/CURRENT_STATUS_REPORT.md` — актуальные истории, риски и тесты
+- `Docs/GLOBAL_DELIVERY_PLAN.md` — фазы поставки, Azure/AppCast
 - `Docs/PACKAGING_FINAL_GUIDE.md` и `client/modules/*/MACOS_PACKAGING_GUIDE.md` — пайплайн сборки и подписи
-- `Docs/CURRENT_STATUS_REPORT.md` — актуальные истории и фичи
-- `Docs/GLOBAL_DELIVERY_PLAN.md` — требования к доставке и Azure VM
-- `Docs/GO_TO_MARKET_BETA_PLAN_RU.md` — план выхода на рынок
-- `PERMISSIONS_REPORT.md` — актуальные статусы системных разрешений
+- `Docs/PRE_PACKAGING_VERIFICATION.md` + `Docs/PACKAGING_READINESS_CHECKLIST.md` — фактические результаты чек-листов упаковки
+- `PERMISSIONS_REPORT.md` + `Docs/first_run_flow_spec.md` — статусы разрешений/TCC и логика first-run
 
 ### 1.1 Источник истины для TCC/First-Run/Restart
 
@@ -20,9 +22,9 @@
 - `config/interaction_matrix.yaml` — правила взаимодействия осей и приоритеты решений (hard_stop, graceful, preference)
 
 **Как делаем** (реализация):
-- `Docs/PERMISSION_RESTART_KEY_POINTS.md` — ключевые моменты и нюансы автоматического перезапуска
-- `Docs/PERMISSION_RESTART_BLOCKERS.md` — все условия блокировки и отсрочки перезапуска
-- `Docs/TEST_PLAN_PERMISSION_RESTART.md` — канонический чек-лист для тестирования TCC/перезапуска
+- `Docs/first_run_flow_spec.md` — детальная логика запроса разрешений и перезапуска
+- `PERMISSIONS_REPORT.md` — актуальные статусы TCC, открытые задачи
+- `Docs/TAL_TESTING_CHECKLIST.md` — чек-лист TAL/permission restart с логами и тестами
 - `integration/core/gateways.py` — логика принятия решений на основе осей состояния
 
 **Machine-enforced правила**:
@@ -227,6 +229,7 @@ first_run_permissions:
 - [ ] Все правила из interaction_matrix.yaml реализованы в gateways.py
 - [ ] Все gateways покрыты тестами (≥8–14 pairwise + 2 негативных) с проверкой decision-логов в каноническом формате
 - [ ] Machine-enforced правила пройдены (lint, schema-validate, verify_no_direct_state_access)
+- [ ] **Требования обновлены**: Если изменение логики затрагивает требования, обновлён `Docs/PROJECT_REQUIREMENTS.md` и запущены `scripts/update_requirements_snapshot.py --check` + `scripts/check_requirements_mapping.py`
 
 **Перед мерджем — SIMPLE-гейт**
 
@@ -246,6 +249,18 @@ first_run_permissions:
 - [ ] Фича-флаг + kill-switch прописаны (см. раздел 19 «Роллаут»)
 - [ ] Выполнены тест-планы из `required_test_plans` в `change_impact.yaml`, отчёт приложен (логи/события/метрики)
 
+### 11.1 Impact Map (обязательный артефакт)
+- Перед любыми правками ассистент формирует Impact Map и прикладывает её к задаче до внесения кода. Без заполненной карты изменение не стартует.
+- Impact Map описывает полную цепочку влияния: какие оси/инварианты задеты, какие модули/интеграции/события EventBus/конфиги/флаги/kill-switches нужно синхронизировать, какие артефакты и тесты обновить.
+- Минимальный шаблон:
+
+| Ось или инвариант | Модули/интеграции | EventBus события/контракты | Конфиги/флаги | Тест-планы/скрипты |
+| --- | --- | --- | --- | --- |
+| permissions.mic | VoiceRecognitionIntegration, first_run_permissions_integration | voice.recognition.start/result | unified_config.yaml (`NEXY_FEATURE_PERMISSION_RESTART_V2`) | tests/test_gateways.py, scripts/verify_no_direct_state_access.py |
+
+- Для каждой строки ассистент указывает конкретные файлы и проверки, которые нужно затронуть (STATE_CATALOG.md, interaction_matrix.yaml, gateways.py, Docs, scripts).
+- После реализации Impact Map обновляется фактическими ссылками (PR diff, лог команд) и сверяется с `change_impact.yaml`.
+
 **После**
 - Если добавлена новая интеграция/модуль — зафиксируй обоснование в `../Docs/CURRENT_STATUS_REPORT.md`.
 - **Проверь контракт EventBus** согласно чек-листу (раздел 16.6).
@@ -253,6 +268,83 @@ first_run_permissions:
 - Обнови `unified_config.yaml`, документацию и при необходимости паковочные гайты.
 - Прогоняй ручные проверки и убедись, что логи чисты от ошибок.
 - Если менялись gRPC контракты — синхронизируй изменения с серверной командой.
+- **Если изменение логики затрагивает требования**: обнови `Docs/PROJECT_REQUIREMENTS.md` и запусти `scripts/update_requirements_snapshot.py --update` + `scripts/check_requirements_mapping.py` (см. раздел 11.3).
+- **Перед мерджем**: запусти `scripts/pre_build_gate.sh` для проверки всех обязательных проверок (см. раздел 11.4).
+
+### 11.3 Процесс обновления требований (RELEASE_INTEGRITY_PLAN этап 1)
+
+**ОБЯЗАТЕЛЬНО**: Любое изменение логики, затрагивающее требования, начинается с обновления `Docs/PROJECT_REQUIREMENTS.md`.
+
+**Before (подготовка)**:
+1. Проверить текущий `Docs/PROJECT_REQUIREMENTS.md`
+2. Определить, какие требования (REQ-XXX) затрагиваются
+3. Уведомить Owner требования о планируемых изменениях
+
+**During (внесение изменений)**:
+1. Обновить `Docs/PROJECT_REQUIREMENTS.md`:
+   - Добавить/изменить требование (REQ-XXX) с полями: Домен, Критичность, Описание, Источник, Owner, Ожидаемый результат, Implementation, Verification
+   - Обновить Implementation Map (таблица соответствия требований реализации и тестам)
+2. Обновить исходный документ (если требуется)
+3. Обновить код/тесты согласно требованию
+4. Запустить `scripts/update_requirements_snapshot.py --check` для валидации структуры
+5. Запустить `scripts/check_requirements_mapping.py` для проверки соответствия Implementation/Verification
+
+**After (проверка синхронизации)**:
+1. ✅ Все требования из исходных документов присутствуют в snapshot
+2. ✅ Все требования имеют Implementation и Verification
+3. ✅ Скрипты проверки пройдены (`update_requirements_snapshot.py --check`, `check_requirements_mapping.py`)
+4. ✅ Owner требования уведомлён и одобрил изменения
+5. ✅ Обновлён `client/VERSION_INFO.json` через `scripts/update_requirements_snapshot.py --update`
+
+**Связанные документы**:
+- `Docs/PROJECT_REQUIREMENTS.md` — единый snapshot требований
+- `Docs/REQUIREMENTS_SOURCE_MAP.md` — карта всех документов требований
+- `scripts/update_requirements_snapshot.py` — валидация и обновление snapshot
+- `scripts/check_requirements_mapping.py` — проверка соответствия требований коду и тестам
+
+### 11.4 Pre-build Gate (RELEASE_INTEGRITY_PLAN этап 2)
+
+**ОБЯЗАТЕЛЬНО**: Перед мерджем и сборкой запускается `scripts/pre_build_gate.sh` для проверки всех обязательных проверок.
+
+**Что проверяет pre-build gate**:
+1. **Линтеры и форматтеры**: ruff lint, проверка прямого доступа к состоянию
+2. **Unit-тесты**: тесты схем, gateways, порядка инициализации, permission restart, golden tests, SLO
+3. **Статические проверки**: валидация схем, 4-артефактный инвариант, покрытие правил/предикатов, регистрация feature flags, валидация snapshot требований
+4. **Специализированные проверки**: TAL assertion, permission monitoring, критические пути, tray termination
+
+**Использование**:
+```bash
+# Полная проверка
+./scripts/pre_build_gate.sh
+
+# С опциями
+./scripts/pre_build_gate.sh --skip-tests    # Пропустить тесты
+./scripts/pre_build_gate.sh --skip-lint     # Пропустить линтеры
+./scripts/pre_build_gate.sh --verbose       # Подробный вывод
+```
+
+**В CI**: Pre-build gate запускается автоматически в `.github/workflows/ci.yml` (job `pre-build-gate`).
+
+**Exit codes**:
+- `0` — все проверки пройдены, можно продолжать сборку
+- `1` — хотя бы одна проверка провалена, сборка блокируется
+
+**Связанные документы**:
+- `scripts/pre_build_gate.sh` — скрипт pre-build gate
+- `.github/workflows/ci.yml` — CI интеграция
+- `Docs/PROJECT_REQUIREMENTS.md` — требования REQ-023 (Machine-enforced правила)
+
+### 11.2 Packaging Regression Checklist
+- Любые изменения, влияющие на рантайм, ресурсы, конфигурацию, зависимости или упаковку, сопровождаются заполненным checklist до ревью.
+- Checklist ссылается на `Docs/PACKAGING_FINAL_GUIDE.md` и соответствующие `client/modules/*/MACOS_PACKAGING_GUIDE.md`; шаги нельзя пропускать без ADR.
+- Минимальный набор проверок:
+  1. PyInstaller сборка (`rebuild_from_scratch.sh` или аналог) — приложить лог выполнения.
+  2. `pkgbuild` + `productbuild` + notarization dry-run — зафиксировать команды и статусы.
+  3. Валидация `unified_config.yaml`, `Docs/PACKAGING_FINAL_GUIDE.md`, модульных MACOS_PACKAGING_GUIDE на актуальность после изменений.
+  4. Smoke-тест `cold_start_diagnostics.sh` и запуск собранной `.app` из `dist/` (логи приложены).
+  5. Проверка ресурсов (ffmpeg, assets) на присутствие в пакете и валидные пути.
+- Итоговый статус фиксируй в `Docs/PACKAGING_READINESS_CHECKLIST.md` (ссылка на обновлённый `Docs/PRE_PACKAGING_VERIFICATION.md`).
+- Результаты checklist прикладываются к PR/таске вместе с логами. Без выполненного checklist правки не мержим.
 
 ## 12. Распространённые риски
 - Изменение режима без `mode.request` ломает FSM и workflows.

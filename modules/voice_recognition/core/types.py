@@ -20,6 +20,13 @@ class RecognitionState(Enum):
     COMPLETED = "completed"
     ERROR = "error"
 
+class AudioStreamState(Enum):
+    """Состояния аудио-потока (state machine для предотвращения гонок)"""
+    IDLE = "idle"
+    STARTING = "starting"
+    RUNNING = "running"
+    STOPPING = "stopping"
+
 class RecognitionEventType(Enum):
     """Типы событий распознавания"""
     LISTENING_START = "listening_start"

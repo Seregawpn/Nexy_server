@@ -43,7 +43,15 @@ class UpdateHTTPClient:
         if not ssl_verify:
             logger.warning("⚠️ SSL verification disabled - используется self-signed сертификат")
             pool_kwargs['cert_reqs'] = 'CERT_NONE'
-            pool_kwargs['assert_hostname'] = False
+
+            # На urllib3 2.x параметр assert_hostname удалён – отключаем проверку через SSLContext
+            try:
+                from urllib3.util import ssl_
+                ssl_context = ssl_.create_urllib3_context(cert_reqs='CERT_NONE')
+                ssl_context.check_hostname = False
+                pool_kwargs['ssl_context'] = ssl_context
+            except Exception as exc:
+                logger.warning(f"⚠️ Не удалось сконфигурировать SSLContext для self-signed: {exc}")
 
         self.http = urllib3.PoolManager(**pool_kwargs)
 

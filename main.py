@@ -7,7 +7,10 @@ import asyncio
 import logging
 import os
 import sys
+import signal
+import traceback
 from pathlib import Path
+from datetime import datetime
 
 # Добавляем пути к модулям (централизованно)
 CLIENT_ROOT = Path(__file__).parent
@@ -66,7 +69,7 @@ init_ffmpeg_for_pydub()
 # ВАЖНО: Должен быть выполнен ДО импорта любых модулей, использующих rumps
 # Исправляет проблему "dlsym cannot find symbol NSMakeRect in CFBundle"
 try:
-                                     # Правильный порядок импорта: сначала AppKit, потом Foundation
+    # Правильный порядок импорта: сначала AppKit, потом Foundation
     import AppKit
     import Foundation
     
@@ -169,9 +172,106 @@ logger = logging.getLogger(__name__)
 logger.info(f"📝 Логи записываются в: {log_file}")
 print(f"📝 Логи записываются в: {log_file}")
 
+# Глобальная переменная для отслеживания состояния приложения
+_app_shutting_down = False
+
+def log_crash_to_file(error_type, error_value, tb, context=""):
+    """Записывает информацию о падении приложения в лог-файл"""
+    try:
+        crash_log_file = os.path.join(tempfile.gettempdir(), 'nexy_crash.log')
+        with open(crash_log_file, 'a', encoding='utf-8') as f:
+            f.write("\n" + "="*80 + "\n")
+            f.write(f"💥 CRASH REPORT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("="*80 + "\n")
+            if context:
+                f.write(f"Context: {context}\n")
+            f.write(f"Error Type: {error_type.__name__}\n")
+            f.write(f"Error Value: {error_value}\n")
+            f.write(f"PID: {os.getpid()}\n")
+            f.write(f"Python: {sys.version}\n")
+            f.write(f"Working Dir: {os.getcwd()}\n")
+            f.write("\nFull Traceback:\n")
+            f.write("".join(traceback.format_exception(error_type, error_value, tb)))
+            f.write("\n" + "="*80 + "\n\n")
+        
+        # Пытаемся использовать logger, если он доступен
+        try:
+            logger.critical(f"💥 CRASH записан в: {crash_log_file}")
+        except:
+            pass
+        print(f"💥 CRASH записан в: {crash_log_file}")
+    except Exception as e:
+        print(f"❌ Не удалось записать crash log: {e}")
+        import traceback as tb_module
+        tb_module.print_exc()
+
+def exception_hook(error_type, error_value, tb):
+    """Глобальный обработчик необработанных исключений"""
+    global _app_shutting_down
+    if _app_shutting_down:
+        return
+    
+    # Логируем в основной лог
+    logger.critical(
+        f"💥 НЕОБРАБОТАННОЕ ИСКЛЮЧЕНИЕ: {error_type.__name__}: {error_value}",
+        exc_info=(error_type, error_value, tb)
+    )
+    
+    # Записываем в crash log
+    log_crash_to_file(error_type, error_value, tb, "Unhandled exception")
+    
+    # Выводим в консоль
+    print("\n" + "="*80)
+    print("💥 НЕОБРАБОТАННОЕ ИСКЛЮЧЕНИЕ")
+    print("="*80)
+    traceback.print_exception(error_type, error_value, tb)
+    print("="*80)
+    print(f"📝 Полный лог ошибки записан в: {log_file}")
+    print(f"💥 Crash report записан в: {os.path.join(tempfile.gettempdir(), 'nexy_crash.log')}")
+    print("="*80 + "\n")
+    
+    # Вызываем стандартный обработчик для завершения приложения
+    sys.__excepthook__(error_type, error_value, tb)
+
+def signal_handler(signum, frame):
+    """Обработчик сигналов для корректного завершения"""
+    global _app_shutting_down
+    signal_name = signal.Signals(signum).name
+    logger.info(f"📡 Получен сигнал {signal_name} (PID: {os.getpid()})")
+    print(f"\n📡 Получен сигнал {signal_name}, завершение работы...")
+    
+    _app_shutting_down = True
+    
+    # Записываем информацию о сигнале
+    try:
+        crash_log_file = os.path.join(tempfile.gettempdir(), 'nexy_crash.log')
+        with open(crash_log_file, 'a', encoding='utf-8') as f:
+            f.write("\n" + "="*80 + "\n")
+            f.write(f"📡 SIGNAL RECEIVED - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Signal: {signal_name} ({signum})\n")
+            f.write(f"PID: {os.getpid()}\n")
+            f.write("="*80 + "\n\n")
+    except Exception as e:
+        logger.error(f"Не удалось записать signal log: {e}")
+    
+    # Завершаем приложение
+    sys.exit(0)
+
+# Устанавливаем глобальный обработчик исключений
+sys.excepthook = exception_hook
+
+# Устанавливаем обработчики сигналов
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
 async def main():
     """Главная функция"""
     try:
+        logger.info("🚀 Запуск приложения Nexy...")
+        logger.info(f"Python version: {sys.version}")
+        logger.info(f"PID: {os.getpid()}")
+        logger.info(f"Working directory: {os.getcwd()}")
+        
         # Импортируем SimpleModuleCoordinator
         from integration.core.simple_module_coordinator import SimpleModuleCoordinator
 
@@ -185,10 +285,15 @@ async def main():
         # Запускаем (run() сам вызовет initialize() и проверку дублирования)
         await coordinator.run()
 
+    except KeyboardInterrupt:
+        logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt в main)")
+        raise
     except Exception as e:
-        print(f"💥 Критическая ошибка: {e}")
-        import traceback
+        logger.critical(f"💥 КРИТИЧЕСКАЯ ОШИБКА в main(): {e}", exc_info=True)
+        log_crash_to_file(type(e), e, e.__traceback__, "Exception in main()")
+        print(f"\n💥 Критическая ошибка: {e}")
         traceback.print_exc()
+        raise
 
 if __name__ == "__main__":
     if "--diagnostics" in sys.argv or os.getenv("NEXY_DIAG") == "voice":
@@ -202,8 +307,24 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
     
     try:
+        logger.info("="*80)
+        logger.info("🚀 NEXY APPLICATION START")
+        logger.info("="*80)
         loop.run_until_complete(main())
     except KeyboardInterrupt:
+        logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt)")
         print("\n⏹️ Приложение прервано пользователем")
+    except Exception as e:
+        logger.critical(f"💥 КРИТИЧЕСКАЯ ОШИБКА в event loop: {e}", exc_info=True)
+        log_crash_to_file(type(e), e, e.__traceback__, "Exception in event loop")
+        print(f"\n💥 Критическая ошибка в event loop: {e}")
+        traceback.print_exc()
+        sys.exit(1)
     finally:
-        loop.close()
+        logger.info("="*80)
+        logger.info("🛑 NEXY APPLICATION STOP")
+        logger.info("="*80)
+        try:
+            loop.close()
+        except Exception as e:
+            logger.error(f"Ошибка при закрытии event loop: {e}")

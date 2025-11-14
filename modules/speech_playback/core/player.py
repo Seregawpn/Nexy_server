@@ -299,6 +299,10 @@ class SequentialSpeechPlayer:
                 self.state_manager.set_state(PlaybackState.ERROR)
                 return False
             
+            # ✅ FIX: Стартуем поток сразу при start_playback (не lazy start)
+            # Это гарантирует, что поток готов к воспроизведению
+            self._ensure_stream_started()
+            
             # Запускаем поток воспроизведения
             self._stop_event.clear()
             self._pause_event.set()
