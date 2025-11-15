@@ -87,24 +87,35 @@ class InterruptHandlingAdapter(UniversalModuleInterface):
             
             action = request.get("action", "check_interrupt")
             session_id = request.get("session_id")
+            hardware_id = request.get("hardware_id")
             
             result = {}
             
             if action == "interrupt_session":
-                if not session_id:
-                    raise ValueError("session_id не указан")
-                # Прерываем сессию
-                await self._manager.interrupt_session(session_id)
-                result = {"success": True}
-            elif action == "check_interrupt":
-                if not session_id:
-                    raise ValueError("session_id не указан")
-                # Проверяем прерывание
-                is_interrupted = await self._manager.is_session_interrupted(session_id)
-                result = {"interrupted": is_interrupted}
+                target = hardware_id or session_id
+                if not target:
+                    raise ValueError("hardware_id или session_id не указан")
+                interrupt_result = await self._manager.interrupt_session(target)
+                result = {"success": interrupt_result.get("success", False), **interrupt_result}
+            elif action in ("check_interrupt", "check_hardware_interrupt"):
+                if not hardware_id:
+                    raise ValueError("hardware_id не указан")
+                is_interrupted = self._manager.should_interrupt(hardware_id)
+                result = {"interrupted": is_interrupted, "success": True}
+            elif action == "register_module":
+                module_name = request.get("module_name")
+                module_instance = request.get("module_instance")
+                if not module_name or not module_instance:
+                    raise ValueError("module_name и module_instance обязательны")
+                success = await self._manager.register_module(module_name, module_instance)
+                result = {"success": success}
+            elif action == "register_callback":
+                callback = request.get("callback")
+                success = await self._manager.register_callback(callback)
+                result = {"success": success}
             elif action == "clear_interrupt":
-                # Очищаем глобальное прерывание
-                await self._manager.clear_global_interrupt()
+                if hasattr(self._manager, "_reset_interrupt_flags"):
+                    self._manager._reset_interrupt_flags()
                 result = {"success": True}
             else:
                 raise ValueError(f"Неизвестное действие: {action}")
@@ -165,4 +176,3 @@ class InterruptHandlingAdapter(UniversalModuleInterface):
             Экземпляр InterruptManager
         """
         return self._manager
-

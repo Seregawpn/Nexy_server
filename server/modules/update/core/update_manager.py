@@ -6,7 +6,8 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, AsyncGenerator
 
-from integrations.core.universal_module_interface import UniversalModuleInterface, ModuleStatus
+from integrations.core.universal_module_interface import UniversalModuleInterface
+from integrations.core.module_status import ModuleStatus, ModuleState
 from ..config import UpdateConfig
 from ..providers.version_provider import VersionProvider
 from ..providers.manifest_provider import ManifestProvider
@@ -20,14 +21,12 @@ class UpdateManager(UniversalModuleInterface):
     """Основной координатор Update Module"""
     
     def __init__(self, config: Optional[UpdateConfig] = None):
-        # Преобразуем конфигурацию в словарь для UniversalModuleInterface
-        config_dict = (config or UpdateConfig()).to_dict()
-        
-        # Инициализируем базовый класс
-        super().__init__(name="update", config=config_dict)
+        super().__init__(name="update")
         
         # Сохраняем оригинальную конфигурацию
         self.config = config or UpdateConfig()
+        self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
+        self.is_initialized = False
         
         # Провайдеры
         self.version_provider = None
@@ -52,7 +51,7 @@ class UpdateManager(UniversalModuleInterface):
             if not self.config.enabled:
                 logger.info("⏭️ Update Module отключен в конфигурации")
                 self.is_initialized = True
-                self.set_status(ModuleStatus.READY)
+                self._status = ModuleStatus(state=ModuleState.READY, health="ok")
                 return True
             
             # Валидируем конфигурацию
@@ -64,11 +63,13 @@ class UpdateManager(UniversalModuleInterface):
             await self._initialize_providers()
             
             self.is_initialized = True
+            self._status = ModuleStatus(state=ModuleState.READY, health="ok")
             logger.info("✅ UpdateManager инициализирован")
             return True
             
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации UpdateManager: {e}")
+            self._status = ModuleStatus(state=ModuleState.ERROR, health="down", last_error=str(e))
             return False
     
     async def _initialize_providers(self):
@@ -134,12 +135,14 @@ class UpdateManager(UniversalModuleInterface):
             
             self.is_running = True
             self.start_time = asyncio.get_event_loop().time()
+            self._status = ModuleStatus(state=ModuleState.READY, health="ok")
             
             logger.info("✅ UpdateManager запущен")
             return True
             
         except Exception as e:
             logger.error(f"❌ Ошибка запуска UpdateManager: {e}")
+            self._status = ModuleStatus(state=ModuleState.ERROR, health="down", last_error=str(e))
             return False
 
     async def check_update(self, current_version: str) -> Dict[str, Any]:
@@ -210,11 +213,13 @@ class UpdateManager(UniversalModuleInterface):
                 await self.update_server_provider.stop()
             
             self.is_running = False
+            self._status = ModuleStatus(state=ModuleState.STOPPED, health="down")
             logger.info("✅ UpdateManager остановлен")
             return True
             
         except Exception as e:
             logger.error(f"❌ Ошибка остановки UpdateManager: {e}")
+            self._status = ModuleStatus(state=ModuleState.ERROR, health="down", last_error=str(e))
             return False
     
     def get_status(self) -> Dict[str, Any]:
@@ -368,6 +373,10 @@ class UpdateManager(UniversalModuleInterface):
                 "error": str(e)
             }
 
+    def status(self) -> ModuleStatus:
+        """Текущий статус модуля"""
+        return self._status
+
     def get_current_version(self) -> Dict[str, str]:
         """Возвращает текущую версию и сборку"""
 
@@ -418,6 +427,7 @@ class UpdateManager(UniversalModuleInterface):
         Yields:
             Результаты обработки
         """
+        self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
         try:
             # Для Update Module process не используется активно,
             # так как основная работа происходит через HTTP сервер
@@ -439,32 +449,30 @@ class UpdateManager(UniversalModuleInterface):
                 "error": str(e),
                 "data": input_data
             }
+        finally:
+            # Возвращаем статус к READY, если модуль инициализирован
+            if self.is_initialized:
+                self._status = ModuleStatus(state=ModuleState.READY, health="ok")
     
-    async def cleanup(self) -> bool:
+    async def cleanup(self) -> None:
         """
         Очистка ресурсов модуля (требуется UniversalModuleInterface)
-        
-        Returns:
-            True если очистка успешна, False иначе
         """
         try:
             logger.info("🧹 Очистка ресурсов UpdateManager...")
             
-            # Вызываем stop для остановки всех компонентов
             await self.stop()
             
-            # Дополнительная очистка ресурсов
             if self.start_time:
                 self.start_time = None
             
-            # Сброс статистики
             self.total_requests = 0
             self.total_downloads = 0
             self.total_errors = 0
+            self._status = ModuleStatus(state=ModuleState.STOPPED, health="down")
             
             logger.info("✅ Ресурсы UpdateManager очищены")
-            return True
             
         except Exception as e:
             logger.error(f"❌ Ошибка очистки ресурсов UpdateManager: {e}")
-            return False
+            self._status = ModuleStatus(state=ModuleState.ERROR, health="down", last_error=str(e))

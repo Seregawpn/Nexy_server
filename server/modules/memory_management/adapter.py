@@ -81,8 +81,9 @@ class MemoryManagementAdapter(UniversalModuleInterface):
         
         Args:
             request: Запрос на работу с памятью
-                - action: str - действие (get_memory, update_memory, analyze)
-                - session_id: str - идентификатор сессии
+                - action: str - действие (get_memory, get_context, update_memory, update_background, analyze)
+                - session_id: str - идентификатор сессии (для совместимости)
+                - hardware_id: str - идентификатор устройства
                 - prompt: str (опционально) - промпт
                 - response: str (опционально) - ответ
         
@@ -94,18 +95,35 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             
             action = request.get("action", "get_memory")
             session_id = request.get("session_id")
-            
-            if not session_id:
-                raise ValueError("session_id не указан")
-            
+            hardware_id = request.get("hardware_id")
+
+            # Аппаратный идентификатор считается источником правды, но для
+            # обратной совместимости допускаем session_id.
+            subject_id = hardware_id or session_id
+            if action not in ("update_memory", "analyze") and not subject_id:
+                raise ValueError("hardware_id или session_id должны быть указаны")
+
             result = {}
             
             if action == "get_memory":
                 # Получаем память для сессии
-                memory = await self._manager.get_memory_context(session_id)
+                memory = await self._manager.get_memory_context(subject_id)
                 result = {"memory": memory}
+            elif action == "get_context":
+                # Новый унифицированный action для получения памяти
+                memory = await self._manager.get_memory_context(subject_id)
+                result = {"memory": memory}
+            elif action == "update_background":
+                prompt = request.get("prompt", "") or request.get("text", "")
+                response = request.get("response", "") or request.get("processed_text", "")
+                if not hardware_id:
+                    raise ValueError("hardware_id обязателен для update_background")
+                await self._manager.update_memory_background(hardware_id, prompt, response)
+                result = {"success": True}
             elif action == "update_memory":
                 # Обновляем память
+                if not session_id:
+                    raise ValueError("session_id не указан")
                 prompt = request.get("prompt", "")
                 response = request.get("response", "")
                 await self._manager.update_memory(session_id, prompt, response)
@@ -175,4 +193,3 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             Экземпляр MemoryManager
         """
         return self._manager
-

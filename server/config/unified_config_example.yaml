@@ -6,9 +6,13 @@ database:
   password: ''
 
 grpc:
-  host: 0.0.0.0
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
   port: 50051
   max_workers: 10
+
+http:
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
+  port: 8080
 
 audio:
   sample_rate: 48000
@@ -252,7 +256,7 @@ workflow:
 
 update:
   enabled: true
-  host: 0.0.0.0
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
   port: 8081
   cors_enabled: true
   cache_control: no-cache, no-store, must-revalidate

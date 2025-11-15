@@ -29,15 +29,16 @@ class StreamingWorkflowIntegration:
         Инициализация StreamingWorkflowIntegration
         
         Args:
-            text_processor: Модуль обработки текста
-            audio_processor: Модуль генерации аудио
+            text_processor: Модуль обработки текста (UniversalModuleInterface)
+            audio_processor: Модуль генерации аудио (UniversalModuleInterface)
             memory_workflow: Workflow интеграция для работы с памятью
-            text_filter_manager: Менеджер фильтрации текста
+            text_filter_manager: Модуль фильтрации текста (UniversalModuleInterface)
         """
-        self.text_processor = text_processor
-        self.audio_processor = audio_processor
+        # Унифицированные модули (названия параметров оставлены для совместимости)
+        self.text_module = text_processor
+        self.audio_module = audio_processor
         self.memory_workflow = memory_workflow
-        self.text_filter_manager = text_filter_manager
+        self.text_filter_module = text_filter_manager
         self.is_initialized = False
         
         # Единая неблокирующая буферизация и критерии флашинга (для текста и TTS одновременно)
@@ -75,16 +76,16 @@ class StreamingWorkflowIntegration:
             logger.info("Инициализация StreamingWorkflowIntegration...")
             
             # Проверяем доступность модулей
-            if not self.text_processor:
+            if not self.text_module:
                 logger.warning("⚠️ TextProcessor не предоставлен")
             
-            if not self.audio_processor:
+            if not self.audio_module:
                 logger.warning("⚠️ AudioProcessor не предоставлен")
             
             if not self.memory_workflow:
                 logger.warning("⚠️ MemoryWorkflow не предоставлен")
             
-            if not self.text_filter_manager:
+            if not self.text_filter_module:
                 logger.warning("⚠️ TextFilterManager не предоставлен")
             
             self.is_initialized = True
@@ -113,12 +114,12 @@ class StreamingWorkflowIntegration:
             logger.info(f"→ Input text content: '{request_data.get('text', '')[:100]}...'")
 
             logger.info("🔍 ДИАГНОСТИКА МОДУЛЕЙ:")
-            logger.info(f"   → text_processor: {self.text_processor is not None}")
-            logger.info(f"   → audio_processor: {self.audio_processor is not None}")
-            if self.text_processor:
-                logger.info(f"   → text_processor.is_initialized: {getattr(self.text_processor, 'is_initialized', 'NO_ATTR')}")
-            if self.audio_processor:
-                logger.info(f"   → audio_processor.is_initialized: {getattr(self.audio_processor, 'is_initialized', 'NO_ATTR')}")
+            logger.info(f"   → text_processor: {self.text_module is not None}")
+            logger.info(f"   → audio_processor: {self.audio_module is not None}")
+            if self.text_module:
+                logger.info(f"   → text_processor.is_initialized: {getattr(self.text_module, 'is_initialized', 'NO_ATTR')}")
+            if self.audio_module:
+                logger.info(f"   → audio_processor.is_initialized: {getattr(self.audio_module, 'is_initialized', 'NO_ATTR')}")
 
             hardware_id = request_data.get('hardware_id', 'unknown')
             memory_context = await self._get_memory_context_parallel(hardware_id)
@@ -331,17 +332,29 @@ class StreamingWorkflowIntegration:
                 screenshot_data = None
 
         yielded_any = False
-        if self.text_processor and hasattr(self.text_processor, 'process_text_streaming'):
-            logger.info(f"🔄 Стриминг текста через TextProcessor: '{enriched_text[:80]}...'")
+        if self.text_module and hasattr(self.text_module, 'process'):
+            logger.info(f"🔄 Стриминг текста через Text Module: '{enriched_text[:80]}...'")
             try:
-                async for processed_sentence in self.text_processor.process_text_streaming(enriched_text, screenshot_data):
+                async for chunk in self._stream_text_module(enriched_text, screenshot_data):
+                    sentence = (self._extract_text_chunk(chunk) or '').strip()
+                    if sentence:
+                        yielded_any = True
+                        logger.debug(f"📨 TextModule sentence: '{sentence[:120]}...'")
+                        yield sentence
+            except Exception as processing_error:
+                logger.warning(f"⚠️ Ошибка Text Module: {processing_error}. Используем fallback")
+        elif self.text_module and hasattr(self.text_module, 'process_text_streaming'):
+            # Legacy fallback на прямой доступ к TextProcessor
+            logger.info(f"🔄 Legacy стриминг текста: '{enriched_text[:80]}...'")
+            try:
+                async for processed_sentence in self.text_module.process_text_streaming(enriched_text, screenshot_data):
                     sentence = (processed_sentence or '').strip()
                     if sentence:
                         yielded_any = True
-                        logger.debug(f"📨 TextProcessor sentence: '{sentence[:120]}...'")
+                        logger.debug(f"📨 Legacy TextProcessor sentence: '{sentence[:120]}...'")
                         yield sentence
             except Exception as processing_error:
-                logger.warning(f"⚠️ Ошибка TextProcessor: {processing_error}. Используем fallback")
+                logger.warning(f"⚠️ Ошибка legacy TextProcessor: {processing_error}. Используем fallback")
 
         if not yielded_any:
             logger.debug("⚠️ TextProcessor не вернул предложений, используем fallback разбивку")
@@ -356,18 +369,22 @@ class StreamingWorkflowIntegration:
         if not text:
             return ""
 
-        if self.text_filter_manager:
+        if self.text_filter_module and hasattr(self.text_filter_module, 'process'):
             try:
-                result = await self.text_filter_manager.clean_text(text, {
-                    "remove_special_chars": True,
-                    "remove_extra_whitespace": True,
-                    "normalize_unicode": True,
-                    "remove_control_chars": True
+                result = await self.text_filter_module.process({
+                    "operation": "clean_text",
+                    "text": text,
+                    "options": {
+                        "remove_special_chars": True,
+                        "remove_extra_whitespace": True,
+                        "normalize_unicode": True,
+                        "remove_control_chars": True
+                    }
                 })
-                if result.get("success") and result.get("cleaned_text") is not None:
+                if isinstance(result, dict) and result.get("success") and result.get("cleaned_text") is not None:
                     return result.get("cleaned_text", "").strip()
             except Exception as err:
-                logger.warning("⚠️ Ошибка очистки текста через TextFilterManager: %s", err)
+                logger.warning("⚠️ Ошибка очистки текста через TextFilterModule: %s", err)
 
         return text.strip()
 
@@ -378,13 +395,16 @@ class StreamingWorkflowIntegration:
         if not text:
             return [], ""
 
-        if self.text_filter_manager:
+        if self.text_filter_module and hasattr(self.text_filter_module, 'process'):
             try:
-                result = await self.text_filter_manager.split_sentences(text)
-                if result.get("success"):
+                result = await self.text_filter_module.process({
+                    "operation": "split_sentences",
+                    "text": text
+                })
+                if isinstance(result, dict) and result.get("success"):
                     return result.get("sentences", []), result.get("remainder", "")
             except Exception as err:
-                logger.warning("⚠️ Ошибка разбиения текста через TextFilterManager: %s", err)
+                logger.warning("⚠️ Ошибка разбиения текста через TextFilterModule: %s", err)
 
         stripped = text.strip()
         return ([stripped] if stripped else [], "")
@@ -396,13 +416,74 @@ class StreamingWorkflowIntegration:
         if not text:
             return 0
 
-        if self.text_filter_manager:
+        if self.text_filter_module and hasattr(self.text_filter_module, 'process'):
             try:
-                return self.text_filter_manager.count_meaningful_words(text)
+                result = await self.text_filter_module.process({
+                    "operation": "count_meaningful_words",
+                    "text": text
+                })
+                if isinstance(result, dict) and result.get("success"):
+                    return int(result.get("count", 0))
             except Exception as err:
-                logger.warning("⚠️ Ошибка подсчёта слов через TextFilterManager: %s", err)
+                logger.warning("⚠️ Ошибка подсчёта слов через TextFilterModule: %s", err)
 
         return len([w for w in text.split() if w.strip()])
+
+    async def _stream_text_module(self, text: str, screenshot_data: Optional[bytes]):
+        """Стриминг ответов из текстового модуля."""
+        payload = {"text": text}
+        if screenshot_data:
+            payload["image_data"] = screenshot_data
+
+        async for chunk in self._stream_module_results(self.text_module, payload):
+            yield chunk
+
+    async def _stream_audio_module(self, text: str):
+        """Стриминг аудио чанков из аудио модуля."""
+        async for chunk in self._stream_module_results(self.audio_module, {"text": text}):
+            yield chunk
+
+    async def _stream_module_results(self, module, payload: Dict[str, Any]):
+        """Унифицированный вызов module.process с поддержкой async generator."""
+        if not module or not hasattr(module, 'process'):
+            return
+        try:
+            result = await module.process(payload)
+            if result is None:
+                return
+            if hasattr(result, "__aiter__"):
+                async for item in result:
+                    yield item
+            else:
+                yield result
+        except Exception as err:
+            logger.warning("⚠️ Ошибка при вызове модуля %s: %s", getattr(module, 'name', 'unknown'), err)
+
+    def _extract_text_chunk(self, chunk: Any) -> str:
+        """Извлекает текстовый ответ из результата модуля."""
+        if chunk is None:
+            return ""
+        if isinstance(chunk, str):
+            return chunk
+        if isinstance(chunk, dict):
+            for key in ("text", "text_response", "value", "chunk"):
+                value = chunk.get(key)
+                if isinstance(value, str):
+                    return value
+        return ""
+
+    def _extract_audio_chunk(self, chunk: Any) -> bytes:
+        """Извлекает аудио байты из результата модуля."""
+        if chunk is None:
+            return b""
+        if isinstance(chunk, (bytes, bytearray)):
+            return bytes(chunk)
+        if isinstance(chunk, dict):
+            for key in ("audio", "audio_chunk", "data", "value"):
+                value = chunk.get(key)
+                if isinstance(value, (bytes, bytearray)):
+                    return bytes(value)
+        return b""
 
     def _enrich_with_memory(self, text: str, memory_context: Optional[Dict[str, Any]]) -> str:
         """
@@ -430,27 +511,35 @@ class StreamingWorkflowIntegration:
         """Стримит аудио чанки для одного предложения."""
         if not sentence.strip():
             return
-        if not self.audio_processor:
+        if not self.audio_module:
             logger.warning("⚠️ AudioProcessor недоступен, пропускаем генерацию аудио")
             return
-        if not hasattr(self.audio_processor, 'generate_speech_streaming'):
-            logger.warning("⚠️ AudioProcessor не поддерживает generate_speech_streaming")
-            return
-        if hasattr(self.audio_processor, 'is_initialized') and not self.audio_processor.is_initialized:
-            logger.warning("⚠️ AudioProcessor не инициализирован")
-            return
-
-        try:
-            logger.info(f"🔊 Генерация аудио для предложения #{sentence_index}: '{sentence[:80]}...'")
-            chunk_count = 0
-            async for audio_chunk in self.audio_processor.generate_speech_streaming(sentence):
-                if audio_chunk:
-                    chunk_count += 1
-                    logger.info(f"🔊 Audio chunk #{chunk_count} для предложения #{sentence_index}: {len(audio_chunk)} bytes")
-                    yield audio_chunk
-            logger.info(f"✅ Аудио генерация завершена для предложения #{sentence_index}: {chunk_count} чанков")
-        except Exception as audio_error:
-            logger.error(f"❌ Ошибка генерации аудио для предложения #{sentence_index}: {audio_error}")
+        if hasattr(self.audio_module, 'process'):
+            try:
+                logger.info(f"🔊 Генерация аудио для предложения #{sentence_index}: '{sentence[:80]}...'")
+                chunk_count = 0
+                async for chunk in self._stream_audio_module(sentence):
+                    audio_chunk = self._extract_audio_chunk(chunk)
+                    if audio_chunk:
+                        chunk_count += 1
+                        logger.info(f"🔊 Audio chunk #{chunk_count} для предложения #{sentence_index}: {len(audio_chunk)} bytes")
+                        yield audio_chunk
+                logger.info(f"✅ Аудио генерация завершена для предложения #{sentence_index}: {chunk_count} чанков")
+            except Exception as audio_error:
+                logger.error(f"❌ Ошибка генерации аудио для предложения #{sentence_index}: {audio_error}")
+        elif hasattr(self.audio_module, 'generate_speech_streaming'):
+            # Legacy fallback
+            try:
+                logger.info(f"🔊 Legacy аудио для предложения #{sentence_index}: '{sentence[:80]}...'")
+                chunk_count = 0
+                async for audio_chunk in self.audio_module.generate_speech_streaming(sentence):
+                    if audio_chunk:
+                        chunk_count += 1
+                        logger.info(f"🔊 Audio chunk #{chunk_count} для предложения #{sentence_index}: {len(audio_chunk)} bytes")
+                        yield audio_chunk
+                logger.info(f"✅ Legacy аудио генерация завершена для предложения #{sentence_index}: {chunk_count} чанков")
+            except Exception as audio_error:
+                logger.error(f"❌ Ошибка legacy генерации аудио для предложения #{sentence_index}: {audio_error}")
     
     def _split_into_sentences(self, text: str) -> list[str]:
         """

@@ -76,7 +76,8 @@ class TextFilteringAdapter(UniversalModuleInterface):
         Args:
             request: Запрос на фильтрацию текста
                 - text: str - текст для фильтрации
-                - action: str (опционально) - действие (filter, clean, validate)
+                - action/operation: str - действие (filter_text, clean_text, split_sentences, count_meaningful_words, validate)
+                - options: dict (опционально) - дополнительные параметры
         
         Returns:
             Результат обработки
@@ -85,27 +86,32 @@ class TextFilteringAdapter(UniversalModuleInterface):
             self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
             
             text = request.get("text", "")
-            action = request.get("action", "filter")
+            operation = request.get("operation") or request.get("action") or "filter_text"
+            options = request.get("options") or request.get("config") or {}
             
-            if not text:
+            if not text and operation not in ("count_meaningful_words", "get_statistics"):
                 raise ValueError("Текст для фильтрации не указан")
             
-            result = {}
-            
-            if action == "filter":
-                # Фильтруем текст
-                filtered_text = await self._manager.filter_text(text)
-                result = {"filtered_text": filtered_text, "success": True}
-            elif action == "clean":
-                # Очищаем текст
-                cleaned_text = await self._manager.clean_text(text)
-                result = {"cleaned_text": cleaned_text, "success": True}
-            elif action == "validate":
-                # Валидируем текст
-                is_valid = await self._manager.validate_text(text)
-                result = {"is_valid": is_valid, "success": True}
+            if operation in ("filter", "filter_text"):
+                filtered = await self._manager.filter_text(text, options)
+                result = {"success": filtered.get("success", True), **filtered}
+            elif operation in ("clean", "clean_text", "sanitize"):
+                cleaned = await self._manager.clean_text(text, options)
+                result = {"success": cleaned.get("success", True), **cleaned}
+            elif operation in ("validate", "validate_text"):
+                validated = await self._manager.validate_text(text, options)
+                result = {"success": validated.get("success", True), **validated}
+            elif operation == "split_sentences":
+                split = await self._manager.split_sentences(text, options)
+                result = {"success": split.get("success", True), **split}
+            elif operation == "count_meaningful_words":
+                count = self._manager.count_meaningful_words(text)
+                result = {"success": True, "count": count}
+            elif operation == "get_statistics":
+                stats = self._manager.get_statistics()
+                result = {"success": True, "stats": stats}
             else:
-                raise ValueError(f"Неизвестное действие: {action}")
+                raise ValueError(f"Неизвестное действие: {operation}")
             
             return result
                 
@@ -163,4 +169,3 @@ class TextFilteringAdapter(UniversalModuleInterface):
             Экземпляр TextFilterManager
         """
         return self._manager
-

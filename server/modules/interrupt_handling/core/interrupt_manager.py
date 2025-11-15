@@ -10,7 +10,8 @@ import time
 from typing import Dict, Any, Optional, Set, Callable
 from datetime import datetime
 
-from integrations.core.universal_module_interface import UniversalModuleInterface, ModuleStatus
+from integrations.core.universal_module_interface import UniversalModuleInterface
+from integrations.core.module_status import ModuleStatus, ModuleState
 from modules.interrupt_handling.config import InterruptHandlingConfig
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class InterruptManager(UniversalModuleInterface):
         Args:
             config: Конфигурация модуля прерываний
         """
-        super().__init__("interrupt_handling", config.config if config else {})
+        super().__init__("interrupt_handling")
         
         self.config = config or InterruptHandlingConfig()
         
@@ -65,7 +66,7 @@ class InterruptManager(UniversalModuleInterface):
         try:
             logger.info("Initializing Interrupt Manager...")
             
-            self.set_status(ModuleStatus.INITIALIZING)
+            self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
             
             # Проверяем конфигурацию
             if not self.config.get("global_interrupt_enabled", True):
@@ -74,7 +75,7 @@ class InterruptManager(UniversalModuleInterface):
             # Инициализируем базовые компоненты
             await self._initialize_components()
             
-            self.set_status(ModuleStatus.READY)
+            self._status = ModuleStatus(state=ModuleState.READY, health="ok")
             self.is_initialized = True
             
             logger.info("Interrupt Manager initialized successfully")
@@ -82,7 +83,7 @@ class InterruptManager(UniversalModuleInterface):
             
         except Exception as e:
             logger.error(f"Failed to initialize Interrupt Manager: {e}")
-            self.set_status(ModuleStatus.ERROR)
+            self._status = ModuleStatus(state=ModuleState.ERROR, health="down", last_error=str(e))
             return False
     
     async def _initialize_components(self):
@@ -409,6 +410,15 @@ class InterruptManager(UniversalModuleInterface):
             logger.error(f"Error unregistering session {session_id}: {e}")
             return False
     
+    def status(self) -> ModuleStatus:
+        """
+        Получение статуса модуля
+        
+        Returns:
+            ModuleStatus с текущим состоянием модуля
+        """
+        return self._status
+    
     async def cleanup(self) -> bool:
         """
         Очистка ресурсов модуля
@@ -437,7 +447,7 @@ class InterruptManager(UniversalModuleInterface):
             if hasattr(self, 'session_tracker_provider'):
                 await self.session_tracker_provider.cleanup()
             
-            self.set_status(ModuleStatus.STOPPED)
+            self._status = ModuleStatus(state=ModuleState.STOPPED, health="ok")
             self.is_initialized = False
             
             logger.info("Interrupt Manager cleaned up successfully")

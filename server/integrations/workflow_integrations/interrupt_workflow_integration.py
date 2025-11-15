@@ -28,7 +28,7 @@ class InterruptWorkflowIntegration:
         Args:
             interrupt_manager: Модуль управления прерываниями
         """
-        self.interrupt_manager = interrupt_manager
+        self.interrupt_module = interrupt_manager
         self.is_initialized = False
         self.active_sessions = {}  # Отслеживание активных сессий
         
@@ -45,7 +45,7 @@ class InterruptWorkflowIntegration:
             logger.info("Инициализация InterruptWorkflowIntegration...")
             
             # Проверяем доступность InterruptManager
-            if not self.interrupt_manager:
+            if not self.interrupt_module:
                 logger.warning("⚠️ InterruptManager не предоставлен")
             
             self.is_initialized = True
@@ -71,12 +71,17 @@ class InterruptWorkflowIntegration:
             return False
 
         try:
-            if not self.interrupt_manager:
+            if not self.interrupt_module:
                 logger.debug("InterruptManager не доступен, прерывания не проверяются")
                 return False
 
-            # Проверяем через InterruptManager
-            should_interrupt = self.interrupt_manager.should_interrupt(hardware_id)
+            # Проверяем через InterruptModule
+            response = await self._call_interrupt_module({
+                "action": "check_interrupt",
+                "hardware_id": hardware_id
+            })
+
+            should_interrupt = bool(response.get("interrupted") if isinstance(response, dict) else response)
 
             if should_interrupt:
                 logger.info(f"🛑 Обнаружено прерывание для {hardware_id}")
@@ -111,7 +116,7 @@ class InterruptWorkflowIntegration:
             }
 
         try:
-            if not self.interrupt_manager:
+            if not self.interrupt_module:
                 logger.error("❌ InterruptManager не доступен")
                 return {
                     'success': False,
@@ -119,8 +124,10 @@ class InterruptWorkflowIntegration:
                     'interrupted_sessions': []
                 }
 
-            # Делегируем прерывание в InterruptManager
-            interrupt_result = await self.interrupt_manager.interrupt_session(hardware_id=hardware_id)
+            interrupt_result = await self._call_interrupt_module({
+                "action": "interrupt_session",
+                "hardware_id": hardware_id
+            }) or {}
 
             logger.info(f"✅ Прерывание сессии для {hardware_id}: {interrupt_result}")
             return interrupt_result
@@ -199,6 +206,21 @@ class InterruptWorkflowIntegration:
             logger.error(f"❌ Ошибка выполнения workflow: {e}")
             await self._cleanup_session(session_id)
             raise
+
+    async def _call_interrupt_module(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Делегирует вызовы в interrupt_module.process."""
+        if not self.interrupt_module or not hasattr(self.interrupt_module, 'process'):
+            return {}
+        result = await self.interrupt_module.process(payload)
+        if hasattr(result, "__aiter__"):
+            return await self._first_from_async_iterator(result) or {}
+        return result or {}
+
+    async def _first_from_async_iterator(self, iterator) -> Optional[Dict[str, Any]]:
+        try:
+            return await iterator.__anext__()
+        except StopAsyncIteration:
+            return None
     
     async def cleanup_on_interrupt(self, hardware_id: str, session_id: Optional[str] = None):
         """

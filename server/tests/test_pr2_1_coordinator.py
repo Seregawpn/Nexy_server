@@ -35,6 +35,16 @@ from modules.text_filtering.adapter import TextFilteringAdapter
 class TestModuleCoordinatorIntegration:
     """Тесты интеграции ModuleCoordinator"""
     
+    @pytest.fixture(autouse=True)
+    def mock_text_processor_init(self):
+        """Не даём тестам ходить в реальный Live API"""
+        with patch(
+            'modules.text_processing.core.text_processor.TextProcessor.initialize',
+            new_callable=AsyncMock,
+            return_value=True
+        ):
+            yield
+
     @pytest.fixture
     def unified_config(self):
         """Фикстура для unified_config"""
@@ -110,9 +120,22 @@ class TestGrpcServiceManagerWithCoordinator:
         # Устанавливаем фича-флаг
         with patch.object(grpc_manager.unified_config, 'is_feature_enabled', return_value=True):
             with patch.object(grpc_manager.unified_config, 'is_kill_switch_active', return_value=False):
-                # Инициализируем менеджер
-                config = {}
-                await grpc_manager.initialize(config)
+                with patch(
+                    'modules.text_processing.core.text_processor.TextProcessor.initialize',
+                    new_callable=AsyncMock,
+                    return_value=True
+                ), patch(
+                    'modules.audio_generation.core.audio_processor.AudioProcessor.initialize',
+                    new_callable=AsyncMock,
+                    return_value=True
+                ), patch(
+                    'modules.database.core.database_manager.DatabaseManager.initialize',
+                    new_callable=AsyncMock,
+                    return_value=True
+                ):
+                    # Инициализируем менеджер
+                    config = {}
+                    await grpc_manager.initialize(config)
                 
                 # Проверяем, что координатор создан
                 assert grpc_manager.coordinator is not None
@@ -130,6 +153,15 @@ class TestGrpcServiceManagerWithCoordinator:
                     
                     # Проверяем, что метод инициализации с координатором вызван
                     mock_init.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_grpc_manager_legacy_path_when_kill_switch_active(self, grpc_manager):
+        """Тест, что GrpcServiceManager использует legacy путь при активном kill-switch"""
+        with patch.object(grpc_manager.unified_config, 'is_feature_enabled', return_value=True):
+            with patch.object(grpc_manager.unified_config, 'is_kill_switch_active', return_value=True):
+                with patch.object(grpc_manager, '_initialize_legacy', new_callable=AsyncMock) as mock_legacy:
+                    await grpc_manager.initialize({})
+                    mock_legacy.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_grpc_manager_status(self, grpc_manager):
@@ -259,11 +291,10 @@ class TestNoDirectImports:
         for import_line in direct_imports:
             assert import_line not in content, f"Найден прямой импорт модуля: {import_line}"
         
-        # Проверяем, что есть импорты адаптеров
-        assert "from modules.text_processing.module import TextProcessingModule" in content or \
-               "from modules.audio_generation.adapter import AudioGenerationAdapter" in content
+        # Убеждаемся, что используется фабрика модулей вместо прямых импортов
+        assert "from integrations.core.module_factory import ModuleFactory" in content
+        assert "ModuleFactory.create(" in content
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

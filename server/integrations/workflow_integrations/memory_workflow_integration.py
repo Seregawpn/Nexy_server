@@ -23,7 +23,7 @@ class MemoryWorkflowIntegration:
         Args:
             memory_manager: Модуль управления памятью
         """
-        self.memory_manager = memory_manager
+        self.memory_module = memory_manager
         self.is_initialized = False
         self.memory_cache = {}  # Кэш для быстрого доступа
         self.cache_ttl = 300  # 5 минут TTL для кэша
@@ -44,7 +44,7 @@ class MemoryWorkflowIntegration:
             logger.info("Инициализация MemoryWorkflowIntegration...")
             
             # Проверяем доступность модуля памяти
-            if not self.memory_manager:
+            if not self.memory_module:
                 logger.warning("⚠️ MemoryManager не предоставлен")
             else:
                 await self._warmup_memory_manager()
@@ -80,8 +80,8 @@ class MemoryWorkflowIntegration:
                 logger.debug("✅ Используем кэшированный контекст памяти")
                 return cached_context
             
-            if not self.memory_manager or not hasattr(self.memory_manager, 'get_user_context'):
-                logger.debug("MemoryManager не доступен или не имеет метода get_user_context")
+            if not self.memory_module or not hasattr(self.memory_module, 'process'):
+                logger.debug("MemoryModule не доступен или не поддерживает process()")
                 return None
 
             # Если запрос уже выполняется, не создаём новый
@@ -118,12 +118,8 @@ class MemoryWorkflowIntegration:
             logger.debug("Запуск фонового сохранения в память")
             
             # Проверяем доступность MemoryManager
-            if not self.memory_manager:
-                logger.warning("⚠️ MemoryManager не доступен для сохранения")
-                return False
-            
-            if not hasattr(self.memory_manager, 'update_memory_background'):
-                logger.warning("⚠️ MemoryManager не имеет метода update_memory_background")
+            if not self.memory_module or not hasattr(self.memory_module, 'process'):
+                logger.warning("⚠️ MemoryModule не доступен для сохранения")
                 return False
             
             # Запускаем сохранение в фоне
@@ -149,23 +145,27 @@ class MemoryWorkflowIntegration:
             Контекст памяти
         """
         try:
-            if not self.memory_manager:
+            if not self.memory_module or not hasattr(self.memory_module, 'process'):
                 return None
             
-            memory_context = await asyncio.wait_for(
-                self.memory_manager.get_user_context(hardware_id),
+            response = await asyncio.wait_for(
+                self._call_memory_module({"action": "get_context", "hardware_id": hardware_id}),
                 timeout=self.memory_fetch_timeout
             )
+
+            memory_context = self._extract_memory_from_response(response)
             
             if memory_context:
                 logger.debug(f"Получен контекст памяти: {type(memory_context)}")
                 return memory_context
-            else:
-                logger.debug("Контекст памяти пуст")
-                return None
+            logger.debug("Контекст памяти пуст")
+            return None
                 
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ Таймаут получения памяти для {hardware_id}")
+            return None
         except Exception as e:
-            logger.warning(f"⚠️ Ошибка получения контекста из MemoryManager: {e}")
+            logger.warning(f"⚠️ Ошибка получения контекста из MemoryModule: {e}")
             return None
     
     async def _save_memory_background(self, data: Dict[str, Any]):
@@ -190,7 +190,12 @@ class MemoryWorkflowIntegration:
                 return
 
             await asyncio.wait_for(
-                self.memory_manager.update_memory_background(hardware_id, prompt, response),
+                self._call_memory_module({
+                    "action": "update_background",
+                    "hardware_id": hardware_id,
+                    "prompt": prompt,
+                    "response": response
+                }),
                 timeout=self.memory_update_timeout
             )
             
@@ -198,6 +203,32 @@ class MemoryWorkflowIntegration:
             
         except Exception as e:
             logger.error(f"❌ Ошибка фонового сохранения в память: {e}")
+
+    async def _call_memory_module(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Унифицированный вызов memory_module.process."""
+        if not self.memory_module or not hasattr(self.memory_module, 'process'):
+            return None
+        result = await self.memory_module.process(payload)
+        if hasattr(result, "__aiter__"):
+            return await self._first_from_async_iterator(result)
+        return result
+
+    async def _first_from_async_iterator(self, iterator) -> Optional[Any]:
+        """Возвращает первый элемент из async iterator."""
+        try:
+            return await iterator.__anext__()
+        except StopAsyncIteration:
+            return None
+
+    def _extract_memory_from_response(self, response: Any) -> Optional[Dict[str, Any]]:
+        """Приводит ответ модуля памяти к словарю контекста."""
+        if response is None:
+            return None
+        if isinstance(response, dict):
+            if "memory" in response:
+                return response.get("memory")
+            return response
+        return response
     
     def _prepare_memory_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -232,13 +263,14 @@ class MemoryWorkflowIntegration:
 
     async def _fetch_and_cache_memory(self, hardware_id: str):
         """Фоновое получение памяти с кэшированием и таймаутом."""
-        if not self.memory_manager:
+        if not self.memory_module or not hasattr(self.memory_module, 'process'):
             return None
         try:
             memory_context = await asyncio.wait_for(
-                self.memory_manager.get_user_context(hardware_id),
+                self._call_memory_module({"action": "get_context", "hardware_id": hardware_id}),
                 timeout=self.memory_fetch_timeout
             )
+            memory_context = self._extract_memory_from_response(memory_context)
             if memory_context:
                 self._cache_memory(hardware_id, memory_context)
                 logger.debug(
@@ -253,28 +285,24 @@ class MemoryWorkflowIntegration:
         return None
 
     async def _warmup_memory_manager(self):
-        """Прогрев MemoryManager, чтобы исключить задержки при первом запросе."""
-        if not self.memory_manager:
+        """Прогрев MemoryModule, чтобы исключить задержки при первом запросе."""
+        if not self.memory_module or not hasattr(self.memory_module, 'process'):
             return
         try:
-            if hasattr(self.memory_manager, 'initialize'):
-                init_result = self.memory_manager.initialize()
-                if asyncio.iscoroutine(init_result):
-                    await asyncio.wait_for(init_result, timeout=self.memory_update_timeout)
-            if hasattr(self.memory_manager, 'get_user_context'):
-                try:
-                    await asyncio.wait_for(
-                        self.memory_manager.get_user_context('__warmup__'),
-                        timeout=self.memory_fetch_timeout
-                    )
-                except Exception:
-                    # Игнорируем ошибки прогрева, т.к. hardware_id фиктивный
-                    pass
-            logger.debug("✅ MemoryManager прогрет")
+            # Отправляем фиктивный запрос, чтобы инициализировать соединения
+            try:
+                await asyncio.wait_for(
+                    self._call_memory_module({"action": "get_context", "hardware_id": "__warmup__"}),
+                    timeout=self.memory_fetch_timeout
+                )
+            except Exception:
+                # Игнорируем ошибки прогрева, т.к. hardware_id фиктивный
+                pass
+            logger.debug("✅ MemoryModule прогрет")
         except asyncio.TimeoutError:
-            logger.warning("⚠️ Таймаут прогрева MemoryManager")
+            logger.warning("⚠️ Таймаут прогрева MemoryModule")
         except Exception as e:
-            logger.warning("⚠️ Ошибка прогрева MemoryManager: %s", e)
+            logger.warning("⚠️ Ошибка прогрева MemoryModule: %s", e)
     
     def _get_cached_memory(self, hardware_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -341,6 +369,3 @@ class MemoryWorkflowIntegration:
             
         except Exception as e:
             logger.error(f"❌ Ошибка очистки MemoryWorkflowIntegration: {e}")
-
-
-

@@ -6,16 +6,28 @@ gRPC Interceptor с единой картой ошибок (PR-7)
 import logging
 import time
 import asyncio
-from typing import Callable, Any, Optional
+from typing import Callable, Any, Optional, TYPE_CHECKING
 from contextlib import asynccontextmanager
 
 import grpc
 from grpc import aio
 
+
 from utils.logging_formatter import log_rpc_error, log_decision
 from utils.metrics_collector import record_metric, record_decision_metric
 
 logger = logging.getLogger(__name__)
+
+# Совместимость с разными версиями grpcio
+# HandlerCallDetails может отсутствовать в старых версиях
+if TYPE_CHECKING:
+    try:
+        from grpc.aio import HandlerCallDetails
+    except (ImportError, AttributeError):
+        HandlerCallDetails = Any
+else:
+    # В runtime используем Any для совместимости
+    HandlerCallDetails = Any
 
 
 class ErrorCodeMapper:
@@ -106,8 +118,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
     async def intercept_service(
         self,
         continuation: Callable,
-        handler_call_details: aio.HandlerCallDetails
-    ) -> aio.UnaryUnaryHandler:
+        handler_call_details: HandlerCallDetails
+    ) -> Any:
         """
         Перехват вызова сервиса
         
@@ -119,26 +131,43 @@ class LoggingInterceptor(aio.ServerInterceptor):
             Обработчик с логированием
         """
         method_name = handler_call_details.method
-        
-        # Получаем оригинальный обработчик
+
+        # Получаем оригинальный handler
         handler = await continuation(handler_call_details)
-        
         if handler is None:
             return None
+
+        # Извлекаем callables и сериализаторы из оригинального handler
+        # RpcMethodHandler - это namedtuple, поэтому извлекаем напрямую
+        unary_unary = handler.unary_unary
+        unary_stream = handler.unary_stream
+        stream_unary = handler.stream_unary
+        stream_stream = handler.stream_stream
         
-        # Обёртываем в логирующий обработчик
-        if handler.request_streaming and handler.response_streaming:
-            # Bidirectional streaming
-            return self._wrap_bidi_streaming(handler, method_name)
-        elif handler.request_streaming:
-            # Request streaming
-            return self._wrap_request_streaming(handler, method_name)
-        elif handler.response_streaming:
-            # Response streaming
-            return self._wrap_response_streaming(handler, method_name)
-        else:
-            # Unary
-            return self._wrap_unary(handler, method_name)
+        # Обёртываем callables в логирующие обёртки
+        wrapped_unary_unary = None
+        wrapped_unary_stream = None
+        wrapped_stream_unary = None
+        wrapped_stream_stream = None
+
+        if unary_unary:
+            wrapped_unary_unary = self._wrap_unary(unary_unary, method_name)
+        if unary_stream:
+            wrapped_unary_stream = self._wrap_response_streaming(unary_stream, method_name)
+        if stream_unary:
+            wrapped_stream_unary = self._wrap_request_streaming(stream_unary, method_name)
+        if stream_stream:
+            wrapped_stream_stream = self._wrap_bidi_streaming(stream_stream, method_name)
+
+        # Создаём новый handler через _replace() метод namedtuple
+        new_handler = handler._replace(
+            unary_unary=wrapped_unary_unary,
+            unary_stream=wrapped_unary_stream,
+            stream_unary=wrapped_stream_unary,
+            stream_stream=wrapped_stream_stream
+        )
+
+        return new_handler
     
     def _wrap_unary(self, handler, method_name: str):
         """Обёртка для unary RPC"""
@@ -320,4 +349,3 @@ def get_interceptor() -> LoggingInterceptor:
     if _global_interceptor is None:
         _global_interceptor = LoggingInterceptor()
     return _global_interceptor
-

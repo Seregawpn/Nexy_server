@@ -25,6 +25,8 @@ load_dotenv('config.env')
 # Загружаем конфигурацию
 unified_config = get_config()
 server_metadata = unified_config.get_server_metadata()
+grpc_config = unified_config.grpc
+http_config = unified_config.http
 
 # Настройка структурированного логирования (PR-4)
 log_level = unified_config.logging.level if hasattr(unified_config, 'logging') else 'INFO'
@@ -116,6 +118,17 @@ shutdown_event = asyncio.Event()
 servers_cleanup = []
 
 
+async def cancel_task(task: asyncio.Task):
+    """Безопасная отмена асинхронной задачи."""
+    if task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
 def setup_signal_handlers():
     """Настройка обработчиков сигналов для graceful shutdown (PR-7)"""
     def signal_handler(signum, frame):
@@ -170,7 +183,7 @@ async def main():
     await backpressure_manager.start()
     
     # Логируем старт сервера (PR-4)
-    log_server_start(logger, port=8080, version="1.0.0")
+    log_server_start(logger, port=http_config.port, version=SERVER_VERSION)
     
     # Запускаем периодическое логирование метрик (PR-4)
     metrics_task = asyncio.create_task(periodic_metrics_logging())
@@ -184,13 +197,18 @@ async def main():
     # Запускаем HTTP сервер на порту 8080
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    site = web.TCPSite(runner, http_config.host, http_config.port)
     await site.start()
+    servers_cleanup.append(runner.cleanup)
     
     logger.info("HTTP server started", extra={
         'scope': 'server',
         'decision': 'start',
-        'ctx': {'port': 8080, 'endpoints': ['/health', '/status']}
+        'ctx': {
+            'host': http_config.host,
+            'port': http_config.port,
+            'endpoints': ['/health', '/status']
+        }
     })
     
     # Запускаем сервер обновлений на порту 8081
@@ -205,8 +223,11 @@ async def main():
             logger.info("Update server started", extra={
                 'scope': 'update',
                 'decision': 'start',
-                'ctx': {'port': 8081}
+                'ctx': {'host': update_manager.config.host, 'port': update_manager.config.port}
             })
+            async def stop_update_manager():
+                await update_manager.stop()
+            servers_cleanup.append(stop_update_manager)
         except Exception as e:
             logger.error(f"Update server startup failed: {e}", extra={
                 'scope': 'update',
@@ -222,16 +243,20 @@ async def main():
     logger.info("Starting gRPC server", extra={
         'scope': 'grpc',
         'decision': 'start',
-        'ctx': {'port': 50051}
+        'ctx': {'host': grpc_config.host, 'port': grpc_config.port}
     })
     
     try:
         # Запускаем gRPC сервер в фоне
-        serve_task = asyncio.create_task(serve())
+        serve_task = asyncio.create_task(serve(
+            host=grpc_config.host,
+            port=grpc_config.port,
+            max_workers=grpc_config.max_workers
+        ))
         
         # Регистрируем cleanup функцию
-        servers_cleanup.append(lambda: metrics_task.cancel())
-        servers_cleanup.append(lambda: serve_task.cancel())
+        servers_cleanup.append(lambda: cancel_task(metrics_task))
+        servers_cleanup.append(lambda: cancel_task(serve_task))
         
         # Ждем сигнала завершения или ошибки
         await asyncio.wait(

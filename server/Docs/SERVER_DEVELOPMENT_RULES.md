@@ -25,6 +25,9 @@
 
 - `server/modules/*` — только бизнес-логика. Оркестрация и сценарии располагаются в `server/integrations/{core,service_integrations,workflow_integrations}`.
 - Прямых импортов между модулями нет; все обращения идут через `ModuleCoordinator` (`server/integrations/service_integrations/module_coordinator.py`).
+- Каждый модуль реализует `UniversalModuleInterface`; если модуль оборачивает существующий процессор, создаётся адаптер (`modules/*/adapter.py`), предоставляющий `initialize/process/cleanup/status`.
+- `GrpcServiceManager` создаёт capability через `ModuleFactory`, а не прямыми импортами.
+- LoggingInterceptor (`modules/grpc_service/core/grpc_interceptor.py`) подключается всегда. Он переупаковывает `RpcMethodHandler` через `_replace` и фиксирует `decision=start|abort|complete`.
 - Единственный proto-файл — `server/modules/grpc_service/streaming.proto`. Изменения обновляют его и `Docs/GRPC_PROTOCOL_AUDIT.md`.
 - Лимиты, таймауты и флаги читаются из `server/config/unified_config.py` или env-override; хардкоды запрещены.
 
@@ -46,6 +49,7 @@
 - [ ] `/health` отдаёт `latest_version` и `latest_build` как строки, `/appcast.xml` содержит тот же номер; логи апдейта без ошибок
 - [ ] Фича-флаг + kill-switch прописаны (если релиз инкрементальный)
 - [ ] CI-проверки (lint, contract, validate_release_size) выполняются по `Docs/CI_GRPC_CHECKS.md`
+- [ ] Локальные тесты пройдены: `pytest server/tests/test_pr2_1_coordinator.py` и `python server/scripts/grpc_smoke.py localhost 50051` (или прикладываем логи из CI)
 
 ---
 
@@ -118,7 +122,8 @@ test "$APPCAST_SIZE" = "$GITHUB_SIZE"
 
 **Документация:**
 - `Docs/GRPC_PROTOCOL_AUDIT.md` — полный аудит протокола, таблицы полей, правила совместимости
-- `scripts/grpc_smoke.py` — smoke-тест для проверки совместимости
+- `SMOKE_TEST_QUICK_START.md`, `READY_FOR_SMOKE_TEST.md` — актуальные команды smoke/health перед релизом
+- `scripts/grpc_smoke.py` (production) и `server/scripts/grpc_smoke.py` (локально) — smoke-тест для проверки совместимости
 - `scripts/check_grpc_health.py` — проверка health/status/портов
 
 **Автоматические проверки:**
@@ -204,12 +209,16 @@ kill_switches:
 ```dotenv
 NEXY_ENV=prod
 GITHUB_TOKEN=...
-UPDATE_PORT=8081
+GRPC_HOST=auto
 GRPC_PORT=50051
-HEALTH_PORT=8080
+HTTP_HOST=auto
+HTTP_PORT=8080
+UPDATE_HOST=auto
+UPDATE_PORT=8081
 ```
 
 - Новые переменные добавляем только после описания в ADR + обновления шаблона. Все значения храним в секретах (GitHub, Azure).
+- Значение `auto` для `GRPC_HOST`/`HTTP_HOST`/`UPDATE_HOST` переключает биндинг в зависимости от `NEXY_ENV`: dev → `0.0.0.0`, stage/prod → `127.0.0.1`.
 
 ---
 

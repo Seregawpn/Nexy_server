@@ -14,6 +14,8 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional, AsyncGenerator
 
+from config.unified_config import get_config
+
 # Protobuf файлы генерируются автоматически из streaming.proto
 import sys
 import os
@@ -442,13 +444,26 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 interrupted_sessions=[]
             )
 
-async def run_server(port: int = 50051, max_workers: int = 100):
+async def run_server(
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    max_workers: Optional[int] = None
+):
     """Запуск оптимизированного gRPC сервера для 100 пользователей"""
-    logger.info(f"🚀 Запуск оптимизированного gRPC сервера на порту {port} с {max_workers} воркерами")
+    unified_config = get_config()
+    cfg = unified_config.grpc if hasattr(unified_config, 'grpc') else None
+    resolved_host = host or (cfg.host if cfg else '0.0.0.0')
+    resolved_port = port or (cfg.port if cfg else 50051)
+    resolved_workers = max_workers or (cfg.max_workers if cfg else 100)
+    
+    logger.info(
+        f"🚀 Запуск оптимизированного gRPC сервера на {resolved_host}:{resolved_port} "
+        f"с {resolved_workers} воркерами"
+    )
     
     # Оптимизированный ThreadPoolExecutor
     executor = ThreadPoolExecutor(
-        max_workers=max_workers,
+        max_workers=resolved_workers,
         thread_name_prefix="grpc-worker"
     )
     
@@ -472,12 +487,15 @@ async def run_server(port: int = 50051, max_workers: int = 100):
         ('grpc.client_idle_timeout_ms', 300000),  # 5 минут
     ]
     
-    # Создаем сервер с оптимизированными настройками
-    server = grpc.aio.server(executor, options=options)
-    
     # Добавляем интерсептор для единой обработки ошибок и логирования (PR-7)
     interceptor = get_interceptor()
-    server.interceptors(interceptor)
+    
+    # Создаем сервер с оптимизированными настройками и интерсептором
+    server = grpc.aio.server(
+        executor,
+        options=options,
+        interceptors=[interceptor]
+    )
     
     # Создаем сервис
     servicer = NewStreamingServicer()
@@ -492,12 +510,15 @@ async def run_server(port: int = 50051, max_workers: int = 100):
     streaming_pb2_grpc.add_StreamingServiceServicer_to_server(servicer, server)
     
     # Настраиваем порт
-    listen_addr = f'[::]:{port}'
+    if ':' in resolved_host and not resolved_host.startswith('['):
+        listen_addr = f'[{resolved_host}]:{resolved_port}'
+    else:
+        listen_addr = f'{resolved_host}:{resolved_port}'
     server.add_insecure_port(listen_addr)
     
     logger.info(f"✅ Оптимизированный сервер настроен на {listen_addr}")
     logger.info(f"📊 Настройки производительности:")
-    logger.info(f"   - Воркеры: {max_workers}")
+    logger.info(f"   - Воркеры: {resolved_workers}")
     logger.info(f"   - Keep-alive: 30s")
     logger.info(f"   - Буферы: 4MB")
     logger.info(f"   - Таймаут клиента: 5 минут")
@@ -505,7 +526,7 @@ async def run_server(port: int = 50051, max_workers: int = 100):
     try:
         # Запускаем сервер
         await server.start()
-        logger.info(f"🎉 Оптимизированный gRPC сервер запущен на порту {port}")
+        logger.info(f"🎉 Оптимизированный gRPC сервер запущен на {listen_addr}")
         
         # Ждем завершения
         await server.wait_for_termination()

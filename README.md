@@ -55,15 +55,19 @@ python main.py  # gRPC поднимается на 0.0.0.0:50051
 
 | Ключ | Тип | dev | stage | prod | Env override |
 | --- | --- | --- | --- | --- | --- |
+| `grpc.host` | string | `0.0.0.0` | `127.0.0.1` | `127.0.0.1` | `GRPC_HOST` (`auto` → по `NEXY_ENV`) |
 | `grpc.port` | int | 50051 | 50051 | 50051 | `GRPC_PORT` |
 | `grpc.max_workers` | int | 10 | — (inherit prod) | 100 | `MAX_WORKERS` |
+| `http.host` | string | `0.0.0.0` | `127.0.0.1` | `127.0.0.1` | `HTTP_HOST` (`auto` → по `NEXY_ENV`) |
+| `http.port` | int | 8080 | 8080 | 8080 | `HTTP_PORT` |
 | `backpressure.max_concurrent_streams` | int | 10 | 25 | 50 | `BACKPRESSURE_MAX_STREAMS` |
 | `backpressure.max_message_rate_per_second` | int | 5 | 8 | 10 | `BACKPRESSURE_MAX_RATE` |
 | `features.use_module_coordinator` | bool | true | true | true | `USE_MODULE_COORDINATOR` |
 | `kill_switches.disable_module_coordinator` | bool | false | false | false | `NEXY_KS_DISABLE_MODULE_COORDINATOR` |
+| `update.host` | string | `0.0.0.0` | `127.0.0.1` | `127.0.0.1` | `UPDATE_HOST` (`auto` → по `NEXY_ENV`) |
 | `update.port` | int | 8081 | 8081 | 8081 | `UPDATE_PORT` |
 
-> Stage наследует prod значения, если не указано иное в `unified_config_example.yaml`. Все лимиты и флаги переопределяются только через unified_config или переменные окружения.
+> Stage наследует prod значения, если не указано иное в `unified_config_example.yaml`. `NEXY_ENV=prod/stage` автоматически переключает gRPC/HTTP/Update на `127.0.0.1`, весь внешний трафик обслуживает Nginx на `https://20.151.51.172`. В dev по умолчанию используем `0.0.0.0`, чтобы подключаться напрямую. Указание `auto` в env соответствует поведению по окружению.
 
 ## 🏗️ Архитектура и границы
 
@@ -71,7 +75,7 @@ python main.py  # gRPC поднимается на 0.0.0.0:50051
 - **gRPC сервер:** канонический протокол описан в `server/modules/grpc_service/streaming.proto`. Регенирация — `python -m grpc_tools.protoc -I server/modules/grpc_service --python_out=server/modules/grpc_service --grpc_python_out=server/modules/grpc_service server/modules/grpc_service/streaming.proto` (см. `Docs/SERVER_DEVELOPMENT_RULES.md`).
 - **Конфигурация:** все флаги, таймауты и лимиты берутся из `server/config/unified_config.py`. Код не держит хардкоды.
 - **Наблюдаемость:** обязательны decision-логи (`ts`, `level`, `scope`, `method`, `decision`, `ctx`, `dur_ms`) и метрики `p95_latency_ms`, `error_rate`, `backpressure_refusal_rate`.
-- **Ingress:** наружный трафик проходит через Nginx (HTTPS:443). Внутренние сервисы (`50051`, `8080`, `8081`) доступны только внутри инфраструктуры.
+- **Ingress:** наружный трафик проходит через Nginx (HTTPS:443, IP продакшна `20.151.51.172`). `NEXY_ENV=prod/stage` автоматически заставляет службы слушать `127.0.0.1`, локально (`dev`) можно открыть `0.0.0.0`.
 
 Подробный обзор — в `server/Docs/ARCHITECTURE_OVERVIEW.md`.
 

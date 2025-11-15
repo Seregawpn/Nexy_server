@@ -10,7 +10,8 @@ import time
 from typing import Dict, Any, Optional, List, Union
 from datetime import datetime
 
-from integrations.core.universal_module_interface import UniversalModuleInterface, ModuleStatus
+from integrations.core.universal_module_interface import UniversalModuleInterface
+from integrations.core.module_status import ModuleStatus, ModuleState
 from modules.text_filtering.config import TextFilteringConfig
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class TextFilterManager(UniversalModuleInterface):
         Args:
             config: Конфигурация модуля фильтрации текста
         """
-        super().__init__("text_filtering", config.config if config else {})
+        super().__init__("text_filtering")
         
         self.config = config or TextFilteringConfig()
         
@@ -55,12 +56,12 @@ class TextFilterManager(UniversalModuleInterface):
         try:
             logger.info("Initializing Text Filter Manager...")
             
-            self.set_status(ModuleStatus.INITIALIZING)
+            self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
             
             # Инициализируем провайдеры фильтрации
             await self._initialize_providers()
             
-            self.set_status(ModuleStatus.READY)
+            self._status = ModuleStatus(state=ModuleState.READY, health="ok")
             self.is_initialized = True
             
             logger.info("Text Filter Manager initialized successfully")
@@ -68,7 +69,7 @@ class TextFilterManager(UniversalModuleInterface):
             
         except Exception as e:
             logger.error(f"Failed to initialize Text Filter Manager: {e}")
-            self.set_status(ModuleStatus.ERROR)
+            self._status = ModuleStatus(state=ModuleState.ERROR, health="down", last_error=str(e))
             return False
     
     async def _initialize_providers(self):
@@ -449,7 +450,7 @@ class TextFilterManager(UniversalModuleInterface):
             self.total_errors = 0
             self.processing_times.clear()
             
-            self.set_status(ModuleStatus.STOPPED)
+            self._status = ModuleStatus(state=ModuleState.STOPPED, health="ok")
             self.is_initialized = False
             
             logger.info("Text Filter Manager cleaned up successfully")
@@ -458,6 +459,15 @@ class TextFilterManager(UniversalModuleInterface):
         except Exception as e:
             logger.error(f"Error cleaning up Text Filter Manager: {e}")
             return False
+    
+    def status(self) -> ModuleStatus:
+        """
+        Получение статуса модуля
+        
+        Returns:
+            ModuleStatus с текущим состоянием модуля
+        """
+        return self._status
     
     def get_statistics(self) -> Dict[str, Any]:
         """Получение статистики фильтрации"""

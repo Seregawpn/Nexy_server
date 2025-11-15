@@ -52,10 +52,31 @@ class GrpcConfig:
     
     @classmethod
     def from_env(cls) -> 'GrpcConfig':
+        env = os.getenv('NEXY_ENV', 'prod').lower()
+        default_host = '127.0.0.1' if env in ('prod', 'stage') else '0.0.0.0'
+        host_override = os.getenv('GRPC_HOST')
+        host_value = host_override if host_override and host_override.lower() != 'auto' else default_host
         return cls(
-            host=os.getenv('GRPC_HOST', '0.0.0.0'),
+            host=host_value,
             port=int(os.getenv('GRPC_PORT', '50051')),
             max_workers=int(os.getenv('MAX_WORKERS', '10'))
+        )
+
+@dataclass
+class HttpConfig:
+    """Конфигурация HTTP сервера health/status"""
+    host: str = "0.0.0.0"
+    port: int = 8080
+    
+    @classmethod
+    def from_env(cls) -> 'HttpConfig':
+        env = os.getenv('NEXY_ENV', 'prod').lower()
+        default_host = '127.0.0.1' if env in ('prod', 'stage') else '0.0.0.0'
+        host_override = os.getenv('HTTP_HOST')
+        host_value = host_override if host_override and host_override.lower() != 'auto' else default_host
+        return cls(
+            host=host_value,
+            port=int(os.getenv('HTTP_PORT', '8080'))
         )
 
 @dataclass
@@ -346,9 +367,13 @@ class UpdateServiceConfig:
     @classmethod
     def from_env(cls) -> 'UpdateServiceConfig':
         base_dir = Path(__file__).parent.parent / 'updates'
+        env = os.getenv('NEXY_ENV', 'prod').lower()
+        default_host = '127.0.0.1' if env in ('prod', 'stage') else '0.0.0.0'
+        host_override = os.getenv('UPDATE_HOST')
+        host_value = host_override if host_override and host_override.lower() != 'auto' else default_host
         return cls(
             enabled=os.getenv('UPDATE_ENABLED', 'true').lower() == 'true',
-            host=os.getenv('UPDATE_HOST', '0.0.0.0'),
+            host=host_value,
             port=int(os.getenv('UPDATE_PORT', '8081')),
             cors_enabled=os.getenv('UPDATE_CORS', 'true').lower() == 'true',
             cache_control=os.getenv('UPDATE_CACHE_CONTROL', 'no-cache, no-store, must-revalidate'),
@@ -487,6 +512,7 @@ class UnifiedServerConfig:
     """Централизованная конфигурация всего сервера"""
     database: DatabaseConfig = field(default_factory=DatabaseConfig.from_env)
     grpc: GrpcConfig = field(default_factory=GrpcConfig.from_env)
+    http: HttpConfig = field(default_factory=HttpConfig.from_env)
     audio: AudioConfig = field(default_factory=AudioConfig.from_env)
     text_processing: TextProcessingConfig = field(default_factory=TextProcessingConfig.from_env)
     memory: MemoryConfig = field(default_factory=MemoryConfig.from_env)
@@ -557,6 +583,7 @@ class UnifiedServerConfig:
         config_mapping = {
             'database': self.database.__dict__,
             'grpc': self.grpc.__dict__,
+            'http': self.http.__dict__,
             'audio': self.audio.__dict__,
             'text_processing': self.text_processing.__dict__,
             'memory': self.memory.__dict__,
@@ -708,6 +735,7 @@ class UnifiedServerConfig:
         config_dict = {
             'database': self.database.__dict__,
             'grpc': self.grpc.__dict__,
+            'http': self.http.__dict__,
             'audio': self.audio.__dict__,
             'text_processing': self.text_processing.__dict__,
             'memory': self.memory.__dict__,
@@ -741,6 +769,7 @@ class UnifiedServerConfig:
         # Создаем экземпляры конфигураций из словаря
         database = DatabaseConfig(**config_dict.get('database', {}))
         grpc = GrpcConfig(**config_dict.get('grpc', {}))
+        http = HttpConfig(**config_dict.get('http', {}))
         audio = AudioConfig(**config_dict.get('audio', {}))
         text_processing = TextProcessingConfig(**config_dict.get('text_processing', {}))
         memory = MemoryConfig(**config_dict.get('memory', {}))
@@ -765,6 +794,7 @@ class UnifiedServerConfig:
         return cls(
             database=database,
             grpc=grpc,
+            http=http,
             audio=audio,
             text_processing=text_processing,
             memory=memory,
@@ -795,6 +825,7 @@ class UnifiedServerConfig:
                 'password_set': bool(self.database.password)
             },
             'grpc': self.grpc.__dict__,
+            'http': self.http.__dict__,
             'audio': {
                 'sample_rate': self.audio.sample_rate,
                 'chunk_size': self.audio.chunk_size,

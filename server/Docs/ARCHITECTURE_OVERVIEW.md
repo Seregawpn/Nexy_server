@@ -52,7 +52,9 @@ server/
 
 - Модули ≠ интеграции ≠ workflow: бизнес-логика живёт в `server/modules/*`. Оркестрация и сценарии находятся в интеграциях и workflow-интеграциях.
 - Прямые импорты между модулями запрещены. Доступ идёт через `server/integrations/service_integrations/module_coordinator.py`.
-- gRPC слой не импортирует интеграции напрямую; связь через `GrpcServiceManager` → `ModuleCoordinator`.
+- Каждый модуль реализует `UniversalModuleInterface`. Наследуемые процессоры оборачиваются адаптерами (`modules/*/adapter.py`), предоставляющими единый `initialize/process/cleanup/status`.
+- gRPC слой не импортирует интеграции напрямую; связь через `GrpcServiceManager` → `ModuleCoordinator`, а создание модулей выполняет `ModuleFactory`.
+- Workflow-интеграции (`streaming`, `memory`, `interrupt`) работают с capability через `module.process()`. Запрос внутренних `get_processor()` допускается только как временный workaround и фиксируется в ADR + `Docs/SERVER_DEVELOPMENT_RULES.md`.
 - Все порты/лимиты/таймауты читаются из `unified_config`; в коде отсутствуют «магические числа».
 
 ---
@@ -87,6 +89,13 @@ server/
 | `validation_failed` | `INVALID_ARGUMENT` | Fix payload, no retry |
 | `internal` | `INTERNAL` | Surface error, retry once |
 
+### 3.4 LoggingInterceptor
+
+- Файл: `modules/grpc_service/core/grpc_interceptor.py`. Оборачивает callables через `_replace`, не модифицируя сериализаторы (`rpc_method_handler` — namedtuple).
+- В логах обязателен контекст: `scope=grpc`, `method=/streaming.StreamingService/...`, `decision=start|abort|complete`, `ctx` со служебными полями.
+- Ошибки классифицируются через `ErrorCodeMapper`; transient ошибки фиксируются как `decision=error`, `error_classified=transient`.
+- Любой новый RPC обязан регистрироваться через LoggingInterceptor. В обходных сценариях требуется ADR + обновление `Docs/CI_GRPC_CHECKS.md`.
+
 Таблица дублируется комментариями в `server/modules/grpc_service/core/grpc_interceptor.py`. Любое изменение — синхронное обновление двух мест.
 
 ---
@@ -97,16 +106,20 @@ server/
 
 | Ключ | Тип | dev | stage | prod | Env override |
 | --- | --- | --- | --- | --- | --- |
+| `grpc.host` | string | `0.0.0.0` | `127.0.0.1` | `127.0.0.1` | `GRPC_HOST` (`auto` = по `NEXY_ENV`) |
 | `grpc.port` | int | 50051 | 50051 | 50051 | `GRPC_PORT` |
 | `grpc.max_workers` | int | 10 | — (inherit prod) | 100 | `MAX_WORKERS` |
+| `http.host` | string | `0.0.0.0` | `127.0.0.1` | `127.0.0.1` | `HTTP_HOST` (`auto` = по `NEXY_ENV`) |
+| `http.port` | int | 8080 | 8080 | 8080 | `HTTP_PORT` |
 | `backpressure.max_concurrent_streams` | int | 10 | 25 | 50 | `BACKPRESSURE_MAX_STREAMS` |
 | `backpressure.max_message_rate_per_second` | int | 5 | 8 | 10 | `BACKPRESSURE_MAX_RATE` |
 | `backpressure.idle_timeout_seconds` | int | 60 | 180 | 300 | `BACKPRESSURE_IDLE_TIMEOUT` |
 | `features.use_module_coordinator` | bool | true | true | true | `USE_MODULE_COORDINATOR` |
 | `kill_switches.disable_module_coordinator` | bool | false | false | false | `NEXY_KS_DISABLE_MODULE_COORDINATOR` |
+| `update.host` | string | `0.0.0.0` | `127.0.0.1` | `127.0.0.1` | `UPDATE_HOST` (`auto` = по `NEXY_ENV`) |
 | `update.port` | int | 8081 | 8081 | 8081 | `UPDATE_PORT` |
 
-> Stage наследует prod значения, если не указано иное. Все overrides проходят через unified_config + env, прямых setdefault в коде нет.
+> Stage наследует prod значения, если не указано иное. Значения по умолчанию для `grpc.host`/`http.host`/`update.host` определяются `NEXY_ENV`: dev → `0.0.0.0` для локальных тестов, stage/prod → `127.0.0.1` (все запросы идут через Nginx на 443). Значение `auto` в `config.env` означает «использовать дефолт по окружению». Все overrides проходят через unified_config + env, прямых setdefault в коде нет.
 
 Backpressure лимиты, error-коды и рекомендации по отладке — в `Docs/BACKPRESSURE_README.md`.
 
@@ -133,6 +146,8 @@ Backpressure лимиты, error-коды и рекомендации по от�
 
 - **Ingress**: один публичный вход — HTTPS:443 через Nginx (`/etc/nginx/sites-available/nexy`). Внутренние адреса `127.0.0.1:50051`, `127.0.0.1:8080`, `127.0.0.1:8081` слушают только на localhost и недоступны извне.
 - **Архитектура доступа:**
+  - Публичная точка входа prod: `https://20.151.51.172` (IP закреплён за Nexy Server в Azure)
+  - Значение `NEXY_ENV=prod` или `stage` автоматически переводит все сервисы в режим `127.0.0.1`. Для локальных запусков (`NEXY_ENV=dev`) хосты по умолчанию `0.0.0.0`.
   - Внешний доступ: только через Nginx на порту 443 (HTTPS, HTTP/2)
   - Внутренние порты: 8080 (HTTP health/status), 50051 (gRPC), 8081 (Update Server) — только localhost
   - Nginx проксирует: `https://<host>/health` → `http://127.0.0.1:8080/health`

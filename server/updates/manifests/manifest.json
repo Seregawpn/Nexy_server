@@ -4,7 +4,7 @@
   "release_date": "2025-09-20T00:30:06.034643Z",
   "artifact": {
     "type": "txt",
-    "url": "http://localhost:8080/artifacts/test-update.txt",
+    "url": "https://20.151.51.172/updates/appcast.xml",
     "size": 33,
     "sha256": "82563569ade22e35d4344ab9e2aa31028c0b39766d2dd76c18ae0d8f0a7aca31",
     "arch": "universal2",
@@ -13,5 +13,5 @@
   },
   "critical": false,
   "auto_install": true,
-  "notes_url": "http://localhost:8080/artifacts/test-update.txt"
+  "notes_url": "https://20.151.51.172/updates/appcast.xml"
 }
