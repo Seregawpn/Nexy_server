@@ -18,7 +18,7 @@
 
 | Permission | Интеграция / модуль | Статус (2025‑01‑15) | Проверено | Источник |
 |------------|--------------------|---------------------|-----------|----------|
-| Microphone (TCC) | `FirstRunPermissionsIntegration`, `modules/voice_recognition` | ✅ granted (beta devices) | `Docs/COMPREHENSIVE_CHECK_2025-01-08.md` (см. воспроизведение) | `Docs/first_run_flow_spec.md` |
+| Microphone (TCC) | `FirstRunPermissionsIntegration`, `modules/voice_recognition` | ✅ granted (beta devices) | `scripts/test_first_run_integration.sh` (см. воспроизведение) | `Docs/first_run_flow_spec.md` |
 | Screen Capture | `modules/screenshot_capture`, first-run flow | ✅ granted | Manual checklist (PRE_PACKAGING_VERIFICATION) | `Docs/PRE_PACKAGING_VERIFICATION.md` |
 | Accessibility | `modules/permission_restart/macos/permissions_restart_handler.py` | ⚠️ granted, но детектируется через приватный `TCCAccessRequest` → заменить API | `Docs/EXIT_HANDLER_ISSUE_ANALYSIS.md` §3 | (TODO TCC-AX-001) |
 | Input Monitoring | `FirstRunPermissionsIntegration` | ✅ not required post v2 (read-only) | First-run spec | `Docs/first_run_flow_spec.md` |
@@ -43,7 +43,7 @@
 
 | Проверка | Дата | Результат | Логи / артефакты |
 |----------|------|-----------|------------------|
-| First-run + restart (permissions) | 2025-01-08 | ✅ pass | `Docs/COMPREHENSIVE_CHECK_2025-01-08.md`, `log.md` |
+| First-run + restart (permissions) | 2025-01-08 | ✅ pass | `scripts/test_first_run_integration.sh`, `log.md` |
 | TAL hold / restart after permissions | 2025-01-12 | ✅ pass | `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py` |
 | Tray termination (post permissions) | 2025-01-12 | ✅ pass | `Docs/PRE_PACKAGING_VERIFICATION.md`, `scripts/test_tray_termination.py` |
 

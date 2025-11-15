@@ -632,6 +632,10 @@ class SimpleModuleCoordinator:
                             delay_ms = 500
                         await asyncio.sleep(max(0.0, delay_ms / 1000.0))
 
+                        # Get update_in_progress from state_manager (via selector for consistency)
+                        from integration.core.selectors import is_update_in_progress
+                        update_in_progress = is_update_in_progress(self.state_manager)
+                        
                         snapshot = Snapshot(
                             perm_mic=PermissionStatus.GRANTED,  # TODO: использовать реальный статус
                             perm_screen=PermissionStatus.GRANTED,
@@ -641,7 +645,32 @@ class SimpleModuleCoordinator:
                             first_run=self._permissions_in_progress,
                             app_mode=AppMode.SLEEPING,
                             restart_pending=self._restart_pending,  # Use internal state, not state_data (source: permissions.restart_pending.changed event)
+                            update_in_progress=update_in_progress,  # Use selector for consistency
                         )
+
+                        # Shadow-mode: diagnostic logging for update_in_progress
+                        try:
+                            feature_config = self.config._load_config().get("features", {}).get("use_events_for_update_status", {})
+                            if feature_config.get("enabled", False):
+                                # Compare snapshot value vs state_data
+                                state_data_value = bool(self.state_manager.get_state_data("update_in_progress", False))
+                                snapshot_value = snapshot.update_in_progress
+                                if state_data_value != snapshot_value:
+                                    logger.warning(
+                                        "[COORDINATOR] Shadow-mode mismatch: snapshot.update_in_progress=%s vs state_data=%s (session=%s)",
+                                        snapshot_value,
+                                        state_data_value,
+                                        session_id,
+                                    )
+                                else:
+                                    logger.debug(
+                                        "[COORDINATOR] Shadow-mode sync: snapshot.update_in_progress=%s == state_data=%s (session=%s)",
+                                        snapshot_value,
+                                        state_data_value,
+                                        session_id,
+                                    )
+                        except Exception:
+                            pass  # Don't fail if feature flag check fails
 
                         decision = decide_continue_integration_startup(snapshot)
                         decision_duration_ms = int((time.time() - decision_start) * 1000)
@@ -1053,6 +1082,13 @@ class SimpleModuleCoordinator:
             print(f"⏳ [PERMISSIONS] Начат процесс запроса разрешений (session={session_id})")
             logger.info(f"⏳ [PERMISSIONS] Начат процесс запроса разрешений (session={session_id})")
             self._permissions_in_progress = True
+            try:
+                if self.state_manager:
+                    self.state_manager.set_state_data("first_run_in_progress", True)
+                    self.state_manager.set_state_data("first_run_required", True)
+                    self.state_manager.set_state_data("first_run_completed", False)
+            except Exception:
+                logger.debug("[PERMISSIONS] Не удалось обновить first_run state (started)")
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_started: {e}")
 
@@ -1064,6 +1100,13 @@ class SimpleModuleCoordinator:
             print(f"✅ [PERMISSIONS] Запрос разрешений завершен (session={session_id})")
             logger.info(f"✅ [PERMISSIONS] Запрос разрешений завершен (session={session_id})")
             self._permissions_in_progress = False
+            try:
+                if self.state_manager:
+                    self.state_manager.set_state_data("first_run_in_progress", False)
+                    self.state_manager.set_state_data("first_run_required", False)
+                    self.state_manager.set_state_data("first_run_completed", True)
+            except Exception:
+                logger.debug("[PERMISSIONS] Не удалось обновить first_run state (completed)")
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_completed: {e}")
 
@@ -1076,6 +1119,13 @@ class SimpleModuleCoordinator:
             print(f"⚠️ [PERMISSIONS] Ошибка запроса разрешений (session={session_id}): {error}")
             logger.warning(f"⚠️ [PERMISSIONS] Ошибка запроса разрешений (session={session_id}): {error}")
             self._permissions_in_progress = False
+            try:
+                if self.state_manager:
+                    self.state_manager.set_state_data("first_run_in_progress", False)
+                    self.state_manager.set_state_data("first_run_required", True)
+                    self.state_manager.set_state_data("first_run_completed", False)
+            except Exception:
+                logger.debug("[PERMISSIONS] Не удалось обновить first_run state (failed)")
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_failed: {e}")
 

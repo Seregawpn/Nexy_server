@@ -35,7 +35,6 @@
 | `Docs/EXIT_HANDLER_ISSUE_ANALYSIS.md` | TAL, exit handler | Permissions SWAT | ✅ Актуален | Анализ проблемы exit handler, TAL hold |
 | `Docs/RESTART_AFTER_PERMISSIONS_ISSUE_ANALYSIS.md` | Permission restart | Permissions SWAT | ✅ Актуален | Анализ проблемы перезапуска после разрешений |
 | `Docs/TRAY_TERMINATION_FIX.md` | Tray, termination | Tray Controller Owner | ✅ Актуален | Исправление проблемы termination guard |
-| `Docs/COMPREHENSIVE_CHECK_2025-01-08.md` | Тестирование | QA | ✅ Актуален | Комплексная проверка инициализации, EventBus, режимов |
 | `Docs/CRITICAL_PATHS_TEST_REPORT.md` | Тестирование | QA | ✅ Актуален | Отчёт по критическим путям тестирования |
 | `Docs/AUDIO_ISSUES_ANALYSIS.md` | Аудио | Audio Owner | ✅ Актуален | Анализ проблем аудио |
 | `Docs/AUDIO_FIXES_SUMMARY.md` | Аудио | Audio Owner | ✅ Актуален | Резюме исправлений аудио |
@@ -79,7 +78,7 @@
 - **Статус**: ⚠️ Требует обновления (GAP-001)
 
 ### Testing/QA
-- **Документы**: `Docs/COMPREHENSIVE_CHECK_2025-01-08.md`, `Docs/CRITICAL_PATHS_TEST_REPORT.md`, `Docs/TAL_TESTING_CHECKLIST.md`
+- **Документы**: `Docs/CURRENT_STATUS_REPORT.md`, `Docs/CRITICAL_PATHS_TEST_REPORT.md`, `Docs/TAL_TESTING_CHECKLIST.md`
 - **Владелец**: QA
 - **Статус**: ✅ Актуален
 
@@ -111,4 +110,3 @@
 
 **Последнее обновление**: 2025-01-30  
 **Следующая ревизия**: 2025-02-06
-

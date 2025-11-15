@@ -245,10 +245,17 @@ def create_snapshot_from_state(
     except Exception:
         current_mode = AppMode.SLEEPING
     
-    # Get first_run status
-    first_run = bool(state_manager.get_state_data("permissions_restart_pending", False)) or False
-    # TODO: Get actual first_run flag from FirstRunPermissionsIntegration if needed
-    
+    # Get first_run status (prefer explicit state, fallback to completion flag)
+    try:
+        first_run_required = state_manager.get_state_data("first_run_required", None)
+    except Exception:
+        first_run_required = None
+    if first_run_required is None:
+        completed = bool(state_manager.get_state_data("first_run_completed", False))
+        first_run = not completed
+    else:
+        first_run = bool(first_run_required)
+
     # Get restart_pending status
     restart_pending = bool(state_manager.get_state_data("permissions_restart_pending", False))
     
@@ -273,5 +280,4 @@ def create_snapshot_from_state(
         restart_pending=restart_pending,
         update_in_progress=update_in_progress,
     )
-
 

@@ -88,6 +88,9 @@ class FirstRunPermissionsIntegration:
                 restart_flag_path,
             )
 
+        # Фиксируем базовое состояние first_run (флаг присутствует → процедура завершена)
+        self._update_first_run_state(completed=self.flag_file.exists(), in_progress=False)
+
         self._initialized = False
         self._running = False
         self._permissions_in_progress = False
@@ -102,6 +105,7 @@ class FirstRunPermissionsIntegration:
             self._restart_session_id = None
             self._permissions_in_progress = False
             self.state_manager.set_state_data("permissions_restart_pending", False)
+            self._update_first_run_state(completed=self.flag_file.exists(), in_progress=False)
 
             # КРИТИЧНО: Проверяем был ли перезапуск после first_run
             # Это позволяет опубликовать completed ТОЛЬКО после успешного перезапуска
@@ -155,6 +159,7 @@ class FirstRunPermissionsIntegration:
                     "[FIRST_RUN_PERMISSIONS] ✅ Флаги обработаны: restart_completed.flag удалён, "
                     "permissions_first_run_completed.flag сохранён"
                 )
+                self._update_first_run_state(completed=True, in_progress=False)
                 
                 # Устанавливаем fallback флаг в state_manager (для других интеграций)
                 self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
@@ -174,6 +179,7 @@ class FirstRunPermissionsIntegration:
                 )
                 self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
                 logger.info("[FIRST_RUN_PERMISSIONS] Set restart_completed_fallback=True in state_manager (flag only)")
+                self._update_first_run_state(completed=True, in_progress=False)
 
             if not self.enabled:
                 logger.info("ℹ️ [FIRST_RUN_PERMISSIONS] Отключено в конфиге")
@@ -218,12 +224,14 @@ class FirstRunPermissionsIntegration:
                     self._safe_touch_flag(self.flag_file, "permissions_first_run_completed")
                     self._safe_touch_flag(self._restart_flag, "restart_completed")
                     logger.info("🧪 [FIRST_RUN_PERMISSIONS] Флаги созданы - при следующем запуске будет эмулирован перезапуск")
-                
+                    self._update_first_run_state(completed=True, in_progress=False)
+            
                 return True
 
             # Проверяем флаг первого запуска
             if self.flag_file.exists():
                 logger.info("✅ [FIRST_RUN_PERMISSIONS] Первый запуск уже завершён - пропускаем")
+                self._update_first_run_state(completed=True, in_progress=False)
                 return True
 
             # Если флага нет, но ВСЕ разрешения уже выданы - считаем что первый запуск был
@@ -238,6 +246,7 @@ class FirstRunPermissionsIntegration:
                 screen_status == PermissionStatus.GRANTED and
                 input_status == PermissionStatus.GRANTED):
                 logger.info("✅ [FIRST_RUN_PERMISSIONS] Все разрешения уже выданы - первый запуск был ранее")
+                self._update_first_run_state(completed=True, in_progress=False)
                 return True
 
             # ПЕРВЫЙ ЗАПУСК!
@@ -249,6 +258,7 @@ class FirstRunPermissionsIntegration:
                 "session_id": session_id,
                 "source": "first_run_permissions_integration"
             })
+            self._update_first_run_state(completed=False, in_progress=True)
 
             self._running = True
             self._permissions_in_progress = True
@@ -269,6 +279,8 @@ class FirstRunPermissionsIntegration:
                     # Сбрасываем состояние и продолжаем без перезапуска
                     self._handle_restart_failure()
                     return False
+
+                self._update_first_run_state(completed=True, in_progress=True)
 
                 # ВАЖНО: НЕ сбрасываем флаг permissions_in_progress!
                 # Это предотвратит запуск остальных интеграций (voice_recognition и т.д.)
@@ -329,6 +341,7 @@ class FirstRunPermissionsIntegration:
             # Сбрасываем флаги состояния
             self._running = False
             self._permissions_in_progress = False
+            self._update_first_run_state(completed=False, in_progress=False)
 
             # Сохраняем флаг даже при ошибке чтобы не застрять в цикле
             if not self._safe_touch_flag(self.flag_file, "permissions_first_run_completed (after error)"):
@@ -665,6 +678,21 @@ class FirstRunPermissionsIntegration:
                 )
         except Exception as exc:
             logger.error(f"[FIRST_RUN_PERMISSIONS] ❌ Ошибка обработки permissions_first_run_completed.flag: {exc}")
+
+    def _update_first_run_state(self, *, completed: Optional[bool] = None, in_progress: Optional[bool] = None) -> None:
+        """Синхронизирует состояние first_run в state_manager (fallback для селекторов)."""
+        try:
+            if completed is not None:
+                self.state_manager.set_state_data("first_run_completed", completed)
+                self.state_manager.set_state_data("first_run_required", not completed)
+            if in_progress is not None:
+                self.state_manager.set_state_data("first_run_in_progress", in_progress)
+        except Exception:
+            logger.debug(
+                "[FIRST_RUN_PERMISSIONS] Не удалось обновить состояние first_run (completed=%s, in_progress=%s)",
+                completed,
+                in_progress,
+            )
 
     def _handle_restart_failure(self) -> None:
         """Fallback: разблокируем интеграции и очищаем флаг."""

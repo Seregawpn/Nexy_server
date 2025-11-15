@@ -9,7 +9,7 @@
 
 | Канал | Статус | Комментарий / источники |
 |-------|--------|-------------------------|
-| Dev (CLI) | ✅ активен | Все интеграции инициализируются без ошибок (`Docs/COMPREHENSIVE_CHECK_2025-01-08.md`). |
+| Dev (CLI) | ✅ активен | Все интеграции инициализируются без ошибок (`scripts/run_release_suite.py`). |
 | Beta (подписанный `.app`) | ✅ сборка протестирована | `Docs/PRE_PACKAGING_VERIFICATION.md` + `Docs/PACKAGING_READINESS_CHECKLIST.md` фиксируют полный проход чек-листа. |
 | Production rollout | ⏳ готовим контрольный список | Сборка/нотаризация готовы; ждём утверждения по `GLOBAL_DELIVERY_PLAN.md`. |
 
@@ -23,8 +23,8 @@
 | Permission Restart & TAL | ✅ Исправлено, тесты в green | `Docs/TAL_TESTING_CHECKLIST.md`, `Docs/EXIT_HANDLER_ISSUE_ANALYSIS.md` | TAL hold обновляется каждые 30 с, timeout увеличен до 120 с, сценарии happy/fatal покрыты. |
 | Tray / Application termination guard | ✅ Готово | `Docs/TRAY_TERMINATION_FIX.md`, `Docs/PRE_PACKAGING_VERIFICATION.md` | `applicationShouldTerminate()` now returns `False`, quit handler настроен до `app.run()`. |
 | Packaging / Notarization | ✅ Process locked | `Docs/PACKAGING_FINAL_GUIDE.md`, `Docs/PRE_PACKAGING_VERIFICATION.md` | PyInstaller → pkgbuild/productbuild → notarization dry-run прошли, см. логи в `rebuild_logs/`. |
-| Audio pipeline & playback | ✅ Stable | `Docs/COMPREHENSIVE_CHECK_2025-01-08.md`, `Docs/PLAYBACK_LOGIC_CHECK.md` | Lazy start/stop работает, Bluetooth (AirPods) подтверждён. |
-| Voice recognition | ✅ baseline | `modules/voice_recognition/core/*`, `Docs/LOG_ANALYSIS_2025-01-08.md` | Нет регрессий в логах, EventBus события `voice.recognition.*` публикуются. |
+| Audio pipeline & playback | ✅ Stable | `Docs/PLAYBACK_LOGIC_CHECK.md`, `scripts/run_release_suite.py` | Lazy start/stop работает, Bluetooth (AirPods) подтверждён. |
+| Voice recognition | ✅ baseline | `modules/voice_recognition/core/*`, `scripts/run_release_suite.py` | Нет регрессий в логах, EventBus события `voice.recognition.*` публикуются. |
 
 ---
 
@@ -40,7 +40,7 @@
 
 ## 4. Проверки и метрики
 
-- ✅ `Docs/COMPREHENSIVE_CHECK_2025-01-08.md` — green (инициализация, EventBus, режимы, Bluetooth playback).
+- ✅ Release suite (`scripts/run_release_suite.py`) — green (инициализация, EventBus, режимы, Bluetooth playback).
 - ✅ `scripts/test_tray_termination.py`, `scripts/test_critical_paths.py`, `scripts/test_tal_assertion.py` — последний прогон см. `Docs/PRE_PACKAGING_VERIFICATION.md`.
 - ✅ Machine checks: `scripts/validate_schemas.py`, `scripts/verify_no_direct_state_access.py`, `scripts/verify_rule_coverage.py` — включены в CI (`.github/workflows/ci.yml`).
 - ✅ Packaging Regression Checklist (см. `.cursorrules §11.2`) — заполнен, логи в `rebuild_logs/`.

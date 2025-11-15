@@ -90,7 +90,7 @@
 - **Owner**: Tech Lead клиента
 - **Ожидаемый результат**: Все интеграции инициализируются в правильном порядке без ошибок
 - **Implementation**: `integration/core/simple_module_coordinator.py::_create_integrations()`
-- **Verification**: `Docs/COMPREHENSIVE_CHECK_2025-01-08.md`, логи инициализации
+- **Verification**: `scripts/run_release_suite.py`, логи инициализации
 
 ### REQ-007: EventBus контракты для интеграций
 - **Домен**: Client Runtime / Integration
@@ -134,7 +134,7 @@
 - **Owner**: Permissions SWAT
 - **Ожидаемый результат**: Все разрешения запрашиваются последовательно, флаг `permissions_first_run_completed.flag` создаётся после завершения
 - **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `modules/permissions/first_run/*`
-- **Verification**: `Docs/COMPREHENSIVE_CHECK_2025-01-08.md`, `scripts/clear_first_run_flags.py`, логи first-run
+- **Verification**: `scripts/test_first_run_integration.sh`, `scripts/clear_first_run_flags.py`, логи first-run
 
 ### REQ-011: Permission restart после выдачи разрешений
 - **Домен**: Permissions/TCC
@@ -353,11 +353,11 @@
 | REQ-003 | `integration/core/selectors.py`, `integration/core/gateways/` | `scripts/verify_no_direct_state_access.py`, `tests/test_gateways.py` | Tech Lead клиента |
 | REQ-004 | `pyproject.toml`, `scripts/verify_no_direct_state_access.py` | `scripts/verify_no_direct_state_access.py` (CI) | Tech Lead клиента |
 | REQ-005 | `integration/core/gateways/` | `tests/test_gateways.py` | Tech Lead клиента |
-| REQ-006 | `integration/core/simple_module_coordinator.py` | `Docs/COMPREHENSIVE_CHECK_2025-01-08.md` | Tech Lead клиента |
+| REQ-006 | `integration/core/simple_module_coordinator.py` | `scripts/run_release_suite.py` | Tech Lead клиента |
 | REQ-007 | README модулей, `integration/integrations/*.py` | Ревью кода | Tech Lead клиента |
 | REQ-008 | `integration/core/error_handler.py` | Логи ошибок | Tech Lead клиента |
 | REQ-009 | Все интеграции | Логи событий | Tech Lead клиента |
-| REQ-010 | `integration/integrations/first_run_permissions_integration.py` | `Docs/COMPREHENSIVE_CHECK_2025-01-08.md`, `scripts/clear_first_run_flags.py` | Permissions SWAT |
+| REQ-010 | `integration/integrations/first_run_permissions_integration.py` | `scripts/test_first_run_integration.sh`, `scripts/clear_first_run_flags.py` | Permissions SWAT |
 | REQ-011 | `integration/integrations/permission_restart_integration.py`, `modules/permission_restart/` | `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py` | Permissions SWAT |
 | REQ-012 | `integration/core/simple_module_coordinator.py` | `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py` | Permissions SWAT |
 | REQ-013 | `modules/permission_restart/macos/permissions_restart_handler.py` | Unit тесты | Permissions SWAT |
@@ -412,4 +412,3 @@
 
 **Последнее обновление**: 2025-01-30  
 **Следующая ревизия**: 2025-02-06
-
