@@ -2,15 +2,17 @@
 
 ## 1. Документы перед началом
 Перед изменениями обнови контекст по ключевым файлам:
-- `Docs/PROJECT_REQUIREMENTS.md` — единый snapshot требований (обязательно при изменении логики)
+- `Docs/PROJECT_REQUIREMENTS.md` — единый snapshot требований (обязательно при изменении логики, см. раздел 11.3)
 - `Docs/REQUIREMENTS_SOURCE_MAP.md` — карта всех документов требований с их статусом
 - `Docs/PRODUCT_CONCEPT.md` — пользовательские сценарии и режимы
 - `Docs/ARCHITECTURE_OVERVIEW.md` — связь модулей и интеграций
 - `Docs/CURRENT_STATUS_REPORT.md` — актуальные истории, риски и тесты
-- `Docs/GLOBAL_DELIVERY_PLAN.md` — фазы поставки, Azure/AppCast
-- `Docs/PACKAGING_FINAL_GUIDE.md` и `client/modules/*/MACOS_PACKAGING_GUIDE.md` — пайплайн сборки и подписи
+- `Docs/GLOBAL_DELIVERY_PLAN.md` — фазы поставки, Azure/AppCast (обновлён с ссылками на новый процесс)
+- `Docs/PACKAGING_FINAL_GUIDE.md` и `client/modules/*/MACOS_PACKAGING_GUIDE.md` — пайплайн сборки и подписи (обновлён с ссылками на новый процесс)
 - `Docs/PRE_PACKAGING_VERIFICATION.md` + `Docs/PACKAGING_READINESS_CHECKLIST.md` — фактические результаты чек-листов упаковки
 - `PERMISSIONS_REPORT.md` + `Docs/first_run_flow_spec.md` — статусы разрешений/TCC и логика first-run
+
+**ВАЖНО:** Любое изменение логики начинается с обновления `Docs/PROJECT_REQUIREMENTS.md` (см. раздел 11.3). Это обязательный процесс регулярного аудита требований.
 
 ### 1.1 Источник истины для TCC/First-Run/Restart
 
@@ -333,6 +335,168 @@ first_run_permissions:
 - `scripts/pre_build_gate.sh` — скрипт pre-build gate
 - `.github/workflows/ci.yml` — CI интеграция
 - `Docs/PROJECT_REQUIREMENTS.md` — требования REQ-023 (Machine-enforced правила)
+
+### 11.5 Release Suite (RELEASE_INTEGRITY_PLAN этап 3)
+
+**ОБЯЗАТЕЛЬНО**: Перед релизом запускается `scripts/run_release_suite.py` для выполнения полного цикла интеграционных проверок.
+
+**Что проверяет Release Suite**:
+1. **Pre-build gate**: все обязательные проверки перед сборкой
+2. **Сборка dev-билда**: PyInstaller сборка клиента
+3. **Проверка логов**: headless запуск и проверка логов на соответствие спецификациям (AppKit fix, TAL удержание, first-run)
+4. **Интеграционные тесты**: критические тесты (gateways, init order, permission restart)
+5. **Проверки сервера**: gRPC health check, AppCast доступность
+6. **Сверка требований**: соответствие PROJECT_REQUIREMENTS с тестами
+
+**Использование**:
+```bash
+# Полный цикл проверок
+python scripts/run_release_suite.py
+
+# С опциями
+python scripts/run_release_suite.py --smoke         # Smoke mode: быстрые проверки без сборки и сервера
+python scripts/run_release_suite.py --skip-build    # Пропустить сборку
+python scripts/run_release_suite.py --skip-server   # Пропустить проверки сервера
+python scripts/run_release_suite.py --output report.json  # Сохранить отчёт
+```
+
+**JSON-отчёт**: Release Suite возвращает JSON-отчёт с результатами всех проверок (`release_suite_report.json`).
+
+**Exit codes**:
+- `0` — все проверки пройдены, можно продолжать релиз
+- `1` — хотя бы одна проверка провалена, релиз блокируется
+
+**Связанные документы**:
+- `scripts/run_release_suite.py` — скрипт Release Suite
+- `Docs/PROJECT_REQUIREMENTS.md` — требования для сверки
+- `RELEASE_INTEGRITY_PLAN.md` — полный план целостности релиза
+
+### 11.6 Prepare Release (RELEASE_INTEGRITY_PLAN этап 4)
+
+**ОБЯЗАТЕЛЬНО**: Перед релизом запускается `scripts/prepare_release.sh` для выполнения полной цепочки подготовки релиза.
+
+**Что выполняет prepare_release**:
+1. **Pre-build gate**: все обязательные проверки перед сборкой
+2. **Release Suite**: полный цикл интеграционных проверок
+3. **PyInstaller сборка**: создание .app через rebuild_from_scratch.sh
+4. **Встраивание метаданных**: копирование VERSION_INFO.json и release_suite_report.json в .app
+5. **PKG создание**: pkgbuild и productbuild через build_final.sh
+6. **Нотарификация**: проверка статуса нотарификации (выполняется в build_final.sh)
+7. **Валидация бандла**: проверка метаданных и отчётов через validate_release_bundle.py
+
+**Использование**:
+```bash
+# Полная цепочка подготовки релиза
+./scripts/prepare_release.sh
+
+# С опциями
+./scripts/prepare_release.sh --skip-tests          # Пропустить тесты в pre-build gate
+./scripts/prepare_release.sh --skip-notarization    # Пропустить проверку нотарификации
+./scripts/prepare_release.sh --dry-run             # Режим dry-run (команды не выполняются)
+```
+
+**Exit codes**:
+- `0` — все шаги пройдены, релиз готов
+- `1` — хотя бы один шаг провален, релиз блокируется
+
+**Связанные документы**:
+- `scripts/prepare_release.sh` — скрипт подготовки релиза
+- `scripts/validate_release_bundle.py` — валидация релизного бандла
+- `packaging/build_final.sh` — финальная сборка и нотарификация
+- `RELEASE_INTEGRITY_PLAN.md` — полный план целостности релиза
+
+### 11.7 Validate Release Bundle
+
+**ОБЯЗАТЕЛЬНО**: Перед загрузкой на сервер запускается `scripts/validate_release_bundle.py` для проверки метаданных артефакта.
+
+**Что проверяет validate_release_bundle**:
+1. **Структура .app**: наличие обязательных путей (Contents/Info.plist, Contents/MacOS/Nexy, Contents/Resources)
+2. **Info.plist**: валидность и наличие обязательных ключей (CFBundleIdentifier, CFBundleVersion)
+3. **VERSION_INFO.json**: наличие и валидность метаданных (version, req_version, req_checksum)
+4. **release_suite_report.json**: наличие и валидность отчёта Release Suite
+5. **Подпись кода**: проверка через `codesign --verify`
+6. **Нотарификация**: проверка через `xcrun stapler validate`
+7. **PKG (опционально)**: проверка подписи и нотарификации PKG
+
+**Использование**:
+```bash
+# Валидация .app
+python scripts/validate_release_bundle.py dist/Nexy.app
+
+# Валидация .app и .pkg
+python scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
+```
+
+**Exit codes**:
+- `0` — все проверки пройдены
+- `1` — есть ошибки валидации
+
+**Связанные документы**:
+- `scripts/validate_release_bundle.py` — скрипт валидации
+- `RELEASE_INTEGRITY_PLAN.md` — полный план целостности релиза
+
+### 11.8 Continuous Verification (RELEASE_INTEGRITY_PLAN этап 5)
+
+**ОБЯЗАТЕЛЬНО**: CI обеспечивает непрерывную проверку качества через автоматические проверки.
+
+**Что включает Continuous Verification**:
+1. **На PR**: pre-build gate + усечённый release suite (smoke mode)
+2. **Nightly**: полный release suite + отчёт о покрытии требований
+3. **Автоматические отчёты**: покрытие требований (что проверено, что нет)
+
+**CI Workflow**:
+- **pre-build-gate**: запускается на всех событиях (PR, push, schedule, workflow_dispatch)
+- **release-suite-smoke**: запускается только на PR (быстрые проверки без сборки и сервера)
+- **release-suite-full**: запускается на schedule (nightly) и workflow_dispatch (ручной запуск)
+
+**Отчёты**:
+- `release_suite_report.json` — результаты Release Suite (загружается как артефакт)
+- `requirements_coverage_report.json` — покрытие требований (только в nightly)
+
+**Использование**:
+```bash
+# Генерация отчёта о покрытии требований
+python scripts/generate_requirements_coverage.py --output requirements_coverage_report.json
+```
+
+**Связанные документы**:
+- `.github/workflows/ci.yml` — CI workflow с nightly builds
+- `scripts/generate_requirements_coverage.py` — генерация отчёта о покрытии требований
+- `RELEASE_INTEGRITY_PLAN.md` — полный план целостности релиза
+
+### 11.9 Continuous Monitoring (RELEASE_INTEGRITY_PLAN этап 8)
+
+**ОБЯЗАТЕЛЬНО**: Непрерывный мониторинг метрик и SLO обеспечивает контроль качества в production.
+
+**Что включает Continuous Monitoring**:
+1. **Мониторинг метрик**: анализ логов и извлечение метрик из `client/metrics/registry.md`
+2. **Проверка SLO**: автоматическая проверка соответствия метрик SLO порогам
+3. **Отчёты**: генерация JSON-отчётов о производительности и нарушениях SLO
+4. **Интеграция в CI**: проверка SLO в nightly builds и перед релизом
+
+**Использование**:
+```bash
+# Анализ метрик из лог-файла
+python scripts/monitor_metrics.py --log-file log.md --output metrics_report.json
+
+# Проверка SLO с выходом при нарушениях
+python scripts/monitor_metrics.py --log-file log.md --check-slo
+
+# Автоматический поиск последнего лог-файла
+python scripts/monitor_metrics.py --output metrics_report.json
+```
+
+**SLO пороги**: Определены в `client/metrics/registry.md` и проверяются автоматически.
+
+**Exit codes**:
+- `0` — все метрики соответствуют SLO порогам (или проверка не выполнялась)
+- `1` — обнаружены нарушения SLO (только с флагом `--check-slo`)
+
+**Связанные документы**:
+- `scripts/monitor_metrics.py` — скрипт мониторинга метрик
+- `client/metrics/registry.md` — реестр метрик и SLO порогов
+- `tests/perf/test_slo.py` — тесты SLO
+- `RELEASE_INTEGRITY_PLAN.md` — полный план целостности релиза
 
 ### 11.2 Packaging Regression Checklist
 - Любые изменения, влияющие на рантайм, ресурсы, конфигурацию, зависимости или упаковку, сопровождаются заполненным checklist до ревью.

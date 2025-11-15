@@ -5,6 +5,10 @@ on:
     branches: [main, develop]
   push:
     branches: [main, develop]
+  schedule:
+    # Nightly build: каждый день в 2:00 UTC (5:00 MSK)
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Ручной запуск
 
 jobs:
   pre-build-gate:
@@ -22,6 +26,84 @@ jobs:
         run: |
           ./scripts/pre_build_gate.sh --verbose
         continue-on-error: false
+
+  release-suite-smoke:
+    name: Release Suite (Smoke - PR only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'  # Только на PR
+    needs: [pre-build-gate]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install ruff pytest jsonschema pyyaml
+      - name: Run Release Suite (smoke)
+        run: |
+          python scripts/run_release_suite.py --smoke --output release_suite_report.json
+        continue-on-error: false
+      - name: Upload Release Suite Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-suite-report-smoke
+          path: release_suite_report.json
+          retention-days: 7
+
+  release-suite-full:
+    name: Release Suite (Full - Nightly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'  # Nightly или ручной запуск
+    needs: [pre-build-gate]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install ruff pytest jsonschema pyyaml
+      - name: Run Release Suite (full)
+        run: |
+          python scripts/run_release_suite.py --output release_suite_report.json
+        continue-on-error: false
+      - name: Upload Release Suite Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-suite-report-full
+          path: release_suite_report.json
+          retention-days: 30
+      - name: Generate Requirements Coverage Report
+        if: always()
+        run: |
+          python scripts/generate_requirements_coverage.py --output requirements_coverage_report.json
+      - name: Upload Requirements Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: requirements-coverage-report
+          path: requirements_coverage_report.json
+          retention-days: 30
+      - name: Monitor Metrics and SLO
+        if: always()
+        run: |
+          # Пробуем найти лог-файлы для анализа (если есть)
+          if [ -f "log.md" ]; then
+            python scripts/monitor_metrics.py --log-file log.md --output metrics_report.json || true
+          else
+            echo "Лог-файл не найден, пропускаем мониторинг метрик"
+          fi
+      - name: Upload Metrics Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: metrics-report
+          path: metrics_report.json
+          retention-days: 30
+          if-no-files-found: ignore
 
   # Отдельные джобы для детального отчёта (опционально, можно отключить если pre-build-gate достаточно)
   lint:

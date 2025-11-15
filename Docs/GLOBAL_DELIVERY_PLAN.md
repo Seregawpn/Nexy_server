@@ -4,6 +4,12 @@
 **Владелец:** Release/Delivery (Tech Lead клиента)  
 **Назначение:** единый план вывода настольного клиента Nexy на dev/beta/prod окружения, включая упаковку, подпись, распространение и Azure/AppCast интеграцию.
 
+**Связанные документы:**
+- `Docs/PROJECT_REQUIREMENTS.md` — единый snapshot требований (req_version, checksum)
+- `Docs/PACKAGING_FINAL_GUIDE.md` — инструкции по упаковке и нотарификации
+- `Docs/CURRENT_STATUS_REPORT.md` — актуальный статус проекта
+- `.cursorrules` — правила разработки и процесс обновления требований (раздел 11.3)
+
 ---
 
 ## 1. Цели и критерии готовности
@@ -31,16 +37,21 @@
 
 ## 3. Технический пайплайн
 
-1. **Сборка:** `rebuild_from_scratch.sh` (PyInstaller) → артефакт в `dist/Nexy.app`.
-2. **PKG:** следуем `Docs/PACKAGING_FINAL_GUIDE.md` (pkgbuild + productbuild).
-3. **Подпись:** Developer ID Application / Installer (certs в CI keychain).
-4. **Нотарификация:** `xcrun notarytool submit ... --wait`, stapler на `.pkg`.
-5. **Smoke:** `cold_start_diagnostics.sh`, manual run из `dist/`.
-6. **Публикация:**  
-   - `.pkg` грузится в защищённый Azure Storage / CDN.  
-   - `appcast.xml` обновляется новым `<item>` (версия, подпись, SHA256).  
-   - Sparkle (или кастомный апдейтер) указывает на staging feed до GA.
-7. **Telemetry hook:** после публикации следим за `client/metrics/registry.md` метриками: `permission_flow_success`, `start_listening_p95`, `stream_open_success_rate`.
+1. **Requirements audit** — проверка соответствия изменений `Docs/PROJECT_REQUIREMENTS.md` (см. `.cursorrules` раздел 11.3).
+2. **Pre-build gate** — `scripts/pre_build_gate.sh` выполняет все обязательные проверки (см. `.cursorrules` раздел 11.4).
+3. **Release Suite** — `scripts/run_release_suite.py` выполняет интеграционные проверки (см. `.cursorrules` раздел 11.5).
+4. **Prepare Release** — `scripts/prepare_release.sh` выполняет полную цепочку подготовки релиза (см. `.cursorrules` раздел 11.6).
+5. **Сборка:** `rebuild_from_scratch.sh` (PyInstaller) → артефакт в `dist/Nexy.app`.
+6. **PKG:** следуем `Docs/PACKAGING_FINAL_GUIDE.md` (pkgbuild + productbuild).
+7. **Подпись:** Developer ID Application / Installer (certs в CI keychain).
+8. **Нотарификация:** `xcrun notarytool submit ... --wait`, stapler на `.pkg`.
+9. **Validate Bundle** — `scripts/validate_release_bundle.py` проверяет метаданные артефакта (см. `.cursorrules` раздел 11.7).
+10. **Smoke:** `cold_start_diagnostics.sh`, manual run из `dist/`.
+11. **Публикация:**  
+    - `.pkg` грузится в защищённый Azure Storage / CDN.  
+    - `appcast.xml` обновляется новым `<item>` (версия, подпись, SHA256).  
+    - Sparkle (или кастомный апдейтер) указывает на staging feed до GA.
+12. **Telemetry hook:** после публикации следим за `client/metrics/registry.md` метриками: `permission_flow_success`, `start_listening_p95`, `stream_open_success_rate`.
 
 ---
 

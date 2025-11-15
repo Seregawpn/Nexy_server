@@ -61,6 +61,33 @@
   - Обновлён `.github/workflows/ci.yml` — добавлен job `pre-build-gate` для автоматической проверки в CI
   - Pre-build gate включает: линтеры, unit-тесты, статические проверки, специализированные проверки (TAL, permissions, updater)
   - Обновлён `.cursorrules` с процессом pre-build gate (раздел 11.4)
+- **Этап 3 Release Suite (RELEASE_INTEGRITY_PLAN) завершён**:
+  - Создан `scripts/run_release_suite.py` — полный цикл интеграционных проверок перед релизом
+  - Release Suite включает: сборку dev-билда, проверку логов, интеграционные тесты, проверки сервера, сверку требований
+  - Release Suite возвращает JSON-отчёт с результатами всех проверок
+  - Обновлён `.cursorrules` с процессом Release Suite (раздел 11.5)
+- **Этап 4 Prepare Release (RELEASE_INTEGRITY_PLAN) завершён**:
+  - Создан `scripts/prepare_release.sh` — полная цепочка подготовки релиза (pre_build_gate → run_release_suite → PyInstaller/pkgbuild → notarization)
+  - Создан `scripts/validate_release_bundle.py` — проверка метаданных артефакта перед загрузкой на сервер
+  - Prepare Release включает: все проверки, сборку, встраивание метаданных, создание PKG, валидацию
+  - Обновлён `.cursorrules` с процессом Prepare Release (разделы 11.6, 11.7)
+- **Этап 5 Continuous Verification (RELEASE_INTEGRITY_PLAN) завершён**:
+  - Обновлён `.github/workflows/ci.yml` — добавлены smoke release suite на PR и full release suite на nightly
+  - Создан `scripts/generate_requirements_coverage.py` — генерация отчёта о покрытии требований
+  - Release Suite поддерживает smoke mode для быстрых проверок на PR
+  - Nightly builds выполняют полный release suite и генерируют отчёт о покрытии требований
+  - Обновлён `.cursorrules` с процессом Continuous Verification (раздел 11.8)
+- **Этап 6 Обновление документации (RELEASE_INTEGRITY_PLAN) завершён**:
+  - Обновлён `Docs/GLOBAL_DELIVERY_PLAN.md` — добавлены ссылки на новый процесс (pre-build gate, release suite, prepare release, validate bundle)
+  - Обновлён `Docs/PACKAGING_FINAL_GUIDE.md` — добавлены ссылки на новый процесс и валидацию бандла
+  - Обновлён `.cursorrules` — усилен раздел 1 с напоминанием о регулярном аудите требований
+  - Обновлён `Docs/CURRENT_STATUS_REPORT.md` — добавлена ссылка на процесс обновления требований
+  - Все основные документы теперь ссылаются на `Docs/PROJECT_REQUIREMENTS.md` и новый процесс
+- **Этап 8 Continuous Monitoring (RELEASE_INTEGRITY_PLAN) завершён**:
+  - Создан `scripts/monitor_metrics.py` — мониторинг метрик и проверка SLO порогов
+  - Мониторинг извлекает метрики из логов и проверяет соответствие SLO порогам из `client/metrics/registry.md`
+  - Генерирует JSON-отчёты о производительности и нарушениях SLO
+  - Обновлён `.cursorrules` с процессом Continuous Monitoring (раздел 11.9)
 - Консолидация TAL документации → `Docs/TAL_TESTING_CHECKLIST.md` (вместо 5 разных файлов).
 - Добавлен Packaging Readiness summary, теперь статус перед релизом фиксируется в одном месте.
 - Убраны дублирующие скрипты схем (только `scripts/validate_schemas.py`).
@@ -69,7 +96,7 @@
 
 ## 6. Следующие шаги
 
-1. **RELEASE_INTEGRITY_PLAN этап 3**: Реализовать Release Suite (интеграционный цикл) — сборка dev-билда, headless запуск, критические интеграционные тесты.
+1. **RELEASE_INTEGRITY_PLAN завершён**: Все этапы (1-6, 8) реализованы. Документация обновлена с ссылками на новый процесс и snapshot требований. Мониторинг метрик и SLO настроен.
 2. Закрыть TCC-AX-001 (обновить интеграцию + добавить тесты) до следующего релиза.
 3. Заполнить `Docs/GLOBAL_DELIVERY_PLAN.md` деталями по Azure/AppCast rollout и согласовать с Ops.
 4. Освежить этот отчёт после следующего полного прогона `rebuild_from_scratch.sh` и TAL чек-листа.
@@ -77,3 +104,5 @@
 ---
 
 **Примечание:** Этот файл — оперативный источник статуса. Все структурные правила и инварианты по-прежнему берём из `.cursorrules`, `Docs/STATE_CATALOG.md`, `Docs/PROJECT_REQUIREMENTS.md` и `Docs/PACKAGING_FINAL_GUIDE.md`.
+
+**Процесс обновления требований:** Любые изменения логики начинаются с обновления `Docs/PROJECT_REQUIREMENTS.md`. См. `.cursorrules` раздел 11.3 для деталей процесса.

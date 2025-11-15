@@ -4,6 +4,12 @@
 
 > Это базовый и единственный источник инструкций по сборке `.app` + `.pkg`, подписи и нотарификации. Все чек-листы (`Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md`, `.cursorrules §11.2`) обязаны ссылаться на этот файл и фиксировать фактические результаты.
 
+**Связанные документы:**
+- `Docs/PROJECT_REQUIREMENTS.md` — единый snapshot требований (REQ-016, REQ-017, REQ-018)
+- `scripts/prepare_release.sh` — полная цепочка подготовки релиза (см. `.cursorrules` раздел 11.6)
+- `scripts/validate_release_bundle.py` — проверка метаданных артефакта (см. `.cursorrules` раздел 11.7)
+- `.cursorrules` — правила разработки и Packaging Regression Checklist (раздел 11.2)
+
 ---
 
 ## 1. Требования окружения
@@ -18,6 +24,9 @@
 ---
 
 ## 2. Сборка `.app` (PyInstaller)
+
+**ВАЖНО:** Перед сборкой убедись, что выполнены все проверки из `scripts/prepare_release.sh` (pre-build gate, release suite). См. `.cursorrules` раздел 11.6.
+
 1. Активируй виртуальное окружение (`source .venv/bin/activate`).
 2. Выполни `./rebuild_from_scratch.sh` **или** вручную:
    ```bash
@@ -94,7 +103,30 @@
 
 ---
 
-## 6. Smoke-тесты после сборки
+## 6. Валидация релизного бандла
+
+**ОБЯЗАТЕЛЬНО:** Перед загрузкой на сервер выполни валидацию метаданных:
+
+```bash
+# Валидация .app
+python scripts/validate_release_bundle.py dist/Nexy.app
+
+# Валидация .app и .pkg
+python scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
+```
+
+Скрипт проверяет:
+- Структуру .app (обязательные пути)
+- Info.plist (валидность и обязательные ключи)
+- VERSION_INFO.json (метаданные версии и требований)
+- release_suite_report.json (отчёт Release Suite)
+- Подпись кода и нотарификацию
+
+См. `.cursorrules` раздел 11.7 для деталей.
+
+---
+
+## 7. Smoke-тесты после сборки
 1. Запустить `.app` напрямую из `dist/`.
 2. Выполнить `./cold_start_diagnostics.sh`.
 3. Пройти сценарии из `Docs/PRE_PACKAGING_VERIFICATION.md` (tray quit handler, first-run, TAL).
@@ -102,7 +134,7 @@
 
 ---
 
-## 7. Публикация / AppCast
+## 8. Публикация / AppCast
 1. Загрузить `.pkg` в staging Azure Storage или CDN (`nexy-stage`).
 2. Обновить `appcast-stage.xml` (Sparkle) через `scripts/fire_manual_update.py`.
 3. Мониторить telemetry ≥24 ч, затем перенести item в `appcast-prod.xml`.
@@ -110,7 +142,7 @@
 
 ---
 
-## 8. Траблшутинг
+## 9. Траблшутинг
 - **Auto-termination после запуска:** см. `Docs/EXIT_HANDLER_ISSUE_ANALYSIS.md`, `Docs/TAL_TESTING_CHECKLIST.md`.
 - **Permission restart issues:** см. `PERMISSIONS_REPORT.md`, `Docs/first_run_flow_spec.md`.
 - **Ошибки notarization:** проверь права на Apple ID, корректность `--primary-bundle-id`, повтори `notarytool history --limit 5`.
@@ -118,7 +150,7 @@
 
 ---
 
-## 9. Чек-листы и отчёты
+## 10. Чек-листы и отчёты
 - **Перед упаковкой:** `Docs/PRE_PACKAGING_VERIFICATION.md`.
 - **Резюме статуса:** `Docs/PACKAGING_READINESS_CHECKLIST.md`.
 - **Process rules:** `.cursorrules §11.2 Packaging Regression Checklist`.
