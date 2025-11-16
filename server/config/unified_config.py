@@ -438,13 +438,15 @@ class FeaturesConfig:
     use_module_coordinator: bool = True
     use_workflow_integrations: bool = True
     use_fallback_manager: bool = True
+    forward_assistant_actions: bool = False  # MCP command forwarding (Phase 1)
     
     @classmethod
     def from_env(cls) -> 'FeaturesConfig':
         return cls(
             use_module_coordinator=os.getenv('USE_MODULE_COORDINATOR', 'true').lower() == 'true',
             use_workflow_integrations=os.getenv('USE_WORKFLOW_INTEGRATIONS', 'true').lower() == 'true',
-            use_fallback_manager=os.getenv('USE_FALLBACK_MANAGER', 'true').lower() == 'true'
+            use_fallback_manager=os.getenv('USE_FALLBACK_MANAGER', 'true').lower() == 'true',
+            forward_assistant_actions=os.getenv('FORWARD_ASSISTANT_ACTIONS', 'false').lower() == 'true'
         )
 
 @dataclass
@@ -499,12 +501,14 @@ class KillSwitchesConfig:
     """Конфигурация kill-switch"""
     disable_module_coordinator: bool = False
     disable_workflow_integrations: bool = False
+    disable_forward_assistant_actions: bool = False  # MCP command forwarding kill-switch (Phase 1)
     
     @classmethod
     def from_env(cls) -> 'KillSwitchesConfig':
         return cls(
             disable_module_coordinator=os.getenv('NEXY_KS_DISABLE_MODULE_COORDINATOR', 'false').lower() == 'true',
-            disable_workflow_integrations=os.getenv('NEXY_KS_DISABLE_WORKFLOW_INTEGRATIONS', 'false').lower() == 'true'
+            disable_workflow_integrations=os.getenv('NEXY_KS_DISABLE_WORKFLOW_INTEGRATIONS', 'false').lower() == 'true',
+            disable_forward_assistant_actions=os.getenv('NEXY_KS_DISABLE_FORWARD_ASSISTANT_ACTIONS', 'false').lower() == 'true'
         )
 
 @dataclass
@@ -744,7 +748,10 @@ class UnifiedServerConfig:
             'workflow': self.workflow.__dict__,
             'update': self.update.__dict__,
             'server': self.server.__dict__,
-            'logging': self.logging.__dict__
+            'logging': self.logging.__dict__,
+            'features': self.features.__dict__,
+            'kill_switches': self.kill_switches.__dict__,
+            'backpressure': self.backpressure.__dict__
         }
         
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -852,7 +859,10 @@ class UnifiedServerConfig:
             'workflow': self.workflow.__dict__,
             'update': self.update.__dict__,
             'server': self.server.__dict__,
-            'logging': self.logging.__dict__
+            'logging': self.logging.__dict__,
+            'features': self.features.__dict__,
+            'kill_switches': self.kill_switches.__dict__,
+            'backpressure': self.backpressure.__dict__
         }
 
 # Глобальный экземпляр конфигурации

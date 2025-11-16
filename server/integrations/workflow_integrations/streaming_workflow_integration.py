@@ -8,6 +8,8 @@ from typing import Dict, Any, AsyncGenerator, Optional, Union
 from datetime import datetime
 
 from config.unified_config import WorkflowConfig, get_config
+from integrations.core.assistant_response_parser import AssistantResponseParser
+from utils.logging_formatter import log_structured
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,11 @@ class StreamingWorkflowIntegration:
         self._has_emitted: bool = False
         self._pending_segment: str = ""
         self._processed_sentences: set = set()  # Для дедупликации
+        
+        # MCP command payload (Фаза 2)
+        self._pending_command_payload: Optional[Dict[str, Any]] = None
+        self._command_payload_sent: bool = False
+        self._assistant_parser = AssistantResponseParser()
         # Централизованные пороги
         if workflow_config is None:
             workflow_config = get_config().get_workflow_thresholds()
@@ -130,6 +137,9 @@ class StreamingWorkflowIntegration:
             self._pending_segment = ""
             self._has_emitted = False
             self._processed_sentences.clear()
+            # Сбрасываем состояние MCP команды (Фаза 2)
+            self._pending_command_payload = None
+            self._command_payload_sent = False
 
             captured_segments: list[str] = []
             input_sentence_counter = 0
@@ -145,6 +155,17 @@ class StreamingWorkflowIntegration:
             ):
                 input_sentence_counter += 1
                 logger.info(f"📝 In sentence #{input_sentence_counter}: '{sentence[:120]}{'...' if len(sentence) > 120 else ''}' (len={len(sentence)})")
+
+                # Фаза 2: Парсинг ответа ассистента для извлечения text и command_payload
+                parsed = await self._parse_assistant_response(sentence, session_id)
+                if parsed.command_payload and not self._command_payload_sent:
+                    # Сохраняем command_payload для отправки один раз
+                    self._pending_command_payload = parsed.command_payload
+                    # Логируем обнаружение команды
+                    self._log_command_detected(parsed, session_id)
+                
+                # Используем только text_response для дальнейшей обработки
+                sentence = parsed.text_response
 
                 # Единая буферизация: накапливаем, извлекаем завершенные предложения, агрегируем короткие
                 sanitized = await self._sanitize_for_tts(sentence)
@@ -190,25 +211,29 @@ class StreamingWorkflowIntegration:
                         }
 
                         # Аудио (гарантируем завершающую пунктуацию для TTS)
-                        tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
-                        sentence_audio_chunks = 0
-                        async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
-                            if not audio_chunk:
-                                continue
-                            sentence_audio_chunks += 1
-                            total_audio_chunks += 1
-                            total_audio_bytes += len(audio_chunk)
-                            yield {
-                                'success': True,
-                                'audio_chunk': audio_chunk,
-                                'sentence_index': emitted_segment_counter,
-                                'audio_chunk_index': sentence_audio_chunks
-                            }
-
-                        sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
-                        logger.info(
-                            f"🎧 Segment #{emitted_segment_counter} → audio_chunks={sentence_audio_chunks}, total_audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}"
-                        )
+                        # Фаза 2: Пропускаем аудио-генерацию, если text пустой
+                        if to_emit.strip():
+                            tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
+                            sentence_audio_chunks = 0
+                            async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
+                                if not audio_chunk:
+                                    continue
+                                sentence_audio_chunks += 1
+                                total_audio_chunks += 1
+                                total_audio_bytes += len(audio_chunk)
+                                yield {
+                                    'success': True,
+                                    'audio_chunk': audio_chunk,
+                                    'sentence_index': emitted_segment_counter,
+                                    'audio_chunk_index': sentence_audio_chunks
+                                }
+                            sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
+                            logger.info(
+                                f"🎧 Segment #{emitted_segment_counter} → audio_chunks={sentence_audio_chunks}, total_audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}"
+                            )
+                        else:
+                            # Пустой текст - пропускаем аудио
+                            logger.debug(f"⏭️ Пропуск аудио для пустого текста в segment #{emitted_segment_counter}")
                     else:
                         # Продолжаем копить
                         self._pending_segment = candidate
@@ -228,17 +253,21 @@ class StreamingWorkflowIntegration:
                         self._has_emitted = True
                         captured_segments.append(to_emit)
                         yield {'success': True, 'text_response': to_emit, 'sentence_index': emitted_segment_counter}
-                        tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
-                        sentence_audio_chunks = 0
-                        async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
-                            if not audio_chunk:
-                                continue
-                            sentence_audio_chunks += 1
-                            total_audio_chunks += 1
-                            total_audio_bytes += len(audio_chunk)
-                            yield {'success': True, 'audio_chunk': audio_chunk, 'sentence_index': emitted_segment_counter, 'audio_chunk_index': sentence_audio_chunks}
-                        sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
-                        logger.info(f"🎧 Final segment #{emitted_segment_counter} → audio_chunks={sentence_audio_chunks}, total_audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}")
+                        # Фаза 2: Пропускаем аудио-генерацию, если text пустой
+                        if to_emit.strip():
+                            tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
+                            sentence_audio_chunks = 0
+                            async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
+                                if not audio_chunk:
+                                    continue
+                                sentence_audio_chunks += 1
+                                total_audio_chunks += 1
+                                total_audio_bytes += len(audio_chunk)
+                                yield {'success': True, 'audio_chunk': audio_chunk, 'sentence_index': emitted_segment_counter, 'audio_chunk_index': sentence_audio_chunks}
+                            sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
+                            logger.info(f"🎧 Final segment #{emitted_segment_counter} → audio_chunks={sentence_audio_chunks}, total_audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}")
+                        else:
+                            logger.debug(f"⏭️ Пропуск аудио для пустого текста в final segment #{emitted_segment_counter}")
                     else:
                         self._pending_segment = candidate
 
@@ -251,24 +280,26 @@ class StreamingWorkflowIntegration:
                 self._has_emitted = True
                 captured_segments.append(to_emit)
                 yield {'success': True, 'text_response': to_emit, 'sentence_index': emitted_segment_counter}
-                tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
-                sentence_audio_chunks = 0
-                async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
-                    if not audio_chunk:
-                        continue
-                    sentence_audio_chunks += 1
-                    total_audio_chunks += 1
-                    total_audio_bytes += len(audio_chunk)
-                    yield {'success': True, 'audio_chunk': audio_chunk, 'sentence_index': emitted_segment_counter, 'audio_chunk_index': sentence_audio_chunks}
-                sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
-                logger.info(f"🎧 Forced final segment #{emitted_segment_counter} → audio_chunks={sentence_audio_chunks}, total_audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}")
+                # Фаза 2: Пропускаем аудио-генерацию, если text пустой
+                if to_emit.strip():
+                    tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
+                    sentence_audio_chunks = 0
+                    async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
+                        if not audio_chunk:
+                            continue
+                        sentence_audio_chunks += 1
+                        total_audio_chunks += 1
+                        total_audio_bytes += len(audio_chunk)
+                        yield {'success': True, 'audio_chunk': audio_chunk, 'sentence_index': emitted_segment_counter, 'audio_chunk_index': sentence_audio_chunks}
+                    sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
+                    logger.info(f"🎧 Forced final segment #{emitted_segment_counter} → audio_chunks={sentence_audio_chunks}, total_audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}")
+                else:
+                    logger.debug(f"⏭️ Пропуск аудио для пустого текста в forced segment #{emitted_segment_counter}")
 
             full_text = " ".join(captured_segments).strip()
 
-            logger.info(
-                f"✅ Запрос обработан успешно: segments={emitted_segment_counter}, audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}"
-            )
-            yield {
+            # Фаза 2: Отправляем command_payload один раз в финальном ответе
+            final_result = {
                 'success': True,
                 'text_full_response': full_text,
                 'sentences_processed': emitted_segment_counter,
@@ -277,6 +308,22 @@ class StreamingWorkflowIntegration:
                 'sentence_audio_map': sentence_audio_map,
                 'is_final': True
             }
+            
+            # Добавляем command_payload, если он есть и фича-флаг включен
+            if self._pending_command_payload and not self._command_payload_sent:
+                config = get_config()
+                if (config.features.forward_assistant_actions and 
+                    not config.kill_switches.disable_forward_assistant_actions):
+                    final_result['command_payload'] = self._pending_command_payload
+                    self._command_payload_sent = True
+                    self._log_command_complete(session_id)
+                else:
+                    logger.debug("Фича-флаг forward_assistant_actions выключен или kill-switch активен, пропускаем command_payload")
+
+            logger.info(
+                f"✅ Запрос обработан успешно: segments={emitted_segment_counter}, audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}"
+            )
+            yield final_result
 
         except Exception as e:
             logger.error(f"❌ Ошибка обработки запроса {session_id}: {e}")
@@ -540,6 +587,93 @@ class StreamingWorkflowIntegration:
                 logger.info(f"✅ Legacy аудио генерация завершена для предложения #{sentence_index}: {chunk_count} чанков")
             except Exception as audio_error:
                 logger.error(f"❌ Ошибка legacy генерации аудио для предложения #{sentence_index}: {audio_error}")
+    
+    async def _parse_assistant_response(self, response: Union[str, Dict[str, Any]], session_id: str):
+        """
+        Парсинг ответа ассистента для извлечения text и command_payload (Фаза 2)
+        
+        Args:
+            response: Ответ от текстового модуля (строка или словарь)
+            session_id: ID сессии для логирования
+            
+        Returns:
+            ParsedResponse с text_response и опциональным command_payload
+        """
+        try:
+            config = get_config()
+            # Проверяем фича-флаг и kill-switch
+            if (not config.features.forward_assistant_actions or 
+                config.kill_switches.disable_forward_assistant_actions):
+                # Фича выключена - возвращаем как обычный текст
+                if isinstance(response, dict):
+                    return self._assistant_parser.parse(response.get('text', str(response)))
+                return self._assistant_parser.parse(response)
+            
+            # Парсим ответ
+            return self._assistant_parser.parse(response)
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка парсинга ответа ассистента: {e}, возвращаем как обычный текст")
+            # Fallback на обычный текст
+            if isinstance(response, dict):
+                text = response.get('text', str(response))
+            else:
+                text = str(response)
+            return self._assistant_parser.parse(text)
+    
+    def _log_command_detected(self, parsed, session_id: str):
+        """
+        Логирование обнаружения команды (Фаза 2)
+        
+        Args:
+            parsed: ParsedResponse с command_payload
+            session_id: ID сессии
+        """
+        if not parsed.command_payload:
+            return
+        
+        payload = parsed.command_payload.get('payload', {})
+        command = payload.get('command', 'unknown')
+        args = payload.get('args', {})
+        
+        log_structured(
+            logger,
+            logging.INFO,
+            f"Command detected: {command}",
+            scope="command",
+            method="parse_assistant_response",
+            decision="start",
+            ctx={
+                "session_id": session_id,
+                "command": command,
+                "args": args
+            }
+        )
+    
+    def _log_command_complete(self, session_id: str):
+        """
+        Логирование успешного завершения команды (Фаза 2)
+        
+        Args:
+            session_id: ID сессии
+        """
+        if not self._pending_command_payload:
+            return
+        
+        payload = self._pending_command_payload.get('payload', {})
+        command = payload.get('command', 'unknown')
+        
+        log_structured(
+            logger,
+            logging.INFO,
+            f"Command forwarded: {command}",
+            scope="command",
+            method="process_request_streaming",
+            decision="complete",
+            ctx={
+                "session_id": session_id,
+                "command": command
+            }
+        )
     
     def _split_into_sentences(self, text: str) -> list[str]:
         """

@@ -111,9 +111,8 @@ class GrpcServiceIntegration:
             # Извлекаем данные из запроса
             hardware_id = request_data.get('hardware_id', 'unknown')
             session_id = request_data.get('session_id', f"session_{datetime.now().timestamp()}")
-            text = request_data.get('text', '')
-            screenshot = request_data.get('screenshot')
-            
+            request_data.setdefault('session_id', session_id)
+
             # Используем InterruptWorkflowIntegration для безопасной обработки
             async def _process_full_workflow():
                 async for item in self._process_full_workflow_internal(request_data, hardware_id, session_id):
@@ -191,6 +190,9 @@ class GrpcServiceIntegration:
                             audio_delivered = True
                         if result.get('is_final'):
                             final_response_text = result.get('text_full_response', '') or " ".join(collected_sentences).strip()
+                        # Фаза 3: Передаём command_payload дальше в gRPC слой
+                        if result.get('command_payload'):
+                            logger.debug(f"MCP command_payload передан в gRPC слой: {result.get('command_payload').get('payload', {}).get('command', 'unknown')}")
                     except Exception:
                         pass
                     yield result

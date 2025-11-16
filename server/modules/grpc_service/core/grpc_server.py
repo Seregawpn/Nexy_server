@@ -249,6 +249,20 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                     yield streaming_pb2.StreamResponse(error_message=rate_error or "Message rate limit exceeded")
                     return
                 
+                # Фаза 3: MCP command_payload (отправляем как text_chunk с префиксом __MCP__)
+                cmd_payload = item.get('command_payload')
+                if cmd_payload:
+                    import json
+                    try:
+                        # Формируем JSON строку с префиксом для идентификации клиентом
+                        mcp_json = json.dumps(cmd_payload, ensure_ascii=False)
+                        mcp_text_chunk = f"__MCP__{mcp_json}"
+                        logger.info(f"→ StreamAudio: sending MCP command_payload len={len(mcp_text_chunk)} for session={session_id}, command={cmd_payload.get('payload', {}).get('command', 'unknown')}")
+                        yield streaming_pb2.StreamResponse(text_chunk=mcp_text_chunk)
+                        sent_any = True
+                    except Exception as mcp_error:
+                        logger.warning(f"⚠️ Ошибка сериализации MCP command_payload: {mcp_error}")
+                
                 # Текст
                 txt = item.get('text_response')
                 if txt:
