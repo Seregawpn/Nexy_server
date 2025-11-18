@@ -4,9 +4,11 @@
 PyInstaller spec file for macOS application "Nexy AI Assistant"
 """
 
+import os
 import sys
 import yaml
 from pathlib import Path
+import rumps
 
 # File paths - Force absolute paths
 current_dir = Path.cwd().resolve()  # This is /path/to/client (PyInstaller runs from client/)
@@ -21,6 +23,11 @@ with open(config_path, 'r', encoding='utf-8') as f:
 
 print(f"Using absolute path: {client_dir}")
 print(f"App version from config: {APP_VERSION}")
+
+TARGET_ARCH = os.environ.get("PYI_TARGET_ARCH", "arm64")
+print(f"Target architecture: {TARGET_ARCH}")
+
+rumps_path = Path(rumps.__file__).resolve().parent
 
 # Check icon existence
 if not icon_path.exists():
@@ -44,7 +51,7 @@ a = Analysis(
         # Utils (preserve directory structure)
         (str(client_dir / "integration" / "utils"), "integration/utils"),
         # КРИТИЧНО: rumps пакет (PyInstaller не подхватывает его автоматически)
-        ("/opt/homebrew/lib/python3.13/site-packages/rumps", "rumps"),
+        (str(rumps_path), "rumps"),
     ],
     hiddenimports=[
         # System monitoring (must be first)
@@ -236,7 +243,7 @@ exe = EXE(
     console=False,  # Hide console for macOS application
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch="arm64",  # Только Apple Silicon для нотаризации
+    target_arch=TARGET_ARCH,
     codesign_identity="Developer ID Application: Sergiy Zasorin (5NKLL2CLB9)",
     entitlements_file="packaging/entitlements.plist",
     codesign_deep=True,  # Deep signing
@@ -290,7 +297,7 @@ app = BUNDLE(
         "NSAccessibilityUsageDescription": "Nexy needs accessibility permissions to assist you with controlling your computer.",
 
         # Architecture - Apple Silicon ONLY (M1/M2)
-        "LSArchitecturePriority": ["arm64"],  # ONLY M1/M2 support, NO Intel
+        "LSArchitecturePriority": ["arm64", "x86_64"],
         
         # Application category
         "LSApplicationCategoryType": "public.app-category.productivity",
@@ -312,6 +319,6 @@ app = BUNDLE(
         "LSMultipleInstancesProhibited": True,    # Только одна копия приложения
 
         # ARM64 ONLY restrictions
-        "LSRequiresNativeExecution": True,  # Только нативная ARM64 архитектура
+        "LSRequiresNativeExecution": False,
     },
 )

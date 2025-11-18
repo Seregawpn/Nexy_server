@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# 📦 Nexy AI Assistant - Финальная упаковка и подпись (ОБНОВЛЕНО 24.09.2025)
+# 📦 Nexy AI Assistant - Финальная упаковка и подпись Universal 2 (ОБНОВЛЕНО 17.11.2025)
 # Использование: ./packaging/build_final.sh
+# Автоматически выполняет Universal 2 сборку (arm64 + x86_64)
 
 set -e  # Остановить при ошибку
 
@@ -19,6 +20,20 @@ NC='\033[0m' # No Color
 CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$CLIENT_DIR/dist"
 
+# Используем установленный Universal Python 3.13.7 (через официальный pkg)
+# Приоритет: официальный Python > pyenv > системный
+if [ -d "/Library/Frameworks/Python.framework/Versions/3.13/bin" ]; then
+    export PATH="/Library/Frameworks/Python.framework/Versions/3.13/bin:$PATH"
+    echo "✓ Используем Universal Python 3.13.7 из /Library/Frameworks"
+elif [ -d "$HOME/.pyenv" ]; then
+    export PATH="$HOME/.pyenv/bin:$PATH"
+    if command -v pyenv >/dev/null 2>&1; then
+        # Отключаем rehash, чтобы избежать проблем с правами
+        export PYENV_SHELL=bash
+        eval "$(pyenv init -)" 2>/dev/null || true
+    fi
+fi
+
 # Read version from unified_config.yaml (single source of truth)
 VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('$CLIENT_DIR/config/unified_config.yaml'))['app']['version'])")
 
@@ -33,6 +48,10 @@ CLEAN_APP="/tmp/${APP_NAME}.app"
 echo -e "${BLUE}🚀 Начинаем финальную упаковку Nexy AI Assistant${NC}"
 echo "Рабочая директория: $CLIENT_DIR"
 echo "Версия: $VERSION"
+
+# Проверяем зависимости и бинарники до сборки
+echo -e "${YELLOW}🔍 Проверяем окружение и универсальные бинарники...${NC}"
+python3 "$CLIENT_DIR/scripts/check_dependencies.py"
 
 # Обновляем версии в Info.plist модулей
 echo -e "${YELLOW}📝 Обновляем версии в модулях...${NC}"
@@ -229,20 +248,106 @@ if ! security find-identity -v -p basic | grep -q "Developer ID Installer"; then
     error "Developer ID Installer сертификат не найден"
 fi
 
-# Шаг 1: Очистка и сборка
-echo -e "${BLUE}🧹 Шаг 1: Очистка и сборка${NC}"
+# Шаг 1: Очистка и Universal 2 сборка
+echo -e "${BLUE}🧹 Шаг 1: Очистка и Universal 2 сборка${NC}"
 cd "$CLIENT_DIR"
 
 log "Очищаем старые файлы..."
+# Проверяем, есть ли уже Universal .app
+UNIVERSAL_APP=""
+if [ -d "dist/$APP_NAME.app" ]; then
+    # Проверяем, что это Universal 2
+    if lipo -info "dist/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
+        log "Найден Universal 2 .app, сохраняем для использования..."
+        UNIVERSAL_APP="/tmp/${APP_NAME}_universal_backup.app"
+        rm -rf "$UNIVERSAL_APP"
+        safe_copy "dist/$APP_NAME.app" "$UNIVERSAL_APP"
+    fi
+fi
+
 # Безопасная очистка: удаляем содержимое, а не сами директории
-rm -rf dist/* dist/.* build/* build/.* *.pyc __pycache__/ 2>/dev/null || true
+rm -rf dist/* dist/.* build/* build/.* dist-arm64 dist-x86_64 build-arm64 build-x86_64 *.pyc __pycache__/ 2>/dev/null || true
 find . -name "*.pyc" -delete 2>/dev/null || true
 find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
-log "Собираем приложение с PyInstaller..."
-# Активируем .venv для использования правильных версий пакетов (protobuf 6.32.1)
-source "$CLIENT_DIR/.venv/bin/activate"
-pyinstaller packaging/Nexy.spec --noconfirm --clean
+if [ -n "$UNIVERSAL_APP" ] && [ -d "$UNIVERSAL_APP" ]; then
+    log "Восстанавливаем Universal 2 .app (пропускаем PyInstaller сборку)..."
+    safe_copy "$UNIVERSAL_APP" "dist/$APP_NAME.app"
+    rm -rf "$UNIVERSAL_APP"
+else
+    log "Выполняем Universal 2 сборку (arm64 + x86_64)..."
+    
+    # Активируем .venv для использования правильных версий пакетов
+    if [ -f "$CLIENT_DIR/.venv/bin/activate" ]; then
+        source "$CLIENT_DIR/.venv/bin/activate"
+    fi
+    
+    # Проверяем, что Python универсальный
+    log "Проверяем архитектуру Python..."
+    PYTHON_ARCH=$(python3 -c "import platform; print(platform.machine())" 2>/dev/null || echo "unknown")
+    log "Текущая архитектура Python: $PYTHON_ARCH"
+    
+    # Шаг 1.1: Универсализация .so файлов (если нужно)
+    log "Проверяем необходимость универсализации .so файлов..."
+    if [ -d "/tmp/x86_64_site_packages" ]; then
+        log "Найдена временная x86_64 установка, универсализируем .so файлы..."
+        python3 "$CLIENT_DIR/scripts/merge_so_from_x86_64.py" || warn "Универсализация .so файлов завершилась с предупреждениями"
+    else
+        log "Временная x86_64 установка не найдена, пропускаем универсализацию .so"
+        log "Примечание: если x86_64 сборка упадет, установите пакеты через: arch -x86_64 python3 -m pip install -r requirements.txt"
+    fi
+    
+    # Шаг 1.2: Сборка arm64
+    log "Собираем arm64 версию..."
+    PYI_TARGET_ARCH=arm64 python3 -m PyInstaller packaging/Nexy.spec \
+        --distpath dist-arm64 \
+        --workpath build-arm64 \
+        --noconfirm \
+        --clean
+    
+    if [ ! -d "dist-arm64/$APP_NAME.app" ]; then
+        error "arm64 сборка не удалась. Проверьте логи PyInstaller."
+    fi
+    log "arm64 сборка завершена"
+    
+    # Шаг 1.3: Сборка x86_64 (через Rosetta)
+    log "Собираем x86_64 версию (через Rosetta)..."
+    PYI_TARGET_ARCH=x86_64 arch -x86_64 python3 -m PyInstaller packaging/Nexy.spec \
+        --distpath dist-x86_64 \
+        --workpath build-x86_64 \
+        --noconfirm \
+        --clean
+    
+    if [ ! -d "dist-x86_64/$APP_NAME.app" ]; then
+        error "x86_64 сборка не удалась. Проверьте логи PyInstaller."
+    fi
+    log "x86_64 сборка завершена"
+    
+    # Шаг 1.4: Объединение в Universal 2
+    log "Объединяем arm64 и x86_64 в Universal 2 .app..."
+    python3 "$CLIENT_DIR/scripts/create_universal_app.py" \
+        --arm64 "dist-arm64/$APP_NAME.app" \
+        --x86 "dist-x86_64/$APP_NAME.app" \
+        --output "dist/$APP_NAME.app" \
+        --verbose
+    
+    if [ ! -d "dist/$APP_NAME.app" ]; then
+        error "Объединение в Universal 2 не удалось."
+    fi
+    
+    # Проверяем результат
+    log "Проверяем архитектуры Universal .app..."
+    MAIN_ARCHS=$(lipo -info "dist/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null || echo "")
+    if echo "$MAIN_ARCHS" | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
+        log "✅ Universal 2 .app создан успешно (x86_64 + arm64)"
+    else
+        warn "⚠️  Главный бинарник может быть не Universal 2: $MAIN_ARCHS"
+    fi
+    
+    # Очищаем временные директории сборки
+    log "Очищаем временные директории сборки..."
+    rm -rf dist-arm64 dist-x86_64 build-arm64 build-x86_64
+fi
 
 if [ ! -d "dist/$APP_NAME.app" ]; then
     error "Сборка не удалась. Проверьте логи PyInstaller."
@@ -297,18 +402,27 @@ codesign --remove-signature "$CLEAN_APP" 2>/dev/null || true
 find "$CLEAN_APP/Contents" -type f -perm -111 -exec codesign --remove-signature {} \; 2>/dev/null || true
 
 log "Подписываем вложенные Mach-O файлы (СНАЧАЛА!)..."
-# Подписываем все вложенные библиотеки БЕЗ entitlements
-while IFS= read -r -d '' BIN; do
-    # Пропускаем главный executable - его подпишем потом
-    if [[ "$BIN" == *"/Contents/MacOS/$APP_NAME" ]]; then
-        continue
-    fi
-    if file -b "$BIN" | grep -q "Mach-O"; then
-        echo "  Подписываем библиотеку: $(basename $BIN)"
-        codesign --force --timestamp --options=runtime \
-            --sign "$IDENTITY" "$BIN" || true
-    fi
-done < <(find "$CLEAN_APP/Contents" -type f -perm -111 -print0 2>/dev/null)
+# Используем оптимизированный скрипт для быстрой подписи
+SIGN_SCRIPT="$CLIENT_DIR/scripts/sign_all_binaries.sh"
+if [ -f "$SIGN_SCRIPT" ]; then
+    log "Используем оптимизированный скрипт подписи..."
+    bash "$SIGN_SCRIPT" --libs-only "$CLEAN_APP" 2>&1 | while IFS= read -r line; do
+        log "$line"
+    done
+else
+    # Fallback: подписываем все вложенные библиотеки БЕЗ entitlements
+    count=0
+    find "$CLEAN_APP/Contents" -type f -perm -111 2>/dev/null | grep -v "/Contents/MacOS/$APP_NAME$" | while read -r BIN; do
+        if file -b "$BIN" 2>/dev/null | grep -q "Mach-O"; then
+            codesign --force --timestamp --options=runtime \
+                --sign "$IDENTITY" "$BIN" >/dev/null 2>&1 || true
+            count=$((count + 1))
+            if [ $((count % 50)) -eq 0 ]; then
+                log "  Подписано: $count файлов..."
+            fi
+        fi
+    done
+fi
 
 # Явно подписываем встроенный ffmpeg, если присутствует (Frameworks)
 FFMPEG_BIN="$CLEAN_APP/Contents/Frameworks/resources/ffmpeg/ffmpeg"
@@ -417,8 +531,11 @@ mkdir -p /tmp/nexy_pkg_clean_final
 
 log "Копируем нотаризованное приложение в правильную структуру..."
 mkdir -p /tmp/nexy_pkg_clean_final/Applications
-safe_copy "$CLEAN_APP" /tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app
-clean_xattrs "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app" "создание PKG"
+# ВАЖНО: Используем ditto БЕЗ --noextattr для сохранения печати нотаризации
+/usr/bin/ditto "$CLEAN_APP" /tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app
+# Удаляем только AppleDouble файлы, но сохраняем extended attributes для нотаризации
+find "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app" -name '._*' -delete 2>/dev/null || true
+find "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app" -name '.DS_Store' -delete 2>/dev/null || true
 
 # КРИТИЧНО: Удаляем AppleDouble файлы из Python.framework (могут создаться при копировании)
 log "Удаляем AppleDouble файлы из Python.framework перед pkgbuild..."

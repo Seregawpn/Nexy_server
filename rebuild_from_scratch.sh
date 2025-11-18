@@ -320,9 +320,9 @@ echo ""
 pause_for_review
 
 # ============================================================================
-# ЭТАП 4: Сборка через PyInstaller
+# ЭТАП 4: Universal 2 сборка через PyInstaller
 # ============================================================================
-log_step "4️⃣  СБОРКА ЧЕРЕЗ PYINSTALLER"
+log_step "4️⃣  UNIVERSAL 2 СБОРКА (arm64 + x86_64)"
 
 log_info "Проверяем наличие packaging/build_final.sh..."
 if [ ! -f "packaging/build_final.sh" ]; then
@@ -330,8 +330,11 @@ if [ ! -f "packaging/build_final.sh" ]; then
     exit 1
 fi
 
-log_info "Запускаем полную сборку..."
-log_warning "Это займёт ~10-15 минут (PyInstaller + подпись + notarization)"
+log_info "Запускаем полную Universal 2 сборку..."
+log_warning "Это займёт ~20-30 минут:"
+log_warning "  • Двойная сборка PyInstaller (arm64 + x86_64)"
+log_warning "  • Объединение в Universal 2"
+log_warning "  • Подпись и нотаризация"
 echo ""
 
 BUILD_LOG="$LOG_DIR/build_${TIMESTAMP}.log"
@@ -356,6 +359,15 @@ if [ ! -d "dist/Nexy.app" ]; then
     exit 1
 fi
 log_success "dist/Nexy.app ✅"
+
+# Проверяем архитектуры Universal 2
+log_info "Проверяем архитектуры Universal 2 .app..."
+MAIN_ARCHS=$(lipo -info "dist/Nexy.app/Contents/MacOS/Nexy" 2>/dev/null || echo "")
+if echo "$MAIN_ARCHS" | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
+    log_success "✅ Universal 2 (arm64 + x86_64) подтверждено"
+else
+    log_warning "⚠️  Архитектуры: $MAIN_ARCHS (ожидается Universal 2)"
+fi
 
 if [ ! -f "dist/Nexy.pkg" ]; then
     log_warning "dist/Nexy.pkg не найден (возможно, создание пакета не выполнено)"
