@@ -9,6 +9,7 @@ import os
 import sys
 import signal
 import traceback
+import platform
 from pathlib import Path
 from datetime import datetime
 
@@ -62,8 +63,15 @@ def init_ffmpeg_for_pydub():
         except Exception:
             pass
 
+    return ffmpeg_path
+
+
+# Список ранних заметок до инициализации логгера
+BOOT_NOTES: list[str] = []
+
 # Выполняем инициализацию до импортов модулей, использующих pydub
-init_ffmpeg_for_pydub()
+_ffmpeg_path = init_ffmpeg_for_pydub()
+BOOT_NOTES.append(f"init_ffmpeg_for_pydub: path={(str(_ffmpeg_path) if _ffmpeg_path else 'not found')}")
 
 # --- Фикс PyObjC для macOS (до импорта rumps) ---
 # ВАЖНО: Должен быть выполнен ДО импорта любых модулей, использующих rumps
@@ -83,11 +91,14 @@ try:
         print("✅ AppKit символы успешно скопированы в Foundation")
     else:
         print("⚠️ AppKit.NSMakeRect не найден")
+    BOOT_NOTES.append("pyobjc_fix: success (main.py)")
 
 except ImportError as e:
     print(f"⚠️ PyObjC недоступен: {e}")
+    BOOT_NOTES.append(f"pyobjc_fix: import_error:{e}")
 except Exception as e:
     print(f"⚠️ Ошибка инициализации PyObjC: {e}")
+    BOOT_NOTES.append(f"pyobjc_fix: error:{e}")
 
 # Функция активации NSApplication - вызывается при каждом запуске
 def activate_nsapplication_for_menu_bar():
@@ -171,6 +182,37 @@ root_logger.addHandler(console_handler)
 logger = logging.getLogger(__name__)
 logger.info(f"📝 Логи записываются в: {log_file}")
 print(f"📝 Логи записываются в: {log_file}")
+logger.info("BOOT: logger initialized")
+logger.info(
+    "BOOT: environment macOS=%s arch=%s python=%s cwd=%s",
+    platform.mac_ver()[0] or "unknown",
+    platform.machine(),
+    sys.version.split()[0],
+    os.getcwd(),
+)
+for note in BOOT_NOTES:
+    logger.info("BOOT: %s", note)
+logger.info("BOOT: tempr log file=%s", log_file)
+def safe_exit(reason: str, code: int = 0) -> None:
+    """Единая точка корректного завершения приложения."""
+    try:
+        logger.error(
+            "SAFE_EXIT: reason=%s code=%s",
+            reason,
+            code,
+            stack_info=True,
+        )
+    except Exception:
+        pass
+
+    # Пытаемся сбросить все handler'ы перед выходом
+    for handler in logging.getLogger().handlers:
+        try:
+            handler.flush()
+        except Exception:
+            pass
+
+    sys.exit(code)
 
 # Глобальная переменная для отслеживания состояния приложения
 _app_shutting_down = False
@@ -254,8 +296,8 @@ def signal_handler(signum, frame):
     except Exception as e:
         logger.error(f"Не удалось записать signal log: {e}")
     
-    # Завершаем приложение
-    sys.exit(0)
+    # Завершаем приложение через safe_exit
+    safe_exit(f"signal_handler signal={signal_name}", 0)
 
 # Устанавливаем глобальный обработчик исключений
 sys.excepthook = exception_hook
@@ -272,18 +314,24 @@ async def main():
         logger.info(f"PID: {os.getpid()}")
         logger.info(f"Working directory: {os.getcwd()}")
         
+        logger.info("BOOT: step 1 - importing SimpleModuleCoordinator")
         # Импортируем SimpleModuleCoordinator
         from integration.core.simple_module_coordinator import SimpleModuleCoordinator
+        logger.info("BOOT: step 1 - SimpleModuleCoordinator import complete")
 
         # Создаем координатор
         coordinator = SimpleModuleCoordinator()
+        logger.info("BOOT: step 2 - SimpleModuleCoordinator instantiated")
 
         # Передаем функцию активации NSApplication координатору
         # Она будет вызвана непосредственно перед app.run()
         coordinator.nsapp_activator = activate_nsapplication_for_menu_bar
 
         # Запускаем (run() сам вызовет initialize() и проверку дублирования)
+        logger.info("BOOT: step 3 - coordinator.run() start")
+        logger.info("READY: Nexy initialized successfully, entering run loop")
         await coordinator.run()
+        logger.info("BOOT: step 3 - coordinator.run() completed")
 
     except KeyboardInterrupt:
         logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt в main)")
@@ -310,7 +358,9 @@ if __name__ == "__main__":
         logger.info("="*80)
         logger.info("🚀 NEXY APPLICATION START")
         logger.info("="*80)
+        logger.info("BOOT: event loop run_until_complete start")
         loop.run_until_complete(main())
+        logger.info("BOOT: event loop run_until_complete finished")
     except KeyboardInterrupt:
         logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt)")
         print("\n⏹️ Приложение прервано пользователем")

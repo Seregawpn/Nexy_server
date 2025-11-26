@@ -59,7 +59,7 @@ class FirstRunPermissionsIntegration:
         # Настройки из конфига
         self.enabled = self.config.get('enabled', True)
         self.pause_seconds = self.config.get('pause_between_requests_sec', 1.0)
-        self.activation_hold_seconds = self.config.get('activation_hold_duration_sec', 7.0)
+        self.activation_hold_seconds = self.config.get('activation_hold_duration_sec', 13.0)
 
         logger.info(
             "[FIRST_RUN_PERMISSIONS] Configuration loaded: "
@@ -366,7 +366,47 @@ class FirstRunPermissionsIntegration:
 
         print(f"🔄 [FIRST_RUN] Начало последовательного запроса разрешений (session={session_id})")  # DEBUG
 
-        # 1. MICROPHONE
+        # 1. INPUT MONITORING
+        logger.info("⌨️ [FIRST_RUN_PERMISSIONS] Проверка Input Monitoring...")
+        input_status = PermissionStatus.NOT_DETERMINED
+        logger.info("   Статус: not_determined (форсированный перед активацией)")
+        await self._publish_status_checked(
+            permission=PermissionType.INPUT_MONITORING,
+            status=input_status,
+            session_id=session_id,
+            source="first_run.pre_activation",
+        )
+        logger.info(
+            "   Активируем Input Monitoring независимо от статуса (hold_duration=%s сек)...",
+            self.activation_hold_seconds,
+        )
+        start_time = time.time()
+        await activate_input_monitoring(hold_duration=self.activation_hold_seconds)
+        elapsed = time.time() - start_time
+        logger.info(
+            "   ✅ Input Monitoring activation завершена за %.2f сек (ожидалось %.2f сек)",
+            elapsed,
+            self.activation_hold_seconds,
+        )
+        new_status = check_input_monitoring_status()
+
+        await self._publish_status_checked(
+            permission=PermissionType.INPUT_MONITORING,
+            status=new_status,
+            session_id=session_id,
+            source="first_run.post_activation",
+        )
+        if new_status != input_status:
+            await self._publish_permission_changed(
+                permission=PermissionType.INPUT_MONITORING,
+                old_status=input_status,
+                new_status=new_status,
+                session_id=session_id,
+                source="first_run.input_monitoring",
+            )
+        input_status = new_status
+
+        # 2. MICROPHONE
         logger.info("🎙️ [FIRST_RUN_PERMISSIONS] Проверка Microphone...")
         # На первом запросе считаем статус неопределённым, даже если TCC хранит решение.
         mic_status = PermissionStatus.NOT_DETERMINED
@@ -408,99 +448,7 @@ class FirstRunPermissionsIntegration:
             )
         mic_status = new_status
 
-        # 2. ACCESSIBILITY
-        logger.info("♿ [FIRST_RUN_PERMISSIONS] Проверка Accessibility...")
-        acc_status = PermissionStatus.NOT_DETERMINED
-        logger.info("   Статус: not_determined (форсированный перед активацией)")
-        await self._publish_status_checked(
-            permission=PermissionType.ACCESSIBILITY,
-            status=acc_status,
-            session_id=session_id,
-            source="first_run.pre_activation",
-        )
-        logger.info(
-            "   Активируем Accessibility независимо от статуса (hold_duration=%s сек)...",
-            self.activation_hold_seconds,
-        )
-        start_time = time.time()
-        await activate_accessibility(hold_duration=self.activation_hold_seconds)
-        elapsed = time.time() - start_time
-        logger.info(
-            "   ✅ Accessibility activation завершена за %.2f сек (ожидалось %.2f сек)",
-            elapsed,
-            self.activation_hold_seconds,
-        )
-        new_status = check_accessibility_status()
-        if new_status != PermissionStatus.GRANTED:
-            logger.warning(
-                "⚠️ [FIRST_RUN_PERMISSIONS] Accessibility status=%s после %.2f сек, считаем GRANTED",
-                new_status.value,
-                elapsed,
-            )
-            new_status = PermissionStatus.GRANTED
-        await self._publish_status_checked(
-            permission=PermissionType.ACCESSIBILITY,
-            status=new_status,
-            session_id=session_id,
-            source="first_run.post_activation",
-        )
-        if new_status != acc_status:
-            await self._publish_permission_changed(
-                permission=PermissionType.ACCESSIBILITY,
-                old_status=acc_status,
-                new_status=new_status,
-                session_id=session_id,
-                source="first_run.accessibility",
-            )
-        acc_status = new_status
-
-        # 3. INPUT MONITORING
-        logger.info("⌨️ [FIRST_RUN_PERMISSIONS] Проверка Input Monitoring...")
-        input_status = PermissionStatus.NOT_DETERMINED
-        logger.info("   Статус: not_determined (форсированный перед активацией)")
-        await self._publish_status_checked(
-            permission=PermissionType.INPUT_MONITORING,
-            status=input_status,
-            session_id=session_id,
-            source="first_run.pre_activation",
-        )
-        logger.info(
-            "   Активируем Input Monitoring независимо от статуса (hold_duration=%s сек)...",
-            self.activation_hold_seconds,
-        )
-        start_time = time.time()
-        await activate_input_monitoring(hold_duration=self.activation_hold_seconds)
-        elapsed = time.time() - start_time
-        logger.info(
-            "   ✅ Input Monitoring activation завершена за %.2f сек (ожидалось %.2f сек)",
-            elapsed,
-            self.activation_hold_seconds,
-        )
-        new_status = check_input_monitoring_status()
-        if new_status != PermissionStatus.GRANTED:
-            logger.warning(
-                "⚠️ [FIRST_RUN_PERMISSIONS] Input Monitoring status=%s после %.2f сек, считаем GRANTED",
-                new_status.value,
-                elapsed,
-            )
-            new_status = PermissionStatus.GRANTED
-        await self._publish_status_checked(
-            permission=PermissionType.INPUT_MONITORING,
-            status=new_status,
-            session_id=session_id,
-            source="first_run.post_activation",
-        )
-        if new_status != input_status:
-            await self._publish_permission_changed(
-                permission=PermissionType.INPUT_MONITORING,
-                old_status=input_status,
-                new_status=new_status,
-                session_id=session_id,
-                source="first_run.input_monitoring",
-            )
-        input_status = new_status
-
-        # 4. SCREEN CAPTURE
+        # 3. SCREEN CAPTURE
         logger.info("📺 [FIRST_RUN_PERMISSIONS] Проверка Screen Capture...")
         screen_status = PermissionStatus.NOT_DETERMINED
         logger.info("   Статус: not_determined (форсированный перед активацией)")
@@ -523,13 +471,7 @@ class FirstRunPermissionsIntegration:
             self.activation_hold_seconds,
         )
         new_status = check_screen_capture_status()
-        if new_status != PermissionStatus.GRANTED:
-            logger.warning(
-                "⚠️ [FIRST_RUN_PERMISSIONS] Screen Capture status=%s после %.2f сек, считаем GRANTED",
-                new_status.value,
-                elapsed,
-            )
-            new_status = PermissionStatus.GRANTED
+
         await self._publish_status_checked(
             permission=PermissionType.SCREEN_CAPTURE,
             status=new_status,
@@ -545,6 +487,55 @@ class FirstRunPermissionsIntegration:
                 source="first_run.screen_capture",
             )
         screen_status = new_status
+
+        # 4. ACCESSIBILITY
+        logger.info("♿ [FIRST_RUN_PERMISSIONS] START Accessibility activation...")
+        acc_status = PermissionStatus.NOT_DETERMINED
+        logger.info("   Статус: not_determined (форсированный перед активацией)")
+        await self._publish_status_checked(
+            permission=PermissionType.ACCESSIBILITY,
+            status=acc_status,
+            session_id=session_id,
+            source="first_run.pre_activation",
+        )
+        logger.info(
+            "   Активируем Accessibility независимо от статуса (hold_duration=%s сек)...",
+            self.activation_hold_seconds,
+        )
+        start_time = time.time()
+        result = await activate_accessibility(hold_duration=self.activation_hold_seconds)
+        elapsed = time.time() - start_time
+        
+        # КРИТИЧНО: Проверяем результат активации
+        if not result:
+            logger.error("❌ [FIRST_RUN_PERMISSIONS] Accessibility activation FAILED!")
+            logger.error("❌ Это может означать, что Quartz/AX API недоступен или произошла ошибка")
+            logger.error("❌ Проверьте логи выше для деталей")
+            # НЕ останавливаем последовательность, но логируем критическую ошибку
+        else:
+            logger.info(
+            "   ✅ Accessibility activation завершена за %.2f сек (ожидалось %.2f сек)",
+            elapsed,
+            self.activation_hold_seconds,
+        )
+        
+        new_status = check_accessibility_status()
+
+        await self._publish_status_checked(
+            permission=PermissionType.ACCESSIBILITY,
+            status=new_status,
+            session_id=session_id,
+            source="first_run.post_activation",
+        )
+        if new_status != acc_status:
+            await self._publish_permission_changed(
+                permission=PermissionType.ACCESSIBILITY,
+                old_status=acc_status,
+                new_status=new_status,
+                session_id=session_id,
+                source="first_run.accessibility",
+            )
+        acc_status = new_status
 
         logger.info("✅ [FIRST_RUN_PERMISSIONS] Все разрешения обработаны")
 

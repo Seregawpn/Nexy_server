@@ -160,7 +160,7 @@ class InputProcessingIntegration:
         print(f"🎤🎤🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         try:
-            logger.info(f"🎤 PTT: keyDown(left_shift) → PRESS, timestamp={event.timestamp}")
+            logger.info(f"🎤 PTT: keyDown({event.key}) → PRESS, timestamp={event.timestamp}")
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id
             active_session_id = self._get_active_session_id()
             logger.debug(f"PRESS: current_session={active_session_id}, pending_session={self._pending_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
@@ -674,7 +674,8 @@ class InputProcessingIntegration:
                 print(f"🔧 DEBUG: KeyboardMonitor статус: {status}")
                 print(f"🔧 DEBUG: Callbacks зарегистрированы: {status.get('callbacks_registered', 0)}")
                 print(f"🔧 DEBUG: Мониторинг активен: {status.get('is_monitoring', False)}")
-                print(f"⌨️ DEBUG: НАЖМИТЕ ЛЕВЫЙ SHIFT СЕЙЧАС ДЛЯ ТЕСТИРОВАНИЯ!")
+                key_name = self.config.keyboard.key_to_monitor
+                print(f"⌨️ DEBUG: НАЖМИТЕ {key_name.upper()} СЕЙЧАС ДЛЯ ТЕСТИРОВАНИЯ!")
                 
             self.is_running = True
             logger.info("✅ input_processing запущен")
@@ -712,7 +713,7 @@ class InputProcessingIntegration:
             
     # Обработчики событий клавиатуры
     async def _handle_short_press(self, event: KeyEvent):
-        """Обработка короткого нажатия левого Shift"""
+        """Обработка короткого нажатия клавиши/комбинации"""
         try:
             logger.debug(f"🔑 SHORT_PRESS: {event.duration:.3f}с")
 
@@ -828,7 +829,7 @@ class InputProcessingIntegration:
 
                 # КРИТИЧНО: Используем _get_active_session_id для получения session_id
                 active_session_id = self._get_active_session_id()
-                logger.info(f"🛑 PTT: keyUp(left_shift) → RECORDING_STOP, session={active_session_id}, duration={duration*1000:.0f}ms, reason=short_press")
+                logger.info(f"🛑 PTT: keyUp({event.key}) → RECORDING_STOP, session={active_session_id}, duration={duration*1000:.0f}ms, reason=short_press")
                 await self.event_bus.publish(
                     "voice.recording_stop",
                     {
@@ -952,7 +953,7 @@ class InputProcessingIntegration:
             )
             
     async def _handle_long_press(self, event: KeyEvent):
-        """Обработка длинного нажатия левого Shift"""
+        """Обработка длинного нажатия клавиши/комбинации"""
         print(f"🎤🎤🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
         logger.info(f"🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
         try:
@@ -1102,12 +1103,12 @@ class InputProcessingIntegration:
             )
             
     async def _handle_key_release(self, event: KeyEvent):
-        """Обработка отпускания левого Shift"""
+        """Обработка отпускания клавиши/комбинации"""
         print(f"🎤🎤🎤 _handle_key_release ВЫЗВАН! duration={event.duration:.3f}s")
         logger.info(f"🎤 _handle_key_release ВЫЗВАН! duration={event.duration:.3f}s")
         try:
             duration_ms = event.duration * 1000 if event.duration else 0
-            logger.info(f"🛑 PTT: keyUp(left_shift) → RELEASE, duration={duration_ms:.0f}ms")
+            logger.info(f"🛑 PTT: keyUp({event.key}) → RELEASE, duration={duration_ms:.0f}ms")
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id
             active_session_id = self._get_active_session_id()
             logger.debug(f"RELEASE: session={active_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")

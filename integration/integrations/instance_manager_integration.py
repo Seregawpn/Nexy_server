@@ -88,6 +88,12 @@ class InstanceManagerIntegration:
                 # ДУБЛИРОВАНИЕ ОБНАРУЖЕНО - ЗАВЕРШАЕМ РАБОТУ
                 print("❌ Nexy уже запущен! Завершаем дубликат.")
                 try:
+                    logger.error(
+                        "SAFE_EXIT: duplicate_instance lock_file=%s pid=%s",
+                        self.instance_manager.lock_file,
+                        os.getpid(),
+                        stack_info=True,
+                    )
                     logger.warning("🚫 InstanceManager: duplicate instance detected — exiting with code 1")
                 except Exception:
                     pass

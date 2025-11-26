@@ -23,6 +23,7 @@ try:
         kCGHIDEventTap,
         kCGHeadInsertEventTap,
         kCGEventTapOptionListenOnly,
+        kCGEventTapOptionDefault,
         kCGEventKeyDown,
         kCGEventKeyUp,
         kCGEventFlagsChanged,
@@ -32,6 +33,7 @@ try:
         CGEventGetFlags,
         kCGKeyboardEventKeycode,
         kCGEventFlagMaskShift,
+        kCGEventFlagMaskControl,
     )
     QUARTZ_AVAILABLE = True
 except Exception as e:  # pragma: no cover
@@ -45,11 +47,15 @@ logger = logging.getLogger(__name__)
 class QuartzKeyboardMonitor:
     """Глобальный монитор клавиатуры на macOS через Quartz Event Tap."""
 
-    # Минимальная карта key_to_monitor -> keycode (US). Сейчас нужен только left_shift.
+    # Keycodes для macOS (US layout)
     KEYCODES = {
         "left_shift": 56,  # Левый Shift
-        # При необходимости можно расширить: space(49), enter(36), esc(53), right_shift(60), ctrl(59/62), alt(58/61)
+        # При необходимости можно расширить: space(49), enter(36), esc(53), right_shift(60), alt(58/61)
     }
+    
+    # Keycodes для комбинации Control+N
+    CONTROL_KEYCODES = {59, 62}  # Левый и правый Control (по умолчанию используем оба)
+    N_KEYCODE = 45  # Клавиша N (US layout)
 
     def __init__(self, config: KeyboardConfig):
         self.config = config
@@ -86,18 +92,171 @@ class QuartzKeyboardMonitor:
         
         # Отслеживание предыдущего состояния модификаторов (для kCGEventFlagsChanged)
         self._previous_left_shift_pressed = False
+        
+        # Состояние для комбинации Control+N
+        self._control_pressed = False
+        self._n_pressed = False
+        self._combo_active = False
+        self._combo_start_time: Optional[float] = None
 
         # Доступность
         self.keyboard_available = QUARTZ_AVAILABLE
         if not QUARTZ_AVAILABLE:
             logger.warning("⚠️ Quartz недоступен — нативный монитор клавиатуры отключен")
 
-        # Целевой keycode
-        self._target_keycode = self.KEYCODES.get(self.key_to_monitor, None)
-        if self._target_keycode is None:
-            logger.warning(f"⚠️ Неподдерживаемая клавиша для Quartz: {self.key_to_monitor}")
-            self.keyboard_available = False
+        # Целевой keycode или комбинация
+        if self.key_to_monitor == "ctrl_n":
+            # Для комбинации не нужен одиночный keycode
+            self._target_keycode = None
+            self._is_combo = True
+        else:
+            self._target_keycode = self.KEYCODES.get(self.key_to_monitor, None)
+            self._is_combo = False
+            if self._target_keycode is None:
+                logger.warning(f"⚠️ Неподдерживаемая клавиша для Quartz: {self.key_to_monitor}")
+                self.keyboard_available = False
 
+    def _handle_combo_event(self, event_type, event):
+        """Обрабатывает события для комбинации Control+N"""
+        try:
+            now = time.time()
+            
+            # Обработка flagsChanged для Control
+            if event_type == kCGEventFlagsChanged:
+                keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+                flags = CGEventGetFlags(event)
+                control_pressed = bool(flags & kCGEventFlagMaskControl)
+                
+                # Проверяем, что это событие для Control (keycode 59 или 62)
+                if keycode in self.CONTROL_KEYCODES:
+                    with self.state_lock:
+                        self._control_pressed = control_pressed
+                        
+                        # Обновляем состояние комбинации
+                        self._update_combo_state()
+                        
+                        # Подавление событий не требуется для Control (не блокируем другие hotkeys)
+                
+                return event
+            
+            # Обработка keyDown/keyUp для N
+            if event_type in (kCGEventKeyDown, kCGEventKeyUp):
+                keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+                
+                if keycode != self.N_KEYCODE:
+                    return event
+                
+                with self.state_lock:
+                    if event_type == kCGEventKeyDown:
+                        # Игнорируем автоповтор N
+                        if self._n_pressed:
+                            logger.debug("🔒 Quartz: игнорируем автоповтор N")
+                            # Подавляем событие - возвращаем None для блокировки keyDown N
+                            if self._combo_active:
+                                return None
+                            return event
+                        
+                        # Cooldown только для keyDown N
+                        if (now - self.last_event_time) < self.event_cooldown:
+                            logger.debug("🔒 Quartz: keyDown N пропущен из-за cooldown")
+                            return event
+                        
+                        self._n_pressed = True
+                        self.last_event_time = now
+                        
+                        # Обновляем состояние комбинации
+                        self._update_combo_state()
+                        
+                        # Подавляем keyDown N при активной комбо
+                        if self._combo_active:
+                            logger.debug("🔒 Quartz: подавляем keyDown N (combo активна)")
+                            return None
+                        
+                    else:  # kCGEventKeyUp
+                        if not self._n_pressed:
+                            return event
+                        
+                        self._n_pressed = False
+                        
+                        # Обновляем состояние комбинации
+                        self._update_combo_state()
+                
+                return event
+            
+            return event
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки combo события: {e}")
+            return event
+    
+    def _update_combo_state(self):
+        """Обновляет состояние комбинации Control+N и генерирует события при изменениях"""
+        now = time.time()
+        was_active = self._combo_active
+        should_be_active = self._control_pressed and self._n_pressed
+        
+        if should_be_active and not was_active:
+            # Активация комбинации: обе клавиши зажаты
+            self._combo_active = True
+            self._combo_start_time = now
+            self._long_sent = False
+            self._event_processed = False
+            self._last_event_timestamp = 0.0
+            self.key_pressed = True  # Для совместимости с hold_monitor
+            self.press_start_time = now
+            
+            logger.info("✅ Control+N комбинация активирована")
+            ev = KeyEvent(
+                key=self.key_to_monitor,
+                event_type=KeyEventType.PRESS,
+                timestamp=now,
+            )
+            self._trigger_event(KeyEventType.PRESS, 0.0, ev)
+            
+        elif not should_be_active and was_active:
+            # Деактивация комбинации: одна из клавиш отпущена
+            self._combo_active = False
+            duration = now - (self._combo_start_time or now)
+            self._combo_start_time = None
+            
+            # Защита от двойной обработки
+            if self._event_processed and (now - self._last_event_timestamp) < 0.1:
+                logger.debug("🔒 Combo deactivation: событие уже обработано, пропускаем")
+                return
+            
+            long_sent_snapshot = self._long_sent
+            self.key_pressed = False
+            self.press_start_time = None
+            self.last_event_time = now
+            self._event_processed = True
+            self._last_event_timestamp = now
+            
+            if long_sent_snapshot:
+                # LONG_PRESS уже был отправлен - генерируем только RELEASE
+                logger.debug("🔑 Combo deactivation: LONG_PRESS уже был, генерируем RELEASE")
+                event_type_out = KeyEventType.RELEASE
+            else:
+                # Короткое нажатие - генерируем SHORT_PRESS
+                logger.debug("🔑 Combo deactivation: короткое нажатие, генерируем SHORT_PRESS")
+                event_type_out = KeyEventType.SHORT_PRESS
+            
+            ev = KeyEvent(
+                key=self.key_to_monitor,
+                event_type=event_type_out,
+                timestamp=now,
+                duration=duration,
+            )
+            self._trigger_event(event_type_out, duration, ev)
+            
+            # RELEASE всегда отправляется после SHORT_PRESS
+            if event_type_out != KeyEventType.RELEASE:
+                ev_release = KeyEvent(
+                    key=self.key_to_monitor,
+                    event_type=KeyEventType.RELEASE,
+                    timestamp=now,
+                    duration=duration,
+                )
+                self._trigger_event(KeyEventType.RELEASE, duration, ev_release)
+    
     def register_callback(self, event_type, callback: Callable):
         if isinstance(event_type, str):
             try:
@@ -124,31 +283,54 @@ class QuartzKeyboardMonitor:
             return False
 
         # КРИТИЧНО: Проверяем разрешения ПЕРЕД созданием event tap
+        # ВАЖНО: Используем только публичный API с prompt=False (только проверка статуса, без запроса диалога)
+        # Запрос диалога должен происходить только в activate_accessibility() при первом запуске
         logger.info("🔐 Проверяем разрешения для Quartz Event Tap...")
         print("🔐 Проверяем разрешения для Quartz Event Tap...")
 
         try:
-            from ApplicationServices import AXIsProcessTrusted
-            has_accessibility = AXIsProcessTrusted()
+            # Унифицируем импорты на Quartz (как в activator/handler)
+            from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+            from Foundation import NSDictionary, NSNumber
+            
+            # КРИТИЧНО: prompt=False - только проверка статуса, НЕ запрос диалога
+            # Диалог должен запрашиваться только в activate_accessibility() при первом запуске
+            options = NSDictionary.dictionaryWithObject_forKey_(
+                NSNumber.numberWithBool_(False),  # prompt=False - только проверка
+                    kAXTrustedCheckOptionPrompt,
+                )
+            has_accessibility = bool(AXIsProcessTrustedWithOptions(options))
+
             logger.info(f"🔐 Accessibility permission: {has_accessibility}")
             print(f"🔐 Accessibility permission: {has_accessibility}")
 
             if not has_accessibility:
-                logger.error("❌ Accessibility разрешения НЕ выданы!")
-                logger.error("❌ Перейдите в: System Settings > Privacy & Security > Accessibility")
-                logger.error("❌ Добавьте Nexy.app и включите переключатель")
-                print("❌ Accessibility разрешения НЕ выданы!")
-                print("❌ Перейдите в: System Settings > Privacy & Security > Accessibility")
-                print("❌ Добавьте Nexy.app и включите переключатель")
+                logger.warning("⚠️ Accessibility разрешения НЕ выданы!")
+                logger.warning("⚠️ Перейдите в: System Settings > Privacy & Security > Accessibility")
+                logger.warning("⚠️ Добавьте Nexy.app и включите переключатель")
+                print("⚠️ Accessibility разрешения НЕ выданы!")
+                print("⚠️ Перейдите в: System Settings > Privacy & Security > Accessibility")
+                print("⚠️ Добавьте Nexy.app и включите переключатель")
                 # Не блокируем создание event tap - позволяем CGEventTapCreate вернуть None
+        except ImportError as import_err:
+            logger.warning(f"⚠️ Quartz/AX API недоступен для проверки разрешений: {import_err}")
+            logger.warning(f"⚠️ Проверьте, что PyObjC-framework-Quartz установлен")
+            print(f"⚠️ Quartz/AX API недоступен: {import_err}")
+            has_accessibility = False
         except Exception as e:
             logger.warning(f"⚠️ Не удалось проверить Accessibility permissions: {e}")
             print(f"⚠️ Не удалось проверить Accessibility permissions: {e}")
+            has_accessibility = False
 
         try:
             # Создаем Event Tap
             def _tap_callback(proxy, event_type, event, refcon):
                 try:
+                    # Обработка комбинации Control+N
+                    if self._is_combo:
+                        return self._handle_combo_event(event_type, event)
+                    
+                    # Обработка одиночной клавиши (left_shift для обратной совместимости)
                     # Логируем только события flagsChanged (для модификаторов) - это наша целевая клавиша
                     # Остальные события (keyDown/keyUp для обычных клавиш) обрабатываем без логирования
 
@@ -339,10 +521,11 @@ class QuartzKeyboardMonitor:
             # Маска событий: keyDown, keyUp для обычных клавиш, flagsChanged для модификаторов (Shift, Ctrl, Alt)
             event_mask = (1 << kCGEventKeyDown) | (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged)
             
+            tap_option = kCGEventTapOptionDefault if self._is_combo else kCGEventTapOptionListenOnly
             self._tap = CGEventTapCreate(
                 kCGHIDEventTap,
                 kCGHeadInsertEventTap,
-                kCGEventTapOptionListenOnly,
+                tap_option,
                 event_mask,
                 _tap_callback,
                 None,
@@ -430,13 +613,17 @@ class QuartzKeyboardMonitor:
         while not self.stop_event.is_set():
             try:
                 with self.state_lock:
-                    if self.key_pressed and self.press_start_time:
-                        duration = time.time() - self.press_start_time
+                    # Для комбинации используем combo_active, для одиночной клавиши - key_pressed
+                    is_active = self._combo_active if self._is_combo else self.key_pressed
+                    start_time = self._combo_start_time if self._is_combo else self.press_start_time
+                    
+                    if is_active and start_time:
+                        duration = time.time() - start_time
                         if not self._long_sent and duration >= self.long_press_threshold:
-                            # КРИТИЧНО: Проверяем еще раз, что клавиша все еще нажата
-                            # (keyUp мог произойти между проверкой и этой строкой)
-                            if not self.key_pressed or not self.press_start_time:
-                                logger.debug(f"HOLD_MONITOR: клавиша была отпущена во время проверки, пропускаем LONG_PRESS")
+                            # КРИТИЧНО: Проверяем еще раз, что комбинация/клавиша все еще активна
+                            is_still_active = self._combo_active if self._is_combo else self.key_pressed
+                            if not is_still_active or not start_time:
+                                logger.debug(f"HOLD_MONITOR: комбинация/клавиша была отпущена во время проверки, пропускаем LONG_PRESS")
                                 continue
 
                             import threading
@@ -517,9 +704,8 @@ class QuartzKeyboardMonitor:
 
     def get_status(self) -> Dict[str, Any]:
         with self.state_lock:
-            return {
+            status = {
                 "is_monitoring": self.is_monitoring,
-                "key_pressed": self.key_pressed,
                 "keyboard_available": self.keyboard_available,
                 "fallback_mode": False,
                 "config": {
@@ -530,3 +716,12 @@ class QuartzKeyboardMonitor:
                 "callbacks_registered": len(self.event_callbacks),
                 "backend": "quartz",
             }
+            
+            if self._is_combo:
+                status["combo_active"] = self._combo_active
+                status["control_pressed"] = self._control_pressed
+                status["n_pressed"] = self._n_pressed
+            else:
+                status["key_pressed"] = self.key_pressed
+            
+            return status

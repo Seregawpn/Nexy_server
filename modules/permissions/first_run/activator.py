@@ -10,6 +10,8 @@ import logging
 import ctypes
 from ctypes import util
 
+from config.unified_config_loader import unified_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,8 +88,9 @@ async def activate_accessibility(hold_duration: float = 7.0) -> bool:
     """
     Активировать запрос разрешения Accessibility.
 
-    Вызывает AXIsProcessTrustedWithOptions с prompt=True для показа диалога.
-    Затем ждёт hold_duration секунд чтобы дать пользователю время ответить.
+    Вызывает AXIsProcessTrustedWithOptions с prompt=False (только проверка статуса).
+    Затем открывает System Settings для ручного запроса разрешения.
+    Ждёт hold_duration секунд чтобы дать пользователю время ответить.
 
     Args:
         hold_duration: сколько секунд ждать после активации (по умолчанию 7.0)
@@ -101,33 +104,23 @@ async def activate_accessibility(hold_duration: float = 7.0) -> bool:
         print(f"♿ [ACTIVATOR] Начало активации Accessibility")  # DEBUG
 
         try:
-            print(f"♿ [ACTIVATOR] Импортируем Quartz/AX API...")  # DEBUG
-            from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-            from Foundation import NSDictionary, NSNumber
+            from Quartz import CoreGraphics
         except ImportError:
-            logger.warning("⚠️ Quartz/AX API недоступен – не удалось запросить Accessibility")
-            print(f"⚠️ [ACTIVATOR] Quartz/AX API недоступен")  # DEBUG
+            logger.error("❌ КРИТИЧНО: CoreGraphics (Quartz) API недоступен.")
+            print(f"❌ [ACTIVATOR] CoreGraphics (Quartz) API недоступен")  # DEBUG
             return False
 
-        try:
-            # Вызываем с prompt=True, чтобы система показала диалог, если доступ ещё не выдан
-            print(f"♿ [ACTIVATOR] Вызываем AXIsProcessTrustedWithOptions с prompt=True...")  # DEBUG
-            options = NSDictionary.dictionaryWithObject_forKey_(
-                NSNumber.numberWithBool_(True),
-                kAXTrustedCheckOptionPrompt,
-            )
-            trusted = bool(AXIsProcessTrustedWithOptions(options))
-            print(f"♿ [ACTIVATOR] AXIsProcessTrustedWithOptions вернул: {trusted}")  # DEBUG
-        except Exception as ax_err:
-            logger.error(f"❌ Ошибка вызова AXIsProcessTrustedWithOptions: {ax_err}")
-            return False
+        # Используем CGRequestPostEventAccess() как публичный и более прямой способ
+        # запросить разрешение, необходимое для управления событиями.
+        logger.info("♿ [ACTIVATOR] Вызываем CGRequestPostEventAccess()...")
+        print(f"♿ [ACTIVATOR] Вызываем CGRequestPostEventAccess()...")  # DEBUG
+        
+        # Этот вызов напрямую триггерит системный диалог, если разрешение не выдано
+        CoreGraphics.CGRequestPostEventAccess()
 
-        if trusted:
-            logger.info("✅ Accessibility уже предоставлен")
-        else:
-            logger.info("ℹ️ Accessibility диалог запрошен через AXIsProcessTrustedWithOptions")
-            logger.info("   macOS автоматически откроет System Settings если нужно")
-            logger.info("   Пожалуйста, предоставьте доступ в System Settings → Privacy & Security → Accessibility")
+        logger.info("ℹ️ Accessibility диалог запрошен через CGRequestPostEventAccess")
+        # В отличие от AX API, этот вызов не возвращает статус, он только триггерит UI,
+        # поэтому мы не можем проверить 'trusted' здесь. Проверка статуса будет позже.
 
         # Ждём чтобы дать пользователю время ответить
         logger.debug(f"   ⏸️ Пауза {hold_duration} сек...")
@@ -246,38 +239,30 @@ async def activate_screen_capture(hold_duration: float = 7.0) -> bool:
 
 async def activate_all_permissions(pause_seconds: float = 7.0) -> dict:
     """
-    Активировать все разрешения последовательно с паузами.
-
-    Args:
-        pause_seconds: пауза между активациями в секундах
-
-    Returns:
-        dict: словарь с результатами {permission_name: bool}
+    Активировать все разрешения ПАРАЛЛЕЛЬНО.
+    Длительность паузы берется из центральной конфигурации.
     """
-    results = {}
+    try:
+        permission_config = unified_config.get_permission_config()
+        hold_duration = permission_config.get('first_run', {}).get('activation_hold_duration_sec', 13.0)
+        logger.info(f"Используем 'activation_hold_duration_sec' из конфига: {hold_duration} сек.")
+    except Exception as e:
+        logger.warning(f"Не удалось загрузить 'activation_hold_duration_sec' из конфига. Используем значение по-умолчанию 13.0 сек. Ошибка: {e}")
+        hold_duration = 13.0
 
-    # Microphone
-    results['microphone'] = await activate_microphone()
-    if results['microphone']:
-        logger.info(f"   Пауза {pause_seconds} сек...")
-        await asyncio.sleep(pause_seconds)
+    logger.info("🚀 Активация всех разрешений в параллельном режиме...")
 
-    # Accessibility
-    results['accessibility'] = await activate_accessibility()
-    if results['accessibility']:
-        logger.info(f"   Пауза {pause_seconds} сек...")
-        await asyncio.sleep(pause_seconds)
+    tasks = {
+        'microphone': activate_microphone(hold_duration=hold_duration),
+        'accessibility': activate_accessibility(hold_duration=hold_duration),
+        'input_monitoring': activate_input_monitoring(hold_duration=hold_duration),
+        'screen_capture': activate_screen_capture(hold_duration=hold_duration)
+    }
 
-    # Input Monitoring
-    results['input_monitoring'] = await activate_input_monitoring()
-    if results['input_monitoring']:
-        logger.info(f"   Пауза {pause_seconds} сек...")
-        await asyncio.sleep(pause_seconds)
-
-    # Screen Capture
-    results['screen_capture'] = await activate_screen_capture()
-    if results['screen_capture']:
-        logger.info(f"   Пауза {pause_seconds} сек...")
-        await asyncio.sleep(pause_seconds)
+    # Запускаем все задачи одновременно
+    task_results = await asyncio.gather(*tasks.values())
+    
+    results = dict(zip(tasks.keys(), task_results))
+    logger.info(f"   🏁 Все запросы разрешений завершены. Результаты: {results}")
 
     return results

@@ -15,31 +15,48 @@ class AccessibilityHandler:
     def __init__(self):
         self.bundle_id = "com.nexy.assistant"
     
-    def check_accessibility_permission(self) -> bool:
-        """Check whether the app is trusted for Accessibility using public API."""
+    def _ax_trusted_public_check(self, *, prompt: bool = False) -> bool:
+        """
+        Invoke the public Quartz API (AXIsProcessTrustedWithOptions).
+        `prompt` controls whether macOS should show the system dialog.
+        """
         try:
-            # Используем публичный API из Quartz (AXIsProcessTrustedWithOptions)
-            try:
-                from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-                from Foundation import NSDictionary, NSNumber
-            except ImportError:
-                logger.warning("⚠️ Quartz/AX API недоступен — считаем, что разрешение не выдано")
-                # Возвращаем False, чтобы FirstRunPermissions смог повторно запросить доступ
-                return False
+            from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+            from Foundation import NSDictionary, NSNumber
+        except ImportError as import_err:
+            # Явный WARN лог при ImportError
+            logger.warning(f"⚠️ Quartz/AX API недоступен: {import_err}")
+            logger.warning(f"⚠️ Проверьте, что PyObjC-framework-Quartz установлен")
+            logger.warning("⚠️ Считаем, что разрешение не выдано")
+            return False
 
+        try:
             options = NSDictionary.dictionaryWithObject_forKey_(
-                NSNumber.numberWithBool_(False),
-                kAXTrustedCheckOptionPrompt,
+            NSNumber.numberWithBool_(bool(prompt)),
+            kAXTrustedCheckOptionPrompt,
             )
-            trusted = bool(AXIsProcessTrustedWithOptions(options))
-            
+            return bool(AXIsProcessTrustedWithOptions(options))
+        except Exception as e:
+            logger.error(f"❌ Ошибка вызова AXIsProcessTrustedWithOptions: {e}")
+            return False
+        except ImportError as import_err:
+            logger.warning(f"⚠️ Quartz/AX API недоступен: {import_err}")
+            logger.warning(f"⚠️ Проверьте, что PyObjC-framework-Quartz установлен")
+            logger.warning("⚠️ Считаем, что разрешение не выдано")
+            return False
+
+    def check_accessibility_permission(self) -> bool:
+        """Check whether the app is trusted for Accessibility using only public APIs."""
+        try:
+            trusted = self._ax_trusted_public_check(prompt=False)
+
             if trusted:
                 logger.info("✅ Accessibility permission granted (public API)")
             else:
                 logger.warning("⚠️ Accessibility permission not granted (public API)")
-            
+
             return trusted
-            
+
         except Exception as e:
             logger.error(f"❌ Error checking accessibility permission: {e}")
             # Возвращаем False, чтобы другие компоненты попытались запросить доступ

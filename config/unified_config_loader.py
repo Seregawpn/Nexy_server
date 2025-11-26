@@ -211,6 +211,11 @@ class UnifiedConfigLoader:
     # РАЗРЕШЕНИЯ
     # =====================================================
 
+    def get_permission_config(self) -> Dict[str, Any]:
+        """Получает настройки разрешений"""
+        config = self._load_config()
+        return config.get('permissions', {})
+
     def get_permission_override_config(self) -> Dict[str, Any]:
         """Возвращает настройку override для разрешений с учетом окружения"""
         config = self._load_config()
@@ -414,8 +419,20 @@ class UnifiedConfigLoader:
             if field not in kbd_cfg:
                 raise ValueError(f"Отсутствует обязательное поле '{field}' в конфигурации клавиатуры")
         
+        # Валидация поддерживаемых клавиш
+        key_to_monitor = kbd_cfg['key_to_monitor']
+        supported_keys = {'left_shift', 'ctrl_n'}
+        if key_to_monitor not in supported_keys:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"⚠️ Неподдерживаемая клавиша '{key_to_monitor}'. "
+                f"Поддерживаемые: {', '.join(supported_keys)}. "
+                f"Используется '{key_to_monitor}' (может не работать)."
+            )
+        
         return KeyboardConfig(
-            key_to_monitor=kbd_cfg['key_to_monitor'],
+            key_to_monitor=key_to_monitor,
             short_press_threshold=kbd_cfg['short_press_threshold'],
             long_press_threshold=kbd_cfg['long_press_threshold'],
             event_cooldown=kbd_cfg['event_cooldown'],

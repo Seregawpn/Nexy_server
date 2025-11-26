@@ -127,7 +127,7 @@ integrations:
     enabled: true
     priority: 2
   keyboard:
-    key_to_monitor: left_shift
+    key_to_monitor: ctrl_n
     short_press_threshold: 0.1
     long_press_threshold: 0.6
     event_cooldown: 0.1

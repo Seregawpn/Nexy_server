@@ -48,3 +48,4 @@ logs/
 # Временные файлы
 *.tmp
 *.temp
+resources/ffmpeg/ffmpeg

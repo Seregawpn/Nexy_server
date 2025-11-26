@@ -115,6 +115,7 @@ class PermissionRestartIntegration(BaseIntegration):
             await self._subscribe("updater.update_started", self._on_update_started, EventPriority.MEDIUM)
             await self._subscribe("updater.update_completed", self._on_update_completed, EventPriority.HIGH)
             await self._subscribe("updater.update_skipped", self._on_update_completed, EventPriority.HIGH)
+            await self._subscribe("updater.update_failed", self._on_update_completed, EventPriority.HIGH)
             await self._subscribe("app.startup", self._on_app_startup_event, EventPriority.MEDIUM)
             logger.info("[PERMISSION_RESTART] Subscribed to permission events")
 

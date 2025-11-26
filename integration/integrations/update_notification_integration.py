@@ -33,6 +33,7 @@ class UpdateNotificationConfig:
     use_signals: bool = True
     voice: str = "ru-RU"
     dry_run: bool = False
+    announce_on_startup: bool = False
 
     @classmethod
     def from_dict(cls, raw: Optional[Dict[str, Any]]) -> "UpdateNotificationConfig":
@@ -49,6 +50,7 @@ class UpdateNotificationConfig:
             use_signals=bool(raw.get("use_signals", True)),
             voice=str(raw.get("voice", "ru-RU") or "ru-RU"),
             dry_run=bool(raw.get("dry_run", False)),
+            announce_on_startup=bool(raw.get("announce_on_startup", False)),
         )
 
 
@@ -78,6 +80,7 @@ class UpdateNotificationIntegration(BaseIntegration):
         self._lock = asyncio.Lock()
         self._update_completed: bool = False  # Флаг завершения обновления
         self._update_in_progress: bool = False  # Флаг активного обновления
+        self._suppress_announcements: bool = False  # Стартап-обновление без озвучки
 
     async def _do_initialize(self) -> bool:
         """
@@ -140,20 +143,26 @@ class UpdateNotificationIntegration(BaseIntegration):
             self._reset_progress()
             self._update_in_progress = True
             self._update_completed = False
+            trigger = (event.get("data") or {}).get("trigger") or "unknown"
+            self._suppress_announcements = (
+                trigger == "startup" and not self.config.announce_on_startup
+            )
+            if self._suppress_announcements:
+                logger.info("[UPDATE_NOTIFY] Suppressing startup update announcements")
             logger.info(
                 "[UPDATE_NOTIFY] Update started (trigger=%s)",
-                (event.get("data") or {}).get("trigger"),
+                trigger,
             )
-            if self.config.speak_start:
+            if not self._suppress_announcements and self.config.speak_start:
                 await self._speak(
                     "An update for Nexy is now in progress. This may take a few minutes. "
                     "Nexy will restart automatically when the update is complete."
                 )
-            if self.config.use_signals:
+            if not self._suppress_announcements and self.config.use_signals:
                 await self._play_signal("update_start")
 
     async def _on_progress(self, event: Dict[str, Any]) -> None:
-        if not self.config.speak_progress:
+        if not self.config.speak_progress or self._suppress_announcements:
             return
 
         # Проверяем, что обновление не завершено
@@ -189,15 +198,16 @@ class UpdateNotificationIntegration(BaseIntegration):
             (event.get("data") or {}).get("trigger"),
         )
 
-        if self.config.use_signals:
+        if not self._suppress_announcements and self.config.use_signals:
             await self._play_signal("update_success")
 
-        if self.config.speak_complete:
+        if not self._suppress_announcements and self.config.speak_complete:
             await self._speak("Update completed. Nexy will restart to apply changes.")
 
         # Отписываемся от событий после завершения обновления
         logger.info("[UPDATE_NOTIFY] Отписываемся от событий после завершения обновления")
         await self._unsubscribe_all()
+        self._suppress_announcements = False
 
     async def _on_update_failed(self, event: Dict[str, Any]) -> None:
         async with self._lock:
@@ -208,16 +218,17 @@ class UpdateNotificationIntegration(BaseIntegration):
         data = event.get("data") or {}
         logger.warning("[UPDATE_NOTIFY] Update failed: %s", data.get("error"))
 
-        if self.config.use_signals:
+        if not self._suppress_announcements and self.config.use_signals:
             await self._play_signal("update_error")
 
-        if self.config.speak_error:
+        if not self._suppress_announcements and self.config.speak_error:
             reason = str(data.get("error") or "unknown error")
             await self._speak(f"Nexy update failed. Reason: {reason}. Please try again later.")
 
         # Отписываемся от событий после ошибки обновления
         logger.info("[UPDATE_NOTIFY] Отписываемся от событий после ошибки обновления")
         await self._unsubscribe_all()
+        self._suppress_announcements = False
 
     def _should_announce(self, percent: int, stage: str) -> bool:
         # Озвучиваем только при достижении 50% (точное совпадение с progress_step_percent)

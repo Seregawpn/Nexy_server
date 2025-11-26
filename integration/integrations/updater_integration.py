@@ -109,7 +109,18 @@ class UpdaterIntegration:
             if self.updater.config.check_on_startup:
                 logger.info("🔍 Проверка обновлений при запуске...")
                 if await self._can_update():
-                    if await self._execute_update(trigger="startup"):
+                    update_performed = False
+                    try:
+                        update_performed = await self._execute_update(trigger="startup")
+                    except Exception as exc:
+                        logger.error(
+                            "❌ Ошибка проверки/установки обновления при запуске (trigger=startup). "
+                            "Продолжаем работу без авто-обновления: %s",
+                            exc,
+                            exc_info=True,
+                        )
+                        update_performed = False
+                    if update_performed:
                         return True  # Приложение перезапустится
             
             # Запускаем периодическую проверку

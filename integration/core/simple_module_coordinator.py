@@ -1175,14 +1175,6 @@ class SimpleModuleCoordinator:
             
             process_info = Foundation.NSProcessInfo.processInfo()
             
-            # ИДЕМПОТЕНТНОСТЬ: Если TAL hold уже установлен, только обновляем assertion
-            if self._tal_hold_active:
-                logger.debug(f"TAL=hold (ts={time.time():.2f}, reason=duplicate_call, already_active=True)")
-                print(f"🛡️ [ANTI_TAL] TAL hold уже активен - обновляем assertion")
-                # Обновляем assertion для продления времени
-                process_info.disableAutomaticTermination_("Waiting for tray icon (refreshing)")
-                return
-            
             # КРИТИЧНО: Всегда устанавливаем TAL hold, даже если automaticTerminationSupportEnabled()
             # возвращает False. Это необходимо для периодического обновления assertion после перезапуска.
             # Если TAL уже отключен (например, в main.py), мы всё равно вызываем disableAutomaticTermination_()
@@ -1190,6 +1182,45 @@ class SimpleModuleCoordinator:
             auto_term_enabled = process_info.automaticTerminationSupportEnabled()
             print(f"🛡️ [ANTI_TAL] auto_term_enabled={auto_term_enabled}")
             logger.info(f"🛡️ [ANTI_TAL] auto_term_enabled={auto_term_enabled}")
+            
+            # ИДЕМПОТЕНТНОСТЬ: Если TAL hold уже установлен, обновляем assertion и проверяем задачи
+            if self._tal_hold_active:
+                logger.debug(f"TAL=hold (ts={time.time():.2f}, reason=duplicate_call, already_active=True)")
+                print(f"🛡️ [ANTI_TAL] TAL hold уже активен - обновляем assertion")
+                # Обновляем assertion для продления времени
+                process_info.disableAutomaticTermination_("Waiting for tray icon (refreshing)")
+                
+                # КРИТИЧНО: Проверяем, запущена ли уже задача периодического обновления
+                # Если нет - запускаем её (это может произойти, если TAL hold был установлен в main.py)
+                if self._tal_refresh_task is None or (hasattr(self._tal_refresh_task, 'done') and self._tal_refresh_task.done()):
+                    if self._bg_loop and self._bg_loop.is_running():
+                        print(f"🛡️ [ANTI_TAL] Фоновый loop доступен - запускаем периодическое обновление (duplicate call)")
+                        logger.info(f"🛡️ [ANTI_TAL] Фоновый loop доступен - запускаем периодическое обновление (duplicate call)")
+                        
+                        def schedule_refresh():
+                            try:
+                                asyncio.set_event_loop(self._bg_loop)
+                                self._tal_refresh_task = self._bg_loop.create_task(self._periodically_refresh_tal_hold())
+                                print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop (duplicate call)")
+                                logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop (duplicate call)")
+                            except Exception as task_err:
+                                logger.error(f"❌ [ANTI_TAL] Ошибка создания задачи в фоновом loop (duplicate call): {task_err}")
+                        
+                        self._bg_loop.call_soon_threadsafe(schedule_refresh)
+                    else:
+                        try:
+                            loop = asyncio.get_running_loop()
+                            print(f"🛡️ [ANTI_TAL] Event loop активен: {loop} - запускаем периодическое обновление")
+                            logger.info(f"🛡️ [ANTI_TAL] Event loop активен: {loop} - запускаем периодическое обновление")
+                            
+                            self._tal_refresh_task = asyncio.create_task(self._periodically_refresh_tal_hold())
+                            print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана (duplicate call): {self._tal_refresh_task}")
+                            logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана (duplicate call)")
+                        except RuntimeError as loop_err:
+                            print(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен при duplicate call! {loop_err}")
+                            logger.error(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен при duplicate call! {loop_err}")
+                
+                return
             
             # Всегда вызываем disableAutomaticTermination_() для установки/обновления assertion
             print(f"🛡️ [ANTI_TAL] Вызов disableAutomaticTermination_()...")
@@ -1205,26 +1236,52 @@ class SimpleModuleCoordinator:
             
             # КРИТИЧНО: Периодически обновляем assertion чтобы предотвратить timeout
             # Обновляем каждые 30 секунд до готовности tray
-            # ВАЖНО: Проверяем, что event loop активен
-            try:
-                loop = asyncio.get_running_loop()
-                print(f"🛡️ [ANTI_TAL] Event loop активен: {loop}")
-                logger.info(f"🛡️ [ANTI_TAL] Event loop активен: {loop}")
+            # ВАЖНО: Используем фоновый event loop (_bg_loop), чтобы периодическое обновление
+            # работало даже когда основной поток заблокирован app.run()
+            if self._bg_loop and self._bg_loop.is_running():
+                print(f"🛡️ [ANTI_TAL] Используем фоновый event loop для периодического обновления: {self._bg_loop}")
+                logger.info(f"🛡️ [ANTI_TAL] Используем фоновый event loop для периодического обновления")
                 
-                self._tal_refresh_task = asyncio.create_task(self._periodically_refresh_tal_hold())
-                print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана: {self._tal_refresh_task}")
-                logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана")
+                # Создаем задачи в фоновом event loop
+                def schedule_tasks():
+                    try:
+                        asyncio.set_event_loop(self._bg_loop)
+                        self._tal_refresh_task = self._bg_loop.create_task(self._periodically_refresh_tal_hold())
+                        print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop")
+                        logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop")
+                        
+                        # Планируем автоматическое снятие по таймауту (120s - увеличено)
+                        timeout_task = self._bg_loop.create_task(self._release_tal_hold_after_timeout())
+                        print(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана в фоновом loop")
+                        logger.info(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана в фоновом loop")
+                    except Exception as task_err:
+                        logger.error(f"❌ [ANTI_TAL] Ошибка создания задач в фоновом loop: {task_err}")
+                        import traceback
+                        traceback.print_exc()
                 
-                # Планируем автоматическое снятие по таймауту (120s - увеличено)
-                timeout_task = asyncio.create_task(self._release_tal_hold_after_timeout())
-                print(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана: {timeout_task}")
-                logger.info(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана")
-            except RuntimeError as loop_err:
-                # Event loop не активен - это критическая проблема
-                print(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен! {loop_err}")
-                logger.error(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен! {loop_err}")
-                # Продолжаем работу, но периодическое обновление не будет работать
-                # Это может привести к timeout assertion
+                # Планируем выполнение в фоновом loop
+                self._bg_loop.call_soon_threadsafe(schedule_tasks)
+            else:
+                # Fallback: пытаемся использовать текущий event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    print(f"🛡️ [ANTI_TAL] Фоновый loop недоступен, используем текущий: {loop}")
+                    logger.warning(f"🛡️ [ANTI_TAL] Фоновый loop недоступен, используем текущий: {loop}")
+                    
+                    self._tal_refresh_task = asyncio.create_task(self._periodically_refresh_tal_hold())
+                    print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана: {self._tal_refresh_task}")
+                    logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана")
+                    
+                    # Планируем автоматическое снятие по таймауту (120s - увеличено)
+                    timeout_task = asyncio.create_task(self._release_tal_hold_after_timeout())
+                    print(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана: {timeout_task}")
+                    logger.info(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана")
+                except RuntimeError as loop_err:
+                    # Event loop не активен - это критическая проблема
+                    print(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен! {loop_err}")
+                    logger.error(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен! {loop_err}")
+                    # Продолжаем работу, но периодическое обновление не будет работать
+                    # Это может привести к timeout assertion
                 
         except Exception as exc:
             logger.error(f"❌ [ANTI_TAL] Failed to set TAL hold: {exc}")

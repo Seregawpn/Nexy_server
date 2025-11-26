@@ -46,6 +46,13 @@ class KeyboardMonitor:
         self.fallback_mode = False
         self.keyboard_available = True
         
+        # Состояние для комбинации Control+N
+        self._is_combo = (self.key_to_monitor == "ctrl_n")
+        self._control_pressed = False
+        self._n_pressed = False
+        self._combo_active = False
+        self._combo_start_time: Optional[float] = None
+        
         # Инициализируем клавиатуру
         self._init_keyboard()
     
@@ -158,11 +165,20 @@ class KeyboardMonitor:
         while not self.stop_event.is_set():
             try:
                 with self.state_lock:
-                    if self.key_pressed and self.press_start_time:
-                        duration = time.time() - self.press_start_time
+                    # Для комбинации используем combo_active, для одиночной клавиши - key_pressed
+                    is_active = self._combo_active if self._is_combo else self.key_pressed
+                    start_time = self._combo_start_time if self._is_combo else self.press_start_time
+                    
+                    if is_active and start_time:
+                        duration = time.time() - start_time
                         
                         # Проверяем долгое нажатие (только один раз!)
                         if not self._long_sent and duration >= self.long_press_threshold:
+                            # Проверяем еще раз, что комбинация/клавиша все еще активна
+                            is_still_active = self._combo_active if self._is_combo else self.key_pressed
+                            if not is_still_active or not start_time:
+                                continue
+                            
                             logger.info(f"🔑 HOLD_MONITOR: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}")
                             print(f"🔑 HOLD_MONITOR: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}")  # Для отладки
                             self._trigger_event(KeyEventType.LONG_PRESS, duration)
@@ -179,32 +195,61 @@ class KeyboardMonitor:
         try:
             current_time = time.time()
             
-            # Проверяем cooldown
-            if current_time - self.last_event_time < self.event_cooldown:
-                return
-                
-            # Проверяем, что это наша клавиша
-            if not self._is_target_key(key):
-                return
-                
-            with self.state_lock:
-                # Если клавиша уже нажата, игнорируем
-                if self.key_pressed:
+            if self._is_combo:
+                # Обработка комбинации Control+N
+                with self.state_lock:
+                    # Определяем, какая клавиша нажата
+                    is_control = (key == self.keyboard.Key.ctrl or 
+                                 key == self.keyboard.Key.ctrl_l or 
+                                 key == self.keyboard.Key.ctrl_r)
+                    is_n = ((hasattr(key, 'char') and key.char and key.char.lower() == 'n') or
+                           (hasattr(key, 'name') and key.name and key.name.lower() == 'n'))
+                    
+                    if is_control:
+                        if self._control_pressed:
+                            return  # Игнорируем повторные нажатия
+                        self._control_pressed = True
+                    elif is_n:
+                        # Cooldown только для keyDown N
+                        if current_time - self.last_event_time < self.event_cooldown:
+                            return
+                        if self._n_pressed:
+                            return  # Игнорируем автоповтор N
+                        self._n_pressed = True
+                        self.last_event_time = current_time
+                    else:
+                        return  # Не наша клавиша
+                    
+                    # Обновляем состояние комбинации
+                    self._update_combo_state()
+            else:
+                # Обработка одиночной клавиши (left_shift)
+                # Проверяем cooldown
+                if current_time - self.last_event_time < self.event_cooldown:
                     return
                     
-                self.key_pressed = True
-                self.press_start_time = current_time
-                self._long_sent = False  # Сбрасываем флаг для нового нажатия
+                # Проверяем, что это наша клавиша
+                if not self._is_target_key(key):
+                    return
+                    
+                with self.state_lock:
+                    # Если клавиша уже нажата, игнорируем
+                    if self.key_pressed:
+                        return
+                        
+                    self.key_pressed = True
+                    self.press_start_time = current_time
+                    self._long_sent = False  # Сбрасываем флаг для нового нажатия
+                    
+                # Создаем событие нажатия
+                event = KeyEvent(
+                    key=self._key_to_string(key),
+                    event_type=KeyEventType.PRESS,
+                    timestamp=current_time
+                )
                 
-            # Создаем событие нажатия
-            event = KeyEvent(
-                key=self._key_to_string(key),
-                event_type=KeyEventType.PRESS,
-                timestamp=current_time
-            )
-            
-            self._trigger_event(KeyEventType.PRESS, 0.0, event)
-            logger.debug(f"🔑 Клавиша нажата: {self._key_to_string(key)}")
+                self._trigger_event(KeyEventType.PRESS, 0.0, event)
+                logger.debug(f"🔑 Клавиша нажата: {self._key_to_string(key)}")
             
         except Exception as e:
             logger.error(f"❌ Ошибка обработки нажатия: {e}")
@@ -214,49 +259,145 @@ class KeyboardMonitor:
         try:
             current_time = time.time()
 
-            # Проверяем, что это наша клавиша
-            if not self._is_target_key(key):
-                return
-
-            with self.state_lock:
-                if not self.key_pressed:
+            if self._is_combo:
+                # Обработка комбинации Control+N
+                with self.state_lock:
+                    # Определяем, какая клавиша отпущена
+                    is_control = (key == self.keyboard.Key.ctrl or 
+                                 key == self.keyboard.Key.ctrl_l or 
+                                 key == self.keyboard.Key.ctrl_r)
+                    is_n = ((hasattr(key, 'char') and key.char and key.char.lower() == 'n') or
+                           (hasattr(key, 'name') and key.name and key.name.lower() == 'n'))
+                    
+                    if is_control:
+                        if not self._control_pressed:
+                            return
+                        self._control_pressed = False
+                    elif is_n:
+                        if not self._n_pressed:
+                            return
+                        self._n_pressed = False
+                    else:
+                        return  # Не наша клавиша
+                    
+                    # Обновляем состояние комбинации
+                    self._update_combo_state()
+            else:
+                # Обработка одиночной клавиши (left_shift)
+                # Проверяем, что это наша клавиша
+                if not self._is_target_key(key):
                     return
 
-                duration = current_time - self.press_start_time if self.press_start_time else 0
+                with self.state_lock:
+                    if not self.key_pressed:
+                        return
 
-                # КРИТИЧНО: Сбрасываем состояние СРАЗУ, чтобы hold_monitor не отправил LONG_PRESS
-                self.key_pressed = False
-                press_start_time_backup = self.press_start_time
-                self.press_start_time = None
+                    duration = current_time - self.press_start_time if self.press_start_time else 0
 
-                # Определяем тип события
-                if duration < self.short_press_threshold:
-                    event_type = KeyEventType.SHORT_PRESS
-                else:
-                    event_type = KeyEventType.RELEASE
+                    # КРИТИЧНО: Сбрасываем состояние СРАЗУ, чтобы hold_monitor не отправил LONG_PRESS
+                    self.key_pressed = False
+                    press_start_time_backup = self.press_start_time
+                    self.press_start_time = None
 
-                # Создаем событие
-                event = KeyEvent(
-                    key=self._key_to_string(key),
-                    event_type=event_type,
-                    timestamp=current_time,
-                    duration=duration
-                )
+                    # Определяем тип события
+                    if duration < self.short_press_threshold:
+                        event_type = KeyEventType.SHORT_PRESS
+                    else:
+                        event_type = KeyEventType.RELEASE
 
-                self._trigger_event(event_type, duration, event)
+                    # Создаем событие
+                    event = KeyEvent(
+                        key=self._key_to_string(key),
+                        event_type=event_type,
+                        timestamp=current_time,
+                        duration=duration
+                    )
 
-                # Обновляем время последнего события
-                self.last_event_time = current_time
-                
-            logger.debug(f"🔑 Клавиша отпущена: {self._key_to_string(key)} (длительность: {duration:.3f}s)")
+                    self._trigger_event(event_type, duration, event)
+
+                    # Обновляем время последнего события
+                    self.last_event_time = current_time
+                    
+                logger.debug(f"🔑 Клавиша отпущена: {self._key_to_string(key)} (длительность: {duration:.3f}s)")
             
         except Exception as e:
             logger.error(f"❌ Ошибка обработки отпускания: {e}")
+    
+    def _update_combo_state(self):
+        """Обновляет состояние комбинации Control+N и генерирует события при изменениях"""
+        now = time.time()
+        was_active = self._combo_active
+        should_be_active = self._control_pressed and self._n_pressed
+        
+        if should_be_active and not was_active:
+            # Активация комбинации: обе клавиши зажаты
+            self._combo_active = True
+            self._combo_start_time = now
+            self._long_sent = False
+            self.key_pressed = True  # Для совместимости с hold_monitor
+            self.press_start_time = now
+            
+            logger.info("✅ Control+N комбинация активирована (pynput)")
+            event = KeyEvent(
+                key=self.key_to_monitor,
+                event_type=KeyEventType.PRESS,
+                timestamp=now,
+            )
+            self._trigger_event(KeyEventType.PRESS, 0.0, event)
+            
+        elif not should_be_active and was_active:
+            # Деактивация комбинации: одна из клавиш отпущена
+            self._combo_active = False
+            duration = now - (self._combo_start_time or now)
+            self._combo_start_time = None
+            
+            long_sent_snapshot = self._long_sent
+            self.key_pressed = False
+            self.press_start_time = None
+            self.last_event_time = now
+            
+            if long_sent_snapshot:
+                # LONG_PRESS уже был отправлен - генерируем только RELEASE
+                logger.debug("🔑 Combo deactivation: LONG_PRESS уже был, генерируем RELEASE")
+                event_type_out = KeyEventType.RELEASE
+            else:
+                # Короткое нажатие - генерируем SHORT_PRESS
+                logger.debug("🔑 Combo deactivation: короткое нажатие, генерируем SHORT_PRESS")
+                event_type_out = KeyEventType.SHORT_PRESS
+            
+            event = KeyEvent(
+                key=self.key_to_monitor,
+                event_type=event_type_out,
+                timestamp=now,
+                duration=duration,
+            )
+            self._trigger_event(event_type_out, duration, event)
+            
+            # RELEASE всегда отправляется после SHORT_PRESS
+            if event_type_out != KeyEventType.RELEASE:
+                ev_release = KeyEvent(
+                    key=self.key_to_monitor,
+                    event_type=KeyEventType.RELEASE,
+                    timestamp=now,
+                    duration=duration,
+                )
+                self._trigger_event(KeyEventType.RELEASE, duration, ev_release)
     
     def _is_target_key(self, key) -> bool:
         """Проверяет, является ли клавиша целевой"""
         try:
             if not self.keyboard_available:
+                return False
+            
+            if self._is_combo:
+                # Для комбинации проверяем отдельно Control и N
+                if key == self.keyboard.Key.ctrl or key == self.keyboard.Key.ctrl_l or key == self.keyboard.Key.ctrl_r:
+                    return True
+                # Проверяем N по символу или keycode
+                if hasattr(key, 'char') and key.char and key.char.lower() == 'n':
+                    return True
+                if hasattr(key, 'name') and key.name and key.name.lower() == 'n':
+                    return True
                 return False
                 
             if self.key_to_monitor == 'left_shift':
@@ -333,9 +474,8 @@ class KeyboardMonitor:
     def get_status(self) -> Dict[str, Any]:
         """Возвращает статус мониторинга"""
         with self.state_lock:
-            return {
+            status = {
                 "is_monitoring": self.is_monitoring,
-                "key_pressed": self.key_pressed,
                 "keyboard_available": self.keyboard_available,
                 "fallback_mode": self.fallback_mode,
                 "config": {
@@ -345,3 +485,12 @@ class KeyboardMonitor:
                 },
                 "callbacks_registered": len(self.event_callbacks)
             }
+            
+            if self._is_combo:
+                status["combo_active"] = self._combo_active
+                status["control_pressed"] = self._control_pressed
+                status["n_pressed"] = self._n_pressed
+            else:
+                status["key_pressed"] = self.key_pressed
+            
+            return status

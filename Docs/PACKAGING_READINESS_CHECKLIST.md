@@ -4,9 +4,13 @@
 > Этот файл — только короткое резюме статуса перед упаковкой.
 
 ## Текущий статус
-- **Дата проверки:** 2025-11-12
+- **Дата проверки:** 2025-11-25
 - **Результат:** ✅ все проверки из `PRE_PACKAGING_VERIFICATION.md` пройдены
 - **Что покрыто:** критические сценарии tray/NSApplication, InstanceManager, first-run flags, permission restart, EventBus/StateManager
+- **Universal 2 сборка:** ✅ Успешно собрана и валидирована
+  - PKG: подписан, нотаризован, Universal 2 (arm64 + x86_64)
+  - DMG: создан, размер 161.8 MB
+  - Архитектуры: главный бинарник и все ресурсные бинарники (FFmpeg, SwitchAudioSource, FLAC) - Universal 2
 
 ## Что делать перед новой упаковкой
 1. Пройти полный чек-лист и обновить таблицы в `Docs/PRE_PACKAGING_VERIFICATION.md`.
