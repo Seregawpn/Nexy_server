@@ -131,7 +131,7 @@ else
 fi
 
 log_info "Удаляем артефакты сборки..."
-rm -rf build dist
+rm -rf build dist build-arm64 build-x86_64 dist-arm64 dist-x86_64
 log_success "build/ и dist/ удалены"
 
 log_info "Удаляем установленное приложение..."
@@ -142,6 +142,26 @@ log_info "Очищаем __pycache__ и .pyc файлы..."
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find . -type f -name "*.pyc" -delete 2>/dev/null || true
 log_success "Python кэш очищен"
+
+log_info "Очищаем кэш PyInstaller..."
+rm -rf "$HOME/Library/Application Support/pyinstaller" 2>/dev/null || true
+log_success "Кэш PyInstaller очищен"
+
+log_info "Очищаем временные файлы сборки..."
+rm -rf /tmp/Nexy*.app /tmp/nexy_* /tmp/*.pkg /tmp/*.dmg /tmp/Nexy-app-for-notarization.zip 2>/dev/null || true
+log_success "Временные файлы очищены"
+
+log_info "Очищаем .spec файлы артефакты..."
+find . -name "*.spec.bak" -delete 2>/dev/null || true
+log_success "Спецификации очищены"
+
+log_info "Очищаем кэш pip (опционально, для чистоты)..."
+# Не удаляем полностью, только упоминаем
+log_info "  (кэш pip сохранён для ускорения последующих сборок)"
+
+log_info "Очищаем логи предыдущих сборок (старые)..."
+find rebuild_logs -name "*.log" -mtime +7 -delete 2>/dev/null || true
+log_success "Старые логи очищены"
 
 echo ""
 pause_for_review
@@ -338,10 +358,35 @@ log_warning "  • Подпись и нотаризация"
 echo ""
 
 BUILD_LOG="$LOG_DIR/build_${TIMESTAMP}.log"
-cd packaging
-./build_final.sh 2>&1 | tee "$BUILD_LOG"
-BUILD_EXIT_CODE=${PIPESTATUS[0]}
+
+# Убеждаемся, что мы в корне проекта
 cd "$PROJECT_ROOT"
+
+# Проверяем, что build_final.sh существует и исполняемый
+if [ ! -f "packaging/build_final.sh" ]; then
+    log_error "packaging/build_final.sh не найден!"
+    exit 1
+fi
+
+if [ ! -x "packaging/build_final.sh" ]; then
+    log_info "Добавляем права на выполнение для build_final.sh..."
+    chmod +x packaging/build_final.sh
+fi
+
+log_info "Запускаем полную Universal 2 сборку через build_final.sh..."
+log_info "Рабочая директория: $PROJECT_ROOT"
+log_info "Версия из конфига: $(python3 -c "import yaml; print(yaml.safe_load(open('config/unified_config.yaml'))['app']['version'])" 2>/dev/null || echo 'неизвестно')"
+
+# Запускаем build_final.sh из корня проекта (он сам определит пути)
+# build_final.sh автоматически:
+# - Проверит зависимости
+# - Очистит старые артефакты
+# - Выполнит двойную сборку PyInstaller (arm64 + x86_64)
+# - Объединит в Universal 2
+# - Подпишет и нотаризует
+log_info "Запуск: ./packaging/build_final.sh"
+./packaging/build_final.sh 2>&1 | tee "$BUILD_LOG"
+BUILD_EXIT_CODE=${PIPESTATUS[0]}
 
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
     log_error "Сборка не удалась! Код выхода: $BUILD_EXIT_CODE"
@@ -353,30 +398,50 @@ log_success "Сборка завершена успешно!"
 log_info "Лог сборки: $BUILD_LOG"
 
 # Проверяем наличие артефактов
-log_info "Проверяем наличие артефактов..."
-if [ ! -d "dist/Nexy.app" ]; then
-    log_error "dist/Nexy.app не найден!"
-    exit 1
-fi
-log_success "dist/Nexy.app ✅"
+log_info "Проверяем наличие артефактов после сборки..."
 
-# Проверяем архитектуры Universal 2
-log_info "Проверяем архитектуры Universal 2 .app..."
-MAIN_ARCHS=$(lipo -info "dist/Nexy.app/Contents/MacOS/Nexy" 2>/dev/null || echo "")
-if echo "$MAIN_ARCHS" | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
-    log_success "✅ Universal 2 (arm64 + x86_64) подтверждено"
+# build_final.sh создаёт Nexy-final.app, проверяем его
+if [ -d "dist/Nexy-final.app" ]; then
+    log_success "dist/Nexy-final.app ✅"
+    
+    # Проверяем архитектуры Universal 2
+    log_info "Проверяем архитектуры Universal 2 .app..."
+    MAIN_ARCHS=$(lipo -info "dist/Nexy-final.app/Contents/MacOS/Nexy" 2>/dev/null || echo "")
+    if echo "$MAIN_ARCHS" | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
+        log_success "✅ Universal 2 (arm64 + x86_64) подтверждено"
+        echo "   Архитектуры: $MAIN_ARCHS"
+    else
+        log_warning "⚠️  Архитектуры: $MAIN_ARCHS (ожидается Universal 2)"
+    fi
+    
+    # Проверяем версию в Info.plist
+    if [ -f "dist/Nexy-final.app/Contents/Info.plist" ]; then
+        APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "dist/Nexy-final.app/Contents/Info.plist" 2>/dev/null || echo "неизвестно")
+        log_info "Версия в .app: $APP_VERSION"
+    fi
+elif [ -d "dist/Nexy.app" ]; then
+    log_success "dist/Nexy.app ✅"
+    MAIN_ARCHS=$(lipo -info "dist/Nexy.app/Contents/MacOS/Nexy" 2>/dev/null || echo "")
+    if echo "$MAIN_ARCHS" | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
+        log_success "✅ Universal 2 (arm64 + x86_64) подтверждено"
+    fi
 else
-    log_warning "⚠️  Архитектуры: $MAIN_ARCHS (ожидается Universal 2)"
+    log_error "dist/Nexy-final.app или dist/Nexy.app не найден!"
+    exit 1
 fi
 
 if [ ! -f "dist/Nexy.pkg" ]; then
     log_warning "dist/Nexy.pkg не найден (возможно, создание пакета не выполнено)"
 else
     log_success "dist/Nexy.pkg ✅"
+    PKG_SIZE=$(du -h "dist/Nexy.pkg" | cut -f1)
+    log_info "   Размер PKG: $PKG_SIZE"
 fi
 
 if [ -f "dist/Nexy.dmg" ]; then
     log_success "dist/Nexy.dmg ✅"
+    DMG_SIZE=$(du -h "dist/Nexy.dmg" | cut -f1)
+    log_info "   Размер DMG: $DMG_SIZE"
 else
     log_info "dist/Nexy.dmg не найден (опционально)"
 fi
@@ -424,8 +489,19 @@ pause_for_review
 # ============================================================================
 log_step "1️⃣2️⃣  ФИНАЛЬНАЯ ПРОВЕРКА SPCTL"
 
-log_info "Проверяем .app через spctl..."
-spctl --assess --verbose dist/Nexy.app 2>&1 | tee -a "$FULL_LOG"
+# Проверяем правильный .app файл (build_final.sh создаёт Nexy-final.app)
+APP_TO_CHECK=""
+if [ -d "dist/Nexy-final.app" ]; then
+    APP_TO_CHECK="dist/Nexy-final.app"
+elif [ -d "dist/Nexy.app" ]; then
+    APP_TO_CHECK="dist/Nexy.app"
+else
+    log_error "Не найден .app файл для проверки!"
+    exit 1
+fi
+
+log_info "Проверяем .app через spctl: $APP_TO_CHECK"
+spctl --assess --verbose "$APP_TO_CHECK" 2>&1 | tee -a "$FULL_LOG"
 SPCTL_APP_EXIT=$?
 
 if [ $SPCTL_APP_EXIT -eq 0 ]; then
@@ -446,8 +522,8 @@ if [ -f "dist/Nexy.pkg" ]; then
     fi
 fi
 
-log_info "Проверяем codesign --verify..."
-codesign --verify --deep --strict --verbose=2 dist/Nexy.app 2>&1 | tee -a "$FULL_LOG"
+log_info "Проверяем codesign --verify для $APP_TO_CHECK..."
+codesign --verify --deep --strict --verbose=2 "$APP_TO_CHECK" 2>&1 | tee -a "$FULL_LOG"
 CODESIGN_EXIT=$?
 
 if [ $CODESIGN_EXIT -eq 0 ]; then
@@ -458,7 +534,7 @@ else
 fi
 
 log_info "Проверяем Info.plist..."
-plutil -p dist/Nexy.app/Contents/Info.plist | grep -E "(CFBundleIdentifier|CFBundleName|CFBundleVersion)" | tee -a "$FULL_LOG"
+plutil -p "$APP_TO_CHECK/Contents/Info.plist" | grep -E "(CFBundleIdentifier|CFBundleName|CFBundleVersion|CFBundleShortVersionString)" | tee -a "$FULL_LOG"
 log_success "Info.plist корректен"
 
 echo ""
@@ -489,8 +565,16 @@ log_info "Проверяем установку..."
 if [ -d "/Applications/Nexy.app" ]; then
     log_success "/Applications/Nexy.app существует"
     
-    log_info "Bundle ID в установленном приложении:"
-    plutil -p /Applications/Nexy.app/Contents/Info.plist | grep CFBundleIdentifier | tee -a "$FULL_LOG"
+    log_info "Информация об установленном приложении:"
+    plutil -p /Applications/Nexy.app/Contents/Info.plist | grep -E "(CFBundleIdentifier|CFBundleVersion|CFBundleShortVersionString)" | tee -a "$FULL_LOG"
+    
+    # Проверяем архитектуру установленного приложения
+    INSTALLED_ARCHS=$(lipo -info "/Applications/Nexy.app/Contents/MacOS/Nexy" 2>/dev/null || echo "")
+    if echo "$INSTALLED_ARCHS" | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
+        log_success "✅ Установленное приложение - Universal 2"
+    else
+        log_info "Архитектура установленного приложения: $INSTALLED_ARCHS"
+    fi
 else
     log_error "/Applications/Nexy.app не найден!"
     exit 1
@@ -576,10 +660,13 @@ cat << EOF
 
 EOF
 
-if [ -d "dist/Nexy.app" ]; then
+# Проверяем оба возможных варианта (build_final.sh создаёт Nexy-final.app)
+if [ -d "dist/Nexy-final.app" ]; then
+    echo -e "   ${GREEN}✅ dist/Nexy-final.app${NC}"
+elif [ -d "dist/Nexy.app" ]; then
     echo -e "   ${GREEN}✅ dist/Nexy.app${NC}"
 else
-    echo -e "   ${RED}❌ dist/Nexy.app${NC}"
+    echo -e "   ${RED}❌ dist/Nexy*.app не найден${NC}"
 fi
 
 if [ -f "dist/Nexy.pkg" ]; then
