@@ -40,6 +40,7 @@ from integration.integrations.signal_integration import SignalsIntegrationConfig
 from integration.integrations.welcome_message_integration import WelcomeMessageIntegration
 from integration.integrations.voiceover_ducking_integration import VoiceOverDuckingIntegration
 from integration.integrations.first_run_permissions_integration import FirstRunPermissionsIntegration
+from integration.integrations.action_execution_integration import ActionExecutionIntegration
 from integration.core.selectors import (
     Snapshot,
     PermissionStatus,
@@ -338,6 +339,25 @@ class SimpleModuleCoordinator:
                 error_handler=self.error_handler,
             )
 
+            # Action Execution Integration - выполнение MCP команд (open_app)
+            # Включается только в dev окружении или если явно включено в конфиге
+            actions_cfg = self.config.get_actions_config().get('open_app')
+            env = self.config.get_environment()
+            # Включаем только если: (dev окружение ИЛИ enabled в конфиге) И не выключено через kill-switch
+            actions_enabled = (env == 'development' or (actions_cfg and actions_cfg.enabled)) if actions_cfg else (env == 'development')
+            
+            if actions_enabled:
+                self.integrations['action_execution'] = ActionExecutionIntegration(
+                    event_bus=self.event_bus,
+                    state_manager=self.state_manager,
+                    error_handler=self.error_handler,
+                )
+                logger.info("[F-2025-016] ActionExecutionIntegration registered (env=%s, config.enabled=%s)", 
+                           env, actions_cfg.enabled if actions_cfg else False)
+            else:
+                logger.info("[F-2025-016] ActionExecutionIntegration skipped (env=%s, config.enabled=%s)", 
+                           env, actions_cfg.enabled if actions_cfg else False)
+
             # Speech Playback Integration
             self.integrations['speech_playback'] = SpeechPlaybackIntegration(
                 event_bus=self.event_bus,
@@ -575,13 +595,14 @@ class SimpleModuleCoordinator:
                 'interrupt',               # 10. Управление прерываниями
                 'screenshot_capture',      # 11. Захват экрана (использует screen_capture)
                 'grpc',                    # 12. gRPC клиент (зависит от hardware_id)
-                'speech_playback',         # 13. Воспроизведение речи (зависит от grpc)
-                'signals',                 # 14. Аудио сигналы (должны быть до update_notification)
-                'update_notification',     # 15. Голосовые уведомления об обновлениях (ПЕРЕД updater!)
-                'updater',                 # 16. Система обновлений (после update_notification)
-                'welcome_message',         # 17. Приветственное сообщение (зависит от speech_playback)
-                'voiceover_ducking',       # 18. VoiceOver Ducking
-                'autostart_manager',       # 19. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
+                'action_execution',         # 13. Выполнение MCP команд (зависит от grpc)
+                'speech_playback',         # 14. Воспроизведение речи (зависит от grpc)
+                'signals',                 # 15. Аудио сигналы (должны быть до update_notification)
+                'update_notification',     # 16. Голосовые уведомления об обновлениях (ПЕРЕД updater!)
+                'updater',                 # 17. Система обновлений (после update_notification)
+                'welcome_message',         # 18. Приветственное сообщение (зависит от speech_playback)
+                'voiceover_ducking',       # 19. VoiceOver Ducking
+                'autostart_manager',       # 20. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
             ]
             
             # Запускаем в правильном порядке

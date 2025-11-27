@@ -117,7 +117,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: production
+    server: local  # local|production|fallback - для dev используем local (127.0.0.1:50051)
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 30.0
     max_retries: 3
@@ -496,3 +496,12 @@ features:
   #   rollout_percentage: 0
   # ks_new_feature_name:
   #   enabled: false
+
+# Конфигурация действий (MCP commands)
+# Feature ID: F-2025-016-mcp-app-opening-integration
+actions:
+  open_app:
+    enabled: true  # Включено для dev окружения (автоматически включается в development)
+    timeout_sec: 10.0  # Таймаут выполнения команды в секундах
+    allowed_apps: []  # Whitelist приложений (пустой список = все разрешены)
+    binary: "/usr/bin/open"  # Бинарный файл для открытия приложений на macOS

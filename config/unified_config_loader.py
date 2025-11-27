@@ -80,6 +80,18 @@ class InputProcessingConfig:
     playback_wait_timeout_sec: float = 5.0
     recording_prestart_delay_sec: float = 0.3
 
+@dataclass
+class OpenAppActionConfig:
+    """Конфигурация действий открытия приложений"""
+    enabled: bool = False  # По умолчанию выключено для безопасности
+    timeout_sec: float = 10.0
+    allowed_apps: list = None  # None или пустой список = все разрешены
+    binary: str = "/usr/bin/open"
+    
+    def __post_init__(self):
+        if self.allowed_apps is None:
+            self.allowed_apps = []
+
 class UnifiedConfigLoader:
     """Единый загрузчик конфигурации с автоматической синхронизацией"""
     
@@ -455,6 +467,29 @@ class UnifiedConfigLoader:
             playback_wait_timeout_sec=float(input_cfg.get('playback_wait_timeout_sec', 5.0)),
             recording_prestart_delay_sec=float(input_cfg.get('recording_prestart_delay_sec', 0.3)),
         )
+
+    def get_actions_config(self) -> Dict[str, OpenAppActionConfig]:
+        """
+        Получает конфигурацию действий.
+        
+        Returns:
+            Словарь с конфигурациями действий, ключ - тип действия (например, "open_app")
+        """
+        config = self._load_config()
+        actions_cfg = config.get('actions', {})
+        
+        result = {}
+        
+        # Конфигурация для open_app
+        open_app_cfg = actions_cfg.get('open_app', {})
+        result['open_app'] = OpenAppActionConfig(
+            enabled=bool(open_app_cfg.get('enabled', False)),
+            timeout_sec=float(open_app_cfg.get('timeout_sec', 10.0)),
+            allowed_apps=list(open_app_cfg.get('allowed_apps', [])) if open_app_cfg.get('allowed_apps') else [],
+            binary=str(open_app_cfg.get('binary', '/usr/bin/open')),
+        )
+        
+        return result
 
 # Глобальный экземпляр загрузчика
 unified_config = UnifiedConfigLoader()

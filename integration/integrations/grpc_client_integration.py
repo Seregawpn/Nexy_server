@@ -9,6 +9,7 @@ GrpcClientIntegration — интеграция gRPC клиента с EventBus
 
 import asyncio
 import base64
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,9 @@ from config.unified_config_loader import UnifiedConfigLoader
 
 # Модульный gRPC клиент
 from modules.grpc_client.core.grpc_client import GrpcClient
+
+FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
+MCP_PREFIX = "__MCP__"
 
 logger = logging.getLogger(__name__)
 
@@ -389,7 +393,64 @@ class GrpcClientIntegration:
                 if which_oneof == 'text_chunk':
                     text = resp.text_chunk
                     logger.info(f"gRPC received text_chunk len={len(text)} for session {session_id}")
-                    await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
+                    
+                    # Проверяем префикс __MCP__ для MCP команд
+                    if text.startswith(MCP_PREFIX):
+                        # Извлекаем JSON после префикса
+                        mcp_json_str = text[len(MCP_PREFIX):]
+                        try:
+                            # Парсим JSON для валидации
+                            mcp_payload = json.loads(mcp_json_str)
+                            
+                            # Извлекаем command_payload из структуры
+                            # Формат: {"event": "mcp.command_request", "payload": {...}}
+                            command_payload = mcp_payload.get("payload", {})
+                            
+                            logger.info(
+                                "[%s] MCP command detected: command=%s, session_id=%s",
+                                FEATURE_ID,
+                                command_payload.get("command", "unknown"),
+                                session_id
+                            )
+                            
+                            # Публикуем событие grpc.response.action с action_json
+                            # Формат события соответствует ожиданиям ActionExecutionIntegration
+                            await self.event_bus.publish("grpc.response.action", {
+                                "session_id": session_id,
+                                "action_json": json.dumps(command_payload, ensure_ascii=False),
+                                "feature_id": FEATURE_ID,
+                            })
+                            
+                            logger.debug(
+                                "[%s] Published grpc.response.action for session=%s, command=%s",
+                                FEATURE_ID,
+                                session_id,
+                                command_payload.get("command", "unknown")
+                            )
+                        except json.JSONDecodeError as e:
+                            logger.error(
+                                "[%s] Failed to parse MCP JSON: %s, text=%s",
+                                FEATURE_ID,
+                                e,
+                                mcp_json_str[:100]
+                            )
+                            # Публикуем событие об ошибке парсинга
+                            await self.event_bus.publish("grpc.response.action", {
+                                "session_id": session_id,
+                                "action_json": None,
+                                "error": "invalid_json",
+                                "feature_id": FEATURE_ID,
+                            })
+                        except Exception as e:
+                            logger.error(
+                                "[%s] Error processing MCP command: %s",
+                                FEATURE_ID,
+                                e
+                            )
+                            await self._handle_error(e, where="grpc.process_mcp_command", severity="warning")
+                    else:
+                        # Обычный текст - публикуем как обычно
+                        await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
 
                 elif which_oneof == 'audio_chunk':
                     ch = resp.audio_chunk
