@@ -37,3 +37,6 @@ pydub
 
 # Мониторинг системы
 psutil
+
+# Валидация данных (Pydantic)
+pydantic

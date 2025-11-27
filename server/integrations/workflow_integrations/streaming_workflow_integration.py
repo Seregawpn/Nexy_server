@@ -165,21 +165,24 @@ class StreamingWorkflowIntegration:
                 # Накопление JSON: добавляем часть в буфер
                 self._json_buffer += sentence
                 
-                # Проверяем, начинается ли буфер с JSON (может быть `{` или пробелы перед `{`)
-                is_potential_json = self._json_buffer.strip().startswith('{')
+                # Очищаем от markdown перед проверкой
+                cleaned_buffer = self._extract_json_from_markdown(self._json_buffer)
+                
+                # Проверяем, начинается ли буфер с JSON (может быть `{` или markdown-блок)
+                is_potential_json = cleaned_buffer.strip().startswith('{')
                 
                 if is_potential_json:
-                    # Пытаемся распарсить накопленный JSON
+                    # Пытаемся распарсить накопленный JSON (после удаления markdown-разметки)
                     parsed_json = None
                     try:
                         import json
-                        parsed_json = json.loads(self._json_buffer.strip())
+                        parsed_json = json.loads(cleaned_buffer)
                         # JSON валиден - используем его
-                        logger.info(f"✅ JSON полностью накоплен и распарсен: {len(self._json_buffer)} символов")
+                        logger.info(f"✅ JSON полностью накоплен и распарсен: {len(self._json_buffer)} символов (после очистки: {len(cleaned_buffer)})")
                         self._json_parsed = True
                     except (json.JSONDecodeError, ValueError):
                         # JSON ещё не полный - продолжаем накапливать
-                        logger.debug(f"📦 Накопление JSON: {len(self._json_buffer)} символов (ещё не полный)")
+                        logger.debug(f"📦 Накопление JSON: {len(self._json_buffer)} символов (ещё не полный, очищенный: {len(cleaned_buffer)})")
                         continue
                     
                     # JSON полностью накоплен - парсим его
@@ -189,10 +192,35 @@ class StreamingWorkflowIntegration:
                         self._pending_command_payload = parsed.command_payload
                         # Логируем обнаружение команды
                         self._log_command_detected(parsed, session_id)
-                    
+
                     # Используем только text_response для дальнейшей обработки
                     sentence = parsed.text_response
-                    logger.info(f"📝 После парсинга JSON: text_response='{sentence[:100] if sentence else '(пусто)'}...' (len={len(sentence) if sentence else 0})")
+
+                    # [НОВОЕ ИЗМЕНЕНИЕ] Специальная обработка для текста подтверждения команды
+                    if parsed.command_payload and sentence and sentence.strip():
+                        logger.info(f"🎤 Обнаружен текст подтверждения для команды: '{sentence}'")
+                        emitted_segment_counter += 1
+                        captured_segments.append(sentence.strip())
+                        
+                        # Немедленно отправляем текст и аудио, минуя буфер
+                        yield { 'success': True, 'text_response': sentence.strip(), 'sentence_index': emitted_segment_counter }
+                        
+                        tts_text = sentence.strip() if sentence.strip().endswith(self.end_punctuations) else f"{sentence.strip()}."
+                        sentence_audio_chunks = 0
+                        async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
+                            if audio_chunk:
+                                sentence_audio_chunks += 1
+                                total_audio_chunks += 1
+                                total_audio_bytes += len(audio_chunk)
+                                yield { 'success': True, 'audio_chunk': audio_chunk, 'sentence_index': emitted_segment_counter, 'audio_chunk_index': sentence_audio_chunks }
+                        
+                        sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
+                        logger.info(f"🎧 Command confirmation audio generated for segment #{emitted_segment_counter}")
+
+                        # Очищаем буфер и пропускаем остальную часть цикла, так как этот чанк обработан
+                        self._json_buffer = ""
+                        self._json_parsed = False
+                        continue
                     
                     # Очищаем JSON буфер после успешного парсинга
                     self._json_buffer = ""
@@ -212,10 +240,25 @@ class StreamingWorkflowIntegration:
                     logger.warning(f"⚠️ text_response пустой после парсинга, пропускаем обработку TTS")
                     continue
                 
+                # Дополнительная проверка: если sentence выглядит как JSON, пробуем его распарсить
+                # Это защита от случаев, когда JSON не был распознан ранее и попал в stream_buffer
+                if sentence.strip().startswith('{') or '{"text"' in sentence or '"text":' in sentence:
+                    # Возможно, это JSON, который не был распознан - пробуем распарсить
+                    try:
+                        import json
+                        cleaned = self._extract_json_from_markdown(sentence)
+                        if cleaned.strip().startswith('{'):
+                            parsed_json = json.loads(cleaned)
+                            parsed = await self._parse_assistant_response(parsed_json, session_id)
+                            sentence = parsed.text_response
+                            logger.info(f"✅ JSON распознан и распарсен на этапе обработки TTS: text_response='{sentence[:100] if sentence else '(пусто)'}...' (len={len(sentence) if sentence else 0})")
+                    except (json.JSONDecodeError, ValueError):
+                        # Не JSON или неполный - продолжаем как есть
+                        pass
+                
                 logger.info(f"📝 Обработка text_response для TTS: '{sentence[:100]}{'...' if len(sentence) > 100 else ''}' (len={len(sentence)})")
                     
                 sanitized = await self._sanitize_for_tts(sentence)
-                logger.info(f"📝 После санитизации: '{sanitized[:100] if sanitized else '(пусто)'}{'...' if sanitized and len(sanitized) > 100 else ''}' (len={len(sanitized) if sanitized else 0})")
                 if sanitized:
                     # Дедупликация только на уровне очищенного текста (более мягкая)
                     sanitized_hash = hash(sanitized.strip())
@@ -225,17 +268,14 @@ class StreamingWorkflowIntegration:
                     self._processed_sentences.add(sanitized_hash)
                     
                     self._stream_buffer = (f"{self._stream_buffer}{self.sentence_joiner}{sanitized}" if self._stream_buffer else sanitized)
-                    logger.info(f"📝 Добавлено в stream_buffer: len={len(self._stream_buffer)}, content='{self._stream_buffer[:100]}{'...' if len(self._stream_buffer) > 100 else ''}'")
 
                 complete_sentences, remainder = await self._split_complete_sentences(self._stream_buffer)
-                logger.info(f"📝 _split_complete_sentences: complete={len(complete_sentences)}, remainder_len={len(remainder) if remainder else 0}")
                 self._stream_buffer = remainder
 
                 for complete in complete_sentences:
                     # Агрегируем короткие завершенные предложения до порогов
                     candidate = complete if not self._pending_segment else f"{self._pending_segment}{self.sentence_joiner}{complete}"
                     words_count = await self._count_meaningful_words(candidate)
-                    logger.info(f"📝 Проверка сегмента: candidate_len={len(candidate)}, words={words_count}, has_emitted={self._has_emitted}, min_words={self.stream_min_words if self._has_emitted else self.stream_first_sentence_min_words}, min_chars={self.stream_min_chars}")
                     if (not self._has_emitted and (words_count >= self.stream_first_sentence_min_words or len(candidate) >= self.stream_min_chars)) or \
                        (self._has_emitted and (words_count >= self.stream_min_words or len(candidate) >= self.stream_min_chars)):
                         # Дедупликация финальных сегментов (только для очень коротких повторений)
@@ -286,17 +326,18 @@ class StreamingWorkflowIntegration:
                             logger.debug(f"⏭️ Пропуск аудио для пустого текста в segment #{emitted_segment_counter}")
                     else:
                         # Продолжаем копить
-                        logger.debug(f"📝 Сегмент не прошёл проверку, копим дальше: candidate_len={len(candidate)}, words={words_count}")
                         self._pending_segment = candidate
 
             # Финальный флаш: обрабатываем оставшийся JSON буфер, если он есть
             if self._json_buffer and not self._json_parsed:
                 import json
-                is_potential_json = self._json_buffer.strip().startswith('{')
+                # Очищаем от markdown перед проверкой
+                cleaned_buffer = self._extract_json_from_markdown(self._json_buffer)
+                is_potential_json = cleaned_buffer.strip().startswith('{')
                 if is_potential_json:
                     try:
-                        parsed_json = json.loads(self._json_buffer.strip())
-                        logger.info(f"✅ Финальный парсинг JSON буфера: {len(self._json_buffer)} символов")
+                        parsed_json = json.loads(cleaned_buffer)
+                        logger.info(f"✅ Финальный парсинг JSON буфера: {len(self._json_buffer)} символов (после очистки: {len(cleaned_buffer)})")
                         parsed = await self._parse_assistant_response(parsed_json, session_id)
                         if parsed.command_payload and not self._command_payload_sent:
                             self._pending_command_payload = parsed.command_payload
@@ -325,17 +366,37 @@ class StreamingWorkflowIntegration:
                     self._json_buffer = ""
             
             # Финальный флаш: сначала обработаем завершенные предложения из буфера
+            # ВАЖНО: проверяем, не является ли stream_buffer JSON-объектом
             if self._stream_buffer:
-                logger.info(f"📝 Финальный флаш: stream_buffer_len={len(self._stream_buffer)}, content='{self._stream_buffer[:100]}{'...' if len(self._stream_buffer) > 100 else ''}'")
+                # Проверяем, не является ли stream_buffer JSON-объектом
+                stream_cleaned = self._extract_json_from_markdown(self._stream_buffer)
+                if stream_cleaned.strip().startswith('{'):
+                    try:
+                        import json
+                        parsed_json = json.loads(stream_cleaned)
+                        logger.info(f"✅ JSON обнаружен в stream_buffer при финальном флаше: {len(self._stream_buffer)} символов")
+                        parsed = await self._parse_assistant_response(parsed_json, session_id)
+                        if parsed.text_response:
+                            self._stream_buffer = parsed.text_response
+                            logger.info(f"📝 Заменён stream_buffer на распарсенный text_response: '{self._stream_buffer[:100]}...' (len={len(self._stream_buffer)})")
+                    except (json.JSONDecodeError, ValueError):
+                        # Не JSON или неполный - продолжаем как есть
+                        pass
+                
                 complete_sentences, remainder = await self._split_complete_sentences(self._stream_buffer)
-                logger.info(f"📝 Финальный _split_complete_sentences: complete={len(complete_sentences)}, remainder_len={len(remainder) if remainder else 0}")
                 self._stream_buffer = remainder
                 for complete in complete_sentences:
                     candidate = complete if not self._pending_segment else f"{self._pending_segment}{self.sentence_joiner}{complete}"
                     words_count = await self._count_meaningful_words(candidate)
-                    logger.info(f"📝 Финальная проверка сегмента: candidate_len={len(candidate)}, words={words_count}, has_emitted={self._has_emitted}")
-                    if (not self._has_emitted and (words_count >= self.stream_first_sentence_min_words or len(candidate) >= self.stream_min_chars)) or \
-                       (self._has_emitted and (words_count >= self.stream_min_words or len(candidate) >= self.stream_min_chars)):
+                    # Если есть command_payload, принудительно эмитируем даже короткий текст
+                    has_command = self._pending_command_payload and not self._command_payload_sent
+                    should_emit = (
+                        (not self._has_emitted and (words_count >= self.stream_first_sentence_min_words or len(candidate) >= self.stream_min_chars)) or
+                        (self._has_emitted and (words_count >= self.stream_min_words or len(candidate) >= self.stream_min_chars)) or
+                        (has_command and candidate.strip())  # Принудительная эмиссия для команд
+                    )
+                    
+                    if should_emit:
                         emitted_segment_counter += 1
                         to_emit = candidate.strip()
                         self._pending_segment = ""
@@ -359,49 +420,45 @@ class StreamingWorkflowIntegration:
                             logger.debug(f"⏭️ Пропуск аудио для пустого текста в final segment #{emitted_segment_counter}")
                     else:
                         self._pending_segment = candidate
-
-            # Если остался незавершенный агрегат или остаток в stream_buffer, форс-флаш если достаточно длинный
-            # Обрабатываем остаток из stream_buffer, если он есть
-            if self._stream_buffer and self._stream_buffer.strip():
-                logger.info(f"📝 Остаток в stream_buffer после финального флаша: len={len(self._stream_buffer)}, content='{self._stream_buffer[:100]}{'...' if len(self._stream_buffer) > 100 else ''}'")
-                # Добавляем остаток к pending_segment, если он есть
-                if self._pending_segment:
-                    self._pending_segment = f"{self._pending_segment}{self.sentence_joiner}{self._stream_buffer}"
-                else:
-                    self._pending_segment = self._stream_buffer
-                self._stream_buffer = ""
-            
-            # Если остался незавершенный агрегат, можно форс-флаш, если очень длинный
-            force_max = self.force_flush_max_chars
-            logger.info(f"📝 Проверка форс-флаша: pending_segment_len={len(self._pending_segment) if self._pending_segment else 0}, force_max={force_max}")
-            # Если force_max=0, но есть pending_segment и он достаточно длинный, всё равно эмитим
-            if self._pending_segment and len(self._pending_segment.strip()) > 0:
-                # Если force_max > 0, проверяем длину, иначе эмитим всегда (если есть текст)
-                if force_max == 0 or len(self._pending_segment) >= force_max:
-                    logger.info(f"📝 Форс-флаш pending_segment: len={len(self._pending_segment)}, force_max={force_max}")
-                    emitted_segment_counter += 1
-                    to_emit = self._pending_segment
-                    self._pending_segment = ""
-                    self._has_emitted = True
-                    captured_segments.append(to_emit)
-                    yield {'success': True, 'text_response': to_emit, 'sentence_index': emitted_segment_counter}
-                    # Фаза 2: Пропускаем аудио-генерацию, если text пустой
-                    if to_emit.strip():
-                        tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
-                        sentence_audio_chunks = 0
-                        async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
-                            if not audio_chunk:
-                                continue
-                            sentence_audio_chunks += 1
-                            total_audio_chunks += 1
-                            total_audio_bytes += len(audio_chunk)
-                            yield {'success': True, 'audio_chunk': audio_chunk, 'sentence_index': emitted_segment_counter, 'audio_chunk_index': sentence_audio_chunks}
-                        sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
-                        logger.info(f"🎧 Forced final segment #{emitted_segment_counter} → audio_chunks={sentence_audio_chunks}, total_audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}")
+                
+                # Если остался remainder в stream_buffer, добавляем его в pending_segment
+                if remainder and remainder.strip():
+                    if self._pending_segment:
+                        self._pending_segment = f"{self._pending_segment}{self.sentence_joiner}{remainder}"
                     else:
-                        logger.debug(f"⏭️ Пропуск аудио для пустого текста в forced segment #{emitted_segment_counter}")
+                        self._pending_segment = remainder
+
+            # Если остался незавершенный агрегат, можно форс-флаш, если очень длинный
+            # ИЛИ если есть command_payload (нужно обязательно воспроизвести текст для действия)
+            force_max = self.force_flush_max_chars
+            has_command = self._pending_command_payload and not self._command_payload_sent
+            should_force_flush = (
+                (force_max > 0 and len(self._pending_segment) >= force_max) or
+                (has_command and self._pending_segment and self._pending_segment.strip())
+            )
+            
+            if should_force_flush:
+                emitted_segment_counter += 1
+                to_emit = self._pending_segment
+                self._pending_segment = ""
+                self._has_emitted = True
+                captured_segments.append(to_emit)
+                yield {'success': True, 'text_response': to_emit, 'sentence_index': emitted_segment_counter}
+                # Фаза 2: Пропускаем аудио-генерацию, если text пустой
+                if to_emit.strip():
+                    tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
+                    sentence_audio_chunks = 0
+                    async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
+                        if not audio_chunk:
+                            continue
+                        sentence_audio_chunks += 1
+                        total_audio_chunks += 1
+                        total_audio_bytes += len(audio_chunk)
+                        yield {'success': True, 'audio_chunk': audio_chunk, 'sentence_index': emitted_segment_counter, 'audio_chunk_index': sentence_audio_chunks}
+                    sentence_audio_map[emitted_segment_counter] = sentence_audio_chunks
+                    logger.info(f"🎧 Forced final segment #{emitted_segment_counter} → audio_chunks={sentence_audio_chunks}, total_audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}")
                 else:
-                    logger.debug(f"📝 pending_segment не прошёл проверку форс-флаша: len={len(self._pending_segment)}, force_max={force_max}")
+                    logger.debug(f"⏭️ Пропуск аудио для пустого текста в forced segment #{emitted_segment_counter}")
 
             full_text = " ".join(captured_segments).strip()
 
@@ -716,8 +773,8 @@ class StreamingWorkflowIntegration:
                     return self._assistant_parser.parse(response.get('text', str(response)))
                 return self._assistant_parser.parse(response)
             
-            # Парсим ответ
-            return self._assistant_parser.parse(response)
+            # Парсим ответ, передавая session_id для подстановки в action-ответы
+            return self._assistant_parser.parse(response, session_id=session_id)
         except Exception as e:
             logger.warning(f"⚠️ Ошибка парсинга ответа ассистента: {e}, возвращаем как обычный текст")
             # Fallback на обычный текст
@@ -782,6 +839,98 @@ class StreamingWorkflowIntegration:
             }
         )
     
+    def _extract_json_from_markdown(self, text: str) -> str:
+        """
+        Удаляет Markdown-обёртки и возвращает чистый JSON текст.
+        Поддерживает различные вариации ответов LLM:
+        - ```json {...}```
+        - ``` {...}```
+        - json {...}
+        - Текст до/после JSON
+        - Частичный JSON (для накопления)
+        - JSON с лишними пробелами/переносами
+        - JSON с trailing commas (удаляются)
+        - JSON с комментариями (удаляются)
+        
+        Args:
+            text: Текст, который может содержать JSON в различных форматах
+            
+        Returns:
+            Чистый JSON текст без markdown-разметки и лишних символов
+        """
+        if not text:
+            return ""
+
+        import re
+        
+        text = str(text).strip()
+
+        # Вариант 1: Markdown code fence ```json ... ``` или ``` ... ```
+        if text.startswith("```"):
+            # Удаляем открывающий fence
+            text = text[3:]
+            text = text.lstrip()
+            
+            # Опциональный язык (json/JSON/JSONC и т.д.)
+            lowered = text.lower()
+            if lowered.startswith("json"):
+                text = text[4:]
+            text = text.lstrip()
+            
+            # Удаляем ведущие переводы строки
+            while text.startswith(("\n", "\r")):
+                text = text[1:]
+            
+            # Удаляем закрывающий fence (может быть в конце или в середине для частичного JSON)
+            text = text.rstrip()
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+
+        # Вариант 2: Текст начинается с "json" (без markdown)
+        # Удаляем "json" если он стоит перед JSON объектом
+        text_lower = text.lower()
+        if text_lower.startswith("json") and len(text) > 4:
+            # Проверяем, что после "json" идёт пробел/перенос и затем {
+            after_json = text[4:].lstrip()
+            if after_json.startswith("{") or after_json.startswith("\n{") or after_json.startswith("\r{"):
+                text = after_json
+
+        # Вариант 3: Текст до/после JSON - извлекаем только JSON объект
+        # Ищем первую открывающую скобку и последнюю закрывающую
+        first_brace = text.find("{")
+        last_brace = text.rfind("}")
+        
+        if first_brace != -1 and last_brace != -1 and first_brace < last_brace:
+            # Извлекаем JSON объект
+            json_candidate = text[first_brace:last_brace + 1]
+            
+            # Очищаем от лишних символов вокруг
+            json_candidate = json_candidate.strip()
+            
+            # Удаляем возможные артефакты:
+            # 1. Удаляем комментарии (// и /* */) - хотя JSON не поддерживает, LLM может их добавить
+            json_candidate = re.sub(r'//.*?$', '', json_candidate, flags=re.MULTILINE)  # Однострочные комментарии
+            json_candidate = re.sub(r'/\*.*?\*/', '', json_candidate, flags=re.DOTALL)  # Многострочные комментарии
+            
+            # 2. Удаляем trailing commas перед закрывающими скобками/фигурными скобками
+            json_candidate = re.sub(r',\s*}', '}', json_candidate)  # Trailing comma перед }
+            json_candidate = re.sub(r',\s*]', ']', json_candidate)  # Trailing comma перед ]
+            
+            # 3. Нормализуем пробелы и переносы строк
+            json_candidate = re.sub(r'\n\s*\n', '\n', json_candidate)  # Удаляем пустые строки
+            json_candidate = re.sub(r'[ \t]+', ' ', json_candidate)  # Нормализуем пробелы
+            
+            # 4. Удаляем лишние пробелы вокруг двоеточий и запятых
+            json_candidate = re.sub(r'\s*:\s*', ': ', json_candidate)  # Нормализуем пробелы вокруг :
+            json_candidate = re.sub(r'\s*,\s*', ', ', json_candidate)  # Нормализуем пробелы вокруг ,
+            
+            return json_candidate
+
+        # Если JSON объект не найден, возвращаем очищенный текст
+        # (может быть частичный JSON для дальнейшего накопления)
+        return text.strip()
+
     def _split_into_sentences(self, text: str) -> list[str]:
         """
         Разбивка текста на предложения
