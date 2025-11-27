@@ -8,7 +8,7 @@ Feature ID: F-2025-016-mcp-app-opening-integration
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from integration.core.base_integration import BaseIntegration
 from integration.core.event_bus import EventBus, EventPriority
@@ -17,6 +17,7 @@ from integration.core.error_handler import ErrorHandler
 
 from config.unified_config_loader import UnifiedConfigLoader, OpenAppActionConfig
 from modules.action_executor import ActionExecutor, ActionExecutorConfig
+from modules.action_errors.messages import resolver as action_error_resolver
 
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
 
@@ -51,9 +52,11 @@ class ActionExecutionIntegration(BaseIntegration):
         )
         
         self._executor = ActionExecutor(executor_config)
+        self._open_app_config = actions_cfg
         self._config = executor_config
         self._actions_lock = asyncio.Lock()
         self._active_actions: Dict[str, asyncio.Task] = {}
+        self._spoken_error_sessions: Set[str] = set()
         
         logger.info(
             "[%s] ActionExecutionIntegration initialized: enabled=%s, timeout=%.1fs, allowed_apps=%s",
@@ -122,13 +125,12 @@ class ActionExecutionIntegration(BaseIntegration):
 
         if not self._executor.is_enabled():
             logger.info("[%s] Actions disabled, ignoring payload", feature_id)
-            await self.event_bus.publish(
-                "actions.open_app.failed",
-                {
-                    "session_id": session_id,
-                    "feature_id": feature_id,
-                    "error": "disabled",
-                },
+            await self._publish_failure(
+                session_id=session_id,
+                feature_id=feature_id,
+                error_code="disabled",
+                message="Action executor disabled",
+                app_name=None,
             )
             return
 
@@ -141,14 +143,12 @@ class ActionExecutionIntegration(BaseIntegration):
             action_data = json.loads(action_json)
         except json.JSONDecodeError as exc:
             logger.error("[%s] Invalid action JSON: %s", feature_id, exc)
-            await self.event_bus.publish(
-                "actions.open_app.failed",
-                {
-                    "session_id": session_id,
-                    "feature_id": feature_id,
-                    "error": "invalid_json",
-                    "message": str(exc),
-                },
+            await self._publish_failure(
+                session_id=session_id,
+                feature_id=feature_id,
+                error_code="invalid_json",
+                message=str(exc),
+                app_name=None,
             )
             return
 
@@ -209,6 +209,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 "action": action_data,
             },
         )
+        self._spoken_error_sessions.discard(session_id)
         
         try:
             # Выполняем действие
@@ -232,14 +233,12 @@ class ActionExecutionIntegration(BaseIntegration):
                 )
             else:
                 # Ошибка выполнения
-                await self.event_bus.publish(
-                    "actions.open_app.failed",
-                    {
-                        "session_id": session_id,
-                        "feature_id": feature_id,
-                        "error": result.error or "unknown",
-                        "message": result.message,
-                    },
+                await self._publish_failure(
+                    session_id=session_id,
+                    feature_id=feature_id,
+                    error_code=result.error or "unknown",
+                    message=result.message,
+                    app_name=result.app_name or action_data.get("app_name"),
                 )
                 logger.warning(
                     "[%s] Action failed: %s - %s",
@@ -250,28 +249,24 @@ class ActionExecutionIntegration(BaseIntegration):
                 
         except asyncio.CancelledError:
             # Действие было отменено
-            await self.event_bus.publish(
-                "actions.open_app.failed",
-                {
-                    "session_id": session_id,
-                    "feature_id": feature_id,
-                    "error": "cancelled",
-                    "message": "Action cancelled",
-                },
+            await self._publish_failure(
+                session_id=session_id,
+                feature_id=feature_id,
+                error_code="cancelled",
+                message="Action cancelled",
+                app_name=action_data.get("app_name"),
             )
             logger.info("[%s] Action cancelled for session=%s", feature_id, session_id)
             
         except Exception as exc:
             # Неожиданная ошибка
             await self._handle_error(exc, where="_execute_action")
-            await self.event_bus.publish(
-                "actions.open_app.failed",
-                {
-                    "session_id": session_id,
-                    "feature_id": feature_id,
-                    "error": "unexpected",
-                    "message": str(exc),
-                },
+            await self._publish_failure(
+                session_id=session_id,
+                feature_id=feature_id,
+                error_code="unexpected",
+                message=str(exc),
+                app_name=action_data.get("app_name"),
             )
             logger.error(
                 "[%s] Unexpected error executing action: %s",
@@ -319,3 +314,85 @@ class ActionExecutionIntegration(BaseIntegration):
             except asyncio.CancelledError:
                 pass
 
+    async def _publish_failure(
+        self,
+        *,
+        session_id: Optional[str],
+        feature_id: str,
+        error_code: Optional[str],
+        message: str,
+        app_name: Optional[str],
+    ) -> None:
+        """Публикует событие failure и голосовой фидбек."""
+        if session_id:
+            payload = {
+                "session_id": session_id,
+                "feature_id": feature_id,
+                "error": error_code or "unknown",
+                "message": message,
+            }
+        else:
+            payload = {
+                "feature_id": feature_id,
+                "error": error_code or "unknown",
+                "message": message,
+            }
+        await self.event_bus.publish("actions.open_app.failed", payload)
+        await self._cancel_active_playback(session_id=session_id, reason=error_code or "action_failed")
+        await self._publish_speech_feedback(
+            session_id=session_id,
+            error_code=error_code,
+            app_name=app_name,
+        )
+
+    async def _cancel_active_playback(self, *, session_id: Optional[str], reason: str) -> None:
+        """Останавливает текущее воспроизведение, чтобы не звучала старая реплика."""
+        if not session_id:
+            return
+        try:
+            await self.event_bus.publish(
+                "playback.cancelled",
+                {
+                    "session_id": session_id,
+                    "source": "actions.open_app",
+                    "reason": reason or "action_failed",
+                    "feature_id": FEATURE_ID,
+                },
+            )
+        except Exception as exc:
+            logger.warning("[%s] Failed to cancel playback: %s", FEATURE_ID, exc)
+
+    async def _publish_speech_feedback(
+        self,
+        *,
+        session_id: Optional[str],
+        error_code: Optional[str],
+        app_name: Optional[str],
+    ) -> None:
+        """Публикует speech.playback.request с описанием ошибки."""
+        if not self._open_app_config.speak_errors or not session_id:
+            return
+        if session_id in self._spoken_error_sessions:
+            return
+
+        speech_text = action_error_resolver.resolve(error_code, app_name)
+        await self.event_bus.publish(
+            "speech.playback.request",
+            {
+                "session_id": session_id,
+                "feature_id": FEATURE_ID,
+                "source": "actions.open_app",
+                "category": "action_error",
+                "priority": "high",
+                "use_server_tts": self._open_app_config.use_server_tts,
+                "voice": "en-US",
+                "text": speech_text,
+            },
+        )
+        self._spoken_error_sessions.add(session_id)
+        logger.info(
+            "[%s] Published speech feedback for session=%s code=%s",
+            FEATURE_ID,
+            session_id,
+            error_code,
+        )

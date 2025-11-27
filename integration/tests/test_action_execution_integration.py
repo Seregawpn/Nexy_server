@@ -17,6 +17,10 @@ from integration.core.error_handler import ErrorHandler
 from modules.action_executor import ActionResult
 
 
+def _published_event_names(mock_event_bus):
+    return [call.args[0] for call in mock_event_bus.publish.call_args_list]
+
+
 @pytest.fixture
 def mock_event_bus():
     """Фикстура для EventBus."""
@@ -97,6 +101,9 @@ async def test_start_enabled_executor(action_integration, mock_event_bus):
 @pytest.mark.asyncio
 async def test_on_action_received_disabled(action_integration, mock_event_bus):
     """Тест: Получение действия при disabled executor."""
+    # КРИТИЧНО: Устанавливаем executor в disabled состояние для этого теста
+    action_integration._executor._config.enabled = False
+    
     event = {
         "session_id": "test-session-1",
         "action_json": json.dumps({"command": "open_app", "args": {"app_name": "Safari"}}),
@@ -107,8 +114,9 @@ async def test_on_action_received_disabled(action_integration, mock_event_bus):
     
     # Должно быть опубликовано событие об ошибке
     assert mock_event_bus.publish.called
-    publish_calls = [call[0][0] for call in mock_event_bus.publish.call_args_list]
-    assert "actions.open_app.failed" in publish_calls
+    event_names = _published_event_names(mock_event_bus)
+    assert "actions.open_app.failed" in event_names
+    assert "speech.playback.request" in event_names
 
 
 @pytest.mark.asyncio
@@ -144,15 +152,16 @@ async def test_on_action_received_invalid_json(action_integration, mock_event_bu
     
     # Должно быть опубликовано событие об ошибке
     assert mock_event_bus.publish.called
-    publish_calls = [call[0][0] for call in mock_event_bus.publish.call_args_list]
-    assert "actions.open_app.failed" in publish_calls
+    event_names = _published_event_names(mock_event_bus)
+    assert "actions.open_app.failed" in event_names
+    assert "speech.playback.request" in event_names
     
     # Проверяем содержимое события
     failed_call = next(
         call for call in mock_event_bus.publish.call_args_list
-        if call[0][0] == "actions.open_app.failed"
+        if call.args[0] == "actions.open_app.failed"
     )
-    event_data = failed_call[0][1]
+    event_data = failed_call.args[1]
     assert event_data["error"] == "invalid_json"
 
 
@@ -208,7 +217,7 @@ async def test_on_action_received_failed_execution(action_integration, mock_even
         mock_execute.return_value = ActionResult(
             success=False,
             message="App not found",
-            error="not_found",
+            error="app_not_found",
             app_name="UnknownApp"
         )
         
@@ -228,9 +237,161 @@ async def test_on_action_received_failed_execution(action_integration, mock_even
         
         # Проверяем публикацию событий
         assert mock_event_bus.publish.called
-        publish_calls = [call[0][0] for call in mock_event_bus.publish.call_args_list]
-        assert "actions.open_app.started" in publish_calls
-        assert "actions.open_app.failed" in publish_calls
+        event_names = _published_event_names(mock_event_bus)
+        assert "actions.open_app.started" in event_names
+        assert "actions.open_app.failed" in event_names
+        assert "speech.playback.request" in event_names
+
+
+@pytest.mark.asyncio
+async def test_nonexistent_app_triggers_speech_feedback(action_integration, mock_event_bus):
+    """Тест: Несуществующее приложение должно вызвать голосовое уведомление с правильным текстом."""
+    action_integration._executor._config.enabled = True
+    
+    # Мокаем ошибку "app_not_found" для несуществующего приложения
+    with patch.object(action_integration._executor, 'execute') as mock_execute:
+        nonexistent_app = "FooBarNonExistentApp"
+        mock_execute.return_value = ActionResult(
+            success=False,
+            message=f"Application '{nonexistent_app}' not found",
+            error="app_not_found",  # Код ошибки для несуществующего приложения
+            app_name=nonexistent_app
+        )
+        
+        event = {
+            "session_id": "test-session-nonexistent",
+            "action_json": json.dumps({
+                "command": "open_app",
+                "args": {"app_name": nonexistent_app}
+            }),
+            "feature_id": FEATURE_ID,
+        }
+        
+        await action_integration._on_action_received(event)
+        
+        # Ждем выполнения задачи
+        await asyncio.sleep(0.1)
+        
+        # Проверяем, что были опубликованы события
+        assert mock_event_bus.publish.called, "EventBus.publish должен был быть вызван"
+        event_names = _published_event_names(mock_event_bus)
+        
+        # Проверяем обязательные события
+        assert "actions.open_app.started" in event_names, "Должно быть событие started"
+        assert "actions.open_app.failed" in event_names, "Должно быть событие failed"
+        assert "speech.playback.request" in event_names, "Должно быть событие speech.playback.request"
+        
+        # Проверяем содержимое события failed
+        failed_calls = [
+            call for call in mock_event_bus.publish.call_args_list
+            if call[0][0] == "actions.open_app.failed"
+        ]
+        assert len(failed_calls) > 0, "Должно быть хотя бы одно событие failed"
+        failed_payload = failed_calls[0][0][1]
+        assert failed_payload["error"] == "app_not_found", f"Ожидался error='app_not_found', получен '{failed_payload.get('error')}'"
+        assert failed_payload["session_id"] == "test-session-nonexistent"
+        assert failed_payload["feature_id"] == FEATURE_ID
+        
+        # Проверяем содержимое события speech.playback.request
+        speech_calls = [
+            call for call in mock_event_bus.publish.call_args_list
+            if call[0][0] == "speech.playback.request"
+        ]
+        assert len(speech_calls) > 0, "Должно быть событие speech.playback.request"
+        speech_payload = speech_calls[0][0][1]
+        
+        # Проверяем правильный текст сообщения об ошибке
+        expected_text = f"The app {nonexistent_app} isn't installed on this Mac."
+        assert speech_payload["text"] == expected_text, (
+            f"Ожидался текст '{expected_text}', получен '{speech_payload.get('text')}'"
+        )
+        
+        # Проверяем метаданные события
+        assert speech_payload["session_id"] == "test-session-nonexistent"
+        assert speech_payload["feature_id"] == FEATURE_ID
+        assert speech_payload["source"] == "actions.open_app"
+        assert speech_payload["category"] == "action_error"
+        assert speech_payload["priority"] == "high"
+        assert speech_payload["voice"] == "en-US"
+        assert speech_payload["use_server_tts"] is False  # По умолчанию локальный TTS
+
+
+@pytest.mark.asyncio
+async def test_different_error_codes_trigger_correct_messages(action_integration, mock_event_bus):
+    """Тест: Разные коды ошибок должны генерировать правильные сообщения."""
+    action_integration._executor._config.enabled = True
+    
+    # Тестируем различные коды ошибок
+    test_cases = [
+        {
+            "error_code": "not_allowed",
+            "app_name": "RestrictedApp",
+            "expected_text": "Opening RestrictedApp is blocked by security settings.",
+        },
+        {
+            "error_code": "disabled",
+            "app_name": None,
+            "expected_text": "App launching is currently disabled. Please enable it in settings first.",
+        },
+        {
+            "error_code": "timeout",
+            "app_name": "SlowApp",
+            "expected_text": "I couldn't open SlowApp because the request timed out. Please try again.",
+        },
+        {
+            "error_code": "command_failed",
+            "app_name": "BrokenApp",
+            "expected_text": "I couldn't open BrokenApp because of a system error. Please try again.",
+        },
+        {
+            "error_code": "unknown_error_code",
+            "app_name": "SomeApp",
+            "expected_text": "I couldn't open SomeApp. Please try again.",  # Fallback message
+        },
+    ]
+    
+    for i, test_case in enumerate(test_cases):
+        # Очищаем моки перед каждым тестом
+        mock_event_bus.reset_mock()
+        action_integration._spoken_error_sessions.clear()
+        
+        with patch.object(action_integration._executor, 'execute') as mock_execute:
+            mock_execute.return_value = ActionResult(
+                success=False,
+                message=f"Error: {test_case['error_code']}",
+                error=test_case["error_code"],
+                app_name=test_case["app_name"]
+            )
+            
+            event = {
+                "session_id": f"test-session-{i}",
+                "action_json": json.dumps({
+                    "command": "open_app",
+                    "args": {"app_name": test_case["app_name"] or "TestApp"}
+                }),
+                "feature_id": FEATURE_ID,
+            }
+            
+            await action_integration._on_action_received(event)
+            await asyncio.sleep(0.1)
+            
+            # Проверяем, что speech.playback.request был опубликован
+            event_names = _published_event_names(mock_event_bus)
+            assert "speech.playback.request" in event_names, (
+                f"Для error_code='{test_case['error_code']}' должно быть событие speech.playback.request"
+            )
+            
+            # Проверяем правильность текста
+            speech_calls = [
+                call for call in mock_event_bus.publish.call_args_list
+                if call[0][0] == "speech.playback.request"
+            ]
+            assert len(speech_calls) > 0
+            speech_payload = speech_calls[0][0][1]
+            assert speech_payload["text"] == test_case["expected_text"], (
+                f"Для error_code='{test_case['error_code']}' ожидался текст '{test_case['expected_text']}', "
+                f"получен '{speech_payload.get('text')}'"
+            )
 
 
 @pytest.mark.asyncio
@@ -263,6 +424,64 @@ async def test_duplicate_action_prevention(action_integration, mock_event_bus):
         
         # Executor должен быть вызван только один раз
         assert mock_execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_speech_feedback_disabled_by_config(action_integration, mock_event_bus):
+    """Если speak_errors=false, события воспроизведения не публикуются."""
+    action_integration._executor._config.enabled = True
+    action_integration._open_app_config.speak_errors = False
+
+    with patch.object(action_integration._executor, 'execute') as mock_execute:
+        mock_execute.return_value = ActionResult(
+            success=False,
+            message="Action timed out",
+            error="timeout",
+            app_name="Safari",
+        )
+
+        event = {
+            "session_id": "test-session-tts",
+            "action_json": json.dumps(
+                {"command": "open_app", "args": {"app_name": "Safari"}}
+            ),
+            "feature_id": FEATURE_ID,
+        }
+
+        await action_integration._on_action_received(event)
+        await asyncio.sleep(0.1)
+
+        event_names = _published_event_names(mock_event_bus)
+        assert "actions.open_app.failed" in event_names
+        assert "speech.playback.request" not in event_names
+
+
+@pytest.mark.asyncio
+async def test_speech_feedback_debounced_per_session(action_integration, mock_event_bus):
+    """Повторные ошибки в одной сессии не дублируют голосовой ответ."""
+    action_integration._open_app_config.speak_errors = True
+    mock_event_bus.publish.reset_mock()
+
+    await action_integration._publish_failure(
+        session_id="dup-session",
+        feature_id=FEATURE_ID,
+        error_code="timeout",
+        message="timeout",
+        app_name="Safari",
+    )
+    await action_integration._publish_failure(
+        session_id="dup-session",
+        feature_id=FEATURE_ID,
+        error_code="timeout",
+        message="timeout again",
+        app_name="Safari",
+    )
+
+    speech_calls = [
+        call for call in mock_event_bus.publish.call_args_list
+        if call.args[0] == "speech.playback.request"
+    ]
+    assert len(speech_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -311,4 +530,3 @@ async def test_stop_integration(action_integration, mock_event_bus):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

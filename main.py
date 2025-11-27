@@ -1,5 +1,5 @@
 """
-Nexy AI Assistant - Главный файл приложения
+ттNexy AI Assistant - Главный файл приложения
 Только точка входа и инициализация SimpleModuleCoordinator
 """
 

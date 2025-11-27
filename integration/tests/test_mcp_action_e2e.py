@@ -264,6 +264,62 @@ async def test_full_chain_with_mock_executor(event_bus, grpc_integration, action
 
 
 @pytest.mark.asyncio
+async def test_full_chain_failure_triggers_speech(event_bus, grpc_integration, action_integration):
+    """Неудача действия приводит к событию speech.playback.request."""
+    action_integration._executor._config.enabled = True
+
+    with patch.object(action_integration._executor, 'execute') as mock_execute:
+        mock_execute.return_value = ActionResult(
+            success=False,
+            message="App not found",
+            error="app_not_found",
+            app_name="GhostApp",
+        )
+
+        await grpc_integration.initialize()
+        await action_integration.initialize()
+        await action_integration.start()
+
+        received_events = []
+
+        def event_collector(event_name: str):
+            def handler(event: Dict[str, Any]):
+                received_events.append((event_name, event))
+            return handler
+
+        await event_bus.subscribe("speech.playback.request", event_collector("speech.playback.request"))
+        await event_bus.subscribe("actions.open_app.failed", event_collector("actions.open_app.failed"))
+
+        mcp_payload = {
+            "event": "mcp.command_request",
+            "payload": {
+                "session_id": "test-e2e-error",
+                "command": "open_app",
+                "args": {"app_name": "GhostApp"},
+            },
+        }
+        response = MockStreamResponse('text_chunk', f"{MCP_PREFIX}{json.dumps(mcp_payload)}")
+        session_id = "test-e2e-error"
+
+        if response.WhichOneof('content') == 'text_chunk':
+            payload = json.loads(response.text_chunk[len(MCP_PREFIX):])
+            await event_bus.publish(
+                "grpc.response.action",
+                {
+                    "session_id": session_id,
+                    "action_json": json.dumps(payload.get("payload", {})),
+                    "feature_id": GRPC_FEATURE_ID,
+                },
+            )
+
+        await asyncio.sleep(0.2)
+
+        event_names = [name for name, _ in received_events]
+        assert "actions.open_app.failed" in event_names
+        assert "speech.playback.request" in event_names
+
+
+@pytest.mark.asyncio
 async def test_full_chain_regular_text(event_bus, grpc_integration):
     """Тест: Обычный текст не должен обрабатываться как MCP команда."""
     await grpc_integration.initialize()
@@ -305,4 +361,3 @@ async def test_full_chain_regular_text(event_bus, grpc_integration):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

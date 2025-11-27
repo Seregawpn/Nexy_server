@@ -143,6 +143,10 @@ integrations:
     recording_prestart_delay_sec: 0.3
     playback_idle_grace_sec: 0.3
     playback_wait_timeout_sec: 5.0
+    # Максимальное время (в секундах), которое микрофон может быть активен.
+    # По истечении этого времени состояние будет принудительно сброшено
+    # для защиты от "залипания" при потере системных событий. 0 - отключено.
+    mic_reset_timeout_sec: 60.0
   instance_manager:
     enabled: true
     priority: 13
@@ -505,3 +509,5 @@ actions:
     timeout_sec: 10.0  # Таймаут выполнения команды в секундах
     allowed_apps: []  # Whitelist приложений (пустой список = все разрешены)
     binary: "/usr/bin/open"  # Бинарный файл для открытия приложений на macOS
+    speak_errors: true  # Произносить голосовой фидбек при ошибках
+    use_server_tts: false  # Использовать серверный TTS для ошибок (по умолчанию локальный)

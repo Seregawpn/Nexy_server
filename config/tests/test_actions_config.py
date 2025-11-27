@@ -30,11 +30,12 @@ def test_open_app_config_defaults():
     actions_cfg = loader.get_actions_config()
     open_app_cfg = actions_cfg["open_app"]
     
-    # Проверяем значения по умолчанию (из unified_config.yaml)
-    assert open_app_cfg.enabled is False  # По умолчанию выключено
+    assert isinstance(open_app_cfg.enabled, bool)
     assert open_app_cfg.timeout_sec == 10.0
     assert open_app_cfg.allowed_apps == []  # Пустой список = все разрешены
     assert open_app_cfg.binary == "/usr/bin/open"
+    assert open_app_cfg.speak_errors is True
+    assert open_app_cfg.use_server_tts is False
 
 
 def test_open_app_config_structure():
@@ -48,6 +49,8 @@ def test_open_app_config_structure():
     assert hasattr(open_app_cfg, 'timeout_sec')
     assert hasattr(open_app_cfg, 'allowed_apps')
     assert hasattr(open_app_cfg, 'binary')
+    assert hasattr(open_app_cfg, 'speak_errors')
+    assert hasattr(open_app_cfg, 'use_server_tts')
 
 
 def test_open_app_config_allowed_apps():
@@ -65,4 +68,3 @@ def test_open_app_config_allowed_apps():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

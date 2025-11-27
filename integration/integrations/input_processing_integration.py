@@ -67,6 +67,12 @@ class InputProcessingIntegration:
         self._mic_waiters: List[asyncio.Future] = []
         self._last_mic_closed_ts: float = time.monotonic()
         self._mic_wait_timeout: float = max(0.5, float(self.config.playback_wait_timeout_sec))
+        # Время начала активности микрофона для мониторинга таймаута
+        self._mic_active_start_time: Optional[float] = None
+        # Таймаут для принудительного сброса состояния микрофона
+        self._mic_reset_timeout: float = max(0.0, float(self.config.mic_reset_timeout_sec))
+        # Фоновая задача для мониторинга таймаута микрофона
+        self._mic_monitor_task: Optional[asyncio.Task] = None
         # КРИТИЧНО: Флаг для отмены pending записи при RELEASE до завершения LONG_PRESS
         self._pending_recording_cancelled: bool = False
         
@@ -482,7 +488,11 @@ class InputProcessingIntegration:
     async def _on_mic_opened(self, event):
         try:
             self._mic_active = True
+            self._mic_active_start_time = time.monotonic()
             logger.debug("MIC: opened (session=%s)", (event or {}).get("data", {}).get("session_id"))
+            # Запускаем мониторинг таймаута, если он включен
+            if self._mic_reset_timeout > 0:
+                await self._start_mic_monitor()
         except Exception as e:
             logger.debug("MIC: error handling open event: %s", e)
 
@@ -504,12 +514,19 @@ class InputProcessingIntegration:
                 fut.set_result(True)
 
     def _notify_mic_closed(self):
-        self._mic_active = False
-        self._last_mic_closed_ts = time.monotonic()
+        self._reset_mic_state_internal()
         while self._mic_waiters:
             fut = self._mic_waiters.pop(0)
             if not fut.done():
                 fut.set_result(True)
+    
+    def _reset_mic_state_internal(self):
+        """Внутренний метод для сброса состояния микрофона (без публикации событий)."""
+        self._mic_active = False
+        self._mic_active_start_time = None
+        self._last_mic_closed_ts = time.monotonic()
+        # Останавливаем мониторинг таймаута
+        self._stop_mic_monitor()
     
     async def _on_first_run_started(self, event):
         """Обработчик начала процедуры first_run - синхронизируем состояние микрофона"""
@@ -520,8 +537,7 @@ class InputProcessingIntegration:
             # Принудительно сбрасываем состояние микрофона
             if self._mic_active:
                 logger.warning("⚠️ [INPUT_PROCESSING] Микрофон был активен при начале first_run - принудительно закрываем")
-                self._mic_active = False
-                self._last_mic_closed_ts = time.monotonic()
+                self._reset_mic_state_internal()
             
             # Разрешаем все ожидающие Future для предотвращения залипания
             while self._mic_waiters:
@@ -542,8 +558,7 @@ class InputProcessingIntegration:
             # После first_run микрофон должен быть закрыт
             if self._mic_active:
                 logger.warning("⚠️ [INPUT_PROCESSING] Микрофон был активен при завершении first_run - принудительно закрываем")
-                self._mic_active = False
-                self._last_mic_closed_ts = time.monotonic()
+                self._reset_mic_state_internal()
             
             # Разрешаем все ожидающие Future для предотвращения залипания
             while self._mic_waiters:
@@ -606,8 +621,7 @@ class InputProcessingIntegration:
             # КРИТИЧНО: При таймауте принудительно сбрасываем состояние для предотвращения залипания
             if self._mic_active:
                 logger.warning("⚠️ [INPUT_PROCESSING] Принудительный сброс _mic_active из-за таймаута")
-                self._mic_active = False
-                self._last_mic_closed_ts = time.monotonic()
+                self._reset_mic_state_internal()
             if not waiter.done():
                 waiter.set_result(False)
         finally:
@@ -623,6 +637,79 @@ class InputProcessingIntegration:
             remaining = self._playback_idle_grace - elapsed
             if remaining > 0:
                 await asyncio.sleep(remaining)
+
+    def _force_reset_mic_state(self, reason: str):
+        """Принудительно сбрасывает состояние микрофона."""
+        logger.warning(f"⚠️ [INPUT_PROCESSING] Force resetting mic state due to: {reason}")
+        self._reset_mic_state_internal()
+        self._recording_started = False
+        # Разрешаем все ожидающие Future
+        while self._mic_waiters:
+            fut = self._mic_waiters.pop(0)
+            if not fut.done():
+                fut.set_result(False)
+        # Публикуем событие закрытия микрофона для синхронизации с другими модулями
+        try:
+            asyncio.create_task(self.event_bus.publish("voice.mic_closed", {
+                "source": "mic_reset_timeout",
+                "timestamp": time.time(),
+                "reason": reason,
+            }))
+        except Exception as e:
+            logger.error(f"❌ [INPUT_PROCESSING] Ошибка публикации voice.mic_closed при сбросе: {e}")
+
+    async def _start_mic_monitor(self):
+        """Запускает фоновую задачу для мониторинга таймаута микрофона."""
+        # Останавливаем предыдущую задачу, если она есть
+        self._stop_mic_monitor()
+        
+        if self._mic_reset_timeout <= 0:
+            return
+        
+        async def _monitor_loop():
+            """Цикл мониторинга таймаута микрофона."""
+            check_interval = 1.0  # Проверяем каждую секунду
+            while self._mic_active and self._mic_active_start_time is not None:
+                try:
+                    await asyncio.sleep(check_interval)
+                    
+                    if not self._mic_active:
+                        break
+                    
+                    if self._mic_active_start_time is None:
+                        break
+                    
+                    duration = time.monotonic() - self._mic_active_start_time
+                    
+                    # Проверяем на "залипание" состояния
+                    if duration > self._mic_reset_timeout:
+                        logger.warning(
+                            f"⚠️ [INPUT_PROCESSING] Микрофон активен слишком долго "
+                            f"({duration:.1f}s > {self._mic_reset_timeout}s) - принудительный сброс"
+                        )
+                        self._force_reset_mic_state(
+                            f"Stale mic timeout ({duration:.1f}s > {self._mic_reset_timeout}s)"
+                        )
+                        break
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"❌ [INPUT_PROCESSING] Ошибка в цикле мониторинга микрофона: {e}")
+                    break
+        
+        try:
+            loop = asyncio.get_running_loop()
+            self._mic_monitor_task = loop.create_task(_monitor_loop())
+            logger.debug(f"🎤 [INPUT_PROCESSING] Мониторинг таймаута микрофона запущен (timeout={self._mic_reset_timeout}s)")
+        except Exception as e:
+            logger.error(f"❌ [INPUT_PROCESSING] Ошибка запуска мониторинга микрофона: {e}")
+
+    def _stop_mic_monitor(self):
+        """Останавливает фоновую задачу мониторинга таймаута микрофона."""
+        if self._mic_monitor_task and not self._mic_monitor_task.done():
+            self._mic_monitor_task.cancel()
+            self._mic_monitor_task = None
+            logger.debug("🎤 [INPUT_PROCESSING] Мониторинг таймаута микрофона остановлен")
 
     async def start(self) -> bool:
         """Запуск input_processing"""
@@ -693,6 +780,9 @@ class InputProcessingIntegration:
     async def stop(self) -> bool:
         """Остановка input_processing"""
         try:
+            # Остановка мониторинга таймаута микрофона
+            self._stop_mic_monitor()
+            
             # Остановка мониторинга клавиатуры
             if self.keyboard_monitor:
                 self.keyboard_monitor.stop_monitoring()
@@ -1031,8 +1121,7 @@ class InputProcessingIntegration:
                 # Принудительно сбрасываем состояние микрофона
                 if self._mic_active:
                     logger.warning("⚠️ LONG_PRESS: принудительный сброс _mic_active из-за таймаута")
-                    self._mic_active = False
-                    self._last_mic_closed_ts = time.monotonic()
+                    self._reset_mic_state_internal()
 
             # КРИТИЧНО: Проверяем, не был ли отменен pending recording через RELEASE
             if self._pending_recording_cancelled:
@@ -1169,8 +1258,7 @@ class InputProcessingIntegration:
                         "reason": "force_close_on_release"
                     })
                     # Принудительно сбрасываем состояние микрофона
-                    self._mic_active = False
-                    self._last_mic_closed_ts = time.monotonic()
+                    self._reset_mic_state_internal()
                 
                 # КРИТИЧНО: Сбрасываем _recording_started СРАЗУ после публикации voice.recording_stop,
                 # чтобы предотвратить race condition при быстром повторном нажатии
@@ -1183,8 +1271,7 @@ class InputProcessingIntegration:
                 except asyncio.TimeoutError:
                     logger.warning("⚠️ RELEASE: таймаут ожидания закрытия микрофона, принудительно сбрасываем состояние")
                     if self._mic_active:
-                        self._mic_active = False
-                        self._last_mic_closed_ts = time.monotonic()
+                        self._reset_mic_state_internal()
             elif not self._recording_started:
                 logger.debug(f"ℹ️ RELEASE пришёл без активной записи: session={active_session_id}, duration={duration_ms:.0f}ms, _mic_active={self._mic_active}")
 

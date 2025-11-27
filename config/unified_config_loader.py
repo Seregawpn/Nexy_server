@@ -79,6 +79,7 @@ class InputProcessingConfig:
     playback_idle_grace_sec: float = 0.3
     playback_wait_timeout_sec: float = 5.0
     recording_prestart_delay_sec: float = 0.3
+    mic_reset_timeout_sec: float = 60.0
 
 @dataclass
 class OpenAppActionConfig:
@@ -87,6 +88,8 @@ class OpenAppActionConfig:
     timeout_sec: float = 10.0
     allowed_apps: list = None  # None или пустой список = все разрешены
     binary: str = "/usr/bin/open"
+    speak_errors: bool = True
+    use_server_tts: bool = False
     
     def __post_init__(self):
         if self.allowed_apps is None:
@@ -466,6 +469,7 @@ class UnifiedConfigLoader:
             playback_idle_grace_sec=float(input_cfg.get('playback_idle_grace_sec', 0.3)),
             playback_wait_timeout_sec=float(input_cfg.get('playback_wait_timeout_sec', 5.0)),
             recording_prestart_delay_sec=float(input_cfg.get('recording_prestart_delay_sec', 0.3)),
+            mic_reset_timeout_sec=float(input_cfg.get('mic_reset_timeout_sec', 60.0)),
         )
 
     def get_actions_config(self) -> Dict[str, OpenAppActionConfig]:
@@ -487,6 +491,8 @@ class UnifiedConfigLoader:
             timeout_sec=float(open_app_cfg.get('timeout_sec', 10.0)),
             allowed_apps=list(open_app_cfg.get('allowed_apps', [])) if open_app_cfg.get('allowed_apps') else [],
             binary=str(open_app_cfg.get('binary', '/usr/bin/open')),
+            speak_errors=bool(open_app_cfg.get('speak_errors', True)),
+            use_server_tts=bool(open_app_cfg.get('use_server_tts', False)),
         )
         
         return result
