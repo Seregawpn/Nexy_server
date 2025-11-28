@@ -304,6 +304,12 @@ class VoiceRecognitionIntegration:
             await self._cancel_recognition(reason="new_recording_start")
             logger.debug(f"VOICE: recording_start, session={session_id}")
 
+            # КРИТИЧНО: Публикуем voice.mic_opened СРАЗУ при recording_start,
+            # чтобы сигнал воспроизводился сразу при переходе в LISTENING режим,
+            # а не после открытия микрофона (которое может занимать время для Bluetooth)
+            await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
+            logger.info(f"🎤 VOICE: microphone opened (pending) для session {session_id}")
+
             # Если используем реальный движок — начинаем прослушивание
             if not self.config.simulate and self._recognizer is not None:
                 # КРИТИЧНО: Проверяем состояние перед запуском для предотвращения двойного старта
@@ -323,15 +329,15 @@ class VoiceRecognitionIntegration:
                         start_result = await self._recognizer.start_listening()
                         logger.debug(f"🎤 start_listening вернул: {start_result}")
 
-                        # Для единообразия сигнализируем старт распознавания и открытие микрофона
+                        # Для единообразия сигнализируем старт распознавания
+                        # КРИТИЧНО: voice.mic_opened уже опубликован выше при recording_start
+                        # для немедленного воспроизведения сигнала
                         await self.event_bus.publish("voice.recognition_started", {
                             "session_id": session_id,
                             "language": self.config.language
                         })
                         logger.debug(f"✓ voice.recognition_started опубликован для session {session_id}")
-
-                        await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
-                        logger.info(f"🎤 VOICE: microphone opened (real) для session {session_id}")
+                        logger.info(f"🎤 VOICE: microphone opened (confirmed) для session {session_id}")
                         break  # Успешно запустили, выходим из цикла
                     except Exception as e:
                         error_str = str(e)

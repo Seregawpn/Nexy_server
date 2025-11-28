@@ -67,6 +67,8 @@ class KeyboardConfig:
     hold_check_interval: float
     debounce_time: float
     backend: str
+    combo_timeout_sec: float = 10.0  # Максимальное время активной комбинации (защита от залипания)
+    key_state_timeout_sec: float = 5.0  # Максимальное время удержания отдельной клавиши (защита от залипания)
 
 @dataclass
 class InputProcessingConfig:
@@ -453,7 +455,9 @@ class UnifiedConfigLoader:
             event_cooldown=kbd_cfg['event_cooldown'],
             hold_check_interval=kbd_cfg['hold_check_interval'],
             debounce_time=kbd_cfg['debounce_time'],
-            backend=kbd_cfg['backend']
+            backend=kbd_cfg['backend'],
+            combo_timeout_sec=kbd_cfg.get('combo_timeout_sec', 10.0),
+            key_state_timeout_sec=kbd_cfg.get('key_state_timeout_sec', 5.0)
         )
 
     def get_input_processing_config(self) -> InputProcessingConfig:

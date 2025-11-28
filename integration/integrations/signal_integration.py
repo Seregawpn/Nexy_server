@@ -81,8 +81,8 @@ class SignalIntegration:
 
         self._initialized = False
         self._running = False
-        # Защита от дублей listen_start: храним последний session_id микрофона
-        self._last_listen_session_id: Optional[Any] = None
+        # УБРАНО: Защита от дублей через session_id - теперь полагаемся только на cooldown в _service.emit()
+        # Это предотвращает ложные подавления сигнала при одинаковых session_id между активациями
 
     async def initialize(self) -> bool:
         try:
@@ -123,13 +123,11 @@ class SignalIntegration:
         try:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
-            if sid is not None and self._last_listen_session_id == sid:
-                logger.debug("Signals: LISTEN_START suppressed (same session)")
-                return
-            logger.info("Signals: LISTEN_START (voice.mic_opened)")
+            # КРИТИЧНО: Убрана проверка на одинаковый session_id - полагаемся только на cooldown в _service.emit()
+            # Это предотвращает ложные подавления сигнала при одинаковых session_id между активациями
+            # Cooldown (600ms) уже настроен в _service и предотвращает дребезг
+            logger.info(f"Signals: LISTEN_START (voice.mic_opened, session={sid})")
             await self._service.emit(SignalRequest(pattern=SignalPattern.LISTEN_START, kind=SignalKind.AUDIO))
-            if sid is not None:
-                self._last_listen_session_id = sid
         except Exception as e:
             logger.debug(f"SignalIntegration _on_voice_mic_opened error: {e}")
 
