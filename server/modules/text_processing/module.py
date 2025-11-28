@@ -98,7 +98,7 @@ class TextProcessingModule(UniversalModuleInterface):
             # Если есть изображение, используем метод с изображением
             if image_data:
                 async def stream_with_image():
-                    async for chunk in self._processor.process_text_streaming_with_jpeg_image(
+                    async for chunk in self._processor.process_text_streaming(
                         text, image_data
                     ):
                         yield {"text": chunk, "type": "text_chunk"}

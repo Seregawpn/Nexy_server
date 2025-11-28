@@ -9,6 +9,9 @@ service StreamingService {
   
   // ПРИНУДИТЕЛЬНОЕ прерывание активной сессии на сервере
   rpc InterruptSession(InterruptRequest) returns (InterruptResponse);
+  
+  // Генерация приветственного аудио сообщения
+  rpc GenerateWelcomeAudio(WelcomeRequest) returns (stream WelcomeResponse);
 }
 
 // Запрос на стриминг
@@ -48,4 +51,30 @@ message InterruptResponse {
   bool success = 1;            // Успешность операции
   repeated string interrupted_sessions = 2;  // Список прерванных сессий
   string message = 3;          // Сообщение о результате
+}
+
+// Запрос на генерацию приветственного аудио
+message WelcomeRequest {
+  string text = 1;            // Текст для генерации (опционально, используется дефолтное приветствие)
+  string session_id = 2;       // ID сессии для отслеживания (опционально)
+  string voice = 3;           // Голос для TTS (опционально)
+  string language = 4;        // Язык для TTS (опционально)
+}
+
+// Метаданные приветственного аудио
+message WelcomeMetadata {
+  string method = 1;          // Метод генерации (например, "azure_tts")
+  double duration_sec = 2;    // Длительность аудио в секундах
+  int32 sample_rate = 3;      // Частота дискретизации
+  int32 channels = 4;         // Количество каналов
+}
+
+// Ответ на генерацию приветственного аудио
+message WelcomeResponse {
+  oneof content {
+    AudioChunk audio_chunk = 1;  // Аудио чанк
+    WelcomeMetadata metadata = 2; // Метаданные (отправляется один раз в начале)
+    string end_message = 3;      // Сообщение о завершении
+    string error_message = 4;    // Сообщение об ошибке
+  }
 }

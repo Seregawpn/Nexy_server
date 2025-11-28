@@ -457,6 +457,129 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 message=f"Ошибка обработки прерывания: {str(e)}",
                 interrupted_sessions=[]
             )
+    
+    async def GenerateWelcomeAudio(self, request: streaming_pb2.WelcomeRequest, context) -> AsyncGenerator[streaming_pb2.WelcomeResponse, None]:
+        """
+        Генерация приветственного аудио сообщения
+        
+        Args:
+            request: WelcomeRequest с текстом для генерации
+            context: gRPC контекст
+            
+        Yields:
+            WelcomeResponse с audio_chunk
+        """
+        start_time = time.time()
+        session_id = request.session_id or "welcome"
+        text = request.text or "Hi! Nexy is here. How can I help you?"
+        
+        # Структурированное логирование начала обработки (PR-4)
+        log_decision(
+            logger,
+            decision="start",
+            method="GenerateWelcomeAudio",
+            ctx={"session_id": session_id, "text_length": len(text)}
+        )
+        
+        try:
+            # Получаем audio_generation модуль через менеджер
+            audio_module = self.grpc_service_manager._get_module('audio_generation')
+            if not audio_module:
+                raise Exception("Audio generation module not available")
+            
+            logger.info(f"🎵 GenerateWelcomeAudio: generating audio for text: '{text[:80]}...'")
+            
+            # Генерируем аудио через модуль
+            # audio_module.process - это async функция, возвращает AsyncIterator[Dict[str, Any]]
+            # Нужно await, чтобы получить AsyncIterator
+            process_result = await audio_module.process({"text": text})
+            
+            # Инициализируем счетчик chunks
+            chunk_count = 0
+            
+            # Проверяем, является ли результат AsyncIterator
+            if hasattr(process_result, '__aiter__'):
+                async for result in process_result:
+                    # Извлекаем audio chunk из результата
+                    audio_chunk = None
+                    if isinstance(result, dict):
+                        # Может быть {"audio": bytes, "type": "audio_chunk"}
+                        audio_chunk = result.get("audio") or result.get("audio_chunk")
+                    elif isinstance(result, bytes):
+                        audio_chunk = result
+                    
+                    if audio_chunk and len(audio_chunk) > 0:
+                        chunk_count += 1
+                        logger.info(f"🎵 GenerateWelcomeAudio: sending audio_chunk #{chunk_count} bytes={len(audio_chunk)}")
+                        
+                        # Формируем WelcomeResponse с audio_chunk
+                        yield streaming_pb2.WelcomeResponse(
+                            audio_chunk=streaming_pb2.AudioChunk(
+                                audio_data=audio_chunk,
+                                dtype='int16',
+                                shape=[]
+                            )
+                        )
+            else:
+                # Если результат не AsyncIterator, обрабатываем как единичный результат
+                logger.warning("⚠️ GenerateWelcomeAudio: process returned non-iterator, treating as single result")
+                chunk_count = 0
+                audio_chunk = None
+                if isinstance(process_result, dict):
+                    audio_chunk = process_result.get("audio") or process_result.get("audio_chunk")
+                    if audio_chunk and len(audio_chunk) > 0:
+                        chunk_count = 1
+                        yield streaming_pb2.WelcomeResponse(
+                            audio_chunk=streaming_pb2.AudioChunk(
+                                audio_data=audio_chunk,
+                                dtype='int16',
+                                shape=[]
+                            )
+                        )
+            
+            # Завершение стрима
+            dur_ms = (time.time() - start_time) * 1000
+            log_decision(
+                logger,
+                decision="complete",
+                method="GenerateWelcomeAudio",
+                dur_ms=dur_ms,
+                ctx={"session_id": session_id, "chunks_sent": chunk_count}
+            )
+            record_decision_metric("GenerateWelcomeAudio", "complete")
+            record_metric("GenerateWelcomeAudio", dur_ms, is_error=False)
+            
+            yield streaming_pb2.WelcomeResponse(end_message="Welcome audio generation completed")
+            
+        except Exception as e:
+            # Структурированное логирование ошибки (PR-4)
+            dur_ms = (time.time() - start_time) * 1000
+            log_rpc_error(
+                logger,
+                method="GenerateWelcomeAudio",
+                error_code="INTERNAL",
+                error_message=f"Ошибка генерации приветственного аудио: {str(e)}",
+                dur_ms=dur_ms,
+                ctx={"session_id": session_id}
+            )
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}", extra={
+                'scope': 'grpc',
+                'method': 'GenerateWelcomeAudio',
+                'decision': 'error',
+                'ctx': {'error': str(e)}
+            })
+            
+            record_decision_metric("GenerateWelcomeAudio", "error")
+            record_metric("GenerateWelcomeAudio", dur_ms, is_error=True)
+            
+            # Устанавливаем статус ошибки в контексте
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Ошибка генерации приветственного аудио: {str(e)}")
+            
+            yield streaming_pb2.WelcomeResponse(
+                error_message=f"Ошибка генерации приветственного аудио: {str(e)}"
+            )
 
 async def run_server(
     host: Optional[str] = None,

@@ -27,9 +27,9 @@ class UpdateConfig:
     cors_enabled: bool = True
     cache_control: str = "no-cache, no-store, must-revalidate"
     
-    # Настройки манифестов
-    default_version: str = "1.0.0"
-    default_build: str = "1.0.0"
+    # Настройки манифестов (берутся из SERVER_VERSION и SERVER_BUILD через unified_config)
+    default_version: str = "1.0.1"
+    default_build: str = "1.0.1"
     default_arch: str = "universal2"
     default_min_os: str = "11.0"
     

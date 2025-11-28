@@ -72,16 +72,25 @@ class UpdateServerProvider:
             # Получаем последний манифест
             latest_manifest = self.manifest_provider.get_latest_manifest()
             
-            if not latest_manifest:
-                logger.warning("⚠️ Манифесты не найдены")
-                return web.Response(
-                    text="No manifests available",
-                    status=404,
-                    content_type='text/plain'
-                )
+            # Единый источник истины - версия из конфига (централизованное управление)
+            # Создаем манифест для AppCast с версией из конфига
+            if latest_manifest:
+                manifest_for_appcast = latest_manifest.copy()
+            else:
+                # Если манифеста нет, создаем минимальный с версией из конфига
+                manifest_for_appcast = {
+                    "version": self.config.default_version,
+                    "build": self.config.default_build,
+                    "artifact": {}
+                }
+                logger.warning("⚠️ Манифесты не найдены, используется версия из конфига")
             
-            # Генерируем AppCast XML
-            appcast_xml = self._generate_appcast_xml(latest_manifest)
+            # Всегда используем версию из конфига (единый источник истины)
+            manifest_for_appcast["version"] = self.config.default_version
+            manifest_for_appcast["build"] = self.config.default_build
+            
+            # Генерируем AppCast XML с версией из конфига
+            appcast_xml = self._generate_appcast_xml(manifest_for_appcast)
             
             if self.config.log_requests:
                 logger.info("📄 AppCast XML запрошен")
@@ -164,19 +173,31 @@ class UpdateServerProvider:
     async def health_handler(self, request: web_request.Request) -> web_response.Response:
         """Проверка здоровья сервера"""
         try:
-            latest_manifest = self.manifest_provider.get_latest_manifest()
             artifacts = self.artifact_provider.list_artifacts()
             
-            # Версии должны быть строками (PR-7)
-            latest_version = str(latest_manifest.get("version")) if latest_manifest and latest_manifest.get("version") else None
-            latest_build = str(latest_manifest.get("build")) if latest_manifest and latest_manifest.get("build") else None
+            # Единый источник истины - версия из конфига (централизованное управление)
+            # Конфиг берет версию из SERVER_VERSION и SERVER_BUILD переменных окружения
+            latest_version = str(self.config.default_version)
+            latest_build = str(self.config.default_build)
+            
+            # Если есть манифест, используем его версию как fallback, но приоритет у конфига
+            latest_manifest = self.manifest_provider.get_latest_manifest()
+            if latest_manifest and latest_manifest.get("version"):
+                # Проверяем, что версия из манифеста совпадает с конфигом (предупреждение если нет)
+                manifest_version = str(latest_manifest.get("version", ""))
+                manifest_build = str(latest_manifest.get("build", manifest_version))
+                if manifest_version != latest_version or manifest_build != latest_build:
+                    logger.warning(
+                        f"⚠️ Несоответствие версий: конфиг={latest_version}/{latest_build}, "
+                        f"манифест={manifest_version}/{manifest_build}. Используется версия из конфига."
+                    )
             
             health_data = {
                 "status": "healthy",
                 "timestamp": datetime.now().isoformat(),
-                "version": self.config.default_version,
-                "latest_version": latest_version,  # Строка (PR-7)
-                "latest_build": latest_build,  # Строка (PR-7)
+                "version": latest_version,  # Версия сервера из конфига
+                "latest_version": latest_version,  # Строка (PR-7) - единый источник истины
+                "latest_build": latest_build,  # Строка (PR-7) - единый источник истины
                 "artifacts_available": len(artifacts),
                 "downloads_dir": self.config.downloads_dir,
                 "manifests_dir": self.config.manifests_dir
