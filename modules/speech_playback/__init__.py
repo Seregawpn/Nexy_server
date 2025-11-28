@@ -23,7 +23,7 @@ from .macos.core_audio import CoreAudioManager
 from .macos.security import SecurityManager
 from .macos.performance import PerformanceMonitor
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 __author__ = "Nexy AI Voice Assistant Team"
 
 # Экспорт основных классов

@@ -23,5 +23,5 @@ __all__ = [
     'DEFAULT_INPUT_CONFIG'
 ]
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 __author__ = "Nexy Team"
