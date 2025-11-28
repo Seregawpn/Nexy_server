@@ -408,13 +408,13 @@ class UpdateServiceConfig:
 class ServerMetadataConfig:
     """Метаданные сервера"""
 
-    version: str = '1.0.1'
-    build: str = '1.0.1'
+    version: str = '1.0.2'
+    build: str = '1.0.2'
     channel: str = 'stable'
 
     @classmethod
     def from_env(cls) -> 'ServerMetadataConfig':
-        version = os.getenv('SERVER_VERSION', '1.0.1')
+        version = os.getenv('SERVER_VERSION', '1.0.2')
         build = os.getenv('SERVER_BUILD', version)
         return cls(
             version=version,

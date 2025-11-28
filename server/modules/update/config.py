@@ -28,8 +28,8 @@ class UpdateConfig:
     cache_control: str = "no-cache, no-store, must-revalidate"
     
     # Настройки манифестов (берутся из SERVER_VERSION и SERVER_BUILD через unified_config)
-    default_version: str = "1.0.1"
-    default_build: str = "1.0.1"
+    default_version: str = "1.0.2"
+    default_build: str = "1.0.2"
     default_arch: str = "universal2"
     default_min_os: str = "11.0"
     
