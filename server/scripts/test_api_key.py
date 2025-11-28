@@ -12,7 +12,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "server"))
 
 # API ключ для тестирования
-API_KEY = "AIzaSyBJD7HeddPpAL90vbzIsHCv1f5tXA_cxPE"
+API_KEY = "AIzaSyDwn_dU74qc4c_gb3VGljy-lVXZuk-lQ3I"
 
 async def test_api_key():
     """Тест API ключа"""
