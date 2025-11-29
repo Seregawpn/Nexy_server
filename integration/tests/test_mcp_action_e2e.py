@@ -264,6 +264,100 @@ async def test_full_chain_with_mock_executor(event_bus, grpc_integration, action
 
 
 @pytest.mark.asyncio
+async def test_full_chain_close_app_mcp_to_action(event_bus, grpc_integration, action_integration):
+    """Тест: Полная цепочка от MCP команды до выполнения close_app действия.
+    
+    Feature ID: F-2025-014-close-app
+    """
+    # Включаем MCP executor для теста
+    action_integration._mcp_executor.config.enabled = True
+    
+    # Инициализируем интеграции
+    await grpc_integration.initialize()
+    await action_integration.initialize()
+    await action_integration.start()
+    
+    # Создаем MCP команду для close_app
+    mcp_payload = {
+        "event": "mcp.command_request",
+        "payload": {
+            "session_id": "test-e2e-close-session",
+            "command": "close_app",
+            "args": {
+                "app_name": "Calculator"
+            }
+        }
+    }
+    mcp_json = json.dumps(mcp_payload, ensure_ascii=False)
+    mcp_text = f"{MCP_PREFIX}{mcp_json}"
+    
+    # Собираем события
+    received_events = []
+    
+    def event_collector(event_name: str):
+        def handler(event: Dict[str, Any]):
+            received_events.append((event_name, event))
+        return handler
+    
+    # Подписываемся на события для проверки
+    await event_bus.subscribe("grpc.response.action", event_collector("grpc.response.action"))
+    await event_bus.subscribe("actions.close_app.started", event_collector("actions.close_app.started"))
+    await event_bus.subscribe("actions.close_app.completed", event_collector("actions.close_app.completed"))
+    await event_bus.subscribe("actions.close_app.failed", event_collector("actions.close_app.failed"))
+    
+    # Имитируем получение text_chunk с MCP командой
+    response = MockStreamResponse('text_chunk', mcp_text)
+    session_id = "test-e2e-close-session"
+    
+    # Обрабатываем через GrpcClientIntegration (имитируя логику из _send)
+    which_oneof = response.WhichOneof('content')
+    if which_oneof == 'text_chunk':
+        text = response.text_chunk
+        if text.startswith(MCP_PREFIX):
+            mcp_json_str = text[len(MCP_PREFIX):]
+            mcp_payload_parsed = json.loads(mcp_json_str)
+            command_payload = mcp_payload_parsed.get("payload", {})
+            
+            await event_bus.publish("grpc.response.action", {
+                "session_id": session_id,
+                "action_json": json.dumps(command_payload, ensure_ascii=False),
+                "feature_id": GRPC_FEATURE_ID,
+            })
+    
+    # Ждем обработки
+    await asyncio.sleep(0.3)
+    
+    # Проверяем события
+    event_names = [name for name, _ in received_events]
+    
+    # Должно быть событие grpc.response.action
+    assert "grpc.response.action" in event_names, "Должно быть событие grpc.response.action"
+    
+    # Должно быть событие actions.close_app.started
+    assert "actions.close_app.started" in event_names, "Должно быть событие actions.close_app.started"
+    
+    # Проверяем содержимое события grpc.response.action
+    grpc_event_data = next((data for name, data in received_events if name == "grpc.response.action"), None)
+    assert grpc_event_data is not None
+    # EventBus может обернуть в data
+    grpc_event = grpc_event_data.get("data", grpc_event_data) if isinstance(grpc_event_data, dict) and "data" in grpc_event_data else grpc_event_data
+    assert grpc_event.get("session_id") == session_id
+    assert grpc_event.get("action_json") is not None
+    
+    # Проверяем содержимое action_json
+    action_data = json.loads(grpc_event["action_json"])
+    assert action_data["command"] == "close_app"
+    assert action_data["args"]["app_name"] == "Calculator"
+    
+    # Проверяем событие started
+    started_event_data = next((data for name, data in received_events if name == "actions.close_app.started"), None)
+    assert started_event_data is not None
+    started_event = started_event_data.get("data", started_event_data) if isinstance(started_event_data, dict) and "data" in started_event_data else started_event_data
+    assert started_event.get("session_id") == session_id
+    assert started_event.get("feature_id") == "F-2025-014-close-app"
+
+
+@pytest.mark.asyncio
 async def test_full_chain_failure_triggers_speech(event_bus, grpc_integration, action_integration):
     """Неудача действия приводит к событию speech.playback.request."""
     action_integration._executor._config.enabled = True

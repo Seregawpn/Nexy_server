@@ -17,6 +17,7 @@ from integration.core.error_handler import ErrorHandler
 
 from config.unified_config_loader import UnifiedConfigLoader, OpenAppActionConfig
 from modules.action_executor import ActionExecutor, ActionExecutorConfig
+from modules.mcp_action import McpActionExecutor, McpActionConfig
 from modules.action_errors.messages import resolver as action_error_resolver
 
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
@@ -44,6 +45,7 @@ class ActionExecutionIntegration(BaseIntegration):
         loader = UnifiedConfigLoader()
         actions_cfg = loader.get_actions_config().get("open_app") or OpenAppActionConfig()
         
+        # ActionExecutor для open_app (direct режим)
         executor_config = ActionExecutorConfig(
             enabled=actions_cfg.enabled,
             timeout_sec=actions_cfg.timeout_sec,
@@ -54,6 +56,48 @@ class ActionExecutionIntegration(BaseIntegration):
         self._executor = ActionExecutor(executor_config)
         self._open_app_config = actions_cfg
         self._config = executor_config
+        
+        # McpActionExecutor для close_app (через MCP)
+        # Загружаем конфигурацию MCP серверов из unified_config
+        mcp_configs = loader.get_mcp_config()
+        open_app_mcp = mcp_configs.get('open_app', {})
+        close_app_mcp = mcp_configs.get('close_app', {})
+        
+        # Преобразуем относительные пути в абсолютные
+        from pathlib import Path
+        # Определяем корень проекта Nexy (client(prod) находится в Nexy/client(prod))
+        # __file__ = client(prod)/integration/integrations/action_execution_integration.py
+        # Нужно подняться на 4 уровня: integrations -> integration -> client(prod) -> Nexy
+        # 0: action_execution_integration.py
+        # 1: integrations
+        # 2: integration
+        # 3: client(prod)
+        # 4: Nexy
+        nexy_root = Path(__file__).parent.parent.parent.parent
+        
+        open_app_server_path = open_app_mcp.get('server_path', '')
+        close_app_server_path = close_app_mcp.get('server_path', '')
+        
+        # Если путь относительный, делаем его абсолютным относительно корня Nexy
+        if open_app_server_path and not Path(open_app_server_path).is_absolute():
+            # Путь уже относительно Nexy root (без "../")
+            open_app_server_path = str((nexy_root / open_app_server_path).resolve())
+        if close_app_server_path and not Path(close_app_server_path).is_absolute():
+            close_app_server_path = str((nexy_root / close_app_server_path).resolve())
+        
+        # Fallback на пути по умолчанию, если конфигурация не найдена
+        if not open_app_server_path:
+            open_app_server_path = str(nexy_root / "mcp_close_app_test" / "server" / "app_launcher_server.py")
+        if not close_app_server_path:
+            close_app_server_path = str(nexy_root / "mcp_close_app_test" / "server" / "close_app_server.py")
+        
+        mcp_config = McpActionConfig(
+            open_app_server_path=open_app_server_path,
+            close_app_server_path=close_app_server_path,
+            timeout_sec=float(close_app_mcp.get('timeout_sec', actions_cfg.timeout_sec)),
+            enabled=bool(close_app_mcp.get('enabled', actions_cfg.enabled)),
+        )
+        self._mcp_executor = McpActionExecutor(mcp_config)
         self._actions_lock = asyncio.Lock()
         self._active_actions: Dict[str, asyncio.Task] = {}
         self._spoken_error_sessions: Set[str] = set()
@@ -152,21 +196,74 @@ class ActionExecutionIntegration(BaseIntegration):
             )
             return
 
-        # Проверяем, что это команда open_app
-        if action_data.get("command") != "open_app":
+        # Определяем тип команды и feature_id
+        command = action_data.get("command")
+        action_type = command  # "open_app" или "close_app"
+        
+        # Расширяем валидацию типов для поддержки close_app
+        valid_commands = ["open_app", "close_app"]
+        if command not in valid_commands:
             logger.warning(
                 "[%s] Unsupported command: %s",
                 feature_id,
-                action_data.get("command")
+                command
+            )
+            await self._publish_failure(
+                session_id=session_id,
+                feature_id=feature_id,
+                error_code="unsupported_command",
+                message=f"Unsupported command: {command}",
+                app_name=None,
             )
             return
+        
+        # Обновляем feature_id в зависимости от типа действия
+        if command == "open_app":
+            action_feature_id = "F-2025-013-open-app"
+        elif command == "close_app":
+            action_feature_id = "F-2025-014-close-app"
+        else:
+            action_feature_id = feature_id
+        
+        # Валидация параметров в зависимости от типа действия
+        args = action_data.get("args", {})
+        if command == "open_app":
+            # Для open_app требуется app_name или app_path
+            if not args.get("app_name") and not args.get("app_path"):
+                logger.error(
+                    "[%s] Missing app_name or app_path for open_app",
+                    action_feature_id
+                )
+                await self._publish_failure(
+                    session_id=session_id,
+                    feature_id=action_feature_id,
+                    error_code="missing_parameter",
+                    message="Missing app_name or app_path for open_app",
+                    app_name=None,
+                )
+                return
+        elif command == "close_app":
+            # Для close_app требуется только app_name
+            if not args.get("app_name"):
+                logger.error(
+                    "[%s] Missing app_name for close_app",
+                    action_feature_id
+                )
+                await self._publish_failure(
+                    session_id=session_id,
+                    feature_id=action_feature_id,
+                    error_code="missing_parameter",
+                    message="Missing app_name for close_app",
+                    app_name=None,
+                )
+                return
 
         # Преобразуем формат для ActionExecutor
-        # ActionExecutor ожидает: {"type": "open_app", "app_name": "...", "app_path": "..."}
+        # ActionExecutor ожидает: {"type": "open_app" или "close_app", "app_name": "...", "app_path": "..."}
         executor_action_data = {
-            "type": "open_app",
-            "app_name": action_data.get("args", {}).get("app_name"),
-            "app_path": action_data.get("args", {}).get("app_path"),
+            "type": action_type,
+            "app_name": args.get("app_name"),
+            "app_path": args.get("app_path"),
         }
 
         # Защита от дублирования: проверяем, не выполняется ли уже действие для этой сессии
@@ -180,7 +277,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 self._execute_action(
                     session_id=session_id,
                     action_data=executor_action_data,
-                    feature_id=feature_id
+                    feature_id=action_feature_id
                 )
             )
             self._active_actions[session_id] = task
@@ -200,9 +297,13 @@ class ActionExecutionIntegration(BaseIntegration):
             action_data: Данные действия для ActionExecutor
             feature_id: ID фичи для логирования
         """
+        # Определяем тип действия для событий
+        action_type = action_data.get("type", "open_app")
+        event_prefix = f"actions.{action_type}"
+        
         # Публикуем событие о начале выполнения
         await self.event_bus.publish(
-            "actions.open_app.started",
+            f"{event_prefix}.started",
             {
                 "session_id": session_id,
                 "feature_id": feature_id,
@@ -212,13 +313,29 @@ class ActionExecutionIntegration(BaseIntegration):
         self._spoken_error_sessions.discard(session_id)
         
         try:
-            # Выполняем действие
-            result = await self._executor.execute(action_data)
+            # Выполняем действие в зависимости от типа
+            if action_type == "open_app":
+                # Используем ActionExecutor для open_app
+                result = await self._executor.execute(action_data)
+            elif action_type == "close_app":
+                # Используем McpActionExecutor для close_app
+                result = await self._mcp_executor.execute_action(
+                    action_data,
+                    session_id=session_id
+                )
+            else:
+                # Неизвестный тип действия
+                from modules.action_executor import ActionResult
+                result = ActionResult(
+                    success=False,
+                    message=f"Unsupported action type: {action_type}",
+                    error="unsupported_action",
+                )
             
             if result.success:
                 # Успешное выполнение
                 await self.event_bus.publish(
-                    "actions.open_app.completed",
+                    f"{event_prefix}.completed",
                     {
                         "session_id": session_id,
                         "feature_id": feature_id,
@@ -337,7 +454,12 @@ class ActionExecutionIntegration(BaseIntegration):
                 "error": error_code or "unknown",
                 "message": message,
             }
-        await self.event_bus.publish("actions.open_app.failed", payload)
+        # Определяем префикс события в зависимости от feature_id
+        if "close-app" in feature_id:
+            event_name = "actions.close_app.failed"
+        else:
+            event_name = "actions.open_app.failed"
+        await self.event_bus.publish(event_name, payload)
         await self._cancel_active_playback(session_id=session_id, reason=error_code or "action_failed")
         await self._publish_speech_feedback(
             session_id=session_id,

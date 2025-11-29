@@ -25,7 +25,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.0.2  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
+  version: 1.0.3  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
 # Авто-всё конфигурация аудио - автоматическое определение параметров устройства
 default_audio:
   # Только целевые параметры для STT (что ожидает движок распознавания)
@@ -117,7 +117,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: production  # local|production|fallback - для dev используем local (127.0.0.1:50051)
+    server: local  # local|production|fallback - для dev используем local (172.16.226.162:50051)
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 30.0
     max_retries: 3
@@ -503,9 +503,19 @@ features:
   #   rollout_percentage: 0
   # ks_new_feature_name:
   #   enabled: false
+  
+  # Actions feature flags
+  # Feature ID: F-2025-013-open-app (open_app)
+  # Feature ID: F-2025-014-close-app (close_app)
+  actions:
+    open_app:
+      enabled: true
+    close_app:
+      enabled: true  # Feature flag for close_app functionality
 
 # Конфигурация действий (MCP commands)
-# Feature ID: F-2025-016-mcp-app-opening-integration
+# Feature ID: F-2025-016-mcp-app-opening-integration (open_app)
+# Feature ID: F-2025-014-close-app (close_app)
 actions:
   open_app:
     enabled: true  # Включено для dev окружения (автоматически включается в development)
@@ -514,3 +524,21 @@ actions:
     binary: "/usr/bin/open"  # Бинарный файл для открытия приложений на macOS
     speak_errors: true  # Произносить голосовой фидбек при ошибках
     use_server_tts: false  # Использовать серверный TTS для ошибок (по умолчанию локальный)
+  close_app:
+    enabled: true  # Включено для dev окружения
+    timeout_sec: 10.0  # Таймаут выполнения команды в секундах
+    speak_errors: true  # Произносить голосовой фидбек при ошибках
+    use_server_tts: false  # Использовать серверный TTS для ошибок (по умолчанию локальный)
+
+# Конфигурация MCP серверов
+# Feature ID: F-2025-014-close-app
+# Пути относительно корня проекта Nexy
+mcp:
+  open_app:
+    server_path: "mcp_close_app_test/server/app_launcher_server.py"  # Относительно Nexy root (fallback если не существует)
+    enabled: true
+    timeout_sec: 10.0
+  close_app:
+    server_path: "mcp_close_app_test/server/close_app_server.py"  # Относительно Nexy root
+    enabled: true
+    timeout_sec: 10.0

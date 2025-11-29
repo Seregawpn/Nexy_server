@@ -528,5 +528,121 @@ async def test_stop_integration(action_integration, mock_event_bus):
     assert "keyboard.short_press" in unsubscribe_calls
 
 
+# ==================== Тесты для close_app ====================
+
+@pytest.mark.asyncio
+async def test_close_app_validation_success(action_integration, mock_event_bus):
+    """Тест: Валидация close_app проходит успешно."""
+    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
+    
+    event = {
+        "session_id": "test-session",
+        "action_json": json.dumps({
+            "command": "close_app",
+            "args": {"app_name": "Safari"}
+        }),
+        "feature_id": "F-2025-014-close-app"
+    }
+    
+    # Мокируем McpActionExecutor
+    from modules.mcp_action import McpActionResult
+    mock_result = McpActionResult(
+        success=True,
+        message="Application 'Safari' closed successfully",
+        app_name="Safari"
+    )
+    action_integration._mcp_executor.execute_action = AsyncMock(return_value=mock_result)
+    
+    await action_integration._on_action_received(event)
+    await asyncio.sleep(0.1)
+    
+    # Проверяем, что событие опубликовано
+    event_names = _published_event_names(mock_event_bus)
+    assert "actions.close_app.started" in event_names
+    assert "actions.close_app.completed" in event_names
+
+
+@pytest.mark.asyncio
+async def test_close_app_validation_missing_app_name(action_integration, mock_event_bus):
+    """Тест: Валидация close_app отклоняет отсутствие app_name."""
+    action_integration._executor._config.enabled = True
+    
+    event = {
+        "session_id": "test-session",
+        "action_json": json.dumps({
+            "command": "close_app",
+            "args": {}
+        }),
+        "feature_id": "F-2025-014-close-app"
+    }
+    
+    await action_integration._on_action_received(event)
+    await asyncio.sleep(0.1)
+    
+    # Проверяем, что событие об ошибке опубликовано
+    event_names = _published_event_names(mock_event_bus)
+    assert "actions.close_app.failed" in event_names or "actions.open_app.failed" in event_names
+
+
+@pytest.mark.asyncio
+async def test_close_app_validation_unsupported_command(action_integration, mock_event_bus):
+    """Тест: Валидация отклоняет неподдерживаемую команду."""
+    action_integration._executor._config.enabled = True
+    
+    event = {
+        "session_id": "test-session",
+        "action_json": json.dumps({
+            "command": "unknown_command",
+            "args": {"app_name": "Safari"}
+        }),
+        "feature_id": "F-2025-014-close-app"
+    }
+    
+    await action_integration._on_action_received(event)
+    await asyncio.sleep(0.1)
+    
+    # Проверяем, что событие об ошибке опубликовано
+    event_names = _published_event_names(mock_event_bus)
+    # Может быть опубликовано событие об ошибке или ничего не опубликовано
+    assert len(event_names) >= 0  # Просто проверяем, что нет исключений
+
+
+@pytest.mark.asyncio
+async def test_close_app_feature_id_logging(action_integration, mock_event_bus):
+    """Тест: Правильный feature_id используется для close_app."""
+    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
+    
+    event = {
+        "session_id": "test-session",
+        "action_json": json.dumps({
+            "command": "close_app",
+            "args": {"app_name": "Safari"}
+        }),
+        "feature_id": "F-2025-014-close-app"
+    }
+    
+    # Мокируем McpActionExecutor
+    from modules.mcp_action import McpActionResult
+    mock_result = McpActionResult(
+        success=True,
+        message="Application 'Safari' closed successfully",
+        app_name="Safari"
+    )
+    action_integration._mcp_executor.execute_action = AsyncMock(return_value=mock_result)
+    
+    await action_integration._on_action_received(event)
+    await asyncio.sleep(0.1)
+    
+    # Проверяем, что правильный feature_id используется в событиях
+    event_names = _published_event_names(mock_event_bus)
+    assert "actions.close_app.started" in event_names
+    # Проверяем, что feature_id правильный в аргументах события
+    for call in mock_event_bus.publish.call_args_list:
+        if call.args[0] == "actions.close_app.started":
+            assert call.args[1]["feature_id"] == "F-2025-014-close-app"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

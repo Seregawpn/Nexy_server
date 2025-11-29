@@ -499,6 +499,47 @@ class UnifiedConfigLoader:
             use_server_tts=bool(open_app_cfg.get('use_server_tts', False)),
         )
         
+        # Конфигурация для close_app (используем тот же тип, так как структура похожа)
+        close_app_cfg = actions_cfg.get('close_app', {})
+        result['close_app'] = OpenAppActionConfig(
+            enabled=bool(close_app_cfg.get('enabled', False)),
+            timeout_sec=float(close_app_cfg.get('timeout_sec', 10.0)),
+            allowed_apps=[],  # close_app не использует whitelist
+            binary="",  # close_app не использует binary (использует MCP)
+            speak_errors=bool(close_app_cfg.get('speak_errors', True)),
+            use_server_tts=bool(close_app_cfg.get('use_server_tts', False)),
+        )
+        
+        return result
+    
+    def get_mcp_config(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Получает конфигурацию MCP серверов.
+        
+        Returns:
+            Словарь с конфигурациями MCP серверов, ключ - тип действия (например, "open_app", "close_app")
+        """
+        config = self._load_config()
+        mcp_cfg = config.get('mcp', {})
+        
+        result = {}
+        
+        # Конфигурация для open_app MCP сервера
+        open_app_mcp = mcp_cfg.get('open_app', {})
+        result['open_app'] = {
+            'server_path': str(open_app_mcp.get('server_path', '')),
+            'enabled': bool(open_app_mcp.get('enabled', True)),
+            'timeout_sec': float(open_app_mcp.get('timeout_sec', 10.0)),
+        }
+        
+        # Конфигурация для close_app MCP сервера
+        close_app_mcp = mcp_cfg.get('close_app', {})
+        result['close_app'] = {
+            'server_path': str(close_app_mcp.get('server_path', '')),
+            'enabled': bool(close_app_mcp.get('enabled', True)),
+            'timeout_sec': float(close_app_mcp.get('timeout_sec', 10.0)),
+        }
+        
         return result
 
 # Глобальный экземпляр загрузчика
