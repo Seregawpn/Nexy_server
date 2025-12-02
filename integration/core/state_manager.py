@@ -42,6 +42,13 @@ class ApplicationStateManager:
         # EventBus (необязателен). Устанавливается координатором.
         self._event_bus = None
         self._loop = None  # основной asyncio loop, на который публикуем события
+        
+        # ✅ ЭТАП 1: Централизованное управление состоянием микрофона
+        # Состояние микрофона: "idle", "opening", "active", "closing", "error"
+        self._microphone_state: str = "idle"
+        self._microphone_session_id: Optional[str] = None
+        self._microphone_lock = threading.Lock()  # Thread-safe доступ к состоянию микрофона
+        self._microphone_last_change: float = 0.0  # Timestamp последнего изменения состояния
 
     def attach_event_bus(self, event_bus):
         """Прикрепить EventBus для публикации событий смены режима"""
@@ -217,5 +224,104 @@ class ApplicationStateManager:
             "current_mode": self.current_mode.value,
             "previous_mode": self.previous_mode.value if self.previous_mode else None,
             "mode_history_size": len(self.mode_history),
-            "state_data_keys": list(self.state_data.keys())
+            "state_data_keys": list(self.state_data.keys()),
+            "microphone_state": self._microphone_state,
+            "microphone_session_id": self._microphone_session_id
         }
+    
+    # ✅ ЭТАП 1: Методы управления состоянием микрофона (единый источник истины)
+    
+    def set_microphone_state(self, state: str, session_id: Optional[str] = None, reason: str = "unknown") -> bool:
+        """
+        Установить состояние микрофона (thread-safe).
+        
+        Состояния:
+        - "idle": Микрофон закрыт, нет активных операций
+        - "opening": Микрофон открывается (асинхронная операция)
+        - "active": Микрофон активен, запись идет
+        - "closing": Микрофон закрывается (асинхронная операция)
+        - "error": Ошибка, требуется восстановление
+        
+        Args:
+            state: Новое состояние микрофона
+            session_id: ID сессии (опционально)
+            reason: Причина изменения состояния (для логирования)
+            
+        Returns:
+            True если состояние изменилось, False если осталось прежним
+        """
+        import time
+        with self._microphone_lock:
+            old_state = self._microphone_state
+            if old_state != state:
+                self._microphone_state = state
+                self._microphone_session_id = session_id
+                self._microphone_last_change = time.time()
+                logger.info(
+                    f"🔄 [MIC_STATE] {old_state} → {state} "
+                    f"(session={session_id}, reason={reason})"
+                )
+                return True
+            else:
+                # Состояние не изменилось, но обновляем session_id если нужно
+                if session_id is not None and self._microphone_session_id != session_id:
+                    self._microphone_session_id = session_id
+                    logger.debug(
+                        f"🔄 [MIC_STATE] session_id обновлен: {self._microphone_session_id} → {session_id} "
+                        f"(state={state}, reason={reason})"
+                    )
+                return False
+    
+    def get_microphone_state(self) -> tuple[str, Optional[str]]:
+        """
+        Получить текущее состояние микрофона (thread-safe).
+        
+        Returns:
+            Кортеж (state, session_id): текущее состояние и session_id
+        """
+        with self._microphone_lock:
+            return (self._microphone_state, self._microphone_session_id)
+    
+    def is_microphone_active(self) -> bool:
+        """
+        Проверить, активен ли микрофон (thread-safe).
+        
+        Returns:
+            True если микрофон активен (state == "active"), False в противном случае
+        """
+        with self._microphone_lock:
+            return self._microphone_state == "active"
+    
+    def get_microphone_session_id(self) -> Optional[str]:
+        """
+        Получить session_id текущего микрофона (thread-safe).
+        
+        Returns:
+            session_id если микрофон активен, None в противном случае
+        """
+        with self._microphone_lock:
+            return self._microphone_session_id if self._microphone_state == "active" else None
+    
+    def force_close_microphone(self, reason: str = "unknown") -> bool:
+        """
+        Принудительно закрыть микрофон (восстановление при ошибках).
+        
+        Args:
+            reason: Причина принудительного закрытия
+            
+        Returns:
+            True если состояние изменилось, False если уже было "idle"
+        """
+        with self._microphone_lock:
+            old_state = self._microphone_state
+            if old_state != "idle":
+                self._microphone_state = "idle"
+                self._microphone_session_id = None
+                import time
+                self._microphone_last_change = time.time()
+                logger.warning(
+                    f"⚠️ [MIC_STATE] Принудительное закрытие микрофона: "
+                    f"{old_state} → idle (reason={reason})"
+                )
+                return True
+            return False

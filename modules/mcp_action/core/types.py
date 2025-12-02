@@ -25,3 +25,4 @@ class McpActionResult:
     error: Optional[str] = None
     app_name: Optional[str] = None
 
+

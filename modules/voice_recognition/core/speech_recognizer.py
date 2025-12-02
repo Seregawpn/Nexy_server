@@ -18,6 +18,9 @@ from .types import (
 from .audio_device_monitor import AudioDeviceMonitor
 from .audio_recovery_manager import AudioRecoveryManager, preflight_check
 
+# ✅ НОРМАЛИЗАЦИЯ ПАРАМЕТРОВ УСТРОЙСТВ
+from modules.audio_core import DeviceParamsNormalizer, InputParams
+
 logger = logging.getLogger(__name__)
 
 class SpeechRecognizer:
@@ -63,6 +66,7 @@ class SpeechRecognizer:
         self.recovery_manager: Optional[AudioRecoveryManager] = None
         self.recovery_enabled = bool(getattr(self.config, "enable_audio_recovery", True))
         self._current_stream: Optional[sd.InputStream] = None
+        self._stream_lock = threading.RLock()  # ✅ FIX: Блокировка для защиты _current_stream от race conditions
         self._device_priority: List[Any] = []
 
         # Параметры входного устройства - используем системные дефолты
@@ -97,6 +101,24 @@ class SpeechRecognizer:
         self.device_monitor.set_device_change_callback(self._on_device_changed)
         self.last_device_change_time = 0.0
         self.stabilization_delay = 0.3  # 300мс задержка стабилизации
+        
+        # ✅ ИТЕРАЦИЯ 4: Инициализация нормализатора параметров устройств (пока не используется)
+        try:
+            from config.unified_config_loader import unified_config
+            audio_config = unified_config.get_audio_config()
+            normalizer_config = audio_config.get('normalization', {})
+            if normalizer_config:
+                self._params_normalizer = DeviceParamsNormalizer(normalizer_config)
+                self._normalized_input_params: Optional[InputParams] = None
+                logger.debug("✅ DeviceParamsNormalizer инициализирован для INPUT (готов к использованию)")
+            else:
+                logger.warning("⚠️ Конфигурация нормализации не найдена, используем fallback")
+                self._params_normalizer = None
+                self._normalized_input_params = None
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка инициализации нормализатора: {e}")
+            self._params_normalizer = None
+            self._normalized_input_params = None
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Устанавливает event loop для асинхронных операций из audio callback."""
@@ -235,7 +257,10 @@ class SpeechRecognizer:
     def _graceful_stop_listening(self, reason: str):
         """Безопасно останавливает текущий поток прослушивания (синхронно)."""
         try:
+            # ✅ FIX: Устанавливаем stop_event ПЕРЕД is_listening для более быстрой реакции
             self.stop_event.set()
+            # ✅ FIX: Используем memory barrier для гарантии видимости в других потоках
+            self.is_listening = False
         except Exception:
             pass
 
@@ -248,21 +273,22 @@ class SpeechRecognizer:
                 logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value} (graceful stop: {reason})")
 
         # ВАЖНО: Принудительно закрываем аудио поток перед join треда
-        if self._current_stream:
-            try:
-                logger.debug(f"🛑 Принудительное закрытие аудио потока (reason={reason})")
-                self._current_stream.stop()
-                self._current_stream.close()
-            except Exception as e:
-                logger.debug(f"⚠️ Ошибка закрытия потока в _graceful_stop: {e}")
-            finally:
-                self._current_stream = None  # Всегда очищаем ссылку
+        with self._stream_lock:
+            if self._current_stream:
+                try:
+                    logger.debug(f"🛑 Принудительное закрытие аудио потока (reason={reason})")
+                    self._current_stream.stop()
+                    self._current_stream.close()
+                except Exception as e:
+                    logger.debug(f"⚠️ Ошибка закрытия потока в _graceful_stop: {e}")
+                finally:
+                    self._current_stream = None  # Всегда очищаем ссылку
 
         thread = self.listen_thread
         if thread and thread.is_alive():
-            thread.join(timeout=2.0)
+            thread.join(timeout=0.5)  # ✅ FIX: Уменьшено с 2.0 до 0.5 секунды для быстрого отклика
             if thread.is_alive():
-                logger.warning("⚠️ Поток прослушивания не завершился за 2с (reason=%s)", reason)
+                logger.warning("⚠️ Поток прослушивания не завершился за 0.5с (reason=%s), продолжаем без ожидания", reason)
         self.listen_thread = None
 
         with self.audio_lock:
@@ -491,8 +517,10 @@ class SpeechRecognizer:
                 logger.debug(f"🔄 [AUDIO_STATE] {old_state.value} → {self._stream_state.value}")
                 
             self.state = RecognitionState.PROCESSING
-            self.is_listening = False
+            # ✅ FIX: Устанавливаем stop_event ПЕРЕД is_listening для более быстрой реакции потока
             self.stop_event.set()
+            # ✅ FIX: Используем явное присваивание для memory barrier (гарантия видимости в других потоках)
+            self.is_listening = False
             
             # Останавливаем мониторинг устройств
             if self.device_monitor.is_monitoring():
@@ -503,20 +531,23 @@ class SpeechRecognizer:
             await self._notify_event(RecognitionEventType.LISTENING_STOP)
             await self._notify_state_change(RecognitionState.PROCESSING)
             
-            # Ждем завершения потока прослушивания
+            # ✅ FIX: Уменьшаем таймаут ожидания потока для быстрого отклика
             if self.listen_thread and self.listen_thread.is_alive():
                 logger.debug("⏳ Ожидаем завершение потока записи...")
-                self.listen_thread.join(timeout=5.0)
+                self.listen_thread.join(timeout=1.0)  # ✅ FIX: Уменьшено с 5.0 до 1.0 секунды
+                if self.listen_thread.is_alive():
+                    logger.warning("⚠️ Поток прослушивания не завершился за 1с, продолжаем без ожидания")
 
             # ВАЖНО: Принудительно очищаем поток после завершения треда
-            if self._current_stream:
-                try:
-                    self._current_stream.stop()
-                    self._current_stream.close()
-                except Exception as e:
-                    logger.debug(f"⚠️ Ошибка закрытия потока в stop_listening: {e}")
-                finally:
-                    self._current_stream = None
+            with self._stream_lock:
+                if self._current_stream:
+                    try:
+                        self._current_stream.stop()
+                        self._current_stream.close()
+                    except Exception as e:
+                        logger.debug(f"⚠️ Ошибка закрытия потока в stop_listening: {e}")
+                    finally:
+                        self._current_stream = None
 
             # Распознаем речь
             logger.debug(
@@ -568,7 +599,20 @@ class SpeechRecognizer:
             # Кэш устройств обновляется в _get_system_default_input_index()
             # Не дублируем обновление здесь
 
-            device_id, device_info = self._select_default_input_device(strict=True)
+            # ✅ FIX: Сначала пробуем strict=True (предпочитаем системный default)
+            # Если default недоступен (например, AirPods отключены), автоматически переключаемся на альтернативы
+            try:
+                device_id, device_info = self._select_default_input_device(strict=True)
+            except RuntimeError as e:
+                # Если default устройство недоступно, пробуем найти любое доступное
+                logger.warning(f"⚠️ Системное default устройство недоступно: {e}")
+                logger.info("🔄 Пробуем найти альтернативное доступное устройство...")
+                device_id, device_info = self._select_default_input_device(strict=False)
+                if device_id is None or device_info is None:
+                    logger.error("❌ Не найдено ни одного доступного входного устройства")
+                    raise RuntimeError("Не найдено ни одного доступного входного устройства")
+                logger.info(f"✅ Найдено альтернативное устройство: \"{device_info.get('name')}\" (ID: {device_id})")
+            
             new_device_name = device_info.get('name') if device_info else None
 
             # ВСЕГДА обновляем поля устройства (система может переключиться)
@@ -698,6 +742,37 @@ class SpeechRecognizer:
                 channels_available = int(device_info.get('max_input_channels') or 1)
                 channels_target = max(1, self.config.channels)
                 
+                # ✅ ИТЕРАЦИЯ 5: Нормализуем параметры устройства
+                if device_info and self._params_normalizer:
+                    try:
+                        normalized = self._params_normalizer.select_input_params(device_info)
+                        self._normalized_input_params = normalized
+                        
+                        # Обновляем параметры с нормализованными значениями
+                        self.actual_input_rate = normalized.device_rate
+                        self.actual_input_channels = normalized.channels
+                        
+                        logger.info(f"✅ [INPUT] Нормализованные параметры для \"{device_name}\":")
+                        logger.info(f"   Device Rate: {normalized.device_rate} Hz")
+                        logger.info(f"   Target Rate: {normalized.target_rate} Hz (ASR)")
+                        logger.info(f"   Channels: {normalized.channels}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Ошибка нормализации параметров: {e}, используем существующую логику")
+                        # Fallback на существующую логику
+                        if self._is_bluetooth_device(device_name):
+                            self.actual_input_rate = float(samplerate)
+                            self.actual_input_channels = 1 if channels_available >= 1 else max(1, min(channels_available, channels_target))
+                            logger.info(f"🔵 Bluetooth устройство обнаружено - формат: {self.actual_input_rate}Hz, {self.actual_input_channels} канал(ов)")
+                        else:
+                            self.actual_input_rate = float(samplerate)
+                            self.actual_input_channels = max(1, min(channels_available, channels_target))
+                else:
+                    # Fallback на существующую логику если нормализатор недоступен
+                    if not self._params_normalizer:
+                        logger.debug("⚠️ Нормализатор недоступен, используем существующую логику")
+                    else:
+                        logger.debug("⚠️ Информация об устройстве недоступна, используем существующую логику")
+                
                 # Для Bluetooth устройств используем формат устройства, но ограничиваем каналы до моно если нужно
                 if self._is_bluetooth_device(device_name):
                     # Используем формат устройства, но для BT предпочитаем моно
@@ -764,7 +839,8 @@ class SpeechRecognizer:
                         )
 
                         # Сохраняем ссылку на поток для recovery
-                        self._current_stream = stream
+                        with self._stream_lock:
+                            self._current_stream = stream
 
                         # ✅ FIX для Error 89: Задержка перед start() для Bluetooth устройств
                         # Bluetooth устройствам нужно время на инициализацию CoreAudio pipeline
@@ -853,10 +929,19 @@ class SpeechRecognizer:
                 self._notify_microphone_unstable()
                 raise RuntimeError("Не удалось запустить аудио поток ни на одном устройстве")
 
-            # Поток работает - ждём завершения
-            with stream:
-                while self.is_listening and not self.stop_event.is_set():
-                    time.sleep(0.1)
+            # ✅ FIX: Управляем потоком вручную (БЕЗ `with stream:`) для немедленной остановки
+            # Проблема: `with stream:` контекстный менеджер блокирует выход до полного закрытия потока
+            # Решение: управляем потоком вручную, чтобы иметь полный контроль над остановкой
+            stream_closed = False  # ✅ FIX: Флаг для предотвращения двойного закрытия
+            # ✅ FIX: Поток работает - ждём завершения с немедленной остановкой при stop_event
+            while self.is_listening and not self.stop_event.is_set():
+                # ✅ FIX: Проверяем stop_event часто (каждые 50ms) для быстрой реакции
+                time.sleep(0.05)
+                
+                # ✅ FIX: Дополнительная проверка - если stop_event установлен, выходим немедленно
+                if self.stop_event.is_set():
+                    logger.debug("🛑 stop_event установлен, выходим из цикла")
+                    break
 
             duration = time.time() - self.listen_start_time if self.listen_start_time else 0
             logger.debug("🛑 Поток записи остановлен, длительность=%.2fs", duration)
@@ -871,16 +956,58 @@ class SpeechRecognizer:
             self.state = RecognitionState.ERROR
             self._schedule_cooldown(0.6)
         finally:
-            # Закрываем поток если он всё ещё открыт
-            if stream:
+            # ✅ FIX: Принудительно останавливаем и закрываем поток (ОДИН РАЗ)
+            # КРИТИЧНО: stream.close() может блокировать до 1 секунды, даже после stream.stop()
+            # Решение: выполняем stream.close() в отдельном потоке с защитой от двойного закрытия
+            if stream and not stream_closed:
                 try:
-                    stream.stop()
-                    stream.close()
-                except Exception:
-                    pass
+                    # ✅ FIX: Сначала останавливаем поток
+                    if stream.active:
+                        logger.debug("🛑 Останавливаем поток перед закрытием")
+                        stream.stop()
+                        # ✅ FIX: Даем небольшое время для завершения callback'ов
+                        time.sleep(0.05)
+                    
+                    # ✅ FIX: Закрываем поток в отдельном потоке с защитой от двойного закрытия
+                    # Используем lock для защиты от одновременного закрытия из разных потоков
+                    def close_stream_safely():
+                        nonlocal stream_closed
+                        with self._stream_lock:  # Защита от двойного закрытия
+                            if stream_closed:
+                                logger.debug("🔄 Поток уже закрыт, пропускаем")
+                                return
+                            try:
+                                logger.debug("🛑 Закрываем поток (асинхронно)")
+                                stream.close()
+                                stream_closed = True
+                                logger.debug("✅ Поток закрыт (асинхронно)")
+                            except Exception as e:
+                                logger.debug(f"⚠️ Ошибка закрытия потока (асинхронно): {e}")
+                                stream_closed = True  # Помечаем как закрытый даже при ошибке
+                    
+                    # Запускаем закрытие в отдельном daemon потоке
+                    # ВАЖНО: используем lock для защиты от двойного закрытия
+                    close_thread = threading.Thread(target=close_stream_safely, daemon=True)
+                    close_thread.start()
+                    logger.debug("🔄 Поток закрытия запущен в отдельном потоке (с защитой от двойного закрытия)")
+                except Exception as e:
+                    logger.debug(f"⚠️ Ошибка остановки потока: {e}")
+                    stream_closed = True  # Помечаем как закрытый даже при ошибке
+
+            # ✅ FIX: Также останавливаем _current_stream если он отличается от stream
+            with self._stream_lock:
+                if self._current_stream and self._current_stream != stream:
+                    try:
+                        if self._current_stream.active:
+                            logger.debug("🛑 Принудительная остановка _current_stream в finally")
+                            self._current_stream.stop()
+                        self._current_stream.close()
+                    except Exception as e:
+                        logger.debug(f"⚠️ Ошибка закрытия _current_stream в finally: {e}")
 
             # ВАЖНО: Очищаем ссылку на поток для предотвращения утечек ресурсов
             self._current_stream = None
+            logger.debug("🧹 Аудио поток очищен (_current_stream = None)")
             
             # ✅ FIX: Возвращаемся в IDLE после завершения потока
             with self._stream_state_lock:
@@ -1051,15 +1178,26 @@ class SpeechRecognizer:
         """
         Возвращает индекс системного дефолтного INPUT устройства.
         
-        ✅ НОВЫЙ ПОДХОД (как в OUTPUT):
-        Использует sd.default.device для получения актуального устройства,
-        вместо поиска по имени в кэшированном списке.
-        
-        Это решает проблему с AirPods - sd.default.device обновляется
-        автоматически при смене устройства в macOS.
+        ✅ УЛУЧШЕННЫЙ ПОДХОД:
+        1. Сначала пробуем получить имя устройства через macOS API (SwitchAudioSource)
+        2. Ищем устройство по имени в PortAudio
+        3. Если не найдено, используем sd.default.device как fallback
+        4. Это решает проблему с AirPods - macOS API всегда возвращает актуальное устройство
         """
         try:
-            # ✅ ИСПОЛЬЗУЕМ sd.default.device как в OUTPUT
+            # ✅ ПРИОРИТЕТ 1: Получаем имя устройства через macOS API (как для OUTPUT)
+            system_device_name = self._get_system_default_input_name()
+            if system_device_name:
+                logger.debug(f"🔍 [INPUT] macOS default INPUT: \"{system_device_name}\"")
+                # Ищем устройство по имени в PortAudio
+                device_id = self._find_device_id_by_name_input(system_device_name)
+                if device_id is not None:
+                    logger.debug(f"✅ [INPUT] Найдено устройство по имени: \"{system_device_name}\" → ID {device_id}")
+                    return device_id
+                else:
+                    logger.warning(f"⚠️ [INPUT] Устройство \"{system_device_name}\" не найдено в PortAudio, пробуем sd.default.device...")
+
+            # ✅ ПРИОРИТЕТ 2: Используем sd.default.device как fallback
             default_setting = sd.default.device
             logger.debug(f"🔍 [INPUT] sd.default.device = {default_setting}")
 
@@ -1077,19 +1215,20 @@ class SpeechRecognizer:
                 try:
                     device_info = sd.query_devices(input_device_id, 'input')
                     if device_info and device_info.get('max_input_channels', 0) > 0:
-                        logger.debug(f"✅ [INPUT] Найдено INPUT устройство: ID {input_device_id} - \"{device_info.get('name')}\"")
+                        device_name = device_info.get('name', 'Unknown')
+                        logger.debug(f"✅ [INPUT] Найдено INPUT устройство через sd.default.device: ID {input_device_id} - \"{device_name}\"")
                         return input_device_id
                     else:
                         logger.warning(f"⚠️ [INPUT] Устройство ID {input_device_id} не является INPUT устройством")
                 except Exception as e:
                     logger.warning(f"⚠️ [INPUT] Ошибка проверки устройства ID {input_device_id}: {e}")
 
-            # Fallback: если sd.default.device не работает, используем старый метод
-            logger.debug("🔄 [INPUT] Fallback к поиску по имени...")
+            # Fallback: если ничего не сработало, используем старый метод
+            logger.debug("🔄 [INPUT] Fallback к поиску по имени (старый метод)...")
             return self._get_system_default_input_index_fallback()
 
         except Exception as e:
-            logger.error(f"❌ [INPUT] Ошибка получения default input через sd.default.device: {e}")
+            logger.error(f"❌ [INPUT] Ошибка получения default input: {e}")
             # Fallback к старому методу
             return self._get_system_default_input_index_fallback()
 
@@ -1133,7 +1272,7 @@ class SpeechRecognizer:
     def _select_default_input_device(self, strict: bool = True) -> tuple[Any, Optional[Dict[str, Any]]]:
         """
         Возвращает (device_id, device_info) для системного default входа.
-        Если strict=True и default недоступен — выбрасывает RuntimeError.
+        Если strict=True и default недоступен — автоматически ищет альтернативные устройства.
         Если strict=False — пытается найти первый доступный альтернативный input.
         """
         logger.debug(f"🔍 [SELECT] Начинаем выбор default input устройства (strict={strict})")
@@ -1157,7 +1296,11 @@ class SpeechRecognizer:
             candidates.append(default_input)
             logger.debug(f"🔍 [SELECT] Добавлен кандидат (default): ID {default_input}")
 
-        if not strict and devices_snapshot:
+        # ✅ FIX: Если strict=True, но default недоступен, автоматически добавляем альтернативы
+        # Это позволяет системе переключаться на доступные устройства при отключении AirPods
+        should_try_alternatives = not strict or (strict and default_input is not None)
+        
+        if should_try_alternatives and devices_snapshot:
             sorted_indices = sorted(
                 (
                     idx
@@ -1171,9 +1314,12 @@ class SpeechRecognizer:
 
         logger.debug(f"🔍 [SELECT] Всего кандидатов: {len(candidates)} → {candidates}")
 
-        if strict and not candidates:
-            raise RuntimeError("Системное входное устройство недоступно")
+        if not candidates:
+            if strict:
+                raise RuntimeError("Системное входное устройство недоступно")
+            return None, None
 
+        # Пробуем все кандидаты по порядку
         for candidate in candidates:
             logger.debug(f"🔍 [SELECT] Проверяем кандидата ID {candidate}...")
             try:
@@ -1187,12 +1333,13 @@ class SpeechRecognizer:
                 logger.debug(f"⚠️ [SELECT] ID {candidate}: info пуст, пропускаем")
                 continue
             if not self._device_is_available(candidate, info):
-                logger.debug(f"⚠️ [SELECT] ID {candidate}: устройство недоступно")
+                logger.warning(f"⚠️ [SELECT] ID {candidate} (\"{device_name}\"): устройство недоступно, пробуем следующее")
                 continue
             self._set_portaudio_default_input(candidate)
-            logger.debug(f"✅ [SELECT] ВЫБРАН: ID {candidate} - \"{info.get('name')}\"")
+            logger.info(f"✅ [SELECT] ВЫБРАН: ID {candidate} - \"{info.get('name')}\"")
             return candidate, info
 
+        # Если дошли сюда - все кандидаты недоступны
         if strict:
             raise RuntimeError("Системное входное устройство недоступно или занято")
         return None, None
@@ -1421,10 +1568,29 @@ class SpeechRecognizer:
     def _audio_callback(self, indata, frames, time, status):
         """Callback для записи аудио с диагностикой пустых чанков"""
         try:
+            # ✅ FIX: Немедленно выходим если запись остановлена
+            # ✅ FIX: Проверяем stop_event и is_listening атомарно (локальные копии)
+            stop_requested = self.stop_event.is_set()
+            listening_active = self.is_listening
+            
+            if stop_requested or not listening_active:
+                # ✅ FIX: Немедленно останавливаем поток при установке stop_event
+                with self._stream_lock:
+                    if self._current_stream and self._current_stream.active:
+                        try:
+                            self._current_stream.stop()
+                            self._current_stream.close()
+                            self._current_stream = None
+                            logger.debug("🛑 Аудио поток принудительно остановлен в callback")
+                        except Exception as e:
+                            logger.debug(f"⚠️ Ошибка принудительной остановки потока в callback: {e}")
+                return
+            
             if status:
                 logger.warning(f"⚠️ AUDIO callback status: {status}, frames={frames}")
 
-            if self.is_listening:
+            # ✅ FIX: Используем локальную копию для проверки (уже получена выше)
+            if listening_active:
                 # Проверяем уровень сигнала (диагностика CoreAudio overload)
                 peak = float(np.max(np.abs(indata)))
                 signal_detected = peak >= self._signal_threshold

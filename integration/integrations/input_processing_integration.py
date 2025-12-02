@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
+from enum import Enum, auto
 import time
 
 # Импорты модулей input_processing
@@ -19,6 +20,14 @@ from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCat
 from config.unified_config_loader import InputProcessingConfig
 
 logger = logging.getLogger(__name__)
+
+
+class InputState(Enum):
+    """Состояние обработки ввода (централизованное управление)"""
+    IDLE = auto()              # Нет активных операций
+    PENDING = auto()           # PRESS получен, ожидание LONG_PRESS
+    LISTENING = auto()         # LONG_PRESS получен, запись активна
+    PROCESSING = auto()        # RELEASE получен, обработка gRPC
 
 # InputProcessingConfig теперь импортируется из unified_config_loader
 
@@ -40,16 +49,25 @@ class InputProcessingIntegration:
         # Состояние
         self.is_initialized = False
         self.is_running = False
+        
+        # ✅ ЭТАП 0.1: Централизованное состояние через Enum
+        self._input_state: InputState = InputState.IDLE
+        
         # КРИТИЧНО: _current_session_id удален - используем только state_manager.get_current_session_id()
         self._session_recognized: bool = False
         self._recording_started: bool = False
         # Debounce для short press в LISTENING
         self._last_short_ts: float = 0.0
+        # ✅ ЭТАП 3.1: Debounce для PRESS (игнорировать если < 0.1s)
+        self._last_press_ts: float = 0.0
+        self._press_debounce_interval: float = 0.1  # 100ms
         # Текущее состояние gRPC-потока
         self._session_waiting_grpc: bool = False
         self._active_grpc_session_id: Optional[float] = None
         # Подготовленная, но ещё не подтверждённая (LONG_PRESS) сессия
         self._pending_session_id: Optional[float] = None
+        # КРИТИЧНО: Флаг для отслеживания неудачных распознаваний (чтобы не переходить в PROCESSING)
+        self._recognition_failed_sessions: set = set()  # Множество session_id с неудачным распознаванием
         # Последний валидный session_id для отмены текущего gRPC/плеера
         self._cancel_session_id: Optional[float] = None
         # Время начала записи для проверки минимальной длительности
@@ -63,7 +81,8 @@ class InputProcessingIntegration:
         self._playback_wait_timeout: float = max(0.5, float(self.config.playback_wait_timeout_sec))
         self._playback_idle_grace: float = max(0.0, float(self.config.playback_idle_grace_sec))
         self._recording_prestart_delay: float = max(0.0, float(self.config.recording_prestart_delay_sec))
-        self._mic_active: bool = False
+        # ✅ ЭТАП 1: Удаляем _mic_active - используем state_manager.is_microphone_active() вместо этого
+        # self._mic_active: bool = False  # УДАЛЕНО - используем state_manager
         self._mic_waiters: List[asyncio.Future] = []
         self._last_mic_closed_ts: float = time.monotonic()
         self._mic_wait_timeout: float = max(0.5, float(self.config.playback_wait_timeout_sec))
@@ -73,8 +92,14 @@ class InputProcessingIntegration:
         self._mic_reset_timeout: float = max(0.0, float(self.config.mic_reset_timeout_sec))
         # Фоновая задача для мониторинга таймаута микрофона
         self._mic_monitor_task: Optional[asyncio.Task] = None
-        # КРИТИЧНО: Флаг для отмены pending записи при RELEASE до завершения LONG_PRESS
-        self._pending_recording_cancelled: bool = False
+        # ✅ ЭТАП 0.4: Используем asyncio.Event вместо простого флага для надежной синхронизации
+        self._pending_recording_cancelled_event: asyncio.Event = asyncio.Event()
+        
+        # ✅ ЭТАП 0.2: Используем asyncio.Lock для async методов (не блокирует event loop)
+        self._state_lock: asyncio.Lock = asyncio.Lock()
+        
+        # ✅ ЭТАП 0.3: Флаг для защиты от повторных LONG_PRESS
+        self._long_press_in_progress: bool = False
         
     async def initialize(self) -> bool:
         """Инициализация input_processing (клавиатура)"""
@@ -167,6 +192,25 @@ class InputProcessingIntegration:
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         try:
             logger.info(f"🎤 PTT: keyDown({event.key}) → PRESS, timestamp={event.timestamp}")
+            
+            # ✅ ЭТАП 3.1: Debounce для PRESS - игнорируем если предыдущий PRESS был менее 0.1s назад
+            now = time.monotonic()
+            time_since_last_press = now - self._last_press_ts
+            if time_since_last_press < self._press_debounce_interval:
+                logger.debug(f"🔒 PRESS debounced: {time_since_last_press*1000:.1f}ms < {self._press_debounce_interval*1000:.0f}ms, игнорируем")
+                return
+            
+            # Обновляем время последнего PRESS
+            self._last_press_ts = now
+            
+            # ✅ ЭТАП 3.2: Отменяем предыдущий _pending_session_id при новом PRESS
+            if self._pending_session_id is not None:
+                old_pending_id = self._pending_session_id
+                logger.debug(f"🔄 PRESS: отменяем предыдущий pending_session_id={old_pending_id} (новый PRESS)")
+                # Сбрасываем состояние предыдущего PRESS
+                if self._input_state == InputState.PENDING:
+                    await self._set_input_state(InputState.IDLE, reason="new_press_cancelled_previous")
+            
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id
             active_session_id = self._get_active_session_id()
             logger.debug(f"PRESS: current_session={active_session_id}, pending_session={self._pending_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
@@ -184,6 +228,9 @@ class InputProcessingIntegration:
             self._session_recognized = False
             self._recording_started = False
             logger.debug("PRESS: pending_session_id=%s", self._pending_session_id)
+            
+            # ✅ ЭТАП 0.1: Переход в состояние PENDING
+            await self._set_input_state(InputState.PENDING, reason="press_received")
 
             # Публикуем событие press чтобы другие модули (например VoiceOver) могли отреагировать мгновенно
             logger.info(f"🔑 [INPUT] Публикую keyboard.press событие...")
@@ -236,6 +283,8 @@ class InputProcessingIntegration:
         try:
             await self.event_bus.subscribe("voice.mic_opened", self._on_mic_opened, EventPriority.HIGH)
             await self.event_bus.subscribe("voice.mic_closed", self._on_mic_closed, EventPriority.HIGH)
+            # ✅ ЭТАП 1.3: Подписка на ошибки открытия микрофона для обработки ошибок
+            await self.event_bus.subscribe("microphone.error", self._on_microphone_error, EventPriority.HIGH)
         except Exception:
             pass
         # КРИТИЧНО: Подписываемся на события first_run для синхронизации состояния микрофона
@@ -255,6 +304,9 @@ class InputProcessingIntegration:
             active_session_id = self._get_active_session_id()
             if active_session_id is not None and session_id == active_session_id:
                 self._session_recognized = True
+                # КРИТИЧНО: Удаляем сессию из множества неудачных при успешном распознавании
+                if session_id is not None:
+                    self._recognition_failed_sessions.discard(session_id)
         except Exception as e:
             await self.error_handler.handle_error(
                 severity=ErrorSeverity.LOW,
@@ -278,12 +330,23 @@ class InputProcessingIntegration:
                 logger.info("⚠️ RECOGNITION_FAILED: запись была активна, RELEASE еще обрабатывается - НЕ сбрасываем session_id")
                 # КРИТИЧНО: Используем _get_active_session_id для получения session_id
                 active_session_id = self._get_active_session_id()
-                logger.info(f"⚠️ RECOGNITION_FAILED: сохраняем session_id={active_session_id or self._active_grpc_session_id} для RELEASE")
-                # НЕ вызываем _reset_session - RELEASE сам опубликует mode.request(PROCESSING)
+                session_id_to_mark = active_session_id or self._active_grpc_session_id
+                logger.info(f"⚠️ RECOGNITION_FAILED: сохраняем session_id={session_id_to_mark} для RELEASE")
+                # КРИТИЧНО: Помечаем сессию как неудачную, чтобы RELEASE не переходил в PROCESSING
+                if session_id_to_mark is not None:
+                    self._recognition_failed_sessions.add(session_id_to_mark)
+                    logger.info(f"⚠️ RECOGNITION_FAILED: сессия {session_id_to_mark} помечена как неудачная - RELEASE не перейдет в PROCESSING")
+                # НЕ вызываем _reset_session - RELEASE сам решит, что делать
                 # НЕ публикуем mode.request(SLEEPING) - RELEASE сам решит, что делать
                 return
             
             # Если запись не была активна или RELEASE уже обработался - сбрасываем сессию
+            # КРИТИЧНО: Помечаем сессию как неудачную перед сбросом
+            active_session_id = self._get_active_session_id()
+            if active_session_id is not None:
+                self._recognition_failed_sessions.add(active_session_id)
+                logger.info(f"⚠️ RECOGNITION_FAILED: сессия {active_session_id} помечена как неудачная")
+            
             self._reset_session("recognition_failed")
             # Переходим в SLEEPING через централизованный запрос
             await self.event_bus.publish("mode.request", {
@@ -302,6 +365,14 @@ class InputProcessingIntegration:
     def _reset_session(self, reason: str):
         """Сбрасывает состояние текущей сессии после завершения gRPC-цепочки."""
         logger.debug(f"SESSION RESET ({reason})")
+        
+        # КРИТИЧНО: Очищаем множество неудачных сессий при сбросе
+        active_session_id = self._get_active_session_id()
+        if active_session_id is not None:
+            self._recognition_failed_sessions.discard(active_session_id)
+        # Также очищаем по grpc_session_id, если есть
+        if self._active_grpc_session_id is not None:
+            self._recognition_failed_sessions.discard(self._active_grpc_session_id)
         
         # КРИТИЧНО: Принудительно останавливаем микрофон при сбросе сессии
         if self._recording_started:
@@ -331,7 +402,38 @@ class InputProcessingIntegration:
         self._pending_session_id = None
         self._cancel_session_id = None
         self._recording_start_time = 0.0
-        self._pending_recording_cancelled = False  # Сбрасываем флаг отмены pending записи
+        # ✅ ЭТАП 0.4: Сбрасываем asyncio.Event вместо простого флага
+        self._pending_recording_cancelled_event.clear()
+        # ✅ ЭТАП 3.1: Сбрасываем debounce таймеры
+        self._last_press_ts = 0.0
+        self._last_short_ts = 0.0
+        
+        # ✅ ЭТАП 0.1: Сбрасываем централизованное состояние (синхронно, так как _reset_session вызывается из разных мест)
+        # Используем прямой доступ к _input_state, так как это внутренний метод сброса
+        old_state = self._input_state
+        if old_state != InputState.IDLE:
+            self._input_state = InputState.IDLE
+            logger.debug(f"🔄 [STATE] {old_state.name} → IDLE (reason: {reason})")
+    
+    async def _set_input_state(self, new_state: InputState, reason: str = "unknown"):
+        """
+        ✅ ЭТАП 0.1: Централизованное управление переходами состояния.
+        
+        Все переходы состояния должны происходить через этот метод для:
+        - Явного контроля переходов
+        - Логирования всех изменений
+        - Валидации переходов (если нужно)
+        
+        Args:
+            new_state: Новое состояние
+            reason: Причина перехода (для логирования)
+        """
+        old_state = self._input_state
+        if old_state != new_state:
+            self._input_state = new_state
+            logger.debug(f"🔄 [STATE] {old_state.name} → {new_state.name} (reason: {reason})")
+        else:
+            logger.debug(f"🔄 [STATE] {new_state.name} (без изменений, reason: {reason})")
 
     # ========== МЕТОДЫ-ПОМОЩНИКИ ДЛЯ ПРОВЕРКИ СОСТОЯНИЯ ==========
     # Эти методы упрощают логику проверок и делают код более читаемым.
@@ -339,12 +441,15 @@ class InputProcessingIntegration:
     
     def _is_recording_active(self) -> bool:
         """
-        Проверка: активна ли запись (микрофон или запись начата).
+        Проверка: активна ли запись.
+        Единый источник истины: state_manager.is_microphone_active()
         
         Returns:
-            True если запись активна (микрофон открыт или запись начата)
+            True если запись активна (микрофон открыт)
         """
-        return self._recording_started or self._mic_active
+        # ✅ ЭТАП 1: Используем только state_manager как единый источник истины
+        # _recording_started не является источником истины для состояния микрофона
+        return self.state_manager.is_microphone_active()
     
     def _has_active_session(self) -> bool:
         """
@@ -487,9 +592,12 @@ class InputProcessingIntegration:
 
     async def _on_mic_opened(self, event):
         try:
-            self._mic_active = True
+            # ✅ ЭТАП 1: Состояние микрофона управляется через state_manager в VoiceRecognitionIntegration
+            # Здесь только обновляем локальные переменные для мониторинга таймаута
+            data = (event or {}).get("data", {}) or {}
+            session_id = data.get("session_id")
             self._mic_active_start_time = time.monotonic()
-            logger.debug("MIC: opened (session=%s)", (event or {}).get("data", {}).get("session_id"))
+            logger.debug("MIC: opened (session=%s)", session_id)
             # Запускаем мониторинг таймаута, если он включен
             if self._mic_reset_timeout > 0:
                 await self._start_mic_monitor()
@@ -497,13 +605,50 @@ class InputProcessingIntegration:
             logger.debug("MIC: error handling open event: %s", e)
 
     async def _on_mic_closed(self, event):
+        """
+        Обработчик события закрытия микрофона.
+        Сбрасывает _recording_started только после подтверждения закрытия.
+        """
         try:
             data = (event or {}).get("data", {}) or {}
             session_id = data.get("session_id")
-            logger.debug("MIC: closed (session=%s)", session_id)
+            logger.debug("🛑 [INPUT] voice.mic_closed получено, session=%s", session_id)
+            
+            # ✅ ЭТАП 1: Сбрасываем _recording_started только после подтверждения закрытия микрофона
+            # Это предотвращает race conditions при быстром повторном нажатии
+            if self._recording_started:
+                self._recording_started = False
+                logger.info("✅ [INPUT] _recording_started сброшен после закрытия микрофона (session=%s)", session_id)
+            else:
+                logger.debug("ℹ️ [INPUT] _recording_started уже был False (session=%s)", session_id)
+            
             self._notify_mic_closed()
         except Exception as e:
             logger.debug("MIC: error handling close event: %s", e)
+
+    async def _on_microphone_error(self, event: Dict[str, Any]):
+        """
+        Обработчик ошибки открытия микрофона.
+        Откатывает состояние _recording_started при ошибке.
+        """
+        try:
+            data = event.get("data", {}) or event
+            session_id = data.get("session_id")
+            error = data.get("error", "unknown")
+            
+            logger.error(f"❌ [INPUT] Ошибка открытия микрофона: {error} (session={session_id})")
+            
+            # ✅ ЭТАП 1.3: Откат: сброс _recording_started при ошибке открытия микрофона
+            if self._recording_started:
+                self._recording_started = False
+                logger.warning("⚠️ [INPUT] Откат: _recording_started сброшен из-за ошибки открытия микрофона")
+            
+            # Сбрасываем pending_session_id, если он был установлен
+            if self._pending_session_id is not None:
+                logger.debug(f"🔄 [INPUT] Сброс pending_session_id из-за ошибки открытия микрофона")
+                self._pending_session_id = None
+        except Exception as e:
+            logger.error(f"❌ [INPUT] Ошибка обработки microphone.error: {e}")
 
     def _notify_playback_idle(self):
         self._playback_active = False
@@ -522,7 +667,8 @@ class InputProcessingIntegration:
     
     def _reset_mic_state_internal(self):
         """Внутренний метод для сброса состояния микрофона (без публикации событий)."""
-        self._mic_active = False
+        # ✅ ЭТАП 1: Состояние микрофона управляется через state_manager
+        # Здесь только обновляем локальные переменные
         self._mic_active_start_time = None
         self._last_mic_closed_ts = time.monotonic()
         # Останавливаем мониторинг таймаута
@@ -534,9 +680,10 @@ class InputProcessingIntegration:
             logger.info(
                 "🔒 [INPUT_PROCESSING] First run начат - синхронизация состояния микрофона"
             )
-            # Принудительно сбрасываем состояние микрофона
-            if self._mic_active:
+            # ✅ ЭТАП 1: Принудительно сбрасываем состояние микрофона через state_manager
+            if self.state_manager.is_microphone_active():
                 logger.warning("⚠️ [INPUT_PROCESSING] Микрофон был активен при начале first_run - принудительно закрываем")
+                self.state_manager.force_close_microphone(reason="first_run_started")
                 self._reset_mic_state_internal()
             
             # Разрешаем все ожидающие Future для предотвращения залипания
@@ -554,10 +701,11 @@ class InputProcessingIntegration:
             logger.info(
                 "🔓 [INPUT_PROCESSING] First run завершён - гарантируем синхронизацию состояния микрофона"
             )
-            # Гарантируем, что состояние микрофона синхронизировано
+            # ✅ ЭТАП 1: Гарантируем, что состояние микрофона синхронизировано через state_manager
             # После first_run микрофон должен быть закрыт
-            if self._mic_active:
+            if self.state_manager.is_microphone_active():
                 logger.warning("⚠️ [INPUT_PROCESSING] Микрофон был активен при завершении first_run - принудительно закрываем")
+                self.state_manager.force_close_microphone(reason="first_run_completed")
                 self._reset_mic_state_internal()
             
             # Разрешаем все ожидающие Future для предотвращения залипания
@@ -579,11 +727,19 @@ class InputProcessingIntegration:
                 await asyncio.wait_for(waiter, self._playback_wait_timeout)
             except asyncio.TimeoutError:
                 logger.warning(
-                    "⚠️ Timeout %.1fs ожидания остановки воспроизведения",
+                    "⚠️ Timeout %.1fs ожидания остановки воспроизведения, повторяем...",
                     self._playback_wait_timeout,
                 )
                 if not waiter.done():
                     waiter.set_result(False)
+                # ✅ ФИНАЛЬНОЕ РЕШЕНИЕ: На TimeoutError делаем await asyncio.sleep(0.1) и повторяем
+                await asyncio.sleep(0.1)
+                # Повторная попытка (максимум 3 раза)
+                for retry in range(3):
+                    if not self._playback_active:
+                        logger.info(f"✅ [INPUT_PROCESSING] Воспроизведение остановлено после повторной попытки {retry + 1}")
+                        break
+                    await asyncio.sleep(0.1)
             finally:
                 if waiter in self._playback_waiters:
                     self._playback_waiters.remove(waiter)
@@ -601,9 +757,11 @@ class InputProcessingIntegration:
 
     async def _wait_for_mic_closed(self):
         """Ждет закрытия микрофона после voice.recording_stop."""
-        logger.debug(f"🎤 [INPUT_PROCESSING] _wait_for_mic_closed: _mic_active={self._mic_active}")
+        # ✅ ЭТАП 1: Используем state_manager вместо _mic_active
+        mic_active = self.state_manager.is_microphone_active()
+        logger.debug(f"🎤 [INPUT_PROCESSING] _wait_for_mic_closed: mic_active={mic_active}")
         
-        if not self._mic_active:
+        if not mic_active:
             logger.debug("🎤 [INPUT_PROCESSING] Микрофон уже закрыт, пропускаем ожидание")
             await self._sleep_after_mic_close()
             return
@@ -618,9 +776,10 @@ class InputProcessingIntegration:
                 "⚠️ [INPUT_PROCESSING] Timeout %.1fs ожидания закрытия микрофона - принудительно сбрасываем состояние",
                 self._mic_wait_timeout,
             )
-            # КРИТИЧНО: При таймауте принудительно сбрасываем состояние для предотвращения залипания
-            if self._mic_active:
-                logger.warning("⚠️ [INPUT_PROCESSING] Принудительный сброс _mic_active из-за таймаута")
+            # ✅ ЭТАП 1: При таймауте принудительно сбрасываем состояние через state_manager
+            if self.state_manager.is_microphone_active():
+                logger.warning("⚠️ [INPUT_PROCESSING] Принудительный сброс состояния микрофона из-за таймаута")
+                self.state_manager.force_close_microphone(reason="mic_close_timeout")
                 self._reset_mic_state_internal()
             if not waiter.done():
                 waiter.set_result(False)
@@ -638,6 +797,44 @@ class InputProcessingIntegration:
             if remaining > 0:
                 await asyncio.sleep(remaining)
 
+    async def _wait_for_mic_opened(self, timeout: float = 5.0) -> bool:
+        """
+        Ждет открытия микрофона через polling state_manager.is_microphone_active().
+        Использует единый источник истины вместо подписки на события (избегает race conditions).
+        
+        Args:
+            timeout: Таймаут ожидания в секундах (по умолчанию 5.0s)
+        
+        Returns:
+            True если микрофон открыт, False если таймаут или ошибка
+        """
+        logger.info(f"🔍 [INPUT_PROCESSING] _wait_for_mic_opened: ВХОД, timeout={timeout}s")
+        # Проверяем, не открыт ли уже микрофон
+        mic_active = self.state_manager.is_microphone_active()
+        logger.info(f"🔍 [INPUT_PROCESSING] _wait_for_mic_opened: is_microphone_active()={mic_active}")
+        if mic_active:
+            logger.info("🎤 [INPUT_PROCESSING] _wait_for_mic_opened: микрофон уже открыт")
+            return True
+        
+        logger.info(f"🎤 [INPUT_PROCESSING] _wait_for_mic_opened: ожидание открытия микрофона (таймаут {timeout}s, polling)")
+        
+        # Используем polling через state_manager (единый источник истины)
+        # Это избегает race conditions с подпиской на события
+        start_time = time.time()
+        poll_interval = 0.05  # Проверяем каждые 50ms
+        
+        while time.time() - start_time < timeout:
+            if self.state_manager.is_microphone_active():
+                elapsed = time.time() - start_time
+                logger.info(f"✅ [INPUT_PROCESSING] Микрофон успешно открыт (через {elapsed:.3f}s)")
+                return True
+            
+            await asyncio.sleep(poll_interval)
+        
+        # Таймаут
+        logger.warning(f"⚠️ [INPUT_PROCESSING] Таймаут ожидания открытия микрофона ({timeout}s)")
+        return False
+
     def _force_reset_mic_state(self, reason: str):
         """Принудительно сбрасывает состояние микрофона."""
         logger.warning(f"⚠️ [INPUT_PROCESSING] Force resetting mic state due to: {reason}")
@@ -648,15 +845,9 @@ class InputProcessingIntegration:
             fut = self._mic_waiters.pop(0)
             if not fut.done():
                 fut.set_result(False)
-        # Публикуем событие закрытия микрофона для синхронизации с другими модулями
-        try:
-            asyncio.create_task(self.event_bus.publish("voice.mic_closed", {
-                "source": "mic_reset_timeout",
-                "timestamp": time.time(),
-                "reason": reason,
-            }))
-        except Exception as e:
-            logger.error(f"❌ [INPUT_PROCESSING] Ошибка публикации voice.mic_closed при сбросе: {e}")
+        # ✅ ЭТАП 4: voice.mic_closed будет опубликовано MicrophoneStateManager
+        # при принудительном закрытии через force_close_microphone()
+        logger.debug("🎤 [INPUT_PROCESSING] ожидание закрытия микрофона (таймаут мониторинга)")
 
     async def _start_mic_monitor(self):
         """Запускает фоновую задачу для мониторинга таймаута микрофона."""
@@ -669,11 +860,12 @@ class InputProcessingIntegration:
         async def _monitor_loop():
             """Цикл мониторинга таймаута микрофона."""
             check_interval = 1.0  # Проверяем каждую секунду
-            while self._mic_active and self._mic_active_start_time is not None:
+            # ✅ ЭТАП 1: Используем state_manager вместо _mic_active
+            while self.state_manager.is_microphone_active() and self._mic_active_start_time is not None:
                 try:
                     await asyncio.sleep(check_interval)
                     
-                    if not self._mic_active:
+                    if not self.state_manager.is_microphone_active():
                         break
                     
                     if self._mic_active_start_time is None:
@@ -811,6 +1003,23 @@ class InputProcessingIntegration:
             if self._pending_session_id is not None and not self._recording_started:
                 logger.info(f"🛑 SHORT_PRESS без записи - отменяем pending session {self._pending_session_id}")
 
+                # ✅ ЭТАП 1: Если микрофон активен, но нет активной сессии - принудительно закрываем микрофон
+                if self.state_manager.is_microphone_active():
+                    logger.warning(f"⚠️ SHORT_PRESS: микрофон активен, но нет активной сессии - принудительно закрываем микрофон")
+                    # Публикуем voice.recording_stop для остановки микрофона (даже без session_id)
+                    await self.event_bus.publish("voice.recording_stop", {
+                        "source": "keyboard",
+                        "timestamp": event.timestamp,
+                        "duration": event.duration,
+                        "session_id": None,  # Нет активной сессии, но нужно закрыть микрофон
+                    })
+                    # ✅ ЭТАП 4: voice.mic_closed будет опубликовано MicrophoneStateManager
+                    # после получения microphone.closed или при принудительном закрытии
+                    logger.debug("🎤 [INPUT_PROCESSING] ожидание закрытия микрофона (SHORT_PRESS)")
+                    # Принудительно сбрасываем состояние микрофона
+                    self._reset_mic_state_internal()
+                    logger.info("✅ SHORT_PRESS: микрофон принудительно закрыт")
+
                 # КРИТИЧНО: Прерываем воспроизведение при SHORT_PRESS
                 # Проверяем как режим, так и активность воспроизведения (для надежности)
                 try:
@@ -819,11 +1028,13 @@ class InputProcessingIntegration:
                     current_mode = None
 
                 # КРИТИЧНО: Прерываем воспроизведение если:
-                # 1. Режим PROCESSING, ИЛИ
-                # 2. Воспроизведение активно (_playback_active), ИЛИ
-                # 3. Есть активная gRPC сессия (_active_grpc_session_id)
+                # 1. Режим PROCESSING (всегда прерываем), ИЛИ
+                # 2. Режим LISTENING (прерываем запись), ИЛИ
+                # 3. Воспроизведение активно (_playback_active), ИЛИ
+                # 4. Есть активная gRPC сессия (_active_grpc_session_id)
                 should_interrupt = (
                     current_mode == AppMode.PROCESSING or
+                    current_mode == AppMode.LISTENING or
                     self._playback_active or
                     self._active_grpc_session_id is not None
                 )
@@ -849,6 +1060,7 @@ class InputProcessingIntegration:
                     # Публикуем событие для ProcessingWorkflow (для координации перехода в SLEEPING)
                     # ProcessingWorkflow может также опубликовать playback.cancelled, но это безопасно (идемпотентная операция)
                     await self.event_bus.publish("interrupt.request", {
+                        "type": "session_clear",  # ✅ FIX: Явно указываем тип прерывания
                         "source": "keyboard",
                         "timestamp": event.timestamp,
                         "duration": event.duration,
@@ -976,11 +1188,13 @@ class InputProcessingIntegration:
                     current_mode = None
                 
                 # КРИТИЧНО: Прерываем воспроизведение если:
-                # 1. Режим PROCESSING, ИЛИ
-                # 2. Воспроизведение активно (_playback_active), ИЛИ
-                # 3. Есть активная gRPC сессия (_active_grpc_session_id)
+                # 1. Режим PROCESSING (всегда прерываем), ИЛИ
+                # 2. Режим LISTENING (прерываем запись), ИЛИ
+                # 3. Воспроизведение активно (_playback_active), ИЛИ
+                # 4. Есть активная gRPC сессия (_active_grpc_session_id)
                 should_interrupt = (
                     current_mode == AppMode.PROCESSING or
+                    current_mode == AppMode.LISTENING or
                     self._playback_active or
                     self._active_grpc_session_id is not None
                 )
@@ -1042,6 +1256,40 @@ class InputProcessingIntegration:
                 context={"where": "input_processing_integration.handle_short_press"}
             )
             
+    async def _can_start_recording(self) -> tuple[bool, str]:
+        """
+        Проверяет готовность системы к записи.
+        Единая функция для всех проверок состояния системы перед началом записи.
+        
+        ПРИМЕЧАНИЕ: Проверка _long_press_in_progress выполняется в _handle_long_press
+        ДО вызова этой функции (защита от повторных LONG_PRESS), поэтому здесь её не проверяем.
+        
+        Returns:
+            (can_start, reason) - можно ли начать запись и причина отказа (если нельзя)
+        """
+        # Проверка 1: _input_state
+        if self._input_state != InputState.PENDING:
+            return False, f"wrong_input_state_{self._input_state.name}"
+        
+        # Проверка 2: pending_session_id
+        if self._pending_session_id is None:
+            return False, "no_pending_session"
+        
+        # Проверка 3: keyboard_monitor.key_pressed
+        if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
+            if not self.keyboard_monitor.key_pressed:
+                return False, "key_not_pressed"
+        
+        # Проверка 4: микрофон уже активен (используем state_manager как единый источник истины)
+        if self.state_manager.is_microphone_active():
+            return False, "microphone_already_active"
+        
+        # ПРИМЕЧАНИЕ: Проверка _recording_started убрана - используем только state_manager.is_microphone_active()
+        # как единый источник истины. _recording_started используется только для отслеживания
+        # публикации voice.recording_start и не является источником истины для состояния микрофона.
+        
+        return True, "ok"
+            
     async def _handle_long_press(self, event: KeyEvent):
         """Обработка длинного нажатия клавиши/комбинации"""
         print(f"🎤🎤🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
@@ -1051,139 +1299,222 @@ class InputProcessingIntegration:
             logger.info(f"🔑 LONG_PRESS: {event.duration:.3f}с")
             print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
             print(f"🔑 LONG_PRESS: event.key={event.key}, event.timestamp={event.timestamp}")  # Для отладки
-            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
-            active_session_id = self._get_active_session_id()
-            print(f"🔑 LONG_PRESS: _recording_started={self._recording_started}, active_session_id={active_session_id}")  # Для отладки
-
-            # ЗАЩИТА 2: Проверяем, что pending_session валиден
-            if self._pending_session_id is None:
-                logger.warning("⚠️ LONG_PRESS пришел БЕЗ pending_session - возможна race condition, игнорируем")
-                return
-
-            # ЗАЩИТА 3: Проверяем, что клавиша ЕЩЕ нажата (дополнительная проверка)
-            if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
-                if not self.keyboard_monitor.key_pressed:
-                    logger.warning("⚠️ LONG_PRESS пришел ПОСЛЕ отпускания клавиши - race condition, игнорируем")
-                    self._pending_session_id = None
+            
+            # ✅ ЭТАП 0.3: Атомарная проверка-и-установка для защиты от повторных LONG_PRESS
+            logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: проверяем _long_press_in_progress={self._long_press_in_progress}")
+            async with self._state_lock:
+                if self._long_press_in_progress:
+                    logger.warning("⚠️ LONG_PRESS уже выполняется, игнорируем повторный вызов")
                     return
-
-            # ЗАЩИТА 4: Проверяем, что микрофон НЕ активен (защита от повторных LONG_PRESS)
-            if self._mic_active:
-                logger.warning(f"⚠️ LONG_PRESS пришел, но микрофон УЖЕ активен (_mic_active=True) - игнорируем повторную активацию")
-                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
-                active_session_id = self._get_active_session_id()
-                logger.warning(f"⚠️ LONG_PRESS: _recording_started={self._recording_started}, active_session_id={active_session_id}")
-                # НЕ сбрасываем _pending_session_id - он может быть нужен для RELEASE
-                return
-
-            # ЗАЩИТА 5: Проверяем, что запись НЕ начата (защита от повторных LONG_PRESS)
-            if self._recording_started:
-                logger.warning(f"⚠️ LONG_PRESS пришел, но запись УЖЕ начата (_recording_started=True) - игнорируем повторную активацию")
-                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
-                active_session_id = self._get_active_session_id()
-                logger.warning(f"⚠️ LONG_PRESS: _mic_active={self._mic_active}, active_session_id={active_session_id}")
-                # НЕ сбрасываем _pending_session_id - он может быть нужен для RELEASE
-                return
-
-            # НЕ публикуем keyboard.long_press - это создает бесконечный цикл!
-            # Событие уже пришло к нам через SimpleModuleCoordinator
-
-            # Перед стартом новой записи обязательно прерываем текущую озвучку/стрим
-            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
-            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._get_active_session_id()
-            if cancel_sid is not None:
-                logger.debug("LONG_PRESS: запрашиваем отмену gRPC перед открытием микрофона (sid=%s)", cancel_sid)
-                await self.event_bus.publish("grpc.request_cancel", {"session_id": cancel_sid})
-
-            try:
-                current_mode = self.state_manager.get_current_mode()
-            except Exception:
-                current_mode = None
-            if current_mode == AppMode.PROCESSING:
-                logger.debug("LONG_PRESS: публикуем playback.cancelled перед запуском записи")
-                await self.event_bus.publish("playback.cancelled", {
-                    "session_id": cancel_sid,
-                    "reason": "keyboard",
-                    "source": "input_processing"
-                })
-
-            # Дожидаемся полной остановки воспроизведения и закрытия микрофона
-            # КРИТИЧНО: Используем таймаут для предотвращения блокировки LONG_PRESS
-            try:
-                await asyncio.wait_for(self._ensure_playback_idle(), timeout=2.0)
-            except asyncio.TimeoutError:
-                logger.warning("⚠️ LONG_PRESS: таймаут ожидания остановки воспроизведения, продолжаем")
+                self._long_press_in_progress = True
+                logger.info(f"✅ [INPUT_PROCESSING] LONG_PRESS: _long_press_in_progress установлен в True")
             
             try:
-                await asyncio.wait_for(self._wait_for_mic_closed(), timeout=1.0)
-            except asyncio.TimeoutError:
-                logger.warning("⚠️ LONG_PRESS: таймаут ожидания закрытия микрофона, продолжаем")
-                # Принудительно сбрасываем состояние микрофона
-                if self._mic_active:
-                    logger.warning("⚠️ LONG_PRESS: принудительный сброс _mic_active из-за таймаута")
-                    self._reset_mic_state_internal()
-
-            # КРИТИЧНО: Проверяем, не был ли отменен pending recording через RELEASE
-            if self._pending_recording_cancelled:
-                logger.warning("⚠️ LONG_PRESS: pending recording был отменен через RELEASE - игнорируем публикацию voice.recording_start")
-                self._pending_recording_cancelled = False  # Сбрасываем флаг
-                self._pending_session_id = None
-                return
-            
-            # КРИТИЧНО: Проверяем, что клавиша ВСЕ ЕЩЕ нажата перед публикацией voice.recording_start
-            if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
-                if not self.keyboard_monitor.key_pressed:
-                    logger.warning("⚠️ LONG_PRESS: клавиша уже отпущена перед публикацией voice.recording_start - отменяем запись")
-                    self._pending_session_id = None
+                # ✅ ЭТАП 1: Используем единую функцию проверки готовности к записи
+                logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: проверяем готовность к записи...")
+                logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: _input_state={self._input_state}, _pending_session_id={self._pending_session_id}")
+                can_start, reason = await self._can_start_recording()
+                logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: _can_start_recording() вернул can_start={can_start}, reason={reason}")
+                if not can_start:
+                    logger.warning(f"⚠️ LONG_PRESS: нельзя начать запись - {reason}")
+                    async with self._state_lock:
+                        self._long_press_in_progress = False
                     return
-            
-            # На LONG_PRESS стартуем запись и переходим в LISTENING (push-to-talk)
-            new_session_id = self._pending_session_id or event.timestamp or time.monotonic()
-            # Полностью очищаем предыдущее состояние перед новой записью
-            self._reset_session("long_press_start")
-            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
-            self._set_session_id(new_session_id, reason="long_press_start")
-            self._pending_session_id = None
-            self._cancel_session_id = None
-            self._pending_recording_cancelled = False  # Сбрасываем флаг отмены
-            if not self._recording_started:
-                # Запоминаем время начала записи для проверки минимальной длительности
-                self._recording_start_time = time.time()
+                    
                 # КРИТИЧНО: Используем _get_active_session_id для получения session_id
                 active_session_id = self._get_active_session_id()
-                await self.event_bus.publish(
-                    "voice.recording_start",
-                    {
-                        "source": "keyboard",
-                        "timestamp": event.timestamp,
-                        "session_id": active_session_id,
-                    }
-                )
-                self._recording_started = True
-                logger.debug("LONG_PRESS: voice.recording_start опубликовано")
-                logger.debug(f"LONG_PRESS: записываем время начала записи: {self._recording_start_time}")
+                print(f"🔑 LONG_PRESS: _recording_started={self._recording_started}, active_session_id={active_session_id}")  # Для отладки
 
-                # Запрашиваем переход в LISTENING централизованно, но только если не в PROCESSING
+                # НЕ публикуем keyboard.long_press - это создает бесконечный цикл!
+                # Событие уже пришло к нам через SimpleModuleCoordinator
+
+                # Перед стартом новой записи обязательно прерываем текущую озвучку/стрим
+                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._get_active_session_id()
+                if cancel_sid is not None:
+                    logger.debug("LONG_PRESS: запрашиваем отмену gRPC перед открытием микрофона (sid=%s)", cancel_sid)
+                    await self.event_bus.publish("grpc.request_cancel", {"session_id": cancel_sid})
+
                 try:
                     current_mode = self.state_manager.get_current_mode()
-                    if current_mode == AppMode.PROCESSING:
-                        logger.info("LONG_PRESS: в PROCESSING режиме, пропускаем запрос на LISTENING")
-                    else:
-                        await self.event_bus.publish("mode.request", {
-                            "target": AppMode.LISTENING,
-                            "source": "input_processing"
-                        })
-                        logger.info("LONG_PRESS: запрос на LISTENING отправлен")
-                except Exception as e:
-                    logger.warning(f"LONG_PRESS: ошибка проверки режима: {e}")
-                    # Fallback - отправляем запрос
-                    await self.event_bus.publish("mode.request", {
-                        "target": AppMode.LISTENING,
+                except Exception:
+                    current_mode = None
+                if current_mode == AppMode.PROCESSING:
+                    logger.debug("LONG_PRESS: публикуем playback.cancelled перед запуском записи")
+                    await self.event_bus.publish("playback.cancelled", {
+                        "session_id": cancel_sid,
+                        "reason": "keyboard",
                         "source": "input_processing"
                     })
-                    logger.info("LONG_PRESS: запрос на LISTENING отправлен (fallback)")
-            
+
+                # Дожидаемся полной остановки воспроизведения и закрытия микрофона
+                # ✅ ЭТАП 2: Уменьшенные таймауты для быстрого отклика
+                try:
+                    await asyncio.wait_for(self._ensure_playback_idle(), timeout=0.5)
+                    logger.debug("✅ LONG_PRESS: Воспроизведение остановлено")
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ LONG_PRESS: таймаут ожидания остановки воспроизведения (0.5s), принудительно прерываем")
+                    # Принудительно прерываем воспроизведение
+                    cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._get_active_session_id()
+                    if cancel_sid is not None:
+                        await self.event_bus.publish("playback.cancelled", {
+                            "session_id": cancel_sid,
+                            "reason": "timeout",
+                            "source": "input_processing"
+                        })
+                except Exception as e:
+                    logger.error(f"❌ LONG_PRESS: Ошибка ожидания остановки воспроизведения: {e}")
+                
+                try:
+                    await asyncio.wait_for(self._wait_for_mic_closed(), timeout=1.0)
+                    logger.debug("✅ LONG_PRESS: Микрофон закрыт")
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ LONG_PRESS: таймаут ожидания закрытия микрофона (1.0s), принудительно сбрасываем состояние")
+                    # ✅ ЭТАП 1: Принудительно сбрасываем состояние микрофона через state_manager
+                    if self.state_manager.is_microphone_active():
+                        logger.warning("⚠️ LONG_PRESS: принудительный сброс состояния микрофона из-за таймаута")
+                        self.state_manager.force_close_microphone(reason="long_press_mic_close_timeout")
+                        self._reset_mic_state_internal()
+                except Exception as e:
+                    logger.error(f"❌ LONG_PRESS: Ошибка ожидания закрытия микрофона: {e}")
+
+                # ✅ ЭТАП 0.4: Проверяем, не был ли отменен pending recording через RELEASE (используем asyncio.Event)
+                if self._pending_recording_cancelled_event.is_set():
+                    logger.warning("⚠️ LONG_PRESS: pending recording был отменен через RELEASE - игнорируем публикацию voice.recording_start")
+                    self._pending_recording_cancelled_event.clear()  # Сбрасываем event
+                    self._pending_session_id = None
+                    return
+                
+                # КРИТИЧНО: Проверяем, что клавиша ВСЕ ЕЩЕ нажата перед публикацией voice.recording_start (атомарно)
+                async with self._state_lock:
+                    if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
+                        if not self.keyboard_monitor.key_pressed:
+                            logger.warning("⚠️ LONG_PRESS: клавиша уже отпущена перед публикацией voice.recording_start - отменяем запись")
+                            self._pending_session_id = None
+                            return
+                
+                # На LONG_PRESS стартуем запись и переходим в LISTENING (push-to-talk)
+                new_session_id = self._pending_session_id or event.timestamp or time.monotonic()
+                # Полностью очищаем предыдущее состояние перед новой записью
+                self._reset_session("long_press_start")
+                # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+                self._set_session_id(new_session_id, reason="long_press_start")
+                self._pending_session_id = None
+                self._cancel_session_id = None
+                # ✅ ЭТАП 1.2: Публикуем voice.recording_start и ОЖИДАЕМ открытия микрофона
+                # КРИТИЧНО: Не устанавливаем _recording_started = True до открытия микрофона
+                if not self._recording_started:
+                    # Запоминаем время начала записи для проверки минимальной длительности
+                    self._recording_start_time = time.time()
+                    # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+                    active_session_id = self._get_active_session_id()
+                    
+                    # Публикуем voice.recording_start
+                    await self.event_bus.publish(
+                        "voice.recording_start",
+                        {
+                            "source": "keyboard",
+                            "timestamp": event.timestamp,
+                            "session_id": active_session_id,
+                        }
+                    )
+                    logger.debug("LONG_PRESS: voice.recording_start опубликовано")
+                    logger.debug(f"LONG_PRESS: записываем время начала записи: {self._recording_start_time}")
+                    
+                    # ✅ ЭТАП 1.2: ОЖИДАЕМ открытия микрофона перед установкой состояний
+                    logger.info("🔍 [INPUT_PROCESSING] LONG_PRESS: вызываем _wait_for_mic_opened()")
+                    try:
+                        mic_opened = await self._wait_for_mic_opened(timeout=5.0)
+                        logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: _wait_for_mic_opened() вернул {mic_opened}")
+                        if not mic_opened:
+                            logger.error("❌ LONG_PRESS: Микрофон не открылся в течение 5 секунд - откат состояний")
+                            # Откат: не устанавливаем _recording_started, публикуем ошибку
+                            await self.event_bus.publish("voice.recording_error", {
+                                "session_id": active_session_id,
+                                "error": "microphone_open_timeout",
+                                "source": "input_processing"
+                            })
+                            # Сбрасываем состояние
+                            self._pending_session_id = None
+                            return
+                        
+                        # ✅ ЭТАП 1.2: Микрофон открыт - устанавливаем _recording_started = True
+                        self._recording_started = True
+                        logger.info("✅ LONG_PRESS: Микрофон открыт, _recording_started установлен")
+                    except Exception as e:
+                        logger.error(f"❌ LONG_PRESS: Ошибка при ожидании открытия микрофона: {e}")
+                        await self.event_bus.publish("voice.recording_error", {
+                            "session_id": active_session_id,
+                            "error": f"microphone_wait_error: {e}",
+                            "source": "input_processing"
+                        })
+                        self._pending_session_id = None
+                        return
+                    
+                    # ✅ ЭТАП 0.1: Переход в состояние LISTENING
+                    await self._set_input_state(InputState.LISTENING, reason="long_press_recording_started")
+
+                    # ✅ ЭТАП 1.2: Запрашиваем переход в LISTENING ПОСЛЕ открытия микрофона
+                    try:
+                        current_mode = self.state_manager.get_current_mode()
+                        logger.debug(f"🔍 LONG_PRESS: текущий режим={current_mode}, запрашиваем LISTENING")
+                        
+                        if current_mode == AppMode.PROCESSING:
+                            # В PROCESSING режиме - прерываем текущую обработку и начинаем новую запись
+                            logger.info("⚠️ LONG_PRESS: в PROCESSING режиме, прерываем текущую обработку и начинаем новую запись")
+                            # Публикуем событие отмены текущей обработки
+                            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or active_session_id
+                            if cancel_sid is not None:
+                                logger.debug("LONG_PRESS: публикуем playback.cancelled для прерывания текущей обработки")
+                                await self.event_bus.publish("playback.cancelled", {
+                                    "session_id": cancel_sid,
+                                    "reason": "keyboard_interrupt",
+                                    "source": "input_processing"
+                                })
+                            # Запрашиваем переход в LISTENING (обработка будет прервана)
+                            await self.event_bus.publish("mode.request", {
+                                "target": AppMode.LISTENING,
+                                "source": "input_processing",
+                                "session_id": active_session_id
+                            })
+                            logger.info("✅ LONG_PRESS: запрос на LISTENING отправлен (прерывание PROCESSING)")
+                        elif current_mode == AppMode.LISTENING:
+                            # Уже в LISTENING - идемпотентность, НЕ публикуем mode.request для предотвращения дублирования
+                            logger.debug("ℹ️ LONG_PRESS: уже в LISTENING режиме, запрос идемпотентен - пропускаем публикацию mode.request")
+                        else:
+                            # SLEEPING или другой режим - нормальный переход в LISTENING
+                            await self.event_bus.publish("mode.request", {
+                                "target": AppMode.LISTENING,
+                                "source": "input_processing",
+                                "session_id": active_session_id
+                            })
+                            logger.info(f"✅ LONG_PRESS: запрос на LISTENING отправлен (из {current_mode})")
+                    except Exception as e:
+                        logger.error(f"❌ LONG_PRESS: ошибка проверки режима: {e}", exc_info=True)
+                        # Fallback - отправляем запрос для гарантии перехода
+                        await self.event_bus.publish("mode.request", {
+                            "target": AppMode.LISTENING,
+                            "source": "input_processing",
+                            "session_id": active_session_id
+                        })
+                        logger.warning("⚠️ LONG_PRESS: запрос на LISTENING отправлен (fallback после ошибки)")
+                        # Откат: не устанавливаем _recording_started, публикуем ошибку
+                        await self.event_bus.publish("voice.recording_error", {
+                            "session_id": active_session_id,
+                            "error": str(e),
+                            "source": "input_processing"
+                        })
+                        self._pending_session_id = None
+                        return
+            finally:
+                # ✅ ЭТАП 0.3: Всегда сбрасываем флаг после завершения (даже при ошибке)
+                async with self._state_lock:
+                    self._long_press_in_progress = False
         except Exception as e:
+            # ✅ ЭТАП 0.3: Гарантируем сброс флага даже при исключении
+            logger.error(f"❌ LONG_PRESS: Критическая ошибка в _handle_long_press: {e}", exc_info=True)
+            async with self._state_lock:
+                self._long_press_in_progress = False
             await self.error_handler.handle_error(
                 severity=ErrorSeverity.MEDIUM,
                 category=ErrorCategory.RUNTIME,
@@ -1205,18 +1536,19 @@ class InputProcessingIntegration:
             # НЕ публикуем keyboard.release - это создает бесконечный цикл!
             # Событие обрабатывается напрямую от QuartzKeyboardMonitor
 
-            # КРИТИЧНО: Гарантируем остановку микрофона при RELEASE, даже если _recording_started == False
-            # Это защищает от залипания микрофона при race conditions
-            was_recording = self._recording_started  # Сохраняем состояние ДО обработки
+            # ✅ FIX: Определяем was_recording не только по _recording_started, но и по активности микрофона
+            # Это важно, так как микрофон может быть активен даже если _recording_started == False
+            was_recording = self._recording_started or self.state_manager.is_microphone_active()  # Сохраняем состояние ДО обработки
+            logger.debug(f"🔄 RELEASE: was_recording={was_recording} (_recording_started={self._recording_started}, mic_active={self.state_manager.is_microphone_active()})")
             # КРИТИЧНО: Сохраняем session_id ДО обработки, чтобы он не был потерян при _on_recognition_failed
             # Используем _get_active_session_id для получения session_id
             saved_session_id = self._get_active_session_id()  # Сохраняем session_id ДО обработки
             
-            # КРИТИЧНО: Отменяем pending recording, если LONG_PRESS еще не завершился
+            # ✅ ЭТАП 0.4: Отменяем pending recording, если LONG_PRESS еще не завершился (используем asyncio.Event)
             # Это предотвращает публикацию voice.recording_start после RELEASE
             if self._pending_session_id is not None and not self._recording_started:
                 logger.info("🛑 RELEASE: отменяем pending recording (LONG_PRESS еще не завершился)")
-                self._pending_recording_cancelled = True
+                self._pending_recording_cancelled_event.set()  # Устанавливаем event для синхронизации
                 self._pending_session_id = None
             
             # КРИТИЧНО: Всегда проверяем состояние микрофона и публикуем voice.recording_stop,
@@ -1226,7 +1558,9 @@ class InputProcessingIntegration:
             active_session_id = self._get_active_session_id()
             
             if should_stop_recording:
-                logger.info(f"🛑 RELEASE: микрофон активен (_mic_active={self._mic_active}) или запись начата (_recording_started={self._recording_started}) или есть сессия (session={active_session_id}) - принудительно останавливаем")
+                # ✅ ЭТАП 1: Используем state_manager вместо _mic_active
+                mic_active = self.state_manager.is_microphone_active()
+                logger.info(f"🛑 RELEASE: микрофон активен (mic_active={mic_active}) или запись начата (_recording_started={self._recording_started}) или есть сессия (session={active_session_id}) - принудительно останавливаем")
                 
                 # Если есть активная сессия, останавливаем её
                 if active_session_id is not None:
@@ -1241,8 +1575,8 @@ class InputProcessingIntegration:
                         }
                     )
                     logger.debug("RELEASE: voice.recording_stop опубликовано ✓")
-                elif self._mic_active or self._recording_started:
-                    # Если нет активной сессии, но микрофон активен - принудительно закрываем
+                elif self.state_manager.is_microphone_active() or self._recording_started:
+                    # ✅ ЭТАП 1: Если нет активной сессии, но микрофон активен - принудительно закрываем
                     logger.warning(f"⚠️ RELEASE: микрофон активен, но нет активной сессии - принудительно закрываем микрофон")
                     # КРИТИЧНО: Публикуем voice.recording_stop даже без session_id для гарантированного закрытия микрофона
                     await self.event_bus.publish("voice.recording_stop", {
@@ -1251,42 +1585,67 @@ class InputProcessingIntegration:
                         "duration": event.duration,
                         "session_id": None,  # Нет активной сессии, но нужно закрыть микрофон
                     })
-                    # Также публикуем событие закрытия микрофона напрямую
-                    await self.event_bus.publish("voice.mic_closed", {
-                        "source": "keyboard",
-                        "timestamp": event.timestamp,
-                        "reason": "force_close_on_release"
-                    })
+                    # ✅ ЭТАП 4: voice.mic_closed будет опубликовано MicrophoneStateManager
+                    # после получения microphone.closed или при принудительном закрытии
+                    logger.debug("🎤 [INPUT_PROCESSING] ожидание закрытия микрофона (RELEASE)")
                     # Принудительно сбрасываем состояние микрофона
                     self._reset_mic_state_internal()
                 
-                # КРИТИЧНО: Сбрасываем _recording_started СРАЗУ после публикации voice.recording_stop,
-                # чтобы предотвратить race condition при быстром повторном нажатии
-                self._recording_started = False
-                logger.debug(f"🛑 RELEASE: _recording_started сброшен в False (было {was_recording})")
+                # ✅ ЭТАП 1: НЕ сбрасываем _recording_started СРАЗУ - это делается в _on_mic_closed
+                # после подтверждения закрытия микрофона (см. задачу 1.2 плана исправлений)
+                # self._recording_started = False  # УДАЛЕНО - сбрасывается в _on_mic_closed
+                logger.debug(f"🛑 RELEASE: _recording_started будет сброшен после microphone.closed (было {was_recording})")
                 
-                # КРИТИЧНО: Используем таймаут для предотвращения блокировки RELEASE
+                # ✅ ЭТАП 2: Таймаут для ожидания закрытия микрофона
                 try:
-                    await asyncio.wait_for(self._wait_for_mic_closed(), timeout=2.0)
+                    await asyncio.wait_for(self._wait_for_mic_closed(), timeout=1.0)
+                    logger.debug("✅ RELEASE: Микрофон закрыт")
                 except asyncio.TimeoutError:
-                    logger.warning("⚠️ RELEASE: таймаут ожидания закрытия микрофона, принудительно сбрасываем состояние")
-                    if self._mic_active:
+                    logger.warning("⚠️ RELEASE: таймаут ожидания закрытия микрофона (1.0s), принудительно сбрасываем состояние")
+                    # ✅ ЭТАП 1: Принудительно сбрасываем состояние микрофона через state_manager
+                    if self.state_manager.is_microphone_active():
+                        self.state_manager.force_close_microphone(reason="release_mic_close_timeout")
                         self._reset_mic_state_internal()
+                except Exception as e:
+                    logger.error(f"❌ RELEASE: Ошибка ожидания закрытия микрофона: {e}")
             elif not self._recording_started:
-                logger.debug(f"ℹ️ RELEASE пришёл без активной записи: session={active_session_id}, duration={duration_ms:.0f}ms, _mic_active={self._mic_active}")
+                # ✅ ЭТАП 1: Используем state_manager вместо _mic_active
+                logger.debug(f"ℹ️ RELEASE пришёл без активной записи: session={active_session_id}, duration={duration_ms:.0f}ms, mic_active={self.state_manager.is_microphone_active()}")
 
-            # Переходим в PROCESSING только если запись велась; иначе остаёмся в текущем режиме (обычно SLEEPING)
+            # Переходим в PROCESSING только если запись велась И распознавание не провалилось; иначе остаёмся в текущем режиме (обычно SLEEPING)
             if was_recording:  # Используем сохраненное значение, а не текущее состояние
                 # КРИТИЧНО: Используем saved_session_id (уже получен через _get_active_session_id)
                 # так как _on_recognition_failed мог сбросить session_id
                 session_id_for_processing = saved_session_id or self._get_active_session_id()
-                logger.debug(f"RELEASE: публикуем mode.request(PROCESSING) для session {session_id_for_processing}")
-                await self.event_bus.publish("mode.request", {
-                    "target": AppMode.PROCESSING,
-                    "source": "input_processing",
-                    "session_id": session_id_for_processing  # КРИТИЧНО: Передаем session_id в mode.request
-                })
-                logger.info("RELEASE: запрос на PROCESSING отправлен ✓")
+                
+                # КРИТИЧНО: Проверяем, не была ли сессия помечена как неудачная
+                if session_id_for_processing in self._recognition_failed_sessions:
+                    logger.warning(f"⚠️ RELEASE: сессия {session_id_for_processing} имела неудачное распознавание - НЕ переходим в PROCESSING, возвращаемся в SLEEPING")
+                    # Удаляем сессию из множества неудачных (очистка)
+                    self._recognition_failed_sessions.discard(session_id_for_processing)
+                    # ✅ ЭТАП 0.1: Переход в состояние IDLE (запись была, но распознавание провалилось)
+                    await self._set_input_state(InputState.IDLE, reason="release_after_failed_recognition")
+                    # КРИТИЧНО: Публикуем mode.request(SLEEPING) для возврата в спящий режим
+                    await self.event_bus.publish("mode.request", {
+                        "target": AppMode.SLEEPING,
+                        "source": "input_processing",
+                        "session_id": None  # Сбрасываем session_id при неудачном распознавании
+                    })
+                    logger.info("RELEASE: запрос на SLEEPING отправлен из-за неудачного распознавания ✓")
+                else:
+                    # ✅ ЭТАП 0.1: Переход в состояние PROCESSING
+                    await self._set_input_state(InputState.PROCESSING, reason="release_after_recording")
+                    
+                    logger.debug(f"RELEASE: публикуем mode.request(PROCESSING) для session {session_id_for_processing}")
+                    await self.event_bus.publish("mode.request", {
+                        "target": AppMode.PROCESSING,
+                        "source": "input_processing",
+                        "session_id": session_id_for_processing  # КРИТИЧНО: Передаем session_id в mode.request
+                    })
+                    logger.info("RELEASE: запрос на PROCESSING отправлен ✓")
+            else:
+                # ✅ ЭТАП 0.1: Если записи не было, возвращаемся в IDLE
+                await self._set_input_state(InputState.IDLE, reason="release_without_recording")
 
             # Смена режима публикуется централизованно через ApplicationStateManager
 
@@ -1334,62 +1693,88 @@ class InputProcessingIntegration:
             )
     
     # Sync wrapper'ы для callback'ов KeyboardMonitor
+    def _get_event_loop(self):
+        """Получает event loop для выполнения async операций"""
+        import asyncio
+        # ✅ FIX: Сначала пробуем получить loop из EventBus (основной loop приложения)
+        loop = getattr(self.event_bus, "_loop", None)
+        if loop and not loop.is_closed():
+            return loop
+        
+        # ✅ FIX: Пробуем получить running loop в текущем потоке
+        try:
+            loop = asyncio.get_running_loop()
+            return loop
+        except RuntimeError:
+            pass
+        
+        # ✅ FIX: Если нет running loop, возвращаем None (будет использован asyncio.run)
+        return None
+    
     def _sync_handle_press(self, event):
         """Sync wrapper для async _handle_press"""
         try:
             print(f"🔑 SYNC PRESS: {event.timestamp} - ПОЛУЧЕН CALLBACK!")  # Отладка
             import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                print(f"🔑 DEBUG: Найден running loop, планирую async task")
+            loop = self._get_event_loop()
+            if loop:
+                print(f"🔑 DEBUG: Найден loop, планирую async task")
                 future = asyncio.run_coroutine_threadsafe(self._handle_press(event), loop)
                 print(f"🔑 DEBUG: Task запланирован: {future}")
-            except RuntimeError:
-                print(f"🔑 DEBUG: Нет running loop, запускаю напрямую")
+            else:
+                print(f"🔑 DEBUG: Нет loop, запускаю напрямую")
                 asyncio.run(self._handle_press(event))
         except Exception as e:
             print(f"❌ Ошибка sync_handle_press: {e}")
             import traceback
             traceback.print_exc()
+            logger.error(f"❌ Ошибка sync_handle_press: {e}", exc_info=True)
     
     def _sync_handle_short_press(self, event):
         """Sync wrapper для async _handle_short_press"""
         try:
             print(f"🔑 SYNC SHORT: {event.duration:.3f}с")  # Отладка
             import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            loop = self._get_event_loop()
+            if loop:
                 asyncio.run_coroutine_threadsafe(self._handle_short_press(event), loop)
             else:
                 asyncio.run(self._handle_short_press(event))
         except Exception as e:
             print(f"❌ Ошибка sync_handle_short_press: {e}")
+            logger.error(f"❌ Ошибка sync_handle_short_press: {e}", exc_info=True)
     
     def _sync_handle_long_press(self, event):
         """Sync wrapper для async _handle_long_press"""
         try:
             print(f"🔑 SYNC LONG: {event.duration:.3f}с")  # Отладка
             import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            loop = self._get_event_loop()
+            if loop:
                 asyncio.run_coroutine_threadsafe(self._handle_long_press(event), loop)
             else:
                 asyncio.run(self._handle_long_press(event))
         except Exception as e:
             print(f"❌ Ошибка sync_handle_long_press: {e}")
+            import traceback
+            traceback.print_exc()
+            logger.error(f"❌ Ошибка sync_handle_long_press: {e}", exc_info=True)
     
     def _sync_handle_key_release(self, event):
         """Sync wrapper для async _handle_key_release"""
         try:
             print(f"🔑 SYNC RELEASE: {event.duration:.3f}с")  # Отладка
             import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            loop = self._get_event_loop()
+            if loop:
                 asyncio.run_coroutine_threadsafe(self._handle_key_release(event), loop)
             else:
                 asyncio.run(self._handle_key_release(event))
         except Exception as e:
             print(f"❌ Ошибка sync_handle_key_release: {e}")
+            import traceback
+            traceback.print_exc()
+            logger.error(f"❌ Ошибка sync_handle_key_release: {e}", exc_info=True)
     
     # Метод _on_keyboard_event удален - события клавиатуры обрабатываются напрямую
     # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus)

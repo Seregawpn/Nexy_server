@@ -9,6 +9,7 @@ SignalIntegration — интеграция сигналов (аудио/визу
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
@@ -83,12 +84,24 @@ class SignalIntegration:
         self._running = False
         # УБРАНО: Защита от дублей через session_id - теперь полагаемся только на cooldown в _service.emit()
         # Это предотвращает ложные подавления сигнала при одинаковых session_id между активациями
+        
+        # КРИТИЧНО: Отслеживание последнего LISTEN_START для suppression ERROR сигнала
+        # Если ERROR приходит сразу после LISTEN_START (в течение 2 секунд), подавляем его
+        self._last_listen_start_time: float = 0.0
+        self._error_suppression_window_sec: float = 2.0  # 2 секунды после LISTEN_START
+        
+        # КРИТИЧНО: Блокировка по session_id для suppression повторных LISTEN_START
+        # Если voice.mic_opened приходит для той же активной сессии, подавляем повторный LISTEN_START
+        # Сбрасывается только после voice.mic_closed для этой сессии
+        self._active_listen_session_id: Optional[Any] = None
+        self._listen_start_in_progress: bool = False  # Флаг для защиты от повторных LISTEN_START
 
     async def initialize(self) -> bool:
         try:
             # Subscriptions: map app/audio/grpc events to signal requests
             # Для LISTEN_START используем только voice.mic_opened (исключаем дубли с app.mode_changed)
             await self.event_bus.subscribe("voice.mic_opened", self._on_voice_mic_opened, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("voice.mic_closed", self._on_voice_mic_closed, EventPriority.MEDIUM)
             await self.event_bus.subscribe("playback.completed", self._on_playback_completed, EventPriority.MEDIUM)
             await self.event_bus.subscribe("playback.cancelled", self._on_playback_cancelled, EventPriority.MEDIUM)
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
@@ -123,13 +136,77 @@ class SignalIntegration:
         try:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
-            # КРИТИЧНО: Убрана проверка на одинаковый session_id - полагаемся только на cooldown в _service.emit()
-            # Это предотвращает ложные подавления сигнала при одинаковых session_id между активациями
-            # Cooldown (600ms) уже настроен в _service и предотвращает дребезг
-            logger.info(f"Signals: LISTEN_START (voice.mic_opened, session={sid})")
+            current_time = time.time()
+            
+            # КРИТИЧНО: Блокировка повторных LISTEN_START для активной сессии
+            # Публикуем playback.signal ТОЛЬКО если:
+            # 1. session_id отличается от активного (новая сессия), ИЛИ
+            # 2. voice.mic_closed уже пришел (сессия завершена, _active_listen_session_id = None)
+            # Это гарантирует, что для каждой сессии будет только один LISTEN_START
+            # КРИТИЧНО: Приводим session_id к строке для надежного сравнения (может быть float или string)
+            sid_str = str(sid) if sid is not None else None
+            active_str = str(self._active_listen_session_id) if self._active_listen_session_id is not None else None
+            
+            if sid_str is not None and sid_str == active_str:
+                logger.info(
+                    f"🔇 Signals: LISTEN_START suppressed (session={sid_str} уже активна, "
+                    f"активная={active_str}, ожидаем voice.mic_closed для сброса)"
+                )
+                return
+            
+            # Дополнительная защита: если LISTEN_START уже в процессе для этой сессии
+            # (защита от race conditions при одновременных вызовах)
+            if self._listen_start_in_progress and sid_str == active_str:
+                logger.info(
+                    f"🔇 Signals: LISTEN_START suppressed (уже в процессе для session={sid_str}, "
+                    f"активная={active_str})"
+                )
+                return
+            
+            logger.info(f"🔊 Signals: LISTEN_START (voice.mic_opened, session={sid_str}, предыдущая активная={active_str})")
+            # КРИТИЧНО: Устанавливаем флаг "в процессе" и фиксируем активную сессию
+            # Активная сессия будет удерживаться до voice.mic_closed
+            # КРИТИЧНО: Сохраняем оригинальный session_id (не строку) для совместимости
+            self._listen_start_in_progress = True
+            self._active_listen_session_id = sid
+            # КРИТИЧНО: Фиксируем время последнего LISTEN_START (для suppression ERROR сигнала)
+            self._last_listen_start_time = current_time
+            
             await self._service.emit(SignalRequest(pattern=SignalPattern.LISTEN_START, kind=SignalKind.AUDIO))
+            
+            # КРИТИЧНО: Сбрасываем только флаг "в процессе" после публикации
+            # Активная сессия (_active_listen_session_id) остается до voice.mic_closed
+            # Это гарантирует, что повторные voice.mic_opened для той же сессии будут подавлены
+            self._listen_start_in_progress = False
+            logger.debug(f"✅ Signals: LISTEN_START опубликован, активная сессия={self._active_listen_session_id} (удерживается до voice.mic_closed)")
         except Exception as e:
             logger.debug(f"SignalIntegration _on_voice_mic_opened error: {e}")
+            # В случае ошибки сбрасываем флаг, но активная сессия остается
+            self._listen_start_in_progress = False
+
+    async def _on_voice_mic_closed(self, event: Dict[str, Any]):
+        """Обработчик закрытия микрофона - сбрасывает активную сессию и флаг для разрешения нового LISTEN_START"""
+        try:
+            data = (event or {}).get("data", {})
+            sid = data.get("session_id")
+            
+            # КРИТИЧНО: Сбрасываем активную сессию и флаг только если это та же сессия
+            # Это позволяет новой сессии опубликовать LISTEN_START
+            # КРИТИЧНО: Приводим session_id к строке для надежного сравнения
+            sid_str = str(sid) if sid is not None else None
+            active_str = str(self._active_listen_session_id) if self._active_listen_session_id is not None else None
+            
+            if sid_str is not None and sid_str == active_str:
+                logger.info(f"✅ Signals: Активная сессия {sid_str} закрыта, сбрасываем блокировку, разрешаем новый LISTEN_START")
+                self._active_listen_session_id = None
+                self._listen_start_in_progress = False
+            elif sid_str is not None:
+                logger.debug(f"Signals: voice.mic_closed для другой сессии {sid_str} (активна {active_str}, блокировка не сброшена)")
+        except Exception as e:
+            logger.debug(f"SignalIntegration _on_voice_mic_closed error: {e}")
+            # В случае ошибки сбрасываем флаги
+            self._active_listen_session_id = None
+            self._listen_start_in_progress = False
 
     async def _on_playback_completed(self, event: Dict[str, Any]):
         try:
@@ -166,6 +243,18 @@ class SignalIntegration:
 
     async def _on_error_like(self, event: Dict[str, Any]):
         try:
+            # КРИТИЧНО: Подавляем ERROR сигнал, если недавно был LISTEN_START
+            # Это предотвращает "двойную активацию" звука при неудачном распознавании
+            current_time = time.time()
+            time_since_listen_start = current_time - self._last_listen_start_time
+            
+            if time_since_listen_start < self._error_suppression_window_sec:
+                logger.debug(
+                    f"Signals: ERROR suppressed (LISTEN_START был {time_since_listen_start:.3f}s назад, "
+                    f"окно suppression={self._error_suppression_window_sec}s)"
+                )
+                return
+            
             logger.info("Signals: ERROR (failure event)")
             await self._service.emit(SignalRequest(pattern=SignalPattern.ERROR, kind=SignalKind.AUDIO))
         except Exception as e:

@@ -139,3 +139,4 @@ if __name__ == "__main__":
     exit_code = asyncio.run(test_close_app_e2e())
     sys.exit(exit_code)
 
+

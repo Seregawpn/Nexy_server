@@ -39,6 +39,21 @@ default_audio:
   auto_detect_channels: true
   auto_detect_dtype: true
   
+  # ✅ НОРМАЛИЗАЦИЯ ПАРАМЕТРОВ УСТРОЙСТВ (для работы с любыми устройствами)
+  normalization:
+    # OUTPUT параметры
+    output_min_rate: 16000      # Минимальный sample rate для OUTPUT
+    output_max_rate: 48000      # Максимальный sample rate для OUTPUT
+    output_default_rate: 48000  # Fallback если устройство не определяет rate
+    output_max_channels: 2      # Максимум каналов для OUTPUT (стерео)
+    
+    # INPUT параметры
+    input_min_rate: 16000       # Минимальный sample rate для INPUT
+    input_max_rate: 48000       # Максимальный sample rate для INPUT
+    input_default_rate: 48000   # Fallback если устройство не определяет rate
+    asr_target_rate: 16000      # Целевой rate для ASR (всегда 16 kHz)
+    input_channels: 1           # Всегда mono для INPUT (ASR)
+  
   # Настройки автовосстановления и устойчивости
   silent_window_seconds: 0.3        # окно оценки тишины
   silent_windows_threshold: 2        # подряд окон тишины до перезапуска

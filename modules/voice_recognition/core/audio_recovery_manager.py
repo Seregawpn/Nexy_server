@@ -325,18 +325,24 @@ class AudioRecoveryManager:
         logger.debug("🔄 AudioRecoveryManager сброшен")
 
 
-async def preflight_check(device_id: int, device_name: str, duration_ms: int = 100) -> Tuple[bool, float]:
+async def preflight_check(device_id: Optional[int], device_name: str, duration_ms: int = 100) -> Tuple[bool, float]:
     """
     Preflight проверка устройства перед началом записи.
     
     Args:
-        device_id: ID устройства
+        device_id: ID устройства (None для системного дефолта/BT устройств)
         device_name: Имя устройства
         duration_ms: Длительность проверки в миллисекундах
         
     Returns:
         Tuple[успех, peak_значение]
     """
+    # ✅ СИСТЕМНОЕ РЕШЕНИЕ: Для BT устройств с device_id=None пропускаем preflight
+    # (используем системный дефолт, который уже проверен macOS)
+    if device_id is None:
+        logger.info(f"💡 [PREFLIGHT] BT устройство \"{device_name}\" (device_id=None) - пропускаем preflight, используем системный дефолт")
+        return True, 0.0  # Возвращаем успех для BT устройств
+    
     logger.info(f"🔍 Preflight check: {device_name} ({device_id}) на {duration_ms}ms")
     
     try:

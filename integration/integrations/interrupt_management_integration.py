@@ -291,22 +291,42 @@ class InterruptManagementIntegration:
     async def _on_interrupt_request(self, event):
         """Обработка запроса на прерывание"""
         try:
+            # ✅ FIX: Получаем type из event или определяем по reason/source
             interrupt_type = event.get("type")
             priority = event.get("priority", InterruptPriority.NORMAL)
             source = event.get("source", "unknown")
             data = event.get("data", {})
+            reason = event.get("reason", "")
             
+            # ✅ FIX: Если type не указан, определяем по reason или source
             if not interrupt_type:
-                logger.warning("Interrupt request without type")
-                return
+                # Определяем тип прерывания по reason или source
+                if reason == "user_interrupt" or source == "keyboard":
+                    interrupt_type = InterruptType.SESSION_CLEAR  # Очистка сессии при прерывании пользователем
+                elif "recording" in reason.lower() or "recording" in source.lower():
+                    interrupt_type = InterruptType.RECORDING_STOP
+                elif "speech" in reason.lower() or "playback" in source.lower():
+                    interrupt_type = InterruptType.SPEECH_STOP
+                else:
+                    # По умолчанию - очистка сессии
+                    interrupt_type = InterruptType.SESSION_CLEAR
+                    logger.debug(f"⚠️ Interrupt type не указан, используем SESSION_CLEAR по умолчанию (reason={reason}, source={source})")
+            
+            # ✅ FIX: Проверяем что interrupt_type валидный
+            if isinstance(interrupt_type, str):
+                try:
+                    interrupt_type = InterruptType(interrupt_type)
+                except ValueError:
+                    logger.warning(f"⚠️ Неизвестный тип прерывания: {interrupt_type}, используем SESSION_CLEAR")
+                    interrupt_type = InterruptType.SESSION_CLEAR
             
             # Создаем событие прерывания
             interrupt_event = InterruptEvent(
-                type=InterruptType(interrupt_type),
+                type=interrupt_type,
                 priority=InterruptPriority(priority) if isinstance(priority, str) else priority,
                 source=source,
                 timestamp=asyncio.get_event_loop().time(),
-                data=data
+                data={**data, "reason": reason}  # ✅ FIX: Добавляем reason в data
             )
             
             # Отправляем на обработку
@@ -318,10 +338,10 @@ class InterruptManagementIntegration:
                     severity="warning",
                     category="interrupt",
                     message=f"Ошибка обработки запроса прерывания: {e}",
-                    context={"where": "interrupt.request"}
+                    context={"where": "interrupt.request", "event": event}
                 )
             else:
-                logger.error(f"Error in InterruptManagementIntegration.interrupt_request: {e}")
+                logger.error(f"Error in InterruptManagementIntegration.interrupt_request: {e}", exc_info=True)
     
     async def _on_interrupt_cancel(self, event):
         """Обработка отмены прерывания"""

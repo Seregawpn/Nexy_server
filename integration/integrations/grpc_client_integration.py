@@ -386,8 +386,14 @@ class GrpcClientIntegration:
                 which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None
 
                 # Диагностика: логируем только важные события
+                # ✅ FIX: Всегда логируем первый чанк и терминальные сообщения для диагностики
                 if chunk_count == 1 or chunk_count % 10 == 0 or which_oneof in ('end_message', 'error_message'):
                     logger.info(f"🔍 gRPC response #{chunk_count}: WhichOneof('content')={which_oneof}")
+                
+                # ✅ FIX: Дополнительное логирование для диагностики отсутствия данных
+                if chunk_count == 1 and which_oneof == 'end_message':
+                    logger.warning(f"⚠️ КРИТИЧНО: Сервер отправил только end_message без audio_chunk или text_chunk для session {session_id}")
+                    logger.warning(f"⚠️ Это означает, что сервер не сгенерировал аудио или текст для ответа")
 
                 # Обрабатываем СТРОГО по типу oneof
                 if which_oneof == 'text_chunk':

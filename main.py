@@ -59,7 +59,8 @@ def init_ffmpeg_for_pydub():
         try:
             from pydub import AudioSegment
             os.environ["FFMPEG_BINARY"] = str(ffmpeg_path)
-            AudioSegment.converter = str(ffmpeg_path)
+            AudioSegment.co
+            nverter = str(ffmpeg_path)
         except Exception:
             pass
 

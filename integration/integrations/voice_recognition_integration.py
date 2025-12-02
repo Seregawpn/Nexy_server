@@ -5,6 +5,7 @@ VoiceRecognitionIntegration - координация распознавания 
 
 import asyncio
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import random
@@ -15,6 +16,8 @@ from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode
 from integration.core.error_handler import ErrorHandler
 from config.unified_config_loader import UnifiedConfigLoader
+# ✅ ЭТАП 2: Импорт MicrophoneStateManager
+from modules.microphone_state import MicrophoneStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +25,13 @@ logger = logging.getLogger(__name__)
 try:
     from modules.voice_recognition import SpeechRecognizer, DEFAULT_RECOGNITION_CONFIG, RecognitionResult
     _REAL_VOICE_AVAILABLE = True
-    logger.debug("🔍 [AUDIO_DEBUG] SpeechRecognizer импортирован успешно")
+    logger.info("✅ [AUDIO_DEBUG] SpeechRecognizer импортирован успешно")
+    print("✅ [AUDIO_DEBUG] SpeechRecognizer импортирован успешно")
 except Exception as e:
     # Зависимости могут отсутствовать; в этом случае используем только симуляцию
     _REAL_VOICE_AVAILABLE = False
-    logger.warning(f"⚠️ [AUDIO_DEBUG] Ошибка импорта SpeechRecognizer: {e}")
+    logger.error(f"❌ [AUDIO_DEBUG] Ошибка импорта SpeechRecognizer: {e}", exc_info=True)
+    print(f"❌ [AUDIO_DEBUG] Ошибка импорта SpeechRecognizer: {e}")
 
 
 @dataclass
@@ -72,6 +77,9 @@ class VoiceRecognitionIntegration:
             self._start_retry_delay_sec = max(0.0, float(voice_cfg.get("start_retry_delay_ms", 300)) / 1000.0)
         except Exception:
             self._start_retry_delay_sec = 0.3
+        
+        # ✅ ЭТАП 2: Инициализация MicrophoneStateManager
+        self._mic_state_manager: Optional[MicrophoneStateManager] = None
 
     @classmethod
     def run_dependency_check(cls) -> bool:
@@ -137,7 +145,32 @@ class VoiceRecognitionIntegration:
         return all_ok
         
     async def initialize(self) -> bool:
+        logger.info("🔍 [AUDIO_DEBUG] VoiceRecognitionIntegration.initialize() ВЫЗВАН")
+        logger.info(f"🔍 [AUDIO_DEBUG] Параметры: simulate={self.config.simulate}, _REAL_VOICE_AVAILABLE={_REAL_VOICE_AVAILABLE}")
+        print(f"🔍 [AUDIO_DEBUG] VoiceRecognitionIntegration.initialize() ВЫЗВАН")
+        print(f"🔍 [AUDIO_DEBUG] Параметры: simulate={self.config.simulate}, _REAL_VOICE_AVAILABLE={_REAL_VOICE_AVAILABLE}")
         try:
+            # ✅ ЭТАП 2: Инициализация MicrophoneStateManager (КРИТИЧНО: должен быть инициализирован)
+            try:
+                self._mic_state_manager = MicrophoneStateManager(
+                    event_bus=self.event_bus,
+                    state_manager=self.state_manager,  # Для обратной совместимости (односторонняя синхронизация)
+                    open_timeout=5.0,
+                    close_timeout=3.0
+                )
+                mic_init_result = await self._mic_state_manager.initialize()
+                if not mic_init_result:
+                    logger.error("❌ VOICE: Не удалось инициализировать MicrophoneStateManager")
+                    raise RuntimeError("MicrophoneStateManager initialization failed")
+                logger.info("✅ MicrophoneStateManager инициализирован в VoiceRecognitionIntegration")
+            except Exception as e:
+                logger.error(f"❌ VOICE: КРИТИЧЕСКАЯ ОШИБКА инициализации MicrophoneStateManager: {e}")
+                raise  # Пробрасываем ошибку - без MicrophoneStateManager интеграция не может работать
+            
+            # ✅ ЭТАП 2: Подписка на события запросов открытия/закрытия микрофона
+            await self.event_bus.subscribe("microphone.open_requested", self._on_microphone_open_requested, EventPriority.HIGH)
+            await self.event_bus.subscribe("microphone.close_requested", self._on_microphone_close_requested, EventPriority.HIGH)
+            
             # Подписки на события записи/прерывания
             await self.event_bus.subscribe("voice.recording_start", self._on_recording_start, EventPriority.HIGH)
             await self.event_bus.subscribe("voice.recording_stop", self._on_recording_stop, EventPriority.HIGH)
@@ -152,11 +185,15 @@ class VoiceRecognitionIntegration:
             await self.event_bus.subscribe("permissions.first_run_failed", self._on_first_run_completed, EventPriority.CRITICAL)
 
             # Инициализация реального распознавателя, если симуляция отключена
-            logger.debug(f"🔍 [AUDIO_DEBUG] Условия создания SpeechRecognizer: simulate={self.config.simulate}, _REAL_VOICE_AVAILABLE={_REAL_VOICE_AVAILABLE}")
+            logger.info(f"🔍 [AUDIO_DEBUG] Условия создания SpeechRecognizer: simulate={self.config.simulate}, _REAL_VOICE_AVAILABLE={_REAL_VOICE_AVAILABLE}")
+            print(f"🔍 [AUDIO_DEBUG] Условия создания SpeechRecognizer: simulate={self.config.simulate}, _REAL_VOICE_AVAILABLE={_REAL_VOICE_AVAILABLE}")
             if not self.config.simulate and _REAL_VOICE_AVAILABLE:
                 try:
+                    logger.info("🔍 [AUDIO_DEBUG] Создание SpeechRecognizer...")
                     # ИСПОЛЬЗУЕМ ГОТОВУЮ КОНФИГУРАЦИЮ ИЗ МОДУЛЯ - тонкая интеграция
                     self._recognizer = SpeechRecognizer(DEFAULT_RECOGNITION_CONFIG)
+                    logger.info(f"✅ [AUDIO_DEBUG] SpeechRecognizer создан успешно: {self._recognizer is not None}")
+                    print(f"✅ [AUDIO_DEBUG] SpeechRecognizer создан успешно: {self._recognizer is not None}")
                     
                     # НАСТРАИВАЕМ EventBus в SpeechRecognizer для получения событий выбора устройств
                     if hasattr(self._recognizer, 'set_event_bus'):
@@ -172,10 +209,19 @@ class VoiceRecognitionIntegration:
                     else:
                         logger.warning("⚠️ [AUDIO_DEBUG] SpeechRecognizer не поддерживает set_event_loop")
                     
-                    logger.info("VoiceRecognitionIntegration: real SpeechRecognizer initialized with EventBus")
+                    logger.info("✅ VoiceRecognitionIntegration: real SpeechRecognizer initialized with EventBus")
                 except Exception as e:
-                    logger.warning(f"VoiceRecognitionIntegration: failed to init real recognizer, fallback to simulate. Error: {e}")
+                    logger.error(f"❌ VoiceRecognitionIntegration: failed to init real recognizer, fallback to simulate. Error: {e}", exc_info=True)
                     self.config.simulate = True
+            else:
+                if self.config.simulate:
+                    logger.warning(f"⚠️ [AUDIO_DEBUG] SpeechRecognizer не создается: симуляция включена (simulate=True)")
+                if not _REAL_VOICE_AVAILABLE:
+                    logger.error(f"❌ [AUDIO_DEBUG] SpeechRecognizer не создается: модуль недоступен (_REAL_VOICE_AVAILABLE=False)")
+            
+            # ✅ ДИАГНОСТИКА: Логируем финальное состояние
+            logger.info(f"🔍 [AUDIO_DEBUG] Финальное состояние после initialize: _recognizer={self._recognizer is not None}, simulate={self.config.simulate}")
+            print(f"🔍 [AUDIO_DEBUG] Финальное состояние после initialize: _recognizer={self._recognizer is not None}, simulate={self.config.simulate}")
 
             self._initialized = True
             logger.info("VoiceRecognitionIntegration initialized")
@@ -231,6 +277,30 @@ class VoiceRecognitionIntegration:
         # Используем state_manager как единый источник истины
         session_id = self.state_manager.get_current_session_id()
         return session_id is not None
+    
+    def is_microphone_actually_active(self) -> bool:
+        """
+        Единый источник истины для проверки состояния микрофона.
+        Проверяет централизованное состояние и физическое состояние потока.
+        
+        Returns:
+            True если микрофон действительно активен, False иначе
+        """
+        # 1. Проверяем централизованное состояние (основной источник)
+        if self.state_manager.is_microphone_active():
+            return True
+        
+        # 2. Проверяем физическое состояние потока (fallback для обнаружения рассинхронизации)
+        if self._recognizer and hasattr(self._recognizer, '_current_stream'):
+            try:
+                with getattr(self._recognizer, '_stream_lock', threading.RLock()):
+                    if self._recognizer._current_stream and self._recognizer._current_stream.active:
+                        logger.warning("⚠️ [VOICE] Обнаружена рассинхронизация: поток активен, но state_manager не знает")
+                        return True
+            except Exception as e:
+                logger.debug(f"⚠️ [VOICE] Ошибка проверки физического состояния потока: {e}")
+        
+        return False
     
     def _get_active_session_id(self) -> Optional[float]:
         """
@@ -304,150 +374,335 @@ class VoiceRecognitionIntegration:
             await self._cancel_recognition(reason="new_recording_start")
             logger.debug(f"VOICE: recording_start, session={session_id}")
 
-            # КРИТИЧНО: Публикуем voice.mic_opened СРАЗУ при recording_start,
-            # чтобы сигнал воспроизводился сразу при переходе в LISTENING режим,
-            # а не после открытия микрофона (которое может занимать время для Bluetooth)
-            await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
-            logger.info(f"🎤 VOICE: microphone opened (pending) для session {session_id}")
+            # ✅ ЭТАП 2: Используем MicrophoneStateManager для запроса открытия микрофона
+            # КРИТИЧНО: MicrophoneStateManager должен быть инициализирован (нет fallback для предотвращения дублирования)
+            if not self._mic_state_manager:
+                logger.error("❌ VOICE: MicrophoneStateManager не инициализирован - невозможно открыть микрофон")
+                self._recording_active = False
+                self._set_session_id(None, reason="mic_state_manager_not_initialized")
+                return
+            
+            opened = await self._mic_state_manager.request_open(str(session_id))
+            if not opened:
+                logger.error(f"❌ VOICE: Не удалось открыть микрофон для session {session_id}")
+                self._recording_active = False
+                self._set_session_id(None, reason="mic_open_failed")
+                return
 
-            # Если используем реальный движок — начинаем прослушивание
-            if not self.config.simulate and self._recognizer is not None:
-                # КРИТИЧНО: Проверяем состояние перед запуском для предотвращения двойного старта
-                recognizer_state = getattr(self._recognizer, 'state', None)
-                if recognizer_state and str(recognizer_state).upper() in ['LISTENING', 'RECOGNITIONSTATE.LISTENING']:
-                    logger.warning(f"⚠️ Уже в режиме прослушивания, пропускаем start для session {session_id}")
-                    self._recording_active = False  # Сбрасываем флаг перед выходом
-                    return
-
-                # Попытки с ретраями для устойчивости к временным сбоям CoreAudio
-                max_attempts = 3
-                for attempt in range(max_attempts):
-                    try:
-                        current_state = getattr(self._recognizer, 'state', 'UNKNOWN')
-                        logger.debug(f"🎤 Попытка {attempt+1}/{max_attempts}: recognizer.state={current_state}, session={session_id}")
-
-                        start_result = await self._recognizer.start_listening()
-                        logger.debug(f"🎤 start_listening вернул: {start_result}")
-
-                        # Для единообразия сигнализируем старт распознавания
-                        # КРИТИЧНО: voice.mic_opened уже опубликован выше при recording_start
-                        # для немедленного воспроизведения сигнала
-                        await self.event_bus.publish("voice.recognition_started", {
-                            "session_id": session_id,
-                            "language": self.config.language
-                        })
-                        logger.debug(f"✓ voice.recognition_started опубликован для session {session_id}")
-                        logger.info(f"🎤 VOICE: microphone opened (confirmed) для session {session_id}")
-                        break  # Успешно запустили, выходим из цикла
-                    except Exception as e:
-                        error_str = str(e)
-                        is_already_running = "there already is a thread" in error_str.lower()
-                        current_state = getattr(self._recognizer, 'state', 'UNKNOWN')
-
-                        logger.warning(f"⚠️ Попытка {attempt+1}/{max_attempts} неудачна: {error_str[:100]}, recognizer.state={current_state}")
-
-                        if is_already_running:
-                            logger.warning(f"⚠️ CoreAudio thread already running, попытка {attempt+1}/{max_attempts}")
-                            if attempt < max_attempts - 1:
-                                await asyncio.sleep(self._start_retry_delay_sec)
-                                continue
-
-                        if attempt < max_attempts - 1:
-                            logger.warning(
-                                f"⚠️ Повтор через {int(self._start_retry_delay_sec * 1000)}ms..."
-                            )
-                            await asyncio.sleep(self._start_retry_delay_sec)
-                        else:
-                            # Все попытки исчерпаны
-                            logger.error(f"❌ VOICE: failed to start listening after {max_attempts} attempts")
-                            logger.error(f"❌ Причина: {error_str}")
-                            logger.error(f"❌ Финальный state recognizer: {current_state}")
-                            logger.error(f"❌ Переход на симуляцию для session {session_id}")
-
-                            # КРИТИЧНО: Сбрасываем флаг записи при неудаче
-                            self._recording_active = False
-                            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
-                            self._set_session_id(None, reason="recording_failed")
-                            # НЕ блокируем приложение - переключаемся на симуляцию
-                            self.config.simulate = True
-                            await self.event_bus.publish("voice.recognition_failed", {
-                                "session_id": session_id,
-                                "error": "mic_open_failed",
-                                "reason": str(e),
-                                "fallback_to_simulation": True
-                            })
+            # ✅ КРИТИЧНО: request_open() публикует microphone.open_requested, который обрабатывается
+            # _on_microphone_open_requested и вызывает start_listening() + публикует microphone.opened
+            # НЕ вызываем start_listening() здесь повторно, чтобы избежать дублирования!
+            # voice.mic_opened будет опубликовано MicrophoneStateManager после получения microphone.opened
+            logger.debug(f"🎤 VOICE: запрос открытия микрофона отправлен через MicrophoneStateManager для session {session_id}")
+            
+            # Публикуем voice.recognition_started для единообразия (microphone.opened будет опубликовано в _on_microphone_open_requested)
+            await self.event_bus.publish("voice.recognition_started", {
+                "session_id": session_id,
+                "language": self.config.language
+            })
+            logger.debug(f"✓ voice.recognition_started опубликован для session {session_id}")
         except Exception as e:
             logger.error(f"VOICE: error in recording_start handler: {e}")
 
     async def _on_recording_stop(self, event: Dict[str, Any]):
         try:
+            # ✅ КРИТИЧНО: Логирование входа в метод для диагностики залипания
+            logger.info(f"🛑 VOICE: _on_recording_stop ВХОД: event={event}")
+            
             # Поддерживаем оба формата: прямой и вложенный
             if "data" in event:
                 data = event.get("data", {})
             else:
                 data = event
             session_id = data.get("session_id")
-            logger.debug(f"VOICE: recording_stop, session={session_id}")
+            logger.info(f"🛑 VOICE: recording_stop, session={session_id} (type: {type(session_id)})")
 
             # Останавливаем запись — запускаем распознавание для этой сессии
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id (единый источник истины)
             active_session_id = self._get_active_session_id()
-            if session_id is None or active_session_id != session_id:
+            logger.info(f"🛑 VOICE: active_session_id={active_session_id} (type: {type(active_session_id)}), request_session_id={session_id} (type: {type(session_id)})")
+            
+            # ✅ ЭТАП 1: Если session_id is None, но микрофон активен - принудительно останавливаем микрофон
+            # Это может произойти при SHORT_PRESS после LONG_PRESS, когда микрофон уже открыт, но сессия была отменена
+            if session_id is None:
+                if self._recognizer is not None and hasattr(self._recognizer, 'is_listening') and self._recognizer.is_listening:
+                    logger.warning("⚠️ VOICE: recording_stop с session_id=None, но микрофон активен - принудительно останавливаем микрофон")
+                    # Принудительно останавливаем микрофон
+                    try:
+                        await self._recognizer.stop_listening()
+                        logger.info("✅ VOICE: микрофон принудительно остановлен (session_id=None)")
+                    except Exception as e:
+                        logger.error(f"❌ VOICE: ошибка принудительной остановки микрофона: {e}")
+                    # ✅ ЭТАП 2: Используем MicrophoneStateManager для принудительного закрытия
+                    if self._mic_state_manager:
+                        await self._mic_state_manager.force_close(reason="recording_stop_no_session")
+                    else:
+                        # Fallback только в критической ситуации (микрофон залип, но MicrophoneStateManager не инициализирован)
+                        logger.error("❌ VOICE: MicrophoneStateManager не инициализирован при принудительном закрытии")
+                        self.state_manager.force_close_microphone(reason="recording_stop_no_session_fallback")
+                    # ✅ ЭТАП 3: voice.mic_closed будет опубликовано MicrophoneStateManager
+                    # после получения microphone.closed или при принудительном закрытии
+                    logger.debug("🎤 VOICE: ожидание закрытия микрофона (принудительная остановка)")
+                    self._recording_active = False
+                else:
+                    logger.debug("VOICE: recording_stop с session_id=None, микрофон не активен - игнорируем")
+                    # ✅ ЭТАП 2: Убеждаемся, что состояние микрофона синхронизировано через MicrophoneStateManager
+                    if self._mic_state_manager and self._mic_state_manager.is_active():
+                        logger.warning("⚠️ VOICE: MicrophoneStateManager показывает активный микрофон, но recognizer не активен - синхронизируем состояние")
+                        await self._mic_state_manager.force_close(reason="state_mismatch")
+                    elif self.state_manager.is_microphone_active():
+                        # Fallback только если MicrophoneStateManager не инициализирован
+                        logger.warning("⚠️ VOICE: state_manager показывает активный микрофон, но recognizer не активен - синхронизируем состояние (fallback)")
+                        self.state_manager.force_close_microphone(reason="state_mismatch_fallback")
+                return
+            
+            # ✅ КРИТИЧНО: Сравнение session_id с учетом типов (float vs str)
+            # Конвертируем оба в строки для корректного сравнения
+            active_session_str = str(active_session_id) if active_session_id is not None else None
+            request_session_str = str(session_id) if session_id is not None else None
+            
+            logger.info(f"🛑 VOICE: Сравнение session_id: active='{active_session_str}' vs request='{request_session_str}'")
+            
+            if active_session_str != request_session_str:
                 # Не наша сессия — игнорируем
-                logger.debug("VOICE: recording_stop ignored (session mismatch)")
+                logger.warning(f"⚠️ VOICE: recording_stop ignored (session mismatch: active={active_session_str}, request={request_session_str})")
+                # ✅ КРИТИЧНО: Даже при mismatch принудительно останавливаем поток, если микрофон активен
+                if self._recognizer is not None and hasattr(self._recognizer, 'is_listening') and self._recognizer.is_listening:
+                    logger.warning("⚠️ VOICE: Session mismatch, но микрофон активен - принудительно останавливаем поток")
+                    try:
+                        if hasattr(self._recognizer, '_current_stream') and self._recognizer._current_stream:
+                            with getattr(self._recognizer, '_stream_lock', threading.RLock()):
+                                if self._recognizer._current_stream and self._recognizer._current_stream.active:
+                                    logger.warning("🛑 VOICE: Принудительная остановка потока (session mismatch)")
+                                    self._recognizer._current_stream.stop()
+                                    logger.info("✅ VOICE: Поток остановлен принудительно (session mismatch)")
+                    except Exception as e:
+                        logger.error(f"❌ VOICE: Ошибка принудительной остановки потока (session mismatch): {e}")
                 return
 
             self._recording_active = False
+            
+            # ✅ КРИТИЧНО: ПРОВЕРЯЕМ ФИЗИЧЕСКОЕ СОСТОЯНИЕ ПОТОКА ПЕРЕД ВСЕМ ОСТАЛЬНЫМ
+            # Это предотвращает залипание микрофона, даже если state_manager рассинхронизирован
+            stream_was_active = False
+            if self._recognizer is not None and hasattr(self._recognizer, '_current_stream') and self._recognizer._current_stream:
+                with getattr(self._recognizer, '_stream_lock', threading.RLock()):
+                    if self._recognizer._current_stream and self._recognizer._current_stream.active:
+                        stream_was_active = True
+                        logger.warning("🛑 VOICE: Поток физически активен - принудительно останавливаем ПЕРЕД request_close")
+                        try:
+                            self._recognizer._current_stream.stop()
+                            logger.info("✅ VOICE: Поток остановлен принудительно (проверка физического состояния)")
+                            # ✅ КРИТИЧНО: Публикуем microphone.closed СРАЗУ после остановки потока
+                            # Это разрывает deadlock: request_close ждет microphone.closed, но оно публикуется только после stop_listening
+                            # Но stop_listening вызывается только после request_close - deadlock!
+                            # Решение: публикуем microphone.closed сразу после остановки потока
+                            await self.event_bus.publish("microphone.closed", {"session_id": session_id})
+                            logger.info("✅ VOICE: microphone.closed опубликовано СРАЗУ после остановки потока (разрыв deadlock)")
+                        except Exception as e:
+                            logger.error(f"❌ VOICE: Ошибка принудительной остановки потока (проверка физического состояния): {e}")
+            
+            # ✅ ЭТАП 2: Используем MicrophoneStateManager для запроса закрытия микрофона
+            # КРИТИЧНО: Если поток уже остановлен и microphone.closed уже опубликовано,
+            # request_close должен завершиться быстро (событие уже обработано)
+            logger.info(f"🛑 VOICE: Вызов request_close: mic_state_manager={self._mic_state_manager is not None}, stream_was_active={stream_was_active}")
+            if not self._mic_state_manager:
+                logger.error("❌ VOICE: MicrophoneStateManager не инициализирован - принудительно закрываем через state_manager")
+                # КРИТИЧНО: В случае ошибки инициализации используем прямой вызов для предотвращения залипания
+                self.state_manager.force_close_microphone(reason="mic_state_manager_not_initialized")
+            else:
+                try:
+                    # ✅ КРИТИЧНО: Если поток уже остановлен и microphone.closed уже опубликовано,
+                    # request_close должен завершиться быстро (событие уже обработано в _on_microphone_closed)
+                    # Используем короткий таймаут для request_close, чтобы не блокировать stop_listening
+                    close_timeout = 0.5 if stream_was_active else 3.0  # Очень короткий таймаут если поток уже остановлен
+                    await asyncio.wait_for(
+                        self._mic_state_manager.request_close(str(session_id) if session_id else None, force=(session_id is None)),
+                        timeout=close_timeout
+                    )
+                    logger.info("✅ VOICE: request_close завершен успешно")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ VOICE: Таймаут request_close ({close_timeout}s) - продолжаем без ожидания (микрофон уже закрыт)")
+                    # Fallback: принудительно закрываем через state_manager
+                    # Но это не критично, так как поток уже остановлен
+                    self.state_manager.force_close_microphone(reason="mic_state_manager_request_close_timeout")
+                except Exception as e:
+                    logger.error(f"❌ VOICE: Ошибка request_close: {e}", exc_info=True)
+                    # Fallback: принудительно закрываем через state_manager
+                    self.state_manager.force_close_microphone(reason="mic_state_manager_request_close_failed")
 
+            # ✅ КРИТИЧНО: Добавляем логирование для диагностики залипания
+            logger.info(f"🔍 VOICE: Проверка условий для stop_listening: simulate={self.config.simulate}, recognizer={self._recognizer is not None}")
+            if self.config.simulate:
+                logger.warning("⚠️ VOICE: config.simulate=True, stop_listening не вызывается")
+                return
+            if self._recognizer is None:
+                logger.error("❌ VOICE: _recognizer is None, stop_listening не вызывается")
+                return
+            
+            logger.info("🛑 VOICE: Условия для stop_listening выполнены, вызываем stop_listening")
             if not self.config.simulate and self._recognizer is not None:
-                # Закрываем микрофон для UI сразу, распознавание завершим асинхронно
-                await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+                # ✅ КРИТИЧНО: Принудительно останавливаем поток ПЕРЕД вызовом stop_listening
+                # Это предотвращает продолжение вызовов callback после voice.recording_stop
+                try:
+                    if hasattr(self._recognizer, '_current_stream') and self._recognizer._current_stream:
+                        with getattr(self._recognizer, '_stream_lock', threading.RLock()):
+                            if self._recognizer._current_stream and self._recognizer._current_stream.active:
+                                logger.warning("🛑 VOICE: Принудительная остановка потока ПЕРЕД stop_listening")
+                                try:
+                                    self._recognizer._current_stream.stop()
+                                    logger.info("✅ VOICE: Поток остановлен принудительно")
+                                except Exception as e:
+                                    logger.error(f"❌ VOICE: Ошибка принудительной остановки потока: {e}")
+                except Exception as e:
+                    logger.warning(f"⚠️ VOICE: Ошибка проверки потока перед stop_listening: {e}")
+                
+                # ✅ FIX: Синхронно останавливаем микрофон для немедленного закрытия
+                try:
+                    logger.info(f"🎤 Вызов stop_listening для session {session_id}")
+                    result: "RecognitionResult" = await self._recognizer.stop_listening()
+                    
+                    # ✅ ЭТАП 2: Публикуем событие успешного закрытия микрофона
+                    # КРИТИЧНО: microphone.closed может быть уже опубликовано выше (если поток был остановлен принудительно)
+                    # Проверяем, не было ли оно уже опубликовано, чтобы избежать дублирования
+                    # Но если поток не был остановлен принудительно, публикуем здесь
+                    if not stream_was_active:
+                        await self.event_bus.publish("microphone.closed", {"session_id": session_id})
+                        logger.debug(f"✅ VOICE: microphone.closed опубликовано для session {session_id} (после stop_listening)")
+                    else:
+                        logger.debug(f"✅ VOICE: microphone.closed уже опубликовано выше (поток был остановлен принудительно)")
 
-                async def _stop_and_publish():
-                    try:
-                        logger.debug(f"🎤 Вызов stop_listening для session {session_id}")
-                        result: "RecognitionResult" = await self._recognizer.stop_listening()
+                    # Диагностика результата
+                    chunks_count = getattr(self._recognizer, 'audio_data_len', 0) if hasattr(self._recognizer, 'audio_data_len') else 'N/A'
+                    logger.debug(f"🎤 stop_listening завершён: chunks={chunks_count}, text={result.text if result else None}, error={result.error if result else None}")
 
-                        # Диагностика результата
-                        chunks_count = getattr(self._recognizer, 'audio_data_len', 0) if hasattr(self._recognizer, 'audio_data_len') else 'N/A'
-                        logger.debug(f"🎤 stop_listening завершён: chunks={chunks_count}, text={result.text if result else None}, error={result.error if result else None}")
-
-                        if result and result.text and not result.error:
-                            logger.info(f"✓ Распознавание успешно: text='{result.text[:50]}...', confidence={result.confidence}")
-                            await self.event_bus.publish("voice.recognition_completed", {
-                                "session_id": session_id,
-                                "text": result.text,
-                                "confidence": result.confidence,
-                                "language": result.language
-                            })
-                        else:
-                            error_msg = result.error if result else "unknown"
-                            logger.warning(f"⚠️ Распознавание не дало текста: error={error_msg}, chunks={chunks_count}")
-                            if chunks_count == 0 or chunks_count == 'N/A':
-                                logger.warning(f"⚠️ Похоже на тишину: chunks={chunks_count}")
-                            await self.event_bus.publish("voice.recognition_failed", {
-                                "session_id": session_id,
-                                "error": error_msg,
-                                "reason": "no_text"
-                            })
-                    except Exception as e:
-                        logger.error(f"❌ VOICE: error while stopping listening/recognizing: {e}")
-                        import traceback
-                        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+                    if result and result.text and not result.error:
+                        logger.info(f"✓ Распознавание успешно: text='{result.text[:50]}...', confidence={result.confidence}")
+                        await self.event_bus.publish("voice.recognition_completed", {
+                            "session_id": session_id,
+                            "text": result.text,
+                            "confidence": result.confidence,
+                            "language": result.language
+                        })
+                    else:
+                        error_msg = result.error if result else "unknown"
+                        logger.warning(f"⚠️ Распознавание не дало текста: error={error_msg}, chunks={chunks_count}")
+                        if chunks_count == 0 or chunks_count == 'N/A':
+                            logger.warning(f"⚠️ Похоже на тишину: chunks={chunks_count}")
                         await self.event_bus.publish("voice.recognition_failed", {
                             "session_id": session_id,
-                            "error": "recognition_error",
-                            "reason": str(e)
+                            "error": error_msg,
+                            "reason": "no_text"
                         })
-
-                loop = asyncio.get_running_loop()
-                loop.create_task(_stop_and_publish())
+                except Exception as e:
+                    logger.error(f"❌ VOICE: error while stopping listening/recognizing: {e}")
+                    import traceback
+                    logger.error(f"❌ Traceback: {traceback.format_exc()}")
+                    # ✅ FIX: Все равно публикуем microphone.closed для закрытия микрофона
+                    await self.event_bus.publish("microphone.closed", {"session_id": session_id})
+                    await self.event_bus.publish("voice.recognition_failed", {
+                        "session_id": session_id,
+                        "error": "recognition_error",
+                        "reason": str(e)
+                    })
             else:
                 # Симуляция распознавания
                 await self._start_recognition(session_id)
         except Exception as e:
             logger.error(f"VOICE: error in recording_stop handler: {e}")
 
+    # ✅ ЭТАП 2: Обработчики событий MicrophoneStateManager
+    
+    async def _on_microphone_open_requested(self, event: Dict[str, Any]):
+        """Обработчик запроса открытия микрофона от MicrophoneStateManager"""
+        try:
+            data = event.get("data", {}) or event
+            session_id = data.get("session_id")
+            timeout = data.get("timeout", 5.0)
+            
+            logger.debug(f"🎤 [MIC_STATE] Запрос открытия микрофона для session {session_id}")
+            
+            # ✅ ДИАГНОСТИКА: Логируем условия для понимания, почему start_listening() не вызывается
+            logger.info(f"🔍 [MIC_STATE] Условия для start_listening: simulate={self.config.simulate}, _recognizer={self._recognizer is not None}")
+            
+            # Открываем микрофон через SpeechRecognizer
+            if not self.config.simulate and self._recognizer is not None:
+                # КРИТИЧНО: Проверяем состояние перед запуском для предотвращения двойного старта
+                # Используем is_listening как основной индикатор активности
+                is_listening = getattr(self._recognizer, 'is_listening', False)
+                recognizer_state = getattr(self._recognizer, 'state', None)
+                # Также проверяем физическое состояние потока
+                stream_active = False
+                if hasattr(self._recognizer, '_current_stream') and self._recognizer._current_stream:
+                    try:
+                        stream_active = self._recognizer._current_stream.active
+                    except Exception:
+                        pass
+                
+                if is_listening or stream_active or (recognizer_state and str(recognizer_state).upper() in ['LISTENING', 'RECOGNITIONSTATE.LISTENING']):
+                    logger.warning(f"⚠️ [MIC_STATE] Уже в режиме прослушивания (is_listening={is_listening}, stream_active={stream_active}, state={recognizer_state}), пропускаем start для session {session_id}")
+                    # Публикуем событие успешного открытия (микрофон уже открыт)
+                    await self.event_bus.publish("microphone.opened", {"session_id": session_id})
+                    logger.info(f"✅ [MIC_STATE] Микрофон уже открыт для session {session_id}")
+                    return
+                
+                try:
+                    logger.info(f"🎤 [MIC_STATE] Вызываем start_listening() для session {session_id}")
+                    await self._recognizer.start_listening()
+                    logger.info(f"✅ [MIC_STATE] start_listening() завершен успешно для session {session_id}")
+                    # Публикуем событие успешного открытия
+                    await self.event_bus.publish("microphone.opened", {"session_id": session_id})
+                    logger.info(f"✅ [MIC_STATE] Микрофон успешно открыт для session {session_id}")
+                except Exception as e:
+                    error_str = str(e)
+                    is_already_running = "there already is a thread" in error_str.lower()
+                    
+                    if is_already_running:
+                        logger.warning(f"⚠️ [MIC_STATE] CoreAudio thread already running, микрофон уже активен для session {session_id}")
+                        # Публикуем событие успешного открытия (микрофон уже работает)
+                        await self.event_bus.publish("microphone.opened", {"session_id": session_id})
+                        logger.info(f"✅ [MIC_STATE] Микрофон уже активен для session {session_id}")
+                    else:
+                        logger.error(f"❌ [MIC_STATE] Ошибка открытия микрофона: {e}")
+                        # Публикуем событие ошибки
+                        await self.event_bus.publish("microphone.error", {
+                            "session_id": session_id,
+                            "error": str(e)
+                        })
+            else:
+                # Симуляция или recognizer не инициализирован - сразу публикуем успешное открытие
+                reason = "simulation" if self.config.simulate else "recognizer_not_initialized"
+                logger.warning(f"⚠️ [MIC_STATE] Пропуск start_listening() для session {session_id} (reason: {reason})")
+                await self.event_bus.publish("microphone.opened", {"session_id": session_id})
+        except Exception as e:
+            logger.error(f"❌ [MIC_STATE] Ошибка обработки microphone.open_requested: {e}")
+    
+    async def _on_microphone_close_requested(self, event: Dict[str, Any]):
+        """Обработчик запроса закрытия микрофона от MicrophoneStateManager"""
+        try:
+            data = event.get("data", {}) or event
+            session_id = data.get("session_id")
+            force = data.get("force", False)
+            
+            logger.debug(f"🎤 [MIC_STATE] Запрос закрытия микрофона для session {session_id} (force={force})")
+            
+            # Закрываем микрофон через SpeechRecognizer
+            if not self.config.simulate and self._recognizer is not None:
+                try:
+                    await self._recognizer.stop_listening()
+                    # Публикуем событие успешного закрытия
+                    await self.event_bus.publish("microphone.closed", {"session_id": session_id})
+                    logger.info(f"✅ [MIC_STATE] Микрофон успешно закрыт для session {session_id}")
+                except Exception as e:
+                    logger.error(f"❌ [MIC_STATE] Ошибка закрытия микрофона: {e}")
+                    # Все равно публикуем закрытие (принудительное)
+                    await self.event_bus.publish("microphone.closed", {"session_id": session_id})
+            else:
+                # Симуляция - сразу публикуем успешное закрытие
+                await self.event_bus.publish("microphone.closed", {"session_id": session_id})
+        except Exception as e:
+            logger.error(f"❌ [MIC_STATE] Ошибка обработки microphone.close_requested: {e}")
+    
     # Отмена/прерывание
     async def _on_cancel_request(self, event: Dict[str, Any]):
         try:

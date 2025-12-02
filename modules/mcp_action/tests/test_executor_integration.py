@@ -83,3 +83,4 @@ async def test_close_app_missing_parameter(executor):
     assert "Missing app_name" in result.message
     assert result.error == "missing_parameter"
 
+

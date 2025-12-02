@@ -14,6 +14,7 @@ try:
     from Quartz import (
         CGEventTapCreate,
         CGEventTapEnable,
+            CGEventTapIsEnabled,  # ✅ FIX: Добавляем проверку активности tap
         CFRunLoopAddSource,
         CFRunLoopGetCurrent,
         CFRunLoopGetMain,
@@ -98,6 +99,7 @@ class QuartzKeyboardMonitor:
         
         # Состояние для комбинации Control+N
         self._control_pressed = False
+        self._previous_control_pressed = False  # ✅ FIX: Отслеживаем предыдущее состояние Control
         self._n_pressed = False
         self._combo_active = False
         self._combo_start_time: Optional[float] = None
@@ -133,17 +135,30 @@ class QuartzKeyboardMonitor:
                 flags = CGEventGetFlags(event)
                 control_pressed = bool(flags & kCGEventFlagMaskControl)
                 
-                # Проверяем, что это событие для Control (keycode 59 или 62)
-                if keycode in self.CONTROL_KEYCODES:
+                # ✅ FIX: Всегда проверяем изменение состояния Control по flags
+                # flagsChanged может прийти с keycode=0 или другим keycode, но flags всегда содержат актуальное состояние
+                # Это критично для правильной обработки отпускания Control
                     with self.state_lock:
+                    was_control_pressed = self._control_pressed
+                    
+                    # ✅ FIX: Обновляем состояние Control если оно изменилось
+                    # Это гарантирует, что мы всегда знаем актуальное состояние, даже если keycode не совпадает
+                    if control_pressed != was_control_pressed:
                         self._control_pressed = control_pressed
+                        self._previous_control_pressed = control_pressed
+                        
                         # Обновляем время последнего события для защиты от залипания
                         self._control_last_event_time = now if control_pressed else None
                         
+                        # ✅ FIX: Логируем изменение состояния для диагностики
+                        logger.debug(f"🔍 FlagsChanged: Control (keycode={keycode}), control_pressed={control_pressed} (было {was_control_pressed})")
+                        
                         # Обновляем состояние комбинации
                         self._update_combo_state()
-                        
-                        # Подавление событий не требуется для Control (не блокируем другие hotkeys)
+                    elif keycode in self.CONTROL_KEYCODES:
+                        # ✅ FIX: Даже если состояние не изменилось, обновляем время события
+                        # Это помогает избежать ложных срабатываний залипания
+                        self._control_last_event_time = now if control_pressed else None
                 
                 return event
             
@@ -358,6 +373,20 @@ class QuartzKeyboardMonitor:
             # Создаем Event Tap
             def _tap_callback(proxy, event_type, event, refcon):
                 try:
+                    # ✅ FIX: Логируем все события для диагностики (только для Control+N)
+                    if self._is_combo:
+                        # Логируем только Control и N события для диагностики
+                        if event_type == kCGEventFlagsChanged:
+                            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+                            flags = CGEventGetFlags(event)
+                            control_pressed = bool(flags & kCGEventFlagMaskControl)
+                            if keycode in self.CONTROL_KEYCODES:
+                                logger.debug(f"🔍 [TAP] FlagsChanged: Control (keycode={keycode}), control_pressed={control_pressed}")
+                        elif event_type in (kCGEventKeyDown, kCGEventKeyUp):
+                            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+                            if keycode == self.N_KEYCODE:
+                                logger.debug(f"🔍 [TAP] {('KeyDown' if event_type == kCGEventKeyDown else 'KeyUp')}: N (keycode={keycode})")
+                    
                     # Обработка комбинации Control+N
                     if self._is_combo:
                         return self._handle_combo_event(event_type, event)
@@ -598,6 +627,15 @@ class QuartzKeyboardMonitor:
             CGEventTapEnable(self._tap, True)
             print(f"✅ CGEventTap включен для keycode={self._target_keycode}")  # Для отладки
             logger.info(f"QuartzMonitor: CGEventTap включен для keycode={self._target_keycode}")
+            
+            # ✅ FIX: Проверяем активность tap после включения
+            try:
+                is_enabled = CGEventTapIsEnabled(self._tap)
+                logger.info(f"🔍 [TAP] CGEventTap активен: {is_enabled}")
+                if not is_enabled:
+                    logger.warning("⚠️ [TAP] CGEventTap создан, но НЕ активен! Возможно, нет разрешений.")
+            except Exception as e:
+                logger.warning(f"⚠️ [TAP] Не удалось проверить активность tap: {e}")
 
             # Запускаем поток мониторинга удержания (для long press)
             self.stop_event.clear()
@@ -607,6 +645,14 @@ class QuartzKeyboardMonitor:
                 daemon=True,
             )
             self.hold_monitor_thread.start()
+            
+            # ✅ FIX: Запускаем поток мониторинга активности tap
+            self._tap_monitor_thread = threading.Thread(
+                target=self._monitor_tap_activity,
+                name="QuartzTapMonitor",
+                daemon=True,
+            )
+            self._tap_monitor_thread.start()
 
             self.is_monitoring = True
             logger.info("🎹 Quartz-монитор клавиатуры запущен")
@@ -625,6 +671,12 @@ class QuartzKeyboardMonitor:
             if self.hold_monitor_thread and self.hold_monitor_thread.is_alive():
                 self.hold_monitor_thread.join(timeout=2.0)
 
+            # ✅ FIX: Останавливаем поток мониторинга активности tap
+            if self._tap_monitor_thread and self._tap_monitor_thread.is_alive():
+                self.stop_event.set()
+                self._tap_monitor_thread.join(timeout=1.0)
+                self._tap_monitor_thread = None
+
             if self._tap_source:
                 try:
                     CFRunLoopSourceInvalidate(self._tap_source)
@@ -642,6 +694,39 @@ class QuartzKeyboardMonitor:
             logger.info("🛑 Quartz-монитор клавиатуры остановлен")
         except Exception as e:
             logger.error(f"❌ Ошибка остановки Quartz-монитора: {e}")
+
+    def _monitor_tap_activity(self):
+        """Мониторит активность event tap и перезапускает если он стал неактивным"""
+        while not self.stop_event.is_set():
+            try:
+                # ✅ FIX: Защищаем доступ к _tap блокировкой
+                with self.state_lock:
+                    tap_ref = self._tap
+                
+                if tap_ref is not None:
+                    try:
+                        is_enabled = CGEventTapIsEnabled(tap_ref)
+                        if not is_enabled:
+                            logger.warning("⚠️ [TAP] CGEventTap стал неактивным! Пытаемся перезапустить...")
+                            # Пытаемся перезапустить tap
+                            with self.state_lock:
+                                # Проверяем, что tap всё ещё тот же (не был заменён в stop_monitoring)
+                                if self._tap == tap_ref:
+                                    CGEventTapEnable(self._tap, True)
+                                    time.sleep(0.1)  # Небольшая задержка
+                                    is_enabled_after = CGEventTapIsEnabled(self._tap)
+                                    if is_enabled_after:
+                                        logger.info("✅ [TAP] CGEventTap успешно перезапущен")
+                                    else:
+                                        logger.error("❌ [TAP] Не удалось перезапустить CGEventTap. Проверьте разрешения.")
+                    except Exception as e:
+                        logger.debug(f"⚠️ [TAP] Ошибка проверки активности: {e}")
+                
+                # Проверяем каждые 5 секунд
+                time.sleep(5.0)
+            except Exception as e:
+                logger.error(f"❌ Ошибка в мониторе активности tap: {e}")
+                time.sleep(1.0)
 
     def _run_hold_monitor(self):
         while not self.stop_event.is_set():
@@ -698,21 +783,33 @@ class QuartzKeyboardMonitor:
                 self._reset_stuck_combo_state("combo_timeout")
                 return
         
-        # Проверка таймаута для Control (если зажат без событий)
+        # ✅ FIX: Проверка таймаута для Control (если зажат без событий)
         # КРИТИЧНО: Control использует flagsChanged, который НЕ генерирует повторные события при удержании
         # Поэтому проверяем таймаут только если комбинация НЕ активна
         # Если комбинация активна и N получает автоповтор - это означает, что Control реально зажат
         # Увеличиваем таймаут до 10 секунд для Control (в 2 раза), т.к. модификаторы не генерируют повторные события
-        if self._control_pressed and self._control_last_event_time and not self._combo_active:
+        if self._control_pressed and self._control_last_event_time:
             time_since_event = now - self._control_last_event_time
-            # Увеличиваем таймаут для Control до 10 секунд (модификаторы не генерируют автоповтор)
+            # ✅ FIX: Увеличиваем таймаут для Control, но также проверяем реальное состояние через Quartz
             timeout = self.key_state_timeout_sec * 2  # 10 секунд вместо 5
+            
+            # ✅ FIX: Проверяем реальное состояние Control через Quartz API
+            try:
+                from Quartz import CGEventSourceSecondsSinceLastEventType, kCGEventSourceStateHIDSystemState
+                last_event_time = CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateHIDSystemState, kCGEventFlagsChanged)
+                # Если последнее событие flagsChanged было очень давно, возможно Control залип
+                if last_event_time > timeout:
+                    logger.debug(f"🔍 Quartz: последнее flagsChanged было {last_event_time:.1f}s назад")
+            except Exception:
+                pass
+            
             if time_since_event > timeout:
                 logger.warning(
                     f"⚠️ ЗАЛИПАНИЕ: Control зажат без событий слишком долго ({time_since_event:.1f}s > {timeout}s), "
                     f"combo_active={self._combo_active}, принудительно сбрасываем"
                 )
                 self._control_pressed = False
+                self._previous_control_pressed = False  # ✅ FIX: Сбрасываем предыдущее состояние
                 self._control_last_event_time = None
                 self._update_combo_state()
         
@@ -740,6 +837,7 @@ class QuartzKeyboardMonitor:
         self._combo_active = False
         self._combo_start_time = None
         self._control_pressed = False
+        self._previous_control_pressed = False  # ✅ FIX: Сбрасываем предыдущее состояние
         self._n_pressed = False
         self._control_last_event_time = None
         self._n_last_event_time = None
