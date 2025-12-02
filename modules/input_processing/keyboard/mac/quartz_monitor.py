@@ -138,7 +138,7 @@ class QuartzKeyboardMonitor:
                 # ✅ FIX: Всегда проверяем изменение состояния Control по flags
                 # flagsChanged может прийти с keycode=0 или другим keycode, но flags всегда содержат актуальное состояние
                 # Это критично для правильной обработки отпускания Control
-                    with self.state_lock:
+                with self.state_lock:
                     was_control_pressed = self._control_pressed
                     
                     # ✅ FIX: Обновляем состояние Control если оно изменилось
@@ -149,6 +149,21 @@ class QuartzKeyboardMonitor:
                         
                         # Обновляем время последнего события для защиты от залипания
                         self._control_last_event_time = now if control_pressed else None
+                        
+                        # ✅ ПЛАН: При отпускании Control сбрасываем все связанные состояния
+                        if not control_pressed and was_control_pressed:
+                            logger.debug(f"🔄 [RESET] Control отпущен через flagsChanged, сбрасываем связанные состояния")
+                            # Сбрасываем N, если она была зажата (защита от залипания)
+                            if self._n_pressed:
+                                logger.debug(f"🔄 [RESET] Сбрасываем _n_pressed (было True)")
+                                self._n_pressed = False
+                                self._n_last_event_time = None
+                            # Сбрасываем флаги комбинации
+                            if self._combo_active:
+                                logger.debug(f"🔄 [RESET] Сбрасываем _combo_active (было True)")
+                            if self._long_sent:
+                                logger.debug(f"🔄 [RESET] Сбрасываем _long_sent (было True)")
+                                self._long_sent = False
                         
                         # ✅ FIX: Логируем изменение состояния для диагностики
                         logger.debug(f"🔍 FlagsChanged: Control (keycode={keycode}), control_pressed={control_pressed} (было {was_control_pressed})")
@@ -171,15 +186,16 @@ class QuartzKeyboardMonitor:
                 
                 with self.state_lock:
                     if event_type == kCGEventKeyDown:
-                        # Игнорируем автоповтор N, но обновляем время для защиты от залипания
+                        # ✅ ПЛАН: Игнорируем автоповтор N, но обновляем время для защиты от залипания
                         if self._n_pressed:
-                            logger.debug("🔒 Quartz: игнорируем автоповтор N")
+                            logger.debug("🔒 [SUPPRESS] Quartz: игнорируем автоповтор N (обновляем _n_last_event_time)")
                             # КРИТИЧНО: Обновляем время последнего события при автоповторе,
                             # чтобы показать, что клавиша реально зажата (не залипла)
                             self._n_last_event_time = now
                             # Подавляем событие - возвращаем None для блокировки keyDown N
                             # Подавляем если комбинация активна ИЛИ Control зажат (для надежности)
                             if self._combo_active or self._control_pressed:
+                                logger.debug(f"🔒 [SUPPRESS] Подавляем keyDown N (combo_active={self._combo_active}, control_pressed={self._control_pressed})")
                                 return None
                             return event
                         
@@ -195,9 +211,6 @@ class QuartzKeyboardMonitor:
                         
                         # Обновляем состояние комбинации
                         self._update_combo_state()
-                        
-                        # КРИТИЧНО: Подавляем keyDown N если:
-                        # 1. Комбинация уже активна, ИЛИ
                         # 2. Control уже зажат (даже если комбинация еще не активирована из-за race condition)
                         # Это предотвращает системные щелчки macOS
                         if self._combo_active or self._control_pressed:
@@ -212,10 +225,17 @@ class QuartzKeyboardMonitor:
                         # чтобы знать, была ли она активна в момент keyUp
                         was_combo_active = self._combo_active
                         was_control_pressed = self._control_pressed
+                        was_long_sent = self._long_sent
                         
+                        # ✅ ПЛАН: При keyUp N сбрасываем все связанные состояния
+                        logger.debug(f"🔄 [RESET] keyUp N: сбрасываем _n_pressed, _long_sent (было: _n_pressed=True, _long_sent={was_long_sent})")
                         self._n_pressed = False
                         # Обновляем время последнего события для защиты от залипания
                         self._n_last_event_time = None
+                        # ✅ ПЛАН: Сбрасываем _long_sent при keyUp
+                        if was_long_sent:
+                            logger.debug(f"🔄 [RESET] Сбрасываем _long_sent при keyUp N")
+                            self._long_sent = False
                         
                         # Обновляем состояние комбинации
                         self._update_combo_state()
@@ -261,6 +281,9 @@ class QuartzKeyboardMonitor:
             
         elif not should_be_active and was_active:
             # Деактивация комбинации: одна из клавиш отпущена
+            # ✅ ПЛАН: Сбрасываем все состояния при деактивации
+            logger.debug(f"🔄 [RESET] Деактивация комбинации: control_pressed={self._control_pressed}, n_pressed={self._n_pressed}")
+            
             self._combo_active = False
             duration = now - (self._combo_start_time or now)
             self._combo_start_time = None
@@ -271,11 +294,15 @@ class QuartzKeyboardMonitor:
                 return
             
             long_sent_snapshot = self._long_sent
+            # ✅ ПЛАН: Сбрасываем все связанные состояния
             self.key_pressed = False
             self.press_start_time = None
             self.last_event_time = now
             self._event_processed = True
             self._last_event_timestamp = now
+            # ✅ ПЛАН: Сбрасываем _long_sent при деактивации (если не был отправлен LONG_PRESS)
+            if not long_sent_snapshot:
+                self._long_sent = False
             
             if long_sent_snapshot:
                 # LONG_PRESS уже был отправлен - генерируем только RELEASE
@@ -766,18 +793,22 @@ class QuartzKeyboardMonitor:
                 time.sleep(0.1)
     
     def _check_and_reset_stuck_state(self):
-        """Проверяет и сбрасывает залипшее состояние на основе таймаутов"""
+        """Проверяет и сбрасывает залипшее состояние на основе таймаутов
+        
+        ✅ ПЛАН: Watchdog для защиты от залипания состояний
+        Вызывается регулярно из _run_hold_monitor для проверки таймаутов
+        """
         if not self._is_combo:
             return  # Для одиночных клавиш проверка не нужна (уже есть в hold_monitor)
         
         now = time.time()
         
-        # Проверка таймаута для комбинации
+        # ✅ ПЛАН: Проверка таймаута для комбинации
         if self._combo_active and self._combo_start_time:
             combo_duration = now - self._combo_start_time
             if combo_duration > self.combo_timeout_sec:
                 logger.warning(
-                    f"⚠️ ЗАЛИПАНИЕ: Комбинация активна слишком долго ({combo_duration:.1f}s > {self.combo_timeout_sec}s), "
+                    f"⚠️ [WATCHDOG] ЗАЛИПАНИЕ: Комбинация активна слишком долго ({combo_duration:.1f}s > {self.combo_timeout_sec}s), "
                     f"принудительно сбрасываем состояние"
                 )
                 self._reset_stuck_combo_state("combo_timeout")
@@ -830,10 +861,25 @@ class QuartzKeyboardMonitor:
                 self._update_combo_state()
     
     def _reset_stuck_combo_state(self, reason: str):
-        """Сбрасывает залипшее состояние комбинации"""
-        logger.info(f"🔄 Сброс залипшего состояния комбинации (причина: {reason})")
+        """Сбрасывает залипшее состояние комбинации
         
+        ✅ ПЛАН: Watchdog сброс всех состояний при залипании
+        """
+        now = time.time()
         was_active = self._combo_active
+        was_control = self._control_pressed
+        was_n = self._n_pressed
+        was_long = self._long_sent
+        
+        logger.warning(
+            f"🔄 [WATCHDOG] Сброс залипшего состояния комбинации (причина: {reason})"
+        )
+        logger.debug(
+            f"🔄 [WATCHDOG] Состояние до сброса: combo_active={was_active}, "
+            f"control_pressed={was_control}, n_pressed={was_n}, long_sent={was_long}"
+        )
+        
+        # ✅ ПЛАН: Сбрасываем все состояния
         self._combo_active = False
         self._combo_start_time = None
         self._control_pressed = False
@@ -847,12 +893,18 @@ class QuartzKeyboardMonitor:
         self._event_processed = False
         self._last_event_timestamp = 0.0
         
+        logger.debug(
+            f"✅ [WATCHDOG] Все состояния сброшены: combo_active=False, "
+            f"control_pressed=False, n_pressed=False, long_sent=False"
+        )
+        
         # Если комбинация была активна, генерируем RELEASE событие
         if was_active:
+            logger.info(f"🔄 [WATCHDOG] Генерируем RELEASE событие для активной комбинации")
             ev = KeyEvent(
                 key=self.key_to_monitor,
                 event_type=KeyEventType.RELEASE,
-                timestamp=time.time(),
+                timestamp=now,
                 duration=0.0,
             )
             self._trigger_event(KeyEventType.RELEASE, 0.0, ev)

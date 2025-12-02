@@ -169,3 +169,4 @@ class StreamConfigResolver:
                 }
                 logger.info(f"💾 [OUTPUT] Сохранена безопасная конфигурация для \"{device_name}\" (ошибка: {error_code})")
 
+
