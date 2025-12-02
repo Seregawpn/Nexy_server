@@ -24,6 +24,8 @@ from ..utils.audio_utils import resample_audio, convert_channels
 # Воспроизведение использует системные дефолтные устройства macOS, отдельный менеджер не требуется
 from ..macos.core_audio import CoreAudioManager
 from ..macos.performance import PerformanceMonitor
+# ✅ ФАЗА 3: Stream Config Resolver
+from .stream_config_resolver import StreamConfigResolver
 
 # ЦЕНТРАЛИЗОВАННАЯ КОНФИГУРАЦИЯ АУДИО
 from config.unified_config_loader import unified_config
@@ -136,8 +138,19 @@ class SequentialSpeechPlayer:
         # ✅ КЭШ ОШИБОК: Хранит "плохие" конфигурации по имени устройства
         # Формат: {device_name: {'error_code': -10851, 'safe_config': {...}, 'timestamp': ...}}
         # Используется для предотвращения повторных ошибок при переподключении устройств
+        # ⚠️ ВАЖНО: Должен быть создан ПЕРЕД StreamConfigResolver
         self._device_error_cache: Dict[str, Dict[str, Any]] = {}
         self._error_cache_lock = threading.RLock()
+        
+        # ✅ ФАЗА 3: Stream Config Resolver (создается ПОСЛЕ кэша ошибок)
+        self._stream_config_resolver = StreamConfigResolver(
+            default_sample_rate=self.config.sample_rate,
+            default_channels=self.config.channels,
+            default_dtype=self.config.dtype,
+            default_buffer_size=self.config.buffer_size
+        )
+        # Устанавливаем ссылку на кэш ошибок
+        self._stream_config_resolver.set_error_cache(self._device_error_cache, self._error_cache_lock)
 
         # ✅ ИТЕРАЦИЯ 2: Инициализация нормализатора параметров устройств (пока не используется)
         try:
@@ -849,7 +862,7 @@ class SequentialSpeechPlayer:
                         logger.error(f"❌ [OUTPUT] КРИТИЧЕСКАЯ ОШИБКА: Поток все еще существует перед созданием нового!")
                         raise RuntimeError("Старый поток не был закрыт перед созданием нового")
                     
-                    logger.info(f"🔍 [OUTPUT] Попытка {attempt + 1}/{max_retries} создания потока...")
+                        logger.info(f"🔍 [OUTPUT] Попытка {attempt + 1}/{max_retries} создания потока...")
                     
                     # ✅ ФИНАЛЬНОЕ РЕШЕНИЕ: Логируем подтверждение, что старый поток закрыт → создаём новый stream
                     if self._audio_stream is None:
@@ -864,7 +877,7 @@ class SequentialSpeechPlayer:
                         logger.error(f"❌ [OUTPUT] КРИТИЧЕСКАЯ ОШИБКА: _audio_stream не None перед созданием потока!")
                         raise RuntimeError("Старый поток не был закрыт перед созданием нового")
                     
-                    logger.debug(f"🔍 [OUTPUT] Параметры потока: {stream_config}")
+                        logger.debug(f"🔍 [OUTPUT] Параметры потока: {stream_config}")
 
                 host_error_code = self._get_last_host_error_code()
                 if host_error_code is not None:
@@ -1076,8 +1089,7 @@ class SequentialSpeechPlayer:
         """
         Получает безопасную конфигурацию потока с учетом истории ошибок.
         
-        ✅ КРИТИЧЕСКОЕ УЛУЧШЕНИЕ: Если устройство уже вызывало ошибки в прошлом,
-        сразу возвращает безопасную конфигурацию без попыток использовать "плохие" параметры.
+        ✅ ФАЗА 3: Использует StreamConfigResolver для определения конфигурации
         
         Args:
             device_name: Имя устройства
@@ -1087,71 +1099,35 @@ class SequentialSpeechPlayer:
         Returns:
             dict: Конфигурация потока (device, channels, dtype, samplerate, callback, blocksize, latency)
         """
-        with self._error_cache_lock:
-            # Проверяем кэш ошибок
-            if device_name in self._device_error_cache:
-                cached = self._device_error_cache[device_name]
-                error_code = cached.get('error_code')
-                safe_config = cached.get('safe_config', {})
-                timestamp = cached.get('timestamp', 0)
-                age_seconds = time.time() - timestamp
-                
-                logger.info(f"💾 [OUTPUT] Используем кэшированную безопасную конфигурацию для \"{device_name}\"")
-                logger.info(f"   Причина: предыдущая ошибка {error_code} (возраст кэша: {age_seconds:.1f}с)")
-                logger.info(f"   Конфигурация: device={safe_config.get('device')}, channels={safe_config.get('channels')}, "
-                           f"blocksize={safe_config.get('blocksize', 'N/A')}, latency={safe_config.get('latency', 'N/A')}")
-                
-                # Возвращаем кэшированную конфигурацию с обновленным callback
-                safe_config_copy = safe_config.copy()
-                safe_config_copy['callback'] = self._audio_callback
-                return safe_config_copy
-        
-        # Если нет в кэше, используем стандартную логику
-        if is_bluetooth:
-            return {
-                'device': None,
-                'channels': self.config.channels,
-                'dtype': self.config.dtype,
-                'samplerate': self.config.sample_rate,
-                'callback': self._audio_callback
-            }
-        else:
-            config = {
-                'device': device_id,
-                'channels': self.config.channels,
-                'dtype': self.config.dtype,
-                'samplerate': self.config.sample_rate,
-                'blocksize': self.config.buffer_size,
-                'callback': self._audio_callback
-            }
-            return config
+        # ✅ ФАЗА 3: Используем resolver для определения конфигурации
+        return self._stream_config_resolver.resolve_stream_config(
+            device_name=device_name,
+            is_bluetooth=is_bluetooth,
+            device_id=device_id,
+            callback=self._audio_callback,
+            error_cache=self._device_error_cache,
+            error_cache_lock=self._error_cache_lock
+        )
     
     def _cache_error_config(self, device_name: str, error_code: int, safe_config: Dict[str, Any]):
         """
         Сохраняет "плохую" конфигурацию в кэш для будущего использования.
         
-        ✅ КРИТИЧЕСКОЕ УЛУЧШЕНИЕ: При следующем подключении того же устройства
-        сразу будет использована безопасная конфигурация, без ожидания ошибок.
+        ✅ ФАЗА 3: Использует StreamConfigResolver для сохранения конфигурации
         
         Args:
             device_name: Имя устройства
             error_code: Код ошибки (-9986, -10851)
             safe_config: Безопасная конфигурация, которая сработала после ошибки
         """
-        with self._error_cache_lock:
-            # Удаляем callback из конфигурации перед сохранением (он не сериализуется)
-            safe_config_copy = safe_config.copy()
-            if 'callback' in safe_config_copy:
-                del safe_config_copy['callback']
-            
-            self._device_error_cache[device_name] = {
-                'error_code': error_code,
-                'safe_config': safe_config_copy,
-                'timestamp': time.time()
-            }
-            logger.info(f"💾 [OUTPUT] Сохранена безопасная конфигурация для \"{device_name}\" (ошибка: {error_code})")
-            logger.info(f"   Конфигурация: device={safe_config_copy.get('device')}, channels={safe_config_copy.get('channels')}, "
-                       f"blocksize={safe_config_copy.get('blocksize', 'N/A')}, latency={safe_config_copy.get('latency', 'N/A')}")
+        # ✅ ФАЗА 3: Используем resolver для сохранения конфигурации
+        self._stream_config_resolver.cache_error_config(
+            device_name=device_name,
+            error_code=error_code,
+            safe_config=safe_config,
+            error_cache=self._device_error_cache,
+            error_cache_lock=self._error_cache_lock
+        )
     
     def _clear_error_cache(self, device_name: Optional[str] = None):
         """
@@ -1570,7 +1546,7 @@ class SequentialSpeechPlayer:
 
             # ✅ СИСТЕМНОЕ РЕШЕНИЕ: Определяем, является ли устройство BT
             is_bluetooth = self._is_bluetooth_device(current_device_name)
-            
+
             # ✅ АТОМАРНО: Обновляем кэш СРАЗУ (не откладываем на потом)
             with self._device_tracking_lock:
                 self.output_device_name = current_device_name
@@ -1834,7 +1810,11 @@ class SequentialSpeechPlayer:
             return None
     
     def _start_output_monitoring(self):
-        """Запуск фонового мониторинга output устройства"""
+        """Запуск фонового мониторинга output устройства
+        
+        ✅ ФАЗА 2: Сначала пытается использовать Core Audio нотификации,
+        если недоступны - использует polling как fallback
+        """
         if self._output_monitor_thread and self._output_monitor_thread.is_alive():
             logger.warning("⚠️ [OUTPUT] Мониторинг output устройства уже запущен")
             return
@@ -1843,7 +1823,17 @@ class SequentialSpeechPlayer:
             logger.info("🔍 [OUTPUT] Автопереключение отключено (auto_output_device_switch=False), мониторинг не запускается")
             return
         
-        logger.info(f"🚀 [OUTPUT] Запуск фонового мониторинга output устройства (интервал={self._device_check_interval}s)")
+        # ✅ ФАЗА 2: Пытаемся использовать Core Audio нотификации
+        if self._core_audio_manager.is_notifications_available():
+            logger.info("🔔 [OUTPUT] Попытка использовать Core Audio нотификации для мониторинга устройств...")
+            if self._core_audio_manager.start_device_notifications(self._on_device_changed_notification):
+                logger.info("✅ [OUTPUT] Core Audio нотификации активированы (событийная реакция)")
+                # Инициализируем текущее устройство
+                self._check_and_update_output_device()
+                return
+        
+        # Fallback на polling
+        logger.info(f"🚀 [OUTPUT] Запуск фонового мониторинга output устройства через polling (интервал={self._device_check_interval}s)")
         self._stop_device_monitor.clear()
         self._output_monitor_thread = threading.Thread(
             target=self._output_monitor_loop,
@@ -1851,10 +1841,18 @@ class SequentialSpeechPlayer:
             daemon=True
         )
         self._output_monitor_thread.start()
-        logger.info("✅ [OUTPUT] Фоновый мониторинг output устройства запущен")
+        logger.info("✅ [OUTPUT] Фоновый мониторинг output устройства запущен (polling mode)")
     
     def _stop_output_monitoring(self):
-        """Остановка фонового мониторинга output устройства"""
+        """Остановка фонового мониторинга output устройства
+        
+        ✅ ФАЗА 2: Останавливает как нотификации, так и polling
+        """
+        # ✅ ФАЗА 2: Останавливаем нотификации
+        if self._core_audio_manager.is_notifications_available():
+            self._core_audio_manager.stop_device_notifications()
+        
+        # Останавливаем polling
         if not self._output_monitor_thread or not self._output_monitor_thread.is_alive():
             return
         
@@ -1862,9 +1860,58 @@ class SequentialSpeechPlayer:
         self._output_monitor_thread.join(timeout=2.0)
         logger.info("🛑 [OUTPUT] Фоновый мониторинг output устройства остановлен")
     
+    def _on_device_changed_notification(self):
+        """
+        ✅ ФАЗА 2: Callback для Core Audio нотификаций о смене default output устройства.
+        Вызывается автоматически при изменении устройства в системе.
+        """
+        try:
+            logger.info("🔔 [OUTPUT] Core Audio нотификация: default output устройство изменилось")
+            
+            # Получаем информацию о новом устройстве
+            current_device_name = self._get_output_device_name_via_macos_api()
+            if not current_device_name:
+                logger.debug("⚠️ [OUTPUT] SwitchAudioSource не вернул имя устройства после нотификации")
+                return
+            
+            # Определяем тип устройства (BT/обычное)
+            is_bluetooth = self._is_bluetooth_device(current_device_name)
+            
+            # Получаем ID устройства (для обычных устройств)
+            current_device_id = None
+            if not is_bluetooth:
+                current_device_id = self._find_device_id_by_name(current_device_name, device_type='output')
+                if current_device_id is None:
+                    logger.debug(f"⚠️ [OUTPUT] Устройство '{current_device_name}' не найдено в PortAudio, используем device=None")
+            else:
+                logger.debug(f"💡 [OUTPUT] BT устройство '{current_device_name}' - используем device=None (не ищем ID в PortAudio)")
+            
+            # Получаем старое устройство для логирования
+            with self._device_tracking_lock:
+                old_name = self.output_device_name
+                old_id = self._current_output_device_id
+            
+            # Переключаем устройство
+            if old_name is None or current_device_name != old_name:
+                logger.info(
+                    f"🔄 [OUTPUT] Core Audio нотификация: смена устройства "
+                    f"\"{old_name}\" (ID={old_id}, BT={getattr(self, '_is_current_device_bluetooth', False)}) → "
+                    f"\"{current_device_name}\" (ID={current_device_id}, BT={is_bluetooth})"
+                )
+                # ✅ ФАЗА 2: Используем тот же метод переключения, что и в polling
+                self._switch_output_device(current_device_name, current_device_id, is_bluetooth)
+            else:
+                logger.debug(f"✅ [OUTPUT] Core Audio нотификация: устройство не изменилось \"{current_device_name}\"")
+                
+        except Exception as e:
+            logger.error(f"❌ [OUTPUT] Ошибка обработки нотификации Core Audio: {e}", exc_info=True)
+    
     def _output_monitor_loop(self):
-        """Основной цикл фонового мониторинга output устройства"""
-        logger.info("🔄 [OUTPUT] Запуск цикла мониторинга output устройства")
+        """Основной цикл фонового мониторинга output устройства (polling fallback)
+        
+        ✅ ФАЗА 2: Используется только если Core Audio нотификации недоступны
+        """
+        logger.info("🔄 [OUTPUT] Запуск цикла мониторинга output устройства (polling mode)")
         
         # Логируем все доступные output устройства при старте
         try:
@@ -2084,13 +2131,17 @@ class SequentialSpeechPlayer:
             # Получаем данные из буфера (2D: frames x channels)
             data = self.chunk_buffer.get_playback_data(frames)
 
+            # ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем фактическое количество каналов потока
+            # Поток может быть создан с другим количеством каналов, чем self.config.channels
+            actual_stream_channels = outdata.shape[1] if outdata.ndim >= 2 else 1
+
             # 🔍 ДИАГНОСТИКА: Увеличено логирование для отладки
             if not hasattr(self, '_callback_debug_count'):
                 self._callback_debug_count = 0
             if self._callback_debug_count < 10:  # ✅ Увеличено с 3 до 10
                 buffer_size = self.chunk_buffer.buffer_size
                 has_data = len(data) > 0
-                logger.info(f"🎵 [CALLBACK #{self._callback_debug_count}] frames={frames}, data_shape={data.shape if has_data else 'EMPTY'}, buffer_size={buffer_size}, channels={self.config.channels}")
+                logger.info(f"🎵 [CALLBACK #{self._callback_debug_count}] frames={frames}, data_shape={data.shape if has_data else 'EMPTY'}, buffer_size={buffer_size}, config_channels={self.config.channels}, stream_channels={actual_stream_channels}")
                 self._callback_debug_count += 1
             elif self._callback_debug_count == 10:
                 logger.info(f"🔇 [CALLBACK] Дальнейшее логирование callback отключено (работает нормально)")
@@ -2100,28 +2151,56 @@ class SequentialSpeechPlayer:
             if len(data) == 0:
                 outdata[:] = 0
             else:
-                # Если у нас моно-данные, а устройство ждёт стерео — дублируем канал
-                if data.ndim == 2 and data.shape[1] == 1 and self.config.channels > 1:
-                    data = np.repeat(data, self.config.channels, axis=1)
-                elif data.ndim == 1 and self.config.channels > 1:
+                # ✅ FIX: Конвертация каналов перед записью в outdata
+                # Используем фактическое количество каналов потока, а не self.config.channels
+                # Если данные стерео (2 канала), а поток моно (1 канал) — конвертируем в моно
+                if data.ndim == 2 and data.shape[1] > actual_stream_channels:
+                    # Усредняем каналы для конвертации стерео → моно
+                    data = np.mean(data, axis=1, keepdims=True)
+                    logger.debug(f"🔧 [CALLBACK] Конвертировано {data.shape[1]} каналов → {actual_stream_channels} каналов: shape={data.shape}")
+                # Если у нас моно-данные, а поток ждёт стерео — дублируем канал
+                elif data.ndim == 2 and data.shape[1] == 1 and actual_stream_channels > 1:
+                    data = np.repeat(data, actual_stream_channels, axis=1)
+                    logger.debug(f"🔧 [CALLBACK] Дублирован моно канал → {actual_stream_channels} каналов: shape={data.shape}")
+                elif data.ndim == 1 and actual_stream_channels > 1:
                     # На всякий случай обрабатываем 1D буфер
                     mono = data.reshape(-1, 1)
-                    data = np.repeat(mono, self.config.channels, axis=1)
+                    data = np.repeat(mono, actual_stream_channels, axis=1)
+                    logger.debug(f"🔧 [CALLBACK] Конвертирован 1D буфер → {actual_stream_channels} каналов: shape={data.shape}")
+                elif data.ndim == 1 and actual_stream_channels == 1:
+                    # 1D → 2D для моно
+                    data = data.reshape(-1, 1)
+                    logger.debug(f"🔧 [CALLBACK] Конвертирован 1D буфер → 2D моно: shape={data.shape}")
 
-                copy_ch = min(self.config.channels, data.shape[1])
+                # ✅ FIX: Проверяем, что data имеет правильную форму перед записью
+                if data.ndim != 2:
+                    logger.error(f"❌ [CALLBACK] Неожиданная размерность data: {data.ndim}, shape={data.shape}")
+                    outdata[:] = 0
+                    return
+
+                # ✅ FIX: Используем фактическое количество каналов потока
+                copy_ch = min(actual_stream_channels, data.shape[1])
                 out_frames = min(frames, data.shape[0])
+                
+                # ✅ FIX: Проверяем совместимость форм перед записью (используем actual_stream_channels)
+                if outdata.shape[1] != actual_stream_channels:
+                    logger.error(f"❌ [CALLBACK] Несовместимость форм: outdata.shape={outdata.shape}, expected_channels={actual_stream_channels}")
+                    outdata[:] = 0
+                    return
+                
+                # ✅ FIX: Записываем данные с учетом фактического количества каналов потока
                 outdata[:out_frames, :copy_ch] = data[:out_frames, :copy_ch]
-                if copy_ch < self.config.channels:
-                    # Если входных каналов всё равно меньше — копируем последний доступный канал
+                if copy_ch < actual_stream_channels:
+                    # Если входных каналов меньше — копируем последний доступный канал
                     last_col = min(data.shape[1], 1) - 1
                     fill_segment = data[:out_frames, last_col:last_col + 1]
-                    for ch in range(copy_ch, self.config.channels):
+                    for ch in range(copy_ch, actual_stream_channels):
                         outdata[:out_frames, ch] = fill_segment.squeeze(axis=1)
                 if out_frames < frames:
                     outdata[out_frames:, :] = 0
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка в audio callback: {e}")
+            logger.error(f"❌ Ошибка в audio callback: {e}", exc_info=True)
             outdata[:] = 0
 
     def reconfigure_channels(self, new_channels: int) -> bool:

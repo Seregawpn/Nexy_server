@@ -7,6 +7,8 @@
 
 ✅ **Фаза 0: Валидация текущих исправлений** — в процессе
 ✅ **Фаза 1: Минимальный кэш ошибок** — реализовано
+✅ **Фаза 2: Core Audio нотификации** — реализовано
+✅ **Фаза 3: Полная интеграция Core Audio** — реализовано
 
 ## Детальный статус
 
@@ -81,35 +83,61 @@ self._error_cache_lock = threading.RLock()
 
 ---
 
-### Фаза 2: Core Audio нотификации (опционально)
+### Фаза 2: Core Audio нотификации
 
-**Статус:** ⏸️ Не начато
+**Статус:** ✅ Реализовано
 
-**Зависимости:**
-- Фаза 0 должна быть завершена успешно
-- Фаза 1 должна быть протестирована
+**Выполнено:**
+- [x] Изучен PyObjC Core Audio API для подписки на `kAudioHardwarePropertyDefaultOutputDevice`
+- [x] Реализована обёртка для нотификаций в `CoreAudioManager`
+- [x] Заменен polling в `_output_monitor_loop()` на событийную реакцию (с fallback на polling)
+- [x] Интегрированы нотификации в `SequentialSpeechPlayer`
 
-**План:**
-- [ ] Изучить PyObjC Core Audio API для подписки на `kAudioHardwarePropertyDefaultOutputDevice`
-- [ ] Реализовать обёртку для нотификаций
-- [ ] Заменить polling в `_output_monitor_loop()` на событийную реакцию
-- [ ] Тестирование: переключение устройства в macOS → автоматический перезапуск потока
+**Детали реализации:**
+
+#### 1. Расширение CoreAudioManager (`modules/speech_playback/macos/core_audio.py`)
+- Добавлены методы `start_device_notifications()` и `stop_device_notifications()`
+- Реализована подписка на `kAudioHardwarePropertyDefaultOutputDevice` через PyObjC
+- Callback вызывается автоматически при смене default output устройства
+
+#### 2. Интеграция в SequentialSpeechPlayer (`modules/speech_playback/core/player.py`)
+- `_start_output_monitoring()` сначала пытается использовать Core Audio нотификации
+- Если нотификации недоступны - используется polling как fallback
+- `_on_device_changed_notification()` обрабатывает события от Core Audio
+
+**Тестирование:**
+- [ ] Тест 1: Переключение устройства в macOS → автоматический перезапуск потока
+- [ ] Тест 2: Нотификации работают корректно для BT устройств
+- [ ] Тест 3: Fallback на polling работает при недоступности Core Audio
 
 ---
 
-### Фаза 3: Полная интеграция Core Audio (если нужно)
+### Фаза 3: Полная интеграция Core Audio
 
-**Статус:** ⏸️ Не начато
+**Статус:** ✅ Реализовано
 
-**Зависимости:**
-- Фаза 2 должна быть завершена успешно
-- Должна быть необходимость в более точном контроле
+**Выполнено:**
+- [x] Расширен `CoreAudioManager` (аналог `MacOSAudioSession`) с полным доступом к Core Audio
+- [x] Вынесен resolver в отдельный класс `StreamConfigResolver`
+- [x] Интегрирован resolver в `SequentialSpeechPlayer`
+- [x] Все методы используют resolver для определения конфигурации
 
-**План:**
-- [ ] Реализовать `MacOSAudioSession` с полным доступом к Core Audio
-- [ ] Вынести resolver в отдельный класс
-- [ ] Интегрировать в `SequentialSpeechPlayer`
-- [ ] Тестирование: все сценарии работают без ошибок
+**Детали реализации:**
+
+#### 1. StreamConfigResolver (`modules/speech_playback/core/stream_config_resolver.py`)
+- Отдельный класс для определения конфигурации потока
+- Учитывает тип устройства (BT/обычное), историю ошибок, доступные параметры
+- Методы `resolve_stream_config()` и `cache_error_config()`
+
+#### 2. Интеграция в SequentialSpeechPlayer
+- `_stream_config_resolver` создается в `__init__()`
+- `_get_safe_stream_config()` использует resolver
+- `_cache_error_config()` использует resolver
+
+**Тестирование:**
+- [ ] Тест 1: Resolver корректно определяет конфигурацию для BT устройств
+- [ ] Тест 2: Resolver использует кэш ошибок при повторных подключениях
+- [ ] Тест 3: Все сценарии работают без ошибок
 
 ---
 

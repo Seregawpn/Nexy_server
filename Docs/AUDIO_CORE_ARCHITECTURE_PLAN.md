@@ -115,11 +115,21 @@
 
 **Детали:** См. `Docs/AUDIO_CORE_ARCHITECTURE_IMPLEMENTATION_STATUS.md`
 
-### ⏸️ Фаза 2: Core Audio нотификации (не начато)
-- Зависит от завершения Фазы 0
+### ✅ Фаза 2: Core Audio нотификации (реализовано)
+- Расширен `CoreAudioManager` для поддержки нотификаций через PyObjC
+- Реализована подписка на `kAudioHardwarePropertyDefaultOutputDevice`
+- Заменен polling в `_output_monitor_loop()` на событийную реакцию (с fallback)
+- Интегрированы нотификации в `SequentialSpeechPlayer`
 
-### ⏸️ Фаза 3: Полная интеграция Core Audio (не начато)
-- Зависит от завершения Фазы 2
+**Детали:** См. `Docs/AUDIO_CORE_ARCHITECTURE_IMPLEMENTATION_STATUS.md`
+
+### ✅ Фаза 3: Полная интеграция Core Audio (реализовано)
+- Расширен `CoreAudioManager` (аналог `MacOSAudioSession`) с полным доступом к Core Audio
+- Вынесен resolver в отдельный класс `StreamConfigResolver`
+- Интегрирован resolver в `SequentialSpeechPlayer`
+- Все методы используют resolver для определения конфигурации
+
+**Детали:** См. `Docs/AUDIO_CORE_ARCHITECTURE_IMPLEMENTATION_STATUS.md`
 
 ## Вывод
 
