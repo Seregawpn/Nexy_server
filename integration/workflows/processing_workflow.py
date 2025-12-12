@@ -259,7 +259,8 @@ class ProcessingWorkflow(BaseWorkflow):
         try:
             data = event.get("data", {})
             session_id = data.get("session_id")
-            screenshot_path = data.get("path")
+            # ✅ ИСПРАВЛЕНИЕ: Поддерживаем оба ключа (image_path и path) для обратной совместимости
+            screenshot_path = data.get("image_path") or data.get("path")
             
             logger.info(f"📸 ProcessingWorkflow: скриншот захвачен, path={screenshot_path}")
             
@@ -467,7 +468,14 @@ class ProcessingWorkflow(BaseWorkflow):
     async def _cancel_active_processes(self):
         """Отмена всех активных процессов через ЕДИНЫЙ канал прерывания"""
         try:
+            # ✅ КРИТИЧНО: Используем self.current_session_id как основной источник
+            # Если он None, это означает, что workflow уже завершен или не был запущен
+            # В этом случае не публикуем playback.cancelled, так как нет активной сессии
             session_id = self.current_session_id
+            
+            if session_id is None:
+                logger.warning(f"⚠️ ProcessingWorkflow: current_session_id=None, пропускаем публикацию playback.cancelled (workflow не активен)")
+                return
             
             # Отменяем gRPC запрос
             if not self.grpc_completed:
@@ -477,7 +485,8 @@ class ProcessingWorkflow(BaseWorkflow):
                     "reason": "user_interrupt"
                 })
             
-            # ЕДИНЫЙ канал прерывания аудио - публикуем playback.cancelled
+            # ✅ КРИТИЧНО: ЕДИНЫЙ канал прерывания аудио - публикуем playback.cancelled
+            # Гарантируем, что session_id всегда передается (проверено выше)
             if not self.playback_completed:
                 logger.info("⚙️ ProcessingWorkflow: останавливаем воспроизведение через ЕДИНЫЙ канал")
                 await self.event_bus.publish("playback.cancelled", {

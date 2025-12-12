@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 import numpy as np
@@ -74,6 +75,7 @@ class WelcomeMessageIntegration:
         self._permission_recheck_task: Optional[asyncio.Task] = None
         self._welcome_played = False
         self._welcome_lock = asyncio.Lock()
+        self._current_welcome_session_id: Optional[str] = None  # ✅ ИСПРАВЛЕНИЕ: Сохраняем session_id для проверки завершения
 
         # Блокировки по разрешениям отключены по умолчанию
         self._enforce_permissions = bool(
@@ -141,15 +143,18 @@ class WelcomeMessageIntegration:
 
                 logger.info("🚀 [WELCOME_INTEGRATION] Обработка события готовности к приветствию")
                 self._pending_welcome = True
-                self._welcome_played = True
+                # ✅ ИСПРАВЛЕНИЕ: НЕ устанавливаем _welcome_played здесь - только после успешной отправки аудио
 
                 if self.config.delay_sec > 0:
                     await asyncio.sleep(self.config.delay_sec)
 
                 try:
                     await self._play_welcome_message(trigger="system_ready")
+                    # ✅ ИСПРАВЛЕНИЕ: Устанавливаем _welcome_played только после успешного воспроизведения
+                    self._welcome_played = True
                 except Exception as e:
                     self._welcome_played = False
+                    logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка воспроизведения приветствия: {e}", exc_info=True)
                     raise
                 finally:
                     self._pending_welcome = False
@@ -165,6 +170,11 @@ class WelcomeMessageIntegration:
         """Воспроизводит приветственное сообщение"""
         try:
             logger.info(f"🎵 [WELCOME_INTEGRATION] Начинаю воспроизведение приветствия (trigger={trigger})")
+            
+            # ✅ КРИТИЧНО: Проверяем, не воспроизводится ли уже аудио
+            # Если да - ждём завершения перед началом приветствия
+            logger.info("🔍 [WELCOME_INTEGRATION] Проверяю, не воспроизводится ли уже аудио...")
+            await self._wait_for_active_playback_completion()
             
             # 🆕 ПЕРЕХОД В PROCESSING РЕЖИМ
             logger.info("🔄 [WELCOME_INTEGRATION] Переход в режим PROCESSING для приветствия")
@@ -185,13 +195,30 @@ class WelcomeMessageIntegration:
                     audio_data = self.welcome_player.get_audio_data()
                     if audio_data is not None:
                         logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration (async context)")
-                        await self._send_audio_to_playback(audio_data)
-                        
-                        # Ждём завершения воспроизведения
-                        logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
-                        await self._wait_for_playback_completion()
+                        # ✅ ИСПРАВЛЕНИЕ: Передаем trigger в _send_audio_to_playback
+                        try:
+                            await self._send_audio_to_playback(audio_data, trigger=trigger)
+                            
+                            # Ждём завершения воспроизведения
+                            logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
+                            await self._wait_for_playback_completion()
+                            
+                            # ✅ ИСПРАВЛЕНИЕ: Устанавливаем _welcome_played только после успешного воспроизведения
+                            self._welcome_played = True
+                        except Exception as e:
+                            logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка отправки/воспроизведения аудио: {e}", exc_info=True)
+                            self._welcome_played = False
+                            raise
                         
                         # Возвращаемся в SLEEPING режим
+                        # ✅ КРИТИЧНО: Проверяем, нет ли активной сессии воспроизведения перед переходом в SLEEPING
+                        current_session_id = self.state_manager.get_current_session_id()
+                        logger.debug(f"🔍 [WELCOME_INTEGRATION] Проверка перед SLEEPING: current_session_id={current_session_id}, _current_welcome_session_id={self._current_welcome_session_id}")
+                        if current_session_id is not None and current_session_id != self._current_welcome_session_id:
+                            logger.warning(f"⚠️ [WELCOME_INTEGRATION] Активная сессия {current_session_id} обнаружена, откладываем переход в SLEEPING (welcome_session={self._current_welcome_session_id})")
+                            # Не переключаем режим, если есть активная сессия (не приветствия)
+                            return
+                        
                         logger.info("🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING после приветствия")
                         await self.event_bus.publish("mode.request", {
                             "target": "SLEEPING",
@@ -200,16 +227,26 @@ class WelcomeMessageIntegration:
                         })
                     else:
                         logger.error("❌ [WELCOME_INTEGRATION] audio_data is None - не могу отправить в playback")
+                        self._welcome_played = False
             else:
                 logger.warning(f"⚠️ [WELCOME_INTEGRATION] Приветствие не удалось: {result.error}")
+                self._welcome_played = False
             
         except Exception as e:
             # 🆕 ВОЗВРАТ В SLEEPING ПРИ ОШИБКЕ (с задержкой для видимости)
+            # ✅ КРИТИЧНО: Проверяем, нет ли активной сессии воспроизведения перед переходом в SLEEPING
+            current_session_id = self.state_manager.get_current_session_id()
+            if current_session_id is not None and current_session_id != self._current_welcome_session_id:
+                logger.warning(f"⚠️ [WELCOME_INTEGRATION] Активная сессия {current_session_id} обнаружена, откладываем переход в SLEEPING из-за ошибки")
+                # Не переключаем режим, если есть активная сессия (не приветствия)
+                await self._handle_error(e, where="welcome.play_message", severity="warning")
+                return
+            
             logger.error("🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING из-за ошибки")
             await asyncio.sleep(0.5)  # Небольшая задержка для видимости изменения иконки
             await self.event_bus.publish("mode.request", {
                 "target": "SLEEPING",
-                "source": "welcome_message", 
+                "source": "welcome_message",
                 "reason": "welcome_error"
             })
             await self._handle_error(e, where="welcome.play_message", severity="warning")
@@ -238,6 +275,52 @@ class WelcomeMessageIntegration:
     def _on_welcome_error(self, error: str):
         """Коллбек ошибки воспроизведения приветствия (вызывается из sync контекста)"""
         logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка приветствия: {error}")
+    
+    async def _wait_for_active_playback_completion(self, timeout: float = 5.0):
+        """Ожидает завершения активного воспроизведения перед началом приветствия"""
+        try:
+            logger.info("🔍 [WELCOME_INTEGRATION] Проверяю активное воспроизведение...")
+            
+            # ✅ КРИТИЧНО: Проверяем через событие playback.completed
+            # Если в течение короткого времени приходит событие завершения (не приветствия),
+            # значит было активное воспроизведение, и мы должны подождать следующего завершения
+            playback_completed_recently = asyncio.Event()
+            active_playback_detected = False
+            
+            async def on_playback_completed(event):
+                """Обработчик события завершения воспроизведения"""
+                nonlocal active_playback_detected
+                try:
+                    pattern = event.get("data", {}).get("pattern")
+                    session_id = event.get("data", {}).get("session_id")
+                    # Игнорируем само приветствие
+                    if pattern != "welcome_message" and session_id != self._current_welcome_session_id:
+                        logger.info(f"🔍 [WELCOME_INTEGRATION] Обнаружено завершение активного воспроизведения (pattern={pattern}, session_id={session_id})")
+                        active_playback_detected = True
+                        playback_completed_recently.set()
+                except Exception as e:
+                    logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в обработчике playback.completed: {e}")
+            
+            # Подписываемся на событие
+            await self.event_bus.subscribe("playback.completed", on_playback_completed)
+            
+            try:
+                # Ждём короткое время, чтобы увидеть, завершится ли активное воспроизведение
+                try:
+                    await asyncio.wait_for(playback_completed_recently.wait(), timeout=0.5)
+                    # Если обнаружено завершение активного воспроизведения - ждём ещё немного,
+                    # чтобы убедиться, что нет других активных воспроизведений
+                    logger.info("⏳ [WELCOME_INTEGRATION] Обнаружено завершение активного воспроизведения, ждём ещё немного...")
+                    await asyncio.sleep(0.3)  # Небольшая задержка для проверки других воспроизведений
+                    logger.info("✅ [WELCOME_INTEGRATION] Активное воспроизведение завершено, можно начинать приветствие")
+                except asyncio.TimeoutError:
+                    # Нет активного воспроизведения
+                    logger.debug("🔍 [WELCOME_INTEGRATION] Активное воспроизведение не обнаружено, продолжаем приветствие")
+            finally:
+                await self.event_bus.unsubscribe("playback.completed", on_playback_completed)
+                
+        except Exception as e:
+            logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _wait_for_active_playback_completion: {e}")
             
     async def _wait_for_playback_completion(self):
         """Ожидает завершения воспроизведения приветствия"""
@@ -246,13 +329,24 @@ class WelcomeMessageIntegration:
             playback_completed = asyncio.Future()
             
             async def on_playback_event(event):
-                # Проверяем session_id или pattern
-                session_id = event.get("data", {}).get("session_id", "")
-                pattern = event.get("data", {}).get("pattern", "")
-                if "welcome" in session_id.lower() or "welcome" in pattern.lower():
-                    logger.info("🎵 [WELCOME_INTEGRATION] Получено событие завершения воспроизведения")
+                # ✅ ИСПРАВЛЕНИЕ: Проверяем session_id или pattern более точно
+                data = event.get("data", {}) or {}
+                session_id = data.get("session_id", "")
+                pattern = data.get("pattern", "")
+                
+                # Проверяем по сохранённому session_id или по pattern
+                matches = (
+                    (self._current_welcome_session_id and session_id == self._current_welcome_session_id) or
+                    "welcome_message" in str(session_id).lower() or
+                    "welcome_message" in str(pattern).lower()
+                )
+                
+                if matches:
+                    logger.info(f"🎵 [WELCOME_INTEGRATION] Получено событие завершения воспроизведения (session_id={session_id}, pattern={pattern})")
                     if not playback_completed.done():
                         playback_completed.set_result(True)
+                else:
+                    logger.debug(f"🔍 [WELCOME_INTEGRATION] Игнорируем playback.completed (session_id={session_id}, pattern={pattern}, ожидаем={self._current_welcome_session_id})")
             
             # Подписываемся на событие завершения воспроизведения
             await self.event_bus.subscribe("playback.completed", on_playback_event)
@@ -266,6 +360,8 @@ class WelcomeMessageIntegration:
             finally:
                 # Отписываемся от события
                 await self.event_bus.unsubscribe("playback.completed", on_playback_event)
+                # ✅ ИСПРАВЛЕНИЕ: Очищаем session_id после завершения
+                self._current_welcome_session_id = None
             
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _wait_for_playback_completion: {e}")
@@ -300,6 +396,13 @@ class WelcomeMessageIntegration:
                 # Отписываемся от события
                 await self.event_bus.unsubscribe("playback.completed", on_playback_completed)
             
+            # ✅ КРИТИЧНО: Проверяем, нет ли активной сессии воспроизведения перед переходом в SLEEPING
+            current_session_id = self.state_manager.get_current_session_id()
+            if current_session_id is not None and current_session_id != self._current_welcome_session_id:
+                logger.warning(f"⚠️ [WELCOME_INTEGRATION] Активная сессия {current_session_id} обнаружена, откладываем переход в SLEEPING")
+                # Не переключаем режим, если есть активная сессия (не приветствия)
+                return
+            
             logger.info("🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING после завершения воспроизведения")
             await self.event_bus.publish("mode.request", {
                 "target": "SLEEPING",
@@ -310,10 +413,10 @@ class WelcomeMessageIntegration:
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _return_to_sleeping_after_playback: {e}")
     
-    async def _send_audio_to_playback(self, audio_data: np.ndarray):
+    async def _send_audio_to_playback(self, audio_data: np.ndarray, trigger: str = "app_startup"):
         """Отправляет аудио данные в SpeechPlaybackIntegration для воспроизведения"""
         try:
-            logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration: {len(audio_data)} сэмплов")
+            logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration: {len(audio_data)} сэмплов (trigger={trigger})")
             
             # ОТЛАДКА: Проверяем формат данных
             logger.info(f"🔍 [WELCOME_INTEGRATION] Формат данных: dtype={audio_data.dtype}, shape={audio_data.shape}")
@@ -325,6 +428,8 @@ class WelcomeMessageIntegration:
             
             # ✅ ПРАВИЛЬНО: Передаем numpy массив напрямую в плеер
             # БЕЗ конвертации в bytes - плеер сам разберется с форматом
+            # ✅ ИСПРАВЛЕНИЕ: Добавляем session_id для корректной проверки завершения воспроизведения
+            session_id = f"welcome_message_{trigger}_{int(time.time())}"
             await self.event_bus.publish("playback.raw_audio", {
                 "audio_data": audio_data,  # numpy array
                 "sample_rate": sample_rate,
@@ -332,9 +437,13 @@ class WelcomeMessageIntegration:
                 "dtype": "int16",  # для информации
                 "priority": 5,  # Высокий приоритет для приветствия
                 "pattern": "welcome_message",
+                "session_id": session_id,  # ✅ ИСПРАВЛЕНИЕ: Добавляем session_id
                 "metadata": metadata,
                 "method": method,
             })
+            
+            # Сохраняем session_id для проверки завершения
+            self._current_welcome_session_id = session_id
             
             logger.info("✅ [WELCOME_INTEGRATION] Аудио отправлено в SpeechPlaybackIntegration")
             

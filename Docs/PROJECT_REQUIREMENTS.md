@@ -310,10 +310,10 @@
 - **Домен**: Logging
 - **Критичность**: MUST
 - **Описание**: Формат логов: `YYYY-MM-DD HH:MM:SS - Nexy - LEVEL - [session_id] - Message`. Структурированные события: `module.start|ok|fail` с session_id, duration_ms, контекстом.
-- **Источник**: `.cursorrules` раздел 8, `client/main.py`
+- **Источник**: `.cursorrules` раздел 8, `main.py`
 - **Owner**: Tech Lead клиента
 - **Ожидаемый результат**: Все логи в едином формате
-- **Implementation**: `client/main.py` (настройка логирования), все модули
+- **Implementation**: `main.py` (настройка логирования), все модули
 - **Verification**: Проверка формата логов, `Docs/AUDIO_LOGGING_CHECKLIST.md`
 
 ### REQ-027: Метрики с SLO порогами
@@ -373,7 +373,7 @@
 | REQ-023 | `.github/workflows/ci.yml`, `scripts/verify_*.py` | CI logs | Tech Lead клиента |
 | REQ-024 | `tests/test_gateways.py` | `pytest tests/test_gateways.py` | Tech Lead клиента |
 | REQ-025 | `scripts/verify_4_artifacts_invariant.py`, `scripts/verify_rule_coverage.py` | Скрипты проверки | Tech Lead клиента |
-| REQ-026 | `client/main.py`, все модули | Проверка формата логов | Tech Lead клиента |
+| REQ-026 | `main.py`, все модули | Проверка формата логов | Tech Lead клиента |
 | REQ-027 | `client/metrics/registry.md` | `tests/perf/test_slo.py` | Tech Lead клиента |
 | REQ-028 | `Docs/GLOBAL_DELIVERY_PLAN.md` | Ревью документа | Release/Delivery |
 

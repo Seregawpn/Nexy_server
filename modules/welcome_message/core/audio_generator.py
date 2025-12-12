@@ -48,6 +48,7 @@ class WelcomeAudioGenerator:
             return None
 
         try:
+            logger.info(f"🔍 [WELCOME_AUDIO] Вызываю client.generate_welcome_audio...")
             result = await client.generate_welcome_audio(
                 text=text,
                 voice=self.config.voice,
@@ -55,6 +56,7 @@ class WelcomeAudioGenerator:
                 server_name=self._grpc_server_name,
                 timeout=self._grpc_timeout,
             )
+            logger.info(f"🔍 [WELCOME_AUDIO] generate_welcome_audio вернул результат: keys={list(result.keys()) if result else None}")
             audio_array: Optional[np.ndarray] = result.get('audio')
             metadata = result.get('metadata', {})
             self._last_server_metadata = metadata

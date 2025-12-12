@@ -77,6 +77,8 @@ class QuartzKeyboardMonitor:
         self._long_sent = False
         # КРИТИЧНО: Флаг для предотвращения двойной обработки между flagsChanged и keyUp
         self._event_processed = False
+        # ✅ ИСПРАВЛЕНИЕ: Флаг "комбо завершено" для защиты от повторных событий
+        self._combo_completed = False
         self._last_event_timestamp = 0.0
 
         # Потоки
@@ -164,6 +166,10 @@ class QuartzKeyboardMonitor:
                             if self._long_sent:
                                 logger.debug(f"🔄 [RESET] Сбрасываем _long_sent (было True)")
                                 self._long_sent = False
+                            # ✅ ИСПРАВЛЕНИЕ: Сбрасываем флаг "комбо завершено" при сбросе Control
+                            if self._combo_completed:
+                                logger.debug(f"🔄 [RESET] Сбрасываем _combo_completed (было True)")
+                                self._combo_completed = False
                         
                         # ✅ FIX: Логируем изменение состояния для диагностики
                         logger.debug(f"🔍 FlagsChanged: Control (keycode={keycode}), control_pressed={control_pressed} (было {was_control_pressed})")
@@ -268,6 +274,8 @@ class QuartzKeyboardMonitor:
             self._long_sent = False
             self._event_processed = False
             self._last_event_timestamp = 0.0
+            # ✅ ИСПРАВЛЕНИЕ: Сбрасываем флаг "комбо завершено" при новой активации
+            self._combo_completed = False
             self.key_pressed = True  # Для совместимости с hold_monitor
             self.press_start_time = now
             
@@ -281,6 +289,10 @@ class QuartzKeyboardMonitor:
             
         elif not should_be_active and was_active:
             # Деактивация комбинации: одна из клавиш отпущена
+            # ✅ ИСПРАВЛЕНИЕ: Игнорируем деактивацию, если комбо уже завершено
+            if self._combo_completed:
+                logger.debug("🔒 [QUARTZ] Комбо уже завершено, игнорируем повторную деактивацию")
+                return
             # ✅ ПЛАН: Сбрасываем все состояния при деактивации
             logger.debug(f"🔄 [RESET] Деактивация комбинации: control_pressed={self._control_pressed}, n_pressed={self._n_pressed}")
             
@@ -294,6 +306,22 @@ class QuartzKeyboardMonitor:
                 return
             
             long_sent_snapshot = self._long_sent
+            # ✅ ИСПРАВЛЕНИЕ: Проверяем duration при деактивации - если >= long_press_threshold, но LONG_PRESS еще не отправлен,
+            # отправляем LONG_PRESS немедленно (fallback для случая, когда _run_hold_monitor не успел сработать)
+            should_be_long_press = duration >= self.long_press_threshold
+            if should_be_long_press and not long_sent_snapshot:
+                logger.info(f"🔑 [FALLBACK] LONG_PRESS обнаружен при деактивации: duration={duration:.3f}s >= threshold={self.long_press_threshold}s, но _long_sent=False - отправляем LONG_PRESS")
+                # Отправляем LONG_PRESS немедленно
+                ev_long = KeyEvent(
+                    key=self.key_to_monitor,
+                    event_type=KeyEventType.LONG_PRESS,
+                    timestamp=now,
+                    duration=duration,
+                )
+                self._trigger_event(KeyEventType.LONG_PRESS, duration, ev_long)
+                self._long_sent = True
+                long_sent_snapshot = True  # Обновляем snapshot для дальнейшей логики
+            
             # ✅ ПЛАН: Сбрасываем все связанные состояния
             self.key_pressed = False
             self.press_start_time = None
@@ -320,6 +348,11 @@ class QuartzKeyboardMonitor:
                 duration=duration,
             )
             self._trigger_event(event_type_out, duration, ev)
+            
+            # ✅ ИСПРАВЛЕНИЕ: Выставляем флаг "комбо завершено" после генерации SHORT_PRESS
+            if event_type_out == KeyEventType.SHORT_PRESS:
+                self._combo_completed = True
+                logger.debug("🔒 [QUARTZ] Комбо завершено (SHORT_PRESS), игнорируем последующие KeyUp/FlagsChanged")
             
             # RELEASE всегда отправляется после SHORT_PRESS
             if event_type_out != KeyEventType.RELEASE:
@@ -768,11 +801,15 @@ class QuartzKeyboardMonitor:
                     
                     if is_active and start_time:
                         duration = time.time() - start_time
+                        # ✅ ДИАГНОСТИКА: Логируем состояние для отслеживания LONG_PRESS detection
+                        if duration >= self.long_press_threshold * 0.8:  # Логируем когда близко к порогу
+                            logger.debug(f"🔍 HOLD_MONITOR: duration={duration:.3f}s, threshold={self.long_press_threshold}s, _long_sent={self._long_sent}, is_active={is_active}")
+                        
                         if not self._long_sent and duration >= self.long_press_threshold:
                             # КРИТИЧНО: Проверяем еще раз, что комбинация/клавиша все еще активна
                             is_still_active = self._combo_active if self._is_combo else self.key_pressed
                             if not is_still_active or not start_time:
-                                logger.debug(f"HOLD_MONITOR: комбинация/клавиша была отпущена во время проверки, пропускаем LONG_PRESS")
+                                logger.warning(f"⚠️ HOLD_MONITOR: комбинация/клавиша была отпущена во время проверки (duration={duration:.3f}s >= threshold={self.long_press_threshold}s), пропускаем LONG_PRESS - будет fallback при деактивации")
                                 continue
 
                             import threading

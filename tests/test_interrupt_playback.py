@@ -97,25 +97,43 @@ class TestInterruptPlayback:
 
     @pytest.mark.asyncio
     async def test_short_press_publishes_playback_cancelled_in_processing(
-        self, input_integration, state_manager, event_bus
+        self, input_integration, state_manager, event_bus, error_handler
     ):
-        """Тест: SHORT_PRESS в PROCESSING режиме публикует playback.cancelled"""
-        # Устанавливаем PROCESSING режим
-        state_manager.set_mode(AppMode.PROCESSING)
+        """Тест: SHORT_PRESS в PROCESSING режиме публикует interrupt.request, который обрабатывается через InterruptManagementIntegration"""
+        # ✅ ИЗМЕНЕНО: Тест проверяет новую логику через interrupt.request
         
-        # Устанавливаем pending_session_id для имитации состояния
+        # Устанавливаем PROCESSING режим
         # КРИТИЧНО: Используем числовой session_id (timestamp), так как _get_active_session_id() конвертирует в float
         test_session_id = 1234567890.0
+        state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
+        
+        # Устанавливаем pending_session_id для имитации состояния
         input_integration._pending_session_id = test_session_id
         input_integration._recording_started = False
-        # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
-        state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
+        input_integration._playback_active = True  # Имитируем активное воспроизведение
         
         # Мокируем keyboard_monitor, чтобы избежать реальной инициализации
         input_integration.keyboard_monitor = Mock()
         
         # Инициализируем необходимые атрибуты
         input_integration._min_recording_duration = 0.1
+        
+        # ✅ НОВОЕ: Инициализируем InterruptManagementIntegration для обработки interrupt.request
+        from integration.integrations.interrupt_management_integration import (
+            InterruptManagementIntegration,
+            InterruptManagementIntegrationConfig
+        )
+        interrupt_integration = InterruptManagementIntegration(
+            event_bus=event_bus,
+            state_manager=state_manager,
+            error_handler=error_handler,
+            config=InterruptManagementIntegrationConfig(
+                enable_speech_interrupts=True,
+                enable_recording_interrupts=True,
+                enable_session_interrupts=True,
+            )
+        )
+        await interrupt_integration.initialize()
         
         # Собираем опубликованные события
         published_events = []
@@ -125,7 +143,8 @@ class TestInterruptPlayback:
             payload = event.get("data") if isinstance(event, dict) else event
             published_events.append((event_type, payload))
         
-        # Подписываемся на playback.cancelled для проверки
+        # Подписываемся на interrupt.request и playback.cancelled для проверки
+        await event_bus.subscribe("interrupt.request", capture_event)
         await event_bus.subscribe("playback.cancelled", capture_event)
         
         # Создаем событие SHORT_PRESS
@@ -141,28 +160,42 @@ class TestInterruptPlayback:
         # Вызываем обработчик SHORT_PRESS
         await input_integration._handle_short_press(short_press_event)
         
-        # Даем время на обработку асинхронных событий
-        await asyncio.sleep(0.1)
+        # Даем время на обработку асинхронных событий (увеличено для обработки через InterruptManagementIntegration)
+        await asyncio.sleep(0.3)
         
-        # Проверяем, что playback.cancelled был опубликован
+        # Проверяем, что interrupt.request был опубликован
+        interrupt_request_events = [
+            (event_type, payload)
+            for event_type, payload in published_events
+            if event_type == "interrupt.request"
+        ]
+        
+        assert len(interrupt_request_events) > 0, f"interrupt.request должен быть опубликован. Полученные события: {published_events}"
+        
+        # Проверяем, что playback.cancelled был опубликован через InterruptManagementIntegration
         playback_cancelled_events = [
             (event_type, payload)
             for event_type, payload in published_events
-            if event_type == "playback.cancelled" or (isinstance(payload, dict) and payload.get("reason") == "keyboard")
+            if event_type == "playback.cancelled"
         ]
         
-        assert len(playback_cancelled_events) > 0, f"playback.cancelled должен быть опубликован. Полученные события: {published_events}"
+        assert len(playback_cancelled_events) > 0, f"playback.cancelled должен быть опубликован через InterruptManagementIntegration. Полученные события: {published_events}"
         
-        # Проверяем содержимое события
+        # Проверяем содержимое события playback.cancelled
         event_type, payload = playback_cancelled_events[0]
         if isinstance(payload, dict):
-            assert payload.get("reason") == "keyboard"
-            assert payload.get("source") == "input_processing"
-            # КРИТИЧНО: Проверяем как числовой, так и строковый формат (state_manager хранит строки, _get_active_session_id конвертирует в float)
+            assert payload.get("reason") == "user_interrupt" or payload.get("source") == "interrupt_management", f"playback.cancelled должен быть опубликован через InterruptManagementIntegration. Получен: {payload}"
+            # КРИТИЧНО: Проверяем как числовой, так и строковый формат
             session_id = payload.get("session_id")
             assert session_id == test_session_id or session_id == str(test_session_id), f"session_id должен быть {test_session_id} или {str(test_session_id)}, получен {session_id}"
         
-        logger.info("✅ Тест пройден: playback.cancelled опубликован при SHORT_PRESS в PROCESSING")
+        # Cleanup
+        try:
+            await interrupt_integration.stop()
+        except Exception:
+            pass
+        
+        logger.info("✅ Тест пройден: interrupt.request опубликован, playback.cancelled опубликован через InterruptManagementIntegration")
 
     @pytest.mark.asyncio
     async def test_speech_playback_handles_interrupt_idempotently(

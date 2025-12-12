@@ -45,7 +45,6 @@ lipo -info resources/ffmpeg/ffmpeg
 
 ### Быстрый старт:
 ```bash
-cd client
 ./packaging/build_final.sh
 ```
 

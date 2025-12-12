@@ -188,10 +188,15 @@ class GrpcClientIntegration:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             text = data.get("text")
+            logger.info(f"🔍 [gRPC] _on_voice_completed вызван: session_id={sid}, text={'present' if text else 'missing'}, text_length={len(text) if text else 0}")
+            
             if not sid or not text:
+                logger.warning(f"⚠️ [gRPC] _on_voice_completed: пропуск - session_id={sid}, text={'present' if text else 'missing'}")
                 return
+            
             sess = self._sessions.setdefault(sid, {})
             sess['text'] = text
+            logger.info(f"✅ [gRPC] Текст сохранён в сессию {sid}: '{text[:50]}...' (длина: {len(text)})")
             await self._maybe_send(sid)
         except Exception as e:
             await self._handle_error(e, where="grpc.on_voice_completed", severity="warning")
@@ -286,26 +291,39 @@ class GrpcClientIntegration:
     async def _maybe_send(self, session_id):
         """Если есть текст — запускаем отправку; скриншот ждём коротко."""
         sess = self._sessions.get(session_id) or {}
-        if not sess.get('text'):
+        text = sess.get('text')
+        screenshot_path = sess.get('screenshot_path')
+        
+        logger.info(f"🔍 [gRPC] _maybe_send вызван для session_id={session_id}: text={'present' if text else 'missing'}, screenshot={'present' if screenshot_path else 'missing'}")
+        
+        if not text:
+            logger.warning(f"⚠️ [gRPC] _maybe_send: нет текста для session_id={session_id}, пропуск отправки")
             return
 
         # Уже отправляем? — не дублируем
         if session_id in self._inflight:
+            logger.info(f"ℹ️ [gRPC] _maybe_send: запрос уже в процессе для session_id={session_id}, пропуск дублирования")
             return
 
         # Сеть: если явно оффлайн и включена сет.защелка — не отправляем
         if self.config.use_network_gate and self._network_connected is False:
+            logger.warning(f"⚠️ [gRPC] _maybe_send: сеть оффлайн, пропуск отправки для session_id={session_id}")
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "offline"})
             return
 
+        logger.info(f"✅ [gRPC] _maybe_send: запускаем отправку для session_id={session_id}, текст: '{text[:50]}...'")
+        
         async def _delayed_send():
             try:
                 # Ждём скриншот небольшую паузу, если его ещё нет
                 if not sess.get('screenshot_path') and self.config.aggregate_timeout_sec > 0:
+                    logger.info(f"⏳ [gRPC] Ожидание скриншота {self.config.aggregate_timeout_sec} сек для session_id={session_id}")
                     try:
                         await asyncio.sleep(self.config.aggregate_timeout_sec)
                     except asyncio.CancelledError:
+                        logger.warning(f"⚠️ [gRPC] _delayed_send отменён для session_id={session_id}")
                         return
+                logger.info(f"🚀 [gRPC] Вызываем _send для session_id={session_id}")
                 await self._send(session_id)
             finally:
                 self._inflight.pop(session_id, None)
@@ -313,24 +331,34 @@ class GrpcClientIntegration:
         task = asyncio.create_task(_delayed_send())
         self._cancel_notified.discard(session_id)
         self._inflight[session_id] = task
+        logger.info(f"✅ [gRPC] Задача отправки создана для session_id={session_id}")
 
     async def _send(self, session_id):
         sess = self._sessions.get(session_id) or {}
         text = sess.get('text')
+        screenshot_path = sess.get('screenshot_path')
+        
+        logger.info(f"🔍 [gRPC] _send вызван для session_id={session_id}: text={'present' if text else 'missing'}, screenshot={'present' if screenshot_path else 'missing'}")
+        
         if not text:
+            logger.error(f"❌ [gRPC] _send: нет текста для session_id={session_id}, пропуск отправки")
             return
+        
+        logger.info(f"✅ [gRPC] _send: текст найден для session_id={session_id}: '{text[:50]}...' (длина: {len(text)})")
+        
         # Получаем hardware_id
+        logger.info(f"🔍 [gRPC] Получение hardware_id для session_id={session_id}")
         hwid = await self._await_hardware_id(timeout_ms=3000)
         if not hwid:
-            logger.warning(f"Hardware ID not available for session {session_id} - requesting explicitly")
+            logger.warning(f"⚠️ [gRPC] Hardware ID not available for session {session_id} - requesting explicitly")
             await self.event_bus.publish("hardware.id_request", {"request_id": f"grpc-{session_id}", "wait_ready": True})
             hwid = await self._await_hardware_id(timeout_ms=3000, request_id=f"grpc-{session_id}")
         if not hwid:
-            logger.error(f"No Hardware ID available for gRPC request - session {session_id}")
+            logger.error(f"❌ [gRPC] No Hardware ID available for gRPC request - session {session_id}")
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "no_hardware_id"})
             return
         
-        logger.info(f"Using Hardware ID: {hwid[:8]}... for session {session_id}")
+        logger.info(f"✅ [gRPC] Using Hardware ID: {hwid[:8]}... for session {session_id}")
 
         # Кодируем скриншот (если есть)
         screenshot_b64 = None
@@ -371,7 +399,8 @@ class GrpcClientIntegration:
 
         # Стримим ответы
         try:
-            logger.info(f"Starting gRPC stream for session {session_id} with prompt: '{text[:50]}...'")
+            logger.info(f"🚀 [gRPC] Starting gRPC stream for session {session_id}")
+            logger.info(f"📤 [gRPC] Параметры запроса: prompt='{text[:50]}...' (длина: {len(text)}), screenshot={'present' if screenshot_b64 else 'missing'}, hardware_id={hwid[:8]}...")
             got_terminal = False
             chunk_count = 0
             async for resp in self._client.stream_audio(

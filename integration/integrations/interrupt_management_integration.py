@@ -291,26 +291,45 @@ class InterruptManagementIntegration:
     async def _on_interrupt_request(self, event):
         """Обработка запроса на прерывание"""
         try:
-            # ✅ FIX: Получаем type из event или определяем по reason/source
-            interrupt_type = event.get("type")
-            priority = event.get("priority", InterruptPriority.NORMAL)
-            source = event.get("source", "unknown")
+            # ✅ КРИТИЧНО: EventBus создает событие со структурой {"type": "interrupt.request", "data": {...}}
+            # Поэтому type, source, reason и другие поля находятся в data, а не в корне события
             data = event.get("data", {})
-            reason = event.get("reason", "")
+            if not data and isinstance(event, dict):
+                # Если data пустой, возможно данные в корне события (для обратной совместимости)
+                data = {k: v for k, v in event.items() if k not in ("type", "timestamp")}
+            
+            # ✅ FIX: Получаем type из data, а не из корня события
+            interrupt_type = data.get("type")
+            priority = data.get("priority", InterruptPriority.NORMAL)
+            source = data.get("source", "unknown")
+            reason = data.get("reason", "")
             
             # ✅ FIX: Если type не указан, определяем по reason или source
             if not interrupt_type:
-                # Определяем тип прерывания по reason или source
-                if reason == "user_interrupt" or source == "keyboard":
-                    interrupt_type = InterruptType.SESSION_CLEAR  # Очистка сессии при прерывании пользователем
-                elif "recording" in reason.lower() or "recording" in source.lower():
+                # ✅ КРИТИЧНО: Проверяем режим приложения для определения типа прерывания
+                # Если режим PROCESSING, вероятно активно воспроизведение - используем SPEECH_STOP
+                current_mode = None
+                if self.state_manager:
+                    try:
+                        current_mode = self.state_manager.get_current_mode()
+                    except Exception:
+                        pass
+                
+                # Определяем тип прерывания по reason, source или режиму
+                if "recording" in reason.lower() or "recording" in source.lower():
                     interrupt_type = InterruptType.RECORDING_STOP
                 elif "speech" in reason.lower() or "playback" in source.lower():
                     interrupt_type = InterruptType.SPEECH_STOP
+                elif current_mode == AppMode.PROCESSING:
+                    # ✅ КРИТИЧНО: В режиме PROCESSING обычно активно воспроизведение - прерываем речь
+                    interrupt_type = InterruptType.SPEECH_STOP
+                    logger.debug(f"🔍 InterruptManagement: режим PROCESSING, используем SPEECH_STOP для прерывания воспроизведения")
+                elif reason == "user_interrupt" or source == "keyboard":
+                    interrupt_type = InterruptType.SESSION_CLEAR  # Очистка сессии при прерывании пользователем
                 else:
                     # По умолчанию - очистка сессии
                     interrupt_type = InterruptType.SESSION_CLEAR
-                    logger.debug(f"⚠️ Interrupt type не указан, используем SESSION_CLEAR по умолчанию (reason={reason}, source={source})")
+                    logger.debug(f"⚠️ Interrupt type не указан, используем SESSION_CLEAR по умолчанию (reason={reason}, source={source}, mode={current_mode})")
             
             # ✅ FIX: Проверяем что interrupt_type валидный
             if isinstance(interrupt_type, str):
@@ -326,7 +345,7 @@ class InterruptManagementIntegration:
                 priority=InterruptPriority(priority) if isinstance(priority, str) else priority,
                 source=source,
                 timestamp=asyncio.get_event_loop().time(),
-                data={**data, "reason": reason}  # ✅ FIX: Добавляем reason в data
+                data={**data, "reason": reason, "session_id": data.get("session_id")}  # ✅ FIX: Добавляем reason и session_id в data
             )
             
             # Отправляем на обработку
@@ -369,7 +388,27 @@ class InterruptManagementIntegration:
         try:
             logger.info("Handling speech stop interrupt")
             
-            # Публикуем событие остановки речи
+            # ✅ КРИТИЧНО: Получаем session_id из state_manager для остановки воспроизведения
+            current_session_id = None
+            if self.state_manager:
+                try:
+                    current_session_id = self.state_manager.get_current_session_id()
+                except Exception as e:
+                    logger.debug(f"Could not get session_id from state_manager: {e}")
+            
+            # ✅ КРИТИЧНО: Публикуем playback.cancelled для остановки воспроизведения
+            # SpeechPlaybackIntegration подписан на playback.cancelled и остановит воспроизведение
+            if self.event_bus:
+                await self.event_bus.publish("playback.cancelled", {
+                    "session_id": current_session_id,
+                    "source": interrupt_event.source or "interrupt_management",
+                    "reason": interrupt_event.data.get("reason", "user_interrupt"),
+                    "interrupt_id": id(interrupt_event),
+                    "timestamp": interrupt_event.timestamp
+                })
+                logger.info(f"🛑 InterruptManagement: playback.cancelled опубликовано для остановки воспроизведения (session_id={current_session_id})")
+            
+            # Публикуем событие остановки речи (для обратной совместимости)
             if self.event_bus:
                 await self.event_bus.publish("speech.stop_requested", {
                     "interrupt_id": id(interrupt_event),
@@ -389,11 +428,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Speech stopped successfully"
+            return True  # ✅ КРИТИЧНО: Возвращаем True для успешного выполнения
             
         except Exception as e:
             logger.error(f"Error handling speech stop: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ КРИТИЧНО: Возвращаем False при ошибке
     
     async def _handle_speech_pause(self, interrupt_event: InterruptEvent):
         """Обработка паузы речи"""
@@ -410,11 +451,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Speech paused successfully"
+            return True  # ✅ КРИТИЧНО: Возвращаем True для успешного выполнения
             
         except Exception as e:
             logger.error(f"Error handling speech pause: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ КРИТИЧНО: Возвращаем False при ошибке
     
     async def _handle_recording_stop(self, interrupt_event: InterruptEvent):
         """Обработка остановки записи"""
@@ -441,11 +484,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Recording stopped successfully"
+            return True  # ✅ КРИТИЧНО: Возвращаем True для успешного выполнения
             
         except Exception as e:
             logger.error(f"Error handling recording stop: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ КРИТИЧНО: Возвращаем False при ошибке
     
     async def _handle_session_clear(self, interrupt_event: InterruptEvent):
         """Обработка очистки сессии"""
@@ -472,11 +517,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Session cleared successfully"
+            return True  # ✅ КРИТИЧНО: Возвращаем True для успешного выполнения
             
         except Exception as e:
             logger.error(f"Error handling session clear: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ КРИТИЧНО: Возвращаем False при ошибке
     
     async def _handle_full_reset(self, interrupt_event: InterruptEvent):
         """Обработка полного сброса"""
@@ -506,11 +553,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Full reset completed successfully"
+            return True  # ✅ КРИТИЧНО: Возвращаем True для успешного выполнения
             
         except Exception as e:
             logger.error(f"Error handling full reset: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ КРИТИЧНО: Возвращаем False при ошибке
     
     async def _cancel_all_interrupts(self):
         """Отмена всех активных прерываний"""

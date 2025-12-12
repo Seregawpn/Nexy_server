@@ -255,7 +255,14 @@ class SignalIntegration:
                 )
                 return
             
-            logger.info("Signals: ERROR (failure event)")
+            # ✅ УЛУЧШЕНИЕ: Более информативный лог при ошибке распознавания
+            event_type = event.get("type", "unknown")
+            error_data = event.get("data", {})
+            error_msg = error_data.get("error", "unknown error")
+            session_id = error_data.get("session_id")
+            
+            logger.warning(f"⚠️ Signals: ERROR (failure event: {event_type}, error={error_msg}, session={session_id})")
+            logger.warning(f"⚠️ Signals: Публикуем ERROR сигнал для уведомления пользователя")
             await self._service.emit(SignalRequest(pattern=SignalPattern.ERROR, kind=SignalKind.AUDIO))
         except Exception as e:
             logger.debug(f"SignalIntegration _on_error_like error: {e}")

@@ -10,7 +10,7 @@
 Просто запустите:
 
 ```bash
-cd client
+# Из корня репозитория (где лежит main.py)
 ./packaging/build_final.sh
 ```
 
@@ -155,4 +155,3 @@ python3 scripts/smoke_test_universal_app.py dist/Nexy.app
 - ✅ `dist/Nexy.pkg` - Universal 2 (arm64 + x86_64), нотаризован
 
 Оба артефакта готовы к распространению и тестированию!
-

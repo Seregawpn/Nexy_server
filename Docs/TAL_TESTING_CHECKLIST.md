@@ -66,7 +66,7 @@
    ```bash
    open -a /Applications/Nexy.app
    # или
-   python3 client/main.py
+   python3 main.py
    ```
 
 3. Выдать разрешения TCC (микрофон, экран, доступность)
@@ -303,8 +303,7 @@ log show --style compact --last 5m --predicate 'process == "runningboardd" AND e
 
 ## Примечания
 
-- Все тесты должны выполняться на реальном `.app` bundle, а не только через `python3 client/main.py`.
+- Все тесты должны выполняться на реальном `.app` bundle, а не только через `python3 main.py`.
 - Разница в поведении между терминалом и `.app` bundle была одной из причин проблемы.
 - Для сценария 3 и 4 можно использовать временные `raise` или специальный feature flag для тестирования.
-
 
