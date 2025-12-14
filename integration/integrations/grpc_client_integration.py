@@ -132,6 +132,7 @@ class GrpcClientIntegration:
 
             # Подписки
             await self.event_bus.subscribe("voice.recognition_completed", self._on_voice_completed, EventPriority.HIGH)
+            await self.event_bus.subscribe("voice.recognition_failed", self._on_voice_failed, EventPriority.HIGH)
             await self.event_bus.subscribe("screenshot.captured", self._on_screenshot_captured, EventPriority.HIGH)
             await self.event_bus.subscribe("hardware.id_obtained", self._on_hardware_id, EventPriority.HIGH)
             await self.event_bus.subscribe("hardware.id_response", self._on_hardware_id_response, EventPriority.HIGH)
@@ -188,6 +189,25 @@ class GrpcClientIntegration:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             text = data.get("text")
+            # #region agent log
+            import json
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "C",
+                        "location": "grpc_client_integration.py:186",
+                        "message": "_on_voice_completed called",
+                        "data": {
+                            "session_id": sid,
+                            "text_present": bool(text),
+                            "text_length": len(text) if text else 0
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + "\n")
+            except: pass
+            # #endregion
             logger.info(f"🔍 [gRPC] _on_voice_completed вызван: session_id={sid}, text={'present' if text else 'missing'}, text_length={len(text) if text else 0}")
             
             if not sid or not text:
@@ -200,6 +220,45 @@ class GrpcClientIntegration:
             await self._maybe_send(sid)
         except Exception as e:
             await self._handle_error(e, where="grpc.on_voice_completed", severity="warning")
+
+    async def _on_voice_failed(self, event):
+        """Обработка voice.recognition_failed - отправляем запрос на сервер даже без текста"""
+        try:
+            data = (event or {}).get("data", {})
+            sid = data.get("session_id")
+            error = data.get("error", "unknown")
+            # #region agent log
+            import json
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "D",
+                        "location": "grpc_client_integration.py:_on_voice_failed",
+                        "message": "_on_voice_failed called",
+                        "data": {
+                            "session_id": sid,
+                            "error": error,
+                            "should_send_empty": True
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + "\n")
+            except: pass
+            # #endregion
+            logger.info(f"🔍 [gRPC] _on_voice_failed вызван: session_id={sid}, error={error}")
+            
+            if not sid:
+                logger.warning(f"⚠️ [gRPC] _on_voice_failed: пропуск - нет session_id")
+                return
+            
+            # Сохраняем пустой текст для отправки на сервер
+            sess = self._sessions.setdefault(sid, {})
+            sess['text'] = ""  # Пустой текст для отправки на сервер
+            logger.info(f"✅ [gRPC] Пустой текст сохранён в сессию {sid} для отправки на сервер (recognition_failed)")
+            await self._maybe_send(sid)
+        except Exception as e:
+            await self._handle_error(e, where="grpc.on_voice_failed", severity="warning")
 
     async def _on_screenshot_captured(self, event):
         try:
@@ -289,14 +348,37 @@ class GrpcClientIntegration:
 
     # ---------------- Core logic ----------------
     async def _maybe_send(self, session_id):
-        """Если есть текст — запускаем отправку; скриншот ждём коротко."""
+        """Если есть текст (или пустой текст после recognition_failed) — запускаем отправку; скриншот ждём коротко."""
         sess = self._sessions.get(session_id) or {}
         text = sess.get('text')
         screenshot_path = sess.get('screenshot_path')
         
+        # #region agent log
+        import json
+        try:
+            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "D",
+                    "location": "grpc_client_integration.py:291",
+                    "message": "_maybe_send called",
+                    "data": {
+                        "session_id": session_id,
+                        "text_present": bool(text),
+                        "text_length": len(text) if text else 0,
+                        "text_is_empty": text == "",
+                        "screenshot_present": bool(screenshot_path)
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + "\n")
+        except: pass
+        # #endregion
+        
         logger.info(f"🔍 [gRPC] _maybe_send вызван для session_id={session_id}: text={'present' if text else 'missing'}, screenshot={'present' if screenshot_path else 'missing'}")
         
-        if not text:
+        # Изменено: разрешаем отправку даже с пустым текстом (после recognition_failed)
+        if text is None:
             logger.warning(f"⚠️ [gRPC] _maybe_send: нет текста для session_id={session_id}, пропуск отправки")
             return
 

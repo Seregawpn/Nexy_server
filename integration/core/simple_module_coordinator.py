@@ -114,6 +114,10 @@ class SimpleModuleCoordinator:
     async def initialize(self) -> bool:
         """Инициализация всех компонентов и интеграций"""
         try:
+            # 🔍 ДИАГНОСТИКА: Логируем в начале initialize()
+            logger.info("🔍 [DIAG] coordinator.initialize() - НАЧАЛО")
+            print("🔍 [DIAG] coordinator.initialize() - НАЧАЛО")
+            
             print("\n" + "="*60)
             print("🚀 SIMPLE MODULE COORDINATOR - ИНИЦИАЛИЗАЦИЯ")
             print("="*60)
@@ -473,10 +477,47 @@ class SimpleModuleCoordinator:
             if self.permissions_queue:
                 await self.permissions_queue.initialize()
 
+            # ✅ КРИТИЧНО: Сначала инициализируем voice_recognition, чтобы получить AVFAudioEngine
+            avf_engine = None
+            if 'voice_recognition' in self.integrations:
+                voice_integration = self.integrations['voice_recognition']
+                # 🔍 ДИАГНОСТИКА: Логируем перед вызовом voice_integration.initialize()
+                logger.info("🔍 [DIAG] _initialize_integrations() - ПЕРЕД voice_integration.initialize()")
+                print(f"🔧 Инициализация voice_recognition...")
+                success = await voice_integration.initialize()
+                # 🔍 ДИАГНОСТИКА: Логируем после вызова voice_integration.initialize()
+                logger.info(f"🔍 [DIAG] _initialize_integrations() - ПОСЛЕ voice_integration.initialize(), success={success}")
+                print(f"🔍 [DIAG] _initialize_integrations() - ПОСЛЕ voice_integration.initialize(), success={success}")
+                if not success:
+                    print(f"❌ Ошибка инициализации voice_recognition")
+                    raise Exception(f"Failed to initialize voice_recognition")
+                print(f"✅ voice_recognition инициализирован")
+                # Получаем AVFAudioEngine из VoiceRecognitionIntegration
+                if hasattr(voice_integration, '_avf_engine'):
+                    if voice_integration._avf_engine is not None:
+                        avf_engine = voice_integration._avf_engine
+                        print(f"✅ AVFAudioEngine получен из VoiceRecognitionIntegration")
+                    else:
+                        print(f"⚠️ VoiceRecognitionIntegration._avf_engine = None (не создан)")
+                        logger.warning("⚠️ [COORDINATOR] VoiceRecognitionIntegration._avf_engine = None (не создан)")
+                else:
+                    print(f"⚠️ VoiceRecognitionIntegration не имеет атрибута _avf_engine")
+                    logger.warning("⚠️ [COORDINATOR] VoiceRecognitionIntegration не имеет атрибута _avf_engine")
+
             # Затем инициализируем остальные интеграции
             for name, integration in self.integrations.items():
+                # Пропускаем voice_recognition, так как он уже инициализирован
+                if name == 'voice_recognition':
+                    continue
+                    
                 print(f"🔧 Инициализация {name}...")
-                success = await integration.initialize()
+                
+                # ✅ КРИТИЧНО: Передаём AVFAudioEngine в SpeechPlaybackIntegration
+                if name == 'speech_playback' and avf_engine is not None:
+                    success = await integration.initialize(avf_engine=avf_engine)
+                else:
+                    success = await integration.initialize()
+                    
                 if not success:
                     print(f"❌ Ошибка инициализации {name}")
                     raise Exception(f"Failed to initialize {name}")
@@ -869,9 +910,18 @@ class SimpleModuleCoordinator:
             
             _app_running = True
             self._begin_launch_activity()
+            
+            # 🔍 ДИАГНОСТИКА: Логируем перед вызовом initialize()
+            logger.info("🔍 [DIAG] coordinator.run() - ПЕРЕД вызовом initialize()")
+            print("🔍 [DIAG] coordinator.run() - ПЕРЕД вызовом initialize()")
                 
             # Инициализируем
             success = await self.initialize()
+            
+            # 🔍 ДИАГНОСТИКА: Логируем после вызова initialize()
+            logger.info(f"🔍 [DIAG] coordinator.run() - ПОСЛЕ вызова initialize(), success={success}")
+            print(f"🔍 [DIAG] coordinator.run() - ПОСЛЕ вызова initialize(), success={success}")
+            
             if not success:
                 print("❌ Не удалось инициализировать компоненты")
                 return

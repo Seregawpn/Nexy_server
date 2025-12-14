@@ -85,8 +85,10 @@ class InputProcessingIntegration:
         self._playback_active: bool = False
         self._playback_waiters: List[asyncio.Future] = []
         self._last_playback_stop_ts: float = time.monotonic()
+        self._last_playback_start_ts: float = 0.0  # ✅ КРИТИЧНО: Время последнего playback.started
         self._playback_wait_timeout: float = max(0.5, float(self.config.playback_wait_timeout_sec))
         self._playback_idle_grace: float = max(0.0, float(self.config.playback_idle_grace_sec))
+        self._playback_grace_period: float = 10.0  # ✅ КРИТИЧНО: Период грации для проверки активного воспроизведения (10 секунд)
         self._recording_prestart_delay: float = max(0.0, float(self.config.recording_prestart_delay_sec))
         # ✅ ЭТАП 1: Удаляем _mic_active - используем state_manager.is_microphone_active() вместо этого
         # self._mic_active: bool = False  # УДАЛЕНО - используем state_manager
@@ -112,6 +114,10 @@ class InputProcessingIntegration:
         self._voice_stop_at: float = 0.0  # Время последней публикации voice.recording_stop (time.monotonic())
         self._voice_stop_debounce_sec: float = 0.2  # 200мс debounce
         self._voice_stop_published: bool = False  # Флаг для отслеживания публикации
+        
+        # ✅ ЗАЩИТА ОТ ПОВТОРНОЙ АКТИВАЦИИ: Cooldown период после завершения обработки
+        self._last_processing_completed_at: float = 0.0  # Время последнего завершения обработки (time.monotonic())
+        self._processing_cooldown_sec: float = 0.5  # 500мс cooldown после завершения обработки
         
     async def initialize(self) -> bool:
         """Инициализация input_processing (клавиатура)"""
@@ -202,12 +208,97 @@ class InputProcessingIntegration:
         """Начало удержания: готовим сессию, но не открываем микрофон (until LONG_PRESS)."""
         print(f"🎤🎤🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
+        # #region agent log
+        import json
+        try:
+            current_mode = self.state_manager.get_current_mode() if hasattr(self.state_manager, 'get_current_mode') else None
+            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:201", "message": "PRESS received", "data": {"input_state": self._input_state.name, "current_mode": str(current_mode), "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "pending_session_id": self._pending_session_id, "active_session_id": self._get_active_session_id()}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except: pass
+        # #endregion
         try:
             logger.info(f"🎤 PTT: keyDown({event.key}) → PRESS, timestamp={event.timestamp}")
             
-            # ✅ ЭТАП 3.1: Debounce для PRESS - игнорируем если предыдущий PRESS был менее 0.1s назад
+            # ✅ ЗАЩИТА ОТ ПОВТОРНОЙ АКТИВАЦИИ: Проверка cooldown периода после завершения обработки
             now = time.monotonic()
+            time_since_processing_completed = now - self._last_processing_completed_at
+            # #region agent log
+            try:
+                current_mode = self.state_manager.get_current_mode() if hasattr(self.state_manager, 'get_current_mode') else None
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:220", "message": "PRESS cooldown check", "data": {"time_since_processing_completed": time_since_processing_completed, "cooldown_sec": self._processing_cooldown_sec, "current_mode": str(current_mode), "playback_active": self._playback_active, "grpc_session": self._active_grpc_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+            if time_since_processing_completed < self._processing_cooldown_sec:
+                logger.warning(f"🔒 PRESS blocked by cooldown: {time_since_processing_completed*1000:.1f}ms < {self._processing_cooldown_sec*1000:.0f}ms после завершения обработки, игнорируем")
+                # #region agent log
+                try:
+                    with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:224", "message": "PRESS blocked by cooldown", "data": {"time_since_processing_completed": time_since_processing_completed, "cooldown_sec": self._processing_cooldown_sec}, "timestamp": int(time.time() * 1000)}) + "\n")
+                except: pass
+                # #endregion
+                return
+            
+            # ✅ КРИТИЧНО: Блокируем PRESS во время активного воспроизведения ИЛИ если микрофон активен
+            # PRESS не должен обрабатываться во время воспроизведения, чтобы предотвратить случайную активацию микрофона
+            # Также блокируем, если микрофон физически активен (даже если _playback_active еще не установлен)
+            # LONG_PRESS обрабатывается отдельно и может прервать воспроизведение без предварительного PRESS
+            mic_active = self.state_manager.is_microphone_active()
+            # ✅ КРИТИЧНО: Проверяем не только _playback_active, но и _last_playback_start_ts
+            # Это предотвращает активацию микрофона во время воспроизведения, даже если _playback_active был сброшен преждевременно
+            now = time.monotonic()
+            time_since_playback_start = now - self._last_playback_start_ts if self._last_playback_start_ts > 0 else float('inf')
+            is_playback_recently_started = time_since_playback_start < self._playback_grace_period
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:247", "message": "_handle_press: checking playback_active", "data": {"playback_active": self._playback_active, "mic_active": mic_active, "last_playback_start_ts": self._last_playback_start_ts, "time_since_playback_start": time_since_playback_start, "is_playback_recently_started": is_playback_recently_started, "playback_grace_period": self._playback_grace_period}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+            if self._playback_active or is_playback_recently_started or mic_active:
+                logger.warning(f"🔒 PRESS blocked: воспроизведение активно (playback_active={self._playback_active}, recently_started={is_playback_recently_started}) или микрофон активен (mic_active={mic_active}), игнорируем. Для прерывания используйте LONG_PRESS.")
+                # #region agent log
+                try:
+                    with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:240", "message": "PRESS blocked during playback or mic active", "data": {"playback_active": self._playback_active, "mic_active": mic_active, "grpc_session": self._active_grpc_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+                except: pass
+                # #endregion
+                return
+            
+            # ✅ КРИТИЧНО: Блокируем PRESS во время PROCESSING, если обработка завершена и есть активная пользовательская сессия
+            # Это предотвращает случайную активацию микрофона после завершения обработки
+            try:
+                current_mode = self.state_manager.get_current_mode()
+                if current_mode == AppMode.PROCESSING:
+                    # Проверяем, есть ли активная сессия обработки
+                    active_session_id = self.state_manager.get_current_session_id()
+                    # ✅ ИГНОРИРУЕМ системные сессии (welcome_message, signal) - они не должны блокировать пользовательские активации
+                    is_system_session = active_session_id is not None and (
+                        "welcome_message" in str(active_session_id).lower() or
+                        "signal" in str(active_session_id).lower() or
+                        "system_ready" in str(active_session_id).lower()
+                    )
+                    # Блокируем только если обработка завершена И есть активная пользовательская сессия (не системная)
+                    if not (self._playback_active or self._active_grpc_session_id is not None) and active_session_id is not None and not is_system_session:
+                        logger.warning(f"🔒 PRESS blocked: режим PROCESSING, обработка завершена и есть активная пользовательская сессия (playback={self._playback_active}, grpc_session={self._active_grpc_session_id}, active_session={active_session_id}, is_system={is_system_session}), игнорируем")
+                        # #region agent log
+                        try:
+                            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:259", "message": "PRESS blocked during PROCESSING (completed with active user session)", "data": {"playback_active": self._playback_active, "grpc_session": self._active_grpc_session_id, "active_session_id": active_session_id, "is_system_session": is_system_session}, "timestamp": int(time.time() * 1000)}) + "\n")
+                        except: pass
+                        # #endregion
+                        return
+            except Exception:
+                pass  # Игнорируем ошибки получения режима
+            
+            # ✅ ЭТАП 3.1: Debounce для PRESS - игнорируем если предыдущий PRESS был менее 0.1s назад
             time_since_last_press = now - self._last_press_ts
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:210", "message": "PRESS debounce check", "data": {"time_since_last_press": time_since_last_press, "debounce_interval": self._press_debounce_interval, "will_debounce": time_since_last_press < self._press_debounce_interval}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             if time_since_last_press < self._press_debounce_interval:
                 logger.debug(f"🔒 PRESS debounced: {time_since_last_press*1000:.1f}ms < {self._press_debounce_interval*1000:.0f}ms, игнорируем")
                 return
@@ -336,6 +427,24 @@ class InputProcessingIntegration:
     async def _on_recognition_failed(self, event):
         """Возврат в SLEEPING при неудаче/таймауте распознавания."""
         try:
+            # #region agent log
+            import json
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "C",
+                        "location": "input_processing_integration.py:427",
+                        "message": "_on_recognition_failed called",
+                        "data": {
+                            "event_data": event.get("data", {}) if event else {},
+                            "should_not_sleep_immediately": True
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + "\n")
+            except: pass
+            # #endregion
             # КРИТИЧНО: Проверяем, не ожидается ли обработка через RELEASE
             # Если запись была активна (_recording_started=True) и RELEASE еще не опубликовал
             # mode.request(PROCESSING), значит RELEASE еще обрабатывается.
@@ -403,6 +512,13 @@ class InputProcessingIntegration:
     def _reset_session(self, reason: str):
         """Сбрасывает состояние текущей сессии после завершения gRPC-цепочки."""
         logger.debug(f"SESSION RESET ({reason})")
+        # #region agent log
+        import json
+        try:
+            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:417", "message": "_reset_session called", "data": {"reason": reason, "input_state": self._input_state.name, "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "pending_session_id": self._pending_session_id, "active_session_id": self._get_active_session_id()}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except: pass
+        # #endregion
         
         # КРИТИЧНО: Очищаем множество неудачных сессий при сбросе
         active_session_id = self._get_active_session_id()
@@ -449,12 +565,29 @@ class InputProcessingIntegration:
         self._last_press_ts = 0.0
         self._last_short_ts = 0.0
         
-        # ✅ ЭТАП 0.1: Сбрасываем централизованное состояние (синхронно, так как _reset_session вызывается из разных мест)
+            # ✅ ЭТАП 0.1: Сбрасываем централизованное состояние (синхронно, так как _reset_session вызывается из разных мест)
         # Используем прямой доступ к _input_state, так как это внутренний метод сброса
         old_state = self._input_state
         if old_state != InputState.IDLE:
             self._input_state = InputState.IDLE
             logger.debug(f"🔄 [STATE] {old_state.name} → IDLE (reason: {reason})")
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:456", "message": "_reset_session state reset", "data": {"old_state": old_state.name, "new_state": "IDLE", "reason": reason, "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "pending_session_id": self._pending_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+        
+        # ✅ ЗАЩИТА ОТ ПОВТОРНОЙ АКТИВАЦИИ: Устанавливаем cooldown период после завершения обработки
+        if reason and ("playback" in reason or "completed" in reason or "processing" in reason):
+            self._last_processing_completed_at = time.monotonic()
+            logger.debug(f"🔒 Cooldown установлен после завершения обработки (reason: {reason})")
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:465", "message": "Cooldown set after processing completion", "data": {"reason": reason, "cooldown_sec": self._processing_cooldown_sec}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
     
     async def _set_input_state(self, new_state: InputState, reason: str = "unknown"):
         """
@@ -509,7 +642,16 @@ class InputProcessingIntegration:
         
         Returns:
             True если нужно остановить запись (микрофон активен, запись начата или есть сессия)
+            НО НЕ во время активного воспроизведения (кроме случаев прерывания)
         """
+        # ✅ КРИТИЧНО: Не останавливаем запись во время активного воспроизведения
+        # (кроме случаев, когда это прерывание воспроизведения через LONG_PRESS)
+        if self._playback_active:
+            # Проверяем, не является ли это прерыванием (LONG_PRESS во время воспроизведения)
+            # Если это LONG_PRESS, то _long_press_in_progress будет True
+            if not getattr(self, '_long_press_in_progress', False):
+                logger.debug("🔒 _should_stop_recording: воспроизведение активно, не останавливаем запись (кроме LONG_PRESS)")
+                return False
         return self._is_recording_active() or self._has_active_session()
     
     def _get_active_session_id(self) -> Optional[float]:
@@ -617,11 +759,75 @@ class InputProcessingIntegration:
             )
 
     async def _on_playback_started(self, event):
+        # #region agent log
+        import json
+        try:
+            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:732", "message": "_on_playback_started ENTRY", "data": {"playback_active_before": self._playback_active, "event": str(event)[:200]}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except: pass
+        # #endregion
         try:
             self._playback_active = True
-            logger.debug("PLAYBACK: started (session=%s)", (event or {}).get("data", {}).get("session_id"))
+            self._last_playback_start_ts = time.monotonic()  # ✅ КРИТИЧНО: Сохраняем время последнего playback.started
+            session_id = (event or {}).get("data", {}).get("session_id")
+            logger.debug("PLAYBACK: started (session=%s)", session_id)
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:737", "message": "_on_playback_started: _playback_active SET", "data": {"playback_active_after": self._playback_active, "session_id": session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+            
+            # ✅ КРИТИЧНО: Принудительно сбрасываем _recording_started при начале воспроизведения
+            # Это предотвращает активацию микрофона во время воспроизведения, даже если флаг не был сброшен после предыдущей записи
+            # ВАЖНО: Это должно быть ПЕРВЫМ действием, чтобы предотвратить race condition
+            if self._recording_started:
+                logger.warning(f"⚠️ PLAYBACK: _recording_started=True во время воспроизведения (session={session_id}) - принудительно сбрасываем флаг")
+                self._recording_started = False
+                # ✅ КРИТИЧНО: Если микрофон активен, принудительно останавливаем запись
+                if self.state_manager.is_microphone_active():
+                    logger.warning(f"⚠️ PLAYBACK: Микрофон активен во время начала воспроизведения (session={session_id}) - принудительно останавливаем запись")
+                    await self.event_bus.publish("voice.recording_stop", {
+                        "session_id": session_id,
+                        "source": "input_processing",
+                        "reason": "playback_started",
+                        "timestamp": time.time()
+                    })
+            
+            # ✅ КРИТИЧНО: Проверяем, не активен ли микрофон во время воспроизведения
+            # Если микрофон активен, это ошибка - микрофон должен быть закрыт перед воспроизведением
+            mic_active = self.state_manager.is_microphone_active()
+            
+            if mic_active:
+                logger.warning(f"⚠️ PLAYBACK: Микрофон активен во время начала воспроизведения (session={session_id}) - это ошибка! Микрофон должен быть закрыт перед воспроизведением.")
+                # #region agent log
+                import json
+                try:
+                    with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:719", "message": "PLAYBACK ERROR: microphone active during playback", "data": {"playback_session_id": session_id, "mic_active": mic_active, "recording_started": self._recording_started}, "timestamp": int(time.time() * 1000)}) + "\n")
+                except: pass
+                # #endregion
+            
+            # #region agent log
+            import json
+            try:
+                current_mode = self.state_manager.get_current_mode() if hasattr(self.state_manager, 'get_current_mode') else None
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:715", "message": "playback.started received", "data": {"playback_session_id": session_id, "current_mode": str(current_mode), "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "input_state": self._input_state.name, "pending_session_id": self._pending_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
         except Exception as e:
             logger.debug("PLAYBACK: error handling start event: %s", e)
+            # #region agent log
+            import json
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:778", "message": "_on_playback_started ERROR", "data": {"error": str(e), "playback_active_after_error": self._playback_active, "error_type": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+            # ✅ КРИТИЧНО: Устанавливаем _playback_active даже при ошибке, чтобы предотвратить активацию микрофона
+            self._playback_active = True
+            self._last_playback_start_ts = time.monotonic()
 
     async def _on_playback_finished(self, event):
         """Обрабатывает завершение воспроизведения (completed/cancelled/failed) и сбрасывает сессию."""
@@ -630,6 +836,15 @@ class InputProcessingIntegration:
             event_session_id = data.get("session_id")  # ✅ КРИТИЧНО: session_id из события
             event_type = (event or {}).get("type", "unknown")
             logger.debug("PLAYBACK: finished (event=%s, session=%s)", event_type, event_session_id)
+            # #region agent log
+            import json
+            import time
+            try:
+                current_mode = self.state_manager.get_current_mode() if hasattr(self.state_manager, 'get_current_mode') else None
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:722", "message": "playback.finished received", "data": {"event_type": event_type, "event_session_id": event_session_id, "current_mode": str(current_mode), "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "input_state": self._input_state.name, "pending_session_id": self._pending_session_id, "playback_active": self._playback_active}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             
             # ✅ КРИТИЧНО: Сбрасываем сессию только после завершения воспроизведения
             # Это предотвращает потерю session_id в SpeechPlaybackIntegration во время воспроизведения
@@ -638,10 +853,45 @@ class InputProcessingIntegration:
             # ✅ КРИТИЧНО: Проверяем, не активен ли микрофон с новой сессией
             # Если микрофон активен и _recording_started=True, значит LONG_PRESS уже активировал новую запись
             # В этом случае НЕ сбрасываем session_id, чтобы не потерять новую сессию
+            # ✅ ИСПРАВЛЕНИЕ ПРОБЛЕМЫ 1: Принудительно закрываем микрофон, если он активен
+            # Это гарантирует, что микрофон не останется активным после playback.completed
             mic_active = self.state_manager.is_microphone_active()
+            if mic_active:
+                logger.warning(f"⚠️ PLAYBACK: микрофон активен после playback.completed - принудительно закрываем")
+                # ✅ Используем существующий метод force_close_microphone (единый источник истины)
+                self.state_manager.force_close_microphone(reason="playback_completed")
+                # ✅ Публикуем voice.recording_stop для синхронизации с VoiceRecognitionIntegration
+                await self._publish_recording_stop_with_debounce({
+                    "source": "playback_finished",
+                    "timestamp": time.time(),
+                    "session_id": None,  # Закрываем любой активный микрофон
+                })
+                # ✅ Ждём закрытия микрофона для гарантии
+                await self._wait_for_mic_closed_with_timeout(timeout=1.0, source="playback_finished")
+                # Обновляем mic_active после закрытия
+                mic_active = self.state_manager.is_microphone_active()
+            
+            # ✅ КРИТИЧНО: Проверяем, не активен ли микрофон с новой сессией
+            # Если микрофон активен и _recording_started=True, значит LONG_PRESS уже активировал новую запись
+            # В этом случае НЕ сбрасываем session_id, чтобы не потерять новую сессию
+            # ✅ КРИТИЧНО: НЕ сбрасываем _playback_active, если событие - playback.cancelled и микрофон активен
+            # Это предотвращает race condition: playback.cancelled публикуется, _on_playback_finished сбрасывает _playback_active,
+            # затем LONG_PRESS обрабатывается, но _playback_active уже False, поэтому _can_start_recording разрешает запись
             if mic_active and self._recording_started:
                 logger.warning(f"⚠️ PLAYBACK: микрофон активен с новой записью (_recording_started=True) - НЕ сбрасываем session_id (event={event_type}, event_session_id={event_session_id}, active={active_session_id})")
-                self._notify_playback_idle()
+                # ✅ КРИТИЧНО: НЕ сбрасываем _playback_active, если событие - playback.cancelled
+                # Это предотвращает race condition: LONG_PRESS обрабатывается после playback.cancelled,
+                # но _playback_active уже False, поэтому _can_start_recording разрешает запись
+                if event_type != "playback.cancelled":
+                    # Проверяем, является ли это системным воспроизведением
+                    pattern = data.get("pattern", "")
+                    is_system = (
+                        pattern in {"welcome_message", "signal"} or
+                        (event_session_id and ("welcome_message" in str(event_session_id).lower() or "signal" in str(event_session_id).lower()))
+                    )
+                    self._notify_playback_idle(is_system_playback=is_system)
+                else:
+                    logger.warning(f"⚠️ PLAYBACK: playback.cancelled с активным микрофоном - НЕ сбрасываем _playback_active (предотвращение race condition)")
                 return
             
             # ✅ КРИТИЧНО: Используем правильный порядок: event_session_id or active_session_id or _active_grpc_session_id or _pending_session_id
@@ -658,15 +908,49 @@ class InputProcessingIntegration:
                 )
                 
                 if is_our_session:
+                    # #region agent log
+                    import json
+                    try:
+                        with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:675", "message": "PLAYBACK finished, resetting session", "data": {"effective_session_id": effective_session_id, "event_type": event_type, "input_state": self._input_state.name, "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "pending_session_id": self._pending_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+                    except: pass
+                    # #endregion
                     logger.debug(f"PLAYBACK: завершение воспроизведения для сессии {effective_session_id} (event={event_type}, event_session_id={event_session_id}, active={active_session_id}, grpc={self._active_grpc_session_id}, pending={self._pending_session_id})")
                     self._reset_session(f"playback_{event_type}")
+                    # #region agent log
+                    try:
+                        with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:677", "message": "PLAYBACK session reset completed", "data": {"input_state": self._input_state.name, "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "pending_session_id": self._pending_session_id, "active_session_id": self._get_active_session_id()}, "timestamp": int(time.time() * 1000)}) + "\n")
+                    except: pass
+                    # #endregion
                 else:
                     logger.debug(f"PLAYBACK: завершение воспроизведения для чужой сессии {effective_session_id}, игнорируем (active={active_session_id}, grpc={self._active_grpc_session_id}, pending={self._pending_session_id})")
             else:
                 # Нет активной сессии - ничего не делаем
                 logger.debug(f"PLAYBACK: завершение воспроизведения без активной сессии (event={event_type}, event_session_id={event_session_id}), игнорируем")
             
-            self._notify_playback_idle()
+            # ✅ КРИТИЧНО: НЕ сбрасываем _last_playback_start_ts при playback.completed
+            # Это предотвращает race condition: playback.completed приходит раньше, чем LONG_PRESS обрабатывается,
+            # но playback.started был недавно, значит воспроизведение все еще активно
+            # _last_playback_start_ts будет использоваться для проверки активного воспроизведения в _can_start_recording
+            
+            # ✅ КРИТИЧНО: Определяем, является ли воспроизведение системным (welcome_message, signal)
+            # Системные воспроизведения не должны блокировать пользовательские действия после завершения
+            pattern = data.get("pattern", "")
+            is_system_playback = (
+                pattern in {"welcome_message", "signal"} or
+                (event_session_id and ("welcome_message" in str(event_session_id).lower() or "signal" in str(event_session_id).lower()))
+            )
+            
+            self._notify_playback_idle(is_system_playback=is_system_playback)
+            
+            # #region agent log
+            import json
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "F", "location": "input_processing_integration.py:925", "message": "_on_playback_finished COMPLETED", "data": {"event_type": event_type, "event_session_id": event_session_id, "playback_active_after": self._playback_active, "mic_active": self.state_manager.is_microphone_active(), "recording_started": self._recording_started, "input_state": self._input_state.name, "should_not_activate_mic": True}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
         except Exception as e:
             logger.debug("PLAYBACK: error handling finish event: %s", e)
 
@@ -730,9 +1014,55 @@ class InputProcessingIntegration:
         except Exception as e:
             logger.error(f"❌ [INPUT] Ошибка обработки microphone.error: {e}")
 
-    def _notify_playback_idle(self):
-        self._playback_active = False
-        self._last_playback_stop_ts = time.monotonic()
+    def _notify_playback_idle(self, is_system_playback: bool = False):
+        # #region agent log
+        import json
+        try:
+            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "input_processing_integration.py:951", "message": "_notify_playback_idle: checking if playback really finished", "data": {"playback_active_before": self._playback_active, "last_playback_start_ts": self._last_playback_start_ts, "time_since_playback_start": time.monotonic() - self._last_playback_start_ts if self._last_playback_start_ts > 0 else None, "playback_grace_period": self._playback_grace_period, "is_system_playback": is_system_playback}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except: pass
+        # #endregion
+        
+        # ✅ КРИТИЧНО: Проверяем, действительно ли воспроизведение завершено
+        # Если _last_playback_start_ts был недавно (в пределах grace period), значит воспроизведение все еще активно
+        # Это предотвращает преждевременный сброс _playback_active при завершении одного воспроизведения,
+        # когда другое воспроизведение (например, ответ) все еще активно
+        # ✅ ИСКЛЮЧЕНИЕ: Системные воспроизведения (welcome_message, signal) сбрасываем сразу после завершения,
+        # независимо от grace_period, так как они не должны блокировать пользовательские действия
+        now = time.monotonic()
+        time_since_playback_start = now - self._last_playback_start_ts if self._last_playback_start_ts > 0 else float('inf')
+        is_playback_recently_started = time_since_playback_start < self._playback_grace_period
+        
+        # Сбрасываем _playback_active если:
+        # 1. Воспроизведение действительно завершено (не было недавних playback.started событий), ИЛИ
+        # 2. Это системное воспроизведение (welcome_message, signal) - сбрасываем сразу после завершения
+        if not is_playback_recently_started or is_system_playback:
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "input_processing_integration.py:959", "message": "_notify_playback_idle: RESETTING _playback_active", "data": {"playback_active_before": self._playback_active, "time_since_playback_start": time_since_playback_start, "playback_grace_period": self._playback_grace_period, "is_system_playback": is_system_playback, "reason": "system_playback" if is_system_playback else "playback_finished"}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+            self._playback_active = False
+            self._last_playback_stop_ts = now
+            if is_system_playback:
+                # ✅ КРИТИЧНО: Для системных воспроизведений сбрасываем также _last_playback_start_ts,
+                # чтобы is_playback_recently_started стал False и не блокировал пользовательские действия
+                self._last_playback_start_ts = 0
+                logger.debug(f"✅ PLAYBACK: системное воспроизведение завершено - сбрасываем _playback_active и _last_playback_start_ts сразу (не блокируем пользовательские действия)")
+        else:
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "input_processing_integration.py:959", "message": "_notify_playback_idle: NOT resetting _playback_active (playback still active)", "data": {"playback_active": self._playback_active, "time_since_playback_start": time_since_playback_start, "playback_grace_period": self._playback_grace_period}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+            logger.debug(f"⚠️ PLAYBACK: _notify_playback_idle вызван, но воспроизведение все еще активно (time_since_start={time_since_playback_start:.2f}s < grace_period={self._playback_grace_period}s) - НЕ сбрасываем _playback_active")
+        
+        # ✅ КРИТИЧНО: Для пользовательских воспроизведений НЕ сбрасываем _last_playback_start_ts здесь - он используется для проверки активного воспроизведения
+        # Это предотвращает race condition: playback.completed приходит раньше, чем LONG_PRESS обрабатывается,
+        # но playback.started был недавно, значит воспроизведение все еще активно
+        # Для системных воспроизведений (welcome_message, signal) _last_playback_start_ts сбрасывается выше, чтобы не блокировать пользовательские действия
         while self._playback_waiters:
             fut = self._playback_waiters.pop(0)
             if not fut.done():
@@ -1133,29 +1463,6 @@ class InputProcessingIntegration:
         try:
             logger.debug(f"🔑 SHORT_PRESS: {event.duration:.3f}с")
 
-            # ✅ ИСПРАВЛЕНИЕ: Fallback для LONG_PRESS - если duration >= long_press_threshold, но запись не начата,
-            # это означает, что LONG_PRESS не сработал, и нужно начать запись
-            try:
-                long_press_threshold = self.config.keyboard.long_press_threshold if hasattr(self.config, 'keyboard') and hasattr(self.config.keyboard, 'long_press_threshold') else 0.6
-                if event.duration >= long_press_threshold and not self._recording_started:
-                    logger.warning(f"⚠️ SHORT_PRESS fallback: duration={event.duration:.3f}s >= threshold={long_press_threshold}s, но запись не начата - начинаем запись через voice.recording_start")
-                    # Публикуем voice.recording_start для начала записи
-                    session_id = self._get_active_session_id() or self._pending_session_id
-                    if session_id is None:
-                        session_id = str(time.time())
-                        self._pending_session_id = session_id
-                    
-                    await self.event_bus.publish("voice.recording_start", {
-                        "session_id": session_id,
-                        "source": "keyboard",
-                        "timestamp": event.timestamp,
-                    })
-                    logger.info(f"✅ SHORT_PRESS fallback: voice.recording_start опубликован для session {session_id}")
-                    # Устанавливаем флаг, что запись начата
-                    self._recording_started = True
-            except Exception as fallback_error:
-                logger.warning(f"⚠️ SHORT_PRESS fallback: ошибка при проверке fallback: {fallback_error}")
-
             # ЗАЩИТА 1: Отменяем pending session при SHORT_PRESS БЕЗ записи
             if self._pending_session_id is not None and not self._recording_started:
                 logger.info(f"🛑 SHORT_PRESS без записи - отменяем pending session {self._pending_session_id}")
@@ -1394,27 +1701,100 @@ class InputProcessingIntegration:
         Returns:
             (can_start, reason) - можно ли начать запись и причина отказа (если нельзя)
         """
+        # #region agent log
+        import json
+        import time
+        try:
+            current_mode = self.state_manager.get_current_mode() if hasattr(self.state_manager, 'get_current_mode') else None
+            now = time.monotonic()
+            time_since_playback_start = now - self._last_playback_start_ts if self._last_playback_start_ts > 0 else float('inf')
+            is_playback_recently_started = time_since_playback_start < self._playback_grace_period
+            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "input_processing_integration.py:1472", "message": "_can_start_recording called", "data": {"input_state": self._input_state.name, "pending_session_id": self._pending_session_id, "playback_active": self._playback_active, "current_mode": str(current_mode), "mic_active": self.state_manager.is_microphone_active(), "recording_started": self._recording_started, "last_playback_start_ts": self._last_playback_start_ts, "time_since_playback_start": time_since_playback_start, "is_playback_recently_started": is_playback_recently_started, "playback_grace_period": self._playback_grace_period}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except: pass
+        # #endregion
+        
         # Проверка 1: _input_state
         if self._input_state != InputState.PENDING:
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "input_processing_integration.py:1484", "message": "_can_start_recording rejected: wrong_input_state", "data": {"input_state": self._input_state.name}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             return False, f"wrong_input_state_{self._input_state.name}"
         
         # Проверка 2: pending_session_id
         if self._pending_session_id is None:
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "input_processing_integration.py:1488", "message": "_can_start_recording rejected: no_pending_session", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             return False, "no_pending_session"
         
         # Проверка 3: keyboard_monitor.key_pressed
         if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
             if not self.keyboard_monitor.key_pressed:
+                # #region agent log
+                try:
+                    with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "input_processing_integration.py:1493", "message": "_can_start_recording rejected: key_not_pressed", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+                except: pass
+                # #endregion
                 return False, "key_not_pressed"
         
-        # Проверка 4: микрофон уже активен (используем state_manager как единый источник истины)
+        # Проверка 4: воспроизведение активно (блокируем начало записи во время воспроизведения)
+        # ✅ КРИТИЧНО: Проверяем не только _playback_active, но и время последнего playback.started
+        # Это предотвращает race condition: playback.completed приходит раньше, чем LONG_PRESS обрабатывается,
+        # но playback.started был недавно, значит воспроизведение все еще активно
+        now = time.monotonic()
+        time_since_playback_start = now - self._last_playback_start_ts if self._last_playback_start_ts > 0 else float('inf')
+        is_playback_recently_started = time_since_playback_start < self._playback_grace_period
+        
+        # ✅ КРИТИЧНО: Если прошло больше периода грации, сбрасываем _last_playback_start_ts
+        # Это предотвращает блокировку записи навсегда после завершения воспроизведения
+        if self._last_playback_start_ts > 0 and time_since_playback_start >= self._playback_grace_period:
+            logger.debug(f"🔓 LONG_PRESS: Период грации истек ({time_since_playback_start:.2f}s >= {self._playback_grace_period}s), сбрасываем _last_playback_start_ts")
+            self._last_playback_start_ts = 0.0
+        
+        # ✅ ИСПРАВЛЕНИЕ: Блокируем активацию микрофона во время воспроизведения ответа ассистента
+        # Микрофон должен активироваться ТОЛЬКО при нажатии комбинации клавиш, НЕ автоматически
+        # Даже если пользователь нажал Ctrl+N во время воспроизведения, микрофон НЕ должен активироваться
+        if self._playback_active or is_playback_recently_started:
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "F", "location": "input_processing_integration.py:1734", "message": "_can_start_recording rejected: playback_active (microphone should NOT activate during assistant response)", "data": {"playback_active": self._playback_active, "time_since_playback_start": time_since_playback_start, "is_playback_recently_started": is_playback_recently_started, "playback_grace_period": self._playback_grace_period}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+            logger.warning(f"🔒 LONG_PRESS blocked: воспроизведение активно (_playback_active={self._playback_active}, time_since_start={time_since_playback_start:.2f}s) - микрофон НЕ должен активироваться во время воспроизведения ответа ассистента, игнорируем начало записи")
+            return False, "playback_active"
+        
+        # Проверка 5: микрофон уже активен (используем state_manager как единый источник истины)
         if self.state_manager.is_microphone_active():
+            # #region agent log
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "input_processing_integration.py:1583", "message": "_can_start_recording rejected: microphone_already_active", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             return False, "microphone_already_active"
         
         # ПРИМЕЧАНИЕ: Проверка _recording_started убрана - используем только state_manager.is_microphone_active()
         # как единый источник истины. _recording_started используется только для отслеживания
         # публикации voice.recording_start и не является источником истины для состояния микрофона.
         
+        # #region agent log
+        try:
+            now = time.monotonic()
+            time_since_playback_start = now - self._last_playback_start_ts if self._last_playback_start_ts > 0 else float('inf')
+            is_playback_recently_started = time_since_playback_start < self._playback_grace_period
+            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "input_processing_integration.py:1504", "message": "_can_start_recording approved", "data": {"playback_active": self._playback_active, "last_playback_start_ts": self._last_playback_start_ts, "time_since_playback_start": time_since_playback_start, "is_playback_recently_started": is_playback_recently_started, "playback_grace_period": self._playback_grace_period}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except: pass
+        # #endregion
         return True, "ok"
             
     async def _handle_long_press(self, event: KeyEvent):
@@ -1426,7 +1806,36 @@ class InputProcessingIntegration:
             logger.info(f"🔑 LONG_PRESS: {event.duration:.3f}с")
             print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
             print(f"🔑 LONG_PRESS: event.key={event.key}, event.timestamp={event.timestamp}")  # Для отладки
+
+            # ✅ ИСПРАВЛЕНИЕ ПРОБЛЕМЫ 3: Используем gateway для принятия решения
+            # Это соответствует архитектуре проекта (gateways для принятия решений)
+            from integration.core.gateways.audio_gateways import decide_allow_shortcut_during_processing
+            from integration.core.selectors import create_snapshot_from_state
+            from integration.core.gateways.types import Decision
             
+            # Создаем snapshot для gateway (используем существующую функцию)
+            snapshot = create_snapshot_from_state(self.state_manager)
+            
+            # Принимаем решение через gateway
+            decision = decide_allow_shortcut_during_processing(snapshot, source="keyboard")
+            
+            if decision == Decision.ABORT:
+                logger.warning("🔒 LONG_PRESS blocked by gateway decision (automatic activation during PROCESSING)")
+                async with self._state_lock:
+                    self._long_press_in_progress = False
+                return
+            
+            # ✅ Разрешаем активацию через Shortcut для прерывания воспроизведения
+            logger.info("✅ LONG_PRESS: разрешена активация микрофона (gateway decision: START)")
+            # #region agent log
+            import json
+            try:
+                active_session_id = self.state_manager.get_current_session_id()
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "G", "location": "input_processing_integration.py:1800", "message": "LONG_PRESS allowed for interrupt during PROCESSING (no playback)", "data": {"playback_active": self._playback_active, "grpc_session": self._active_grpc_session_id, "active_session_id": active_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
+
             # ✅ ЭТАП 0.3: Атомарная проверка-и-установка для защиты от повторных LONG_PRESS
             logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: проверяем _long_press_in_progress={self._long_press_in_progress}")
             async with self._state_lock:
@@ -1437,12 +1846,40 @@ class InputProcessingIntegration:
                 logger.info(f"✅ [INPUT_PROCESSING] LONG_PRESS: _long_press_in_progress установлен в True")
             
             try:
+                # ✅ КРИТИЧНО: Устанавливаем _pending_session_id перед проверкой готовности, если его нет
+                # Это позволяет LONG_PRESS работать для прерывания воспроизведения даже если PRESS был заблокирован
+                if self._pending_session_id is None:
+                    self._pending_session_id = event.timestamp or time.monotonic()
+                    logger.debug(f"🔍 [INPUT_PROCESSING] LONG_PRESS: установлен _pending_session_id={self._pending_session_id} (PRESS был заблокирован)")
+                    # Устанавливаем состояние PENDING для прохождения проверки _can_start_recording
+                    if self._input_state != InputState.PENDING:
+                        await self._set_input_state(InputState.PENDING, reason="long_press_without_press")
+                
                 # ✅ ЭТАП 1: Используем единую функцию проверки готовности к записи
                 logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: проверяем готовность к записи...")
                 logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: _input_state={self._input_state}, _pending_session_id={self._pending_session_id}")
+                # #region agent log
+                import json
+                try:
+                    with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:1419", "message": "LONG_PRESS received", "data": {"input_state": self._input_state.name, "pending_session_id": self._pending_session_id, "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "duration": event.duration}, "timestamp": int(time.time() * 1000)}) + "\n")
+                except: pass
+                # #endregion
                 can_start, reason = await self._can_start_recording()
+                # #region agent log
+                try:
+                    with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:1421", "message": "_can_start_recording result", "data": {"can_start": can_start, "reason": reason}, "timestamp": int(time.time() * 1000)}) + "\n")
+                except: pass
+                # #endregion
                 logger.info(f"🔍 [INPUT_PROCESSING] LONG_PRESS: _can_start_recording() вернул can_start={can_start}, reason={reason}")
                 if not can_start:
+                    # #region agent log
+                    try:
+                        with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "input_processing_integration.py:1423", "message": "LONG_PRESS rejected", "data": {"reason": reason, "input_state": self._input_state.name}, "timestamp": int(time.time() * 1000)}) + "\n")
+                    except: pass
+                    # #endregion
                     logger.warning(f"⚠️ LONG_PRESS: нельзя начать запись - {reason}")
                     async with self._state_lock:
                         self._long_press_in_progress = False
@@ -1553,6 +1990,20 @@ class InputProcessingIntegration:
                     active_session_id = self._get_active_session_id()
                     
                     # Публикуем voice.recording_start
+                    # #region agent log
+                    import json
+                    try:
+                        current_mode = self.state_manager.get_current_mode() if hasattr(self.state_manager, 'get_current_mode') else None
+                        with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:1552", "message": "publishing voice.recording_start", "data": {"active_session_id": active_session_id, "input_state": self._input_state.name, "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "current_mode": str(current_mode), "playback_active": self._playback_active, "grpc_session": self._active_grpc_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+                    except: pass
+                    # #endregion
+                    # #region agent log
+                    try:
+                        with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:1690", "message": "PUBLISHING voice.recording_start", "data": {"active_session_id": active_session_id, "input_state": self._input_state.name, "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "current_mode": str(current_mode), "playback_active": self._playback_active, "grpc_session": self._active_grpc_session_id, "event_timestamp": event.timestamp, "event_duration": event.duration}, "timestamp": int(time.time() * 1000)}) + "\n")
+                    except: pass
+                    # #endregion
                     await self.event_bus.publish(
                         "voice.recording_start",
                         {
@@ -1561,6 +2012,12 @@ class InputProcessingIntegration:
                             "session_id": active_session_id,
                         }
                     )
+                    # #region agent log
+                    try:
+                        with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:1717", "message": "voice.recording_start published", "data": {"active_session_id": active_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+                    except: pass
+                    # #endregion
                     logger.debug("LONG_PRESS: voice.recording_start опубликовано")
                     logger.debug(f"LONG_PRESS: записываем время начала записи: {self._recording_start_time}")
                     
@@ -1582,8 +2039,28 @@ class InputProcessingIntegration:
                             return
                         
                         # ✅ ЭТАП 1.2: Микрофон открыт - устанавливаем _recording_started = True
+                        # ✅ КРИТИЧНО: Проверяем, не активно ли воспроизведение перед установкой флага
+                        # Это предотвращает установку _recording_started во время воспроизведения
+                        if self._playback_active:
+                            logger.warning(f"⚠️ LONG_PRESS: Микрофон открыт, но воспроизведение активно (_playback_active=True) - НЕ устанавливаем _recording_started")
+                            # Закрываем микрофон, так как воспроизведение активно
+                            await self.event_bus.publish("voice.recording_stop", {
+                                "session_id": active_session_id,
+                                "source": "input_processing",
+                                "reason": "playback_active",
+                                "timestamp": time.time()
+                            })
+                            self._pending_session_id = None
+                            return
                         self._recording_started = True
                         logger.info("✅ LONG_PRESS: Микрофон открыт, _recording_started установлен")
+                        # ✅ КРИТИЧНО: Сбрасываем _playback_active после открытия микрофона
+                        # Это предотвращает race condition: playback.cancelled публикуется, _on_playback_finished сбрасывает _playback_active,
+                        # затем LONG_PRESS обрабатывается, но _playback_active уже False, поэтому _can_start_recording разрешает запись
+                        if self._playback_active:
+                            logger.info("✅ LONG_PRESS: Сбрасываем _playback_active после открытия микрофона (предотвращение race condition)")
+                            # Это не системное воспроизведение (микрофон открыт пользователем)
+                            self._notify_playback_idle(is_system_playback=False)
                     except Exception as e:
                         logger.error(f"❌ LONG_PRESS: Ошибка при ожидании открытия микрофона: {e}")
                         await self.event_bus.publish("voice.recording_error", {
@@ -1682,6 +2159,13 @@ class InputProcessingIntegration:
             # ✅ FIX: Определяем was_recording не только по _recording_started, но и по активности микрофона
             # Это важно, так как микрофон может быть активен даже если _recording_started == False
             was_recording = self._recording_started or self.state_manager.is_microphone_active()  # Сохраняем состояние ДО обработки
+            # #region agent log
+            import json
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:1680", "message": "RELEASE received", "data": {"was_recording": was_recording, "recording_started": self._recording_started, "mic_active": self.state_manager.is_microphone_active(), "input_state": self._input_state.name, "pending_session_id": self._pending_session_id, "duration": event.duration}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             logger.debug(f"🔄 RELEASE: was_recording={was_recording} (_recording_started={self._recording_started}, mic_active={self.state_manager.is_microphone_active()})")
             # КРИТИЧНО: Сохраняем session_id ДО обработки, чтобы он не был потерян при _on_recognition_failed
             # Используем _get_active_session_id для получения session_id
@@ -1706,6 +2190,12 @@ class InputProcessingIntegration:
                     self._pending_recording_cancelled_event.set()
                     self._pending_session_id = None
             
+            # ✅ КРИТИЧНО: Блокируем обработку RELEASE во время активного воспроизведения
+            # (кроме случаев LONG_PRESS для прерывания воспроизведения)
+            if self._playback_active and not getattr(self, '_long_press_in_progress', False):
+                logger.warning(f"🔒 RELEASE blocked: воспроизведение активно (playback_active={self._playback_active}), игнорируем RELEASE. Для прерывания используйте LONG_PRESS.")
+                return
+            
             # КРИТИЧНО: Всегда проверяем состояние микрофона и публикуем voice.recording_stop,
             # даже если _recording_started == False, чтобы гарантировать закрытие микрофона
             should_stop_recording = self._should_stop_recording()
@@ -1715,6 +2205,12 @@ class InputProcessingIntegration:
             if should_stop_recording:
                 # ✅ ЭТАП 1: Используем state_manager вместо _mic_active
                 mic_active = self.state_manager.is_microphone_active()
+                # #region agent log
+                try:
+                    with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:1711", "message": "RELEASE stopping recording", "data": {"mic_active": mic_active, "recording_started": self._recording_started, "active_session_id": active_session_id, "input_state": self._input_state.name}, "timestamp": int(time.time() * 1000)}) + "\n")
+                except: pass
+                # #endregion
                 logger.info(f"🛑 RELEASE: микрофон активен (mic_active={mic_active}) или запись начата (_recording_started={self._recording_started}) или есть сессия (session={active_session_id}) - принудительно останавливаем")
                 
                 # Если есть активная сессия, останавливаем её
@@ -1728,6 +2224,12 @@ class InputProcessingIntegration:
                         "duration": event.duration,
                         "session_id": active_session_id,
                     })
+                    # #region agent log
+                    try:
+                        with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "input_processing_integration.py:1727", "message": "RELEASE published recording_stop", "data": {"published": published, "active_session_id": active_session_id}, "timestamp": int(time.time() * 1000)}) + "\n")
+                    except: pass
+                    # #endregion
                     if published:
                         logger.debug("RELEASE: voice.recording_stop опубликовано ✓")
                         # ✅ ИСПРАВЛЕНИЕ: Сбрасываем флаг публикации только после обработки release
@@ -1757,6 +2259,21 @@ class InputProcessingIntegration:
                 
                 # ✅ ЭТАП 2: Таймаут для ожидания закрытия микрофона
                 self._schedule_mic_close_wait(timeout=1.0, source="RELEASE")
+                
+                # ✅ ДИАГНОСТИКА: Проверяем состояние микрофона после публикации voice.recording_stop
+                async def check_mic_state_after_stop():
+                    await asyncio.sleep(0.1)  # Небольшая задержка для обработки события
+                    mic_active_after = self.state_manager.is_microphone_active()
+                    # #region agent log
+                    import json
+                    try:
+                        with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "E", "location": "input_processing_integration.py:1932", "message": "RELEASE mic state after stop", "data": {"mic_active_after": mic_active_after, "recording_started": self._recording_started, "active_session_id": self._get_active_session_id()}, "timestamp": int(time.time() * 1000)}) + "\n")
+                    except: pass
+                    # #endregion
+                    if mic_active_after:
+                        logger.warning(f"⚠️ RELEASE: Микрофон все еще активен через 100мс после voice.recording_stop (mic_active={mic_active_after})")
+                asyncio.create_task(check_mic_state_after_stop())
                 
                 # ✅ ИСПРАВЛЕНИЕ: Сбрасываем флаг публикации после обработки release
                 # Это позволит следующему сеансу публиковать voice.recording_stop

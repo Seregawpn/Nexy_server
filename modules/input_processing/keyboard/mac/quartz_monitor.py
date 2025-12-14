@@ -163,9 +163,12 @@ class QuartzKeyboardMonitor:
                             # Сбрасываем флаги комбинации
                             if self._combo_active:
                                 logger.debug(f"🔄 [RESET] Сбрасываем _combo_active (было True)")
-                            if self._long_sent:
-                                logger.debug(f"🔄 [RESET] Сбрасываем _long_sent (было True)")
-                                self._long_sent = False
+                            # ✅ ИСПРАВЛЕНИЕ: НЕ сбрасываем _long_sent при отпускании Control
+                            # _long_sent должен сбрасываться только в _update_combo_state() при полной деактивации,
+                            # чтобы FALLBACK мог правильно определить, был ли отправлен LONG_PRESS
+                            # if self._long_sent:
+                            #     logger.debug(f"🔄 [RESET] Сбрасываем _long_sent (было True)")
+                            #     self._long_sent = False
                             # ✅ ИСПРАВЛЕНИЕ: Сбрасываем флаг "комбо завершено" при сбросе Control
                             if self._combo_completed:
                                 logger.debug(f"🔄 [RESET] Сбрасываем _combo_completed (было True)")
@@ -234,14 +237,16 @@ class QuartzKeyboardMonitor:
                         was_long_sent = self._long_sent
                         
                         # ✅ ПЛАН: При keyUp N сбрасываем все связанные состояния
-                        logger.debug(f"🔄 [RESET] keyUp N: сбрасываем _n_pressed, _long_sent (было: _n_pressed=True, _long_sent={was_long_sent})")
+                        logger.debug(f"🔄 [RESET] keyUp N: сбрасываем _n_pressed (было: _n_pressed=True, _long_sent={was_long_sent})")
                         self._n_pressed = False
                         # Обновляем время последнего события для защиты от залипания
                         self._n_last_event_time = None
-                        # ✅ ПЛАН: Сбрасываем _long_sent при keyUp
-                        if was_long_sent:
-                            logger.debug(f"🔄 [RESET] Сбрасываем _long_sent при keyUp N")
-                            self._long_sent = False
+                        # ✅ ИСПРАВЛЕНИЕ: НЕ сбрасываем _long_sent при keyUp N
+                        # _long_sent должен сбрасываться только в _update_combo_state() при полной деактивации,
+                        # чтобы FALLBACK мог правильно определить, был ли отправлен LONG_PRESS
+                        # if was_long_sent:
+                        #     logger.debug(f"🔄 [RESET] Сбрасываем _long_sent при keyUp N")
+                        #     self._long_sent = False
                         
                         # Обновляем состояние комбинации
                         self._update_combo_state()
@@ -309,7 +314,20 @@ class QuartzKeyboardMonitor:
             # ✅ ИСПРАВЛЕНИЕ: Проверяем duration при деактивации - если >= long_press_threshold, но LONG_PRESS еще не отправлен,
             # отправляем LONG_PRESS немедленно (fallback для случая, когда _run_hold_monitor не успел сработать)
             should_be_long_press = duration >= self.long_press_threshold
+            # #region agent log
+            import json
+            try:
+                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "quartz_monitor.py:312", "message": "FALLBACK check", "data": {"duration": duration, "threshold": self.long_press_threshold, "long_sent": long_sent_snapshot, "should_be_long_press": should_be_long_press, "combo_active_was": was_active}, "timestamp": int(now * 1000)}) + "\n")
+            except: pass
+            # #endregion
             if should_be_long_press and not long_sent_snapshot:
+                # #region agent log
+                try:
+                    with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "quartz_monitor.py:313", "message": "FALLBACK sending LONG_PRESS", "data": {"duration": duration, "long_sent_before": long_sent_snapshot}, "timestamp": int(now * 1000)}) + "\n")
+                except: pass
+                # #endregion
                 logger.info(f"🔑 [FALLBACK] LONG_PRESS обнаружен при деактивации: duration={duration:.3f}s >= threshold={self.long_press_threshold}s, но _long_sent=False - отправляем LONG_PRESS")
                 # Отправляем LONG_PRESS немедленно
                 ev_long = KeyEvent(
@@ -814,6 +832,13 @@ class QuartzKeyboardMonitor:
 
                             import threading
                             thread_name = threading.current_thread().name
+                            # #region agent log
+                            import json
+                            try:
+                                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "quartz_monitor.py:821", "message": "HOLD_MONITOR sending LONG_PRESS", "data": {"duration": duration, "threshold": self.long_press_threshold, "long_sent_before": self._long_sent, "is_still_active": is_still_active}, "timestamp": int(time.time() * 1000)}) + "\n")
+                            except: pass
+                            # #endregion
                             logger.info(f"🔑 PTT: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}, thread={thread_name}")
                             logger.debug(f"HOLD_MONITOR: _long_sent={self._long_sent} → True, event_type=LONG_PRESS")
                             ev = KeyEvent(
@@ -824,6 +849,12 @@ class QuartzKeyboardMonitor:
                             )
                             self._trigger_event(KeyEventType.LONG_PRESS, duration, ev)
                             self._long_sent = True
+                            # #region agent log
+                            try:
+                                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
+                                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "quartz_monitor.py:838", "message": "HOLD_MONITOR _long_sent updated", "data": {"long_sent_after": self._long_sent}, "timestamp": int(time.time() * 1000)}) + "\n")
+                            except: pass
+                            # #endregion
                 time.sleep(self.hold_check_interval)
             except Exception as e:
                 logger.error(f"❌ Ошибка в мониторе удержания: {e}")

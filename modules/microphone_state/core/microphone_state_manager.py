@@ -22,7 +22,7 @@ class MicrophoneStateManager:
         self,
         event_bus,
         state_manager=None,
-        open_timeout: float = 5.0,
+        open_timeout: float = 0.5,  # ✅ Минимальный таймаут для быстрой активации (0.5s вместо 2.0s)
         close_timeout: float = 3.0
     ):
         """
@@ -78,16 +78,16 @@ class MicrophoneStateManager:
     
     async def request_open(self, session_id: str, timeout: Optional[float] = None) -> bool:
         """
-        Запросить открытие микрофона.
+        Запросить открытие микрофона (неблокирующий).
         
         Args:
             session_id: ID сессии для которой открывается микрофон
-            timeout: Таймаут ожидания открытия (секунды, None = использовать дефолт)
+            timeout: Не используется (оставлен для совместимости)
             
         Returns:
-            True если микрофон успешно открыт, False в противном случае
+            True если запрос отправлен успешно (микрофон откроется асинхронно)
         """
-        timeout = timeout or self._open_timeout
+        # ✅ БЕЗ ТАЙМАУТОВ: timeout больше не используется, микрофон откроется асинхронно
         
         # ✅ FIX: Переменные для обработки зависшего состояния CLOSING
         closed_event = None
@@ -141,9 +141,8 @@ class MicrophoneStateManager:
             # Переходим в OPENING
             await self._set_state(MicrophoneState.OPENING, session_id)
             
-            # Создаем событие для ожидания подтверждения
-            self._opened_event = asyncio.Event()
-            self._opened_session_id = session_id
+            # ✅ БЕЗ ТАЙМАУТОВ: Не создаем событие для ожидания - микрофон откроется асинхронно
+            # Событие microphone.opened будет опубликовано когда микрофон действительно откроется
         
         # ✅ FIX: Если было ожидание закрытия, ждем его завершения
         if closed_event is not None:
@@ -158,33 +157,15 @@ class MicrophoneStateManager:
         # КРИТИЧНО: Публикуем событие запроса открытия ПОСЛЕ освобождения блокировки
         # Это предотвращает deadlock, когда _on_microphone_opened вызывается синхронно
         await self._event_bus.publish("microphone.open_requested", {
-            "session_id": session_id,
-            "timeout": timeout
+            "session_id": session_id
+            # ✅ БЕЗ ТАЙМАУТОВ: timeout больше не передается, микрофон откроется асинхронно
         })
         
-        # Ждем подтверждения открытия с таймаутом
-        try:
-            opened = await asyncio.wait_for(
-                self._wait_for_microphone_opened(session_id),
-                timeout=timeout
-            )
-            
-            if opened:
-                logger.info(f"✅ [MIC_STATE] Микрофон успешно открыт для session {session_id}")
-                return True
-            else:
-                logger.error(f"❌ [MIC_STATE] Таймаут ожидания открытия микрофона для session {session_id}")
-                await self._force_close_internal("open_timeout")
-                return False
-                
-        except asyncio.TimeoutError:
-            logger.error(f"❌ [MIC_STATE] Таймаут ожидания открытия микрофона ({timeout}s) для session {session_id}")
-            await self._force_close_internal("open_timeout")
-            return False
-        except Exception as e:
-            logger.error(f"❌ [MIC_STATE] Ошибка ожидания открытия микрофона: {e}")
-            await self._force_close_internal("open_error")
-            return False
+        # ✅ БЕЗ ТАЙМАУТОВ: Не ждем подтверждения открытия - микрофон откроется асинхронно
+        # Событие microphone.opened будет опубликовано когда микрофон действительно откроется
+        # Это позволяет избежать блокировок и таймаутов
+        logger.info(f"✅ [MIC_STATE] Запрос открытия микрофона отправлен для session {session_id} (неблокирующий)")
+        return True  # Возвращаем True сразу - микрофон откроется асинхронно
     
     async def request_close(self, session_id: Optional[str] = None, force: bool = False, timeout: Optional[float] = None) -> bool:
         """

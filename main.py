@@ -59,8 +59,7 @@ def init_ffmpeg_for_pydub():
         try:
             from pydub import AudioSegment
             os.environ["FFMPEG_BINARY"] = str(ffmpeg_path)
-            AudioSegment.co
-            nverter = str(ffmpeg_path)
+            AudioSegment.converter = str(ffmpeg_path)
         except Exception:
             pass
 
@@ -338,7 +337,7 @@ async def main():
         logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt в main)")
         raise
     except Exception as e:
-        logger.critical(f"💥 КРИТИЧЕСКАЯ ОШИБКА в main(): {e}", exc_info=True)
+        logger.critical(f"💥 КРИТИЧЕСКАЯ ОШИБКА в main():тт {e}", exc_info=True)
         log_crash_to_file(type(e), e, e.__traceback__, "Exception in main()")
         print(f"\n💥 Критическая ошибка: {e}")
         traceback.print_exc()

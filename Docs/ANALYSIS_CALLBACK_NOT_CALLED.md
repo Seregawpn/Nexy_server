@@ -117,3 +117,4 @@
 - `integration/integrations/input_processing_integration.py` - обработка SHORT_PRESS и LONG_PRESS
 - `integration/integrations/voice_recognition_integration.py` - активация Google записи
 
+

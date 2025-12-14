@@ -100,7 +100,7 @@ class SpeechRecognizer:
         self.device_monitor = AudioDeviceMonitor(check_interval=0.5)
         self.device_monitor.set_device_change_callback(self._on_device_changed)
         self.last_device_change_time = 0.0
-        self.stabilization_delay = 0.3  # 300мс задержка стабилизации
+        self.stabilization_delay = 0.1  # ✅ Уменьшено с 0.3 до 0.1 для быстрой активации (100мс задержка стабилизации)
         
         # ✅ ИТЕРАЦИЯ 4: Инициализация нормализатора параметров устройств (пока не используется)
         try:
@@ -425,24 +425,32 @@ class SpeechRecognizer:
                     self._schedule_cooldown(0.5)
                     return False
                 
-                # Preflight проверка устройства
+                # Preflight проверка устройства (опциональна для максимальной скорости)
+                # ✅ Пропускаем preflight для быстрой активации - микрофон откроется быстрее
+                # Preflight можно включить обратно, если будут проблемы с устройствами
                 device_name = self.input_device_info.get('name', 'Unknown Device') if hasattr(self, 'input_device_info') else 'Unknown Device'
-                preflight_success, preflight_peak = await preflight_check(device_id, device_name, duration_ms=100)
+                # ✅ ПРОПУСКАЕМ preflight для максимальной скорости активации
+                # preflight_success, preflight_peak = await preflight_check(device_id, device_name, duration_ms=50)
+                preflight_success = True  # Пропускаем проверку для скорости
+                preflight_peak = 0.0  # ✅ FIX: Устанавливаем значение по умолчанию, так как preflight пропущен
+                logger.debug(f"⚡ [SPEED] Preflight пропущен для быстрой активации микрофона")
                 
-                if not preflight_success:
-                    logger.warning(f"⚠️ Preflight check failed: peak={preflight_peak:.6f}")
-                    # Если есть RecoveryManager, инициируем восстановление
-                    if self.recovery_enabled and self.recovery_manager:
-                        logger.info("🔧 Инициируем восстановление после failed preflight")
-                        # Сбрасываем счетчик для немедленного восстановления
-                        self.recovery_manager.stats.silent_chunks = 10  # Порог A
-                        recovery_step = self.recovery_manager.on_chunk_received(
-                            np.zeros((1024, 1), dtype='float32'), 0.0, 0.0
-                        )
-                        if recovery_step:
-                            await self._execute_recovery(recovery_step)
-                else:
-                    logger.info(f"✅ Preflight check passed: peak={preflight_peak:.6f}")
+                # ✅ FIX: Убрана проверка preflight_success, так как мы всегда пропускаем preflight
+                # Если нужно будет включить preflight обратно, раскомментируйте строку выше и эту проверку
+                # if not preflight_success:
+                #     logger.warning(f"⚠️ Preflight check failed: peak={preflight_peak:.6f}")
+                #     # Если есть RecoveryManager, инициируем восстановление
+                #     if self.recovery_enabled and self.recovery_manager:
+                #         logger.info("🔧 Инициируем восстановление после failed preflight")
+                #         # Сбрасываем счетчик для немедленного восстановления
+                #         self.recovery_manager.stats.silent_chunks = 10  # Порог A
+                #         recovery_step = self.recovery_manager.on_chunk_received(
+                #             np.zeros((1024, 1), dtype='float32'), 0.0, 0.0
+                #         )
+                #         if recovery_step:
+                #             await self._execute_recovery(recovery_step)
+                # else:
+                #     logger.info(f"✅ Preflight check passed: peak={preflight_peak:.6f}")
                 
                 self._device_priority = self._build_device_priority(device_id)
                 self.state = RecognitionState.LISTENING
@@ -713,6 +721,7 @@ class SpeechRecognizer:
         """Запускает прослушивание микрофона через sounddevice с мягким retry"""
         stream = None
         stream_started = False
+        stream_closed = False  # ✅ FIX: Инициализируем в начале функции для предотвращения UnboundLocalError
 
         try:
             logger.info("🎤 Прослушивание микрофона начато")

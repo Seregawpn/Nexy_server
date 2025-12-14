@@ -8,6 +8,7 @@ from .common import (
 )
 from .types import Decision
 from .permission_gateways import PermissionRestartGateway, PermissionRestartDecision
+from .audio_gateways import decide_allow_shortcut_during_processing
 
 __all__ = [
     "Decision",
@@ -17,4 +18,5 @@ __all__ = [
     "decide_continue_integration_startup",
     "PermissionRestartGateway",
     "PermissionRestartDecision",
+    "decide_allow_shortcut_during_processing",
 ]

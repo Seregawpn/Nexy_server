@@ -300,12 +300,21 @@ class GrpcClient:
         stub = streaming_pb2_grpc.StreamingServiceStub(self.connection_manager.channel)
         rpc_timeout = timeout or self.config.get('welcome_timeout_sec', 30.0)
 
+        logger.info(f"🔍 [WELCOME_GRPC] Запрос приветственного аудио: text='{text[:50]}...', timeout={rpc_timeout}s")
+        logger.info(f"🔍 [WELCOME_GRPC] Подключение: server={target_server}, connected={self.is_connected()}")
+        logger.info(f"🔍 [WELCOME_GRPC] Channel state: {self.connection_manager.channel.get_state() if self.connection_manager.channel else 'None'}")
+
         audio_chunks: List[bytes] = []
         metadata: Dict[str, Any] = {}
         chunk_dtype: Optional[str] = None
 
         try:
-            async for response in stub.GenerateWelcomeAudio(request, timeout=rpc_timeout):
+            logger.info(f"🔍 [WELCOME_GRPC] Начинаем стриминг GenerateWelcomeAudio...")
+            logger.info(f"🔍 [WELCOME_GRPC] Вызываем stub.GenerateWelcomeAudio с timeout={rpc_timeout}s")
+            response_stream = stub.GenerateWelcomeAudio(request, timeout=rpc_timeout)
+            logger.info(f"🔍 [WELCOME_GRPC] Response stream получен, начинаем итерацию...")
+            async for response in response_stream:
+                logger.info(f"🔍 [WELCOME_GRPC] Получен response: {response.WhichOneof('content')}")
                 content = response.WhichOneof('content')
                 if content == 'audio_chunk':
                     chunk = response.audio_chunk
@@ -314,6 +323,7 @@ class GrpcClient:
                         if audio_bytes:
                             audio_chunks.append(audio_bytes)
                             chunk_dtype = chunk.dtype or chunk_dtype
+                            logger.debug(f"🔍 [WELCOME_GRPC] Получен audio_chunk: {len(audio_bytes)} bytes, dtype={chunk_dtype}, total_chunks={len(audio_chunks)}")
                 elif content == 'metadata':
                     metadata = {
                         'method': response.metadata.method,
@@ -321,33 +331,45 @@ class GrpcClient:
                         'sample_rate': response.metadata.sample_rate,
                         'channels': response.metadata.channels,
                     }
+                    logger.info(f"🔍 [WELCOME_GRPC] Получены метаданные: {metadata}")
                 elif content == 'error_message':
-                    raise RuntimeError(response.error_message)
+                    error_msg = response.error_message
+                    logger.error(f"❌ [WELCOME_GRPC] Сервер вернул ошибку: {error_msg}")
+                    raise RuntimeError(error_msg)
                 elif content == 'end_message':
+                    logger.info(f"🔍 [WELCOME_GRPC] Получен end_message, завершаем стриминг")
                     break
 
         except Exception as e:
-            logger.error(f"❌ Ошибка генерации приветственного аудио: {e}")
+            logger.error(f"❌ [WELCOME_GRPC] Ошибка генерации приветственного аудио: {e}")
+            logger.exception(f"❌ [WELCOME_GRPC] Stack trace:")
             raise
 
+        logger.info(f"🔍 [WELCOME_GRPC] Стриминг завершен: chunks={len(audio_chunks)}, metadata={metadata}")
+
         if not audio_chunks:
+            logger.error(f"❌ [WELCOME_GRPC] Сервер не вернул аудио данных")
             raise RuntimeError("Server returned no audio data")
 
         raw_bytes = b''.join(audio_chunks)
+        logger.info(f"🔍 [WELCOME_GRPC] Объединены чанки: total_bytes={len(raw_bytes)}")
+        
         dtype = (chunk_dtype or 'int16').lower()
 
         if dtype not in ('int16', 'pcm_s16le', 'short'):
-            logger.warning(f"⚠️ Неподдерживаемый dtype '{dtype}', привожу к int16")
+            logger.warning(f"⚠️ [WELCOME_GRPC] Неподдерживаемый dtype '{dtype}', привожу к int16")
             dtype = 'int16'
 
         np_dtype = np.int16
         audio_array = np.frombuffer(raw_bytes, dtype=np_dtype)
+        logger.info(f"🔍 [WELCOME_GRPC] Создан numpy массив: shape={audio_array.shape}, dtype={audio_array.dtype}")
 
         if metadata.get('channels', 1) > 1:
             try:
                 audio_array = audio_array.reshape(-1, metadata['channels'])
+                logger.info(f"🔍 [WELCOME_GRPC] Изменена форма для {metadata['channels']} каналов: shape={audio_array.shape}")
             except Exception:
-                logger.warning("⚠️ Не удалось изменить форму аудио по каналам, оставляю одномерный массив")
+                logger.warning("⚠️ [WELCOME_GRPC] Не удалось изменить форму аудио по каналам, оставляю одномерный массив")
 
         result = {
             'audio': audio_array,
@@ -360,6 +382,7 @@ class GrpcClient:
             }
         }
 
+        logger.info(f"✅ [WELCOME_GRPC] Аудио успешно сгенерировано: shape={audio_array.shape}, metadata={result['metadata']}")
         return result
 
     async def cleanup(self):

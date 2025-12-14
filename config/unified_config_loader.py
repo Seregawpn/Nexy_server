@@ -345,6 +345,23 @@ class UnifiedConfigLoader:
         # Возвращаем default_audio конфигурацию
         return self.get_default_audio_config()
     
+    def get_audio_config_object(self):
+        """Получает объект AudioConfig из unified_config.yaml
+        
+        Returns:
+            AudioConfig: Объект конфигурации аудио
+        """
+        try:
+            from config.audio_config import AudioConfig
+            audio_config_dict = self.get_default_audio_config()
+            return AudioConfig.from_dict(audio_config_dict)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ [CONFIG] Ошибка создания AudioConfig, используем defaults: {e}")
+            from config.audio_config import AudioConfig
+            return AudioConfig.default()
+    
     def get_speech_playback_config(self) -> Dict[str, Any]:
         """Получает настройки воспроизведения речи"""
         audio_config = self.get_audio_config()
@@ -370,6 +387,41 @@ class UnifiedConfigLoader:
             return stt.get('language', default) or default
         except Exception:
             return default
+    
+    def get_audio_avf_config(self) -> Dict[str, Any]:
+        """Получает настройки AVFoundation аудиосистемы из unified_config.yaml
+        
+        Returns:
+            Dict с настройками audio_avf, включая:
+            - avf.enabled: feature flag для включения AVF
+            - ks_avf.enabled: kill-switch для отключения AVF
+            - avf.diagnostics: настройки диагностики (activation_duration_sec, deactivation_pause_sec)
+            - google_recognition: настройки Google распознавания (callback_wait_sec, chunk_wait_sec)
+        """
+        config = self._load_config()
+        # Возвращаем секцию audio_avf или пустой dict с defaults
+        audio_avf = config.get('audio_avf', {})
+        
+        # Устанавливаем defaults, если секция отсутствует
+        if not audio_avf:
+            audio_avf = {
+                'avf': {
+                    'enabled': False,  # По умолчанию выключено
+                    'diagnostics': {
+                        'activation_duration_sec': 1.0,
+                        'deactivation_pause_sec': 0.2
+                    }
+                },
+                'ks_avf': {
+                    'enabled': False
+                },
+                'google_recognition': {
+                    'callback_wait_sec': 0.5,
+                    'chunk_wait_sec': 1.0
+                }
+            }
+        
+        return audio_avf
     
     def get_screen_capture_config(self) -> Dict[str, Any]:
         """Получает настройки захвата экрана"""

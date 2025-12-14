@@ -158,8 +158,8 @@ integrations:
     enable_keyboard_monitoring: true
     auto_start: true
     min_recording_duration_sec: 0.6
-    recording_prestart_delay_sec: 0.3
-    playback_idle_grace_sec: 0.3
+    recording_prestart_delay_sec: 0.0  # ✅ УБРАНО: задержка не нужна, так как мы уже ждем закрытия микрофона через _wait_for_mic_closed()
+    playback_idle_grace_sec: 0.1  # ✅ Уменьшено с 0.3s до 0.1s для быстрого отклика
     playback_wait_timeout_sec: 5.0
     # Максимальное время (в секундах), которое микрофон может быть активен.
     # По истечении этого времени состояние будет принудительно сброшено
@@ -428,6 +428,26 @@ voice_recognition:
 # Voice integration settings (used by voice_recognition_integration.py)
 voice:
   start_retry_delay_ms: 300  # Задержка между попытками запуска микрофона (мс)
+
+# ✅ AVFoundation (AVF) аудиосистема - диагностика и конфигурация устройств
+# Используется для получения конфигурации устройства перед запуском Google микрофона
+audio_avf:
+  # Feature flag для включения AVF
+  avf:
+    enabled: true  # ✅ ОБЯЗАТЕЛЬНО: включить AVF для диагностики устройств
+    rollout_percentage: 100  # Полный rollout (100%)
+    diagnostics:
+      activation_duration_sec: 1.0  # Длительность активации AVF для получения диагностики
+      deactivation_pause_sec: 0.2    # Пауза после деактивации AVF перед запуском Google микрофона
+  
+  # Kill-switch для AVF (мгновенный откат)
+  ks_avf:
+    enabled: false  # Если true, отключает AVF независимо от feature flag
+  
+  # Настройки Google распознавания (используются при записи через speech_recognition)
+  google_recognition:
+    callback_wait_sec: 0.5  # Ожидание после остановки listen_in_background для завершения callback'ов
+    chunk_wait_sec: 1.0      # Ожидание первого чанка перед остановкой записи
 
 # Coordinator settings (used by simple_module_coordinator.py)
 coordinator:

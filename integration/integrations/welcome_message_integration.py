@@ -195,17 +195,75 @@ class WelcomeMessageIntegration:
                     audio_data = self.welcome_player.get_audio_data()
                     if audio_data is not None:
                         logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration (async context)")
+                        # ✅ КРИТИЧНО: Подписываемся на playback.completed ДО публикации playback.raw_audio
+                        # Это предотвращает race condition, когда событие публикуется до подписки
+                        # (особенно при быстром завершении из-за прерывания и принудительного завершения)
+                        
+                        # ✅ КРИТИЧНО: Генерируем session_id ДО подписки, чтобы обработчик мог его использовать
+                        session_id = f"welcome_message_{trigger}_{int(time.time())}"
+                        self._current_welcome_session_id = session_id
+                        
+                        # Создаем Future для ожидания события
+                        playback_completed = asyncio.Future()
+                        
+                        async def on_playback_event(event):
+                            # ✅ ИСПРАВЛЕНИЕ: Проверяем session_id или pattern более точно
+                            data = event.get("data", {}) or {}
+                            event_session_id = data.get("session_id", "")
+                            pattern = data.get("pattern", "")
+                            
+                            # Проверяем по сохранённому session_id или по pattern
+                            matches = (
+                                (self._current_welcome_session_id and event_session_id == self._current_welcome_session_id) or
+                                "welcome_message" in str(event_session_id).lower() or
+                                "welcome_message" in str(pattern).lower()
+                            )
+                            
+                            if matches:
+                                logger.info(f"🎵 [WELCOME_INTEGRATION] Получено событие завершения воспроизведения (session_id={event_session_id}, pattern={pattern})")
+                                if not playback_completed.done():
+                                    playback_completed.set_result(True)
+                            else:
+                                logger.debug(f"🔍 [WELCOME_INTEGRATION] Игнорируем playback.completed (session_id={event_session_id}, pattern={pattern}, ожидаем={self._current_welcome_session_id})")
+                        
+                        # Подписываемся на событие завершения воспроизведения ДО публикации playback.raw_audio
+                        logger.info(f"🔄 [WELCOME_INTEGRATION] Подписываюсь на playback.completed ДО отправки аудио (session_id={session_id})...")
+                        await self.event_bus.subscribe("playback.completed", on_playback_event)
+                        logger.info(f"✅ [WELCOME_INTEGRATION] Подписка на playback.completed завершена, публикую playback.raw_audio...")
+                        
                         # ✅ ИСПРАВЛЕНИЕ: Передаем trigger в _send_audio_to_playback
                         try:
-                            await self._send_audio_to_playback(audio_data, trigger=trigger)
+                            await self._send_audio_to_playback(audio_data, trigger=trigger, session_id=session_id)
                             
                             # Ждём завершения воспроизведения
                             logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
-                            await self._wait_for_playback_completion()
+                            
+                            # ✅ КРИТИЧНО: Проверяем, не было ли событие уже получено ДО начала ожидания
+                            # Это может произойти, если событие публикуется очень быстро после playback.raw_audio
+                            try:
+                                if playback_completed.done():
+                                    logger.info("✅ [WELCOME_INTEGRATION] Событие уже получено ДО начала ожидания, пропускаем wait_for")
+                                else:
+                                    # Ждем завершения воспроизведения с таймаутом 10 секунд
+                                    await asyncio.wait_for(playback_completed, timeout=10.0)
+                                    logger.info("✅ [WELCOME_INTEGRATION] Воспроизведение завершено")
+                            except asyncio.TimeoutError:
+                                logger.warning("⏱️ [WELCOME_INTEGRATION] Timeout ожидания завершения воспроизведения (10 секунд)")
+                            finally:
+                                # Отписываемся от события
+                                await self.event_bus.unsubscribe("playback.completed", on_playback_event)
+                                # ✅ ИСПРАВЛЕНИЕ: Очищаем session_id после завершения
+                                self._current_welcome_session_id = None
                             
                             # ✅ ИСПРАВЛЕНИЕ: Устанавливаем _welcome_played только после успешного воспроизведения
                             self._welcome_played = True
                         except Exception as e:
+                            # Отписываемся от события в случае ошибки
+                            try:
+                                await self.event_bus.unsubscribe("playback.completed", on_playback_event)
+                            except Exception:
+                                pass
+                            self._current_welcome_session_id = None
                             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка отправки/воспроизведения аудио: {e}", exc_info=True)
                             self._welcome_played = False
                             raise
@@ -413,7 +471,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _return_to_sleeping_after_playback: {e}")
     
-    async def _send_audio_to_playback(self, audio_data: np.ndarray, trigger: str = "app_startup"):
+    async def _send_audio_to_playback(self, audio_data: np.ndarray, trigger: str = "app_startup", session_id: Optional[str] = None):
         """Отправляет аудио данные в SpeechPlaybackIntegration для воспроизведения"""
         try:
             logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration: {len(audio_data)} сэмплов (trigger={trigger})")
@@ -426,10 +484,12 @@ class WelcomeMessageIntegration:
             channels = int(metadata.get('channels', self.config.channels))
             method = metadata.get('method', 'server')
             
+            # ✅ ИСПРАВЛЕНИЕ: Используем переданный session_id или генерируем новый
+            if session_id is None:
+                session_id = f"welcome_message_{trigger}_{int(time.time())}"
+            
             # ✅ ПРАВИЛЬНО: Передаем numpy массив напрямую в плеер
             # БЕЗ конвертации в bytes - плеер сам разберется с форматом
-            # ✅ ИСПРАВЛЕНИЕ: Добавляем session_id для корректной проверки завершения воспроизведения
-            session_id = f"welcome_message_{trigger}_{int(time.time())}"
             await self.event_bus.publish("playback.raw_audio", {
                 "audio_data": audio_data,  # numpy array
                 "sample_rate": sample_rate,
@@ -441,9 +501,6 @@ class WelcomeMessageIntegration:
                 "metadata": metadata,
                 "method": method,
             })
-            
-            # Сохраняем session_id для проверки завершения
-            self._current_welcome_session_id = session_id
             
             logger.info("✅ [WELCOME_INTEGRATION] Аудио отправлено в SpeechPlaybackIntegration")
             
