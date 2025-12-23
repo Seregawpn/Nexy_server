@@ -1,0 +1,2182 @@
+{
+  "readiness_score": 9.0,
+  "feature_flags": [
+    {
+      "name": "NEXY_FEATURE_PERMISSION_RESTART_V2",
+      "config_path": "unified_config.yaml: permission_restart.enabled",
+      "code_locations": [
+        "modules/permission_restart/core/restart_scheduler.py",
+        "/Users/sergiyzasorin/Fix_new/client/scripts/verify_feature_flags.py"
+      ],
+      "default_value": "`true`",
+      "purpose": "Включить автоматический перезапуск после разрешений",
+      "type": "feature flag"
+    },
+    {
+      "name": "NEXY_KS_PERMISSION_RESTART_V2",
+      "config_path": "unified_config.yaml: permission_restart.enabled",
+      "code_locations": [
+        "modules/permission_restart/core/restart_scheduler.py:69",
+        "/Users/sergiyzasorin/Fix_new/client/scripts/verify_feature_flags.py"
+      ],
+      "default_value": "`true`",
+      "purpose": "Отключить автоматический перезапуск (откат)",
+      "type": "kill_switch"
+    },
+    {
+      "name": "NEXY_DISABLE_AUTO_RESTART",
+      "config_path": "Environment variable",
+      "code_locations": [
+        "permission_restart_integration.py",
+        "/Users/sergiyzasorin/Fix_new/client/scripts/verify_feature_flags.py",
+        "/Users/sergiyzasorin/Fix_new/client/modules/permission_restart/macos/restart_handler.py",
+        "/Users/sergiyzasorin/Fix_new/client/modules/permission_restart/macos/permissions_restart_handler.py"
+      ],
+      "default_value": "`false`",
+      "purpose": "Dry-run mode (перезапуск не выполняется)",
+      "type": "kill_switch"
+    },
+    {
+      "name": "NEXY_FEATURE_FIRST_RUN_V2",
+      "config_path": "unified_config.yaml: first_run_permissions.enabled",
+      "code_locations": [
+        "integration/integrations/first_run_permissions_integration.py",
+        "/Users/sergiyzasorin/Fix_new/client/scripts/verify_feature_flags.py"
+      ],
+      "default_value": "`true`",
+      "purpose": "Включить систему первого запуска",
+      "type": "feature flag"
+    }
+  ],
+  "events": [
+    {
+      "name": "hardware.id_error",
+      "publishers": [
+        "hardware_id"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "hardware.id_obtained",
+      "publishers": [
+        "hardware_id"
+      ],
+      "subscribers": [
+        "grpc_client"
+      ],
+      "priority": null
+    },
+    {
+      "name": "hardware.id_response",
+      "publishers": [
+        "hardware_id"
+      ],
+      "subscribers": [
+        "grpc_client"
+      ],
+      "priority": null
+    },
+    {
+      "name": "app.startup",
+      "publishers": [],
+      "subscribers": [
+        "hardware_id",
+        "tray_controller",
+        "updater",
+        "interrupt_management",
+        "autostart_manager",
+        "network_manager",
+        "instance_manager",
+        "permission_restart"
+      ],
+      "priority": null
+    },
+    {
+      "name": "app.shutdown",
+      "publishers": [],
+      "subscribers": [
+        "hardware_id",
+        "tray_controller",
+        "updater",
+        "interrupt_management",
+        "speech_playback",
+        "voiceover_ducking",
+        "network_manager",
+        "instance_manager",
+        "grpc_client"
+      ],
+      "priority": null
+    },
+    {
+      "name": "hardware.id_request",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "hardware_id"
+      ],
+      "priority": null
+    },
+    {
+      "name": "hardware.id_refresh",
+      "publishers": [],
+      "subscribers": [
+        "hardware_id"
+      ],
+      "priority": null
+    },
+    {
+      "name": "screenshot.error",
+      "publishers": [
+        "screenshot_capture"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "screenshot.captured",
+      "publishers": [
+        "screenshot_capture"
+      ],
+      "subscribers": [
+        "grpc_client"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.check_required",
+      "publishers": [
+        "screenshot_capture",
+        "welcome_message"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "app.mode_changed",
+      "publishers": [],
+      "subscribers": [
+        "screenshot_capture",
+        "tray_controller",
+        "updater",
+        "voiceover_ducking",
+        "voice_recognition",
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "voice.recording_stop",
+      "publishers": [
+        "input_processing"
+      ],
+      "subscribers": [
+        "screenshot_capture",
+        "voice_recognition"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.status_checked",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "screenshot_capture",
+        "welcome_message",
+        "permission_restart"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.changed",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "screenshot_capture",
+        "welcome_message",
+        "permission_restart"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.requested",
+      "publishers": [],
+      "subscribers": [
+        "screenshot_capture",
+        "welcome_message"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.integration_ready",
+      "publishers": [],
+      "subscribers": [
+        "screenshot_capture",
+        "welcome_message"
+      ],
+      "priority": null
+    },
+    {
+      "name": "tray.integration_ready",
+      "publishers": [
+        "tray_controller"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "tray.quit_clicked",
+      "publishers": [
+        "tray_controller"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "tray.status_updated",
+      "publishers": [
+        "tray_controller"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "voice.mic_opened",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "tray_controller",
+        "signal",
+        "input_processing"
+      ],
+      "priority": null
+    },
+    {
+      "name": "voice.mic_closed",
+      "publishers": [
+        "input_processing",
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "tray_controller",
+        "input_processing",
+        "speech_playback"
+      ],
+      "priority": null
+    },
+    {
+      "name": "updater.update_skipped",
+      "publishers": [
+        "updater"
+      ],
+      "subscribers": [
+        "permission_restart"
+      ],
+      "priority": null
+    },
+    {
+      "name": "updater.update_started",
+      "publishers": [
+        "updater"
+      ],
+      "subscribers": [
+        "update_notification",
+        "permission_restart"
+      ],
+      "priority": null
+    },
+    {
+      "name": "updater.update_completed",
+      "publishers": [
+        "updater"
+      ],
+      "subscribers": [
+        "update_notification",
+        "permission_restart"
+      ],
+      "priority": null
+    },
+    {
+      "name": "updater.update_failed",
+      "publishers": [
+        "updater"
+      ],
+      "subscribers": [
+        "update_notification",
+        "permission_restart"
+      ],
+      "priority": null
+    },
+    {
+      "name": "updater.check_manual",
+      "publishers": [],
+      "subscribers": [
+        "updater"
+      ],
+      "priority": null
+    },
+    {
+      "name": "mode.changed",
+      "publishers": [],
+      "subscribers": [
+        "updater"
+      ],
+      "priority": null
+    },
+    {
+      "name": "signal.play",
+      "publishers": [
+        "update_notification"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "updater.download_progress",
+      "publishers": [],
+      "subscribers": [
+        "update_notification"
+      ],
+      "priority": null
+    },
+    {
+      "name": "updater.install_progress",
+      "publishers": [],
+      "subscribers": [
+        "update_notification"
+      ],
+      "priority": null
+    },
+    {
+      "name": "playback.completed",
+      "publishers": [
+        "speech_playback"
+      ],
+      "subscribers": [
+        "signal",
+        "welcome_message",
+        "input_processing",
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "playback.cancelled",
+      "publishers": [
+        "input_processing",
+        "speech_playback"
+      ],
+      "subscribers": [
+        "signal",
+        "input_processing",
+        "speech_playback"
+      ],
+      "priority": null
+    },
+    {
+      "name": "grpc.request_failed",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "signal",
+        "input_processing",
+        "speech_playback",
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "voice.recognition_failed",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "signal",
+        "input_processing"
+      ],
+      "priority": null
+    },
+    {
+      "name": "interrupt.status_snapshot",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "speech.stop_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "mode.request",
+      "publishers": [
+        "interrupt_management",
+        "welcome_message",
+        "input_processing",
+        "speech_playback",
+        "mode_management"
+      ],
+      "subscribers": [
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "speech.pause_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "recording.stop_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "session.clear_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "system.reset_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "app.state_changed",
+      "publishers": [],
+      "subscribers": [
+        "interrupt_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "interrupt.request",
+      "publishers": [
+        "input_processing"
+      ],
+      "subscribers": [
+        "interrupt_management",
+        "action_execution"
+      ],
+      "priority": null
+    },
+    {
+      "name": "interrupt.cancel",
+      "publishers": [],
+      "subscribers": [
+        "interrupt_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "playback.raw_audio",
+      "publishers": [
+        "welcome_message"
+      ],
+      "subscribers": [
+        "speech_playback"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.timeout",
+      "publishers": [
+        "welcome_message"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "system.ready_to_greet",
+      "publishers": [],
+      "subscribers": [
+        "welcome_message"
+      ],
+      "priority": null
+    },
+    {
+      "name": "grpc.request_cancel",
+      "publishers": [
+        "input_processing"
+      ],
+      "subscribers": [
+        "speech_playback",
+        "grpc_client"
+      ],
+      "priority": null
+    },
+    {
+      "name": "mode.switch",
+      "publishers": [],
+      "subscribers": [
+        "input_processing"
+      ],
+      "priority": null
+    },
+    {
+      "name": "voice.recognition_completed",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "input_processing",
+        "grpc_client"
+      ],
+      "priority": null
+    },
+    {
+      "name": "voice.recognition_timeout",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "input_processing"
+      ],
+      "priority": null
+    },
+    {
+      "name": "grpc.request_completed",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "input_processing",
+        "speech_playback",
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "playback.started",
+      "publishers": [
+        "speech_playback"
+      ],
+      "subscribers": [
+        "input_processing"
+      ],
+      "priority": null
+    },
+    {
+      "name": "playback.failed",
+      "publishers": [
+        "speech_playback"
+      ],
+      "subscribers": [
+        "input_processing",
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.first_run_started",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "input_processing",
+        "voice_recognition"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.first_run_completed",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "input_processing",
+        "voiceover_ducking",
+        "voice_recognition",
+        "permission_restart"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.first_run_failed",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "input_processing",
+        "voice_recognition"
+      ],
+      "priority": null
+    },
+    {
+      "name": "autostart.status_checked",
+      "publishers": [
+        "autostart_manager"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "autostart.check_status",
+      "publishers": [],
+      "subscribers": [
+        "autostart_manager"
+      ],
+      "priority": null
+    },
+    {
+      "name": "grpc.response.audio",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "speech_playback"
+      ],
+      "priority": null
+    },
+    {
+      "name": "playback.signal",
+      "publishers": [],
+      "subscribers": [
+        "speech_playback"
+      ],
+      "priority": null
+    },
+    {
+      "name": "system.permissions_ready",
+      "publishers": [],
+      "subscribers": [
+        "voiceover_ducking"
+      ],
+      "priority": null
+    },
+    {
+      "name": "keyboard.press",
+      "publishers": [],
+      "subscribers": [
+        "voiceover_ducking"
+      ],
+      "priority": null
+    },
+    {
+      "name": "grpc.response.action",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "action_execution"
+      ],
+      "priority": null
+    },
+    {
+      "name": "keyboard.short_press",
+      "publishers": [],
+      "subscribers": [
+        "action_execution",
+        "voice_recognition",
+        "mode_management",
+        "grpc_client"
+      ],
+      "priority": null
+    },
+    {
+      "name": "network.status_snapshot",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "network.status_changed",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [
+        "grpc_client"
+      ],
+      "priority": null
+    },
+    {
+      "name": "network.connection_lost",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "network.quality_changed",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "tray.update_tooltip",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "voice.recognition_started",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "voice.recording_start",
+      "publishers": [],
+      "subscribers": [
+        "voice_recognition",
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "keyboard.long_press",
+      "publishers": [],
+      "subscribers": [
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "keyboard.release",
+      "publishers": [],
+      "subscribers": [
+        "mode_management"
+      ],
+      "priority": null
+    },
+    {
+      "name": "signal.duplicate_instance",
+      "publishers": [
+        "instance_manager"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "instance.status_checked",
+      "publishers": [
+        "instance_manager"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "instance.status_response",
+      "publishers": [
+        "instance_manager"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "instance.check_request",
+      "publishers": [],
+      "subscribers": [
+        "instance_manager"
+      ],
+      "priority": null
+    },
+    {
+      "name": "permissions.first_run_restart_pending",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "grpc.request_started",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [],
+      "priority": null
+    },
+    {
+      "name": "grpc.response.text",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [],
+      "priority": null
+    }
+  ],
+  "modules": [
+    {
+      "name": "mcp_action",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/mcp_action",
+      "audio_related": false,
+      "dependencies": [
+        "typing",
+        "logging",
+        "core.mcp_action_executor",
+        "dataclasses",
+        "mcp.client.stdio",
+        "pathlib",
+        "types",
+        "mcp_action_executor",
+        "asyncio",
+        "core.types",
+        "mcp"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "signals",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/signals",
+      "audio_related": true,
+      "dependencies": [
+        "typing",
+        "core.interfaces",
+        "logging",
+        "enum",
+        "dataclasses",
+        "math",
+        "__future__",
+        "time",
+        "asyncio",
+        "interfaces"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "instance_manager",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/instance_manager",
+      "audio_related": false,
+      "dependencies": [
+        "json",
+        "psutil",
+        "typing",
+        "enum",
+        "dataclasses",
+        "core.instance_manager",
+        "time",
+        "types",
+        "fcntl",
+        "pathlib",
+        "core.types",
+        "os",
+        "tempfile"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "voiceover_control",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/voiceover_control",
+      "audio_related": true,
+      "dependencies": [
+        "typing",
+        "logging",
+        "subprocess",
+        "core",
+        "dataclasses",
+        "__future__",
+        "Quartz",
+        "time",
+        "asyncio",
+        "controller",
+        "modules.permissions.macos.accessibility_handler",
+        "platform"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "voice_recognition",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/voice_recognition",
+      "audio_related": true,
+      "dependencies": [
+        "logging",
+        "sounddevice",
+        "traceback",
+        "audio_device_monitor",
+        "audio_recovery_manager",
+        "threading",
+        "modules.voice_recognition.utils.audio_utils",
+        "dataclasses",
+        "time",
+        "enum",
+        "numpy",
+        "speech_recognition",
+        "json",
+        "core.speech_recognizer",
+        "typing",
+        "config.default_config",
+        "utils.audio_utils",
+        "subprocess",
+        "config.unified_config_loader",
+        "types",
+        "asyncio",
+        "sys",
+        "core.types"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "autostart_manager",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/autostart_manager",
+      "audio_related": true,
+      "dependencies": [
+        "typing",
+        "subprocess",
+        "enum",
+        "core.autostart_manager",
+        "dataclasses",
+        "core.config",
+        "types",
+        "core.types",
+        "os",
+        "macos.launch_agent"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "updater",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/updater",
+      "audio_related": true,
+      "dependencies": [
+        "urllib3",
+        "logging",
+        "pkg",
+        "config",
+        "xml.etree.ElementTree",
+        "pathlib",
+        "plistlib",
+        "os",
+        "shutil",
+        "verify",
+        "nacl.signing",
+        "dataclasses",
+        "time",
+        "replace",
+        "tempfile",
+        "hashlib",
+        "updater",
+        "migrate",
+        "urllib3.exceptions",
+        "packaging",
+        "base64",
+        "json",
+        "dmg",
+        "typing",
+        "urllib3.util",
+        "subprocess",
+        "net",
+        "Cocoa"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "permissions",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/permissions",
+      "audio_related": true,
+      "dependencies": [
+        "permission_handler",
+        "screen_capture_permission",
+        "logging",
+        "sounddevice",
+        "core.permissions_queue",
+        "yaml",
+        "config",
+        "pathlib",
+        "integration.utils.resource_path",
+        "Foundation",
+        "os",
+        "modules.permissions.macos.screen_capture_permission",
+        "core.permissions_manager",
+        "dataclasses",
+        "time",
+        "status_checker",
+        "AVFoundation",
+        "activator",
+        "UserNotifications",
+        "macos.permission_handler",
+        "ctypes",
+        "enum",
+        "Quartz",
+        "core.config",
+        "integration.core.event_bus",
+        "typing",
+        "subprocess",
+        "config.unified_config_loader",
+        "types",
+        "asyncio",
+        "sys",
+        "core.types",
+        "modules.permissions.macos.accessibility_handler",
+        "accessibility_handler"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "mode_management",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/mode_management",
+      "audio_related": true,
+      "dependencies": [
+        "modes.listening_mode",
+        "typing",
+        "logging",
+        "enum",
+        "dataclasses",
+        "modes.processing_mode",
+        "time",
+        "types",
+        "core.mode_controller",
+        "asyncio",
+        "core.types",
+        "modes.sleeping_mode"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "speech_playback",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/speech_playback",
+      "audio_related": true,
+      "dependencies": [
+        "buffer",
+        "logging",
+        "sounddevice",
+        "macos.security",
+        "macos.performance",
+        "threading",
+        "datetime",
+        "dataclasses",
+        "time",
+        "scipy",
+        "enum",
+        "queue",
+        "gc",
+        "numpy",
+        "macos.core_audio",
+        "psutil",
+        "typing",
+        "utils.audio_utils",
+        "state",
+        "config.unified_config_loader",
+        "core.buffer",
+        "asyncio",
+        "core.state",
+        "platform",
+        "core.player"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "network_manager",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/network_manager",
+      "audio_related": false,
+      "dependencies": [
+        "typing",
+        "logging",
+        "enum",
+        "config.unified_config_loader",
+        "dataclasses",
+        "config",
+        "time",
+        "pathlib",
+        "types",
+        "asyncio",
+        "sys"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "input_processing",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/input_processing",
+      "audio_related": true,
+      "dependencies": [
+        "inspect",
+        "threading",
+        "typing",
+        "logging",
+        "enum",
+        "dataclasses",
+        "config.unified_config_loader",
+        "Quartz",
+        "keyboard.keyboard_monitor",
+        "keyboard.types",
+        "keyboard_monitor",
+        "types",
+        "asyncio",
+        "time",
+        "Foundation",
+        "config.input_config",
+        "input_config",
+        "pynput.keyboard"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "tray_controller",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/tray_controller",
+      "audio_related": true,
+      "dependencies": [
+        "rumps",
+        "logging",
+        "yaml",
+        "traceback",
+        "config",
+        "pathlib",
+        "integration.utils.resource_path",
+        "os",
+        "macos.menu_handler",
+        "PIL",
+        "threading",
+        "dataclasses",
+        "time",
+        "uuid",
+        "core.tray_controller",
+        "tempfile",
+        "enum",
+        "core.config",
+        "random",
+        "status_item_manager",
+        "AppKit",
+        "base64",
+        "typing",
+        "tray_types",
+        "config.unified_config_loader",
+        "asyncio",
+        "sys",
+        "core.tray_types",
+        "macos.tray_icon"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "action_errors",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/action_errors",
+      "audio_related": true,
+      "dependencies": [
+        "dataclasses",
+        "typing",
+        "__future__"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "screenshot_capture",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/screenshot_capture",
+      "audio_related": true,
+      "dependencies": [
+        "core.screenshot_capture",
+        "logging",
+        "yaml",
+        "pathlib",
+        "integration.utils.resource_path",
+        "dataclasses",
+        "time",
+        "tempfile",
+        "simple_bridge",
+        "shlex",
+        "enum",
+        "macos.core_graphics_bridge",
+        "Quartz",
+        "core.config",
+        "macos.simple_bridge",
+        "AppKit",
+        "json",
+        "base64",
+        "typing",
+        "subprocess",
+        "types",
+        "asyncio",
+        "core.types"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "interrupt_management",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/interrupt_management",
+      "audio_related": true,
+      "dependencies": [
+        "typing",
+        "logging",
+        "handlers.speech_interrupt",
+        "enum",
+        "dataclasses",
+        "time",
+        "types",
+        "config.interrupt_config",
+        "handlers.recording_interrupt",
+        "core.interrupt_coordinator",
+        "core.types",
+        "asyncio"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "action_executor",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/action_executor",
+      "audio_related": false,
+      "dependencies": [
+        "typing",
+        "logging",
+        "action_executor",
+        "dataclasses",
+        "types",
+        "asyncio",
+        "core.types",
+        "os",
+        "core.action_executor"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "hardware_id",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/hardware_id",
+      "audio_related": true,
+      "dependencies": [
+        "logging",
+        "config",
+        "pathlib",
+        "macos.hardware_detector",
+        "system_profiler",
+        "integration.utils.resource_path",
+        "os",
+        "core.hardware_identifier",
+        "datetime",
+        "dataclasses",
+        "uuid",
+        "utils.validation",
+        "enum",
+        "re",
+        "core.config",
+        "hardware_detector",
+        "json",
+        "typing",
+        "caching",
+        "validation",
+        "subprocess",
+        "hardware_identifier",
+        "types",
+        "utils.caching",
+        "sys",
+        "core.types",
+        "platform"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "grpc_client",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/grpc_client",
+      "audio_related": true,
+      "dependencies": [
+        "retry_manager",
+        "logging",
+        "connection_manager",
+        "yaml",
+        "traceback",
+        "pathlib",
+        "warnings",
+        "integration.utils.resource_path",
+        "grpc",
+        "datetime",
+        "dataclasses",
+        "grpc_client",
+        "health_checker",
+        "time",
+        "core.grpc_client",
+        "enum",
+        "grpc._utilities",
+        "numpy",
+        "random",
+        "importlib",
+        "google.protobuf.internal",
+        "grpc.aio",
+        "streaming_pb2",
+        "typing",
+        "google.protobuf",
+        "types",
+        "asyncio",
+        "sys",
+        "core.types"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "permission_restart",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/permission_restart",
+      "audio_related": true,
+      "dependencies": [
+        "logging",
+        "modules.permission_restart.core.config",
+        "config",
+        "pathlib",
+        "fcntl",
+        "integration.utils.resource_path",
+        "os",
+        "core.permission_change_detector",
+        "integration.core.state_manager",
+        "macos.restart_handler",
+        "modules.permission_restart.core.atomic_flag",
+        "modules.updater.migrate",
+        "dataclasses",
+        "time",
+        "integration.core.selectors",
+        "shlex",
+        "modules.permissions.core.types",
+        "enum",
+        "__future__",
+        "core.config",
+        "integration.core.event_bus",
+        "json",
+        "typing",
+        "subprocess",
+        "types",
+        "asyncio",
+        "sys",
+        "contextlib",
+        "core.restart_scheduler",
+        "textwrap"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    },
+    {
+      "name": "welcome_message",
+      "path": "/Users/sergiyzasorin/Fix_new/client/modules/welcome_message",
+      "audio_related": true,
+      "dependencies": [
+        "welcome_player",
+        "typing",
+        "logging",
+        "enum",
+        "dataclasses",
+        "config.unified_config_loader",
+        "welcome_config",
+        "numpy",
+        "pathlib",
+        "types",
+        "modules.grpc_client.core.grpc_client",
+        "sys",
+        "audio_generator",
+        "core.types",
+        "resource_path",
+        "core.welcome_player"
+      ],
+      "events_published": [],
+      "events_subscribed": []
+    }
+  ],
+  "integrations": [
+    {
+      "name": "screenshot_capture",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/screenshot_capture_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "logging",
+        "modules.screenshot_capture.core.types",
+        "pathlib",
+        "os",
+        "integration.core.state_manager",
+        "datetime",
+        "dataclasses",
+        "integration.core.error_handler",
+        "tempfile",
+        "shlex",
+        "modules.permissions.core.types",
+        "Quartz",
+        "modules.screenshot_capture.core.screenshot_capture",
+        "integration.core.event_bus",
+        "modules.permissions.core.permissions_queue",
+        "base64",
+        "typing",
+        "subprocess",
+        "config.unified_config_loader",
+        "asyncio",
+        "sys",
+        "contextlib"
+      ],
+      "events_published": [
+        "screenshot.error",
+        "screenshot.captured",
+        "permissions.check_required"
+      ],
+      "events_subscribed": [
+        "app.mode_changed",
+        "voice.recording_stop",
+        "permissions.status_checked",
+        "permissions.changed",
+        "permissions.requested",
+        "permissions.integration_ready"
+      ],
+      "initialization_order": 10
+    },
+    {
+      "name": "tray_controller",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/tray_controller_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "rumps",
+        "typing",
+        "logging",
+        "modules.tray_controller.core.tray_types",
+        "dataclasses",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "traceback",
+        "modules.tray_controller",
+        "time",
+        "asyncio",
+        "integration.core.event_bus",
+        "PyObjCTools",
+        "os"
+      ],
+      "events_published": [
+        "tray.integration_ready",
+        "tray.quit_clicked",
+        "tray.status_updated"
+      ],
+      "events_subscribed": [
+        "app.mode_changed",
+        "app.startup",
+        "app.shutdown",
+        "voice.mic_opened",
+        "voice.mic_closed"
+      ],
+      "initialization_order": null
+    },
+    {
+      "name": "updater",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/updater_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "config.updater_manager",
+        "typing",
+        "logging",
+        "modules.updater.config",
+        "config.unified_config_loader",
+        "pathlib",
+        "modules.updater",
+        "sys",
+        "asyncio",
+        "integration.core.event_bus",
+        "os"
+      ],
+      "events_published": [
+        "updater.update_skipped",
+        "updater.update_started",
+        "updater.update_completed",
+        "updater.update_failed"
+      ],
+      "events_subscribed": [
+        "app.startup",
+        "app.shutdown",
+        "updater.check_manual",
+        "app.mode_changed",
+        "mode.changed"
+      ],
+      "initialization_order": 16
+    },
+    {
+      "name": "update_notification",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/update_notification_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "dataclasses",
+        "__future__",
+        "integration.core.error_handler",
+        "time",
+        "asyncio",
+        "integration.core.event_bus",
+        "integration.core.base_integration"
+      ],
+      "events_published": [
+        "signal.play"
+      ],
+      "events_subscribed": [
+        "updater.update_started",
+        "updater.download_progress",
+        "updater.install_progress",
+        "updater.update_completed",
+        "updater.update_failed"
+      ],
+      "initialization_order": 15
+    },
+    {
+      "name": "signal",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/signal_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "modules.signals.channels.audio_tone",
+        "dataclasses",
+        "modules.signals.config.types",
+        "modules.signals.core.interfaces",
+        "__future__",
+        "integration.core.error_handler",
+        "modules.signals.core.service",
+        "integration.core.event_bus",
+        "integration.adapters.signals_event_sink"
+      ],
+      "events_published": [],
+      "events_subscribed": [
+        "voice.mic_opened",
+        "playback.completed",
+        "playback.cancelled",
+        "grpc.request_failed",
+        "voice.recognition_failed"
+      ],
+      "initialization_order": null
+    },
+    {
+      "name": "interrupt_management",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/interrupt_management_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "dataclasses",
+        "integration.core.error_handler",
+        "modules.interrupt_management.core.interrupt_coordinator",
+        "modules.interrupt_management.core.types",
+        "asyncio",
+        "modules.interrupt_management.config.interrupt_config",
+        "integration.core.event_bus"
+      ],
+      "events_published": [
+        "interrupt.status_snapshot",
+        "speech.stop_requested",
+        "mode.request",
+        "speech.pause_requested",
+        "recording.stop_requested",
+        "session.clear_requested",
+        "system.reset_requested"
+      ],
+      "events_subscribed": [
+        "app.startup",
+        "app.shutdown",
+        "app.state_changed",
+        "interrupt.request",
+        "interrupt.cancel"
+      ],
+      "initialization_order": null
+    },
+    {
+      "name": "welcome_message",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/welcome_message_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "modules.permissions.core.types",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "numpy",
+        "pathlib",
+        "asyncio",
+        "sys",
+        "integration.core.event_bus",
+        "modules.welcome_message.core.types",
+        "contextlib",
+        "modules.welcome_message.config.welcome_config",
+        "modules.welcome_message.core.welcome_player",
+        "modules.permissions.core.permissions_queue"
+      ],
+      "events_published": [
+        "mode.request",
+        "playback.raw_audio",
+        "permissions.check_required",
+        "permissions.timeout"
+      ],
+      "events_subscribed": [
+        "system.ready_to_greet",
+        "permissions.status_checked",
+        "permissions.changed",
+        "permissions.requested",
+        "permissions.integration_ready",
+        "playback.completed"
+      ],
+      "initialization_order": 17
+    },
+    {
+      "name": "input_processing",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "dataclasses",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "traceback",
+        "time",
+        "modules.input_processing.keyboard.mac.quartz_monitor",
+        "asyncio",
+        "integration.core.event_bus",
+        "platform",
+        "modules.input_processing.keyboard.types",
+        "modules.input_processing.keyboard.keyboard_monitor"
+      ],
+      "events_published": [
+        "mode.request",
+        "voice.mic_closed",
+        "playback.cancelled",
+        "interrupt.request",
+        "grpc.request_cancel",
+        "voice.recording_stop"
+      ],
+      "events_subscribed": [
+        "mode.switch",
+        "voice.recognition_completed",
+        "voice.recognition_failed",
+        "voice.recognition_timeout",
+        "grpc.request_completed",
+        "grpc.request_failed",
+        "playback.started",
+        "playback.completed",
+        "playback.failed",
+        "playback.cancelled",
+        "voice.mic_opened",
+        "voice.mic_closed",
+        "permissions.first_run_started",
+        "permissions.first_run_completed",
+        "permissions.first_run_failed"
+      ],
+      "initialization_order": null
+    },
+    {
+      "name": "autostart_manager",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/autostart_manager_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "dataclasses",
+        "integration.core.error_handler",
+        "asyncio",
+        "integration.core.event_bus",
+        "os"
+      ],
+      "events_published": [
+        "autostart.status_checked"
+      ],
+      "events_subscribed": [
+        "app.startup",
+        "autostart.check_status"
+      ],
+      "initialization_order": 19
+    },
+    {
+      "name": "speech_playback",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/speech_playback_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "dataclasses",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "numpy",
+        "time",
+        "modules.speech_playback.core.state",
+        "asyncio",
+        "integration.core.event_bus",
+        "modules.speech_playback.core.player"
+      ],
+      "events_published": [
+        "playback.started",
+        "playback.failed",
+        "mode.request",
+        "playback.cancelled",
+        "playback.completed"
+      ],
+      "events_subscribed": [
+        "grpc.response.audio",
+        "grpc.request_completed",
+        "grpc.request_failed",
+        "playback.raw_audio",
+        "playback.signal",
+        "grpc.request_cancel",
+        "playback.cancelled",
+        "voice.mic_closed",
+        "app.shutdown"
+      ],
+      "initialization_order": 13
+    },
+    {
+      "name": "voiceover_ducking",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/voiceover_ducking_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "typing",
+        "logging",
+        "pathlib",
+        "asyncio",
+        "integration.utils.resource_path",
+        "integration.core.base_integration",
+        "modules.voiceover_control.core.controller"
+      ],
+      "events_published": [],
+      "events_subscribed": [
+        "permissions.first_run_completed",
+        "system.permissions_ready",
+        "app.mode_changed",
+        "keyboard.press",
+        "app.shutdown"
+      ],
+      "initialization_order": 18
+    },
+    {
+      "name": "action_execution",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/action_execution_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "json",
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "modules.action_executor",
+        "modules.action_errors.messages",
+        "pathlib",
+        "asyncio",
+        "integration.core.event_bus",
+        "integration.core.base_integration",
+        "modules.mcp_action"
+      ],
+      "events_published": [],
+      "events_subscribed": [
+        "grpc.response.action",
+        "interrupt.request",
+        "keyboard.short_press"
+      ],
+      "initialization_order": 12
+    },
+    {
+      "name": "network_manager",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/network_manager_integration.py",
+      "audio_related": false,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "modules.network_manager.core.config",
+        "dataclasses",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "modules.network_manager.core.types",
+        "asyncio",
+        "integration.core.event_bus",
+        "modules.network_manager.core.network_manager"
+      ],
+      "events_published": [
+        "network.status_snapshot",
+        "network.status_changed",
+        "network.connection_lost",
+        "network.quality_changed",
+        "tray.update_tooltip"
+      ],
+      "events_subscribed": [
+        "app.startup",
+        "app.shutdown"
+      ],
+      "initialization_order": null
+    },
+    {
+      "name": "voice_recognition",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "speech_recognition",
+        "typing",
+        "modules.voice_recognition",
+        "logging",
+        "dataclasses",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "traceback",
+        "asyncio",
+        "integration.core.event_bus",
+        "random",
+        "importlib.util",
+        "shutil"
+      ],
+      "events_published": [
+        "voice.mic_opened",
+        "voice.recognition_started",
+        "voice.recognition_failed",
+        "voice.mic_closed",
+        "voice.recognition_completed",
+        "voice.recognition_timeout"
+      ],
+      "events_subscribed": [
+        "voice.recording_start",
+        "voice.recording_stop",
+        "keyboard.short_press",
+        "app.mode_changed",
+        "permissions.first_run_started",
+        "permissions.first_run_completed",
+        "permissions.first_run_failed"
+      ],
+      "initialization_order": 7
+    },
+    {
+      "name": "mode_management",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/mode_management_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "mode_management",
+        "integration.core.error_handler",
+        "asyncio",
+        "integration.core.event_bus",
+        "modules.mode_management"
+      ],
+      "events_published": [
+        "mode.request"
+      ],
+      "events_subscribed": [
+        "mode.request",
+        "app.mode_changed",
+        "keyboard.long_press",
+        "keyboard.release",
+        "keyboard.short_press",
+        "voice.recording_start",
+        "grpc.request_completed",
+        "grpc.request_failed",
+        "playback.completed",
+        "playback.failed"
+      ],
+      "initialization_order": 5
+    },
+    {
+      "name": "tts",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/tts_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "subprocess",
+        "integration.core.error_handler",
+        "asyncio",
+        "integration.core.event_bus",
+        "platform"
+      ],
+      "events_published": [],
+      "events_subscribed": [],
+      "initialization_order": null
+    },
+    {
+      "name": "instance_manager",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/instance_manager_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "integration.core.error_handler",
+        "traceback",
+        "asyncio",
+        "sys",
+        "modules.instance_manager",
+        "integration.core.event_bus",
+        "os"
+      ],
+      "events_published": [
+        "signal.duplicate_instance",
+        "instance.status_checked",
+        "instance.status_response"
+      ],
+      "events_subscribed": [
+        "app.startup",
+        "app.shutdown",
+        "instance.check_request"
+      ],
+      "initialization_order": 0
+    },
+    {
+      "name": "first_run_permissions",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/first_run_permissions_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "modules.permission_restart.core.atomic_flag",
+        "typing",
+        "logging",
+        "modules.permissions.first_run.activator",
+        "modules.permissions.core.types",
+        "modules.permissions.first_run.status_checker",
+        "integration.core.error_handler",
+        "time",
+        "pathlib",
+        "uuid",
+        "asyncio",
+        "integration.utils.resource_path",
+        "integration.core.event_bus",
+        "os",
+        "modules.permission_restart.macos.permissions_restart_handler"
+      ],
+      "events_published": [
+        "permissions.first_run_completed",
+        "permissions.first_run_started",
+        "permissions.first_run_failed",
+        "permissions.first_run_restart_pending",
+        "permissions.status_checked",
+        "permissions.changed"
+      ],
+      "events_subscribed": [],
+      "initialization_order": 3
+    },
+    {
+      "name": "grpc_client",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/grpc_client_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "json",
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "dataclasses",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "pathlib",
+        "modules.grpc_client.core.grpc_client",
+        "asyncio",
+        "integration.core.event_bus",
+        "base64"
+      ],
+      "events_published": [
+        "grpc.request_failed",
+        "hardware.id_request",
+        "grpc.request_started",
+        "grpc.response.action",
+        "grpc.response.text",
+        "grpc.response.audio",
+        "grpc.request_completed"
+      ],
+      "events_subscribed": [
+        "voice.recognition_completed",
+        "screenshot.captured",
+        "hardware.id_obtained",
+        "hardware.id_response",
+        "keyboard.short_press",
+        "grpc.request_cancel",
+        "network.status_changed",
+        "app.shutdown"
+      ],
+      "initialization_order": null
+    },
+    {
+      "name": "permission_restart",
+      "path": "/Users/sergiyzasorin/Fix_new/client/integration/integrations/permission_restart_integration.py",
+      "audio_related": true,
+      "dependencies": [
+        "integration.core.state_manager",
+        "typing",
+        "logging",
+        "modules.permission_restart.core.types",
+        "modules.permissions.core.types",
+        "config.unified_config_loader",
+        "modules.permissions.first_run.status_checker",
+        "__future__",
+        "integration.core.error_handler",
+        "integration.utils.resource_path",
+        "integration.core.event_bus",
+        "integration.core.base_integration",
+        "integration.core.selectors",
+        "integration.core.gateways.permission_gateways",
+        "os",
+        "integration.core.gateways.types",
+        "modules.permission_restart",
+        "modules.permission_restart.macos.permissions_restart_handler"
+      ],
+      "events_published": [],
+      "events_subscribed": [
+        "permissions.changed",
+        "permissions.status_checked",
+        "permissions.first_run_completed",
+        "updater.update_started",
+        "updater.update_completed",
+        "updater.update_skipped",
+        "updater.update_failed",
+        "app.startup"
+      ],
+      "initialization_order": 4
+    }
+  ],
+  "config_entries": {
+    "voice_recognition": {
+      "enabled": true,
+      "language": "en-US",
+      "max_alternatives": 3,
+      "phrase_timeout": 0.3,
+      "silence_timeout": 0.8
+    },
+    "speech_playback": {
+      "enabled": true,
+      "fade_in_duration": 0.1,
+      "fade_out_duration": 0.1,
+      "max_queue_size": 5,
+      "playback_speed": 1.0,
+      "volume": 0.8,
+      "auto_output_device_switch": true
+    },
+    "default_audio": {
+      "target_sample_rate": 16000,
+      "target_channels": 1,
+      "target_dtype": "int16",
+      "auto_detect_device": true,
+      "auto_detect_sample_rate": true,
+      "auto_detect_channels": true,
+      "auto_detect_dtype": true,
+      "silent_window_seconds": 0.3,
+      "silent_windows_threshold": 2,
+      "reopen_debounce_ms": 600,
+      "device_quarantine_sec": 20,
+      "health_check_interval_sec": 1.0,
+      "read_chunk_sec": 0.2,
+      "chunk_size": 1024,
+      "max_retry_attempts": 3,
+      "retry_delay": 0.5,
+      "error_cooldown": 2.0,
+      "enable_debug_logging": true,
+      "log_health_checks": true,
+      "log_stream_events": true,
+      "log_device_changes": true,
+      "log_performance_metrics": true,
+      "input_sample_rate": 16000,
+      "output_sample_rate": 48000,
+      "input_channels": 1,
+      "output_channels": 1,
+      "dtype": "int16"
+    },
+    "integrations.input_processing": {
+      "enabled": true,
+      "priority": 4,
+      "enable_keyboard_monitoring": true,
+      "auto_start": true,
+      "min_recording_duration_sec": 0.6,
+      "recording_prestart_delay_sec": 0.3,
+      "playback_idle_grace_sec": 0.3,
+      "playback_wait_timeout_sec": 5.0,
+      "mic_reset_timeout_sec": 60.0
+    },
+    "integrations.speech_playback": {
+      "enabled": true,
+      "priority": 10
+    },
+    "integrations.voice_recognition": {
+      "enabled": true,
+      "priority": 4,
+      "simulate": false,
+      "timeout_sec": 10.0,
+      "simulate_success_rate": 0.7,
+      "simulate_min_delay_sec": 1.0,
+      "simulate_max_delay_sec": 3.0
+    }
+  },
+  "initialization_order": [
+    "instance_manager",
+    "tray",
+    "hardware_id",
+    "first_run_permissions",
+    "permission_restart",
+    "mode_management",
+    "input",
+    "voice_recognition",
+    "network",
+    "interrupt",
+    "screenshot_capture",
+    "grpc",
+    "action_execution",
+    "speech_playback",
+    "signals",
+    "update_notification",
+    "updater",
+    "welcome_message",
+    "voiceover_ducking",
+    "autostart_manager"
+  ],
+  "potential_conflicts": [
+    "⚠️ Событие 'permissions.check_required' публикуется несколькими компонентами: screenshot_capture, welcome_message",
+    "⚠️ Событие 'voice.mic_closed' публикуется несколькими компонентами: input_processing, voice_recognition",
+    "⚠️ Событие 'playback.cancelled' публикуется несколькими компонентами: input_processing, speech_playback",
+    "⚠️ Событие 'mode.request' публикуется несколькими компонентами: interrupt_management, welcome_message, input_processing, speech_playback, mode_management",
+    "⚠️ Feature flag 'NEXY_FEATURE_PERMISSION_RESTART_V2' указан в конфигурации, но путь ' permission_restart.enabled' может отсутствовать",
+    "⚠️ Feature flag 'NEXY_KS_PERMISSION_RESTART_V2' указан в конфигурации, но путь ' permission_restart.enabled' может отсутствовать",
+    "⚠️ Feature flag 'NEXY_FEATURE_FIRST_RUN_V2' указан в конфигурации, но путь ' first_run_permissions.enabled' может отсутствовать",
+    "ℹ️ Аудио-модуль 'signals' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'voiceover_control' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'voice_recognition' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'autostart_manager' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'updater' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'permissions' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'mode_management' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'speech_playback' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'input_processing' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'tray_controller' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'action_errors' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'screenshot_capture' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'interrupt_management' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'hardware_id' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'grpc_client' не имеет feature flags для управления",
+    "ℹ️ Аудио-модуль 'welcome_message' не имеет feature flags для управления"
+  ],
+  "recommendations": [
+    "❌ Отсутствуют необходимые feature flags: NEXY_FEATURE_AVFOUNDATION_AUDIO_V2, NEXY_FEATURE_AVFOUNDATION_INPUT_MONITOR_V2, NEXY_FEATURE_AVFOUNDATION_OUTPUT_V2, NEXY_FEATURE_AVFOUNDATION_ROUTE_MANAGER_V2",
+    "🔴 Критический уровень готовности - требуется доработка"
+  ]
+}

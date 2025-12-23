@@ -1,0 +1,21 @@
+{
+  "results": {
+    "feature_flags": true,
+    "unified_config": true,
+    "interaction_matrix": true,
+    "metrics": true,
+    "adr": true,
+    "change_impact": true,
+    "structure": true,
+    "cursorrules": true,
+    "state_catalog": true
+  },
+  "errors": [],
+  "warnings": [],
+  "info": [
+    "В STATE_CATALOG.md не найдены оси audio.input.device и audio.output.device (могут быть добавлены позже)"
+  ],
+  "checks_passed": 11,
+  "checks_failed": 0,
+  "readiness": 100.0
+}

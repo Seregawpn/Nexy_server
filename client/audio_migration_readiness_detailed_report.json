@@ -1,0 +1,1959 @@
+{
+  "readiness_score": 53.577519564318756,
+  "readiness_breakdown": {
+    "files_to_create": 10.0,
+    "files_to_modify": 0.0,
+    "events": 40.0,
+    "dependencies": 100.0,
+    "blocking_conditions": 40.0,
+    "configuration": 100.0,
+    "tests": 45.0,
+    "ci_cd": 75.0,
+    "initialization_order": 80.0
+  },
+  "files_to_create": [
+    {
+      "path": "modules/voice_recognition/core/avfoundation/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 11,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/contracts.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/mapping.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/state_machines.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/route_manager.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/adapters/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 13,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/adapters/avf_monitor.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/adapters/avf_output.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/adapters/google_input.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "integration/integrations/audio_route_manager_integration.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/test_avfoundation_contracts.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/test_avfoundation_mapping.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/test_avfoundation_state_machines.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/test_avfoundation_route_manager.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/test_avfoundation_monitor.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/test_avfoundation_output.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/test_avfoundation_google_input.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/integration/test_audio_route_manager.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/integration/test_device_switching.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "tests/integration/test_heartbeat_watchdog.py",
+      "exists": false,
+      "needs_create": true,
+      "needs_modify": false,
+      "lines_of_code": null,
+      "dependencies": [],
+      "tests_exist": false
+    }
+  ],
+  "files_to_modify": [
+    {
+      "path": "integration/integrations/voice_recognition_integration.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": true,
+      "lines_of_code": 649,
+      "dependencies": [
+        "integration.core.state_manager",
+        "asyncio",
+        "random",
+        "importlib.util",
+        "integration.core.event_bus",
+        "speech_recognition",
+        "dataclasses",
+        "shutil",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "logging",
+        "traceback",
+        "modules.voice_recognition",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "integration/integrations/speech_playback_integration.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": true,
+      "lines_of_code": 818,
+      "dependencies": [
+        "integration.core.state_manager",
+        "asyncio",
+        "modules.speech_playback.core.state",
+        "modules.speech_playback.core.player",
+        "integration.core.event_bus",
+        "time",
+        "dataclasses",
+        "config.unified_config_loader",
+        "integration.core.error_handler",
+        "logging",
+        "numpy",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "integration/core/simple_module_coordinator.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": true,
+      "lines_of_code": 1597,
+      "dependencies": [
+        "integration.core.state_manager",
+        "asyncio",
+        "integration.integrations.network_manager_integration",
+        "integration.integrations.tray_controller_integration",
+        "integration.integrations.welcome_message_integration",
+        "Foundation",
+        "integration.core.error_handler",
+        "modules.tray_controller.core.tray_types",
+        "typing",
+        "integration.integrations.update_notification_integration",
+        "integration.core.selectors",
+        "pathlib",
+        "modules.signals.config.types",
+        "integration.integrations.instance_manager_integration",
+        "integration.integrations.speech_playback_integration",
+        "threading",
+        "integration.integrations.signal_integration",
+        "integration.integrations.hardware_id_integration",
+        "sys",
+        "integration.integrations.interrupt_management_integration",
+        "integration.integrations.voiceover_ducking_integration",
+        "traceback",
+        "integration.integrations.input_processing_integration",
+        "integration.integrations.first_run_permissions_integration",
+        "integration.core.event_utils",
+        "integration.integrations.updater_integration",
+        "integration.integrations.voice_recognition_integration",
+        "rumps",
+        "integration.integrations.grpc_client_integration",
+        "integration.core.gateways",
+        "time",
+        "modules.network_manager.core.config",
+        "integration.integrations.mode_management_integration",
+        "integration.integrations.screenshot_capture_integration",
+        "integration.core.event_bus",
+        "integration.workflows",
+        "integration.integrations.autostart_manager_integration",
+        "integration.integrations.permission_restart_integration",
+        "config.unified_config_loader",
+        "logging",
+        "modules.input_processing.keyboard.types",
+        "ctypes",
+        "integration.integrations.action_execution_integration"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "config/unified_config.yaml",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": true,
+      "lines_of_code": 590,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "Docs/FEATURE_FLAGS.md",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": true,
+      "lines_of_code": 57,
+      "dependencies": [],
+      "tests_exist": false
+    }
+  ],
+  "files_existing": [
+    {
+      "path": "modules/voice_recognition/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 41,
+      "dependencies": [
+        "config.default_config",
+        "core.types",
+        "core.speech_recognizer",
+        "utils.audio_utils"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/audio_device_monitor.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 139,
+      "dependencies": [
+        "time",
+        "threading",
+        "sounddevice",
+        "logging",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/speech_recognizer.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 1839,
+      "dependencies": [
+        "types",
+        "asyncio",
+        "time",
+        "json",
+        "threading",
+        "speech_recognition",
+        "sounddevice",
+        "audio_device_monitor",
+        "subprocess",
+        "sys",
+        "modules.voice_recognition.utils.audio_utils",
+        "logging",
+        "traceback",
+        "numpy",
+        "typing",
+        "audio_recovery_manager"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/types.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 113,
+      "dependencies": [
+        "enum",
+        "dataclasses",
+        "typing",
+        "time"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/audio_recovery_manager.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 357,
+      "dependencies": [
+        "asyncio",
+        "time",
+        "enum",
+        "dataclasses",
+        "sounddevice",
+        "subprocess",
+        "logging",
+        "numpy",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/config/default_config.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 123,
+      "dependencies": [
+        "core.types",
+        "config.unified_config_loader"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/utils/audio_utils.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 177,
+      "dependencies": [
+        "numpy",
+        "typing",
+        "logging"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/utils/device_selector.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 0,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 11,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/voice_recognition/core/avfoundation/adapters/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 13,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 110,
+      "dependencies": [
+        "macos.performance",
+        "core.buffer",
+        "core.player",
+        "core.state",
+        "utils.audio_utils",
+        "macos.security",
+        "macos.core_audio"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/macos/core_audio.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 97,
+      "dependencies": [
+        "platform",
+        "typing",
+        "logging"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/macos/security.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 119,
+      "dependencies": [
+        "platform",
+        "typing",
+        "logging"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/macos/performance.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 275,
+      "dependencies": [
+        "time",
+        "threading",
+        "dataclasses",
+        "logging",
+        "psutil",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/core/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 0,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/core/player.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 917,
+      "dependencies": [
+        "asyncio",
+        "macos.performance",
+        "time",
+        "threading",
+        "dataclasses",
+        "state",
+        "sounddevice",
+        "buffer",
+        "config.unified_config_loader",
+        "logging",
+        "utils.audio_utils",
+        "numpy",
+        "typing",
+        "macos.core_audio"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/core/buffer.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 392,
+      "dependencies": [
+        "time",
+        "threading",
+        "dataclasses",
+        "gc",
+        "queue",
+        "state",
+        "logging",
+        "numpy",
+        "datetime",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/core/state.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 106,
+      "dependencies": [
+        "enum",
+        "dataclasses",
+        "typing",
+        "time"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/utils/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 0,
+      "dependencies": [],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/utils/audio_utils.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 267,
+      "dependencies": [
+        "numpy",
+        "scipy",
+        "typing",
+        "logging"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/speech_playback/utils/device_utils.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 172,
+      "dependencies": [
+        "numpy",
+        "typing",
+        "logging"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/input_processing/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 27,
+      "dependencies": [
+        "keyboard.types",
+        "config.input_config",
+        "keyboard.keyboard_monitor"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/input_processing/config/input_config.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 89,
+      "dependencies": [
+        "keyboard.types",
+        "dataclasses",
+        "config.unified_config_loader",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/input_processing/config/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 10,
+      "dependencies": [
+        "input_config"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/input_processing/keyboard/__init__.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 14,
+      "dependencies": [
+        "types",
+        "keyboard_monitor"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/input_processing/keyboard/types.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 45,
+      "dependencies": [
+        "enum",
+        "dataclasses",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/input_processing/keyboard/keyboard_monitor.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 496,
+      "dependencies": [
+        "types",
+        "asyncio",
+        "time",
+        "threading",
+        "inspect",
+        "logging",
+        "pynput.keyboard",
+        "typing"
+      ],
+      "tests_exist": false
+    },
+    {
+      "path": "modules/input_processing/keyboard/mac/quartz_monitor.py",
+      "exists": true,
+      "needs_create": false,
+      "needs_modify": false,
+      "lines_of_code": 843,
+      "dependencies": [
+        "types",
+        "asyncio",
+        "time",
+        "threading",
+        "Foundation",
+        "Quartz",
+        "inspect",
+        "logging",
+        "typing"
+      ],
+      "tests_exist": false
+    }
+  ],
+  "events_detailed": [
+    {
+      "name": "hardware.id_error",
+      "publishers": [
+        "hardware_id"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "hardware.id_obtained",
+      "publishers": [
+        "hardware_id"
+      ],
+      "subscribers": [
+        "grpc_client"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "hardware.id_response",
+      "publishers": [
+        "hardware_id"
+      ],
+      "subscribers": [
+        "grpc_client"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "app.startup",
+      "publishers": [],
+      "subscribers": [
+        "hardware_id",
+        "tray_controller",
+        "updater",
+        "interrupt_management",
+        "autostart_manager",
+        "network_manager",
+        "instance_manager",
+        "permission_restart"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "app.shutdown",
+      "publishers": [],
+      "subscribers": [
+        "hardware_id",
+        "tray_controller",
+        "updater",
+        "interrupt_management",
+        "speech_playback",
+        "voiceover_ducking",
+        "network_manager",
+        "instance_manager",
+        "grpc_client"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "hardware.id_request",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "hardware_id"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "hardware.id_refresh",
+      "publishers": [],
+      "subscribers": [
+        "hardware_id"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "screenshot.error",
+      "publishers": [
+        "screenshot_capture"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "screenshot.captured",
+      "publishers": [
+        "screenshot_capture"
+      ],
+      "subscribers": [
+        "grpc_client"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.check_required",
+      "publishers": [
+        "screenshot_capture",
+        "welcome_message"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "app.mode_changed",
+      "publishers": [],
+      "subscribers": [
+        "screenshot_capture",
+        "tray_controller",
+        "updater",
+        "voiceover_ducking",
+        "voice_recognition",
+        "mode_management"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "voice.recording_stop",
+      "publishers": [
+        "input_processing"
+      ],
+      "subscribers": [
+        "screenshot_capture",
+        "voice_recognition"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.status_checked",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "screenshot_capture",
+        "welcome_message",
+        "permission_restart"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.changed",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "screenshot_capture",
+        "welcome_message",
+        "permission_restart"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.requested",
+      "publishers": [],
+      "subscribers": [
+        "screenshot_capture",
+        "welcome_message"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.integration_ready",
+      "publishers": [],
+      "subscribers": [
+        "screenshot_capture",
+        "welcome_message"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "tray.integration_ready",
+      "publishers": [
+        "tray_controller"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "tray.quit_clicked",
+      "publishers": [
+        "tray_controller"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "tray.status_updated",
+      "publishers": [
+        "tray_controller"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "voice.mic_opened",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "tray_controller",
+        "signal",
+        "input_processing"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "voice.mic_closed",
+      "publishers": [
+        "input_processing",
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "tray_controller",
+        "input_processing",
+        "speech_playback"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "updater.update_skipped",
+      "publishers": [
+        "updater"
+      ],
+      "subscribers": [
+        "permission_restart"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "updater.update_started",
+      "publishers": [
+        "updater"
+      ],
+      "subscribers": [
+        "update_notification",
+        "permission_restart"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "updater.update_completed",
+      "publishers": [
+        "updater"
+      ],
+      "subscribers": [
+        "update_notification",
+        "permission_restart"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "updater.update_failed",
+      "publishers": [
+        "updater"
+      ],
+      "subscribers": [
+        "update_notification",
+        "permission_restart"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "updater.check_manual",
+      "publishers": [],
+      "subscribers": [
+        "updater"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "mode.changed",
+      "publishers": [],
+      "subscribers": [
+        "updater"
+      ],
+      "priority": "LOW",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "signal.play",
+      "publishers": [
+        "update_notification"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "updater.download_progress",
+      "publishers": [],
+      "subscribers": [
+        "update_notification"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "updater.install_progress",
+      "publishers": [],
+      "subscribers": [
+        "update_notification"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "playback.completed",
+      "publishers": [
+        "speech_playback"
+      ],
+      "subscribers": [
+        "signal",
+        "welcome_message",
+        "input_processing",
+        "mode_management"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "playback.cancelled",
+      "publishers": [
+        "input_processing",
+        "speech_playback"
+      ],
+      "subscribers": [
+        "signal",
+        "input_processing",
+        "speech_playback"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "grpc.request_failed",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "signal",
+        "input_processing",
+        "speech_playback",
+        "mode_management"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "voice.recognition_failed",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "signal",
+        "input_processing"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "interrupt.status_snapshot",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "speech.stop_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "mode.request",
+      "publishers": [
+        "interrupt_management",
+        "welcome_message",
+        "input_processing",
+        "speech_playback",
+        "mode_management"
+      ],
+      "subscribers": [
+        "mode_management"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "speech.pause_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "recording.stop_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "session.clear_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "system.reset_requested",
+      "publishers": [
+        "interrupt_management"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "app.state_changed",
+      "publishers": [],
+      "subscribers": [
+        "interrupt_management"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "interrupt.request",
+      "publishers": [
+        "input_processing"
+      ],
+      "subscribers": [
+        "interrupt_management",
+        "action_execution"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "interrupt.cancel",
+      "publishers": [],
+      "subscribers": [
+        "interrupt_management"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "playback.raw_audio",
+      "publishers": [
+        "welcome_message"
+      ],
+      "subscribers": [
+        "speech_playback"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.timeout",
+      "publishers": [
+        "welcome_message"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "system.ready_to_greet",
+      "publishers": [],
+      "subscribers": [
+        "welcome_message"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "grpc.request_cancel",
+      "publishers": [
+        "input_processing"
+      ],
+      "subscribers": [
+        "speech_playback",
+        "grpc_client"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "mode.switch",
+      "publishers": [],
+      "subscribers": [
+        "input_processing"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "voice.recognition_completed",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "input_processing",
+        "grpc_client"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "voice.recognition_timeout",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [
+        "input_processing"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "grpc.request_completed",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "input_processing",
+        "speech_playback",
+        "mode_management"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "playback.started",
+      "publishers": [
+        "speech_playback"
+      ],
+      "subscribers": [
+        "input_processing"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "playback.failed",
+      "publishers": [
+        "speech_playback"
+      ],
+      "subscribers": [
+        "input_processing",
+        "mode_management"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.first_run_started",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "input_processing",
+        "voice_recognition"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.first_run_completed",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "input_processing",
+        "voiceover_ducking",
+        "voice_recognition",
+        "permission_restart"
+      ],
+      "priority": "CRITICAL",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.first_run_failed",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [
+        "input_processing",
+        "voice_recognition"
+      ],
+      "priority": "CRITICAL",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "autostart.status_checked",
+      "publishers": [
+        "autostart_manager"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "autostart.check_status",
+      "publishers": [],
+      "subscribers": [
+        "autostart_manager"
+      ],
+      "priority": "LOW",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "grpc.response.audio",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "speech_playback"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "playback.signal",
+      "publishers": [],
+      "subscribers": [
+        "speech_playback"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "system.permissions_ready",
+      "publishers": [],
+      "subscribers": [
+        "voiceover_ducking"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "keyboard.press",
+      "publishers": [],
+      "subscribers": [
+        "voiceover_ducking"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "grpc.response.action",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [
+        "action_execution"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "keyboard.short_press",
+      "publishers": [],
+      "subscribers": [
+        "action_execution",
+        "voice_recognition",
+        "mode_management",
+        "grpc_client"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "network.status_snapshot",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "network.status_changed",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [
+        "grpc_client"
+      ],
+      "priority": "HIGH",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "network.connection_lost",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "network.quality_changed",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "tray.update_tooltip",
+      "publishers": [
+        "network_manager"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "voice.recognition_started",
+      "publishers": [
+        "voice_recognition"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "voice.recording_start",
+      "publishers": [],
+      "subscribers": [
+        "voice_recognition",
+        "mode_management"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": true,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "keyboard.long_press",
+      "publishers": [],
+      "subscribers": [
+        "mode_management"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "keyboard.release",
+      "publishers": [],
+      "subscribers": [
+        "mode_management"
+      ],
+      "priority": "MEDIUM",
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "signal.duplicate_instance",
+      "publishers": [
+        "instance_manager"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "instance.status_checked",
+      "publishers": [
+        "instance_manager"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "instance.status_response",
+      "publishers": [
+        "instance_manager"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "instance.check_request",
+      "publishers": [],
+      "subscribers": [
+        "instance_manager"
+      ],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "permissions.first_run_restart_pending",
+      "publishers": [
+        "first_run_permissions"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "grpc.request_started",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    },
+    {
+      "name": "grpc.response.text",
+      "publishers": [
+        "grpc_client"
+      ],
+      "subscribers": [],
+      "priority": null,
+      "payload_schema": null,
+      "audio_related": false,
+      "used_by_route_manager": false
+    }
+  ],
+  "events_missing": [
+    "audio.route.snapshot",
+    "audio.input.active",
+    "audio.input.failed",
+    "audio.output.ready",
+    "audio.output.error",
+    "audio.device.changed"
+  ],
+  "dependencies": [
+    {
+      "name": "pyobjc-core",
+      "required": true,
+      "available": true,
+      "version": "11.1",
+      "location": "requirements.txt"
+    },
+    {
+      "name": "pyobjc-framework-AVFoundation",
+      "required": true,
+      "available": true,
+      "version": "11.1",
+      "location": "requirements.txt"
+    },
+    {
+      "name": "pyobjc-framework-CoreAudio",
+      "required": true,
+      "available": true,
+      "version": "11.1",
+      "location": "requirements.txt"
+    }
+  ],
+  "blocking_conditions": [
+    {
+      "name": "VoiceRecognitionIntegration блокирует при permissions.first_run_started",
+      "event": "permissions.first_run_started",
+      "integration": "VoiceRecognitionIntegration",
+      "checked": false
+    },
+    {
+      "name": "VoiceRecognitionIntegration блокирует при permissions.first_run_completed",
+      "event": "permissions.first_run_completed",
+      "integration": "VoiceRecognitionIntegration",
+      "checked": false
+    },
+    {
+      "name": "PermissionRestartIntegration блокирует при permission_restart.scheduled",
+      "event": "permission_restart.scheduled",
+      "integration": "PermissionRestartIntegration",
+      "checked": false
+    },
+    {
+      "name": "UpdaterIntegration блокирует при update.started",
+      "event": "update.started",
+      "integration": "UpdaterIntegration",
+      "checked": false
+    }
+  ],
+  "config_sections": {
+    "audio_system": {
+      "avfoundation_enabled": false,
+      "avfoundation_input_monitor_enabled": false,
+      "avfoundation_output_enabled": false,
+      "avfoundation_route_manager_enabled": false,
+      "ks_avfoundation_input_monitor": false,
+      "ks_avfoundation_output": false,
+      "ks_avfoundation_route_manager": false,
+      "input_monitor": {
+        "check_interval_sec": 1.5,
+        "use_notifications": true
+      },
+      "route_manager": {
+        "debounce": {
+          "bluetooth": {
+            "initial_ms": 200,
+            "increment_ms": 200,
+            "max_ms": 1200
+          },
+          "usb": {
+            "initial_ms": 100,
+            "increment_ms": 100,
+            "max_ms": 600
+          },
+          "built_in": {
+            "initial_ms": 100,
+            "max_ms": 200
+          }
+        },
+        "reconcile_timeout_ms": 5000,
+        "max_reconcile_retries": 3
+      },
+      "output": {
+        "max_queue_ms": 5000,
+        "max_queue_bytes": 5242880,
+        "sample_rate_conversion": true
+      },
+      "auto_detect_device": true,
+      "auto_detect_sample_rate": true,
+      "auto_detect_channels": true,
+      "auto_detect_dtype": true,
+      "silent_window_seconds": 0.3,
+      "silent_windows_threshold": 2,
+      "reopen_debounce_ms": 600,
+      "device_quarantine_sec": 20,
+      "health_check_interval_sec": 1.0,
+      "read_chunk_sec": 0.2,
+      "chunk_size": 1024,
+      "max_retry_attempts": 3,
+      "retry_delay": 0.5,
+      "error_cooldown": 2.0,
+      "enable_debug_logging": true,
+      "log_health_checks": true,
+      "log_stream_events": true,
+      "log_device_changes": true,
+      "log_performance_metrics": true,
+      "input_sample_rate": 16000,
+      "output_sample_rate": 48000,
+      "input_channels": 1,
+      "output_channels": 1,
+      "dtype": "int16"
+    },
+    "voice_recognition": {
+      "enabled": true,
+      "language": "en-US",
+      "max_alternatives": 3,
+      "phrase_timeout": 0.3,
+      "silence_timeout": 0.8
+    },
+    "speech_playback": {
+      "enabled": true,
+      "fade_in_duration": 0.1,
+      "fade_out_duration": 0.1,
+      "max_queue_size": 5,
+      "playback_speed": 1.0,
+      "volume": 0.8,
+      "auto_output_device_switch": true
+    },
+    "default_audio": {
+      "target_sample_rate": 16000,
+      "target_channels": 1,
+      "target_dtype": "int16"
+    }
+  },
+  "config_missing": [],
+  "tests_existing": [
+    "tests/test_coordinator_critical_subscriptions.py",
+    "tests/test_ctrl_n_combo.py",
+    "tests/test_interrupt_playback.py",
+    "tests/test_golden_first_run_logs.py",
+    "tests/test_permission_restart_priority_order.py",
+    "tests/test_microphone_activation.py",
+    "tests/test_permission_restart_logic.py",
+    "tests/test_init_order.py",
+    "tests/test_schemas.py",
+    "tests/test_gateways.py",
+    "tests/test_permission_monitoring.py",
+    "tests/test_processing_duplicate_requests.py",
+    "tests/test_accessibility_handler.py",
+    "tests/perf/test_slo_smoke.py",
+    "tests/perf/test_slo.py"
+  ],
+  "tests_missing": [
+    "integration/integrations/audio_route_manager_integration.py",
+    "tests/test_avfoundation_contracts.py",
+    "tests/test_avfoundation_mapping.py",
+    "tests/test_avfoundation_state_machines.py",
+    "tests/test_avfoundation_route_manager.py",
+    "tests/test_avfoundation_monitor.py",
+    "tests/test_avfoundation_output.py",
+    "tests/test_avfoundation_google_input.py",
+    "tests/integration/test_audio_route_manager.py",
+    "tests/integration/test_device_switching.py",
+    "tests/integration/test_heartbeat_watchdog.py"
+  ],
+  "ci_integration": {
+    "pre_build_gate_exists": true,
+    "release_suite_exists": true,
+    "audio_tests_in_ci": false,
+    "feature_flags_validation": true
+  },
+  "init_order": [
+    "instance_manager",
+    "tray",
+    "hardware_id",
+    "first_run_permissions",
+    "permission_restart",
+    "mode_management",
+    "input",
+    "voice_recognition",
+    "network",
+    "interrupt",
+    "screenshot_capture",
+    "grpc",
+    "action_execution",
+    "speech_playback",
+    "signals",
+    "update_notification",
+    "updater",
+    "welcome_message",
+    "voiceover_ducking",
+    "autostart_manager"
+  ],
+  "init_order_issues": [
+    "audio_route_manager отсутствует в порядке инициализации"
+  ],
+  "recommendations": [
+    "🟡 Низкий уровень - требуется доработка перед началом миграции"
+  ],
+  "critical_issues": [
+    "Создано только 2/20 файлов (10.0%)",
+    "Отсутствуют события: audio.route.snapshot, audio.input.active, audio.input.failed, audio.output.ready, audio.output.error, audio.device.changed",
+    "audio_route_manager отсутствует в порядке инициализации"
+  ],
+  "warnings": [
+    "Изменено только 0/5 файлов",
+    "Не проверены блокировки: 4",
+    "Отсутствуют тесты: 11",
+    "CI/CD интеграция неполная"
+  ]
+}

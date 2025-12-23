@@ -1,0 +1,121 @@
+# Change Impact Assessment: AVFoundation Audio Migration
+# See .cursorrules section 11 and 19
+
+axes_touched:
+  - Permission.mic
+  - Device.input
+  - Network
+  - FirstRun
+  - appMode
+  # Возможно новые оси (требует анализа):
+  # - audio.input.device (DeviceSignature)
+  # - audio.output.device (DeviceSignature)
+
+invariants:
+  - "no_start_listening_when_mic_denied"
+  - "no_parallel_input_streams"
+  - "no_hot_switch_input_without_restart"
+  - "no_route_manager_during_first_run"
+  - "no_route_manager_during_permission_restart"
+  - "no_route_manager_during_update"
+  - "single_owner_microphone"  # Google Speech Recognition - единственный владелец
+
+guards_updated: true
+
+interaction_matrix_updated: true
+
+required_test_plans:
+  - Docs/AUDIO_MIGRATION_STEP_BY_STEP_PLAN.md (Этап 3: Тестирование)
+  - Internal test checklist (см. .cursorrules раздел 10-11)
+
+pairwise_tests_min: 12  # ≥8-14 + 2 негативных
+
+metrics:
+  - device_discovery_latency_ms
+  - input_switch_duration_ms
+  - output_recreate_duration_ms
+  - mapping_confidence_distribution
+  - reconcile_duration_ms
+  - route_manager_decision_rate
+
+rollout:
+  flag: NEXY_FEATURE_AVFOUNDATION_AUDIO_V2
+  plan: "Shadow-mode (1%) → 25% → 50% → 75% → 100%"
+  kill_switch: NEXY_KS_AVFOUNDATION_AUDIO_V2
+  rollback_condition:
+    - error_rate > 5%
+    - input_switch_duration_ms_p95 > 2000ms
+    - output_recreate_duration_ms_p95 > 900ms
+    - mapping_confidence_HIGH < 70%
+
+test_strategy:
+  unit_tests:
+    - description: "Test contracts.py types"
+      file: "tests/test_avfoundation_contracts.py"
+      coverage: "≥80%"
+    - description: "Test mapping.py DeviceMapper"
+      file: "tests/test_avfoundation_mapping.py"
+      coverage: "≥80%"
+    - description: "Test state machines"
+      file: "tests/test_avfoundation_state_machines.py"
+      coverage: "≥80%"
+    - description: "Test RouteManager reconcile"
+      file: "tests/test_avfoundation_route_manager.py"
+      coverage: "≥80%"
+
+  integration_tests:
+    - description: "Test full RouteManager cycle"
+      file: "tests/integration/test_audio_route_manager.py"
+      scenarios: ["happy_path", "device_changed", "blocking_conditions", "fallback"]
+
+  pairwise_tests:
+    - axes: ["Permission.mic", "Device.input", "Network", "FirstRun", "appMode"]
+      combinations: 12
+      negative_cases: 2
+
+  decision_logs:
+    - description: "Verify decision logs in canonical format"
+      format: "decision=<start|abort|retry|degrade> ctx={...} source=route_manager duration_ms=<int>"
+      tests:
+        - test: "test_route_manager_logs_on_start"
+          file: "tests/test_avfoundation_route_manager.py"
+        - test: "test_route_manager_logs_on_abort"
+          file: "tests/test_avfoundation_route_manager.py"
+
+documentation:
+  updated:
+    - Docs/STATE_CATALOG.md
+    - config/interaction_matrix.yaml
+    - Docs/FEATURE_FLAGS.md
+    - client/metrics/registry.md
+
+  created:
+    - Docs/ADRs/ADR_2025-01-XX_avfoundation_audio_migration.md
+    - modules/voice_recognition/core/avfoundation/README.md
+
+risks:
+  - risk: "Breaking change in audio routing"
+    severity: "high"
+    mitigation: "Feature flag + phased rollout + kill-switch"
+  - risk: "Performance degradation (latency)"
+    severity: "medium"
+    mitigation: "Monitoring + alerting on latency metrics, SLO thresholds"
+  - risk: "PyObjC availability issues"
+    severity: "medium"
+    mitigation: "Fallback to old system, graceful degradation"
+  - risk: "Device mapping failures (LOW/NONE confidence)"
+    severity: "low"
+    mitigation: "Fallback to system default, logging for analysis"
+
+dependencies:
+  affected_components:
+    - integration/integrations/voice_recognition_integration.py
+    - integration/integrations/speech_playback_integration.py
+    - integration/core/simple_module_coordinator.py
+    - modules/voice_recognition/core/speech_recognizer.py
+    - modules/speech_playback/core/player.py
+
+  external:
+    - pyobjc-framework-AVFoundation==11.1 (уже установлен)
+    - pyobjc-framework-CoreAudio==11.1 (уже установлен)
+
