@@ -458,7 +458,14 @@ class SequentialSpeechPlayer:
                     logger.info("▶️ Аудио поток стартован (lazy start)")
 
                     # 🔍 ДИАГНОСТИКА: Проверяем состояние после старта
-                    logger.info(f"🔍 [OUTPUT] Поток стартован: active={self._audio_stream.active if self._audio_stream else 'N/A'}")
+                    stream_active = self._audio_stream.active if self._audio_stream else False
+                    logger.info(f"🔍 [OUTPUT] Поток стартован: active={stream_active}")
+                    
+                    # ✅ КРИТИЧЕСКАЯ ПРОВЕРКА: Убеждаемся что поток действительно активен
+                    if not stream_active:
+                        logger.error("❌ [OUTPUT] КРИТИЧЕСКАЯ ОШИБКА: Поток не активен после старта!")
+                    else:
+                        logger.info("✅ [OUTPUT] Поток активен, callback должен вызываться")
                 except Exception as e:
                     logger.error(f"❌ Ошибка старта аудио потока: {e}")
             elif self._audio_stream is None:
@@ -657,16 +664,17 @@ class SequentialSpeechPlayer:
 
             # Получаем данные из буфера (2D: frames x channels)
             data = self.chunk_buffer.get_playback_data(frames)
-
-            # 🔍 ДИАГНОСТИКА: Увеличено логирование для отладки
+            
+            # 🔍 КРИТИЧЕСКАЯ ДИАГНОСТИКА: Всегда логируем первые 20 вызовов
             if not hasattr(self, '_callback_debug_count'):
                 self._callback_debug_count = 0
-            if self._callback_debug_count < 10:  # ✅ Увеличено с 3 до 10
+            if self._callback_debug_count < 20:
                 buffer_size = self.chunk_buffer.buffer_size
+                queue_size = self.chunk_buffer.queue_size
                 has_data = len(data) > 0
-                logger.info(f"🎵 [CALLBACK #{self._callback_debug_count}] frames={frames}, data_shape={data.shape if has_data else 'EMPTY'}, buffer_size={buffer_size}, channels={self.config.channels}")
+                logger.info(f"🎵 [CALLBACK #{self._callback_debug_count}] frames={frames}, data_shape={data.shape if has_data else 'EMPTY'}, buffer_size={buffer_size}, queue_size={queue_size}, channels={self.config.channels}")
                 self._callback_debug_count += 1
-            elif self._callback_debug_count == 10:
+            elif self._callback_debug_count == 20:
                 logger.info(f"🔇 [CALLBACK] Дальнейшее логирование callback отключено (работает нормально)")
                 self._callback_debug_count += 1
             
@@ -674,23 +682,33 @@ class SequentialSpeechPlayer:
             if len(data) == 0:
                 outdata[:] = 0
             else:
-                # Если у нас моно-данные, а устройство ждёт стерео — дублируем канал
-                if data.ndim == 2 and data.shape[1] == 1 and self.config.channels > 1:
-                    data = np.repeat(data, self.config.channels, axis=1)
-                elif data.ndim == 1 and self.config.channels > 1:
-                    # На всякий случай обрабатываем 1D буфер
-                    mono = data.reshape(-1, 1)
-                    data = np.repeat(mono, self.config.channels, axis=1)
-
-                copy_ch = min(self.config.channels, data.shape[1])
+                # ✅ ИСПРАВЛЕНИЕ: Проверяем и нормализуем форму данных
+                if data.ndim == 1:
+                    # 1D → 2D: (frames,) → (frames, 1)
+                    data = data.reshape(-1, 1)
+                
+                # Нормализуем каналы
+                if data.shape[1] != self.config.channels:
+                    if data.shape[1] == 1 and self.config.channels > 1:
+                        # Моно → стерео: дублируем канал
+                        data = np.repeat(data, self.config.channels, axis=1)
+                    elif data.shape[1] > 1 and self.config.channels == 1:
+                        # Стерео → моно: берем первый канал
+                        data = data[:, :1]
+                
+                # Копируем данные в outdata
                 out_frames = min(frames, data.shape[0])
-                outdata[:out_frames, :copy_ch] = data[:out_frames, :copy_ch]
-                if copy_ch < self.config.channels:
-                    # Если входных каналов всё равно меньше — копируем последний доступный канал
-                    last_col = min(data.shape[1], 1) - 1
-                    fill_segment = data[:out_frames, last_col:last_col + 1]
-                    for ch in range(copy_ch, self.config.channels):
-                        outdata[:out_frames, ch] = fill_segment.squeeze(axis=1)
+                out_channels = min(self.config.channels, data.shape[1])
+                
+                # Заполняем outdata
+                outdata[:out_frames, :out_channels] = data[:out_frames, :out_channels]
+                
+                # Если каналов меньше - дублируем последний
+                if out_channels < self.config.channels:
+                    for ch in range(out_channels, self.config.channels):
+                        outdata[:out_frames, ch] = data[:out_frames, out_channels - 1]
+                
+                # Заполняем остаток нулями
                 if out_frames < frames:
                     outdata[out_frames:, :] = 0
                 
@@ -724,15 +742,19 @@ class SequentialSpeechPlayer:
         """Основной цикл воспроизведения - упрощенная версия"""
         try:
             logger.info("🔄 Playback loop запущен")
+            logger.info(f"🔍 [PLAYBACK_LOOP] Начальное состояние: queue_size={self.chunk_buffer.queue_size}, buffer_size={self.chunk_buffer.buffer_size}")
             
             while not self._stop_event.is_set():
                 # Проверяем паузу
                 self._pause_event.wait()
                 
                 # Получаем следующий чанк
+                queue_size_before = self.chunk_buffer.queue_size
                 chunk_info = self.chunk_buffer.get_next_chunk(timeout=0.1)
+                queue_size_after = self.chunk_buffer.queue_size
                 
                 if chunk_info is not None:
+                    logger.debug(f"🔍 [PLAYBACK_LOOP] Получен чанк: {chunk_info.chunk_id}, queue: {queue_size_before} → {queue_size_after}")
                     # Отмечаем начало обработки
                     chunk_info.state = ChunkState.PLAYING
                     
@@ -742,7 +764,7 @@ class SequentialSpeechPlayer:
                     
                     # Добавляем в буфер воспроизведения
                     if not self.chunk_buffer.add_to_playback_buffer(chunk_info):
-                        logger.error(f"❌ Ошибка добавления чанка {chunk_info.id} в буфер воспроизведения")
+                        logger.error(f"❌ Ошибка добавления чанка {chunk_info.chunk_id} в буфер воспроизведения")
                         chunk_info.state = ChunkState.ERROR
                         continue
                     
@@ -756,7 +778,7 @@ class SequentialSpeechPlayer:
                     if self._on_chunk_completed:
                         self._on_chunk_completed(chunk_info)
                     
-                    logger.info(f"✅ Чанк обработан: {chunk_info.id}")
+                    logger.info(f"✅ Чанк обработан: {chunk_info.chunk_id}")
                 else:
                     # Нет чанков - проверяем нужно ли остановить поток (lazy stop)
                     if self.chunk_buffer.queue_size == 0 and self.chunk_buffer.buffer_size == 0:
@@ -797,15 +819,15 @@ class SequentialSpeechPlayer:
         while time.time() - start_time < timeout:
             # Немедленный выход при запросе остановки
             if self._stop_event.is_set():
-                logger.info(f"⏹️ Прерывание чанка {chunk_info.id} по stop_event")
+                logger.info(f"⏹️ Прерывание чанка {chunk_info.chunk_id} по stop_event")
                 return
             if not self.chunk_buffer.has_data:
-                logger.info(f"✅ Чанк {chunk_info.id} полностью воспроизведен")
+                logger.info(f"✅ Чанк {chunk_info.chunk_id} полностью воспроизведен")
                 return
             
             time.sleep(0.01)
         
-        logger.warning(f"⚠️ Таймаут ожидания завершения чанка {chunk_info.id}")
+        logger.warning(f"⚠️ Таймаут ожидания завершения чанка {chunk_info.chunk_id}")
     
     def wait_for_completion(self, timeout: float = None) -> bool:
         """Ждать завершения воспроизведения всех чанков (без таймаута)"""
