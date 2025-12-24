@@ -82,6 +82,8 @@ class GrpcClientIntegration:
 
         # Агрегатор данных по session_id
         self._sessions: Dict[Any, Dict[str, Any]] = {}
+        # Метаданные аудио для каждой сессии (sample_rate, channels)
+        self._audio_metadata: Dict[Any, Dict[str, Any]] = {}
         # Активные отправки: session_id -> asyncio.Task
         self._inflight: Dict[Any, asyncio.Task] = {}
         # Отметки о том, что отмена уже уведомлена (чтобы не дублировать события)
@@ -254,6 +256,8 @@ class GrpcClientIntegration:
                 task = self._inflight.pop(sid)
                 task.cancel()
                 self._cancel_notified.add(sid)
+                # Очищаем метаданные при отмене
+                self._audio_metadata.pop(sid, None)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": sid, "error": "cancelled"})
         except Exception as e:
             await self._handle_error(e, where="grpc.on_interrupt", severity="warning")
@@ -277,6 +281,8 @@ class GrpcClientIntegration:
             if task and not task.done():
                 task.cancel()
                 self._cancel_notified.add(target_sid)
+                # Очищаем метаданные при отмене
+                self._audio_metadata.pop(target_sid, None)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": target_sid, "error": "cancelled"})
             else:
                 logger.debug(f"grpc.request_cancel: task not found or already done for sid={target_sid}")
@@ -307,6 +313,8 @@ class GrpcClientIntegration:
 
         # Сеть: если явно оффлайн и включена сет.защелка — не отправляем
         if self.config.use_network_gate and self._network_connected is False:
+            # Очищаем метаданные при ошибке
+            self._audio_metadata.pop(session_id, None)
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "offline"})
             return
 
@@ -339,6 +347,8 @@ class GrpcClientIntegration:
             hwid = await self._await_hardware_id(timeout_ms=3000, request_id=f"grpc-{session_id}")
         if not hwid:
             logger.error(f"No Hardware ID available for gRPC request - session {session_id}")
+            # Очищаем метаданные при ошибке
+            self._audio_metadata.pop(session_id, None)
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "no_hardware_id"})
             return
         
@@ -467,6 +477,22 @@ class GrpcClientIntegration:
                         # Обычный текст - публикуем как обычно
                         await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
 
+                elif which_oneof == 'metadata':
+                    # Сохраняем метаданные аудио для сессии (sample_rate, channels)
+                    meta = resp.metadata
+                    if meta:
+                        self._audio_metadata[session_id] = {
+                            'sample_rate': getattr(meta, 'sample_rate', None),
+                            'channels': getattr(meta, 'channels', None),
+                            'method': getattr(meta, 'method', None),
+                            'duration_sec': getattr(meta, 'duration_sec', None),
+                        }
+                        logger.info(
+                            f"📋 gRPC metadata для сессии {session_id}: "
+                            f"sr={self._audio_metadata[session_id].get('sample_rate')}, "
+                            f"ch={self._audio_metadata[session_id].get('channels')}"
+                        )
+
                 elif which_oneof == 'audio_chunk':
                     ch = resp.audio_chunk
                     data = bytes(ch.audio_data) if ch.audio_data else b""
@@ -478,13 +504,36 @@ class GrpcClientIntegration:
                         logger.warning(f"⚠️ Received empty audio_chunk - skipping (waiting for end_message)")
                         continue
 
-                    logger.info(f"gRPC received audio_chunk bytes={len(data)} dtype={dtype} shape={shape} for session {session_id}")
+                    # Получаем метаданные из сохраненных для сессии или используем fallback
+                    audio_meta = self._audio_metadata.get(session_id, {})
+                    sample_rate = audio_meta.get('sample_rate')
+                    channels = audio_meta.get('channels')
+                    
+                    # Если метаданные не были сохранены, используем централизованный формат
+                    if sample_rate is None or channels is None:
+                        try:
+                            from config.unified_config_loader import unified_config
+                            server_format = unified_config.get_server_audio_format()
+                            if sample_rate is None:
+                                sample_rate = server_format.get('sample_rate', 24000)
+                            if channels is None:
+                                channels = server_format.get('channels', 1)
+                        except Exception:
+                            if sample_rate is None:
+                                sample_rate = 24000  # Fallback согласно спецификации
+                            if channels is None:
+                                channels = 1
+
+                    logger.info(
+                        f"gRPC received audio_chunk bytes={len(data)} dtype={dtype} shape={shape} "
+                        f"sr={sample_rate} ch={channels} for session {session_id}"
+                    )
 
                     await self.event_bus.publish("grpc.response.audio", {
                         "session_id": session_id,
                         "dtype": dtype,
-                        "sample_rate": getattr(ch, 'sample_rate', None),
-                        "channels": getattr(ch, 'channels', None),
+                        "sample_rate": sample_rate,
+                        "channels": channels,
                         "shape": shape,
                         "bytes": data,
                     })
@@ -492,6 +541,8 @@ class GrpcClientIntegration:
                 elif which_oneof == 'end_message':
                     end_msg = resp.end_message
                     logger.info(f"gRPC received end_message: '{end_msg}' for session {session_id}")
+                    # Очищаем метаданные после завершения сессии
+                    self._audio_metadata.pop(session_id, None)
                     await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
                     got_terminal = True
                     break
@@ -499,6 +550,8 @@ class GrpcClientIntegration:
                 elif which_oneof == 'error_message':
                     err_msg = resp.error_message
                     logger.error(f"gRPC received error_message: '{err_msg}' for session {session_id}")
+                    # Очищаем метаданные при ошибке
+                    self._audio_metadata.pop(session_id, None)
                     await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": err_msg})
                     got_terminal = True
                     break
@@ -513,9 +566,13 @@ class GrpcClientIntegration:
             # Тихо выходим при отмене; событие могло быть опубликовано ранее
             if session_id not in self._cancel_notified:
                 self._cancel_notified.add(session_id)
+                # Очищаем метаданные при отмене
+                self._audio_metadata.pop(session_id, None)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "cancelled"})
         except Exception as e:
             await self._handle_error(e, where="grpc.stream_audio", severity="warning")
+            # Очищаем метаданные при ошибке
+            self._audio_metadata.pop(session_id, None)
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": str(e)})
 
     # ---------------- Utilities ----------------

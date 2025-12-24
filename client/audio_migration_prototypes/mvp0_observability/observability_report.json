@@ -1,0 +1,78 @@
+{
+  "mvp": "MVP-0: Observability",
+  "status": "PASSED",
+  "log_format": {
+    "format": "snapshot → decision → action",
+    "components": {
+      "snapshot": {
+        "format": "snapshot={mic=...,screen=...,device=...,network=...,firstRun=...,appMode=...,inputDevice=...,outputDevice=...}",
+        "fields": [
+          "perm_mic",
+          "perm_screen",
+          "device_input",
+          "network",
+          "first_run",
+          "app_mode",
+          "audio_input_device",
+          "audio_output_device"
+        ],
+        "timestamp": "ISO 8601"
+      },
+      "decision": {
+        "format": "decision=<start|abort|retry|degrade> ctx={...} source=<domain> duration_ms=<int> reason=\"...\"",
+        "fields": [
+          "decision_type",
+          "context",
+          "source",
+          "duration_ms",
+          "reason"
+        ],
+        "canonical": true
+      },
+      "action": {
+        "format": "action=<ACTION_TYPE> target=\"...\" result=<success|failed> error=\"...\"",
+        "fields": [
+          "action_type",
+          "target",
+          "result",
+          "error_message"
+        ],
+        "timestamp": "ISO 8601"
+      }
+    },
+    "chain": "snapshot → decision → action",
+    "canonical_decision_log": true
+  },
+  "examples_count": 4,
+  "reconstruction_success": true,
+  "examples": [
+    {
+      "scenario": "Успешный старт listening",
+      "snapshot": "snapshot={mic=GRANTED,screen=GRANTED,device=DEFAULT_OK,network=ONLINE,firstRun=False,appMode=SLEEPING,inputDevice=Built-in Microphone,outputDevice=Built-in Output}",
+      "decision": "decision=<start> snapshot={mic=GRANTED,screen=GRANTED,device=DEFAULT_OK,network=ONLINE,firstRun=False,appMode=SLEEPING,inputDevice=Built-in Microphone,outputDevice=Built-in Output} source=<audio> duration_ms=<45> reason=\"All conditions met, starting input\"",
+      "action": "action=<START_INPUT> target=\"Built-in Microphone\" result=<success>",
+      "chain": "snapshot={mic=GRANTED,screen=GRANTED,device=DEFAULT_OK,network=ONLINE,firstRun=False,appMode=SLEEPING,inputDevice=Built-in Microphone,outputDevice=Built-in Output} → decision=<start> snapshot={mic=GRANTED,screen=GRANTED,device=DEFAULT_OK,network=ONLINE,firstRun=False,appMode=SLEEPING,inputDevice=Built-in Microphone,outputDevice=Built-in Output} source=<audio> duration_ms=<45> reason=\"All conditions met, starting input\" → action=<START_INPUT> target=\"Built-in Microphone\" result=<success>"
+    },
+    {
+      "scenario": "MIC_BUSY - микрофон занят",
+      "snapshot": "snapshot={mic=GRANTED,screen=GRANTED,device=BUSY,network=ONLINE,firstRun=False,appMode=LISTENING,inputDevice=Built-in Microphone,outputDevice=None}",
+      "decision": "decision=<abort> snapshot={mic=GRANTED,screen=GRANTED,device=BUSY,network=ONLINE,firstRun=False,appMode=LISTENING,inputDevice=Built-in Microphone,outputDevice=None} source=<audio> duration_ms=<12> reason=\"Microphone busy, another app is using it\"",
+      "action": "action=<NOOP> target=\"system\" result=<success> error=\"MIC_BUSY\"",
+      "chain": "snapshot={mic=GRANTED,screen=GRANTED,device=BUSY,network=ONLINE,firstRun=False,appMode=LISTENING,inputDevice=Built-in Microphone,outputDevice=None} → decision=<abort> snapshot={mic=GRANTED,screen=GRANTED,device=BUSY,network=ONLINE,firstRun=False,appMode=LISTENING,inputDevice=Built-in Microphone,outputDevice=None} source=<audio> duration_ms=<12> reason=\"Microphone busy, another app is using it\" → action=<NOOP> target=\"system\" result=<success> error=\"MIC_BUSY\""
+    },
+    {
+      "scenario": "First run блокирует операции",
+      "snapshot": "snapshot={mic=NOT_DETERMINED,screen=NOT_DETERMINED,device=DEFAULT_OK,network=ONLINE,firstRun=True,appMode=SLEEPING,inputDevice=None,outputDevice=None}",
+      "decision": "decision=<abort> snapshot={mic=NOT_DETERMINED,screen=NOT_DETERMINED,device=DEFAULT_OK,network=ONLINE,firstRun=True,appMode=SLEEPING,inputDevice=None,outputDevice=None} source=<first_run> duration_ms=<5> reason=\"First run in progress, blocking audio operations\"",
+      "action": "action=<NOOP> target=\"system\" result=<success>",
+      "chain": "snapshot={mic=NOT_DETERMINED,screen=NOT_DETERMINED,device=DEFAULT_OK,network=ONLINE,firstRun=True,appMode=SLEEPING,inputDevice=None,outputDevice=None} → decision=<abort> snapshot={mic=NOT_DETERMINED,screen=NOT_DETERMINED,device=DEFAULT_OK,network=ONLINE,firstRun=True,appMode=SLEEPING,inputDevice=None,outputDevice=None} source=<first_run> duration_ms=<5> reason=\"First run in progress, blocking audio operations\" → action=<NOOP> target=\"system\" result=<success>"
+    },
+    {
+      "scenario": "Переключение устройства",
+      "snapshot": "snapshot={mic=GRANTED,screen=GRANTED,device=DEFAULT_OK,network=ONLINE,firstRun=False,appMode=LISTENING,inputDevice=AirPods,outputDevice=AirPods}",
+      "decision": "decision=<start> snapshot={mic=GRANTED,screen=GRANTED,device=DEFAULT_OK,network=ONLINE,firstRun=False,appMode=LISTENING,inputDevice=AirPods,outputDevice=AirPods} source=<audio> duration_ms=<38> reason=\"Device changed, restarting input with new device\"",
+      "action": "action=<START_INPUT> target=\"AirPods\" result=<success>",
+      "chain": "snapshot={mic=GRANTED,screen=GRANTED,device=DEFAULT_OK,network=ONLINE,firstRun=False,appMode=LISTENING,inputDevice=AirPods,outputDevice=AirPods} → decision=<start> snapshot={mic=GRANTED,screen=GRANTED,device=DEFAULT_OK,network=ONLINE,firstRun=False,appMode=LISTENING,inputDevice=AirPods,outputDevice=AirPods} source=<audio> duration_ms=<38> reason=\"Device changed, restarting input with new device\" → action=<START_INPUT> target=\"AirPods\" result=<success>"
+    }
+  ]
+}

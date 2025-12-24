@@ -19,7 +19,7 @@ from config.unified_config_loader import UnifiedConfigLoader
 
 # Импорты интеграции
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[reportAttributeAccessIssue]
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
 from PyObjCTools import AppHelper
 import rumps
@@ -122,6 +122,7 @@ class TrayControllerIntegration:
             # Инициализируем с повторами и бэк-оффом
             max_retries = 3
             backoff_sec = 0.5
+            success = False  # Инициализируем success перед циклом
             for attempt in range(1, max_retries + 1):
                 attempt_start = time.time()
                 success = await self.tray_controller.initialize()
@@ -380,12 +381,12 @@ class TrayControllerIntegration:
                 
                 # Публикуем событие обновления статуса
                 await self.event_bus.publish("tray.status_updated", {
-                    "status": target_status.value,
-                    "mode": new_mode.value,
+                    "status": target_status.value if target_status else None,
+                    "mode": new_mode.value if new_mode else None,
                     "integration": "tray_controller"
                 })
                 
-                logger.info(f"🔄 Режим приложения изменен: {new_mode.value} → {target_status.value}")
+                logger.info(f"🔄 Режим приложения изменен: {new_mode.value if new_mode else None} → {target_status.value if target_status else None}")
                 # Применяем на главном UI-потоке через AppHelper.callAfter
                 try:
                     # Прямой вызов _apply_status_ui_sync (убрано двойное планирование)

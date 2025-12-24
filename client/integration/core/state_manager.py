@@ -13,19 +13,22 @@ application modes across all integrations.
 """
 try:
     # Preferred: top-level import (packaged or PYTHONPATH includes modules)
-    from mode_management import AppMode  # type: ignore
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
 except Exception:
     try:
         # Fallback: explicit modules path if repository layout is used
-        from modules.mode_management import AppMode  # type: ignore
+        from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
     except Exception:
         # Last-resort minimal inline enum to not break local tools; values match
         # the centralized one. Should not be used in production.
         from enum import Enum
-        class AppMode(Enum):
+        class AppMode(Enum):  # type: ignore[no-redef]
             SLEEPING = "sleeping"
             LISTENING = "listening"
             PROCESSING = "processing"
+
+# Экспортируем AppMode для использования в других модулях
+__all__ = ['ApplicationStateManager', 'AppMode']
 
 logger = logging.getLogger(__name__)
 

@@ -63,8 +63,18 @@ class WelcomeAudioGenerator:
                 logger.error("❌ [WELCOME_AUDIO] Сервер вернул пустое аудио")
                 return None
 
-            sample_rate = metadata.get('sample_rate') or self.config.sample_rate
-            channels = metadata.get('channels') or self.config.channels
+            # Используем централизованный формат аудио от сервера для fallback
+            try:
+                from config.unified_config_loader import unified_config
+                server_format = unified_config.get_server_audio_format()
+                default_server_sr = server_format.get('sample_rate', 24000)
+                default_server_ch = server_format.get('channels', 1)
+            except Exception:
+                default_server_sr = 24000  # Fallback согласно спецификации
+                default_server_ch = 1
+            
+            sample_rate = metadata.get('sample_rate') or default_server_sr
+            channels = metadata.get('channels') or default_server_ch
 
             if sample_rate != self.config.sample_rate or channels != self.config.channels:
                 logger.info(

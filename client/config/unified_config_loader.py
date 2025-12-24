@@ -88,7 +88,7 @@ class OpenAppActionConfig:
     """Конфигурация действий открытия приложений"""
     enabled: bool = False  # По умолчанию выключено для безопасности
     timeout_sec: float = 10.0
-    allowed_apps: list = None  # None или пустой список = все разрешены
+    allowed_apps: Optional[list] = None  # None или пустой список = все разрешены
     binary: str = "/usr/bin/open"
     speak_errors: bool = True
     use_server_tts: bool = False
@@ -115,9 +115,9 @@ class UnifiedConfigLoader:
         """Загружает конфигурацию с проверкой изменений"""
         if self._config_cache is None or self._is_config_modified():
             with open(self.config_file, 'r', encoding='utf-8') as f:
-                self._config_cache = yaml.safe_load(f)
+                self._config_cache = yaml.safe_load(f) or {}
             self._last_modified = self.config_file.stat().st_mtime
-        return self._config_cache
+        return self._config_cache or {}
     
     def _is_config_modified(self) -> bool:
         """Проверяет, был ли файл конфигурации изменен"""
@@ -347,15 +347,44 @@ class UnifiedConfigLoader:
     
     def get_speech_playback_config(self) -> Dict[str, Any]:
         """Получает настройки воспроизведения речи"""
+        config = self._load_config()
         audio_config = self.get_audio_config()
-        return audio_config.get('speech_playback', {
-            'sample_rate': 48000,
+        speech_playback_config = audio_config.get('speech_playback', {})
+        
+        # Получаем формат аудио от сервера (централизованный источник истины)
+        server_audio_format = config.get('server_audio_format', {
+            'sample_rate': 24000,
             'channels': 1,
-            'dtype': 'int16',
-            'buffer_size': 512,
-            'max_memory_mb': 50,
-            'auto_device_selection': True,
-            'auto_output_device_switch': True
+            'dtype': 'int16'
+        })
+        
+        # speech_playback использует свой sample_rate (48000 для лучшего качества воспроизведения)
+        # Если sample_rate отличается от server_audio_format, будет выполняться ресемплинг
+        playback_sample_rate = speech_playback_config.get('sample_rate', 48000)  # 48 kHz для воспроизведения
+        
+        return {
+            'sample_rate': playback_sample_rate,  # Целевая частота для воспроизведения (48 kHz)
+            'channels': speech_playback_config.get('channels', 1),
+            'dtype': speech_playback_config.get('dtype', 'int16'),
+            'buffer_size': speech_playback_config.get('buffer_size', 512),
+            'max_memory_mb': speech_playback_config.get('max_memory_mb', 50),
+            'auto_device_selection': speech_playback_config.get('auto_device_selection', True),
+            'auto_output_device_switch': speech_playback_config.get('auto_output_device_switch', True),
+            'enable_resampling': speech_playback_config.get('enable_resampling', True),
+            # Добавляем формат сервера для справки (используется как fallback при получении данных)
+            'server_audio_format': server_audio_format
+        }
+    
+    def get_server_audio_format(self) -> Dict[str, Any]:
+        """Получает централизованный формат аудио от сервера (источник истины)"""
+        config = self._load_config()
+        return config.get('server_audio_format', {
+            'sample_rate': 24000,  # 24 kHz согласно спецификации gRPC
+            'channels': 1,         # mono
+            'dtype': 'int16',       # 16-bit PCM
+            'bit_depth': 16,
+            'endianness': 'little',
+            'format': 'raw_pcm'
         })
     
     def get_stt_config(self) -> Dict[str, Any]:

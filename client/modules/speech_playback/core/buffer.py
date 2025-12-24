@@ -206,11 +206,22 @@ class ChunkBuffer:
                 elif data.ndim > 2:
                     data = data.reshape(data.shape[0], -1)
 
-                # Добавляем в буфер (по rows)
+                # Добавляем в буфер с crossfade для устранения щелчков
                 if len(self._playback_buffer) == 0:
                     self._playback_buffer = data
                 else:
-                    self._playback_buffer = np.vstack([self._playback_buffer, data])
+                    # Применяем crossfade между чанками (512 сэмплов = ~10ms @ 48kHz)
+                    from ..utils.audio_utils import apply_crossfade
+                    fade_samples = min(512, len(self._playback_buffer) // 4, len(data) // 4)
+                    if fade_samples >= 32:  # Минимум 32 сэмпла для crossfade
+                        self._playback_buffer = apply_crossfade(
+                            self._playback_buffer, 
+                            data, 
+                            fade_samples=fade_samples
+                        )
+                    else:
+                        # Если чанки слишком маленькие, просто конкатенируем
+                        self._playback_buffer = np.vstack([self._playback_buffer, data])
 
                 chunk_info.state = ChunkState.BUFFERED
 

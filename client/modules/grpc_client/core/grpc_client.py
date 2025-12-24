@@ -230,12 +230,12 @@ class GrpcClient:
             # Создаем запрос
             if hasattr(screen_info, 'get'):
                 # Это словарь
-                screen_width = screen_info.get('width')
-                screen_height = screen_info.get('height')
+                screen_width = screen_info.get('width')  # type: ignore[attr-defined]
+                screen_height = screen_info.get('height')  # type: ignore[attr-defined]
             elif hasattr(screen_info, 'width') and hasattr(screen_info, 'height'):
                 # Это объект с атрибутами width и height
-                screen_width = screen_info.width
-                screen_height = screen_info.height
+                screen_width = getattr(screen_info, 'width', None)
+                screen_height = getattr(screen_info, 'height', None)
             else:
                 # Неизвестный тип, используем значения по умолчанию
                 logger.warning(f"⚠️ Неизвестный тип screen_info: {type(screen_info)}, используем значения по умолчанию")
@@ -349,13 +349,23 @@ class GrpcClient:
             except Exception:
                 logger.warning("⚠️ Не удалось изменить форму аудио по каналам, оставляю одномерный массив")
 
+        # Получаем централизованный формат аудио от сервера для fallback
+        try:
+            from config.unified_config_loader import unified_config
+            server_format = unified_config.get_server_audio_format()
+            default_sample_rate = server_format.get('sample_rate', 24000)
+            default_channels = server_format.get('channels', 1)
+        except Exception:
+            default_sample_rate = 24000  # Fallback согласно спецификации
+            default_channels = 1
+        
         result = {
             'audio': audio_array,
             'metadata': {
                 'method': metadata.get('method', 'server'),
                 'duration_sec': metadata.get('duration_sec'),
-                'sample_rate': metadata.get('sample_rate', 48000),
-                'channels': metadata.get('channels', 1),
+                'sample_rate': metadata.get('sample_rate', default_sample_rate),  # Используем централизованный формат
+                'channels': metadata.get('channels', default_channels),
                 'dtype': 'int16',
             }
         }

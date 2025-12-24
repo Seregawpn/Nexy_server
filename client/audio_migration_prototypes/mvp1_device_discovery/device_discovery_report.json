@@ -1,0 +1,66 @@
+{
+  "mvp": "MVP-1: Device Discovery",
+  "status": "PASSED",
+  "metrics": {
+    "input_devices_count": 1,
+    "output_devices_count": 1,
+    "current_input_determined": true,
+    "current_output_determined": true,
+    "normalization_success_rate": 100.0,
+    "transport_detection_success_rate": 100.0,
+    "transport_distribution": {
+      "bluetooth": 2,
+      "usb": 0,
+      "built_in": 0,
+      "unknown": 0
+    }
+  },
+  "input_devices": [
+    {
+      "name": "Sergiy’s AirPo",
+      "uid": "1C-77-54-18-C8-A3:input",
+      "port_type": "Bluetooth",
+      "channels": 1,
+      "sample_rate": null,
+      "transport": "bluetooth",
+      "normalized_name": "Sergiy’s AirPo",
+      "is_default_input": false,
+      "is_default_output": false
+    }
+  ],
+  "output_devices": [
+    {
+      "name": "Sergiy’s AirPo",
+      "uid": "1C-77-54-18-C8-A3:output",
+      "port_type": "Bluetooth",
+      "channels": 2,
+      "sample_rate": null,
+      "transport": "bluetooth",
+      "normalized_name": "Sergiy’s AirPo",
+      "is_default_input": false,
+      "is_default_output": false
+    }
+  ],
+  "current_input": {
+    "name": "Sergiy’s AirPo",
+    "uid": "1C-77-54-18-C8-A3:input",
+    "port_type": "Bluetooth",
+    "channels": 1,
+    "sample_rate": null,
+    "transport": "bluetooth",
+    "normalized_name": "Sergiy’s AirPo",
+    "is_default_input": true,
+    "is_default_output": false
+  },
+  "current_output": {
+    "name": "Sergiy’s AirPo",
+    "uid": "1C-77-54-18-C8-A3:output",
+    "port_type": "Bluetooth",
+    "channels": 2,
+    "sample_rate": null,
+    "transport": "bluetooth",
+    "normalized_name": "Sergiy’s AirPo",
+    "is_default_input": false,
+    "is_default_output": true
+  }
+}

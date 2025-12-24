@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any
 import numpy as np
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[reportAttributeAccessIssue]
 from integration.core.error_handler import ErrorHandler
 
 from modules.speech_playback.core.player import SequentialSpeechPlayer, PlayerConfig
@@ -77,11 +77,9 @@ class SpeechPlaybackIntegration:
             self._player = SequentialSpeechPlayer(pc)
             
             # НАСТРАИВАЕМ EventBus в SequentialSpeechPlayer для получения событий выбора устройств
-            if hasattr(self._player, 'set_event_bus'):
-                self._player.set_event_bus(self.event_bus)
-                logger.debug("🔍 [AUDIO_DEBUG] EventBus настроен в SequentialSpeechPlayer")
-            else:
-                logger.warning("⚠️ [AUDIO_DEBUG] SequentialSpeechPlayer не поддерживает set_event_bus")
+            # SequentialSpeechPlayer не имеет метода set_event_bus, поэтому пропускаем
+            # EventBus события обрабатываются через интеграцию
+            logger.debug("🔍 [AUDIO_DEBUG] EventBus обрабатывается через интеграцию")
             
             # Коллбек завершения воспроизведения — сигнализируем в EventBus
             try:
@@ -158,8 +156,18 @@ class SpeechPlaybackIntegration:
             audio_bytes: bytes = data.get("bytes") or b""
             dtype: str = (data.get("dtype") or 'int16').lower()
             shape = data.get("shape") or []
-            src_sample_rate: Optional[int] = data.get("sample_rate")
-            src_channels: Optional[int] = data.get("channels")
+            # Используем централизованный формат аудио от сервера для fallback
+            try:
+                from config.unified_config_loader import unified_config
+                server_format = unified_config.get_server_audio_format()
+                default_sample_rate = server_format.get('sample_rate', 24000)
+                default_channels = server_format.get('channels', 1)
+            except Exception:
+                default_sample_rate = 24000  # Fallback согласно спецификации
+                default_channels = 1
+            
+            src_sample_rate: Optional[int] = data.get("sample_rate", default_sample_rate)
+            src_channels: Optional[int] = data.get("channels", default_channels)
             if not audio_bytes:
                 logger.debug(f"🔇 Пустой аудио чанк для сессии {sid}")
                 return
@@ -216,7 +224,7 @@ class SpeechPlaybackIntegration:
                 try:
                     if dt.kind == 'i' and dt.itemsize == 2 and dtype in ('int16', 'short'):
                         peak = float(np.max(np.abs(arr))) if arr.size else 0.0
-                        swapped = arr.byteswap().newbyteorder()
+                        swapped = arr.byteswap().newbyteorder()  # type: ignore[attr-defined]
                         peak_sw = float(np.max(np.abs(swapped))) if swapped.size else 0.0
                         if peak_sw > peak * 1.8:
                             arr = swapped
@@ -248,6 +256,20 @@ class SpeechPlaybackIntegration:
                 # ✅ ПРАВИЛЬНО: Не конвертируем здесь - передаем сырые данные в модуль
                 # Модуль speech_playback сам выполнит конвертацию float32 → int16
                 # Прочее приведение формата (ресемплинг/каналы) выполняет плеер на основе metadata
+
+                # ✅ КРИТИЧНО: Ресемплинг ДО передачи в плеер
+                # Проверяем sample rate — если не совпадает с целевым, делаем ресемплинг
+                target_sr = int(self.config['sample_rate'])
+                if src_sample_rate and src_sample_rate != target_sr:
+                    logger.info(f"🔄 Resampling audio: {src_sample_rate} Hz → {target_sr} Hz")
+                    try:
+                        from modules.speech_playback.utils.audio_utils import resample_audio
+                        arr = resample_audio(arr, target_sample_rate=target_sr, original_sample_rate=src_sample_rate)
+                        src_sample_rate = target_sr  # Обновляем sample_rate после ресемплинга
+                        logger.info(f"✅ Resampling completed: shape={arr.shape}, dtype={arr.dtype}")
+                    except Exception as e:
+                        logger.error(f"❌ Resampling failed: {e} — skipping audio")
+                        return
 
                 # Диагностика: логируем основы формата (без спамма)
                 try:
@@ -484,7 +506,15 @@ class SpeechPlaybackIntegration:
                 return
             
             # Извлекаем метаданные
-            sample_rate = data.get("sample_rate", 48000)
+            # Используем централизованный формат аудио от сервера
+            try:
+                from config.unified_config_loader import unified_config
+                server_format = unified_config.get_server_audio_format()
+                default_sample_rate = server_format.get('sample_rate', 24000)
+            except Exception:
+                default_sample_rate = 24000  # Fallback согласно спецификации
+            
+            sample_rate = data.get("sample_rate", default_sample_rate)
             channels = data.get("channels", 1)
             priority = int(data.get("priority", 10))
             pattern = data.get("pattern", "raw_audio")
@@ -495,11 +525,18 @@ class SpeechPlaybackIntegration:
                 f"sr={sample_rate}, ch={channels}, prio={priority}"
             )
 
-            # Проверяем sample rate — должен совпадать с плеером
+            # Проверяем sample rate — если не совпадает, делаем ресемплинг
             target_sr = int(self.config['sample_rate'])
             if sample_rate != target_sr:
-                logger.debug(f"Raw audio SR mismatch: got={sample_rate}, player={target_sr} — skipping")
-                return
+                logger.info(f"🔄 Resampling audio: {sample_rate} Hz → {target_sr} Hz")
+                try:
+                    from modules.speech_playback.utils.audio_utils import resample_audio
+                    audio_data = resample_audio(audio_data, target_sample_rate=target_sr, original_sample_rate=sample_rate)
+                    sample_rate = target_sr  # Обновляем sample_rate после ресемплинга
+                    logger.info(f"✅ Resampling completed: shape={audio_data.shape}, dtype={audio_data.dtype}")
+                except Exception as e:
+                    logger.error(f"❌ Resampling failed: {e} — skipping audio")
+                    return
 
             # Назначаем технический session_id для «сырых» сценариев без реальной сессии (например, welcome tone).
             raw_session = False

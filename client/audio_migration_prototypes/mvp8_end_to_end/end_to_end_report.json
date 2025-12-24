@@ -1,0 +1,82 @@
+{
+  "mvp": "MVP-8: End-to-End",
+  "status": "PASSED",
+  "metrics": {
+    "total_scenarios": 6,
+    "successful_scenarios": 6,
+    "success_rate": 100.0,
+    "data_lost_count": 0,
+    "recovery_works_count": 6,
+    "loops_count": 0
+  },
+  "scenarios": [
+    {
+      "scenario_name": "BT disconnect during listening",
+      "success": true,
+      "data_lost": false,
+      "recovery_works": true,
+      "no_loops": true,
+      "details": {
+        "simulated": true
+      }
+    },
+    {
+      "scenario_name": "Output switch during speaking",
+      "success": true,
+      "data_lost": false,
+      "recovery_works": true,
+      "no_loops": true,
+      "details": {
+        "queue_size_before": 5,
+        "queue_size_after": 5,
+        "recreate_success": true
+      }
+    },
+    {
+      "scenario_name": "Mic busy then recovered",
+      "success": true,
+      "data_lost": false,
+      "recovery_works": true,
+      "no_loops": true,
+      "details": {
+        "mic_busy_ok": true,
+        "backoff_ok": true,
+        "rollback_ok": true
+      }
+    },
+    {
+      "scenario_name": "BT disconnect during listening",
+      "success": true,
+      "data_lost": false,
+      "recovery_works": true,
+      "no_loops": true,
+      "details": {
+        "simulated": true
+      }
+    },
+    {
+      "scenario_name": "Output switch during speaking",
+      "success": true,
+      "data_lost": false,
+      "recovery_works": true,
+      "no_loops": true,
+      "details": {
+        "queue_size_before": 10,
+        "queue_size_after": 10,
+        "recreate_success": true
+      }
+    },
+    {
+      "scenario_name": "Mic busy then recovered",
+      "success": true,
+      "data_lost": false,
+      "recovery_works": true,
+      "no_loops": true,
+      "details": {
+        "mic_busy_ok": true,
+        "backoff_ok": true,
+        "rollback_ok": true
+      }
+    }
+  ]
+}

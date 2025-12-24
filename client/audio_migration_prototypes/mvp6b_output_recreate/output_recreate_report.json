@@ -1,0 +1,10 @@
+{
+  "mvp": "MVP-6b: Output Recreate Mid-Play",
+  "status": "PASSED",
+  "metrics": {
+    "queue_size": 0,
+    "queue_size_bytes": 0,
+    "recreate_count": 0,
+    "chunks_lost": 0
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "mvp": "MVP-2: Device Mapping",
+  "status": "PASSED",
+  "metrics": {
+    "total_devices": 1,
+    "high_confidence": 0,
+    "medium_confidence": 1,
+    "low_confidence": 0,
+    "none_confidence": 0,
+    "success_count": 1,
+    "success_rate": 100.0,
+    "cache_size": 1
+  },
+  "mapping_results": [
+    {
+      "device_index": 0,
+      "confidence": "MEDIUM",
+      "reason": "Matched 'Sergiy’s AirPods' with score 12.0",
+      "score": 12.0,
+      "avf_device_name": "Sergiy’s AirPo",
+      "portaudio_device_name": "Sergiy’s AirPods"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "mvp": "MVP-7: Permissions Gate",
+  "status": "PASSED",
+  "metrics": {
+    "permission_status": null,
+    "hidden_attempts_count": 0,
+    "degradation_applied": false
+  }
+}

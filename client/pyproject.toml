@@ -61,19 +61,12 @@ allowed_files = [
 ]
 
 [tool.basedpyright]
-# Type checking configuration for basedpyright
-# Set to "warning" to allow missing imports (they are handled gracefully with try/except)
+# Настройки для basedpyright (статический анализатор типов)
 reportMissingImports = "warning"
-# Ignore missing module sources (for platform-specific modules)
+# Игнорируем предупреждения о динамически генерируемых protobuf модулях
 reportMissingModuleSource = false
-# Platform-specific modules that may not be available in all environments:
-# - PyObjC modules (AppKit, Foundation) are macOS-only
-# - pydub may not be installed in dev environment but is required at runtime
-# These imports are wrapped in try/except blocks and handled gracefully
+# Исключаем proto директории из проверки импортов
 exclude = [
-  "**/__pycache__",
-  "**/build",
-  "**/dist",
-  ".venv",
+  "**/proto/**",
 ]
 

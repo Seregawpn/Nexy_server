@@ -25,13 +25,23 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.0.6.1  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
+  version: 1.0.6.2  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
 # Авто-всё конфигурация аудио - автоматическое определение параметров устройства
 default_audio:
   # Только целевые параметры для STT (что ожидает движок распознавания)
   target_sample_rate: 16000   # стандарт для ASR
   target_channels: 1          # mono
   target_dtype: "int16"       # формат для ASR
+
+# Централизованный формат аудио от сервера (gRPC)
+# ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ для формата аудио, получаемого от сервера
+server_audio_format:
+  sample_rate: 24000          # Частота дискретизации аудио от сервера (24 kHz)
+  channels: 1                  # Количество каналов (1 = mono)
+  dtype: "int16"              # Тип данных (int16 = 16-bit PCM)
+  bit_depth: 16               # Глубина бит (16-bit)
+  endianness: "little"        # Порядок байтов (Little-endian)
+  format: "raw_pcm"           # Формат (Raw PCM без заголовков)
 # Новая аудиосистема на AVFoundation
 audio_system:
   # Master switch
@@ -483,7 +493,9 @@ welcome_message:
   delay_sec: 0.3
   volume: 0.8
   voice: en-US-JennyNeural
-  sample_rate: 48000
+  # Формат аудио (по умолчанию использует server_audio_format из конфигурации)
+  # DEPRECATED: используйте server_audio_format.sample_rate вместо этого
+  sample_rate: 48000  # Целевая частота для воспроизведения (если отличается от server_audio_format, будет ресемплинг)
   channels: 1
   bit_depth: 16
   ignore_microphone_permission: true

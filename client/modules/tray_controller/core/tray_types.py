@@ -68,6 +68,9 @@ class TrayConfig:
     menu_font_size: int = 13
     enable_sound: bool = False
     debug_mode: bool = False
+    show_status_in_menu: bool = True  # Показывать статус в меню
+    enable_notifications: bool = True  # Включить уведомления
+    auto_update_status: bool = True  # Автоматическое обновление статуса
 
 @dataclass
 class TrayEvent:

@@ -1,0 +1,19 @@
+# Зависимости для Audio Migration Prototypes
+
+# PyObjC для работы с AVFoundation
+pyobjc-framework-AVFoundation>=10.0
+pyobjc-framework-CoreAudio>=10.0
+pyobjc-framework-Foundation>=10.0
+
+# Audio I/O
+sounddevice>=0.4.6
+
+# Speech Recognition
+SpeechRecognition>=3.10.0
+
+# NumPy для работы с аудио данными
+numpy>=1.24.0
+
+# Для работы с данными
+dataclasses>=0.8; python_version < "3.7"
+
