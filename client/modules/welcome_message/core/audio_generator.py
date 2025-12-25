@@ -59,30 +59,37 @@ class WelcomeAudioGenerator:
             metadata = result.get('metadata', {})
             self._last_server_metadata = metadata
 
+            # 🔍 ДИАГНОСТИКА: Логируем RAW данные от gRPC клиента
+            logger.info(
+                f"🔍 [WELCOME_AUDIO_DIAG] Данные от gRPC клиента: "
+                f"metadata={metadata}, audio_shape={audio_array.shape if audio_array is not None else 'None'}, "
+                f"audio_dtype={audio_array.dtype if audio_array is not None else 'None'}"
+            )
+
             if audio_array is None or len(audio_array) == 0:
                 logger.error("❌ [WELCOME_AUDIO] Сервер вернул пустое аудио")
                 return None
 
-            # Используем централизованный формат аудио от сервера для fallback
-            try:
-                from config.unified_config_loader import unified_config
-                server_format = unified_config.get_server_audio_format()
-                default_server_sr = server_format.get('sample_rate', 24000)
-                default_server_ch = server_format.get('channels', 1)
-            except Exception:
-                default_server_sr = 24000  # Fallback согласно спецификации
-                default_server_ch = 1
+            sample_rate = metadata.get('sample_rate') or self.config.sample_rate
+            channels = metadata.get('channels') or self.config.channels
             
-            sample_rate = metadata.get('sample_rate') or default_server_sr
-            channels = metadata.get('channels') or default_server_ch
+            # 🔍 ДИАГНОСТИКА: Вычисляем ожидаемую длительность
+            audio_samples = audio_array.size if hasattr(audio_array, 'size') else len(audio_array)
+            expected_duration = audio_samples / float(sample_rate) if sample_rate > 0 else 0.0
+            logger.info(
+                f"🔍 [WELCOME_AUDIO_DIAG] Параметры аудио: samples={audio_samples}, "
+                f"sr={sample_rate}Hz, ch={channels}, expected_duration={expected_duration:.3f}s, "
+                f"config_sr={self.config.sample_rate}Hz"
+            )
 
             if sample_rate != self.config.sample_rate or channels != self.config.channels:
-                logger.info(
-                    "⚠️ [WELCOME_AUDIO] Несовпадение формата: server_sr=%s, config_sr=%s, server_ch=%s, config_ch=%s",
-                    sample_rate,
-                    self.config.sample_rate,
-                    channels,
-                    self.config.channels,
+                config_duration = audio_samples / float(self.config.sample_rate) if self.config.sample_rate > 0 else 0.0
+                speed_factor = sample_rate / float(self.config.sample_rate) if self.config.sample_rate > 0 else 1.0
+                logger.warning(
+                    f"⚠️ [WELCOME_AUDIO_DIAG] Несовпадение формата: server_sr={sample_rate}Hz, "
+                    f"config_sr={self.config.sample_rate}Hz, server_ch={channels}, config_ch={self.config.channels}, "
+                    f"speed_factor={speed_factor:.2f}x, expected_duration={expected_duration:.3f}s, "
+                    f"config_duration={config_duration:.3f}s"
                 )
                 # Пока не выполняем ресэмплинг, сообщаем в лог.
 

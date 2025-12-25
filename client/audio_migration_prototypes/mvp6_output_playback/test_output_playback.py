@@ -16,6 +16,7 @@ import logging
 import json
 import numpy as np
 import time
+import threading
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional, Dict, List
@@ -79,6 +80,7 @@ class OutputPlaybackPrototype:
         self.player_node = None
         self.session = None
         self.metrics: Optional[PlaybackMetrics] = None
+        self._engine_lock = threading.Lock()  # Lock для потокобезопасности
         
     def setup(self) -> bool:
         """Настройка окружения"""
@@ -124,42 +126,52 @@ class OutputPlaybackPrototype:
             logger.error(f"❌ Ошибка настройки AVAudioSession: {e}")
             return False
     
+    def _engine_start(self) -> bool:
+        """Helper для безопасного запуска AVAudioEngine (исправляет startAndReturnError_)"""
+        with self._engine_lock:
+            try:
+                ok, err = self.engine.startAndReturnError_(None)  # type: ignore[reportOptionalMemberAccess]
+                if not ok:
+                    logger.error(f"AVAudioEngine start failed: {err}")
+                return bool(ok)
+            except Exception as e:
+                logger.error(f"AVAudioEngine start exception: {e}")
+                return False
+    
     def initialize_engine(self) -> bool:
-        """Инициализация AVAudioEngine"""
-        try:
-            logger.info("📋 Инициализация AVAudioEngine...")
-            start_time = time.time()
-            
-            # Если engine уже существует, останавливаем его
-            if self.engine and self.engine.isRunning():
-                self.engine.stop()
-            
-            # Создаем новый engine (он автоматически использует текущее системное default output устройство)
-            self.engine = AVAudioEngine.alloc().init()
-            self.player_node = AVAudioPlayerNode.alloc().init()
-            
-            # Attach player node
-            self.engine.attachNode_(self.player_node)
-            
-            # Connect to main mixer
-            main_mixer = self.engine.mainMixerNode()
-            self.engine.connect_to_format_(
-                self.player_node,
-                main_mixer,
-                None  # Use engine's format
-            )
-            
-            init_time = (time.time() - start_time) * 1000
-            logger.info(f"✅ AVAudioEngine инициализирован ({init_time:.2f} ms)")
-            logger.info("")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка инициализации AVAudioEngine: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
+        """Инициализация AVAudioEngine (потокобезопасно)"""
+        with self._engine_lock:
+            try:
+                logger.info("📋 Инициализация AVAudioEngine...")
+                start_time = time.time()
+                
+                # Останавливаем engine, если уже запущен
+                if self.engine is not None and self.engine.isRunning():
+                    self.engine.stop()
+                
+                self.engine = AVAudioEngine.alloc().init()
+                self.player_node = AVAudioPlayerNode.alloc().init()
+                
+                # Attach player node
+                self.engine.attachNode_(self.player_node)
+                
+                # Connect to main mixer
+                main_mixer = self.engine.mainMixerNode()
+                self.engine.connect_to_format_(
+                    self.player_node,
+                    main_mixer,
+                    None  # Use engine's format
+                )
+                
+                init_time = (time.time() - start_time) * 1000
+                logger.info(f"✅ AVAudioEngine инициализирован ({init_time:.2f} ms)")
+                logger.info("")
+                
+                return True
+                
+            except Exception as e:
+                logger.error(f"❌ Ошибка инициализации AVAudioEngine: {e}")
+                return False
     
     def generate_test_audio(self, duration_sec: float = 1.0, sample_rate: int = 16000) -> np.ndarray:
         """Генерация тестового аудио (синусоида 440Hz)"""
@@ -168,9 +180,31 @@ class OutputPlaybackPrototype:
         audio = np.sin(2 * np.pi * frequency * t).astype(np.float32)
         return audio
     
+    def _resample_linear(self, x: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
+        """Простой линейный ресемплинг для приведения аудио к нужной частоте"""
+        if src_sr == dst_sr:
+            return x.astype(np.float32, copy=False)
+
+        x = x.astype(np.float32, copy=False)
+        n_src = int(len(x))
+        if n_src <= 0:
+            return np.zeros((0,), dtype=np.float32)
+        if n_src == 1:
+            # растянем 1 сэмпл
+            ratio = dst_sr / src_sr
+            n_dst = max(1, int(round(n_src * ratio)))
+            return np.full((n_dst,), float(x[0]), dtype=np.float32)
+
+        ratio = dst_sr / src_sr
+        n_dst = max(1, int(round(n_src * ratio)))
+
+        xp = np.linspace(0.0, 1.0, num=n_src, endpoint=False)
+        x_dst = np.interp(np.linspace(0.0, 1.0, num=n_dst, endpoint=False), xp, x).astype(np.float32)
+        return x_dst
+    
     def numpy_to_pcm_buffer(self, audio_data: np.ndarray, sample_rate: int = 16000) -> Optional[AVAudioPCMBuffer]:
         """
-        Конвертация numpy array в AVAudioPCMBuffer
+        Конвертация numpy array в AVAudioPCMBuffer с ресемплингом до target_sample_rate
         """
         try:
             start_time = time.time()
@@ -181,6 +215,11 @@ class OutputPlaybackPrototype:
             target_channels = engine_format.channelCount()
             
             logger.info(f"  🔄 Конвертация: {sample_rate}Hz → {target_sample_rate}Hz, channels: 1 → {target_channels}")
+            
+            # РЕСЕМПЛИНГ: приводим к target_sample_rate
+            if sample_rate != target_sample_rate:
+                audio_data = self._resample_linear(audio_data, sample_rate, target_sample_rate)
+                logger.info(f"  ✅ Ресемплинг выполнен: {len(audio_data)} samples")
             
             # Используем формат output напрямую (чтобы избежать несоответствия каналов)
             audio_format = engine_format
@@ -218,28 +257,26 @@ class OutputPlaybackPrototype:
                     except:
                         channel_count = target_channels  # Fallback
                 
-                # В PyObjC floatChannelData() возвращает tuple из objc.varlist объектов
-                # objc.varlist поддерживает индексацию и срезы, можно использовать np.array()
+                # В PyObjC floatChannelData() возвращает varlist указателей
+                # Используем прямое присваивание через slicing (PyObjC автоматически конвертирует)
+                
                 # Копируем данные для каждого канала
                 if len(audio_data.shape) == 1:
                     # Моно: копируем в первый канал
                     if channel_count > 0:
-                        varlist = channel_data[0]
-                        # Используем срез для получения данных и присваивание для копирования
-                        varlist[:frame_count] = audio_data[:frame_count].tolist()
+                        # Прямое присваивание через slicing (PyObjC конвертирует list в varlist)
+                        channel_data[0][:frame_count] = audio_data.tolist()
                         
                         # Если стерео, дублируем в второй канал
                         if target_channels > 1 and channel_count > 1:
-                            varlist_2 = channel_data[1]
-                            varlist_2[:frame_count] = audio_data[:frame_count].tolist()
+                            channel_data[1][:frame_count] = audio_data.tolist()
                             logger.info(f"  ✅ Дублирован моно канал в стерео")
                 else:
                     # Многоканальное: копируем каждый канал
                     for ch in range(min(audio_data.shape[1], target_channels)):
                         if ch < channel_count:
-                            varlist = channel_data[ch]
                             channel_audio = audio_data[:, ch]
-                            varlist[:frame_count] = channel_audio[:frame_count].tolist()
+                            channel_data[ch][:frame_count] = channel_audio.tolist()
                 
             except Exception as copy_e:
                 logger.error(f"  ❌ Ошибка копирования данных: {copy_e}")
@@ -261,36 +298,71 @@ class OutputPlaybackPrototype:
             logger.error(traceback.format_exc())
             return None
     
-    def play_audio_chunk(self, audio_data: np.ndarray, sample_rate: int = 16000) -> bool:
-        """Воспроизведение аудио чанка"""
+    def _dump_playback_state(self, pcm_buffer: Optional[AVAudioPCMBuffer] = None) -> str:
+        """Диагностика состояния playback для логирования"""
+        lines = []
         try:
-            if not self.engine or not self.player_node:
-                logger.error("❌ AVAudioEngine не инициализирован")
-                return False
-            
-            start_time = time.time()
-            
-            # Конвертируем numpy в PCM buffer
-            pcm_buffer = self.numpy_to_pcm_buffer(audio_data, sample_rate)
-            
-            if not pcm_buffer:
-                logger.error("❌ Не удалось создать PCM buffer")
-                return False
-            
-            # Schedule buffer
-            self.player_node.scheduleBuffer_completionHandler_(pcm_buffer, None)
-            
-            # Start playing if not already
-            if not self.player_node.isPlaying():
-                self.player_node.play()
-            
-            playback_time = (time.time() - start_time) * 1000
-            logger.info(f"✅ Аудио чанк запланирован для воспроизведения ({playback_time:.2f} ms)")
-            return True
-            
+            if self.engine:
+                lines.append(f"  Engine: running={self.engine.isRunning()}")
+            if self.player_node:
+                lines.append(f"  PlayerNode: playing={self.player_node.isPlaying()}")
+            if pcm_buffer:
+                fmt = pcm_buffer.format()
+                lines.append(f"  Buffer: frames={pcm_buffer.frameLength()}/{pcm_buffer.frameCapacity()}, "
+                           f"sr={int(fmt.sampleRate())}Hz, channels={fmt.channelCount()}")
         except Exception as e:
-            logger.error(f"❌ Ошибка воспроизведения: {e}")
-            return False
+            lines.append(f"  ⚠️ Ошибка диагностики: {e}")
+        return "\n".join(lines)
+    
+    def play_audio_chunk(self, audio_data: np.ndarray, sample_rate: int = 16000) -> bool:
+        """Воспроизведение аудио чанка (потокобезопасно)"""
+        with self._engine_lock:
+            try:
+                if not self.engine or not self.player_node:
+                    logger.error("❌ AVAudioEngine не инициализирован")
+                    return False
+                
+                # Диагностика ДО воспроизведения
+                logger.debug("📊 Состояние ДО воспроизведения:")
+                logger.debug(self._dump_playback_state())
+                
+                start_time = time.time()
+                
+                # Конвертируем numpy в PCM buffer
+                pcm_buffer = self.numpy_to_pcm_buffer(audio_data, sample_rate)
+                
+                if not pcm_buffer:
+                    logger.error("❌ Не удалось создать PCM buffer")
+                    return False
+                
+                # Диагностика буфера
+                logger.debug("📊 Состояние буфера:")
+                logger.debug(self._dump_playback_state(pcm_buffer))
+                
+                # Schedule buffer
+                self.player_node.scheduleBuffer_completionHandler_(pcm_buffer, None)
+                
+                # Start playing if not already
+                was_playing = self.player_node.isPlaying()
+                if not was_playing:
+                    self.player_node.play()
+                
+                # Диагностика ПОСЛЕ воспроизведения
+                is_playing_after = self.player_node.isPlaying()
+                logger.debug("📊 Состояние ПОСЛЕ schedule/play:")
+                logger.debug(self._dump_playback_state(pcm_buffer))
+                if not was_playing and not is_playing_after:
+                    logger.warning("  ⚠️ player_node.play() вызван, но isPlaying() всё ещё False")
+                
+                playback_time = (time.time() - start_time) * 1000
+                logger.info(f"✅ Аудио чанк запланирован для воспроизведения ({playback_time:.2f} ms)")
+                return True
+                
+            except Exception as e:
+                logger.error(f"❌ Ошибка воспроизведения: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return False
     
     def test_basic_playback(self) -> bool:
         """Тестирование базового воспроизведения"""
@@ -414,10 +486,9 @@ def main():
         logger.error("❌ Не удалось инициализировать AVAudioEngine")
         sys.exit(1)
     
-    # Запуск engine
+    # Запуск engine (используем helper метод)
     try:
-        error = None
-        if not prototype.engine.startAndReturnError_(error):  # type: ignore[reportOptionalMemberAccess]
+        if not prototype._engine_start():
             logger.error("❌ Не удалось запустить AVAudioEngine")
             sys.exit(1)
         logger.info("✅ AVAudioEngine запущен")

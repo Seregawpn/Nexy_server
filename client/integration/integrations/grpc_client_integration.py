@@ -82,10 +82,6 @@ class GrpcClientIntegration:
 
         # Агрегатор данных по session_id
         self._sessions: Dict[Any, Dict[str, Any]] = {}
-        # Метаданные аудио для каждой сессии (sample_rate, channels)
-        self._audio_metadata: Dict[Any, Dict[str, Any]] = {}
-        # Буфер аудио чанков для каждой сессии (собираем все чанки перед отправкой)
-        self._audio_chunks_buffer: Dict[Any, list] = {}  # session_id -> list of bytes
         # Активные отправки: session_id -> asyncio.Task
         self._inflight: Dict[Any, asyncio.Task] = {}
         # Отметки о том, что отмена уже уведомлена (чтобы не дублировать события)
@@ -258,9 +254,6 @@ class GrpcClientIntegration:
                 task = self._inflight.pop(sid)
                 task.cancel()
                 self._cancel_notified.add(sid)
-                # Очищаем буфер и метаданные при отмене
-                self._audio_chunks_buffer.pop(sid, None)
-                self._audio_metadata.pop(sid, None)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": sid, "error": "cancelled"})
         except Exception as e:
             await self._handle_error(e, where="grpc.on_interrupt", severity="warning")
@@ -284,9 +277,6 @@ class GrpcClientIntegration:
             if task and not task.done():
                 task.cancel()
                 self._cancel_notified.add(target_sid)
-                # Очищаем буфер и метаданные при отмене
-                self._audio_chunks_buffer.pop(target_sid, None)
-                self._audio_metadata.pop(target_sid, None)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": target_sid, "error": "cancelled"})
             else:
                 logger.debug(f"grpc.request_cancel: task not found or already done for sid={target_sid}")
@@ -317,9 +307,6 @@ class GrpcClientIntegration:
 
         # Сеть: если явно оффлайн и включена сет.защелка — не отправляем
         if self.config.use_network_gate and self._network_connected is False:
-            # Очищаем буфер и метаданные при ошибке
-            self._audio_chunks_buffer.pop(session_id, None)
-            self._audio_metadata.pop(session_id, None)
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "offline"})
             return
 
@@ -352,9 +339,6 @@ class GrpcClientIntegration:
             hwid = await self._await_hardware_id(timeout_ms=3000, request_id=f"grpc-{session_id}")
         if not hwid:
             logger.error(f"No Hardware ID available for gRPC request - session {session_id}")
-            # Очищаем буфер и метаданные при ошибке
-            self._audio_chunks_buffer.pop(session_id, None)
-            self._audio_metadata.pop(session_id, None)
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "no_hardware_id"})
             return
         
@@ -405,338 +389,148 @@ class GrpcClientIntegration:
             logger.info(f"Starting gRPC stream for session {session_id} with prompt: '{text[:50]}...'")
             got_terminal = False
             chunk_count = 0
-            try:
-                async for resp in self._client.stream_audio(
-                    prompt=text,
-                    screenshot_base64=screenshot_b64 or "",
-                    screen_info={"width": width, "height": height},
-                    hardware_id=hwid,
-                ):
-                    chunk_count += 1
+            async for resp in self._client.stream_audio(
+                prompt=text,
+                screenshot_base64=screenshot_b64 or "",
+                screen_info={"width": width, "height": height},
+                hardware_id=hwid,
+            ):
+                chunk_count += 1
 
-                    # Проверяем, какой тип content установлен (oneof) - ВСЕГДА используем WhichOneof для protobuf!
-                    which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None
+                # Проверяем, какой тип content установлен (oneof) - ВСЕГДА используем WhichOneof для protobuf!
+                which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None
 
-                    # Диагностика: логируем только важные события
-                    if chunk_count == 1 or chunk_count % 10 == 0 or which_oneof in ('end_message', 'error_message'):
-                        logger.info(f"🔍 gRPC response #{chunk_count}: WhichOneof('content')={which_oneof}")
+                # Диагностика: логируем только важные события
+                if chunk_count == 1 or chunk_count % 10 == 0 or which_oneof in ('end_message', 'error_message'):
+                    logger.info(f"🔍 gRPC response #{chunk_count}: WhichOneof('content')={which_oneof}")
 
-                    # Обрабатываем СТРОГО по типу oneof
-                    if which_oneof == 'text_chunk':
-                        text = resp.text_chunk
-                        logger.info(f"gRPC received text_chunk len={len(text)} for session {session_id}")
-                        
-                        # Проверяем префикс __MCP__ для MCP команд
-                        if text.startswith(MCP_PREFIX):
-                            # Извлекаем JSON после префикса
-                            mcp_json_str = text[len(MCP_PREFIX):]
-                            try:
-                                # Парсим JSON для валидации
-                                mcp_payload = json.loads(mcp_json_str)
-                                
-                                # Извлекаем command_payload из структуры
-                                # Формат: {"event": "mcp.command_request", "payload": {...}}
-                                command_payload = mcp_payload.get("payload", {})
-                                
-                                logger.info(
-                                    "[%s] MCP command detected: command=%s, session_id=%s",
-                                    FEATURE_ID,
-                                    command_payload.get("command", "unknown"),
-                                    session_id
-                                )
-                                
-                                # Публикуем событие grpc.response.action с action_json
-                                # Формат события соответствует ожиданиям ActionExecutionIntegration
-                                await self.event_bus.publish("grpc.response.action", {
-                                    "session_id": session_id,
-                                    "action_json": json.dumps(command_payload, ensure_ascii=False),
-                                    "feature_id": FEATURE_ID,
-                                })
-                                
-                                logger.debug(
-                                    "[%s] Published grpc.response.action for session=%s, command=%s",
-                                    FEATURE_ID,
-                                    session_id,
-                                    command_payload.get("command", "unknown")
-                                )
-                            except json.JSONDecodeError as e:
-                                logger.error(
-                                    "[%s] Failed to parse MCP JSON: %s, text=%s",
-                                    FEATURE_ID,
-                                    e,
-                                    mcp_json_str[:100]
-                                )
-                                # Публикуем событие об ошибке парсинга
-                                await self.event_bus.publish("grpc.response.action", {
-                                    "session_id": session_id,
-                                    "action_json": None,
-                                    "error": "invalid_json",
-                                    "feature_id": FEATURE_ID,
-                                })
-                            except Exception as e:
-                                logger.error(
-                                    "[%s] Error processing MCP command: %s",
-                                    FEATURE_ID,
-                                    e
-                                )
-                                await self._handle_error(e, where="grpc.process_mcp_command", severity="warning")
-                        else:
-                            # Обычный текст - публикуем как обычно
-                            await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
-
-                    elif which_oneof == 'metadata':
-                        # Сохраняем метаданные аудио для сессии (sample_rate, channels)
-                        meta = resp.metadata
-                        if meta:
-                            self._audio_metadata[session_id] = {
-                                'sample_rate': getattr(meta, 'sample_rate', None),
-                                'channels': getattr(meta, 'channels', None),
-                                'method': getattr(meta, 'method', None),
-                                'duration_sec': getattr(meta, 'duration_sec', None),
-                            }
-                            logger.info(
-                                f"📋 gRPC metadata для сессии {session_id}: "
-                                f"sr={self._audio_metadata[session_id].get('sample_rate')}, "
-                                f"ch={self._audio_metadata[session_id].get('channels')}"
-                            )
-
-                    elif which_oneof == 'audio_chunk':
-                        ch = resp.audio_chunk
-                        data = bytes(ch.audio_data) if ch.audio_data else b""
-                        dtype = ch.dtype or 'int16'
-                        shape = list(ch.shape) if ch.shape else []
-
-                        # Пустой audio_chunk больше НЕ считаем завершением, т.к. сервер должен слать end_message
-                        if len(data) == 0:
-                            logger.warning(f"⚠️ Received empty audio_chunk - skipping (waiting for end_message)")
-                            continue
-
-                        # ✅ НОВЫЙ ПОДХОД: Собираем чанки в буфер (как для приветствия)
-                        if session_id not in self._audio_chunks_buffer:
-                            self._audio_chunks_buffer[session_id] = []
-                        self._audio_chunks_buffer[session_id].append(data)
-                        
-                        logger.debug(
-                            f"gRPC received audio_chunk bytes={len(data)} dtype={dtype} shape={shape} "
-                            f"для сессии {session_id} (всего чанков: {len(self._audio_chunks_buffer[session_id])})"
-                        )
-                        
-                        # НЕ отправляем сразу - соберем все чанки и отправим при end_message
-
-                    elif which_oneof == 'end_message':
-                        end_msg = resp.end_message
-                        logger.info(f"✅ gRPC received end_message: '{end_msg}' for session {session_id}")
-                        
-                        # ✅ НОВЫЙ ПОДХОД: Собираем все чанки и отправляем через playback.raw_audio (как для приветствия)
-                        audio_chunks = self._audio_chunks_buffer.pop(session_id, [])
-                        logger.info(f"🔍 [END_MESSAGE] Буфер чанков для сессии {session_id}: {len(audio_chunks)} чанков")
-                        if audio_chunks and len(audio_chunks) > 0:
-                            # Объединяем все чанки в один массив байтов
-                            all_audio_bytes = b"".join(audio_chunks)
-                            
-                            # Получаем метаданные
-                            audio_meta = self._audio_metadata.get(session_id, {})
-                            sample_rate = audio_meta.get('sample_rate')
-                            channels = audio_meta.get('channels')
-                            
-                            # Если метаданные не были сохранены, используем централизованный формат
-                            if sample_rate is None or channels is None:
-                                try:
-                                    from config.unified_config_loader import unified_config
-                                    server_format = unified_config.get_server_audio_format()
-                                    if sample_rate is None:
-                                        sample_rate = server_format.get('sample_rate', 24000)
-                                    if channels is None:
-                                        channels = server_format.get('channels', 1)
-                                except Exception:
-                                    if sample_rate is None:
-                                        sample_rate = 24000  # Fallback согласно спецификации
-                                    if channels is None:
-                                        channels = 1
-                            
-                            # Декодируем в numpy array
-                            try:
-                                import numpy as np
-                                if len(all_audio_bytes) == 0:
-                                    logger.warning(f"⚠️ Пустой аудио буфер для сессии {session_id} - пропускаем")
-                                else:
-                                    audio_array = np.frombuffer(all_audio_bytes, dtype=np.int16)
-                                    logger.info(
-                                        f"✅ Собрано {len(audio_chunks)} чанков для сессии {session_id}: "
-                                        f"всего {len(audio_array)} сэмплов, sr={sample_rate}, ch={channels}"
-                                    )
-                                    
-                                    # Отправляем через playback.raw_audio (как для приветствия)
-                                    await self.event_bus.publish("playback.raw_audio", {
-                                        "audio_data": audio_array,  # numpy array
-                                        "sample_rate": sample_rate,
-                                        "channels": channels,
-                                        "dtype": "int16",
-                                        "priority": 0,
-                                        "pattern": "grpc_response",
-                                        "session_id": session_id,
-                                        "metadata": {
-                                            "method": "server",
-                                            "chunks_count": len(audio_chunks),
-                                            "total_samples": len(audio_array),
-                                        },
-                                    })
-                                    logger.info(f"✅ Аудио ответа отправлено через playback.raw_audio для сессии {session_id}")
-                            except Exception as e:
-                                logger.error(f"❌ Ошибка обработки собранных чанков: {e}")
-                                import traceback
-                                traceback.print_exc()
-                        
-                        # Очищаем метаданные после завершения сессии
-                        self._audio_metadata.pop(session_id, None)
-                        await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
-                        got_terminal = True
-                        break
-
-                    elif which_oneof == 'error_message':
-                        err_msg = resp.error_message
-                        logger.error(f"gRPC received error_message: '{err_msg}' for session {session_id}")
-                        # Очищаем буфер и метаданные при ошибке
-                        self._audio_chunks_buffer.pop(session_id, None)
-                        self._audio_metadata.pop(session_id, None)
-                        await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": err_msg})
-                        got_terminal = True
-                        break
-
-                    else:
-                        logger.warning(f"⚠️ Unknown response type: which_oneof={which_oneof}")
-            except StopAsyncIteration:
-                # Стрим завершился нормально (async for закончился)
-                logger.info(f"🔍 gRPC стрим завершился (StopAsyncIteration) для сессии {session_id}")
-                # got_terminal остается False, обработаем в finally
-            finally:
-                # ✅ КРИТИЧНО: Всегда обрабатываем чанки при выходе из цикла
-                # Если стрим завершился БЕЗ явного end_message/error — завершаем запрос сами,
-                # чтобы UI не зависал в состоянии PROCESSING.
-                if not got_terminal:
-                    logger.warning(f"⚠️ gRPC стрим завершился БЕЗ end_message для сессии {session_id} (got_terminal=False) - отправляем собранные чанки")
-                    # ✅ КРИТИЧНО: Отправляем собранные чанки даже если end_message не пришёл
-                    audio_chunks = self._audio_chunks_buffer.pop(session_id, [])
-                    logger.info(f"🔍 [NO_END_MESSAGE] Буфер чанков для сессии {session_id}: {len(audio_chunks)} чанков")
-                    if audio_chunks and len(audio_chunks) > 0:
-                        # Объединяем все чанки в один массив байтов
-                        all_audio_bytes = b"".join(audio_chunks)
-                        
-                        # Получаем метаданные
-                        audio_meta = self._audio_metadata.get(session_id, {})
-                        sample_rate = audio_meta.get('sample_rate')
-                        channels = audio_meta.get('channels')
-                        
-                        # Если метаданные не были сохранены, используем централизованный формат
-                        if sample_rate is None or channels is None:
-                            try:
-                                from config.unified_config_loader import unified_config
-                                server_format = unified_config.get_server_audio_format()
-                                if sample_rate is None:
-                                    sample_rate = server_format.get('sample_rate', 24000)
-                                if channels is None:
-                                    channels = server_format.get('channels', 1)
-                            except Exception:
-                                if sample_rate is None:
-                                    sample_rate = 24000  # Fallback согласно спецификации
-                                if channels is None:
-                                    channels = 1
-                        
-                        # Декодируем в numpy array
-                        try:
-                            import numpy as np
-                            if len(all_audio_bytes) == 0:
-                                logger.warning(f"⚠️ Пустой аудио буфер для сессии {session_id} - пропускаем")
-                            else:
-                                audio_array = np.frombuffer(all_audio_bytes, dtype=np.int16)
-                                logger.info(
-                                    f"✅ Собрано {len(audio_chunks)} чанков для сессии {session_id} (без end_message): "
-                                    f"всего {len(audio_array)} сэмплов, sr={sample_rate}, ch={channels}"
-                                )
-                                
-                                # Отправляем через playback.raw_audio (как для приветствия)
-                                await self.event_bus.publish("playback.raw_audio", {
-                                    "audio_data": audio_array,  # numpy array
-                                    "sample_rate": sample_rate,
-                                    "channels": channels,
-                                    "dtype": "int16",
-                                    "priority": 0,
-                                    "pattern": "grpc_response",
-                                    "session_id": session_id,
-                                    "metadata": {
-                                        "method": "server",
-                                        "chunks_count": len(audio_chunks),
-                                        "total_samples": len(audio_array),
-                                    },
-                                })
-                                logger.info(f"✅ Аудио ответа отправлено через playback.raw_audio для сессии {session_id} (без end_message)")
-                        except Exception as e:
-                            logger.error(f"❌ Ошибка обработки собранных чанков (без end_message): {e}")
-                            import traceback
-                            traceback.print_exc()
+                # Обрабатываем СТРОГО по типу oneof
+                if which_oneof == 'text_chunk':
+                    text = resp.text_chunk
+                    logger.info(f"gRPC received text_chunk len={len(text)} for session {session_id}")
                     
-                    # Очищаем метаданные
-                    self._audio_metadata.pop(session_id, None)
+                    # Проверяем префикс __MCP__ для MCP команд
+                    if text.startswith(MCP_PREFIX):
+                        # Извлекаем JSON после префикса
+                        mcp_json_str = text[len(MCP_PREFIX):]
+                        try:
+                            # Парсим JSON для валидации
+                            mcp_payload = json.loads(mcp_json_str)
+                            
+                            # Извлекаем command_payload из структуры
+                            # Формат: {"event": "mcp.command_request", "payload": {...}}
+                            command_payload = mcp_payload.get("payload", {})
+                            
+                            logger.info(
+                                "[%s] MCP command detected: command=%s, session_id=%s",
+                                FEATURE_ID,
+                                command_payload.get("command", "unknown"),
+                                session_id
+                            )
+                            
+                            # Публикуем событие grpc.response.action с action_json
+                            # Формат события соответствует ожиданиям ActionExecutionIntegration
+                            await self.event_bus.publish("grpc.response.action", {
+                                "session_id": session_id,
+                                "action_json": json.dumps(command_payload, ensure_ascii=False),
+                                "feature_id": FEATURE_ID,
+                            })
+                            
+                            logger.debug(
+                                "[%s] Published grpc.response.action for session=%s, command=%s",
+                                FEATURE_ID,
+                                session_id,
+                                command_payload.get("command", "unknown")
+                            )
+                        except json.JSONDecodeError as e:
+                            logger.error(
+                                "[%s] Failed to parse MCP JSON: %s, text=%s",
+                                FEATURE_ID,
+                                e,
+                                mcp_json_str[:100]
+                            )
+                            # Публикуем событие об ошибке парсинга
+                            await self.event_bus.publish("grpc.response.action", {
+                                "session_id": session_id,
+                                "action_json": None,
+                                "error": "invalid_json",
+                                "feature_id": FEATURE_ID,
+                            })
+                        except Exception as e:
+                            logger.error(
+                                "[%s] Error processing MCP command: %s",
+                                FEATURE_ID,
+                                e
+                            )
+                            await self._handle_error(e, where="grpc.process_mcp_command", severity="warning")
+                    else:
+                        # Обычный текст - публикуем как обычно
+                        await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
+
+                elif which_oneof == 'audio_chunk':
+                    ch = resp.audio_chunk
+                    data = bytes(ch.audio_data) if ch.audio_data else b""
+                    dtype = ch.dtype or 'int16'
+                    shape = list(ch.shape) if ch.shape else []
+
+                    # Пустой audio_chunk больше НЕ считаем завершением, т.к. сервер должен слать end_message
+                    if len(data) == 0:
+                        logger.warning(f"⚠️ Received empty audio_chunk - skipping (waiting for end_message)")
+                        continue
+
+                    # 🔍 ДИАГНОСТИКА: Проверяем sample_rate в чанке
+                    chunk_sr = getattr(ch, 'sample_rate', None)
+                    chunk_ch = getattr(ch, 'channels', None)
+                    
+                    # 🔍 ДИАГНОСТИКА: Логируем RAW значения из protobuf
+                    logger.debug(
+                        f"🔍 [GRPC_CHUNK_DIAG] audio_chunk: bytes={len(data)}, dtype={dtype}, "
+                        f"shape={shape}, raw_sample_rate={chunk_sr}, raw_channels={chunk_ch} для сессии {session_id}"
+                    )
+                    
+                    if chunk_sr is None:
+                        logger.debug(f"🔍 [GRPC_CHUNK_DIAG] sample_rate не указан в audio_chunk, будет использован fallback: 24000Hz")
+                    elif chunk_sr != 24000:
+                        logger.warning(
+                            f"⚠️ [GRPC_CHUNK_DIAG] sample_rate в audio_chunk ({chunk_sr}Hz) не соответствует спецификации (24000Hz)"
+                        )
+
+                    await self.event_bus.publish("grpc.response.audio", {
+                        "session_id": session_id,
+                        "dtype": dtype,
+                        "sample_rate": chunk_sr,  # Может быть None - fallback будет в speech_playback_integration
+                        "channels": chunk_ch,  # Может быть None - fallback будет в speech_playback_integration
+                        "shape": shape,
+                        "bytes": data,
+                    })
+
+                elif which_oneof == 'end_message':
+                    end_msg = resp.end_message
+                    logger.info(f"gRPC received end_message: '{end_msg}' for session {session_id}")
                     await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
+                    got_terminal = True
+                    break
+
+                elif which_oneof == 'error_message':
+                    err_msg = resp.error_message
+                    logger.error(f"gRPC received error_message: '{err_msg}' for session {session_id}")
+                    await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": err_msg})
+                    got_terminal = True
+                    break
+
+                else:
+                    logger.warning(f"⚠️ Unknown response type: which_oneof={which_oneof}")
+            # Если стрим завершился БЕЗ явного end_message/error — завершаем запрос сами,
+            # чтобы UI не зависал в состоянии PROCESSING.
+            if not got_terminal:
+                await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
         except asyncio.CancelledError:
             # Тихо выходим при отмене; событие могло быть опубликовано ранее
             if session_id not in self._cancel_notified:
                 self._cancel_notified.add(session_id)
-                # Очищаем буфер и метаданные при отмене
-                self._audio_chunks_buffer.pop(session_id, None)
-                self._audio_metadata.pop(session_id, None)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "cancelled"})
         except Exception as e:
             await self._handle_error(e, where="grpc.stream_audio", severity="warning")
-            # ✅ КРИТИЧНО: Отправляем собранные чанки даже при ошибке (если они есть)
-            audio_chunks = self._audio_chunks_buffer.pop(session_id, [])
-            if audio_chunks and len(audio_chunks) > 0:
-                logger.warning(f"⚠️ gRPC стрим завершился с ошибкой для сессии {session_id}, но есть {len(audio_chunks)} чанков - отправляем их")
-                try:
-                    all_audio_bytes = b"".join(audio_chunks)
-                    audio_meta = self._audio_metadata.get(session_id, {})
-                    sample_rate = audio_meta.get('sample_rate')
-                    channels = audio_meta.get('channels')
-                    
-                    if sample_rate is None or channels is None:
-                        try:
-                            from config.unified_config_loader import unified_config
-                            server_format = unified_config.get_server_audio_format()
-                            if sample_rate is None:
-                                sample_rate = server_format.get('sample_rate', 24000)
-                            if channels is None:
-                                channels = server_format.get('channels', 1)
-                        except Exception:
-                            if sample_rate is None:
-                                sample_rate = 24000
-                            if channels is None:
-                                channels = 1
-                    
-                    if len(all_audio_bytes) > 0:
-                        import numpy as np
-                        audio_array = np.frombuffer(all_audio_bytes, dtype=np.int16)
-                        logger.info(f"✅ Собрано {len(audio_chunks)} чанков при ошибке для сессии {session_id}: всего {len(audio_array)} сэмплов")
-                        
-                        await self.event_bus.publish("playback.raw_audio", {
-                            "audio_data": audio_array,
-                            "sample_rate": sample_rate,
-                            "channels": channels,
-                            "dtype": "int16",
-                            "priority": 0,
-                            "pattern": "grpc_response",
-                            "session_id": session_id,
-                            "metadata": {
-                                "method": "server",
-                                "chunks_count": len(audio_chunks),
-                                "total_samples": len(audio_array),
-                            },
-                        })
-                        logger.info(f"✅ Аудио ответа отправлено через playback.raw_audio для сессии {session_id} (при ошибке)")
-                except Exception as send_err:
-                    logger.error(f"❌ Ошибка отправки чанков при ошибке стрима: {send_err}")
-            
-            # Очищаем метаданные при ошибке
-            self._audio_metadata.pop(session_id, None)
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": str(e)})
 
     # ---------------- Utilities ----------------

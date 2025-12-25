@@ -120,7 +120,6 @@ def activate_nsapplication_for_menu_bar():
         msg = "[NEXY_INIT] Activating NSApplication for menu bar app..."
         print(msg)
 
-        # type: ignore[attr-defined] - PyObjC динамически создает атрибуты
         app = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
         print(f"[NEXY_INIT] NSApplication instance: {app}")
         print(f"[NEXY_INIT] Current activation policy: {app.activationPolicy()}")
@@ -128,7 +127,6 @@ def activate_nsapplication_for_menu_bar():
         # ДИАГНОСТИКА: Проверяем статус автоматической терминации
         try:
             import Foundation
-            # type: ignore[attr-defined] - PyObjC динамически создает атрибуты
             process_info = Foundation.NSProcessInfo.processInfo()  # type: ignore[attr-defined]
             auto_term_enabled = process_info.automaticTerminationSupportEnabled()
             print(f"[NEXY_INIT] 🔍 DIAGNOSTICS: automaticTerminationSupportEnabled = {auto_term_enabled}")
@@ -146,7 +144,6 @@ def activate_nsapplication_for_menu_bar():
 
         # Set activation policy for menu bar application
         # NSApplicationActivationPolicyAccessory (hide from Dock, show in menu bar)
-        # type: ignore[attr-defined] - PyObjC динамически создает атрибуты
         result = app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)  # type: ignore[attr-defined]
         print(f"[NEXY_INIT] setActivationPolicy(Accessory) returned: {result}")
         print(f"[NEXY_INIT] New activation policy: {app.activationPolicy()}")

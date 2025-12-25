@@ -61,12 +61,11 @@ allowed_files = [
 ]
 
 [tool.basedpyright]
-# Настройки для basedpyright (статический анализатор типов)
-reportMissingImports = "warning"
-# Игнорируем предупреждения о динамически генерируемых protobuf модулях
-reportMissingModuleSource = false
-# Исключаем proto директории из проверки импортов
-exclude = [
-  "**/proto/**",
+# Configuration for basedpyright type checker
+# Add proto directory to extra paths so imports can be resolved
+extraPaths = [
+  "modules/grpc_client/proto",
 ]
+# Report missing imports as warnings instead of errors for dynamically added paths
+reportMissingImports = "warning"
 

@@ -98,7 +98,7 @@ class SequentialSpeechPlayer:
         self.state_manager = StateManager()
         # Выбираем dtype буфера под конфиг (унифицировано на int16)
         buf_dtype = np.int16 if str(self.config.dtype).lower() in ('int16', 'short') else np.int16  # Всегда int16
-        self.chunk_buffer = ChunkBuffer(max_memory_mb=self.config.max_memory_mb, channels=self.config.channels, dtype=buf_dtype)
+        self.chunk_buffer = ChunkBuffer(sample_rate=self.config.sample_rate, channels=self.config.channels, dtype=str(buf_dtype))
         
         # Потоки и синхронизация
         self._playback_thread: Optional[threading.Thread] = None
@@ -118,6 +118,10 @@ class SequentialSpeechPlayer:
         # Output device tracking (для автоматического переключения устройств)
         self.output_device_name: Optional[str] = None  # PRIMARY: имя для сравнения
         self._current_playback_session_id: Optional[Any] = None  # Текущая сессия воспроизведения
+        
+        # КРИТИЧНО: Храним реальный sample_rate из metadata для правильного воспроизведения
+        # Это предотвращает ускорение речи при несоответствии config.sample_rate и реального sample_rate аудио
+        self._actual_sample_rate: Optional[int] = None  # Реальный sample_rate из аудио данных
 
         # Callbacks
         self._on_chunk_started: Optional[Callable[[ChunkInfo], None]] = None
@@ -257,8 +261,35 @@ class SequentialSpeechPlayer:
                     logger.debug(f"🔄 Стерео → Моно: взят первый канал")
                 # Остальные случаи оставляем как есть
 
-            # Добавляем в буфер
-            chunk_id = self.chunk_buffer.add_chunk(audio_data, priority, metadata)
+            # КРИТИЧНО: Сохраняем реальный sample_rate из metadata для правильного воспроизведения
+            # Это предотвращает ускорение речи при несоответствии config.sample_rate и реального sample_rate
+            if metadata and 'sample_rate' in metadata:
+                actual_sr = int(metadata['sample_rate'])
+                if self._actual_sample_rate is None or self._actual_sample_rate != actual_sr:
+                    old_sr = self._actual_sample_rate
+                    self._actual_sample_rate = actual_sr
+                    logger.info(f"🔧 [SAMPLE_RATE] Обновлен реальный sample_rate: {old_sr}Hz → {actual_sr}Hz (config: {self.config.sample_rate}Hz)")
+                    
+                    # 🔍 ДИАГНОСТИКА: Вычисляем ожидаемую длительность
+                    if len(audio_data) > 0:
+                        expected_duration = len(audio_data) / float(actual_sr)
+                        logger.info(f"🔍 [SAMPLE_RATE_DIAG] Аудио: {len(audio_data)} samples, expected_duration={expected_duration:.3f}s at {actual_sr}Hz")
+                        if self.config.sample_rate != actual_sr:
+                            wrong_duration = len(audio_data) / float(self.config.sample_rate)
+                            speed_factor = actual_sr / float(self.config.sample_rate)
+                            logger.warning(f"⚠️ [SAMPLE_RATE_DIAG] При {self.config.sample_rate}Hz: duration={wrong_duration:.3f}s, speed_factor={speed_factor:.2f}x")
+                    
+                    # Если поток уже создан с неправильным sample_rate, пересоздаем его
+                    if self._audio_stream is not None:
+                        logger.warning(f"⚠️ [SAMPLE_RATE] Поток создан с неправильным sample_rate ({self.config.sample_rate}Hz), пересоздаем с {actual_sr}Hz...")
+                        self._stop_audio_stream()
+                        # Поток будет пересоздан при следующем вызове _ensure_stream_started()
+
+            # Добавляем в буфер (priority передаем в metadata)
+            if metadata is None:
+                metadata = {}
+            metadata['priority'] = priority
+            chunk_id = self.chunk_buffer.add_chunk(audio_data, metadata)
 
             # ✅ ИСПРАВЛЕНИЕ: Если поток не существует (например, был остановлен lazy stop),
             # создаём новый перед попыткой старта
@@ -417,15 +448,29 @@ class SequentialSpeechPlayer:
                 # - (input_id, output_id): для duplex streams
                 # У нас output-only stream, поэтому передаём просто int или None
 
+                # КРИТИЧНО: Используем реальный sample_rate из metadata, если он есть
+                # Иначе используем config.sample_rate (fallback)
+                # Это предотвращает ускорение речи при несоответствии sample_rate
+                playback_sample_rate = self._actual_sample_rate if self._actual_sample_rate is not None else self.config.sample_rate
+                
+                # 🔍 ДИАГНОСТИКА: Детальное логирование выбора sample_rate
+                logger.info(
+                    f"🔍 [STREAM_DIAG] Создание потока: "
+                    f"actual_sr={self._actual_sample_rate}, config_sr={self.config.sample_rate}, "
+                    f"playback_sr={playback_sample_rate}, device_id={device_id}"
+                )
+                
                 # Конфигурация потока
                 stream_config = {
                     'device': device_id,  # int ID или None для дефолтного
                     'channels': self.config.channels,
                     'dtype': self.config.dtype,
-                    'samplerate': self.config.sample_rate,
+                    'samplerate': playback_sample_rate,  # КРИТИЧНО: используем реальный sample_rate
                     'blocksize': self.config.buffer_size,
                     'callback': self._audio_callback
                 }
+                
+                logger.info(f"🔧 [SAMPLE_RATE] Создаем поток с sample_rate={playback_sample_rate}Hz (config: {self.config.sample_rate}Hz, actual: {self._actual_sample_rate})")
 
                 # 🔍 ДИАГНОСТИКА: Узнаем какое устройство будет использовано
                 current_device = self._query_default_output_device()
@@ -662,6 +707,16 @@ class SequentialSpeechPlayer:
             if status:
                 logger.warning(f"⚠️ Статус аудио потока: {status}")
 
+            # 🔍 ДИАГНОСТИКА: Логируем time_info для проверки реального sample_rate
+            if not hasattr(self, '_callback_first_logged'):
+                # ИСПРАВЛЕНО: time_info - это cdata структура PortAudio, не словарь
+                # Обращаемся к полям напрямую через getattr
+                current_time = getattr(time_info, 'current_time', 0.0) if time_info else 0.0
+                logger.info(f"🔍 [CALLBACK_DIAG] Первый callback: stream_sr={self._audio_stream.samplerate if self._audio_stream else 'N/A'}, actual_sr={self._actual_sample_rate}, config_sr={self.config.sample_rate}, current_time={current_time}")
+                self._callback_first_logged = True
+                self._callback_start_time = current_time
+                self._callback_total_frames = 0
+
             # Получаем данные из буфера (2D: frames x channels)
             data = self.chunk_buffer.get_playback_data(frames)
             
@@ -672,7 +727,22 @@ class SequentialSpeechPlayer:
                 buffer_size = self.chunk_buffer.buffer_size
                 queue_size = self.chunk_buffer.queue_size
                 has_data = len(data) > 0
-                logger.info(f"🎵 [CALLBACK #{self._callback_debug_count}] frames={frames}, data_shape={data.shape if has_data else 'EMPTY'}, buffer_size={buffer_size}, queue_size={queue_size}, channels={self.config.channels}")
+                # ИСПРАВЛЕНО: time_info - это cdata структура PortAudio, не словарь
+                current_time = getattr(time_info, 'current_time', 0.0) if time_info else 0.0
+                if hasattr(self, '_callback_start_time'):
+                    elapsed = current_time - self._callback_start_time
+                else:
+                    elapsed = 0.0
+                self._callback_total_frames = getattr(self, '_callback_total_frames', 0) + frames
+                
+                # 🔍 ДИАГНОСТИКА: Проверяем реальный sample_rate потока
+                stream_sr = self._audio_stream.samplerate if self._audio_stream else None
+                logger.info(
+                    f"🎵 [CALLBACK #{self._callback_debug_count}] frames={frames}, data_shape={data.shape if has_data else 'EMPTY'}, "
+                    f"buffer_size={buffer_size}, queue_size={queue_size}, channels={self.config.channels}, "
+                    f"stream_sr={stream_sr}, actual_sr={self._actual_sample_rate}, config_sr={self.config.sample_rate}, "
+                    f"elapsed={elapsed:.3f}s, total_frames={self._callback_total_frames}"
+                )
                 self._callback_debug_count += 1
             elif self._callback_debug_count == 20:
                 logger.info(f"🔇 [CALLBACK] Дальнейшее логирование callback отключено (работает нормально)")
@@ -739,46 +809,33 @@ class SequentialSpeechPlayer:
             return False
     
     def _playback_loop(self):
-        """Основной цикл воспроизведения - упрощенная версия"""
+        """Основной цикл воспроизведения - упрощенная версия
+        
+        ВАЖНО: Этот цикл используется только для координации, реальное воспроизведение
+        происходит через audio callback, который читает данные напрямую из буфера через get_playback_data().
+        """
         try:
             logger.info("🔄 Playback loop запущен")
             logger.info(f"🔍 [PLAYBACK_LOOP] Начальное состояние: queue_size={self.chunk_buffer.queue_size}, buffer_size={self.chunk_buffer.buffer_size}")
             
+            # 🔍 ИСПРАВЛЕНО: Упрощенная версия - callback сам читает данные через get_playback_data()
+            # Этот цикл только ждет завершения воспроизведения всех чанков
             while not self._stop_event.is_set():
                 # Проверяем паузу
                 self._pause_event.wait()
                 
-                # Получаем следующий чанк
+                # 🔍 ИСПРАВЛЕНО: Не используем get_next_chunk() - его нет в ChunkBuffer
+                # Вместо этого просто проверяем, есть ли данные в буфере
                 queue_size_before = self.chunk_buffer.queue_size
-                chunk_info = self.chunk_buffer.get_next_chunk(timeout=0.1)
+                has_data = self.chunk_buffer.has_data
                 queue_size_after = self.chunk_buffer.queue_size
                 
-                if chunk_info is not None:
-                    logger.debug(f"🔍 [PLAYBACK_LOOP] Получен чанк: {chunk_info.chunk_id}, queue: {queue_size_before} → {queue_size_after}")
-                    # Отмечаем начало обработки
-                    chunk_info.state = ChunkState.PLAYING
-                    
-                    # Callback начала чанка
-                    if self._on_chunk_started:
-                        self._on_chunk_started(chunk_info)
-                    
-                    # Добавляем в буфер воспроизведения
-                    if not self.chunk_buffer.add_to_playback_buffer(chunk_info):
-                        logger.error(f"❌ Ошибка добавления чанка {chunk_info.chunk_id} в буфер воспроизведения")
-                        chunk_info.state = ChunkState.ERROR
-                        continue
-                    
-                    # Ждем завершения воспроизведения этого чанка
-                    self._wait_for_chunk_completion(chunk_info)
-                    
-                    # Отмечаем завершение
-                    self.chunk_buffer.mark_chunk_completed(chunk_info)
-                    
-                    # Callback завершения чанка
-                    if self._on_chunk_completed:
-                        self._on_chunk_completed(chunk_info)
-                    
-                    logger.info(f"✅ Чанк обработан: {chunk_info.chunk_id}")
+                # 🔍 ИСПРАВЛЕНО: Callback сам читает данные через get_playback_data()
+                # Этот цикл только ждет, пока все данные будут воспроизведены
+                if has_data:
+                    # Есть данные - callback их обработает
+                    # Просто ждем небольшое время и проверяем снова
+                    time.sleep(0.01)
                 else:
                     # Нет чанков - проверяем нужно ли остановить поток (lazy stop)
                     if self.chunk_buffer.queue_size == 0 and self.chunk_buffer.buffer_size == 0:

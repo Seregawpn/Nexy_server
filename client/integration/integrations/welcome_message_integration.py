@@ -313,7 +313,8 @@ class WelcomeMessageIntegration:
     async def _send_audio_to_playback(self, audio_data: np.ndarray):
         """Отправляет аудио данные в SpeechPlaybackIntegration для воспроизведения"""
         try:
-            logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration: {len(audio_data)} сэмплов")
+            audio_samples = audio_data.size if hasattr(audio_data, 'size') else len(audio_data)
+            logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration: {audio_samples} сэмплов")
             
             # ОТЛАДКА: Проверяем формат данных
             logger.info(f"🔍 [WELCOME_INTEGRATION] Формат данных: dtype={audio_data.dtype}, shape={audio_data.shape}")
@@ -322,6 +323,21 @@ class WelcomeMessageIntegration:
             sample_rate = int(metadata.get('sample_rate', self.config.sample_rate))
             channels = int(metadata.get('channels', self.config.channels))
             method = metadata.get('method', 'server')
+            
+            # 🔍 ДИАГНОСТИКА: Вычисляем ожидаемую длительность
+            expected_duration = audio_samples / float(sample_rate) if sample_rate > 0 else 0.0
+            logger.info(
+                f"🔍 [WELCOME_DIAG] Аудио метрики: samples={audio_samples}, sr={sample_rate}Hz, ch={channels}, "
+                f"expected_duration={expected_duration:.3f}s, config_sr={self.config.sample_rate}Hz"
+            )
+            if sample_rate != self.config.sample_rate:
+                config_duration = audio_samples / float(self.config.sample_rate) if self.config.sample_rate > 0 else 0.0
+                speed_factor = sample_rate / float(self.config.sample_rate) if self.config.sample_rate > 0 else 1.0
+                logger.warning(
+                    f"⚠️ [WELCOME_DIAG] Sample rate mismatch: server={sample_rate}Hz, config={self.config.sample_rate}Hz, "
+                    f"speed_factor={speed_factor:.2f}x, expected_duration={expected_duration:.3f}s, "
+                    f"config_duration={config_duration:.3f}s"
+                )
             
             # ✅ ПРАВИЛЬНО: Передаем numpy массив напрямую в плеер
             # БЕЗ конвертации в bytes - плеер сам разберется с форматом

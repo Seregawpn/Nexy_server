@@ -25,7 +25,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.0.6.3  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
+  version: 1.6.0.4  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
 # Авто-всё конфигурация аудио - автоматическое определение параметров устройства
 default_audio:
   # Только целевые параметры для STT (что ожидает движок распознавания)
@@ -375,6 +375,10 @@ screenshot_capture:
 speech_playback:
   # audio_device: auto  # Удалено - используем системные дефолты
   enabled: true
+  sample_rate: 24000  # Согласно спецификации gRPC: PCM 24kHz, 16-bit, mono
+  channels: 1
+  dtype: int16
+  buffer_size: 512
   fade_in_duration: 0.1
   fade_out_duration: 0.1
   max_queue_size: 5
@@ -495,7 +499,7 @@ welcome_message:
   voice: en-US-JennyNeural
   # Формат аудио (по умолчанию использует server_audio_format из конфигурации)
   # DEPRECATED: используйте server_audio_format.sample_rate вместо этого
-  sample_rate: 48000  # Целевая частота для воспроизведения (если отличается от server_audio_format, будет ресемплинг)
+  sample_rate: 24000  # Согласно спецификации gRPC: PCM 24kHz, 16-bit, mono  # Целевая частота для воспроизведения (если отличается от server_audio_format, будет ресемплинг)
   channels: 1
   bit_depth: 16
   ignore_microphone_permission: true

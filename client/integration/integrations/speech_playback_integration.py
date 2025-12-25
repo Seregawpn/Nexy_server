@@ -14,10 +14,10 @@ from typing import Optional, Dict, Any
 import numpy as np
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[reportAttributeAccessIssue]
+from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[attr-defined]
 from integration.core.error_handler import ErrorHandler
 
-from modules.speech_playback.core.player import SequentialSpeechPlayer, PlayerConfig
+from modules.speech_playback.core.player import SequentialSpeechPlayer, PlayerConfig  # type: ignore[import-untyped]
 from modules.speech_playback.core.state import PlaybackState
 
 # ЦЕНТРАЛИЗОВАННАЯ КОНФИГУРАЦИЯ АУДИО
@@ -77,15 +77,18 @@ class SpeechPlaybackIntegration:
             self._player = SequentialSpeechPlayer(pc)
             
             # НАСТРАИВАЕМ EventBus в SequentialSpeechPlayer для получения событий выбора устройств
-            # SequentialSpeechPlayer не имеет метода set_event_bus, поэтому пропускаем
-            # EventBus события обрабатываются через интеграцию
-            logger.debug("🔍 [AUDIO_DEBUG] EventBus обрабатывается через интеграцию")
+            if self._player is not None and hasattr(self._player, 'set_event_bus'):
+                self._player.set_event_bus(self.event_bus)  # type: ignore[union-attr]
+                logger.debug("🔍 [AUDIO_DEBUG] EventBus настроен в SequentialSpeechPlayer")
+            else:
+                logger.warning("⚠️ [AUDIO_DEBUG] SequentialSpeechPlayer не поддерживает set_event_bus")
             
             # Коллбек завершения воспроизведения — сигнализируем в EventBus
-            try:
-                self._player.set_callbacks(on_playback_completed=self._on_player_completed)
-            except Exception:
-                pass
+            if self._player is not None:
+                try:
+                    self._player.set_callbacks(on_playback_completed=self._on_player_completed)  # type: ignore[union-attr]
+                except Exception:
+                    pass
 
             # Подписки
             await self.event_bus.subscribe("grpc.response.audio", self._on_audio_chunk, EventPriority.HIGH)
@@ -156,21 +159,16 @@ class SpeechPlaybackIntegration:
             audio_bytes: bytes = data.get("bytes") or b""
             dtype: str = (data.get("dtype") or 'int16').lower()
             shape = data.get("shape") or []
-            # Используем централизованный формат аудио от сервера для fallback
-            try:
-                from config.unified_config_loader import unified_config
-                server_format = unified_config.get_server_audio_format()
-                default_sample_rate = server_format.get('sample_rate', 24000)
-                default_channels = server_format.get('channels', 1)
-            except Exception:
-                default_sample_rate = 24000  # Fallback согласно спецификации
-                default_channels = 1
-            
-            src_sample_rate: Optional[int] = data.get("sample_rate", default_sample_rate)
-            src_channels: Optional[int] = data.get("channels", default_channels)
+            # 🔍 ИСПРАВЛЕНО: Fallback на 24000Hz согласно спецификации gRPC (было None)
+            src_sample_rate: Optional[int] = data.get("sample_rate") or 24000
+            src_channels: Optional[int] = data.get("channels") or 1
             if not audio_bytes:
                 logger.debug(f"🔇 Пустой аудио чанк для сессии {sid}")
                 return
+            
+            # 🔍 ДИАГНОСТИКА: Логируем sample_rate из события
+            if data.get("sample_rate") is None:
+                logger.debug(f"🔍 [AUDIO_CHUNK_DIAG] sample_rate не указан в событии, используем fallback: 24000Hz")
             
             logger.info(f"🔊 Получен аудио чанк: {len(audio_bytes)} bytes, dtype={dtype}, shape={shape}, sr={src_sample_rate}, ch={src_channels} для сессии {sid}")
 
@@ -257,20 +255,6 @@ class SpeechPlaybackIntegration:
                 # Модуль speech_playback сам выполнит конвертацию float32 → int16
                 # Прочее приведение формата (ресемплинг/каналы) выполняет плеер на основе metadata
 
-                # ✅ КРИТИЧНО: Ресемплинг ДО передачи в плеер
-                # Проверяем sample rate — если не совпадает с целевым, делаем ресемплинг
-                target_sr = int(self.config['sample_rate'])
-                if src_sample_rate and src_sample_rate != target_sr:
-                    logger.info(f"🔄 Resampling audio: {src_sample_rate} Hz → {target_sr} Hz")
-                    try:
-                        from modules.speech_playback.utils.audio_utils import resample_audio
-                        arr = resample_audio(arr, target_sample_rate=target_sr, original_sample_rate=src_sample_rate)
-                        src_sample_rate = target_sr  # Обновляем sample_rate после ресемплинга
-                        logger.info(f"✅ Resampling completed: shape={arr.shape}, dtype={arr.dtype}")
-                    except Exception as e:
-                        logger.error(f"❌ Resampling failed: {e} — skipping audio")
-                        return
-
                 # Диагностика: логируем основы формата (без спамма)
                 try:
                     _min = float(arr.min()) if arr.size else 0.0
@@ -324,16 +308,20 @@ class SpeechPlaybackIntegration:
                         await self.event_bus.publish("playback.started", {"session_id": sid})
 
                     # Добавляем чанк ПОСЛЕ создания потока
+                    # 🔍 ДИАГНОСТИКА: Логируем metadata перед передачей в player
+                    metadata = {
+                        "session_id": sid,
+                        "sample_rate": src_sample_rate,  # ✅ Всегда 24000Hz (fallback или из события)
+                        "channels": src_channels,
+                        "original_dtype": dtype,  # ✅ Передаем оригинальный тип для диагностики
+                        "original_bytes": len(audio_bytes),  # ✅ Для диагностики
+                    }
+                    logger.debug(f"🔍 [AUDIO_CHUNK_DIAG] Передаем в player: metadata={metadata}")
+                    
                     self._player.add_audio_data(
                         arr,
                         priority=0,
-                        metadata={
-                            "session_id": sid,
-                            "sample_rate": src_sample_rate,
-                            "channels": src_channels,
-                            "original_dtype": dtype,  # ✅ Передаем оригинальный тип для диагностики
-                            "original_bytes": len(audio_bytes),  # ✅ Для диагностики
-                        },
+                        metadata=metadata,
                     )
 
                 self._had_audio_for_session[sid] = True
@@ -506,37 +494,33 @@ class SpeechPlaybackIntegration:
                 return
             
             # Извлекаем метаданные
-            # Используем централизованный формат аудио от сервера
-            try:
-                from config.unified_config_loader import unified_config
-                server_format = unified_config.get_server_audio_format()
-                default_sample_rate = server_format.get('sample_rate', 24000)
-            except Exception:
-                default_sample_rate = 24000  # Fallback согласно спецификации
-            
-            sample_rate = data.get("sample_rate", default_sample_rate)
+            sample_rate = data.get("sample_rate", 48000)
             channels = data.get("channels", 1)
             priority = int(data.get("priority", 10))
             pattern = data.get("pattern", "raw_audio")
             session_id = data.get("session_id")
+            metadata_from_event = data.get("metadata", {})
 
+            # 🔍 ДИАГНОСТИКА: Детальное логирование входящих данных
+            audio_samples = audio_data.size if hasattr(audio_data, 'size') else len(audio_data)
+            expected_duration = audio_samples / float(sample_rate) if sample_rate > 0 else 0.0
             logger.info(
-                f"🔔 playback.raw_audio: pattern={pattern}, dtype={audio_data.dtype}, shape={audio_data.shape}, "
-                f"sr={sample_rate}, ch={channels}, prio={priority}"
+                f"🔔 [RAW_AUDIO_DIAG] playback.raw_audio получен: pattern={pattern}, dtype={audio_data.dtype}, "
+                f"shape={audio_data.shape}, samples={audio_samples}, sr={sample_rate}Hz, ch={channels}, "
+                f"prio={priority}, expected_duration={expected_duration:.3f}s"
             )
 
-            # Проверяем sample rate — если не совпадает, делаем ресемплинг
+            # Проверяем sample rate — должен совпадать с плеером
             target_sr = int(self.config['sample_rate'])
             if sample_rate != target_sr:
-                logger.info(f"🔄 Resampling audio: {sample_rate} Hz → {target_sr} Hz")
-                try:
-                    from modules.speech_playback.utils.audio_utils import resample_audio
-                    audio_data = resample_audio(audio_data, target_sample_rate=target_sr, original_sample_rate=sample_rate)
-                    sample_rate = target_sr  # Обновляем sample_rate после ресемплинга
-                    logger.info(f"✅ Resampling completed: shape={audio_data.shape}, dtype={audio_data.dtype}")
-                except Exception as e:
-                    logger.error(f"❌ Resampling failed: {e} — skipping audio")
-                    return
+                # 🔍 ДИАГНОСТИКА: Не блокируем, а предупреждаем и продолжаем
+                speed_factor = sample_rate / float(target_sr) if target_sr > 0 else 1.0
+                logger.warning(
+                    f"⚠️ [RAW_AUDIO_DIAG] Sample rate mismatch: got={sample_rate}Hz, player={target_sr}Hz, "
+                    f"speed_factor={speed_factor:.2f}x, expected_duration={expected_duration:.3f}s, "
+                    f"will_play_at={target_sr}Hz_duration={audio_samples/float(target_sr):.3f}s"
+                )
+                # НЕ возвращаемся - продолжаем с реальным sample_rate из metadata
 
             # Назначаем технический session_id для «сырых» сценариев без реальной сессии (например, welcome tone).
             raw_session = False
@@ -567,9 +551,19 @@ class SpeechPlaybackIntegration:
                 meta = {
                     "kind": "raw_audio",
                     "pattern": pattern,
-                    "sample_rate": sample_rate,
+                    "sample_rate": sample_rate,  # 🔍 КРИТИЧНО: Передаем реальный sample_rate из события
                     "channels": channels
                 }
+                # Добавляем metadata из события, если есть
+                if metadata_from_event:
+                    meta.update(metadata_from_event)
+
+                # 🔍 ДИАГНОСТИКА: Логируем metadata перед передачей в player
+                logger.info(
+                    f"🔍 [RAW_AUDIO_DIAG] Передаем в player: samples={audio_samples}, "
+                    f"meta_sample_rate={meta.get('sample_rate')}, player_config_sr={self.config['sample_rate']}, "
+                    f"expected_duration={expected_duration:.3f}s"
+                )
 
                 # ✅ КРИТИЧНО: start_playback ПЕРЕД add_audio_data для lazy start
                 # Поток должен быть создан до добавления данных, чтобы _ensure_stream_started() мог его запустить
@@ -584,6 +578,13 @@ class SpeechPlaybackIntegration:
 
                 # Добавляем данные ПОСЛЕ создания потока
                 self._player.add_audio_data(audio_data, priority=priority, metadata=meta)
+                
+                # 🔍 ДИАГНОСТИКА: Проверяем, что metadata была обработана
+                actual_sr = getattr(self._player, '_actual_sample_rate', None)
+                logger.info(
+                    f"🔍 [RAW_AUDIO_DIAG] После add_audio_data: player._actual_sample_rate={actual_sr}, "
+                    f"player.config.sample_rate={self._player.config.sample_rate}"
+                )
 
                 # Обновляем отметку времени последнего аудио и планируем корректный shutdown
                 try:
