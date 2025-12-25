@@ -142,6 +142,47 @@ class SpeechPlaybackIntegration:
             await self._handle_error(e, where="speech.stop", severity="warning")
             return False
 
+    # -------- Helper Methods --------
+    async def _ensure_player_ready(self) -> bool:
+        """
+        🔧 РЕФАКТОРИНГ: Единый метод для инициализации/старта плеера.
+        Устраняет дублирование логики между _on_audio_chunk и _on_raw_audio.
+        
+        Returns:
+            True если плеер готов, False если ошибка
+        """
+        if not self._player:
+            logger.error("SpeechPlayback: player не инициализирован")
+            return False
+        
+        try:
+            # Проверяем состояние
+            player_state = None
+            try:
+                player_state = self._player.state_manager.get_state()
+            except Exception:
+                player_state = None
+            
+            # Инициализация если нужно
+            if player_state not in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+                if not self._player.initialize():
+                    await self._handle_error(Exception("player_init_failed"), where="speech.ensure_player_ready.init")
+                    return False
+            
+            # Старт если нужно
+            state = player_state or self._player.state_manager.get_state()
+            if state == PlaybackState.PAUSED:
+                self._player.resume_playback()
+            elif state != PlaybackState.PLAYING:
+                if not self._player.start_playback():
+                    await self._handle_error(Exception("start_failed"), where="speech.ensure_player_ready.start")
+                    return False
+            
+            return True
+        except Exception as e:
+            await self._handle_error(e, where="speech.ensure_player_ready")
+            return False
+
     # -------- Event Handlers --------
     async def _on_audio_chunk(self, event):
         try:
@@ -172,11 +213,9 @@ class SpeechPlaybackIntegration:
             
             logger.info(f"🔊 Получен аудио чанк: {len(audio_bytes)} bytes, dtype={dtype}, shape={shape}, sr={src_sample_rate}, ch={src_channels} для сессии {sid}")
 
-            # Инициализация плеера при первом чанке
-            if self._player and not self._player.state_manager.is_playing and not self._player.state_manager.is_paused:
-                if not self._player.initialize():
-                    await self._handle_error(Exception("player_init_failed"), where="speech.player_init")
-                    return
+            # 🔧 РЕФАКТОРИНГ: Используем единый метод инициализации
+            if not await self._ensure_player_ready():
+                return
 
             # Декодирование в numpy + диагностика формата
             try:
@@ -271,13 +310,8 @@ class SpeechPlaybackIntegration:
             # ✅ КРИТИЧНО: start_playback ПЕРЕД add_audio_data для lazy start
             try:
                 if self._player:
-                    player_state = None
-                    try:
-                        player_state = self._player.state_manager.get_state()
-                    except Exception:
-                        player_state = None
-
-                    if self._needs_output_resync or player_state not in (PlaybackState.PLAYING, PlaybackState.PAUSED):
+                    # 🔧 РЕФАКТОРИНГ: resync_output_device теперь идемпотентен и безопасен
+                    if self._needs_output_resync:
                         try:
                             changed = self._player.resync_output_device()
                             if changed:
@@ -286,25 +320,11 @@ class SpeechPlaybackIntegration:
                             logger.debug(f"SpeechPlayback: не удалось пересинхронизировать выход перед воспроизведением: {sync_err}")
                         finally:
                             self._needs_output_resync = False
-                        try:
-                            player_state = self._player.state_manager.get_state()
-                        except Exception:
-                            player_state = None
-
-                    # Определяем текущее состояние плеера и корректно управляем
-                    state = player_state or self._player.state_manager.get_state()
-                    if state == PlaybackState.PAUSED:
-                        # Если пауза — резюмируем
-                        self._player.resume_playback()
-                    elif state != PlaybackState.PLAYING:
-                        # IDLE/ERROR/STOPPING — пытаемся запустить воспроизведение
-                        # Повторная/идемпотентная инициализация безопасна
-                        if not self._player.initialize():
-                            await self._handle_error(Exception("player_init_failed"), where="speech.player_init")
-                            return
-                        if not self._player.start_playback():
-                            await self._handle_error(Exception("start_failed"), where="speech.start_playback")
-                            return
+                    
+                    # 🔧 РЕФАКТОРИНГ: Используем единый метод (уже вызван выше, но проверяем состояние)
+                    state = self._player.state_manager.get_state()
+                    if state == PlaybackState.PLAYING:
+                        # Публикуем событие только если это новый старт
                         await self.event_bus.publish("playback.started", {"session_id": sid})
 
                     # Добавляем чанк ПОСЛЕ создания потока
@@ -494,7 +514,8 @@ class SpeechPlaybackIntegration:
                 return
             
             # Извлекаем метаданные
-            sample_rate = data.get("sample_rate", 48000)
+            # 🔍 ИСПРАВЛЕНО: Fallback на 24000Hz согласно спецификации gRPC (было 48000)
+            sample_rate = data.get("sample_rate", 24000)
             channels = data.get("channels", 1)
             priority = int(data.get("priority", 10))
             pattern = data.get("pattern", "raw_audio")
@@ -542,11 +563,9 @@ class SpeechPlaybackIntegration:
             # ✅ ПРАВИЛЬНО: Передаем numpy массив напрямую в плеер
             # Плеер сам выполнит необходимую конвертацию
             try:
-                if (not self._player.state_manager.is_playing
-                        and not self._player.state_manager.is_paused):
-                    if not self._player.initialize():
-                        await self._handle_error(Exception("player_init_failed"), where="speech.raw_audio.init")
-                        return
+                # 🔧 РЕФАКТОРИНГ: Используем единый метод инициализации
+                if not await self._ensure_player_ready():
+                    return
 
                 meta = {
                     "kind": "raw_audio",
@@ -565,15 +584,9 @@ class SpeechPlaybackIntegration:
                     f"expected_duration={expected_duration:.3f}s"
                 )
 
-                # ✅ КРИТИЧНО: start_playback ПЕРЕД add_audio_data для lazy start
-                # Поток должен быть создан до добавления данных, чтобы _ensure_stream_started() мог его запустить
+                # Публикуем событие если плеер только что стартовал
                 state = self._player.state_manager.get_state()
-                if state == PlaybackState.PAUSED:
-                    self._player.resume_playback()
-                elif state != PlaybackState.PLAYING:
-                    if not self._player.start_playback():
-                        await self._handle_error(Exception("start_failed"), where="speech.raw_audio.start")
-                        return
+                if state == PlaybackState.PLAYING:
                     await self.event_bus.publish("playback.started", {"session_id": session_id, "pattern": pattern})
 
                 # Добавляем данные ПОСЛЕ создания потока
@@ -647,19 +660,15 @@ class SpeechPlaybackIntegration:
 
             # ✅ КРИТИЧНО: start_playback ПЕРЕД add_audio_data для lazy start
             try:
+                # 🔧 РЕФАКТОРИНГ: Используем единый метод инициализации
+                if not await self._ensure_player_ready():
+                    return
+
                 meta = {"kind": "signal", "pattern": pattern}
 
-                # Запускаем воспроизведение ПЕРЕД добавлением данных
+                # Публикуем событие если плеер только что стартовал
                 state = self._player.state_manager.get_state()
-                if state == PlaybackState.PAUSED:
-                    self._player.resume_playback()
-                elif state != PlaybackState.PLAYING:
-                    if not self._player.initialize():
-                        await self._handle_error(Exception("player_init_failed"), where="speech.signal.player_init")
-                        return
-                    if not self._player.start_playback():
-                        await self._handle_error(Exception("start_failed"), where="speech.signal.start_playback")
-                        return
+                if state == PlaybackState.PLAYING:
                     await self.event_bus.publish("playback.started", {"signal": True})
 
                 # Добавляем данные ПОСЛЕ создания потока

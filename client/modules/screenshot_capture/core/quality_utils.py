@@ -34,3 +34,4 @@ def get_jpeg_quality(config_quality: ScreenshotQuality, default: float = 0.75) -
     quality_str = str(config_quality.value) if hasattr(config_quality, 'value') else str(config_quality)
     return JPEG_QUALITY_MAP.get(quality_str.lower(), default)
 
+

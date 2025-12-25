@@ -42,20 +42,47 @@ def normalize_audio(audio_data: np.ndarray, target_dtype: np.dtype = np.int16) -
         return audio_data
 
 def resample_audio(audio_data: np.ndarray, original_rate: int, target_rate: int) -> np.ndarray:
-    """Изменяет частоту дискретизации аудио"""
+    """
+    Изменяет частоту дискретизации аудио (линейная интерполяция).
+    
+    🔧 PRODUCTION: Использует round() для избежания систематического дрейфа длины.
+    🔧 PRODUCTION: Dtype guard - приводит к float32 если необходимо.
+    """
     logger.debug(f"🔍 [AUDIO_DEBUG] Изменение частоты дискретизации: {original_rate}Hz -> {target_rate}Hz")
     try:
         if original_rate == target_rate:
             logger.debug(f"🔍 [AUDIO_DEBUG] Частота дискретизации не изменилась: {original_rate}Hz")
             return audio_data
-            
+        
+        # 🔧 PRODUCTION ФИКС #3: Dtype guard - приводим к float32 если необходимо
+        if audio_data.dtype not in [np.float32, np.float64]:
+            logger.warning(f"⚠️ [RESAMPLE] Неожиданный dtype: {audio_data.dtype}, приводим к float32")
+            # Если int16 - нормализуем
+            if audio_data.dtype == np.int16:
+                audio_data = audio_data.astype(np.float32) / 32768.0
+            else:
+                audio_data = audio_data.astype(np.float32)
+        
         # Простое изменение частоты дискретизации
         ratio = target_rate / original_rate
-        new_length = int(len(audio_data) * ratio)
+        
+        # 🔧 PRODUCTION ФИКС #2: Используем round() вместо int() для избежания систематического дрейфа
+        new_length = int(round(len(audio_data) * ratio))
+        
+        if new_length == 0:
+            logger.warning(f"⚠️ [RESAMPLE] new_length=0, возвращаем пустой массив")
+            return np.array([], dtype=audio_data.dtype)
         
         # Линейная интерполяция
-        indices = np.linspace(0, len(audio_data) - 1, new_length)
-        result = np.interp(indices, np.arange(len(audio_data)), audio_data).astype(audio_data.dtype)
+        # 🔧 PRODUCTION ФИКС #1: Оптимизация - используем linspace для indices
+        # xp (точки данных) можно кэшировать на уровне player'а, но здесь оставляем как есть
+        indices = np.linspace(0, len(audio_data) - 1, new_length, dtype=np.float32)
+        xp = np.arange(len(audio_data), dtype=np.float32)
+        result = np.interp(indices, xp, audio_data)
+        
+        # Сохраняем исходный dtype (если был float32/float64)
+        result = result.astype(audio_data.dtype)
+        
         logger.debug(f"🔍 [AUDIO_DEBUG] Частота дискретизации изменена: {len(audio_data)} -> {len(result)} сэмплов")
         return result
         

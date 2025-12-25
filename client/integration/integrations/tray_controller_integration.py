@@ -11,8 +11,8 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 # Импорты модулей (НЕ дублируем логику!)
-from modules.tray_controller import TrayController, TrayStatus, TrayConfig
-from modules.tray_controller.core.tray_types import TrayEvent
+from modules.tray_controller import TrayController, TrayStatus
+from modules.tray_controller.core.tray_types import TrayConfig, TrayEvent
 
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
