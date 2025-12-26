@@ -159,6 +159,6 @@ class AudioRouteMonitor:
     def _poll_loop(self) -> None:
         """Poll for device changes every 2 seconds."""
         while not self._stop.is_set():
-            time.sleep(2.0)
+            self._stop.wait(2.0)
             if not self._stop.is_set():
                 self._check_for_changes("poll")

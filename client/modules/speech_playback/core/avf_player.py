@@ -54,6 +54,7 @@ class AVFoundationPlayer:
         
         # Thread tracking
         self._playback_thread: Optional[threading.Thread] = None
+        self._recreate_threads: List[threading.Thread] = []
 
     def initialize(self) -> bool:
         """Initialize AVAudioEngine and player node."""
@@ -134,6 +135,19 @@ class AVFoundationPlayer:
                 logger.debug("🧵 Playback thread joined")
             except Exception as e:
                 logger.warning(f"⚠️ Could not join playback thread: {e}")
+
+        # Wait for recreate threads
+        with self._lock:
+            threads_to_join = list(self._recreate_threads)
+            self._recreate_threads.clear()
+        
+        for t in threads_to_join:
+            if t.is_alive():
+                try:
+                    t.join(timeout=1.0)
+                    logger.debug(f"🧵 Recreate thread {t.name} joined")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not join recreate thread: {e}")
 
         logger.info("🛑 AVFoundationPlayer shutdown")
 
@@ -444,6 +458,10 @@ class AVFoundationPlayer:
     def _on_route_change(self, notification) -> None:
         """Handle audio route change."""
         logger.info("🔄 Output route changed, recreating player...")
-        # Recreate in background thread to avoid blocking
-        thread = threading.Thread(target=self.recreate, daemon=True)
+        # Recreate in background thread to avoid blocking main thread (likely AppKit event loop)
+        thread = threading.Thread(target=self.recreate, daemon=True, name="AVFRecreate")
+        with self._lock:
+            # Clean up finished threads
+            self._recreate_threads = [t for t in self._recreate_threads if t.is_alive()]
+            self._recreate_threads.append(thread)
         thread.start()

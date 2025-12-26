@@ -220,8 +220,9 @@ class VoiceRecognitionIntegration:
         try:
             logger.debug(f"🎤 [VOICE_DEBUG] _on_recording_start event received: {event}")
             
-            # КРИТИЧНО: Проверяем first_run перед началом записи
-            if self._first_run_in_progress:
+            # КРИТИЧНО: Используем state_manager для проверки first_run
+            first_run_in_progress = self.state_manager.get_state_data("first_run_in_progress", False)
+            if first_run_in_progress or self._first_run_in_progress:
                 logger.warning(
                     "⚠️ [VOICE] Блокировка активации - first_run в процессе."
                 )

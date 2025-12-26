@@ -174,12 +174,17 @@ class GoogleSRController:
                 logger.info("🎙️ Listening... (phrase_limit=%.1fs)", self._phrase_limit)
                 
                 try:
+                    # Dynamically adjust limit if stopping
+                    current_limit = 1.0 if self._stop.is_set() else self._phrase_limit
                     audio = self._recognizer.listen(
                         source,
                         timeout=5.0,  # Wait max 5s for speech to start
-                        phrase_time_limit=self._phrase_limit
+                        phrase_time_limit=current_limit
                     )
                 except sr.WaitTimeoutError:
+                    if self._stop.is_set():
+                        logger.info("🛑 Stop requested while waiting for speech")
+                        return
                     logger.warning("⚠️ No speech detected (timeout)")
                     self.last_error = "no_speech"
                     self.failed += 1

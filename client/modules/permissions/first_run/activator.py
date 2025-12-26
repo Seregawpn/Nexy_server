@@ -17,7 +17,7 @@ from config.unified_config_loader import UnifiedConfigLoader
 logger = get_logger(__name__)
 
 
-async def activate_microphone(hold_duration: float = 7.0) -> bool:
+async def activate_microphone(hold_duration: float = 0.5) -> bool:
     """
     Активировать запрос разрешения микрофона.
 
@@ -56,9 +56,9 @@ async def activate_microphone(hold_duration: float = 7.0) -> bool:
                 dtype='int16',
                 blocksize=8000,
             ):
-                # Держим микрофон открытым всю паузу
-                logger.debug(f"   ⏸️ Удерживаем микрофон открытым {hold_duration} сек...")
-                print(f"🎙️ [ACTIVATOR] Удерживаем микрофон {hold_duration} сек...")  # DEBUG
+                # Больше не держим микрофон открытым долго, так как у нас есть цикл ожидания
+                logger.debug(f"   ⏸️ Короткая пауза активации {hold_duration} сек...")
+                print(f"🎙️ [ACTIVATOR] Короткая пауза {hold_duration} сек...")  # DEBUG
                 await asyncio.sleep(hold_duration)
                 print(f"🎙️ [ACTIVATOR] Удержание завершено")  # DEBUG
 
@@ -86,7 +86,7 @@ async def activate_microphone(hold_duration: float = 7.0) -> bool:
         return False
 
 
-async def activate_accessibility(hold_duration: float = 7.0) -> bool:
+async def activate_accessibility(hold_duration: float = 0.5) -> bool:
     """
     Активировать запрос разрешения Accessibility.
 
@@ -135,7 +135,7 @@ async def activate_accessibility(hold_duration: float = 7.0) -> bool:
         return False
 
 
-async def activate_input_monitoring(hold_duration: float = 7.0) -> bool:
+async def activate_input_monitoring(hold_duration: float = 0.5) -> bool:
     """
     Активировать запрос разрешения Input Monitoring.
 
@@ -193,7 +193,7 @@ async def activate_input_monitoring(hold_duration: float = 7.0) -> bool:
         return False
 
 
-async def activate_screen_capture(hold_duration: float = 7.0) -> bool:
+async def activate_screen_capture(hold_duration: float = 0.5) -> bool:
     """
     Активировать запрос разрешения Screen Capture.
 
@@ -246,11 +246,11 @@ async def activate_all_permissions(pause_seconds: float = 7.0) -> dict:
     """
     try:
         permission_config = UnifiedConfigLoader.get_instance().get_permission_config()
-        hold_duration = permission_config.get('first_run', {}).get('activation_hold_duration_sec', 13.0)
+        hold_duration = permission_config.get('first_run', {}).get('activation_hold_duration_sec', 0.5)
         logger.info(f"Используем 'activation_hold_duration_sec' из конфига: {hold_duration} сек.")
     except Exception as e:
-        logger.warning(f"Не удалось загрузить 'activation_hold_duration_sec' из конфига. Используем значение по-умолчанию 13.0 сек. Ошибка: {e}")
-        hold_duration = 13.0
+        logger.warning(f"Не удалось загрузить 'activation_hold_duration_sec' из конфига. Используем значение по-умолчанию 0.5 сек. Ошибка: {e}")
+        hold_duration = 0.5
 
     logger.info("🚀 Активация всех разрешений в параллельном режиме...")
 

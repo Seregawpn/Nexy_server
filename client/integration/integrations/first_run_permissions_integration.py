@@ -65,7 +65,7 @@ class FirstRunPermissionsIntegration:
         # Настройки из конфига
         self.enabled = self.config.get('enabled', True)
         self.pause_seconds = self.config.get('pause_between_requests_sec', 1.0)
-        self.activation_hold_seconds = self.config.get('activation_hold_duration_sec', 13.0)
+        self.activation_hold_seconds = self.config.get('activation_hold_duration_sec', 0.5)
 
         logger.info(
             "[FIRST_RUN_PERMISSIONS] Configuration loaded: "
@@ -108,6 +108,10 @@ class FirstRunPermissionsIntegration:
             logger.info("🔧 [FIRST_RUN_PERMISSIONS] Инициализация...")
 
             # Сбрасываем состояние при инициализации (важно для повторных запусков/тестов)
+            from modules.permissions.first_run.status_checker import get_bundle_id
+            self.detected_bundle_id = get_bundle_id()
+            logger.info(f"🔍 [FIRST_RUN_PERMISSIONS] Detected Bundle ID: {self.detected_bundle_id}")
+            
             self._restart_session_id = None
             self._permissions_in_progress = False
             self.state_manager.set_restart_pending(False)

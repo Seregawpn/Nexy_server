@@ -23,6 +23,18 @@ class PermissionStatus(Enum):
     ERROR = "error"                    # Ошибка проверки
 
 
+def get_bundle_id() -> str:
+    """Определить bundle_id текущего процесса."""
+    try:
+        from Foundation import NSBundle
+        bundle_id = NSBundle.mainBundle().bundleIdentifier()
+        if bundle_id:
+            return bundle_id
+    except Exception:
+        pass
+    return "com.nexy.assistant"
+
+
 def check_microphone_status() -> PermissionStatus:
     """
     Проверить статус разрешения микрофона.
@@ -147,7 +159,7 @@ def check_input_monitoring_status() -> PermissionStatus:
             import subprocess
 
             result = subprocess.run(
-                ['tccutil', 'check', 'ListenEvent', 'com.nexy.assistant'],
+                ['tccutil', 'check', 'ListenEvent', get_bundle_id()],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -167,7 +179,7 @@ def check_input_monitoring_status() -> PermissionStatus:
             import subprocess
 
             result = subprocess.run(
-                ['tccutil', 'check', 'ListenEvent', 'com.nexy.assistant'],
+                ['tccutil', 'check', 'ListenEvent', get_bundle_id()],
                 capture_output=True,
                 text=True,
                 timeout=5,

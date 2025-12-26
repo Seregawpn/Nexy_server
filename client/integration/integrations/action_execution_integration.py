@@ -137,6 +137,11 @@ class ActionExecutionIntegration(BaseIntegration):
             self._on_keyboard_short_press,
             EventPriority.HIGH,
         )
+        await self.event_bus.subscribe(
+            "app.mode_changed",
+            self._on_mode_changed,
+            EventPriority.HIGH,
+        )
         logger.info("[%s] ActionExecutionIntegration started", FEATURE_ID)
         return True
 
@@ -149,6 +154,7 @@ class ActionExecutionIntegration(BaseIntegration):
         await self.event_bus.unsubscribe("grpc.response.action", self._on_action_received)
         await self.event_bus.unsubscribe("interrupt.request", self._on_interrupt)
         await self.event_bus.unsubscribe("keyboard.short_press", self._on_keyboard_short_press)
+        await self.event_bus.unsubscribe("app.mode_changed", self._on_mode_changed)
         logger.info("[%s] ActionExecutionIntegration stopped", FEATURE_ID)
         return True
 
@@ -406,6 +412,26 @@ class ActionExecutionIntegration(BaseIntegration):
     async def _on_keyboard_short_press(self, event: Dict[str, Any]):
         """Обработка короткого нажатия клавиши - отмена всех действий."""
         await self._cancel_all_actions(reason="keyboard_short_press")
+
+    async def _on_mode_changed(self, event: Dict[str, Any]):
+        """Обработка изменения режима приложения - отмена при переходе в спящий режим."""
+        try:
+            from modules.mode_management import AppMode
+            data = event.get("data", event) if isinstance(event, dict) and "data" in event else event
+            new_mode = data.get("mode")
+            
+            # Если передана строка, пытаемся конвертировать в AppMode для надежности
+            if isinstance(new_mode, str):
+                try:
+                    new_mode = AppMode(new_mode)
+                except ValueError:
+                    pass
+            
+            if new_mode == AppMode.SLEEPING:
+                logger.debug("[%s] Mode changed to SLEEPING, cancelling all actions", FEATURE_ID)
+                await self._cancel_all_actions(reason="mode_change_to_sleeping")
+        except Exception as e:
+            logger.warning("[%s] Error in _on_mode_changed: %s", FEATURE_ID, e)
 
     async def _cancel_all_actions(self, *, reason: str):
         """
