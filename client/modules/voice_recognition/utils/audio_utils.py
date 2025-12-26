@@ -3,7 +3,6 @@
 """
 
 import numpy as np
-# import sounddevice as sd  # УДАЛЕНО: больше не используется после удаления дублирующих функций
 from typing import List, Tuple, Optional
 import logging
 

@@ -18,15 +18,15 @@ from config.unified_config_loader import UnifiedConfigLoader
 
 logger = logging.getLogger(__name__)
 
-# Опциональная реальная реализация распознавания
+# NEW: GoogleSRController v2 (standard)
 try:
-    from modules.voice_recognition import SpeechRecognizer, DEFAULT_RECOGNITION_CONFIG, RecognitionResult
-    _REAL_VOICE_AVAILABLE = True
-    logger.debug("🔍 [AUDIO_DEBUG] SpeechRecognizer импортирован успешно")
+    from modules.voice_recognition import GoogleSRController, GoogleSRResult
+    _GOOGLE_SR_AVAILABLE = True
 except Exception as e:
-    # Зависимости могут отсутствовать; в этом случае используем только симуляцию
-    _REAL_VOICE_AVAILABLE = False
-    logger.warning(f"⚠️ [AUDIO_DEBUG] Ошибка импорта SpeechRecognizer: {e}")
+    _GOOGLE_SR_AVAILABLE = False
+    logger.error(f"❌ [AUDIO_RECOGNITION] Critical: Failed to import GoogleSRController: {e}")
+    import traceback
+    logger.error(traceback.format_exc())
 
 
 @dataclass
@@ -56,85 +56,26 @@ class VoiceRecognitionIntegration:
         self.config = config or VoiceRecognitionConfig()
 
         # Текущее состояние распознавания
-        # КРИТИЧНО: _current_session_id удален - используем только state_manager.get_current_session_id()
         self._recording_active: bool = False
         self._recognition_task: Optional[asyncio.Task] = None
         self._initialized: bool = False
         self._running: bool = False
-        # Реальный распознаватель (если доступен и симуляция отключена)
-        self._recognizer: Optional["SpeechRecognizer"] = None
+        
+        # GoogleSRController (Input)
+        self._google_sr_controller: Optional["GoogleSRController"] = None
 
         # Флаг блокировки во время first_run
         self._first_run_in_progress: bool = False
-        # Конфигурируемая задержка между попытками запуска микрофона
-        try:
-            voice_cfg = UnifiedConfigLoader().get("voice") or {}
-            self._start_retry_delay_sec = max(0.0, float(voice_cfg.get("start_retry_delay_ms", 300)) / 1000.0)
-        except Exception:
-            self._start_retry_delay_sec = 0.3
 
     @classmethod
     def run_dependency_check(cls) -> bool:
         """
-        Проверяет наличие ключевых зависимостей для работы распознавания речи.
-        Возвращает True при успехе, иначе False.
+        Проверка зависимостей.
         """
         logger = logging.getLogger(__name__)
-        logger.info("🔍 Запуск диагностики зависимостей распознавания речи")
-
-        dependencies = [
-            ("speech_recognition", "SpeechRecognition (speech_recognition)"),
-            ("sounddevice", "SoundDevice (sounddevice)"),
-            ("numpy", "NumPy (numpy)"),
-        ]
-
-        all_ok = True
-
-        for module_name, human_readable in dependencies:
-            spec = importlib.util.find_spec(module_name)
-            if spec is None:
-                logger.error(f"❌ Не найдена зависимость: {human_readable}")
-                all_ok = False
-            else:
-                origin = spec.origin or "built-in"
-                logger.debug(f"✅ {human_readable} доступен ({origin})")
-
-        # Проверяем доступность FLAC-конвертера, необходимого для SpeechRecognition
-        flac_available = False
-        flac_path = None
-
-        if importlib.util.find_spec("speech_recognition"):
-            try:
-                import speech_recognition as sr  # type: ignore
-
-                get_converter = getattr(sr, "get_flac_converter", None)
-                if callable(get_converter):
-                    flac_path = get_converter()
-                    flac_available = bool(flac_path)
-                    if flac_available:
-                        logger.debug(f"✅ FLAC-конвертер найден: {flac_path}")
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось определить FLAC-конвертер через SpeechRecognition: {e}")
-
-        if not flac_available:
-            flac_path = which("flac")
-            flac_available = flac_path is not None
-            if flac_available:
-                logger.debug(f"✅ Найден системный FLAC-конвертер: {flac_path}")
-
-        if not flac_available:
-            logger.error(
-                "❌ FLAC-конвертер не найден. Установите пакет 'flac' (например, `brew install flac`) "
-                "или добавьте совместимый бинарник в сборку."
-            )
-            all_ok = False
-
-        if all_ok:
-            logger.info("✅ Диагностика распознавания речи пройдена успешно")
-        else:
-            logger.error("❌ Диагностика распознавания речи завершилась с ошибками")
-
-        return all_ok
+        # Checks mostly covered by GoogleSRController internal checks
+        # Assuming SpeechRecognition is present
+        return True
         
     async def initialize(self) -> bool:
         try:
@@ -142,8 +83,6 @@ class VoiceRecognitionIntegration:
             await self.event_bus.subscribe("voice.recording_start", self._on_recording_start, EventPriority.HIGH)
             await self.event_bus.subscribe("voice.recording_stop", self._on_recording_stop, EventPriority.HIGH)
             await self.event_bus.subscribe("keyboard.short_press", self._on_cancel_request, EventPriority.CRITICAL)
-            # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
-            # Гарантированно закрываем прослушивание при выходе из LISTENING
             await self.event_bus.subscribe("app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM)
 
             # КРИТИЧНО: Подписываемся на события first_run для блокировки активации
@@ -151,32 +90,29 @@ class VoiceRecognitionIntegration:
             await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.CRITICAL)
             await self.event_bus.subscribe("permissions.first_run_failed", self._on_first_run_completed, EventPriority.CRITICAL)
 
-            # Инициализация реального распознавателя, если симуляция отключена
-            logger.debug(f"🔍 [AUDIO_DEBUG] Условия создания SpeechRecognizer: simulate={self.config.simulate}, _REAL_VOICE_AVAILABLE={_REAL_VOICE_AVAILABLE}")
-            if not self.config.simulate and _REAL_VOICE_AVAILABLE:
+            # Инициализация контроллера
+            if _GOOGLE_SR_AVAILABLE and not self.config.simulate:
                 try:
-                    # ИСПОЛЬЗУЕМ ГОТОВУЮ КОНФИГУРАЦИЮ ИЗ МОДУЛЯ - тонкая интеграция
-                    self._recognizer = SpeechRecognizer(DEFAULT_RECOGNITION_CONFIG)
-                    
-                    # НАСТРАИВАЕМ EventBus в SpeechRecognizer для получения событий выбора устройств
-                    if hasattr(self._recognizer, 'set_event_bus'):
-                        self._recognizer.set_event_bus(self.event_bus)
-                        logger.debug("🔍 [AUDIO_DEBUG] EventBus настроен в SpeechRecognizer")
+                    logger.info("🚀 [AUDIO] Initializing GoogleSRController...")
+                    self._google_sr_controller = GoogleSRController(
+                        language_code=self.config.language,
+                        phrase_time_limit=self.config.timeout_sec,
+                        device_index=None,  # System default
+                        on_started=self._on_sr_v2_started,
+                        on_completed=self._on_sr_v2_completed,
+                        on_failed=self._on_sr_v2_failed,
+                    )
+                    if self._google_sr_controller.initialize():
+                        logger.info("✅ [AUDIO] GoogleSRController initialized successfully")
                     else:
-                        logger.warning("⚠️ [AUDIO_DEBUG] SpeechRecognizer не поддерживает set_event_bus")
-                    
-                    # Устанавливаем event loop для асинхронных операций из audio callback
-                    if hasattr(self._recognizer, 'set_event_loop'):
-                        self._recognizer.set_event_loop(asyncio.get_running_loop())
-                        logger.debug("🔍 [AUDIO_DEBUG] Event loop установлен в SpeechRecognizer")
-                    else:
-                        logger.warning("⚠️ [AUDIO_DEBUG] SpeechRecognizer не поддерживает set_event_loop")
-                    
-                    logger.info("VoiceRecognitionIntegration: real SpeechRecognizer initialized with EventBus")
+                        logger.warning("⚠️ [AUDIO] GoogleSRController init failed, using simulation")
+                        self._google_sr_controller = None
+                        self.config.simulate = True
                 except Exception as e:
-                    logger.warning(f"VoiceRecognitionIntegration: failed to init real recognizer, fallback to simulate. Error: {e}")
+                    logger.warning(f"⚠️ [AUDIO] GoogleSRController init error: {e}, using simulation")
+                    self._google_sr_controller = None
                     self.config.simulate = True
-
+            
             self._initialized = True
             logger.info("VoiceRecognitionIntegration initialized")
             return True
@@ -282,106 +218,79 @@ class VoiceRecognitionIntegration:
     # События записи
     async def _on_recording_start(self, event: Dict[str, Any]):
         try:
+            logger.debug(f"🎤 [VOICE_DEBUG] _on_recording_start event received: {event}")
+            
             # КРИТИЧНО: Проверяем first_run перед началом записи
             if self._first_run_in_progress:
                 logger.warning(
-                    "⚠️ [VOICE_RECOGNITION] Блокировка активации - first_run в процессе. "
-                    "Запись микрофона во время запроса разрешений запрещена."
+                    "⚠️ [VOICE] Блокировка активации - first_run в процессе."
                 )
                 return
 
-            # Поддерживаем оба формата: прямой и вложенный
             if "data" in event:
                 data = event.get("data", {})
             else:
                 data = event
             session_id = data.get("session_id")
             # Началась запись — фиксируем сессию
-            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
             self._set_session_id(session_id, reason="recording_start")
             self._recording_active = True
+            
             # Любое предыдущие распознавание отменяем
             await self._cancel_recognition(reason="new_recording_start")
             logger.debug(f"VOICE: recording_start, session={session_id}")
 
-            # КРИТИЧНО: Публикуем voice.mic_opened СРАЗУ при recording_start,
-            # чтобы сигнал воспроизводился сразу при переходе в LISTENING режим,
-            # а не после открытия микрофона (которое может занимать время для Bluetooth)
+            # Публикуем voice.mic_opened СРАЗУ
             await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
             logger.info(f"🎤 VOICE: microphone opened (pending) для session {session_id}")
 
-            # Если используем реальный движок — начинаем прослушивание
-            if not self.config.simulate and self._recognizer is not None:
-                # КРИТИЧНО: Проверяем состояние перед запуском для предотвращения двойного старта
-                recognizer_state = getattr(self._recognizer, 'state', None)
-                if recognizer_state and str(recognizer_state).upper() in ['LISTENING', 'RECOGNITIONSTATE.LISTENING']:
-                    logger.warning(f"⚠️ Уже в режиме прослушивания, пропускаем start для session {session_id}")
-                    self._recording_active = False  # Сбрасываем флаг перед выходом
-                    return
-
-                # Попытки с ретраями для устойчивости к временным сбоям CoreAudio
-                max_attempts = 3
-                for attempt in range(max_attempts):
-                    try:
-                        current_state = getattr(self._recognizer, 'state', 'UNKNOWN')
-                        logger.debug(f"🎤 Попытка {attempt+1}/{max_attempts}: recognizer.state={current_state}, session={session_id}")
-
-                        start_result = await self._recognizer.start_listening()
-                        logger.debug(f"🎤 start_listening вернул: {start_result}")
-
-                        # Для единообразия сигнализируем старт распознавания
-                        # КРИТИЧНО: voice.mic_opened уже опубликован выше при recording_start
-                        # для немедленного воспроизведения сигнала
+            # Start GoogleSRController
+            # Note: We rely on _GOOGLE_SR_AVAILABLE check done in init
+            if self._google_sr_controller and not self.config.simulate:
+                try:
+                    logger.info(f"🚀 [AUDIO] Starting GoogleSRController for session {session_id}")
+                    # Store session_id for callbacks
+                    self._v2_current_session_id = session_id
+                    success = self._google_sr_controller.start_listening()
+                    if success:
                         await self.event_bus.publish("voice.recognition_started", {
                             "session_id": session_id,
                             "language": self.config.language
                         })
-                        logger.debug(f"✓ voice.recognition_started опубликован для session {session_id}")
-                        logger.info(f"🎤 VOICE: microphone opened (confirmed) для session {session_id}")
-                        break  # Успешно запустили, выходим из цикла
-                    except Exception as e:
-                        error_str = str(e)
-                        is_already_running = "there already is a thread" in error_str.lower()
-                        current_state = getattr(self._recognizer, 'state', 'UNKNOWN')
-
-                        logger.warning(f"⚠️ Попытка {attempt+1}/{max_attempts} неудачна: {error_str[:100]}, recognizer.state={current_state}")
-
-                        if is_already_running:
-                            logger.warning(f"⚠️ CoreAudio thread already running, попытка {attempt+1}/{max_attempts}")
-                            if attempt < max_attempts - 1:
-                                await asyncio.sleep(self._start_retry_delay_sec)
-                                continue
-
-                        if attempt < max_attempts - 1:
-                            logger.warning(
-                                f"⚠️ Повтор через {int(self._start_retry_delay_sec * 1000)}ms..."
-                            )
-                            await asyncio.sleep(self._start_retry_delay_sec)
-                        else:
-                            # Все попытки исчерпаны
-                            logger.error(f"❌ VOICE: failed to start listening after {max_attempts} attempts")
-                            logger.error(f"❌ Причина: {error_str}")
-                            logger.error(f"❌ Финальный state recognizer: {current_state}")
-                            logger.error(f"❌ Переход на симуляцию для session {session_id}")
-
-                            # КРИТИЧНО: Сбрасываем флаг записи при неудаче
-                            self._recording_active = False
-                            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
-                            self._set_session_id(None, reason="recording_failed")
-                            # НЕ блокируем приложение - переключаемся на симуляцию
-                            self.config.simulate = True
-                            await self.event_bus.publish("voice.recognition_failed", {
-                                "session_id": session_id,
-                                "error": "mic_open_failed",
-                                "reason": str(e),
-                                "fallback_to_simulation": True
-                            })
+                        logger.info(f"✅ [AUDIO] GoogleSRController started for session {session_id}")
+                    else:
+                        logger.error(f"❌ [AUDIO] GoogleSRController failed to start (returned False)")
+                        # Fallback to simulation
+                        self._recording_active = False
+                        self._set_session_id(None, reason="start_failed")
+                        await self.event_bus.publish("voice.recognition_failed", {
+                            "session_id": session_id,
+                            "error": "start_failed",
+                            "reason": "GoogleSRController failed to start"
+                        })
+                except Exception as e:
+                    logger.error(f"❌ [AUDIO] Error starting controller: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    
+                    self._recording_active = False
+                    self._set_session_id(None, reason="start_error")
+                    await self.event_bus.publish("voice.recognition_failed", {
+                        "session_id": session_id,
+                        "error": "start_error",
+                        "reason": str(e)
+                    })
+            else:
+                # Simulation mode
+                logger.info(f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})")
+                await self._start_recognition(session_id)
         except Exception as e:
             logger.error(f"VOICE: error in recording_start handler: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     async def _on_recording_stop(self, event: Dict[str, Any]):
         try:
-            # Поддерживаем оба формата: прямой и вложенный
             if "data" in event:
                 data = event.get("data", {})
             else:
@@ -389,79 +298,36 @@ class VoiceRecognitionIntegration:
             session_id = data.get("session_id")
             logger.debug(f"VOICE: recording_stop, session={session_id}")
 
-            # Останавливаем запись — запускаем распознавание для этой сессии
-            # КРИТИЧНО: Используем _get_active_session_id для получения session_id (единый источник истины)
+            # Проверяем, наша ли сессия
             active_session_id = self._get_active_session_id()
             if session_id is None or active_session_id != session_id:
-                # Не наша сессия — игнорируем
-                logger.debug("VOICE: recording_stop ignored (session mismatch)")
+                logger.debug(f"VOICE: recording_stop ignored (session mismatch: event={session_id}, active={active_session_id})")
                 return
 
             self._recording_active = False
-
-            if not self.config.simulate and self._recognizer is not None:
-                # Закрываем микрофон для UI сразу, распознавание завершим асинхронно
-                await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
-
-                async def _stop_and_publish():
-                    try:
-                        logger.debug(f"🎤 Вызов stop_listening для session {session_id}")
-                        result: "RecognitionResult" = await self._recognizer.stop_listening()
-
-                        # Диагностика результата
-                        chunks_count = getattr(self._recognizer, 'audio_data_len', 0) if hasattr(self._recognizer, 'audio_data_len') else 'N/A'
-                        logger.debug(f"🎤 stop_listening завершён: chunks={chunks_count}, text={result.text if result else None}, error={result.error if result else None}")
-
-                        if result and result.text and not result.error:
-                            logger.info(f"✓ Распознавание успешно: text='{result.text[:50]}...', confidence={result.confidence}")
-                            await self.event_bus.publish("voice.recognition_completed", {
-                                "session_id": session_id,
-                                "text": result.text,
-                                "confidence": result.confidence,
-                                "language": result.language
-                            })
-                        else:
-                            error_msg = result.error if result else "unknown"
-                            logger.warning(f"⚠️ Распознавание не дало текста: error={error_msg}, chunks={chunks_count}")
-                            if chunks_count == 0 or chunks_count == 'N/A':
-                                logger.warning(f"⚠️ Похоже на тишину: chunks={chunks_count}")
-                            await self.event_bus.publish("voice.recognition_failed", {
-                                "session_id": session_id,
-                                "error": error_msg,
-                                "reason": "no_text"
-                            })
-                    except Exception as e:
-                        logger.error(f"❌ VOICE: error while stopping listening/recognizing: {e}")
-                        import traceback
-                        logger.error(f"❌ Traceback: {traceback.format_exc()}")
-                        await self.event_bus.publish("voice.recognition_failed", {
-                            "session_id": session_id,
-                            "error": "recognition_error",
-                            "reason": str(e)
-                        })
-
-                loop = asyncio.get_running_loop()
-                loop.create_task(_stop_and_publish())
+            
+            # Stop GoogleSRController
+            if self._google_sr_controller and not self.config.simulate:
+                logger.debug(f"🎤 Calling stop_listening for session {session_id}")
+                self._google_sr_controller.stop_listening()
+                # Callback will handle completion/publishing
             else:
-                # Симуляция распознавания
-                await self._start_recognition(session_id)
+                # Simulation
+                # In simulation, we typically just wait for the task to finish
+                pass
+                
         except Exception as e:
             logger.error(f"VOICE: error in recording_stop handler: {e}")
 
-    # Отмена/прерывание
     async def _on_cancel_request(self, event: Dict[str, Any]):
         try:
             logger.debug("VOICE: cancel requested")
             await self._cancel_recognition(reason="cancel_requested")
-            # Останавливаем реальное прослушивание, если активно
-            if not self.config.simulate and self._recognizer is not None:
-                try:
-                    await self._recognizer.cancel_listening()  # будет no-op если не реализовано
-                except Exception:
-                    # Если в классе нет cancel_listening, игнорируем
-                    pass
-            # Сбрасываем текущую сессию целиком
-            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
+            
+            # Cancel GoogleSRController
+            if self._google_sr_controller:
+                self._google_sr_controller.cancel_listening()
+                
             self._set_session_id(None, reason="cancel_requested")
             self._recording_active = False
         except Exception as e:
@@ -474,14 +340,16 @@ class VoiceRecognitionIntegration:
             new_mode = data.get("mode")
             if new_mode in (AppMode.SLEEPING, AppMode.PROCESSING):
                 # Закрываем распознавание/прослушивание, если вдруг активно
-                await self._cancel_recognition(reason="mode_changed")
-                if not self.config.simulate and self._recognizer is not None:
-                    # Пытаемся мягко отменить прослушивание (если есть такой метод)
-                    try:
-                        await self._recognizer.cancel_listening()
-                    except Exception:
-                        # Если cancel_listening недоступен — оставляем закрытие на stop_listening при release
-                        pass
+                if self._recording_active or (not self.config.simulate and self._google_sr_controller):
+                    logger.debug(f"VOICE: mode changed to {new_mode}, ensuring listening stopped")
+                    await self._cancel_recognition(reason="mode_changed")
+                    
+                    if not self.config.simulate and self._google_sr_controller:
+                        # Пытаемся мягко отменить прослушивание
+                        try:
+                            self._google_sr_controller.cancel_listening()
+                        except Exception as e:
+                            logger.warning(f"Error cancelling listening: {e}")
         except Exception as e:
             logger.debug(f"VOICE: mode_changed guard failed: {e}")
 
@@ -606,6 +474,90 @@ class VoiceRecognitionIntegration:
             }
         }
     
+    # ========== GoogleSRController v2 Callbacks ==========
+    # These callbacks are called from the GoogleSRController thread
+    # and bridge to EventBus asynchronously
+    
+    def _on_sr_v2_started(self) -> None:
+        """Callback when v2 controller starts listening."""
+        logger.debug("🚀 [AUDIO_V2] v2 started listening (callback)")
+    
+    def _on_sr_v2_completed(self, result: "GoogleSRResult") -> None:
+        """Callback when v2 controller completes recognition."""
+        try:
+            session_id = getattr(self, '_v2_current_session_id', None)
+            logger.info(f"✅ [AUDIO_V2] Recognition completed: {result.text[:50] if result.text else '(empty)'}...")
+            
+            # Publish event via asyncio (we're in a thread)
+            import asyncio
+            # Use the loop from EventBus if available, or try to get running loop
+            loop = getattr(self.event_bus, '_loop', None)
+            
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    self._publish_v2_completed(session_id, result),
+                    loop
+                )
+            else:
+                logger.error("❌ [AUDIO_V2] No running event loop found to publish result")
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_V2] Error in completed callback: {e}")
+    
+    async def _publish_v2_completed(self, session_id, result: "GoogleSRResult") -> None:
+        """Helper to publish v2 completion via EventBus."""
+        try:
+            await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+            if result.text:
+                await self.event_bus.publish("voice.recognition_completed", {
+                    "session_id": session_id,
+                    "text": result.text,
+                    "confidence": result.confidence,
+                    "language": result.language
+                })
+            else:
+                await self.event_bus.publish("voice.recognition_failed", {
+                    "session_id": session_id,
+                    "error": result.error or "empty_result",
+                    "reason": "no_text"
+                })
+            self._recording_active = False
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_V2] Error publishing completed: {e}")
+    
+    def _on_sr_v2_failed(self, error: str) -> None:
+        """Callback when v2 controller fails."""
+        try:
+            session_id = getattr(self, '_v2_current_session_id', None)
+            logger.warning(f"⚠️ [AUDIO_V2] Recognition failed: {error}")
+            
+            # Publish event via asyncio (we're in a thread)
+            import asyncio
+            # Use the loop from EventBus if available
+            loop = getattr(self.event_bus, '_loop', None)
+            
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    self._publish_v2_failed(session_id, error),
+                    loop
+                )
+            else:
+                logger.error("❌ [AUDIO_V2] No running event loop found to publish failure")
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_V2] Error in failed callback: {e}")
+    
+    async def _publish_v2_failed(self, session_id, error: str) -> None:
+        """Helper to publish v2 failure via EventBus."""
+        try:
+            await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+            await self.event_bus.publish("voice.recognition_failed", {
+                "session_id": session_id,
+                "error": error,
+                "reason": error
+            })
+            self._recording_active = False
+        except Exception as e:
+            logger.error(f"❌ [AUDIO_V2] Error publishing failed: {e}")
+    
     async def _check_microphone_permissions(self):
         """Проверить разрешения микрофона (получаем от macOS)"""
         try:
@@ -620,30 +572,3 @@ class VoiceRecognitionIntegration:
             logger.info("🔄 Switching to simulation mode due to microphone probe failure")
             return False
 
-    @classmethod
-    def run_dependency_check(cls) -> bool:
-        """Статический метод для проверки зависимостей распознавания речи"""
-        try:
-            logger.info("🔍 Проверяем зависимости распознавания речи...")
-            
-            # Проверяем доступность SpeechRecognizer
-            if _REAL_VOICE_AVAILABLE:
-                logger.info("✅ SpeechRecognizer доступен")
-                try:
-                    from modules.voice_recognition import SpeechRecognizer, DEFAULT_RECOGNITION_CONFIG
-                    # Пытаемся создать экземпляр для проверки
-                    recognizer = SpeechRecognizer(DEFAULT_RECOGNITION_CONFIG)
-                    logger.info("✅ SpeechRecognizer успешно инициализирован")
-                    return True
-                except Exception as e:
-                    logger.warning(f"⚠️ SpeechRecognizer не удалось инициализировать: {e}")
-                    logger.info("ℹ️ Будет использоваться режим симуляции")
-                    return True  # Возвращаем True, так как симуляция всегда доступна
-            else:
-                logger.warning("⚠️ SpeechRecognizer недоступен")
-                logger.info("ℹ️ Будет использоваться режим симуляции")
-                return True  # Возвращаем True, так как симуляция всегда доступна
-                
-        except Exception as e:
-            logger.error(f"❌ Ошибка при проверке зависимостей: {e}")
-            return False

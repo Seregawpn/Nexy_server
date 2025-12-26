@@ -128,28 +128,13 @@ class InputProcessingIntegration:
             if not use_quartz:
                 self.keyboard_monitor = KeyboardMonitor(self.config.keyboard)
             
-            # Регистрация обработчиков: для Quartz можно регистрировать async-методы напрямую,
-            # для pynput используем sync wrapper'ы
-            if self._using_quartz:
-                logger.info("🔑 Регистрируем Quartz callback'и:")
-                print("🔑 Регистрируем Quartz callback'и:")  # Для отладки
-                self.keyboard_monitor.register_callback(KeyEventType.PRESS, self._handle_press)
-                logger.info("🔑 ✅ PRESS callback зарегистрирован")
-                print("🔑 ✅ PRESS callback зарегистрирован")  # Для отладки
-                self.keyboard_monitor.register_callback(KeyEventType.SHORT_PRESS, self._handle_short_press)
-                logger.info("🔑 ✅ SHORT_PRESS callback зарегистрирован")
-                print("🔑 ✅ SHORT_PRESS callback зарегистрирован")  # Для отладки
-                self.keyboard_monitor.register_callback(KeyEventType.LONG_PRESS, self._handle_long_press)
-                logger.info("🔑 ✅ LONG_PRESS callback зарегистрирован")
-                print("🔑 ✅ LONG_PRESS callback зарегистрирован")  # Для отладки
-                self.keyboard_monitor.register_callback(KeyEventType.RELEASE, self._handle_key_release)
-                logger.info("🔑 ✅ RELEASE callback зарегистрирован")
-                print("🔑 ✅ RELEASE callback зарегистрирован")  # Для отладки
-            else:
-                self.keyboard_monitor.register_callback(KeyEventType.PRESS, self._sync_handle_press)
-                self.keyboard_monitor.register_callback(KeyEventType.SHORT_PRESS, self._sync_handle_short_press)
-                self.keyboard_monitor.register_callback(KeyEventType.LONG_PRESS, self._sync_handle_long_press)
-                self.keyboard_monitor.register_callback(KeyEventType.RELEASE, self._sync_handle_key_release)
+            # Регистрация обработчиков: используем async-методы напрямую для обоих backend'ов.
+            # KeyboardMonitor теперь умеет корректно обрабатывать async callback'и если установлен loop.
+            logger.info("🔑 Регистрируем callback'и (async)...")
+            self.keyboard_monitor.register_callback(KeyEventType.PRESS, self._handle_press)
+            self.keyboard_monitor.register_callback(KeyEventType.SHORT_PRESS, self._handle_short_press)
+            self.keyboard_monitor.register_callback(KeyEventType.LONG_PRESS, self._handle_long_press)
+            self.keyboard_monitor.register_callback(KeyEventType.RELEASE, self._handle_key_release)
             
             logger.info("✅ KeyboardMonitor инициализирован")
             
@@ -748,8 +733,18 @@ class InputProcessingIntegration:
                         from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
                         self.keyboard_monitor = KeyboardMonitor(self.config.keyboard)
                         self._using_quartz = False
+                        
+                        # КРИТИЧНО: Настраиваем новый монитор (loop + callbacks)
+                        if loop: self.keyboard_monitor.set_loop(loop)
+                        
+                        logger.info("🔑 Перерегистрируем callback'и для pynput fallback...")
+                        self.keyboard_monitor.register_callback(KeyEventType.PRESS, self._handle_press)
+                        self.keyboard_monitor.register_callback(KeyEventType.SHORT_PRESS, self._handle_short_press)
+                        self.keyboard_monitor.register_callback(KeyEventType.LONG_PRESS, self._handle_long_press)
+                        self.keyboard_monitor.register_callback(KeyEventType.RELEASE, self._handle_key_release)
+
                         self.keyboard_monitor.start_monitoring()
-                        logger.info("✅ Переключились на KeyboardMonitor (pynput)")
+                        logger.info("✅ Переключились на KeyboardMonitor (pynput) с восстановленными callback'ами")
                     else:
                         logger.info("✅ QuartzKeyboardMonitor успешно запущен")
                 else:

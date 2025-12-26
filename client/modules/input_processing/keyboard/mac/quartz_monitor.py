@@ -321,8 +321,8 @@ class QuartzKeyboardMonitor:
         print("🔐 Проверяем разрешения для Quartz Event Tap...")
 
         try:
-            # Унифицируем импорты на Quartz (как в activator/handler)
-            from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+            # Унифицируем импорты (используем ApplicationServices вместо Quartz для AX-функций)
+            from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
             from Foundation import NSDictionary, NSNumber
             
             # КРИТИЧНО: prompt=False - только проверка статуса, НЕ запрос диалога

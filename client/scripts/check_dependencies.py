@@ -32,7 +32,6 @@ REQUIRED_PACKAGES = {
     "pydub": "0.25.1",
     "PyYAML": "6.0.3",
     "rumps": "0.4.0",
-    "sounddevice": "0.5.2",
     "SpeechRecognition": "3.14.3",
 }
 

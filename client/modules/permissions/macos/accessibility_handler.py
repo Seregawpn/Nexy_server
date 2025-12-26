@@ -21,7 +21,7 @@ class AccessibilityHandler:
         `prompt` controls whether macOS should show the system dialog.
         """
         try:
-            from Quartz import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+            from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
             from Foundation import NSDictionary, NSNumber
         except ImportError as import_err:
             # Явный WARN лог при ImportError
