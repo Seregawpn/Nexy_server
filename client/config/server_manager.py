@@ -148,7 +148,7 @@ class ServerManager:
         """Получает сервер по умолчанию"""
         try:
             return self._config.get('integrations', {}).get('grpc_client', {}).get('server')
-        except:
+        except Exception:
             return None
     
     def list_servers(self) -> List[str]:

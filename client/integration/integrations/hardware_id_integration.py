@@ -23,7 +23,9 @@ from modules.hardware_id.core import HardwareIdentifier, HardwareIdResult, Hardw
 # Конфиг (опционально используем unified_config для интеграционных параметров)
 from config.unified_config_loader import UnifiedConfigLoader
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -50,7 +52,7 @@ class HardwareIdIntegration:
         # Интеграционная конфигурация (с безопасными умолчаниями)
         if config is None:
             try:
-                uc = UnifiedConfigLoader()
+                uc = UnifiedConfigLoader.get_instance()
                 data = uc._load_config()
                 cfg = (data.get('integrations', {}) or {}).get('hardware_id', {})
                 config = HardwareIdIntegrationConfig(

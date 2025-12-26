@@ -28,7 +28,9 @@ from config.unified_config_loader import UnifiedConfigLoader
 from modules.permissions.core.permissions_queue import PermissionsQueue
 from modules.permissions.core.types import PermissionType
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 class WelcomeMessageIntegration:
@@ -48,7 +50,7 @@ class WelcomeMessageIntegration:
         
         # Загружаем конфигурацию
         try:
-            unified_config = UnifiedConfigLoader()
+            unified_config = UnifiedConfigLoader.get_instance()
             config_loader = WelcomeConfigLoader.from_unified_config(unified_config)
             self.config = config_loader.load_config()
         except Exception as e:

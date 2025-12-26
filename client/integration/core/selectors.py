@@ -212,6 +212,17 @@ def is_update_in_progress(state_manager: ApplicationStateManager) -> bool:
         return False
 
 
+def is_restart_completed_fallback(state_manager: ApplicationStateManager) -> bool:
+    """Check if restart completed fallback flag is set.
+    
+    This is used when permission flags are missing/unreliable after a restart.
+    """
+    try:
+        return bool(state_manager.get_state_data("permissions_restart_completed_fallback", False))
+    except Exception:
+        return False
+
+
 def create_snapshot_from_state(
     state_manager: ApplicationStateManager,
     *,

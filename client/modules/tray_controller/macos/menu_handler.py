@@ -34,7 +34,7 @@ class MacOSTrayMenu:
         # Загружаем конфиг из unified_config.yaml
         try:
             from config.unified_config_loader import UnifiedConfigLoader
-            unified_config = UnifiedConfigLoader()
+            unified_config = UnifiedConfigLoader.get_instance()
             config_data = unified_config._load_config()
             tray_cfg = config_data.get('tray', {})
             status_item_cfg = tray_cfg.get('status_item', {})

@@ -60,7 +60,9 @@ from config.unified_config_loader import UnifiedConfigLoader
 # Импорт Workflows
 from integration.workflows import ListeningWorkflow, ProcessingWorkflow
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 # Глобальная защита от множественного запуска
 _app_running = False
@@ -83,7 +85,7 @@ class SimpleModuleCoordinator:
         self.workflows: Dict[str, Any] = {}
 
         # Конфигурация
-        self.config = UnifiedConfigLoader()
+        self.config = UnifiedConfigLoader.get_instance()
 
         # Очередь разрешений (по умолчанию отсутствует)
         self.permissions_queue: Optional[Any] = None
@@ -673,8 +675,8 @@ class SimpleModuleCoordinator:
                         try:
                             feature_config = self.config._load_config().get("features", {}).get("use_events_for_update_status", {})
                             if feature_config.get("enabled", False):
-                                # Compare snapshot value vs state_data
-                                state_data_value = bool(self.state_manager.get_state_data("update_in_progress", False))
+                                # Compare snapshot value vs state_data via selector
+                                state_data_value = is_update_in_progress(self.state_manager)
                                 snapshot_value = snapshot.update_in_progress
                                 if state_data_value != snapshot_value:
                                     logger.warning(
@@ -725,7 +727,7 @@ class SimpleModuleCoordinator:
                                     self._restart_pending = False
                                     # Legacy: Update state_data for backward compatibility (will be removed after migration)
                                     try:
-                                        self.state_manager.set_state_data("permissions_restart_pending", False)
+                                        self.state_manager.set_restart_pending(False)
                                         await self.event_bus.publish(
                                             "permissions.restart_pending.changed",
                                             {"active": False, "session_id": "unknown", "source": "coordinator"},
@@ -750,7 +752,7 @@ class SimpleModuleCoordinator:
                                 self._restart_pending = False
                                 # Legacy: Update state_data for backward compatibility (will be removed after migration)
                                 try:
-                                    self.state_manager.set_state_data("permissions_restart_pending", False)
+                                    self.state_manager.set_restart_pending(False)
                                     await self.event_bus.publish(
                                         "permissions.restart_pending.changed",
                                         {"active": False, "session_id": "unknown", "source": "coordinator"},
@@ -1105,9 +1107,7 @@ class SimpleModuleCoordinator:
             self._permissions_in_progress = True
             try:
                 if self.state_manager:
-                    self.state_manager.set_state_data("first_run_in_progress", True)
-                    self.state_manager.set_state_data("first_run_required", True)
-                    self.state_manager.set_state_data("first_run_completed", False)
+                    self.state_manager.set_first_run_state(in_progress=True, required=True, completed=False)
             except Exception:
                 logger.debug("[PERMISSIONS] Не удалось обновить first_run state (started)")
         except Exception as e:
@@ -1123,9 +1123,7 @@ class SimpleModuleCoordinator:
             self._permissions_in_progress = False
             try:
                 if self.state_manager:
-                    self.state_manager.set_state_data("first_run_in_progress", False)
-                    self.state_manager.set_state_data("first_run_required", False)
-                    self.state_manager.set_state_data("first_run_completed", True)
+                    self.state_manager.set_first_run_state(in_progress=False, required=False, completed=True)
             except Exception:
                 logger.debug("[PERMISSIONS] Не удалось обновить first_run state (completed)")
         except Exception as e:
@@ -1142,9 +1140,7 @@ class SimpleModuleCoordinator:
             self._permissions_in_progress = False
             try:
                 if self.state_manager:
-                    self.state_manager.set_state_data("first_run_in_progress", False)
-                    self.state_manager.set_state_data("first_run_required", True)
-                    self.state_manager.set_state_data("first_run_completed", False)
+                    self.state_manager.set_first_run_state(in_progress=False, required=True, completed=False)
             except Exception:
                 logger.debug("[PERMISSIONS] Не удалось обновить first_run state (failed)")
         except Exception as e:
@@ -1515,7 +1511,7 @@ class SimpleModuleCoordinator:
             # Legacy: Update state_data for backward compatibility during shadow-mode migration
             # This will be removed once all consumers migrate to events/selectors
             try:
-                self.state_manager.set_state_data("permissions_restart_pending", True)
+                self.state_manager.set_restart_pending(True)
             except Exception:
                 pass
 
@@ -1523,8 +1519,10 @@ class SimpleModuleCoordinator:
             try:
                 feature_config = self.config._load_config().get("features", {}).get("use_events_for_restart_pending", {})
                 if feature_config.get("enabled", False):
-                    # Compare coordinator internal state vs state_data
-                    state_data_value = bool(self.state_manager.get_state_data("permissions_restart_pending", False))
+                    # Compare coordinator internal state vs state_data (via snapshot isolation)
+                    # Use local import to avoid circular dependency if not already imported
+                    from integration.core.selectors import create_snapshot_from_state
+                    state_data_value = create_snapshot_from_state(self.state_manager).restart_pending
                     coordinator_value = self._restart_pending
                     if state_data_value != coordinator_value:
                         logger.warning(

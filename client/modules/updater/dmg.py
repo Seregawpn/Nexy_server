@@ -50,7 +50,7 @@ def mount_dmg(dmg_path: str) -> str:
         # Очищаем временную директорию при ошибке
         try:
             os.rmdir(mount_point)
-        except:
+        except Exception:
             pass
         raise RuntimeError(f"Не удалось смонтировать DMG: {e}")
 
@@ -171,7 +171,7 @@ def cleanup_mount_points():
                         unmount_dmg(mount_path)
                         os.rmdir(mount_path)
                         logger.info(f"Очищена точка монтирования: {mount_path}")
-                    except:
+                    except Exception:
                         pass
         
     except Exception as e:

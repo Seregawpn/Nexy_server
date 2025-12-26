@@ -66,7 +66,7 @@ def test_application_should_terminate():
         # Очистка
         try:
             os.unlink(icon_path)
-        except:
+        except Exception:
             pass
         
         print("✅ ТЕСТ 1 ПРОЙДЕН: applicationShouldTerminate работает корректно")
@@ -126,7 +126,7 @@ def test_setup_quit_handler():
         # Очистка
         try:
             os.unlink(icon_path)
-        except:
+        except Exception:
             pass
         
         print("✅ ТЕСТ 2 ПРОЙДЕН: _setup_quit_handler() работает корректно")
@@ -174,7 +174,7 @@ def test_run_method():
         # Очистка
         try:
             os.unlink(icon_path)
-        except:
+        except Exception:
             pass
         
         print("✅ ТЕСТ 3 ПРОЙДЕН: метод run() настроен корректно")
@@ -223,7 +223,7 @@ def test_quit_method():
         # Очистка
         try:
             os.unlink(icon_path)
-        except:
+        except Exception:
             pass
         
         print("✅ ТЕСТ 4 ПРОЙДЕН: метод quit() доступен")
@@ -285,7 +285,7 @@ def test_integration():
         # Очистка
         try:
             os.unlink(icon_path)
-        except:
+        except Exception:
             pass
         
         if all(checks):

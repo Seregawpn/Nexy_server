@@ -240,10 +240,7 @@ class TestCoordinatorCriticalSubscriptions:
             "Flag _restart_pending should be set to True after receiving permissions.first_run_restart_pending"
         
         # Проверяем что state_data обновлён (legacy support)
-        coordinator.state_manager.set_state_data.assert_called()
-        calls = [call for call in coordinator.state_manager.set_state_data.call_args_list 
-                 if len(call[0]) > 0 and call[0][0] == "permissions_restart_pending"]
-        assert len(calls) > 0, "state_manager.set_state_data should be called with 'permissions_restart_pending'"
+        coordinator.state_manager.set_restart_pending.assert_called_with(True)
 
 
 if __name__ == "__main__":

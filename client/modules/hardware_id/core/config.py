@@ -3,12 +3,11 @@
 Упрощенная версия - только Hardware UUID для macOS
 """
 
-import os
-import json
+from typing import Dict, Any, Optional
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
 
+from config.unified_config_loader import UnifiedConfigLoader
 from integration.utils.resource_path import get_user_data_dir
 
 from .types import HardwareIdConfig
@@ -17,113 +16,71 @@ logger = logging.getLogger(__name__)
 
 
 class HardwareIdConfigManager:
-    """Менеджер конфигурации для hardware_id"""
+    """
+    Менеджер конфигурации для hardware_id.
+    Использует централизованный UnifiedConfigLoader.
+    """
     
     def __init__(self, config_file: Optional[str] = None):
-        self.config_file = config_file or self._get_default_config_file()
+        # config_file игнорируется, так как используется unified_config
+        self._config_loader = UnifiedConfigLoader.get_instance()
         self._config: Optional[HardwareIdConfig] = None
-    
-    def _get_default_config_file(self) -> str:
-        """Получает путь к файлу конфигурации по умолчанию"""
-        data_dir = get_user_data_dir("Nexy")
-        return str(data_dir / "hardware_id_config.json")
-    
-    def _get_default_config(self) -> Dict[str, Any]:
-        """Возвращает конфигурацию по умолчанию"""
-        cache_path = get_user_data_dir("Nexy") / "hardware_id_cache.json"
-        return {
-            "hardware_id": {
-                "cache_enabled": True,
-                "cache_file_path": str(cache_path),
-                "cache_ttl_seconds": 86400 * 30,  # 30 дней
-                "system_profiler_timeout": 5,
-                "validate_uuid_format": True,
-                "fallback_to_random": False
-            }
-        }
-    
-    def load_config(self) -> HardwareIdConfig:
-        """Загружает конфигурацию из файла или создает по умолчанию"""
-        if self._config is not None:
-            return self._config
-        
-        try:
-            # Пытаемся загрузить из файла
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    config_data = json.load(f)
-                
-                # Извлекаем конфигурацию hardware_id
-                hardware_config = config_data.get("hardware_id", {})
-                
-                self._config = HardwareIdConfig(
-                    cache_enabled=hardware_config.get("cache_enabled", True),
-                    cache_file_path=hardware_config.get("cache_file_path", "~/.voice_assistant/hardware_id_cache.json"),
-                    cache_ttl_seconds=hardware_config.get("cache_ttl_seconds", 86400 * 30),
-                    system_profiler_timeout=hardware_config.get("system_profiler_timeout", 5),
-                    validate_uuid_format=hardware_config.get("validate_uuid_format", True),
-                    fallback_to_random=hardware_config.get("fallback_to_random", False)
-                )
-                
-                logger.info("✅ Конфигурация hardware_id загружена из файла")
-                return self._config
-            
-            else:
-                # Создаем конфигурацию по умолчанию
-                logger.info("📝 Создаем конфигурацию hardware_id по умолчанию")
-                return self._create_default_config()
-                
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка загрузки конфигурации: {e}")
-            return self._create_default_config()
     
     def _create_default_config(self) -> HardwareIdConfig:
         """Создает конфигурацию по умолчанию"""
-        self._config = HardwareIdConfig()
+        data_dir = get_user_data_dir("Nexy")
+        cache_path = str(data_dir / "hardware_id_cache.json")
         
-        # Создаем файл конфигурации
+        return HardwareIdConfig(
+            cache_enabled=True,
+            cache_file_path=cache_path,
+            cache_ttl_seconds=86400 * 30,  # 30 дней
+            system_profiler_timeout=5,
+            validate_uuid_format=True,
+            fallback_to_random=False
+        )
+    
+    def load_config(self) -> HardwareIdConfig:
+        """Загружает конфигурацию из UnifiedConfigLoader"""
         try:
-            config_dir = Path(self.config_file).parent
-            config_dir.mkdir(parents=True, exist_ok=True)
+            # Получаем конфигурацию из единого конфига
+            hw_config_data = self._config_loader.get_hardware_id_config()
             
-            config_data = self._get_default_config()
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(config_data, f, indent=2, ensure_ascii=False)
+            # Создаем дефолтную конфигурацию
+            default_config = self._create_default_config()
             
-            logger.info(f"✅ Конфигурация по умолчанию создана: {self.config_file}")
+            # Мержим данные: дефолтные значения + данные из конфига
+            # Примечание: dataclass позволяет передавать kwargs
+            
+            # Подготавливаем словарь для инициализации
+            init_kwargs = {}
+            
+            # Переносим значения из дефолтного конфига
+            for key in default_config.__dict__:
+                init_kwargs[key] = getattr(default_config, key)
+                
+            # Переопределяем значениями из unified_config, если они есть
+            # Важно: unified_config может содержать только subset ключей
+            for key, value in hw_config_data.items():
+                if key in init_kwargs:
+                    init_kwargs[key] = value
+            
+            self._config = HardwareIdConfig(**init_kwargs)
             
         except Exception as e:
-            logger.warning(f"⚠️ Не удалось создать файл конфигурации: {e}")
-        
+            logger.error(f"⚠️ Ошибка загрузки конфигурации hardware_id: {e}")
+            self._config = self._create_default_config()
+            
         return self._config
     
     def save_config(self, config: HardwareIdConfig) -> bool:
-        """Сохраняет конфигурацию в файл"""
-        try:
-            config_dir = Path(self.config_file).parent
-            config_dir.mkdir(parents=True, exist_ok=True)
-            
-            config_data = {
-                "hardware_id": {
-                    "cache_enabled": config.cache_enabled,
-                    "cache_file_path": config.cache_file_path,
-                    "cache_ttl_seconds": config.cache_ttl_seconds,
-                    "system_profiler_timeout": config.system_profiler_timeout,
-                    "validate_uuid_format": config.validate_uuid_format,
-                    "fallback_to_random": config.fallback_to_random
-                }
-            }
-            
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(config_data, f, indent=2, ensure_ascii=False)
-            
-            self._config = config
-            logger.info("✅ Конфигурация hardware_id сохранена")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка сохранения конфигурации: {e}")
-            return False
+        """
+        Сохраняет конфигурацию.
+        NO-OP: Конфигурация управляется централизованно.
+        """
+        logger.warning("Попытка сохранить конфигурацию hardware_id. Конфигурация управляется централизованно.")
+        self._config = config
+        return True
     
     def get_config(self) -> HardwareIdConfig:
         """Получает текущую конфигурацию"""
@@ -132,7 +89,9 @@ class HardwareIdConfigManager:
         return self._config
     
     def update_config(self, **kwargs) -> bool:
-        """Обновляет конфигурацию"""
+        """
+        Обновляет конфигурацию (in-memory only).
+        """
         try:
             current_config = self.get_config()
             
@@ -141,7 +100,7 @@ class HardwareIdConfigManager:
                 if hasattr(current_config, key):
                     setattr(current_config, key, value)
             
-            return self.save_config(current_config)
+            return True
             
         except Exception as e:
             logger.error(f"❌ Ошибка обновления конфигурации: {e}")

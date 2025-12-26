@@ -10,9 +10,11 @@ import logging
 import ctypes
 from ctypes import util
 
-from config.unified_config_loader import unified_config
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+from config.unified_config_loader import UnifiedConfigLoader
+
+logger = get_logger(__name__)
 
 
 async def activate_microphone(hold_duration: float = 7.0) -> bool:
@@ -243,7 +245,7 @@ async def activate_all_permissions(pause_seconds: float = 7.0) -> dict:
     Длительность паузы берется из центральной конфигурации.
     """
     try:
-        permission_config = unified_config.get_permission_config()
+        permission_config = UnifiedConfigLoader.get_instance().get_permission_config()
         hold_duration = permission_config.get('first_run', {}).get('activation_hold_duration_sec', 13.0)
         logger.info(f"Используем 'activation_hold_duration_sec' из конфига: {hold_duration} сек.")
     except Exception as e:

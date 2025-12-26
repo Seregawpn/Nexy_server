@@ -104,7 +104,9 @@ class FirstRunPermissionsIntegration:
             # Сбрасываем состояние при инициализации (важно для повторных запусков/тестов)
             self._restart_session_id = None
             self._permissions_in_progress = False
-            self.state_manager.set_state_data("permissions_restart_pending", False)
+            self._permissions_in_progress = False
+            self.state_manager.set_restart_pending(False)
+            self._update_first_run_state(completed=self.flag_file.exists(), in_progress=False)
             self._update_first_run_state(completed=self.flag_file.exists(), in_progress=False)
 
             # КРИТИЧНО: Проверяем был ли перезапуск после first_run
@@ -162,7 +164,7 @@ class FirstRunPermissionsIntegration:
                 self._update_first_run_state(completed=True, in_progress=False)
                 
                 # Устанавливаем fallback флаг в state_manager (для других интеграций)
-                self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
+                self.state_manager.set_restart_completed_fallback(True)
                 logger.info("[FIRST_RUN_PERMISSIONS] Set restart_completed_fallback=True in state_manager")
 
                 # Очищаем env переменную
@@ -177,7 +179,7 @@ class FirstRunPermissionsIntegration:
                     "[FIRST_RUN_PERMISSIONS] Обнаружен существующий permissions_first_run_completed.flag "
                     "- считаем процедуру первого запуска завершённой"
                 )
-                self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
+                self.state_manager.set_restart_completed_fallback(True)
                 logger.info("[FIRST_RUN_PERMISSIONS] Set restart_completed_fallback=True in state_manager (flag only)")
                 self._update_first_run_state(completed=True, in_progress=False)
 
@@ -294,8 +296,8 @@ class FirstRunPermissionsIntegration:
                     logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Не удалось установить restart_completed.flag")
                     # Используем state_manager как fallback
 
-                self.state_manager.set_state_data("permissions_restart_pending", True)
-                self.state_manager.set_state_data("permissions_restart_completed_fallback", True)
+                self.state_manager.set_restart_pending(True)
+                self.state_manager.set_restart_completed_fallback(True)
                 logger.info(
                     "[FIRST_RUN_PERMISSIONS] State updated: permissions_restart_pending=True, permissions_restart_completed_fallback=True"
                 )
@@ -673,11 +675,16 @@ class FirstRunPermissionsIntegration:
     def _update_first_run_state(self, *, completed: Optional[bool] = None, in_progress: Optional[bool] = None) -> None:
         """Синхронизирует состояние first_run в state_manager (fallback для селекторов)."""
         try:
-            if completed is not None:
-                self.state_manager.set_state_data("first_run_completed", completed)
-                self.state_manager.set_state_data("first_run_required", not completed)
-            if in_progress is not None:
-                self.state_manager.set_state_data("first_run_in_progress", in_progress)
+            # We assume sensible defaults if partial args are given, but usually both are provided.
+            is_completed = completed if completed is not None else False 
+            is_in_progress = in_progress if in_progress is not None else False
+            is_required = not is_completed
+
+            self.state_manager.set_first_run_state(
+                in_progress=is_in_progress,
+                required=is_required,
+                completed=is_completed
+            )
         except Exception:
             logger.debug(
                 "[FIRST_RUN_PERMISSIONS] Не удалось обновить состояние first_run (completed=%s, in_progress=%s)",
@@ -690,7 +697,9 @@ class FirstRunPermissionsIntegration:
         self._permissions_in_progress = False
         self._restart_session_id = None
         self._clear_restart_flag()
-        self.state_manager.set_state_data("permissions_restart_pending", False)
+        self._restart_session_id = None
+        self._clear_restart_flag()
+        self.state_manager.set_restart_pending(False)
         logger.warning("[FIRST_RUN_PERMISSIONS] Restart flow failed, state reset (permissions_restart_pending=False)")
 
     async def _publish_status_checked(

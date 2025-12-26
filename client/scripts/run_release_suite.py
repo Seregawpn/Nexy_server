@@ -46,10 +46,11 @@ NC = '\033[0m'  # No Color
 class ReleaseSuite:
     """Release Suite для выполнения всех проверок перед релизом"""
     
-    def __init__(self, project_root: Path, skip_build: bool = False, skip_server: bool = False):
+    def __init__(self, project_root: Path, skip_build: bool = False, skip_server: bool = False, smoke_mode: bool = False):
         self.project_root = project_root
         self.skip_build = skip_build
         self.skip_server = skip_server
+        self.smoke_mode = smoke_mode
         self.results: Dict[str, Any] = {
             'timestamp': datetime.now().isoformat(),
             'version': self._get_version(),
@@ -234,7 +235,7 @@ class ReleaseSuite:
             try:
                 process.terminate()
                 process.wait(timeout=5)
-            except:
+            except Exception:
                 process.kill()
             
             return all_passed

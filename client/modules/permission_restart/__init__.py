@@ -8,11 +8,9 @@ permissions (microphone, accessibility, input monitoring, screen capture).
 
 from .core.config import PermissionRestartConfig, load_permission_restart_config
 from .core.permission_change_detector import PermissionChangeDetector
-from .core.restart_scheduler import RestartScheduler
 
 __all__ = [
     "PermissionRestartConfig",
     "PermissionChangeDetector",
-    "RestartScheduler",
     "load_permission_restart_config",
 ]

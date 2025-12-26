@@ -89,7 +89,7 @@ async def demo_tray_controller():
             if 'tray_controller' in locals():
                 await tray_controller.stop()
                 logger.info("✅ Tray Controller stopped")
-        except:
+        except Exception:
             pass
 
 if __name__ == "__main__":

@@ -27,7 +27,9 @@ from modules.grpc_client.core.grpc_client import GrpcClient
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
 MCP_PREFIX = "__MCP__"
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -57,7 +59,7 @@ class GrpcClientIntegration:
         # Конфиг интеграции
         if config is None:
             try:
-                uc = UnifiedConfigLoader()
+                uc = UnifiedConfigLoader.get_instance()
                 cfg = (uc._load_config().get('integrations', {}) or {}).get('grpc_client', {})
                 config = GrpcClientIntegrationConfig(
                     aggregate_timeout_sec=float(cfg.get('aggregate_timeout_sec', 1.5)),
@@ -99,7 +101,7 @@ class GrpcClientIntegration:
             logger.info("Initializing GrpcClientIntegration...")
             # Собираем конфигурацию gRPC из unified_config
             try:
-                uc = UnifiedConfigLoader()
+                uc = UnifiedConfigLoader.get_instance()
                 net = uc.get_network_config()
                 servers_cfg = {}
                 for name, s in net.grpc_servers.items():

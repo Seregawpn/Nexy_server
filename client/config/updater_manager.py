@@ -49,7 +49,7 @@ class UpdaterManager:
         self.config_path = resource_path
         self._config = None
         self._updater_config = None
-        self._environment = UnifiedConfigLoader().get_environment()
+        self._environment = UnifiedConfigLoader.get_instance().get_environment()
         self._load_config()
     
     def _load_config(self):

@@ -41,5 +41,5 @@ class KeyboardConfig:
     event_cooldown: float
     hold_check_interval: float
     debounce_time: float
-    combo_timeout_sec: float = 10.0  # Максимальное время активной комбинации (защита от залипания)
-    key_state_timeout_sec: float = 5.0  # Максимальное время удержания отдельной клавиши (защита от залипания)
+    combo_timeout_sec: float = 120.0  # Максимальное время активной комбинации (2 мин для длинных записей)
+    key_state_timeout_sec: float = 60.0  # Максимальное время удержания отдельной клавиши (1 мин)

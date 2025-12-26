@@ -1,17 +1,22 @@
 """
 Единый загрузчик конфигурации Nexy AI Assistant
 Автоматически синхронизирует все настройки из unified_config.yaml
+
+Thread-safe Singleton: используйте UnifiedConfigLoader.get_instance() или
+импортируйте глобальный unified_config для доступа к конфигурации.
 """
 
 import yaml
 import os
 import sys
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class AppConfig:
@@ -67,8 +72,8 @@ class KeyboardConfig:
     hold_check_interval: float
     debounce_time: float
     backend: str
-    combo_timeout_sec: float = 10.0  # Максимальное время активной комбинации (защита от залипания)
-    key_state_timeout_sec: float = 5.0  # Максимальное время удержания отдельной клавиши (защита от залипания)
+    combo_timeout_sec: float = 120.0  # Максимальное время активной комбинации (2 мин для длинных записей)
+    key_state_timeout_sec: float = 60.0  # Максимальное время удержания отдельной клавиши (1 мин)
 
 @dataclass
 class InputProcessingConfig:
@@ -98,9 +103,53 @@ class OpenAppActionConfig:
             self.allowed_apps = []
 
 class UnifiedConfigLoader:
-    """Единый загрузчик конфигурации с автоматической синхронизацией"""
+    """
+    Единый загрузчик конфигурации с автоматической синхронизацией.
+    
+    Thread-safe Singleton Pattern:
+    - Используйте UnifiedConfigLoader.get_instance() для явного получения
+    - Или import unified_config из этого модуля
+    - Прямой вызов UnifiedConfigLoader() также вернёт singleton
+    """
+    
+    _instance: Optional["UnifiedConfigLoader"] = None
+    _lock: threading.Lock = threading.Lock()
+    _initialized: bool = False
+    
+    def __new__(cls, config_file: Optional[Union[str, Path]] = None) -> "UnifiedConfigLoader":
+        """Thread-safe singleton: возвращает единственный экземпляр."""
+        if cls._instance is None:
+            with cls._lock:
+                # Double-check locking pattern
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    @classmethod
+    def get_instance(cls, config_file: Optional[Union[str, Path]] = None) -> "UnifiedConfigLoader":
+        """
+        Явный метод получения singleton экземпляра.
+        
+        Рекомендуется использовать этот метод для clarity.
+        """
+        return cls(config_file)
+    
+    @classmethod
+    def reset_instance(cls) -> None:
+        """
+        Сбрасывает singleton (только для тестов!).
+        
+        WARNING: Не использовать в production коде.
+        """
+        with cls._lock:
+            cls._instance = None
+            cls._initialized = False
     
     def __init__(self, config_file: Optional[Union[str, Path]] = None):
+        # Предотвращаем повторную инициализацию singleton
+        if UnifiedConfigLoader._initialized:
+            return
+        
         # По умолчанию используем файл, расположенный рядом с этим модулем,
         # чтобы не зависеть от текущего рабочего каталога запуска.
         if config_file is None:
@@ -110,6 +159,10 @@ class UnifiedConfigLoader:
         self._config_cache: Optional[Dict[str, Any]] = None
         self._last_modified: Optional[float] = None
         self._environment: str = self._detect_environment()
+        
+        UnifiedConfigLoader._initialized = True
+        logger.debug("UnifiedConfigLoader singleton initialized")
+
     
     def _load_config(self) -> Dict[str, Any]:
         """Загружает конфигурацию с проверкой изменений"""
@@ -574,6 +627,16 @@ class UnifiedConfigLoader:
         }
         
         return result
+
+    def get_tray_config(self) -> Dict[str, Any]:
+        """Получает конфигурацию трея"""
+        config = self._load_config()
+        return config.get('tray', {})
+
+    def get_hardware_id_config(self) -> Dict[str, Any]:
+        """Получает конфигурацию hardware_id"""
+        config = self._load_config()
+        return config.get('integrations', {}).get('hardware_id', {})
 
 # Глобальный экземпляр загрузчика
 unified_config = UnifiedConfigLoader()

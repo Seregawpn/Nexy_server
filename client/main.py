@@ -180,6 +180,10 @@ root_logger.setLevel(logging.DEBUG)
 root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 
+# [ARCH] Phase 2: Применяем централизованные настройки уровней логирования
+from integration.utils.logging_setup import setup_logging
+setup_logging()
+
 logger = logging.getLogger(__name__)
 logger.info(f"📝 Логи записываются в: {log_file}")
 print(f"📝 Логи записываются в: {log_file}")
@@ -240,7 +244,7 @@ def log_crash_to_file(error_type, error_value, tb, context=""):
         # Пытаемся использовать logger, если он доступен
         try:
             logger.critical(f"💥 CRASH записан в: {crash_log_file}")
-        except:
+        except Exception:
             pass
         print(f"💥 CRASH записан в: {crash_log_file}")
     except Exception as e:

@@ -24,7 +24,7 @@ def load_interaction_matrix(dev_only: bool = True, *, path: Optional[Path] = Non
     avoid impacting production behaviour while the rules стабилизируются.
     """
 
-    loader = UnifiedConfigLoader()
+    loader = UnifiedConfigLoader.get_instance()
     environment = loader.get_environment()
     if dev_only and environment not in DEV_ENVIRONMENTS:
         logger.debug("Interaction matrix skipped (environment=%s)", environment)

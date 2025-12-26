@@ -2,101 +2,61 @@
 Конфигурация для Tray Controller
 """
 
-import yaml
-from pathlib import Path
 from typing import Dict, Any, Optional
+import logging
 
-from integration.utils.resource_path import (
-    get_resource_path,
-    get_user_data_dir,
-)
+from config.unified_config_loader import UnifiedConfigLoader
+from .tray_types import TrayConfig
 
-from .tray_types import TrayConfig, TrayStatus
-
+logger = logging.getLogger(__name__)
 
 class TrayConfigManager:
-    """Менеджер конфигурации трея"""
+    """
+    Менеджер конфигурации трея.
+    Использует централизованный UnifiedConfigLoader.
+    """
     
     def __init__(self, config_path: Optional[str] = None):
-        self._default_config_path = Path(get_resource_path("config/tray_config.yaml"))
-        if config_path:
-            self.config_path = Path(config_path).expanduser()
-        else:
-            self.config_path = Path(get_user_data_dir()) / "tray_config.yaml"
+        # config_path игнорируется, так как используется unified_config
+        self._config_loader = UnifiedConfigLoader.get_instance()
         self._config: Optional[TrayConfig] = None
-        self._default_config = self._get_default_config()
     
     def _get_default_config(self) -> TrayConfig:
         """Получить конфигурацию по умолчанию"""
-        return TrayConfig(
-            show_status=True,
-            show_menu=True,
-            enable_click_events=True,
-            enable_right_click=True,
-            auto_hide=False,
-            animation_speed=0.5,
-            icon_size=16,
-            menu_font_size=13,
-            enable_sound=False,
-            debug_mode=False
-        )
+        return TrayConfig()
     
     def load_config(self) -> TrayConfig:
-        """Загрузить конфигурацию"""
-        if self._config is not None:
-            return self._config
-        
+        """Загрузить конфигурацию из UnifiedConfigLoader"""
         try:
-            if self.config_path.exists():
-                with self.config_path.open('r', encoding='utf-8') as f:
-                    config_data = yaml.safe_load(f)
-                self._config = TrayConfig(**config_data)
-            elif self._default_config_path.exists():
-                with self._default_config_path.open('r', encoding='utf-8') as f:
-                    config_data = yaml.safe_load(f)
-                self._config = TrayConfig(**config_data)
-                # Сохраняем копию в пользовательскую директорию, чтобы она была доступна для редактирования
-                self.save_config()
-            else:
-                self._config = self._default_config
-                self.save_config()
-                
+            tray_data = self._config_loader.get_tray_config()
+            
+            # Создаем конфиг с дефолтными значениями
+            default_config = self._get_default_config()
+            
+            # Обновляем значениями из unified_config
+            # Используем только те ключи, которые есть в TrayConfig
+            config_dict = {}
+            for key, value in tray_data.items():
+                if hasattr(default_config, key):
+                    config_dict[key] = value
+            
+            # Создаем объект конфигурации, объединяя defaults и values из yaml
+            # dataclass позволяет передавать kwargs, которые переопределят defaults
+            self._config = TrayConfig(**config_dict)
+            
         except Exception as e:
-            print(f"Ошибка загрузки конфигурации трея: {e}")
-            self._config = self._default_config
+            logger.error(f"Ошибка загрузки конфигурации трея: {e}")
+            self._config = self._get_default_config()
         
         return self._config
     
     def save_config(self) -> bool:
-        """Сохранить конфигурацию"""
-        try:
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            target_path = self.config_path
-            # Если конфигурация ещё не определена, используем значения по умолчанию
-            config = self._config or self._default_config
-            
-            config_dict = {
-                'show_status': config.show_status,
-                'show_menu': config.show_menu,
-                'enable_click_events': config.enable_click_events,
-                'enable_right_click': config.enable_right_click,
-                'auto_hide': config.auto_hide,
-                'animation_speed': config.animation_speed,
-                'icon_size': config.icon_size,
-                'menu_font_size': config.menu_font_size,
-                'enable_sound': config.enable_sound,
-                'debug_mode': config.debug_mode
-            }
-            
-            with target_path.open('w', encoding='utf-8') as f:
-                yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
-            
-            return True
-            
-        except Exception as e:
-            print(f"Ошибка сохранения конфигурации трея: {e}")
-            return False
+        """
+        Сохранить конфигурацию.
+        NO-OP: Конфигурация управляется централизованно через verified_config.yaml
+        """
+        logger.warning("Попытка сохранить конфигурацию трея. Конфигурация управляется централизованно.")
+        return True
     
     def get_config(self) -> TrayConfig:
         """Получить текущую конфигурацию"""
@@ -105,7 +65,10 @@ class TrayConfigManager:
         return self._config
     
     def update_config(self, **kwargs) -> bool:
-        """Обновить конфигурацию"""
+        """
+        Обновить конфигурацию (in-memory only).
+        Изменения не сохраняются на диск.
+        """
         try:
             if self._config is None:
                 self._config = self.load_config()
@@ -114,21 +77,13 @@ class TrayConfigManager:
                 if hasattr(self._config, key):
                     setattr(self._config, key, value)
             
-            return self.save_config()
+            return True
             
         except Exception as e:
-            print(f"Ошибка обновления конфигурации трея: {e}")
+            logger.error(f"Ошибка обновления конфигурации трея: {e}")
             return False
     
     def reset_to_default(self) -> bool:
-        """Сбросить к конфигурации по умолчанию"""
-        self._config = self._default_config
-        return self.save_config()
-
-
-
-
-
-
-
-
+        """Сбросить к конфигурации по умолчанию (in-memory only)"""
+        self._config = self._get_default_config()
+        return True

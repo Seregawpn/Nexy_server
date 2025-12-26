@@ -31,7 +31,9 @@ from config.unified_config_loader import UnifiedConfigLoader
 from modules.permissions.core.permissions_queue import PermissionsQueue
 from modules.permissions.core.types import PermissionType
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -78,7 +80,7 @@ class ScreenshotCaptureIntegration:
 
     def _load_config(self) -> ScreenshotCaptureIntegrationConfig:
         try:
-            loader = UnifiedConfigLoader()
+            loader = UnifiedConfigLoader.get_instance()
             cfg = loader.get_screen_capture_config()
             return ScreenshotCaptureIntegrationConfig(
                 format=str(cfg.get("format", "jpeg")).lower(),

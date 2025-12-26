@@ -65,7 +65,7 @@ def get_default_input_config() -> InputConfig:
     """Получает конфигурацию по умолчанию из UnifiedConfigLoader"""
     from config.unified_config_loader import UnifiedConfigLoader
     
-    config_loader = UnifiedConfigLoader()
+    config_loader = UnifiedConfigLoader.get_instance()
     input_config = config_loader.get_input_processing_config()
     
     return InputConfig(

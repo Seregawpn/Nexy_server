@@ -214,7 +214,7 @@ async def test_mcp_action_e2e(
                             try:
                                 parsed = json.loads(value)
                                 logger.info(f"      {key}: {json.dumps(parsed, indent=8, ensure_ascii=False)}")
-                            except:
+                            except Exception:
                                 logger.info(f"      {key}: {value[:100]}...")
                         else:
                             logger.info(f"      {key}: {value}")

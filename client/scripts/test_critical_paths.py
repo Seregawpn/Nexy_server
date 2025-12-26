@@ -83,7 +83,7 @@ def test_tray_termination_logic():
         # Очистка
         try:
             os.unlink(icon_path)
-        except:
+        except Exception:
             pass
         
         test_result("ТЕСТ 1: Логика завершения tray controller", True)
@@ -198,7 +198,7 @@ def test_first_run_flags_logic():
             try:
                 if restart_flag_path.exists():
                     restart_flag_path.unlink()
-            except:
+            except Exception:
                 pass
         
         # Проверка 4: Флаг удаляется после read_and_remove
@@ -273,7 +273,7 @@ def test_instance_manager_logic():
             try:
                 if lock_file.exists():
                     lock_file.unlink()
-            except:
+            except Exception:
                 pass
             
             test_result("ТЕСТ 4: Логика проверки дублирования", True)
@@ -286,7 +286,7 @@ def test_instance_manager_logic():
                     lock_file.unlink()
                 if temp_dir.exists():
                     temp_dir.rmdir()
-            except:
+            except Exception:
                 pass
         
     except Exception as e:

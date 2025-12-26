@@ -22,7 +22,9 @@ from modules.action_errors.messages import resolver as action_error_resolver
 
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 class ActionExecutionIntegration(BaseIntegration):
@@ -42,7 +44,7 @@ class ActionExecutionIntegration(BaseIntegration):
         )
         
         # Загружаем конфигурацию из unified_config
-        loader = UnifiedConfigLoader()
+        loader = UnifiedConfigLoader.get_instance()
         actions_cfg = loader.get_actions_config().get("open_app") or OpenAppActionConfig()
         
         # ActionExecutor для open_app (direct режим)

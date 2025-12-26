@@ -11,12 +11,15 @@ from typing import Dict, Any, Optional
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.selectors import is_update_in_progress
 from modules.updater import Updater
 from modules.updater.config import UpdaterConfig
 from config.updater_manager import get_updater_manager
 from config.unified_config_loader import UnifiedConfigLoader
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 class UpdaterIntegration:
     """Интеграция системы обновлений с архитектурой приложения"""
@@ -56,7 +59,7 @@ class UpdaterIntegration:
         self._migrate_mode: str = "never"
         self._migrate_on_start: bool = False
         # Config loader for feature flags
-        self._config_loader = UnifiedConfigLoader()
+        self._config_loader = UnifiedConfigLoader.get_instance()
         # Current app mode (tracked via events instead of direct state access)
         self._current_mode: AppMode = AppMode.SLEEPING
     
@@ -385,7 +388,7 @@ class UpdaterIntegration:
         if self._update_in_progress == active:
             # Обновляем state manager даже если значение не меняется, чтобы синхронизировать потребителей.
             try:
-                self.state_manager.set_state_data("update_in_progress", active)
+                self.state_manager.set_update_in_progress(active)
             except Exception:
                 pass
             
@@ -394,7 +397,8 @@ class UpdaterIntegration:
                 feature_config = self._config_loader._load_config().get("features", {}).get("use_events_for_update_status", {})
                 if feature_config.get("enabled", False):
                     # Compare accessor vs state_data
-                    state_data_value = bool(self.state_manager.get_state_data("update_in_progress", False))
+                    from integration.core.selectors import is_update_in_progress
+                    state_data_value = is_update_in_progress(self.state_manager)
                     accessor_value = self._update_in_progress
                     if state_data_value != accessor_value:
                         logger.warning(
@@ -444,7 +448,7 @@ class UpdaterIntegration:
 
         self._update_in_progress = active
         try:
-            self.state_manager.set_state_data("update_in_progress", active)
+            self.state_manager.set_update_in_progress(active)
         except Exception:
             pass
         
@@ -453,7 +457,7 @@ class UpdaterIntegration:
             feature_config = self._config_loader._load_config().get("features", {}).get("use_events_for_update_status", {})
             if feature_config.get("enabled", False):
                 # Compare accessor vs state_data
-                state_data_value = bool(self.state_manager.get_state_data("update_in_progress", False))
+                state_data_value = is_update_in_progress(self.state_manager)
                 accessor_value = self._update_in_progress
                 if state_data_value != accessor_value:
                     logger.warning(

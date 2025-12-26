@@ -8,7 +8,6 @@ from .core.types import (
     ModeConfig, ModeMetrics
 )
 from .modes.sleeping_mode import SleepingMode
-from .modes.processing_mode import ProcessingMode
 from .modes.listening_mode import ListeningMode
 
 __all__ = [
@@ -21,7 +20,6 @@ __all__ = [
     'ModeConfig',
     'ModeMetrics',
     'SleepingMode',
-    'ProcessingMode',
     'ListeningMode'
 ]
 

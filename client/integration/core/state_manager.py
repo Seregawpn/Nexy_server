@@ -209,6 +209,26 @@ class ApplicationStateManager:
         """Получить историю режимов"""
         return self.mode_history[-limit:]
     
+    # Typed State Setters (Architectural Guards)
+    
+    def set_first_run_state(self, in_progress: bool, required: bool, completed: bool):
+        """Update first run state flags safely."""
+        self.set_state_data("first_run_in_progress", in_progress)
+        self.set_state_data("first_run_required", required)
+        self.set_state_data("first_run_completed", completed)
+        
+    def set_restart_pending(self, pending: bool):
+        """Update restart pending flag."""
+        self.set_state_data("permissions_restart_pending", pending)
+        
+    def set_update_in_progress(self, in_progress: bool):
+        """Update update in progress status."""
+        self.set_state_data("update_in_progress", in_progress)
+        
+    def set_restart_completed_fallback(self, completed: bool):
+        """Update restart completed fallback flag."""
+        self.set_state_data("permissions_restart_completed_fallback", completed)
+
     def _get_timestamp(self) -> float:
         """Получить текущий timestamp"""
         import time

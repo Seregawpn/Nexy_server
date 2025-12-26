@@ -87,8 +87,8 @@ class TrayController:
             # пересоздаём дефолтное меню (Status/Output/Quit)
             try:
                 await self._create_default_menu()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"⚠️ Non-critical error re-creating default menu: {e}")
 
             self.is_running = True
             logger.info("✅ TrayController готов к запуску")
@@ -258,8 +258,8 @@ class TrayController:
             # 2) Завершаем приложение через rumps
             if self.tray_menu:
                 self.tray_menu.quit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"⚠️ Error in _on_quit_clicked: {e}")
     
     async def _publish_event(self, event_type: str, data: Dict[str, Any]):
         """Публиковать событие"""

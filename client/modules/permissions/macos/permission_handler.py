@@ -4,9 +4,12 @@ macOS permission handler utilities.
 
 import asyncio
 import subprocess
+import logging
 from typing import Dict, Optional
 from ..core.types import PermissionType, PermissionStatus, PermissionResult
 from .accessibility_handler import AccessibilityHandler
+
+logger = logging.getLogger(__name__)
 
 
 class MacOSPermissionHandler:
@@ -35,6 +38,7 @@ class MacOSPermissionHandler:
             )
             
         except Exception as e:
+            logger.warning(f"⚠️ Microphone permission check failed (bypassing): {e}")
             return PermissionResult(
                 success=True,
                 permission=PermissionType.MICROPHONE,
@@ -66,6 +70,7 @@ class MacOSPermissionHandler:
                     message="Screen capture permission bypassed (tccutil returned non-zero)"
                 )
         except Exception as e:
+            logger.warning(f"⚠️ Screen capture permission check failed (bypassing): {e}")
             return PermissionResult(
                 success=True,
                 permission=PermissionType.SCREEN_CAPTURE,
@@ -241,4 +246,4 @@ class MacOSPermissionHandler:
                 subprocess.run(["open", url], check=True)
                 
         except Exception as e:
-            print(f"Ошибка открытия настроек: {e}")
+            logger.error(f"❌ Ошибка открытия настроек: {e}")

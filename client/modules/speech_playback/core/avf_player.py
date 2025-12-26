@@ -115,17 +115,27 @@ class AVFoundationPlayer:
     def shutdown(self) -> None:
         """Shutdown the player."""
         with self._lock:
+            self._playing = False
             try:
                 if self._player_node:
                     self._player_node.stop()
                 if self._engine:
                     self._engine.stop()
             except Exception as e:
-                logger.warning(f"⚠️ Shutdown error: {e}")
+                logger.warning(f"⚠️ Shutdown engine error: {e}")
             
             self._unregister_route_changes()
             self._initialized = False
-            logger.info("🛑 AVFoundationPlayer shutdown")
+        
+        # Wait for playback thread to finish (outside lock to avoid deadlock)
+        if self._playback_thread and self._playback_thread.is_alive():
+            try:
+                self._playback_thread.join(timeout=1.0)
+                logger.debug("🧵 Playback thread joined")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not join playback thread: {e}")
+
+        logger.info("🛑 AVFoundationPlayer shutdown")
 
     def add_audio_data(self, audio_data: np.ndarray, metadata: Optional[Dict[str, Any]] = None) -> str:
         """

@@ -104,7 +104,7 @@ class WelcomeAudioGenerator:
 
     def _load_grpc_settings(self):
         try:
-            loader = UnifiedConfigLoader()
+            loader = UnifiedConfigLoader.get_instance()
             config_data = loader._load_config()
             integrations_cfg = (config_data.get('integrations') or {}).get('grpc_client', {})
             self._grpc_server_name = integrations_cfg.get('server')

@@ -24,7 +24,9 @@ from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCat
 from PyObjCTools import AppHelper
 import rumps
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 # Убираем дублированную конфигурацию - используем TrayConfig из модуля
 
@@ -37,7 +39,7 @@ class TrayControllerIntegration:
         self.state_manager = state_manager
         self.error_handler = error_handler
         # Загружаем конфигурацию из unified_config.yaml
-        unified_config = UnifiedConfigLoader()
+        unified_config = UnifiedConfigLoader.get_instance()
         if config is None:
             # Создаем конфигурацию модуля из unified_config (с безопасными дефолтами)
             config_data = unified_config._load_config()

@@ -93,6 +93,11 @@ class QuartzKeyboardMonitor:
         self._tap = None
         self._tap_source = None
         
+        # Watchdog для восстановления CGEventTap (если система его отключила)
+        self._last_tap_check_time: float = 0.0
+        self._tap_check_interval: float = 2.0  # Проверка каждые 2 секунды
+        self._tap_recovery_count: int = 0  # Счётчик восстановлений
+        
         # Отслеживание предыдущего состояния модификаторов (для kCGEventFlagsChanged)
         self._previous_left_shift_pressed = False
         
@@ -646,6 +651,9 @@ class QuartzKeyboardMonitor:
     def _run_hold_monitor(self):
         while not self.stop_event.is_set():
             try:
+                # WATCHDOG: Проверяем и восстанавливаем CGEventTap если система его отключила
+                self._check_and_recover_tap()
+                
                 with self.state_lock:
                     # ЗАЩИТА ОТ ЗАЛИПАНИЯ: Проверка таймаутов для сброса состояния
                     self._check_and_reset_stuck_state()
@@ -680,12 +688,70 @@ class QuartzKeyboardMonitor:
                 logger.error(f"❌ Ошибка в мониторе удержания: {e}")
                 time.sleep(0.1)
     
+    def _check_and_recover_tap(self):
+        """Проверяет и восстанавливает CGEventTap если система его отключила."""
+        now = time.time()
+        
+        # Проверяем не чаще чем раз в 2 секунды
+        if now - self._last_tap_check_time < self._tap_check_interval:
+            return
+        self._last_tap_check_time = now
+        
+        if not self._tap:
+            return
+        
+        try:
+            from Quartz import CGEventTapIsEnabled, CGEventTapEnable
+            
+            is_enabled = CGEventTapIsEnabled(self._tap)
+            
+            if not is_enabled:
+                self._tap_recovery_count += 1
+                logger.warning(
+                    f"⚠️ WATCHDOG: CGEventTap отключен системой! "
+                    f"Попытка восстановления #{self._tap_recovery_count}..."
+                )
+                
+                # Включаем tap заново
+                CGEventTapEnable(self._tap, True)
+                
+                # Проверяем, удалось ли восстановить
+                if CGEventTapIsEnabled(self._tap):
+                    logger.info(f"✅ WATCHDOG: CGEventTap восстановлен успешно!")
+                else:
+                    logger.error(
+                        f"❌ WATCHDOG: Не удалось восстановить CGEventTap! "
+                        f"Возможно, требуется перезапуск приложения или проверка Accessibility разрешений."
+                    )
+        except Exception as e:
+            logger.debug(f"⚠️ WATCHDOG: Ошибка проверки CGEventTap: {e}")
+    
     def _check_and_reset_stuck_state(self):
-        """Проверяет и сбрасывает залипшее состояние на основе таймаутов"""
+        """Проверяет и сбрасывает залипшее состояние на основе таймаутов и реального состояния клавиш."""
         if not self._is_combo:
             return  # Для одиночных клавиш проверка не нужна (уже есть в hold_monitor)
         
         now = time.time()
+        
+        # УЛУЧШЕНИЕ: Проверяем реальное состояние модификаторов через CGEventSource
+        # Это позволяет обнаружить "залипание" когда система потеряла keyUp событие
+        try:
+            from Quartz import CGEventSourceFlagsState, kCGEventSourceStateHIDSystemState
+            actual_flags = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
+            actual_control_pressed = bool(actual_flags & kCGEventFlagMaskControl)
+            
+            # Если наше состояние говорит "Control зажат", но система говорит "не зажат" — это залипание
+            if self._control_pressed and not actual_control_pressed:
+                logger.warning(
+                    f"⚠️ ЗАЛИПАНИЕ (проверка системы): Control помечен как зажатый, но система говорит что отпущен. "
+                    f"Сбрасываем состояние."
+                )
+                self._control_pressed = False
+                self._control_last_event_time = None
+                self._update_combo_state()
+                return
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось проверить реальное состояние модификаторов: {e}")
         
         # Проверка таймаута для комбинации
         if self._combo_active and self._combo_start_time:

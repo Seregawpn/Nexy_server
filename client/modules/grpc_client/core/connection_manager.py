@@ -76,12 +76,11 @@ class ConnectionManager:
             # DEBUG: Логируем конфигурацию сервера
             logger.info(f"🔌 [DEBUG] Server config - address: {address}, use_ssl: {server_config.use_ssl}, ssl_verify: {server_config.ssl_verify}")
 
-            # Закрываем предыдущее соединение
             if self.channel:
                 try:
                     await self.channel.close()
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"⚠️ Error closing gRPC channel: {e}")
 
             # Настройки gRPC
             options = self._create_grpc_options(server_config)

@@ -108,7 +108,7 @@ class MacOSTrayIcon:
                 if self._current_icon_path and os.path.exists(self._current_icon_path):
                     try:
                         os.unlink(self._current_icon_path)
-                    except:
+                    except Exception:
                         pass
                 
                 self._current_icon_path = new_icon_path
@@ -130,7 +130,7 @@ class MacOSTrayIcon:
             try:
                 if os.path.exists(temp_file):
                     os.unlink(temp_file)
-            except:
+            except Exception:
                 pass
         self._temp_files.clear()
     

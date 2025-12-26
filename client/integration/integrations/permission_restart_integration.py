@@ -16,7 +16,11 @@ from integration.core.event_bus import EventPriority
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
-from integration.core.selectors import create_snapshot_from_state, is_update_in_progress
+from integration.core.selectors import (
+    create_snapshot_from_state,
+    is_update_in_progress,
+    is_restart_completed_fallback,
+)
 from integration.core.gateways.permission_gateways import decide_permission_restart_safety
 from integration.core.gateways.types import Decision
 
@@ -25,7 +29,6 @@ from integration.utils.resource_path import get_user_data_dir
 from modules.permission_restart import (
     PermissionRestartConfig,
     PermissionChangeDetector,
-    RestartScheduler,
     load_permission_restart_config,
 )
 from modules.permission_restart.macos.permissions_restart_handler import (
@@ -40,7 +43,9 @@ from modules.permissions.first_run.status_checker import (
     PermissionStatus as FirstRunPermissionStatus,
 )
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 class PermissionRestartIntegration(BaseIntegration):
@@ -66,28 +71,22 @@ class PermissionRestartIntegration(BaseIntegration):
         )
         self._raw_config = config or {}
         self._updater_integration = updater_integration
-        self._config_loader = UnifiedConfigLoader()
+        self._config_loader = UnifiedConfigLoader.get_instance()
 
         # Runtime components initialised during `_do_initialize`.
         self._config: PermissionRestartConfig = load_permission_restart_config(self._raw_config)
         self._detector = PermissionChangeDetector(self._config.critical_permissions)
-        self._scheduler: Optional[RestartScheduler] = None
-        self._subscriptions: List[Tuple[str, Any]] = []
-        self._ready_emitted = False
-        self._ready_pending_update = False
+
+        self._restart_handler: Optional[PermissionsRestartHandler] = None
+        self._restart_task: Optional[asyncio.Task] = None
 
     async def _do_initialize(self) -> bool:
         try:
             config_section = self._resolve_config_section()
             self._config = load_permission_restart_config(config_section)
             self._detector.set_critical_permissions(self._config.critical_permissions)
-            self._scheduler = RestartScheduler(
-                config=self._config,
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                updater_integration=self._updater_integration,
-                restart_handler=PermissionsRestartHandler(config=self._config),
-            )
+            self._restart_handler = PermissionsRestartHandler(config=self._config)
+            
             logger.info(
                 "[PERMISSION_RESTART] Integration initialised (enabled=%s, delay=%s, attempts=%s)",
                 self._config.enabled,
@@ -104,8 +103,8 @@ class PermissionRestartIntegration(BaseIntegration):
             logger.info("[PERMISSION_RESTART] Disabled in configuration, skipping subscriptions")
             return True
 
-        if not self._scheduler:
-            logger.error("[PERMISSION_RESTART] Scheduler not initialised")
+        if not self._restart_handler:
+            logger.error("[PERMISSION_RESTART] Restart handler not initialised")
             return False
 
         try:
@@ -118,14 +117,6 @@ class PermissionRestartIntegration(BaseIntegration):
             await self._subscribe("updater.update_failed", self._on_update_completed, EventPriority.HIGH)
             await self._subscribe("app.startup", self._on_app_startup_event, EventPriority.MEDIUM)
             logger.info("[PERMISSION_RESTART] Subscribed to permission events")
-
-            # ИСПРАВЛЕНО: НЕ вызываем догоняющий обработчик!
-            # Если флаг permissions_first_run_completed.flag существует, значит первый запуск уже был
-            # завершён ранее, и перезапуск уже был выполнен. Не нужно планировать новый перезапуск!
-            # 
-            # Событие permissions.first_run_completed должно публиковаться только ОДИН РАЗ -
-            # когда FirstRunPermissionsIntegration завершает процедуру запроса разрешений.
-            # При последующих запусках это событие НЕ публикуется, и мы НЕ должны эмулировать его.
             logger.info("[PERMISSION_RESTART] First run handling: will only react to live permissions.first_run_completed events")
 
             return True
@@ -136,8 +127,8 @@ class PermissionRestartIntegration(BaseIntegration):
     async def _do_stop(self) -> bool:
         try:
             await self._unsubscribe_all()
-            if self._scheduler:
-                await self._scheduler.shutdown()
+            if self._restart_task and not self._restart_task.done():
+                self._restart_task.cancel()
             logger.info("[PERMISSION_RESTART] Stopped")
             return True
         except Exception as exc:
@@ -159,7 +150,7 @@ class PermissionRestartIntegration(BaseIntegration):
         self._subscriptions.clear()
 
     async def _on_permission_event(self, event: Dict[str, Any]) -> None:
-        if not self._config.enabled or not self._scheduler:
+        if not self._config.enabled:
             return
 
         try:
@@ -178,20 +169,8 @@ class PermissionRestartIntegration(BaseIntegration):
     async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
         """
         Обработчик завершения процедуры первого запуска.
-
-        ВАЖНО: Событие permissions.first_run_completed означает, что пользователь
-        прошёл через процедуру запроса разрешений (предоставил или отклонил).
-        Приложение ДОЛЖНО перезапуститься независимо от результата, чтобы:
-        - Выйти из режима "первого запуска"
-        - Применить новые настройки разрешений
-        - Позволить пользователю продолжить работу
-
-        Проверка статуса разрешений НЕ нужна, так как:
-        1. macOS может не успеть обновить TCC базу данных (race condition)
-        2. Пользователь мог отказать в разрешениях - приложение всё равно должно работать
-        3. Событие уже означает завершение процедуры
         """
-        if not self._config.enabled or not self._scheduler:
+        if not self._config.enabled:
             return
 
         data = (event or {}).get("data") or {}
@@ -201,16 +180,8 @@ class PermissionRestartIntegration(BaseIntegration):
             "[PERMISSION_RESTART] First run completed (session_id=%s), scheduling restart",
             session_id,
         )
-        # ИСПРАВЛЕНО: НЕ сбрасываем _ready_emitted, чтобы избежать повторной публикации system.ready_to_greet
-        # self._ready_emitted = False  ← УДАЛЕНО
-
-        # Помечаем как first_run рестарт - это форсирует перезапуск независимо от режима
-        if self._scheduler:
-            self._scheduler._is_first_run_restart = True
-            logger.debug("[PERMISSION_RESTART] Marked as first_run restart")
 
         # Планируем перезапуск для критических разрешений
-        # Создаём синтетические transition события, которые запустят RestartScheduler
         for perm in (PermissionType.ACCESSIBILITY, PermissionType.INPUT_MONITORING):
             payload = {
                 "permission": perm.value,
@@ -230,8 +201,7 @@ class PermissionRestartIntegration(BaseIntegration):
             logger.debug("[PERMISSION_RESTART] Тестовый режим: пропускаем обработку изменений разрешений")
             return
         
-        scheduler = self._scheduler
-        if not scheduler:
+        if not self._restart_handler:
             return
 
         # Check restart safety via gateway before scheduling
@@ -260,13 +230,39 @@ class PermissionRestartIntegration(BaseIntegration):
             logger.debug("[PERMISSION_RESTART] Snapshot creation failed, proceeding with scheduling: %s", exc)
             # Continue with scheduling if snapshot creation fails (defensive)
 
-        request = await scheduler.maybe_schedule_restart(transition)
-        if request:
-            logger.info(
-                "[PERMISSION_RESTART] Restart scheduled (reason=%s, permissions=%s)",
-                request.reason,
-                [perm.value for perm in request.critical_permissions],
-            )
+        # Schedule restart
+        if self._restart_task and not self._restart_task.done():
+            logger.info("[PERMISSION_RESTART] Restart already scheduled, ignoring new request")
+            return
+
+        reason = f"permission_change:{transition.permission.value}:{transition.new_status.value}"
+        critical_perms = [transition.permission.value]
+        
+        logger.info(
+            "[PERMISSION_RESTART] Scheduling restart in %.1fs (reason=%s, permissions=%s)",
+            self._config.restart_delay_sec,
+            reason,
+            critical_perms
+        )
+
+        self._restart_task = asyncio.create_task(
+            self._execute_scheduled_restart(reason, critical_perms)
+        )
+
+    async def _execute_scheduled_restart(self, reason: str, permissions: List[str]) -> None:
+        try:
+            await asyncio.sleep(self._config.restart_delay_sec)
+            
+            if self._restart_handler:
+                await self._restart_handler.trigger_restart(
+                    reason=reason,
+                    permissions=permissions
+                )
+        except asyncio.CancelledError:
+            logger.info("[PERMISSION_RESTART] Scheduled restart cancelled")
+        except Exception as exc:
+            logger.error("[PERMISSION_RESTART] Error executing scheduled restart: %s", exc)
+
 
     async def _on_update_started(self, event: Dict[str, Any]) -> None:
         self._ready_pending_update = True
@@ -374,7 +370,8 @@ class PermissionRestartIntegration(BaseIntegration):
 
         if not permissions_granted:
             try:
-                fallback_state = bool(self.state_manager.get_state_data("permissions_restart_completed_fallback", False))
+                # [ARCH] Use selector to check fallback state
+                fallback_state = is_restart_completed_fallback(self.state_manager)
             except Exception:
                 fallback_state = False
             if fallback_state:
