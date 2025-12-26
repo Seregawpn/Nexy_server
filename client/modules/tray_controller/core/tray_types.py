@@ -15,6 +15,7 @@ class TrayStatus(Enum):
     SLEEPING = "sleeping"         # Спящий режим - серый кружок
     LISTENING = "listening"       # Прослушивание - синий кружок с пульсацией
     PROCESSING = "processing"     # Обработка - желтый кружок с вращением
+    LOCKED = "locked"             # Ожидание разрешений - красный кружок
 
 class TrayIconType(Enum):
     """Типы иконок"""
@@ -89,7 +90,8 @@ class TrayIconGenerator:
         colors = {
             TrayStatus.SLEEPING: "#808080",      # Серый
             TrayStatus.LISTENING: "#007AFF",     # Синий
-            TrayStatus.PROCESSING: "#FF9500"     # Желтый
+            TrayStatus.PROCESSING: "#FF9500",    # Желтый
+            TrayStatus.LOCKED: "#FF3B30",        # Красный (system error/locked)
         }
         
         # 🎯 TRAY DEBUG: Логируем генерацию иконки
@@ -100,7 +102,8 @@ class TrayIconGenerator:
         icon_types = {
             TrayStatus.SLEEPING: TrayIconType.STATIC,
             TrayStatus.LISTENING: TrayIconType.PULSING,
-            TrayStatus.PROCESSING: TrayIconType.ROTATING
+            TrayStatus.PROCESSING: TrayIconType.ROTATING,
+            TrayStatus.LOCKED: TrayIconType.STATIC
         }
         
         return TrayIcon(
@@ -116,7 +119,8 @@ class TrayIconGenerator:
         colors = {
             TrayStatus.SLEEPING: "#808080",
             TrayStatus.LISTENING: "#007AFF", 
-            TrayStatus.PROCESSING: "#FF9500"
+            TrayStatus.PROCESSING: "#FF9500",
+            TrayStatus.LOCKED: "#FF3B30"
         }
         
         color = colors[status]

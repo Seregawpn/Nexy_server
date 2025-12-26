@@ -54,6 +54,21 @@ from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
 
+# Вспомогательные функции для разрешений
+from modules.permissions.first_run.status_checker import (
+    check_microphone_status,
+    check_accessibility_status,
+    check_screen_capture_status,
+    PermissionStatus as FirstRunPermissionStatus
+)
+
+def _map_perm_status(status: FirstRunPermissionStatus) -> PermissionStatus:
+    """Маппинг системного статуса на статус для Snapshot."""
+    if status == FirstRunPermissionStatus.GRANTED:
+        return PermissionStatus.GRANTED
+    return PermissionStatus.DENIED
+
+
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
 
@@ -660,9 +675,9 @@ class SimpleModuleCoordinator:
                         update_in_progress = is_update_in_progress(self.state_manager)
                         
                         snapshot = Snapshot(
-                            perm_mic=PermissionStatus.GRANTED,  # TODO: использовать реальный статус
-                            perm_screen=PermissionStatus.GRANTED,
-                            perm_accessibility=PermissionStatus.GRANTED,
+                            perm_mic=_map_perm_status(check_microphone_status()),
+                            perm_screen=_map_perm_status(check_screen_capture_status()),
+                            perm_accessibility=_map_perm_status(check_accessibility_status()),
                             device_input=DeviceStatus.DEFAULT_OK,
                             network=NetworkStatus.ONLINE,
                             first_run=self._permissions_in_progress,

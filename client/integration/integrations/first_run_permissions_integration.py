@@ -1,8 +1,14 @@
 """
-FirstRunPermissionsIntegration - запрос разрешений при первом запуске приложения.
+FirstRunPermissionsIntegration - проверка и запрос разрешений при КАЖДОМ запуске приложения.
 
-Последовательно запрашивает системные разрешения с паузами между ними.
-Работает ТОЛЬКО при первом запуске (определяется по флагу).
+Логика:
+1. При каждом запуске проверяет ВСЕ разрешения (mic, accessibility, screen, input)
+2. Если какое-то не GRANTED → активирует и ждёт получения (БЕЗ таймаута)
+3. После получения всех → проверяет нужен ли перезапуск:
+   - Accessibility/Input Monitoring/Screen Capture: требуют перезапуска
+   - Microphone: не требует перезапуска
+
+БЛОКИРУЕТ запуск остальных интеграций пока ВСЕ разрешения не будут получены!
 """
 
 import asyncio
@@ -104,7 +110,6 @@ class FirstRunPermissionsIntegration:
             # Сбрасываем состояние при инициализации (важно для повторных запусков/тестов)
             self._restart_session_id = None
             self._permissions_in_progress = False
-            self._permissions_in_progress = False
             self.state_manager.set_restart_pending(False)
             self._update_first_run_state(completed=self.flag_file.exists(), in_progress=False)
             self._update_first_run_state(completed=self.flag_file.exists(), in_progress=False)
@@ -196,159 +201,132 @@ class FirstRunPermissionsIntegration:
 
     async def start(self) -> bool:
         """
-        Запуск интеграции - главная логика запроса разрешений.
+        Запуск интеграции - проверка разрешений при КАЖДОМ запуске.
 
-        Проверяет флаг первого запуска. Если это первый запуск:
-        - Для каждого разрешения проверяет статус
-        - Если NOT_DETERMINED - активирует и делает паузу
-        - Если GRANTED/DENIED - пропускает без паузы
+        Логика:
+        1. Проверяем ВСЕ разрешения
+        2. Если какое-то не GRANTED → активируем и ждём (БЕЗ таймаута)
+        3. Когда все получены → проверяем, нужен ли перезапуск
+        4. Перезапуск нужен для Accessibility/Input Monitoring (CGEventTap)
 
-        БЛОКИРУЕТ запуск остальных интеграций пока не завершится!
+        БЛОКИРУЕТ запуск остальных интеграций пока ВСЕ разрешения не будут получены!
         """
         try:
             if not self._initialized:
-                logger.error("❌ [FIRST_RUN_PERMISSIONS] Не инициализирован")
+                logger.error("❌ [PERMISSIONS] Не инициализирован")
                 return False
 
             # Проверяем enabled
             if not self.enabled:
-                logger.info("ℹ️ [FIRST_RUN_PERMISSIONS] Отключено - пропускаем")
+                logger.info("ℹ️ [PERMISSIONS] Отключено - пропускаем")
                 return True
 
-            # 🧪 ВРЕМЕННАЯ ЗАГЛУШКА для тестирования: пропускаем проверку разрешений
+            # 🧪 ВРЕМЕННАЯ ЗАГЛУШКА для тестирования
             if os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1":
-                logger.warning("🧪 [FIRST_RUN_PERMISSIONS] ТЕСТОВЫЙ РЕЖИМ: пропускаем проверку разрешений (NEXY_TEST_SKIP_PERMISSIONS=1)")
-                
-                # Если флага НЕТ - создаём флаги (эмулируем первый запуск)
-                # При следующем запуске initialize() обработает их и опубликует событие
-                if not self.flag_file.exists():
-                    logger.info("🧪 [FIRST_RUN_PERMISSIONS] Создаём флаги для эмуляции первого запуска")
-                    self._safe_touch_flag(self.flag_file, "permissions_first_run_completed")
-                    self._safe_touch_flag(self._restart_flag, "restart_completed")
-                    logger.info("🧪 [FIRST_RUN_PERMISSIONS] Флаги созданы - при следующем запуске будет эмулирован перезапуск")
-                    self._update_first_run_state(completed=True, in_progress=False)
-            
+                logger.warning("🧪 [PERMISSIONS] ТЕСТОВЫЙ РЕЖИМ: пропускаем проверку разрешений")
                 return True
 
-            # Проверяем флаг первого запуска
-            if self.flag_file.exists():
-                logger.info("✅ [FIRST_RUN_PERMISSIONS] Первый запуск уже завершён - пропускаем")
-                self._update_first_run_state(completed=True, in_progress=False)
-                return True
+            # Публикуем начало проверки разрешений
+            session_id = str(uuid.uuid4())
+            logger.info(f"🔐 [PERMISSIONS] Проверка разрешений при запуске (session={session_id})")
 
-            # Если флага нет, но ВСЕ разрешения уже выданы - считаем что первый запуск был
-            # (например, флаги были удалены после успешного перезапуска)
+            # Проверяем текущие статусы
             mic_status = check_microphone_status()
             accessibility_status = check_accessibility_status()
             screen_status = check_screen_capture_status()
             input_status = check_input_monitoring_status()
-            
+
+            logger.info(
+                f"📋 [PERMISSIONS] Текущие статусы: "
+                f"mic={mic_status.value}, accessibility={accessibility_status.value}, "
+                f"screen={screen_status.value}, input={input_status.value}"
+            )
+
+            # Если все разрешения выданы — сразу продолжаем
             if (mic_status == PermissionStatus.GRANTED and
                 accessibility_status == PermissionStatus.GRANTED and
                 screen_status == PermissionStatus.GRANTED and
                 input_status == PermissionStatus.GRANTED):
-                logger.info("✅ [FIRST_RUN_PERMISSIONS] Все разрешения уже выданы - первый запуск был ранее")
+                logger.info("✅ [PERMISSIONS] Все разрешения уже выданы — продолжаем работу")
                 self._update_first_run_state(completed=True, in_progress=False)
+                
+                # Публикуем готовность
+                await self.event_bus.publish("permissions.first_run_completed", {
+                    "session_id": session_id,
+                    "source": "permissions_integration",
+                    "all_granted": True
+                })
                 return True
 
-            # ПЕРВЫЙ ЗАПУСК!
-            logger.info("🔐 [FIRST_RUN_PERMISSIONS] Первый запуск обнаружен - запрашиваем разрешения")
-
-            # Публикуем начало процесса запроса разрешений
-            session_id = str(uuid.uuid4())
+            # Есть разрешения которые нужно получить
+            logger.info("⏳ [PERMISSIONS] Некоторые разрешения не выданы — начинаем запрос")
+            
             await self.event_bus.publish("permissions.first_run_started", {
                 "session_id": session_id,
-                "source": "first_run_permissions_integration"
+                "source": "permissions_integration"
             })
             self._update_first_run_state(completed=False, in_progress=True)
 
             self._running = True
             self._permissions_in_progress = True
 
+            # Отслеживаем, нужен ли перезапуск
+            needs_restart = False
+
             try:
-                # Запрашиваем разрешения последовательно (простая блокирующая схема)
-                await self._request_permissions_sequentially(session_id=session_id)
+                # Запрашиваем каждое разрешение и ждём получения
+                needs_restart = await self._request_and_wait_for_permissions(session_id=session_id)
 
-                # Сохраняем флаг с обработкой ошибок
-                if not self._safe_touch_flag(self.flag_file, "permissions_first_run_completed"):
-                    logger.error("❌ [FIRST_RUN_PERMISSIONS] Критическая ошибка: не удалось сохранить флаг первого запуска")
-                    # Публикуем событие ошибки
-                    await self.event_bus.publish("permissions.first_run_failed", {
+                logger.info("✅ [PERMISSIONS] Все разрешения получены!")
+
+                if needs_restart:
+                    logger.info("🔄 [PERMISSIONS] Требуется перезапуск для активации Accessibility/Input Monitoring")
+                    
+                    # Сохраняем флаги для нового процесса
+                    self._safe_touch_flag(self.flag_file, "permissions_completed")
+                    self._set_restart_flag()
+                    
+                    self.state_manager.set_restart_pending(True)
+                    self.state_manager.set_restart_completed_fallback(True)
+
+                    # Публикуем событие ожидания перезапуска
+                    await self.event_bus.publish("permissions.first_run_restart_pending", {
                         "session_id": session_id,
-                        "error": "Cannot create flag file",
-                        "source": "first_run_permissions_integration"
+                        "source": "permissions_integration",
+                        "reason": "accessibility_or_input_monitoring_granted"
                     })
-                    # Сбрасываем состояние и продолжаем без перезапуска
-                    self._handle_restart_failure()
-                    return False
 
-                self._update_first_run_state(completed=True, in_progress=True)
-
-                # ВАЖНО: НЕ сбрасываем флаг permissions_in_progress!
-                # Это предотвратит запуск остальных интеграций (voice_recognition и т.д.)
-                # Флаг сбросится только при следующем запуске приложения после перезапуска
-
-                logger.info("✅ [FIRST_RUN_PERMISSIONS] Первый запуск завершён")
-
-                # КРИТИЧНО: Устанавливаем флаг для публикации completed в НОВОМ процессе
-                # Это предотвращает разблокировку voice_recognition ДО перезапуска
-                if not self._set_restart_flag():
-                    logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Не удалось установить restart_completed.flag")
-                    # Используем state_manager как fallback
-
-                self.state_manager.set_restart_pending(True)
-                self.state_manager.set_restart_completed_fallback(True)
-                logger.info(
-                    "[FIRST_RUN_PERMISSIONS] State updated: permissions_restart_pending=True, permissions_restart_completed_fallback=True"
-                )
-
-                # НЕ публикуем permissions.first_run_completed здесь!
-                # Оно будет опубликовано в НОВОМ процессе после успешного перезапуска
-                # Это предотвращает преждевременную разблокировку voice_recognition
-
-                logger.info("🔄 [FIRST_RUN_PERMISSIONS] Запрос перезапуска приложения...")
-
-                # Публикуем ТОЛЬКО restart_pending для coordinator
-                await self.event_bus.publish("permissions.first_run_restart_pending", {
-                    "session_id": session_id,
-                    "source": "first_run_permissions_integration",
-                    "note": "Restart required - completed will be published after restart"
-                })
-                logger.info(
-                    "[FIRST_RUN_PERMISSIONS] Event permissions.first_run_restart_pending published (session=%s)",
-                    session_id,
-                )
-
-                # ВАЖНО: НЕ вызываем _force_restart() здесь!
-                # Coordinator проверит флаг _permissions_in_progress и сам запустит перезапуск
-                # Это позволит корректно остановить запуск остальных интеграций
-
-                # Сохраняем session_id для вызова из coordinator
-                self._restart_session_id = session_id
-
-                # Возвращаем True чтобы coordinator проверил флаг и запустил перезапуск
-                return True
+                    self._restart_session_id = session_id
+                    return True
+                else:
+                    # Перезапуск не нужен — продолжаем
+                    self._update_first_run_state(completed=True, in_progress=False)
+                    self._permissions_in_progress = False
+                    
+                    await self.event_bus.publish("permissions.first_run_completed", {
+                        "session_id": session_id,
+                        "source": "permissions_integration",
+                        "all_granted": True,
+                        "restart_needed": False
+                    })
+                    return True
 
             except Exception as e:
-                # Публикуем ошибку
+                logger.error(f"❌ [PERMISSIONS] Ошибка при запросе разрешений: {e}")
                 await self.event_bus.publish("permissions.first_run_failed", {
                     "session_id": session_id,
                     "error": str(e),
-                    "source": "first_run_permissions_integration"
+                    "source": "permissions_integration"
                 })
                 raise
 
         except Exception as e:
-            logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Ошибка запуска: {e}")
-            # Сбрасываем флаги состояния
+            logger.error(f"❌ [PERMISSIONS] Ошибка запуска: {e}")
             self._running = False
             self._permissions_in_progress = False
             self._update_first_run_state(completed=False, in_progress=False)
-
-            # Сохраняем флаг даже при ошибке чтобы не застрять в цикле
-            if not self._safe_touch_flag(self.flag_file, "permissions_first_run_completed (after error)"):
-                logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Не удалось сохранить флаг даже после ошибки")
             return False
+
 
     async def stop(self) -> bool:
         """Остановка интеграции"""
@@ -362,184 +340,199 @@ class FirstRunPermissionsIntegration:
             logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Ошибка остановки: {e}")
             return False
 
-    async def _request_permissions_sequentially(self, *, session_id: str):
-        """Простая последовательная схема запроса разрешений с задержками."""
-        import time
+    async def _request_and_wait_for_permissions(self, *, session_id: str) -> bool:
+        """
+        Запрашивает каждое разрешение и ждёт его получения (без таймаута).
 
-        print(f"🔄 [FIRST_RUN] Начало последовательного запроса разрешений (session={session_id})")  # DEBUG
+        Returns:
+            True если требуется перезапуск (Accessibility/Input Monitoring были запрошены)
+            False если перезапуск не нужен
+        """
+        needs_restart = False
 
-        # 1. INPUT MONITORING
-        logger.info("⌨️ [FIRST_RUN_PERMISSIONS] Проверка Input Monitoring...")
-        input_status = PermissionStatus.NOT_DETERMINED
-        logger.info("   Статус: not_determined (форсированный перед активацией)")
-        await self._publish_status_checked(
-            permission=PermissionType.INPUT_MONITORING,
-            status=input_status,
-            session_id=session_id,
-            source="first_run.pre_activation",
-        )
-        logger.info(
-            "   Активируем Input Monitoring независимо от статуса (hold_duration=%s сек)...",
-            self.activation_hold_seconds,
-        )
-        start_time = time.time()
-        await activate_input_monitoring(hold_duration=self.activation_hold_seconds)
-        elapsed = time.time() - start_time
-        logger.info(
-            "   ✅ Input Monitoring activation завершена за %.2f сек (ожидалось %.2f сек)",
-            elapsed,
-            self.activation_hold_seconds,
-        )
-        new_status = check_input_monitoring_status()
-
-        await self._publish_status_checked(
-            permission=PermissionType.INPUT_MONITORING,
-            status=new_status,
-            session_id=session_id,
-            source="first_run.post_activation",
-        )
-        if new_status != input_status:
-            await self._publish_permission_changed(
-                permission=PermissionType.INPUT_MONITORING,
-                old_status=input_status,
-                new_status=new_status,
-                session_id=session_id,
-                source="first_run.input_monitoring",
+        # Порядок важен: сначала те, что требуют перезапуска
+        # 1. INPUT MONITORING (требует перезапуска для CGEventTap)
+        input_status = check_input_monitoring_status()
+        if input_status != PermissionStatus.GRANTED:
+            logger.info("⌨️ [PERMISSIONS] Input Monitoring не выдан — запрашиваем...")
+            await self._activate_and_wait_for_permission(
+                permission_type=PermissionType.INPUT_MONITORING,
+                check_func=check_input_monitoring_status,
+                activate_func=activate_input_monitoring,
+                open_settings_func=self._open_input_monitoring_settings,
+                session_id=session_id
             )
-        input_status = new_status
+            needs_restart = True  # Input Monitoring требует перезапуска
 
-        # 2. MICROPHONE
-        logger.info("🎙️ [FIRST_RUN_PERMISSIONS] Проверка Microphone...")
-        # На первом запросе считаем статус неопределённым, даже если TCC хранит решение.
-        mic_status = PermissionStatus.NOT_DETERMINED
-        logger.info("   Статус: not_determined (форсированный перед активацией)")
-        await self._publish_status_checked(
-            permission=PermissionType.MICROPHONE,
-            status=mic_status,
-            session_id=session_id,
-            source="first_run.pre_activation",
-        )
-
-        logger.info(
-            "   Активируем Microphone независимо от текущего статуса (hold_duration=%s сек)...",
-            self.activation_hold_seconds,
-        )
-        start_time = time.time()
-        await activate_microphone(hold_duration=self.activation_hold_seconds)
-        elapsed = time.time() - start_time
-        logger.info(
-            "   ✅ Microphone activation завершена за %.2f сек (ожидалось %.2f сек)",
-            elapsed,
-            self.activation_hold_seconds,
-        )
-
-        new_status = check_microphone_status()
-        await self._publish_status_checked(
-            permission=PermissionType.MICROPHONE,
-            status=new_status,
-            session_id=session_id,
-            source="first_run.post_activation",
-        )
-        if new_status != mic_status:
-            await self._publish_permission_changed(
-                permission=PermissionType.MICROPHONE,
-                old_status=mic_status,
-                new_status=new_status,
-                session_id=session_id,
-                source="first_run.microphone",
+        # 2. ACCESSIBILITY (требует перезапуска для CGEventTap)
+        accessibility_status = check_accessibility_status()
+        if accessibility_status != PermissionStatus.GRANTED:
+            logger.info("♿ [PERMISSIONS] Accessibility не выдан — запрашиваем...")
+            await self._activate_and_wait_for_permission(
+                permission_type=PermissionType.ACCESSIBILITY,
+                check_func=check_accessibility_status,
+                activate_func=activate_accessibility,
+                open_settings_func=self._open_accessibility_settings,
+                session_id=session_id
             )
-        mic_status = new_status
+            needs_restart = True  # Accessibility требует перезапуска
 
-        # 3. SCREEN CAPTURE
-        logger.info("📺 [FIRST_RUN_PERMISSIONS] Проверка Screen Capture...")
-        screen_status = PermissionStatus.NOT_DETERMINED
-        logger.info("   Статус: not_determined (форсированный перед активацией)")
-        await self._publish_status_checked(
-            permission=PermissionType.SCREEN_CAPTURE,
-            status=screen_status,
-            session_id=session_id,
-            source="first_run.pre_activation",
-        )
-        logger.info(
-            "   Активируем Screen Capture независимо от статуса (hold_duration=%s сек)...",
-            self.activation_hold_seconds,
-        )
-        start_time = time.time()
-        await activate_screen_capture(hold_duration=self.activation_hold_seconds)
-        elapsed = time.time() - start_time
-        logger.info(
-            "   ✅ Screen Capture activation завершена за %.2f сек (ожидалось %.2f сек)",
-            elapsed,
-            self.activation_hold_seconds,
-        )
-        new_status = check_screen_capture_status()
-
-        await self._publish_status_checked(
-            permission=PermissionType.SCREEN_CAPTURE,
-            status=new_status,
-            session_id=session_id,
-            source="first_run.post_activation",
-        )
-        if new_status != screen_status:
-            await self._publish_permission_changed(
-                permission=PermissionType.SCREEN_CAPTURE,
-                old_status=screen_status,
-                new_status=new_status,
-                session_id=session_id,
-                source="first_run.screen_capture",
+        # 3. MICROPHONE (не требует перезапуска)
+        mic_status = check_microphone_status()
+        if mic_status != PermissionStatus.GRANTED:
+            logger.info("🎙️ [PERMISSIONS] Microphone не выдан — запрашиваем...")
+            await self._activate_and_wait_for_permission(
+                permission_type=PermissionType.MICROPHONE,
+                check_func=check_microphone_status,
+                activate_func=activate_microphone,
+                open_settings_func=self._open_microphone_settings,
+                session_id=session_id
             )
-        screen_status = new_status
+            # Microphone НЕ требует перезапуска
 
-        # 4. ACCESSIBILITY
-        logger.info("♿ [FIRST_RUN_PERMISSIONS] START Accessibility activation...")
-        acc_status = PermissionStatus.NOT_DETERMINED
-        logger.info("   Статус: not_determined (форсированный перед активацией)")
-        await self._publish_status_checked(
-            permission=PermissionType.ACCESSIBILITY,
-            status=acc_status,
-            session_id=session_id,
-            source="first_run.pre_activation",
-        )
-        logger.info(
-            "   Активируем Accessibility независимо от статуса (hold_duration=%s сек)...",
-            self.activation_hold_seconds,
-        )
-        start_time = time.time()
-        result = await activate_accessibility(hold_duration=self.activation_hold_seconds)
-        elapsed = time.time() - start_time
+        # 4. SCREEN CAPTURE (требует перезапуска для CGWindowListCreateImage и др.)
+        screen_status = check_screen_capture_status()
+        if screen_status != PermissionStatus.GRANTED:
+            logger.info("📺 [PERMISSIONS] Screen Capture не выдан — запрашиваем...")
+            await self._activate_and_wait_for_permission(
+                permission_type=PermissionType.SCREEN_CAPTURE,
+                check_func=check_screen_capture_status,
+                activate_func=activate_screen_capture,
+                open_settings_func=self._open_screen_capture_settings,
+                session_id=session_id
+            )
+            needs_restart = True  # Screen Capture тоже требует перезапуска
+
+
+        return needs_restart
+
+    async def _activate_and_wait_for_permission(
+        self,
+        *,
+        permission_type: PermissionType,
+        check_func,
+        activate_func,
+        open_settings_func,
+        session_id: str
+    ):
+        """
+        Активирует запрос разрешения и ждёт его получения БЕЗ таймаута.
+
+        Args:
+            permission_type: Тип разрешения
+            check_func: Функция проверки статуса
+            activate_func: Функция активации (показ диалога)
+            open_settings_func: Функция открытия настроек (для DENIED)
+            session_id: ID сессии
+        """
+        check_interval = 1.0  # Проверка каждую секунду
+        log_interval = 10  # Логируем каждые 10 секунд
+        checks_since_log = 0
+
+        # Сначала проверяем текущий статус
+        status = check_func()
         
-        # КРИТИЧНО: Проверяем результат активации
-        if not result:
-            logger.error("❌ [FIRST_RUN_PERMISSIONS] Accessibility activation FAILED!")
-            logger.error("❌ Это может означать, что Quartz/AX API недоступен или произошла ошибка")
-            logger.error("❌ Проверьте логи выше для деталей")
-            # НЕ останавливаем последовательность, но логируем критическую ошибку
-        else:
-            logger.info(
-            "   ✅ Accessibility activation завершена за %.2f сек (ожидалось %.2f сек)",
-            elapsed,
-            self.activation_hold_seconds,
-        )
-        
-        new_status = check_accessibility_status()
-
         await self._publish_status_checked(
-            permission=PermissionType.ACCESSIBILITY,
-            status=new_status,
+            permission=permission_type,
+            status=status,
             session_id=session_id,
-            source="first_run.post_activation",
+            source="permissions.pre_activation"
         )
-        if new_status != acc_status:
-            await self._publish_permission_changed(
-                permission=PermissionType.ACCESSIBILITY,
-                old_status=acc_status,
-                new_status=new_status,
-                session_id=session_id,
-                source="first_run.accessibility",
-            )
-        acc_status = new_status
 
-        logger.info("✅ [FIRST_RUN_PERMISSIONS] Все разрешения обработаны")
+        if status == PermissionStatus.GRANTED:
+            logger.info(f"✅ [{permission_type.value}] Уже выдано!")
+            return
+
+        # Активируем (покажет диалог для NOT_DETERMINED)
+        logger.info(f"⏳ [{permission_type.value}] Активация запроса разрешения...")
+        await activate_func(hold_duration=self.activation_hold_seconds)
+
+        # Проверяем после активации
+        status = check_func()
+        if status == PermissionStatus.GRANTED:
+            logger.info(f"✅ [{permission_type.value}] Получено после активации!")
+            await self._publish_status_checked(
+                permission=permission_type,
+                status=status,
+                session_id=session_id,
+                source="permissions.post_activation"
+            )
+            return
+
+        # Если всё ещё не получено — открываем настройки и ждём
+        if status != PermissionStatus.GRANTED:
+            logger.info(f"📋 [{permission_type.value}] Открываем настройки и ждём выдачи...")
+            open_settings_func()
+
+        # Ждём бесконечно пока не получим GRANTED
+        while True:
+            status = check_func()
+
+            if status == PermissionStatus.GRANTED:
+                logger.info(f"✅ [{permission_type.value}] Разрешение получено!")
+                await self._publish_status_checked(
+                    permission=permission_type,
+                    status=status,
+                    session_id=session_id,
+                    source="permissions.granted"
+                )
+                return
+
+            checks_since_log += 1
+            if checks_since_log >= log_interval:
+                logger.info(f"⏳ [{permission_type.value}] Ожидание разрешения... (status={status.value})")
+                checks_since_log = 0
+
+            await asyncio.sleep(check_interval)
+
+    def _open_accessibility_settings(self):
+        """Открывает настройки Accessibility."""
+        import subprocess
+        try:
+            subprocess.run(
+                ['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'],
+                check=True,
+            )
+            logger.info("📋 Открыты настройки Accessibility")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось открыть настройки Accessibility: {e}")
+
+    def _open_input_monitoring_settings(self):
+        """Открывает настройки Input Monitoring."""
+        import subprocess
+        try:
+            subprocess.run(
+                ['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent'],
+                check=True,
+            )
+            logger.info("📋 Открыты настройки Input Monitoring")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось открыть настройки Input Monitoring: {e}")
+
+    def _open_microphone_settings(self):
+        """Открывает настройки Microphone."""
+        import subprocess
+        try:
+            subprocess.run(
+                ['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'],
+                check=True,
+            )
+            logger.info("📋 Открыты настройки Microphone")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось открыть настройки Microphone: {e}")
+
+    def _open_screen_capture_settings(self):
+        """Открывает настройки Screen Recording."""
+        import subprocess
+        try:
+            subprocess.run(
+                ['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'],
+                check=True,
+            )
+            logger.info("📋 Открыты настройки Screen Capture")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось открыть настройки Screen Capture: {e}")
+
 
     async def request_restart(self, *, session_id: Optional[str] = None) -> bool:
         """

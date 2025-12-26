@@ -13,7 +13,12 @@ class AccessibilityHandler:
     """Accessibility permissions helper for macOS."""
     
     def __init__(self):
-        self.bundle_id = "com.nexy.assistant"
+        try:
+            from Foundation import NSBundle
+            self.bundle_id = NSBundle.mainBundle().bundleIdentifier() or "com.nexy.assistant"
+            logger.debug(f"🔍 AccessibilityHandler detected bundle_id: {self.bundle_id}")
+        except Exception:
+            self.bundle_id = "com.nexy.assistant"
     
     def _ax_trusted_public_check(self, *, prompt: bool = False) -> bool:
         """

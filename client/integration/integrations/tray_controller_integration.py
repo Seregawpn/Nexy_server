@@ -298,6 +298,11 @@ class TrayControllerIntegration:
             await self.event_bus.subscribe("app.startup", self._on_app_startup, EventPriority.HIGH)
             await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
             
+            # КРИТИЧНО: Подписка на события разрешений для визуальной блокировки (Красная иконка)
+            await self.event_bus.subscribe("permissions.first_run_started", self._on_permissions_blocked, EventPriority.CRITICAL)
+            await self.event_bus.subscribe("permissions.first_run_completed", self._on_permissions_completed, EventPriority.CRITICAL)
+            await self.event_bus.subscribe("permissions.first_run_failed", self._on_permissions_completed, EventPriority.CRITICAL)
+            
             # Подписки на события клавиатуры убраны - они обрабатываются через SimpleModuleCoordinator
             # чтобы избежать дублирования обработки
 
@@ -441,6 +446,30 @@ class TrayControllerIntegration:
             })
         except Exception as e:
             logger.error(f"❌ Ошибка обработки voice.mic_closed: {e}")
+
+    async def _on_permissions_blocked(self, event):
+        """Обработка начала блокирующей проверки разрешений"""
+        try:
+            logger.info("🔐 [TRAY] Использование LOCKED статуса для индикации ожидания разрешений")
+            self._desired_status = TrayStatus.LOCKED
+            self._ui_dirty = True
+            
+            # Применяем немедленно
+            try:
+                AppHelper.callAfter(self._apply_status_ui_sync, TrayStatus.LOCKED)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.error(f"❌ Ошибка при переключении трея в статус LOCKED: {e}")
+
+    async def _on_permissions_completed(self, event):
+        """Обработка завершения проверки разрешений"""
+        try:
+            logger.info("✅ [TRAY] Проверка разрешений завершена - возвращаемся в обычный режим")
+            # Синхронизируем с текущим режимом приложения (обычно SLEEPING)
+            await self._sync_with_app_mode()
+        except Exception as e:
+            logger.error(f"❌ Ошибка при восстановлении статуса трея после разрешений: {e}")
 
     def _apply_status_ui_sync(self, status: TrayStatus):
         """Фактическое обновление UI. ДОЛЖНО выполняться в главном UI-потоке."""
