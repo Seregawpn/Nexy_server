@@ -152,9 +152,16 @@ class InputProcessingIntegration:
         print(f"🎤🎤🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         try:
+            # КРИТИЧНО: Сбрасываем отмену предыдущей сессии при новом удержании
+            # Это гарантирует, что отмена не "протекает" в следующую сессию
+            if self._pending_recording_cancelled:
+                self._pending_recording_cancelled = False
+                logger.debug("PRESS: pending_recording_cancelled сброшен (new session)")
+            
             # Отмечаем активное удержание PTT для управления микрофоном
             self.state_manager.set_state_data("ptt_pressed", True)
-            logger.info(f"🎤 PTT: keyDown({event.key}) → PRESS, timestamp={event.timestamp}")
+            ptt_pressed = self.state_manager.get_state_data("ptt_pressed", False)
+            logger.info(f"🎤 PTT: keyDown({event.key}) → PRESS, timestamp={event.timestamp}, ptt_pressed={ptt_pressed}, recording_started={self._recording_started}")
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id
             active_session_id = self._get_active_session_id()
             logger.debug(f"PRESS: current_session={active_session_id}, pending_session={self._pending_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
@@ -800,39 +807,111 @@ class InputProcessingIntegration:
             return False
             
     # Обработчики событий клавиатуры
+    
+    async def _handle_short_tap_cancel(self, event: KeyEvent, reason: str = "short_tap_cancel"):
+        """
+        Централизованная логика отмены при коротком tap (без записи).
+        Используется как в _handle_short_press (для не-combo), так и в _handle_key_release (для combo short-tap).
+        
+        Args:
+            event: KeyEvent с информацией о нажатии
+            reason: Причина отмены (для логирования)
+        """
+        logger.info(f"🔑 Short tap cancel: {reason}, duration={event.duration:.3f}s")
+        
+        # Публикуем interrupt.request для отмены активных процессов
+        active_session_id = self._get_active_session_id() or self._active_grpc_session_id
+        await self.event_bus.publish("interrupt.request", {
+            "type": "speech_stop",
+            "source": "keyboard",
+            "timestamp": event.timestamp,
+            "session_id": active_session_id
+        })
+        logger.info(f"🛑 Short tap cancel: interrupt.request опубликовано")
+        
+        # Если есть session_id, отменяем gRPC запрос
+        if active_session_id is not None:
+            await self.event_bus.publish("grpc.request_cancel", {
+                "session_id": active_session_id
+            })
+            logger.info(f"🛑 Short tap cancel: grpc.request_cancel опубликовано")
+        
+        # Отменяем pending session
+        if self._pending_session_id is not None:
+            logger.info(f"🛑 Short tap cancel: отменяем pending session {self._pending_session_id}")
+            self._pending_session_id = None
+            self._cancel_session_id = None
+            self._active_grpc_session_id = None
+            self._set_session_id(None, reason=reason)
+        
+        # КРИТИЧНО: Публикуем keyboard.short_press для совместимости с подписчиками
+        # (listening_workflow, processing_workflow, voice_recognition, grpc_client, action_execution)
+        await self.event_bus.publish("keyboard.short_press", {
+            "source": "keyboard",
+            "timestamp": event.timestamp,
+            "duration": event.duration,
+            "key": event.key if hasattr(event, 'key') else None,
+            "reason": reason
+        })
+        logger.info(f"🔑 Short tap cancel: keyboard.short_press опубликовано для совместимости")
+        
+        # Переход в SLEEPING (отмена)
+        # КРИТИЧНО: Всегда используем keyboard.short_press как source для сохранения приоритетов
+        # в mode_management_integration (keyboard.short_press имеет приоритет выше, чем keyboard.release)
+        await self.event_bus.publish("mode.request", {
+            "target": AppMode.SLEEPING,
+            "source": "keyboard.short_press",
+            "reason": reason
+        })
+        logger.info(f"Short tap cancel: запрос на SLEEPING отправлен (отмена)")
+        
+        # Полный сброс всех состояний сессии
+        self._recording_started = False
+        self._pending_session_id = None
+        self._cancel_session_id = None
+        self._active_grpc_session_id = None
+        self._set_session_id(None, reason=f"{reason}_reset")
+        self._session_waiting_grpc = False
+        
+        # КРИТИЧНО: Сбрасываем флаг ptt_pressed для не-combo клавиш
+        # Для не-combo SHORT_PRESS может прийти без RELEASE, поэтому нужно сбросить здесь
+        # Для combo ptt_pressed сбрасывается в _handle_key_release (RELEASE всегда приходит)
+        self.state_manager.set_state_data("ptt_pressed", False)
+        logger.debug(f"🔑 Short tap cancel: ptt_pressed сброшен (reason={reason})")
+        
+        # КРИТИЧНО: Отмена должна быть одноразовой - сбрасываем флаг после короткого отменного тапа
+        # Это гарантирует, что отмена не "протекает" в следующую сессию
+        self._pending_recording_cancelled = False
+        logger.debug("Short tap cancel: pending_recording_cancelled сброшен")
+    
     async def _handle_short_press(self, event: KeyEvent):
         """Обработка короткого нажатия клавиши/комбинации"""
         try:
             logger.debug(f"🔑 SHORT_PRESS: {event.duration:.3f}с")
-
-            # КРИТИЧНО: Всегда публикуем interrupt.request в начале обработки
-            active_session_id = self._get_active_session_id() or self._active_grpc_session_id
-            await self.event_bus.publish("interrupt.request", {
-                "type": "speech_stop",
-                "source": "keyboard",
-                "timestamp": event.timestamp,
-                "session_id": active_session_id  # может быть None
-            })
-            logger.info("🛑 SHORT_PRESS: interrupt.request опубликовано")
             
-            # Если есть session_id, отменяем gRPC запрос
-            if active_session_id is not None:
-                await self.event_bus.publish("grpc.request_cancel", {
-                    "session_id": active_session_id
-                })
-                logger.info("🛑 SHORT_PRESS: grpc.request_cancel опубликовано")
+            # КРИТИЧНО: Для комбинации ctrl_n SHORT_PRESS больше не генерируется в quartz_monitor
+            # "Short tap" вычисляется в _handle_key_release по длительности PRESS→RELEASE
+            # Если SHORT_PRESS все же пришел для combo (старый код или одиночная клавиша),
+            # игнорируем его для combo, чтобы избежать гонки с RELEASE
+            is_combo = event.key == "ctrl_n" if hasattr(event, 'key') else False
+            if is_combo:
+                logger.debug(f"🔑 SHORT_PRESS для combo ctrl_n игнорируется (short tap вычисляется в RELEASE)")
+                # КРИТИЧНО: Проверяем, не был ли уже отправлен LONG_PRESS
+                # Если был LONG_PRESS, значит это ложный SHORT_PRESS из-за гонки - игнорируем
+                if self._recording_started or self._mic_active:
+                    logger.warning(f"⚠️ SHORT_PRESS для combo при активной записи - игнорируем (гонка с RELEASE)")
+                    return
+                # Если запись не началась, это может быть старый SHORT_PRESS - игнорируем
+                # "Short tap" будет обработан в RELEASE
+                logger.debug(f"🔑 SHORT_PRESS для combo без записи - игнорируем (будет обработан в RELEASE)")
+                return
 
             # ЗАЩИТА 1: Отменяем pending session при SHORT_PRESS БЕЗ записи
+            # КРИТИЧНО: interrupt.request и grpc.request_cancel публикуются внутри _handle_short_tap_cancel
             if self._pending_session_id is not None and not self._recording_started:
-                logger.info(f"🛑 SHORT_PRESS без записи - отменяем pending session {self._pending_session_id}")
-
-                # Сброс всех состояний сессии
-                self._pending_session_id = None
-                self._cancel_session_id = None
-                self._active_grpc_session_id = None  # Сбрасываем активную gRPC сессию
-                # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
-                self._set_session_id(None, reason="short_press_reset")
-
+                # КРИТИЧНО: Используем централизованную логику отмены
+                await self._handle_short_tap_cancel(event, reason="short_press_reset")
+                
                 # Публикуем событие отмены для других модулей
                 await self.event_bus.publish(
                     "keyboard.short_press_cancelled",
@@ -861,9 +940,25 @@ class InputProcessingIntegration:
 
             # В режиме Quartz SHORT_PRESS генерируется вместо RELEASE.
             # Если запись успели начать (после LONG_PRESS), останавливаем её.
-            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
+            # КРИТИЧНО: Для случая с активной записью публикуем interrupt.request и grpc.request_cancel
+            # отдельно, так как это не отмена, а остановка записи с переходом в PROCESSING
             active_session_id = self._get_active_session_id()
             if self._recording_started and active_session_id is not None:
+                # Публикуем interrupt.request для остановки активных процессов
+                await self.event_bus.publish("interrupt.request", {
+                    "type": "speech_stop",
+                    "source": "keyboard",
+                    "timestamp": event.timestamp,
+                    "session_id": active_session_id
+                })
+                logger.info("🛑 SHORT_PRESS (с записью): interrupt.request опубликовано")
+                
+                # Если есть session_id, отменяем gRPC запрос
+                if active_session_id is not None:
+                    await self.event_bus.publish("grpc.request_cancel", {
+                        "session_id": active_session_id
+                    })
+                    logger.info("🛑 SHORT_PRESS (с записью): grpc.request_cancel опубликовано")
                 # КРИТИЧНО: Проверяем минимальную длительность записи
                 duration = time.time() - self._recording_start_time
                 try:
@@ -912,32 +1007,22 @@ class InputProcessingIntegration:
                 # Прерывание записи
                 self._recording_started = False
                 self._pending_session_id = None
+                
+                # КРИТИЧНО: Сбрасываем флаг ptt_pressed для не-combo клавиш
+                # Для не-combo SHORT_PRESS может прийти без RELEASE, поэтому нужно сбросить здесь
+                # Для combo ptt_pressed сбрасывается в _handle_key_release (RELEASE всегда приходит)
+                self.state_manager.set_state_data("ptt_pressed", False)
+                logger.debug(f"🔑 SHORT_PRESS (с записью): ptt_pressed сброшен")
 
                 # Состояние сбросится по событию завершения gRPC
                 logger.debug("SHORT_PRESS: удерживаем session_id=%s до завершения gRPC", active_session_id)
                 return  # Важно! Выходим, не отменяя gRPC и не переходя в SLEEPING
 
             # Если запись НЕ велась - это настоящий короткий tap для отмены
-
             await self._ensure_playback_idle(for_recording=False)
-
-            # При коротком нажатии БЕЗ записи: переход в SLEEPING (отмена)
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "keyboard.short_press",
-                "priority": 80,
-                "reason": "user_cancel"
-            })
-            logger.info("SHORT_PRESS: запрос на SLEEPING отправлен (отмена без записи)")
-
-            # Полный сброс всех состояний сессии
-            self._recording_started = False
-            self._pending_session_id = None
-            self._cancel_session_id = None
-            self._active_grpc_session_id = None
-            # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
-            self._set_session_id(None, reason="short_press_reset_2")
-            self._session_waiting_grpc = False
+            
+            # КРИТИЧНО: Используем централизованную логику отмены
+            await self._handle_short_tap_cancel(event, reason="user_cancel")
             
         except Exception as e:
             await self.error_handler.handle_error(
@@ -952,7 +1037,8 @@ class InputProcessingIntegration:
         print(f"🎤🎤🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
         logger.info(f"🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
         try:
-            logger.info(f"🎤 PTT: LONG_PRESS triggered → RECORDING_START, duration={event.duration:.3f}s")
+            ptt_pressed = self.state_manager.get_state_data("ptt_pressed", False)
+            logger.info(f"🎤 PTT: LONG_PRESS triggered → RECORDING_START, duration={event.duration:.3f}s, ptt_pressed={ptt_pressed}, recording_started={self._recording_started}")
             logger.info(f"🔑 LONG_PRESS: {event.duration:.3f}с")
             print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
             print(f"🔑 LONG_PRESS: event.key={event.key}, event.timestamp={event.timestamp}")  # Для отладки
@@ -1091,9 +1177,11 @@ class InputProcessingIntegration:
         logger.info(f"🎤 _handle_key_release ВЫЗВАН! duration={event.duration:.3f}s")
         try:
             # Снимаем флаг удержания PTT
+            ptt_pressed_before = self.state_manager.get_state_data("ptt_pressed", False)
             self.state_manager.set_state_data("ptt_pressed", False)
+            ptt_pressed_after = self.state_manager.get_state_data("ptt_pressed", False)
             duration_ms = event.duration * 1000 if event.duration else 0
-            logger.info(f"🛑 PTT: keyUp({event.key}) → RELEASE, duration={duration_ms:.0f}ms")
+            logger.info(f"🛑 PTT: keyUp({event.key}) → RELEASE, duration={duration_ms:.0f}ms, ptt_pressed={ptt_pressed_before}→{ptt_pressed_after}, recording_started={self._recording_started}")
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id
             active_session_id = self._get_active_session_id()
             logger.debug(f"RELEASE: session={active_session_id}, recognized={self._session_recognized}, recording={self._recording_started}")
@@ -1170,6 +1258,19 @@ class InputProcessingIntegration:
                         self._reset_mic_state_internal()
             elif not self._recording_started:
                 logger.debug(f"ℹ️ RELEASE пришёл без активной записи: session={active_session_id}, duration={duration_ms:.0f}ms, _mic_active={self._mic_active}")
+
+            # КРИТИЧНО: Для комбинации ctrl_n вычисляем "short tap" по длительности PRESS→RELEASE
+            # Это централизованная логика вместо генерации SHORT_PRESS в quartz_monitor
+            is_combo = event.key == "ctrl_n" if hasattr(event, 'key') else False
+            long_press_threshold = self.config.keyboard.long_press_threshold if hasattr(self.config, 'keyboard') and self.config.keyboard else 0.6
+            
+            # Если запись не началась и длительность меньше порога → это "short tap" (отмена)
+            if is_combo and not was_recording and event.duration and event.duration < long_press_threshold:
+                logger.info(f"🔑 RELEASE: короткий tap (duration={event.duration:.3f}s < {long_press_threshold}s) → отмена и переход в SLEEPING")
+                
+                # КРИТИЧНО: Используем централизованную логику отмены
+                await self._handle_short_tap_cancel(event, reason="short_tap_cancel")
+                return  # Выходим, не переходя в PROCESSING
 
             # Переходим в PROCESSING только если запись велась; иначе остаёмся в текущем режиме (обычно SLEEPING)
             if was_recording:  # Используем сохраненное значение, а не текущее состояние

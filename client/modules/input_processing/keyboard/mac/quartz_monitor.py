@@ -254,6 +254,8 @@ class QuartzKeyboardMonitor:
             
         elif not should_be_active and was_active:
             # Деактивация комбинации: одна из клавиш отпущена
+            # КРИТИЧНО: Для комбинации ctrl_n всегда генерируем только RELEASE
+            # "Short tap" вычисляется в input_processing_integration по длительности PRESS→RELEASE
             self._combo_active = False
             duration = now - (self._combo_start_time or now)
             self._combo_start_time = None
@@ -270,32 +272,18 @@ class QuartzKeyboardMonitor:
             self._event_processed = True
             self._last_event_timestamp = now
             
-            if long_sent_snapshot:
-                # LONG_PRESS уже был отправлен - генерируем только RELEASE
-                logger.debug("🔑 Combo deactivation: LONG_PRESS уже был, генерируем RELEASE")
-                event_type_out = KeyEventType.RELEASE
-            else:
-                # Короткое нажатие - генерируем SHORT_PRESS
-                logger.debug("🔑 Combo deactivation: короткое нажатие, генерируем SHORT_PRESS")
-                event_type_out = KeyEventType.SHORT_PRESS
-            
+            # КРИТИЧНО: Для комбинации ctrl_n всегда генерируем только RELEASE
+            # Это устраняет гонку между SHORT_PRESS и RELEASE
+            # "Short tap" будет вычисляться в input_processing_integration._handle_key_release
+            # по длительности PRESS→RELEASE
+            logger.debug(f"🔑 Combo deactivation: генерируем RELEASE (long_sent={long_sent_snapshot}, duration={duration:.3f}s)")
             ev = KeyEvent(
                 key=self.key_to_monitor,
-                event_type=event_type_out,
+                event_type=KeyEventType.RELEASE,
                 timestamp=now,
                 duration=duration,
             )
-            self._trigger_event(event_type_out, duration, ev)
-            
-            # RELEASE всегда отправляется после SHORT_PRESS
-            if event_type_out != KeyEventType.RELEASE:
-                ev_release = KeyEvent(
-                    key=self.key_to_monitor,
-                    event_type=KeyEventType.RELEASE,
-                    timestamp=now,
-                    duration=duration,
-                )
-                self._trigger_event(KeyEventType.RELEASE, duration, ev_release)
+            self._trigger_event(KeyEventType.RELEASE, duration, ev)
     
     def register_callback(self, event_type, callback: Callable):
         if isinstance(event_type, str):
