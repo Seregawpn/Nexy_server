@@ -32,7 +32,7 @@ except Exception as e:
 @dataclass
 class VoiceRecognitionConfig:
     """Конфигурация распознавания речи"""
-    timeout_sec: float = 10.0
+    timeout_sec: Optional[float] = None  # None = без лимита (завершится при тишине)
     simulate: bool = False
     simulate_success_rate: float = 0.7  # 70% успеха по умолчанию
     simulate_min_delay_sec: float = 1.0
@@ -407,7 +407,7 @@ class VoiceRecognitionIntegration:
         # Запускаем задачу распознавания (симуляция/реал)
         async def _recognize():
             try:
-                # Таймаут всей операции
+                # Таймаут всей операции (None = без лимита)
                 timeout = self.config.timeout_sec
 
                 async def _simulate_work():
@@ -434,10 +434,16 @@ class VoiceRecognitionIntegration:
                         # (SpeechPlaybackIntegration по playback.completed/failed)
 
                 if self.config.simulate:
-                    await asyncio.wait_for(_simulate_work(), timeout=timeout)
+                    if timeout is not None:
+                        await asyncio.wait_for(_simulate_work(), timeout=timeout)
+                    else:
+                        await _simulate_work()  # Без таймаута
                 else:
                     # Здесь будет реальная интеграция с движком SR
-                    await asyncio.wait_for(_simulate_work(), timeout=timeout)
+                    if timeout is not None:
+                        await asyncio.wait_for(_simulate_work(), timeout=timeout)
+                    else:
+                        await _simulate_work()  # Без таймаута
 
             except asyncio.TimeoutError:
                 await self.event_bus.publish("voice.recognition_timeout", {

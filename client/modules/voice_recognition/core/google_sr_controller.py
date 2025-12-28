@@ -42,7 +42,7 @@ class GoogleSRController:
     def __init__(
         self,
         language_code: str = "ru-RU",
-        phrase_time_limit: float = 12.0,
+        phrase_time_limit: Optional[float] = None,
         device_index: Optional[int] = None,
         on_started: Optional[Callable[[], None]] = None,
         on_completed: Optional[Callable[[GoogleSRResult], None]] = None,
@@ -133,7 +133,8 @@ class GoogleSRController:
         
         # Wait for thread to finish
         if self._thread:
-            self._thread.join(timeout=self._phrase_limit + 5.0)
+            join_timeout = (self._phrase_limit if self._phrase_limit is not None else 10.0) + 5.0
+            self._thread.join(timeout=join_timeout)
         
         if self.last_text:
             return GoogleSRResult(
@@ -175,14 +176,23 @@ class GoogleSRController:
                 logger.info("🔊 Adjusting for ambient noise...")
                 self._recognizer.adjust_for_ambient_noise(source, duration=0.3)
                 
-                logger.info("🎙️ Listening... (phrase_limit=%.1fs)", self._phrase_limit)
+                if self._phrase_limit is not None:
+                    logger.info("🎙️ Listening... (phrase_limit=%.1fs)", self._phrase_limit)
+                else:
+                    logger.info("🎙️ Listening... (no phrase limit, will stop on silence)")
                 
                 try:
                     # Dynamically adjust limit if stopping
-                    current_limit = 1.0 if self._stop.is_set() else self._phrase_limit
+                    if self._stop.is_set():
+                        current_limit = 1.0
+                    else:
+                        current_limit = self._phrase_limit  # None is allowed
+                    # Если phrase_limit=None, то и timeout=None (вообще без лимита)
+                    # Иначе timeout=5.0 (ожидание начала речи)
+                    timeout = None if self._phrase_limit is None else 5.0
                     audio = self._recognizer.listen(
                         source,
-                        timeout=5.0,  # Wait max 5s for speech to start
+                        timeout=timeout,
                         phrase_time_limit=current_limit
                     )
                 except sr.WaitTimeoutError:
