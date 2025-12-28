@@ -611,6 +611,11 @@ class ProcessingWorkflow(BaseWorkflow):
         data = event.get("data", {})
         event_session = data.get("session_id")
         
+        # КРИТИЧНО: Если current_session_id есть, а event_session нет - событие не релевантно
+        # Это предотвращает завершение чужой цепочки PROCESSING
+        if self.current_session_id and event_session is None:
+            return False
+        
         if self.current_session_id and event_session:
             return event_session == self.current_session_id
             

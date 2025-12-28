@@ -805,64 +805,26 @@ class InputProcessingIntegration:
         try:
             logger.debug(f"🔑 SHORT_PRESS: {event.duration:.3f}с")
 
+            # КРИТИЧНО: Всегда публикуем interrupt.request в начале обработки
+            active_session_id = self._get_active_session_id() or self._active_grpc_session_id
+            await self.event_bus.publish("interrupt.request", {
+                "type": "speech_stop",
+                "source": "keyboard",
+                "timestamp": event.timestamp,
+                "session_id": active_session_id  # может быть None
+            })
+            logger.info("🛑 SHORT_PRESS: interrupt.request опубликовано")
+            
+            # Если есть session_id, отменяем gRPC запрос
+            if active_session_id is not None:
+                await self.event_bus.publish("grpc.request_cancel", {
+                    "session_id": active_session_id
+                })
+                logger.info("🛑 SHORT_PRESS: grpc.request_cancel опубликовано")
+
             # ЗАЩИТА 1: Отменяем pending session при SHORT_PRESS БЕЗ записи
             if self._pending_session_id is not None and not self._recording_started:
                 logger.info(f"🛑 SHORT_PRESS без записи - отменяем pending session {self._pending_session_id}")
-
-                # КРИТИЧНО: Прерываем воспроизведение при SHORT_PRESS
-                # Проверяем как режим, так и активность воспроизведения (для надежности)
-                try:
-                    current_mode = self.state_manager.get_current_mode()
-                except Exception:
-                    current_mode = None
-
-                # КРИТИЧНО: Прерываем воспроизведение если:
-                # 1. Режим PROCESSING, ИЛИ
-                # 2. Воспроизведение активно (_playback_active), ИЛИ
-                # 3. Есть активная gRPC сессия (_active_grpc_session_id)
-                should_interrupt = (
-                    current_mode == AppMode.PROCESSING or
-                    self._playback_active or
-                    self._active_grpc_session_id is not None
-                )
-                
-                # КРИТИЧНО: Логируем состояние для диагностики
-                logger.info(f"🛑 SHORT_PRESS: проверка прерывания (mode={current_mode}, playback_active={self._playback_active}, grpc_session={self._active_grpc_session_id}, should_interrupt={should_interrupt})")
-
-                if should_interrupt:
-                    logger.info(f"🛑 SHORT_PRESS: МГНОВЕННО прерываем воспроизведение (mode={current_mode}, playback_active={self._playback_active}, grpc_session={self._active_grpc_session_id})")
-                    # КРИТИЧНО: Публикуем playback.cancelled НАПРЯМУЮ для гарантированного прерывания
-                    # ProcessingWorkflow также публикует playback.cancelled, но прямая публикация гарантирует мгновенное прерывание
-                    # КРИТИЧНО: Используем _get_active_session_id для получения session_id
-                    active_session_id = self._get_active_session_id()
-                    await self.event_bus.publish("playback.cancelled", {
-                        "session_id": active_session_id or self._active_grpc_session_id,
-                        "reason": "keyboard",
-                        "source": "input_processing",
-                        "timestamp": event.timestamp,
-                        "duration": event.duration
-                    })
-                    logger.info("🛑 SHORT_PRESS: playback.cancelled опубликовано НАПРЯМУЮ для мгновенного прерывания")
-                    
-                    # Публикуем событие для ProcessingWorkflow (для координации перехода в SLEEPING)
-                    # ProcessingWorkflow может также опубликовать playback.cancelled, но это безопасно (идемпотентная операция)
-                    await self.event_bus.publish("interrupt.request", {
-                        "source": "keyboard",
-                        "timestamp": event.timestamp,
-                        "duration": event.duration,
-                        "reason": "user_interrupt",
-                        "session_id": self._get_active_session_id() or self._active_grpc_session_id
-                    })
-                    logger.info("🛑 SHORT_PRESS: interrupt.request опубликовано для ProcessingWorkflow")
-                    
-                    # Дополнительно публикуем прямой запрос на SLEEPING для гарантии
-                    await self.event_bus.publish("mode.request", {
-                        "target": AppMode.SLEEPING,
-                        "source": "keyboard.short_press",
-                        "priority": 100,  # Максимальный приоритет для прерывания
-                        "reason": "user_interrupt_processing"
-                    })
-                    logger.info("🛑 SHORT_PRESS: дополнительный запрос на SLEEPING отправлен")
 
                 # Сброс всех состояний сессии
                 self._pending_session_id = None
@@ -956,49 +918,6 @@ class InputProcessingIntegration:
                 return  # Важно! Выходим, не отменяя gRPC и не переходя в SLEEPING
 
             # Если запись НЕ велась - это настоящий короткий tap для отмены
-            # Отменяем активный gRPC поток, если он идёт
-            logger.debug("SHORT_PRESS: запрашиваем отмену активного gRPC стрима (отмена)")
-            # КРИТИЧНО: Используем _get_active_session_id для получения session_id
-            cancel_sid = self._active_grpc_session_id or self._cancel_session_id or self._get_active_session_id()
-            await self.event_bus.publish("grpc.request_cancel", {
-                "session_id": cancel_sid
-            })
-
-            # КРИТИЧНО: Всегда прерываем речь, если есть активная сессия или воспроизведение активно
-            active_session_id = self._get_active_session_id() or self._active_grpc_session_id
-            
-            if active_session_id is not None:
-                logger.info(f"🛑 SHORT_PRESS: МГНОВЕННО прерываем воспроизведение (active_session={active_session_id})")
-                await self.event_bus.publish("playback.cancelled", {
-                    "session_id": active_session_id,
-                    "reason": "keyboard",
-                    "source": "input_processing",
-                    "timestamp": event.timestamp,
-                    "duration": event.duration
-                })
-                logger.info("🛑 SHORT_PRESS: playback.cancelled опубликовано для мгновенного прерывания")
-                
-                # Публикуем interrupt.request для ProcessingWorkflow
-                await self.event_bus.publish("interrupt.request", {
-                    "type": "speech_stop",
-                    "source": "keyboard",
-                    "timestamp": event.timestamp,
-                    "duration": event.duration,
-                    "reason": "user_interrupt",
-                    "session_id": active_session_id
-                })
-                logger.info("🛑 SHORT_PRESS: interrupt.request опубликовано для ProcessingWorkflow")
-            elif self._playback_active:
-                # Если сессия уже сброшена, но воспроизведение еще идет - прерываем без session_id
-                logger.info("🛑 SHORT_PRESS: МГНОВЕННО прерываем воспроизведение (сессия сброшена, но playback активен)")
-                await self.event_bus.publish("playback.cancelled", {
-                    "session_id": None,
-                    "reason": "keyboard",
-                    "source": "input_processing",
-                    "timestamp": event.timestamp,
-                    "duration": event.duration
-                })
-                logger.info("🛑 SHORT_PRESS: playback.cancelled опубликовано (без session_id)")
 
             await self._ensure_playback_idle(for_recording=False)
 
@@ -1038,20 +957,22 @@ class InputProcessingIntegration:
             print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
             print(f"🔑 LONG_PRESS: event.key={event.key}, event.timestamp={event.timestamp}")  # Для отладки
             
-            # КРИТИЧНО: Всегда прерываем речь перед запуском записи (в начале функции)
+            # КРИТИЧНО: Всегда публикуем interrupt.request в начале обработки
             active_session_id = self._get_active_session_id() or self._active_grpc_session_id
+            await self.event_bus.publish("interrupt.request", {
+                "type": "speech_stop",
+                "source": "keyboard",
+                "timestamp": event.timestamp,
+                "session_id": active_session_id  # может быть None
+            })
+            logger.info("🛑 LONG_PRESS: interrupt.request опубликовано")
+            
+            # Если есть session_id, отменяем gRPC запрос
             if active_session_id is not None:
-                logger.info(f"🛑 LONG_PRESS: прерываем воспроизведение перед запуском записи (active_session={active_session_id})")
-                await self.event_bus.publish("playback.cancelled", {
-                    "session_id": active_session_id,
-                    "reason": "keyboard_long_press",
-                    "source": "input_processing",
-                    "timestamp": event.timestamp
-                })
                 await self.event_bus.publish("grpc.request_cancel", {
                     "session_id": active_session_id
                 })
-                logger.info("🛑 LONG_PRESS: playback.cancelled и grpc.request_cancel опубликованы")
+                logger.info("🛑 LONG_PRESS: grpc.request_cancel опубликовано")
             
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id
             active_session_id = self._get_active_session_id()

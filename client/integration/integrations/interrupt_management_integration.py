@@ -291,14 +291,36 @@ class InterruptManagementIntegration:
     async def _on_interrupt_request(self, event):
         """Обработка запроса на прерывание"""
         try:
-            interrupt_type = event.get("type")
+            # КРИТИЧНО: Читаем type и session_id сначала из data, затем с верхнего уровня
+            data = event.get("data", {})
+            interrupt_type = data.get("type") or event.get("type")
+            session_id = data.get("session_id") or event.get("session_id")
             priority = event.get("priority", InterruptPriority.NORMAL)
             source = event.get("source", "unknown")
-            data = event.get("data", {})
+            
+            # КРИТИЧНО: Восстанавливаем session_id из state_manager как единственный источник истины
+            if session_id is None:
+                session_id = self.state_manager.get_current_session_id()
+            
+            logger.debug(f"🛑 InterruptManager: interrupt.request - type={interrupt_type}, data.session_id={data.get('session_id')}, event.session_id={event.get('session_id')}, state_manager.session_id={self.state_manager.get_current_session_id()}, final.session_id={session_id}")
             
             if not interrupt_type:
-                logger.warning("Interrupt request without type")
+                logger.warning("Interrupt request without type, event=%s", event)
                 return
+            
+            # КРИТИЧНО: Централизованная остановка речи для type == "speech_stop"
+            if interrupt_type == "speech_stop":
+                logger.info(f"🛑 InterruptManager: останавливаем речь (session_id={session_id})")
+                await self.event_bus.publish("playback.cancelled", {
+                    "session_id": session_id,
+                    "reason": "interrupt_request",
+                    "source": "interrupt_manager"
+                })
+                if session_id is not None:
+                    await self.event_bus.publish("grpc.request_cancel", {
+                        "session_id": session_id
+                    })
+                logger.info("🛑 InterruptManager: playback.cancelled и grpc.request_cancel опубликованы")
             
             # Создаем событие прерывания
             interrupt_event = InterruptEvent(

@@ -367,23 +367,39 @@ class SpeechPlaybackIntegration:
     async def _on_unified_interrupt(self, event: Dict[str, Any]):
         """
         Unified handler for playback interruption (user cancellation, stop, mode switch).
+        Немедленная остановка плеера при cancel.
         """
         try:
+            data = (event or {}).get("data", {})
+            sid = data.get("session_id")
+            
+            # Немедленная остановка плеера
             if self._avf_player:
                 try:
                     self._avf_player.clear_queue()
                     self._avf_player.stop_playback()
-                except Exception:
-                    pass
+                    logger.info("🛑 SpeechPlayback: плеер остановлен синхронно")
+                except Exception as e:
+                    logger.error(f"❌ SpeechPlayback: ошибка остановки плеера: {e}")
             
-            data = (event or {}).get("data", {})
-            sid = data.get("session_id")
             if sid:
                 self._cancelled_sessions.add(sid)
             
             # Cancel silence task if any
             if self._silence_task and not self._silence_task.done():
                 self._silence_task.cancel()
+            
+            # Сброс локальных флагов воспроизведения
+            if sid:
+                self._had_audio_for_session.pop(sid, None)
+                self._finalized_sessions.pop(sid, None)
+            
+            # КРИТИЧНО: Публикуем playback.completed только при наличии session_id (чтобы не завершить чужую цепочку)
+            if sid is not None:
+                await self.event_bus.publish("playback.completed", {"session_id": sid})
+                logger.info(f"🛑 SpeechPlayback: playback.completed опубликовано (session_id={sid})")
+            else:
+                logger.debug("🛑 SpeechPlayback: playback.completed не опубликовано (session_id=None, cancel только останавливает плеер)")
                 
         except Exception as e:
             await self._handle_error(e, where="speech.unified_interrupt", severity="warning")
