@@ -130,9 +130,98 @@ class QuartzKeyboardMonitor:
                 logger.warning(f"⚠️ Неподдерживаемая клавиша для Quartz: {self.key_to_monitor}")
                 self.keyboard_available = False
 
+    def _reconcile_combo_state(self):
+        """
+        Синхронизирует локальное состояние комбинации с реальным системным состоянием клавиш.
+        Это единственный источник истины для проверки залипания.
+        
+        ВАЖНО: Вызывается только из watchdog (_check_and_reset_stuck_state), не из event-path,
+        чтобы избежать ложных сбросов во время активного удержания.
+        """
+        if not self._is_combo:
+            return
+        
+        try:
+            from Quartz import (
+                CGEventSourceFlagsState,
+                CGEventSourceKeyState,
+                kCGEventSourceStateHIDSystemState,
+                kCGEventFlagMaskControl,
+            )  # type: ignore
+            
+            # Проверяем реальное состояние Control через флаги
+            actual_flags = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
+            actual_control_pressed = bool(actual_flags & kCGEventFlagMaskControl)
+            
+            # Проверяем реальное состояние клавиши N
+            actual_n_pressed = bool(CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, self.N_KEYCODE))
+            
+            # Синхронизируем локальное состояние с реальным
+            state_changed = False
+            now = time.time()
+            
+            # Grace window для N: не синхронизируем если последнее событие было недавно
+            # Это защищает от ложных сбросов во время активного удержания, когда
+            # CGEventSourceKeyState может вернуть False из-за подавления системных событий
+            GRACE_WINDOW_SEC = 0.3  # 300ms grace window для защиты активного удержания
+            
+            with self.state_lock:
+                # Проверяем рассинхронизацию Control
+                if self._control_pressed != actual_control_pressed:
+                    logger.warning(
+                        f"⚠️ РАССИНХРОНИЗАЦИЯ Control: local={self._control_pressed}, actual={actual_control_pressed}. "
+                        f"Синхронизируем с системным состоянием."
+                    )
+                    self._control_pressed = actual_control_pressed
+                    self._control_last_event_time = now if actual_control_pressed else None
+                    state_changed = True
+                
+                # Проверяем рассинхронизацию N с grace window
+                if self._n_pressed != actual_n_pressed:
+                    # Grace window: не синхронизируем N если последнее событие было недавно
+                    # Это защищает от ложных сбросов во время активного удержания
+                    if self._n_last_event_time is not None:
+                        time_since_event = now - self._n_last_event_time
+                        if time_since_event < GRACE_WINDOW_SEC:
+                            logger.debug(
+                                f"🔒 Grace window для N: пропускаем синхронизацию "
+                                f"(time_since_event={time_since_event:.3f}s < {GRACE_WINDOW_SEC}s, "
+                                f"local={self._n_pressed}, actual={actual_n_pressed})"
+                            )
+                            # Не синхронизируем N, но продолжаем проверку Control
+                        else:
+                            # Grace window истек, синхронизируем
+                            logger.warning(
+                                f"⚠️ РАССИНХРОНИЗАЦИЯ N: local={self._n_pressed}, actual={actual_n_pressed}. "
+                                f"Синхронизируем с системным состоянием (grace window истек: {time_since_event:.3f}s)."
+                            )
+                            self._n_pressed = actual_n_pressed
+                            self._n_last_event_time = now if actual_n_pressed else None
+                            state_changed = True
+                    else:
+                        # Нет последнего события, синхронизируем сразу
+                        logger.warning(
+                            f"⚠️ РАССИНХРОНИЗАЦИЯ N: local={self._n_pressed}, actual={actual_n_pressed}. "
+                            f"Синхронизируем с системным состоянием (нет последнего события)."
+                        )
+                        self._n_pressed = actual_n_pressed
+                        self._n_last_event_time = now if actual_n_pressed else None
+                        state_changed = True
+                
+                # Если состояние изменилось, обновляем комбинацию
+                if state_changed:
+                    self._update_combo_state()
+                    
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось синхронизировать состояние комбинации: {e}")
+    
     def _handle_combo_event(self, event_type, event):
         """Обрабатывает события для комбинации Control+N"""
         try:
+            # КРИТИЧНО: НЕ синхронизируем состояние в event-path, чтобы избежать ложных сбросов
+            # во время активного удержания. Синхронизация выполняется только в watchdog
+            # (_check_and_reset_stuck_state), что безопасно и не конфликтует с реальными событиями.
+            
             now = time.time()
             
             # Обработка flagsChanged для Control
@@ -595,6 +684,11 @@ class QuartzKeyboardMonitor:
             print(f"✅ CGEventTap включен для keycode={self._target_keycode}")  # Для отладки
             logger.info(f"QuartzMonitor: CGEventTap включен для keycode={self._target_keycode}")
 
+            # КРИТИЧНО: Очищаем старое состояние комбинации после включения tap
+            # Это предотвращает залипание при перезапуске мониторинга
+            if self._is_combo:
+                self._reconcile_combo_state()
+
             # Запускаем поток мониторинга удержания (для long press)
             self.stop_event.clear()
             self.hold_monitor_thread = threading.Thread(
@@ -718,32 +812,17 @@ class QuartzKeyboardMonitor:
             logger.debug(f"⚠️ WATCHDOG: Ошибка проверки CGEventTap: {e}")
     
     def _check_and_reset_stuck_state(self):
-        """Проверяет и сбрасывает залипшее состояние на основе таймаутов и реального состояния клавиш."""
+        """Проверяет и сбрасывает залипшее состояние на основе реального состояния клавиш и таймаутов (fallback)."""
         if not self._is_combo:
             return  # Для одиночных клавиш проверка не нужна (уже есть в hold_monitor)
         
+        # КРИТИЧНО: Сначала синхронизируем с системным состоянием (основной механизм)
+        # Это единственный источник истины для проверки залипания
+        self._reconcile_combo_state()
+        
         now = time.time()
         
-        # УЛУЧШЕНИЕ: Проверяем реальное состояние модификаторов через CGEventSource
-        # Это позволяет обнаружить "залипание" когда система потеряла keyUp событие
-        try:
-            from Quartz import CGEventSourceFlagsState, kCGEventSourceStateHIDSystemState  # type: ignore
-            actual_flags = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
-            actual_control_pressed = bool(actual_flags & kCGEventFlagMaskControl)
-            
-            # Если наше состояние говорит "Control зажат", но система говорит "не зажат" — это залипание
-            if self._control_pressed and not actual_control_pressed:
-                logger.warning(
-                    f"⚠️ ЗАЛИПАНИЕ (проверка системы): Control помечен как зажатый, но система говорит что отпущен. "
-                    f"Сбрасываем состояние."
-                )
-                self._control_pressed = False
-                self._control_last_event_time = None
-                self._update_combo_state()
-                return
-        except Exception as e:
-            logger.debug(f"⚠️ Не удалось проверить реальное состояние модификаторов: {e}")
-        
+        # Таймауты остаются как fallback механизм (на случай если системная проверка недоступна)
         # Проверка таймаута для комбинации
         if self._combo_active and self._combo_start_time:
             combo_duration = now - self._combo_start_time

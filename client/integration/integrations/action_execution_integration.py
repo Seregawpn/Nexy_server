@@ -91,7 +91,8 @@ class ActionExecutionIntegration(BaseIntegration):
         )
         self._mcp_executor = McpActionExecutor(mcp_config)
         self._actions_lock = asyncio.Lock()
-        self._active_actions: Dict[str, asyncio.Task] = {}
+        self._active_actions: Dict[str, asyncio.Task] = {}  # session_id -> task
+        self._active_apps: Dict[str, str] = {}  # app_name -> session_id (для идемпотентности close_app)
         self._spoken_error_sessions: Set[str] = set()
         
         logger.info(
@@ -271,6 +272,23 @@ class ActionExecutionIntegration(BaseIntegration):
                 logger.info("[%s] Action already running for session=%s", feature_id, session_id)
                 return
             
+            # Идемпотентность для close_app: проверяем, не закрывается ли уже это приложение
+            action_type = executor_action_data.get("type")
+            app_name = executor_action_data.get("app_name")
+            if action_type == "close_app" and app_name:
+                if app_name in self._active_apps:
+                    existing_session = self._active_apps[app_name]
+                    logger.info(
+                        "[%s] close_app already running for app=%s (session=%s, new_session=%s)",
+                        feature_id,
+                        app_name,
+                        existing_session,
+                        session_id
+                    )
+                    return
+                # Регистрируем приложение как активное
+                self._active_apps[app_name] = session_id
+            
             # Создаем задачу для выполнения действия
             task = asyncio.create_task(
                 self._execute_action(
@@ -398,6 +416,19 @@ class ActionExecutionIntegration(BaseIntegration):
                 task = self._active_actions.pop(session_id, None)
                 if task and not task.done():
                     task.cancel()
+                
+                # Удаляем приложение из активных (для идемпотентности close_app)
+                action_type = action_data.get("type")
+                app_name = action_data.get("app_name")
+                if action_type == "close_app" and app_name:
+                    if self._active_apps.get(app_name) == session_id:
+                        self._active_apps.pop(app_name, None)
+                        logger.debug(
+                            "[%s] Removed app from active_apps: %s (session=%s)",
+                            feature_id,
+                            app_name,
+                            session_id
+                        )
 
     async def _on_interrupt(self, event: Dict[str, Any]):
         """Обработка прерывания - отмена всех действий."""
