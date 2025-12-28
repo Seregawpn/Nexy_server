@@ -99,7 +99,7 @@ class ScreenshotResult:
     
     def is_valid(self) -> bool:
         """Проверяет валидность результата"""
-        return self.success and self.data is not None and self.data.base64_data
+        return bool(self.success and self.data is not None and self.data.base64_data)
 
 class ScreenshotError(Exception):
     """Базовое исключение для модуля скриншотов"""

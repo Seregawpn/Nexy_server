@@ -68,4 +68,3 @@ extraPaths = [
 ]
 # Report missing imports as warnings instead of errors for dynamically added paths
 reportMissingImports = "warning"
-

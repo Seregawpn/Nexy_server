@@ -406,23 +406,31 @@ class UnifiedConfigLoader:
         
         # Получаем формат аудио от сервера (централизованный источник истины)
         server_audio_format = config.get('server_audio_format', {
-            'sample_rate': 24000,
+            'sample_rate': 48000,
             'channels': 1,
             'dtype': 'int16'
         })
         
-        # 🔍 ИСПРАВЛЕНО: Используем sample_rate из конфига (24000Hz согласно спецификации gRPC)
-        # Если sample_rate отличается от server_audio_format, будет выполняться ресемплинг
-        # НО: лучше использовать реальный sample_rate из metadata аудио, а не fallback
-        playback_sample_rate = speech_playback_config.get('sample_rate', 24000)  # ИСПРАВЛЕНО: было 48000, должно быть 24000
+        # ✅ ИСПРАВЛЕНО: Используем server_audio_format как источник истины
+        # speech_playback.sample_rate должен быть синхронизирован с server_audio_format.sample_rate
+        playback_sample_rate = speech_playback_config.get('sample_rate', server_audio_format.get('sample_rate', 48000))
+        
+        # Проверяем синхронизацию
+        if playback_sample_rate != server_audio_format.get('sample_rate', 48000):
+            logger.warning(
+                f"⚠️ [CONFIG_DIAG] speech_playback.sample_rate ({playback_sample_rate}Hz) "
+                f"не синхронизирован с server_audio_format.sample_rate ({server_audio_format.get('sample_rate', 48000)}Hz). "
+                f"Используется server_audio_format как источник истины."
+            )
+            playback_sample_rate = server_audio_format.get('sample_rate', 48000)
         
         # 🔍 ДИАГНОСТИКА: Логируем загруженный sample_rate
-        logger.info(f"🔍 [CONFIG_DIAG] speech_playback sample_rate загружен: {playback_sample_rate}Hz (из конфига: {speech_playback_config.get('sample_rate', 'N/A')})")
+        logger.info(f"🔍 [CONFIG_DIAG] speech_playback sample_rate загружен: {playback_sample_rate}Hz (из server_audio_format: {server_audio_format.get('sample_rate', 'N/A')}Hz)")
         
         return {
-            'sample_rate': playback_sample_rate,  # Целевая частота для воспроизведения (24000Hz согласно спецификации)
-            'channels': speech_playback_config.get('channels', 1),
-            'dtype': speech_playback_config.get('dtype', 'int16'),
+            'sample_rate': playback_sample_rate,  # Синхронизировано с server_audio_format (источник истины)
+            'channels': speech_playback_config.get('channels', server_audio_format.get('channels', 1)),
+            'dtype': speech_playback_config.get('dtype', server_audio_format.get('dtype', 'int16')),
             'buffer_size': speech_playback_config.get('buffer_size', 512),
             'max_memory_mb': speech_playback_config.get('max_memory_mb', 50),
             'auto_device_selection': speech_playback_config.get('auto_device_selection', True),

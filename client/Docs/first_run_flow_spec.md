@@ -23,8 +23,10 @@ The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionResta
 3. **Permission Requests**  
    - For each permission (microphone, accessibility, input monitoring, screen capture) the integration:
      1. Publishes a `permissions.status_checked` event with status treated as `not_determined`.  
-     2. Calls the activation helper (`activate_microphone`, etc.) and waits `activation_hold_duration_sec` (default: 13 s) to give macOS time to show a dialog and the user — to respond.  
-     3. Re-checks the TCC status and publishes another `permissions.status_checked`; if it changed, emits `permissions.changed`.
+     2. Calls the activation helper (`activate_microphone`, etc.) to trigger the system dialog.  
+     3. **Immediately after activation**, re-checks the TCC status. If not GRANTED, opens System Settings and waits via polling (infinite loop checking every 1 second).  
+     4. Publishes `permissions.status_checked` after status changes; if it changed, emits `permissions.changed`.
+   - **Important**: The integration waits for GRANTED status **without timeout** (infinite polling loop). The `wait_for_grant` and `grant_wait_timeout_sec` config fields are deprecated and not used.
    - macOS decides whether to show a prompt; the integration does not skip any permission even if a decision already exists.
 
 4. **Flow Completion**  

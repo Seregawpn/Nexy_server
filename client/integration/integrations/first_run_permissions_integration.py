@@ -64,15 +64,10 @@ class FirstRunPermissionsIntegration:
 
         # Настройки из конфига
         self.enabled = self.config.get('enabled', True)
-        self.pause_seconds = self.config.get('pause_between_requests_sec', 1.0)
-        self.activation_hold_seconds = self.config.get('activation_hold_duration_sec', 0.5)
-
         logger.info(
             "[FIRST_RUN_PERMISSIONS] Configuration loaded: "
-            "enabled=%s, pause_seconds=%s, activation_hold_seconds=%s",
+            "enabled=%s",
             self.enabled,
-            self.pause_seconds,
-            self.activation_hold_seconds,
         )
 
         # Путь к флагам первого запуска (Application Support)
@@ -449,7 +444,7 @@ class FirstRunPermissionsIntegration:
 
         # Активируем (покажет диалог для NOT_DETERMINED)
         logger.info(f"⏳ [{permission_type.value}] Активация запроса разрешения...")
-        await activate_func(hold_duration=self.activation_hold_seconds)
+        await activate_func()
 
         # Проверяем после активации
         status = check_func()
@@ -767,8 +762,6 @@ class FirstRunPermissionsIntegration:
             "running": self._running,
             "permissions_in_progress": self._permissions_in_progress,
             "enabled": self.enabled,
-            "pause_seconds": self.pause_seconds,
-            "activation_hold_seconds": self.activation_hold_seconds,
             "first_run_completed": self.flag_file.exists(),
             "flag_file": str(self.flag_file),
         }

@@ -73,6 +73,22 @@ BOOT_NOTES: list[str] = []
 _ffmpeg_path = init_ffmpeg_for_pydub()
 BOOT_NOTES.append(f"init_ffmpeg_for_pydub: path={(str(_ffmpeg_path) if _ffmpeg_path else 'not found')}")
 
+# --- Автоматический dev-bypass разрешений при запуске из терминала ---
+def _is_terminal_launch() -> bool:
+    """Определяет запуск из терминала (dev-режим), не для .app bundle."""
+    if getattr(sys, "frozen", False):
+        return False
+    if os.environ.get("NEXY_DISABLE_TERMINAL_PERMISSIONS_BYPASS") in {"1", "true", "yes"}:
+        return False
+    return bool(sys.stdin.isatty() and sys.stdout.isatty() and os.environ.get("TERM"))
+
+
+if _is_terminal_launch():
+    os.environ.setdefault("NEXY_TEST_SKIP_PERMISSIONS", "1")
+    os.environ.setdefault("NEXY_DEV_FORCE_PERMISSIONS", "1")
+    BOOT_NOTES.append("terminal_launch: forced permissions bypass (NEXY_TEST_SKIP_PERMISSIONS=1, NEXY_DEV_FORCE_PERMISSIONS=1)")
+    print("ℹ️ Terminal launch detected: permissions bypass enabled (test/dev mode)")
+
 # --- Фикс PyObjC для macOS (до импорта rumps) ---
 # ВАЖНО: Должен быть выполнен ДО импорта любых модулей, использующих rumps
 # Исправляет проблему "dlsym cannot find symbol NSMakeRect in CFBundle"

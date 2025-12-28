@@ -6,46 +6,41 @@ Activator для активации разрешений macOS.
 """
 
 import asyncio
-import logging
 import ctypes
 from ctypes import util
 
 
 from integration.utils.logging_setup import get_logger
-from config.unified_config_loader import UnifiedConfigLoader
 
 logger = get_logger(__name__)
 
 
-async def activate_microphone(hold_duration: float = 0.5) -> bool:
+async def activate_microphone() -> bool:
     """
     Активировать запрос разрешения микрофона.
 
-    Открывает микрофон и держит его открытым на протяжении hold_duration секунд.
-    Это даёт системе время показать диалог, а пользователю - ответить.
-
-    Args:
-        hold_duration: сколько секунд держать микрофон открытым (по умолчанию 7.0)
+    Открывает микрофон для триггера системного диалога.
 
     Returns:
         True если активация прошла успешно
         False если произошла ошибка
     """
     try:
-        logger.info(f"🎙️ Активация микрофона (держим открытым {hold_duration} сек)...")
+        logger.info("🎙️ Активация микрофона...")
         print(f"🎙️ [ACTIVATOR] Начало активации микрофона")  # DEBUG: Для console.app
 
         # Используем sounddevice для открытия микрофона
         import sounddevice as sd
 
-        # Открываем input stream и держим открытым всю паузу
+        # Открываем input stream для триггера системного диалога
         # Это вызовет системный диалог если разрешение NOT_DETERMINED
         try:
             # Получаем дефолтное устройство
             print(f"🎙️ [ACTIVATOR] Запрос default input device...")  # DEBUG
             default_device = sd.query_devices(kind='input')
-            logger.debug(f"   Default input device: {default_device['name']}")
-            print(f"🎙️ [ACTIVATOR] Default device: {default_device['name']}")  # DEBUG
+            device_name = default_device.get('name', 'unknown') if isinstance(default_device, dict) else getattr(default_device, 'name', 'unknown')
+            logger.debug(f"   Default input device: {device_name}")
+            print(f"🎙️ [ACTIVATOR] Default device: {device_name}")  # DEBUG
 
             # Открываем stream и держим открытым на протяжении всей паузы
             # Это гарантирует что диалог успеет появиться до следующего запроса
@@ -56,11 +51,9 @@ async def activate_microphone(hold_duration: float = 0.5) -> bool:
                 dtype='int16',
                 blocksize=8000,
             ):
-                # Больше не держим микрофон открытым долго, так как у нас есть цикл ожидания
-                logger.debug(f"   ⏸️ Короткая пауза активации {hold_duration} сек...")
-                print(f"🎙️ [ACTIVATOR] Короткая пауза {hold_duration} сек...")  # DEBUG
-                await asyncio.sleep(hold_duration)
-                print(f"🎙️ [ACTIVATOR] Удержание завершено")  # DEBUG
+                # Yield to event loop to allow system dialog to appear
+                await asyncio.sleep(0)
+                print("🎙️ [ACTIVATOR] Поток открыт")  # DEBUG
 
             logger.info("✅ Микрофон активирован успешно")
             print(f"✅ [ACTIVATOR] Микрофон активирован успешно")  # DEBUG
@@ -70,10 +63,6 @@ async def activate_microphone(hold_duration: float = 0.5) -> bool:
             logger.warning(f"⚠️ Не удалось открыть микрофон: {e}")
             print(f"⚠️ [ACTIVATOR] Exception при открытии микрофона: {e}")  # DEBUG
             # Это OK - возможно разрешения нет, диалог показан
-            # Но даём ещё паузу для показа диалога
-            print(f"⏸️ [ACTIVATOR] Ждём {hold_duration} сек для диалога...")  # DEBUG
-            await asyncio.sleep(hold_duration)
-            print(f"✅ [ACTIVATOR] Ожидание завершено")  # DEBUG
             return True
 
     except ImportError:
@@ -86,23 +75,20 @@ async def activate_microphone(hold_duration: float = 0.5) -> bool:
         return False
 
 
-async def activate_accessibility(hold_duration: float = 0.5) -> bool:
+async def activate_accessibility() -> bool:
     """
     Активировать запрос разрешения Accessibility.
 
     Вызывает AXIsProcessTrustedWithOptions с prompt=False (только проверка статуса).
     Затем открывает System Settings для ручного запроса разрешения.
-    Ждёт hold_duration секунд чтобы дать пользователю время ответить.
 
     Args:
-        hold_duration: сколько секунд ждать после активации (по умолчанию 7.0)
-
     Returns:
         True если активация прошла успешно
         False если произошла ошибка
     """
     try:
-        logger.info(f"♿ Активация Accessibility (пауза {hold_duration} сек)...")
+        logger.info("♿ Активация Accessibility...")
         print(f"♿ [ACTIVATOR] Начало активации Accessibility")  # DEBUG
 
         try:
@@ -118,15 +104,12 @@ async def activate_accessibility(hold_duration: float = 0.5) -> bool:
         print(f"♿ [ACTIVATOR] Вызываем CGRequestPostEventAccess()...")  # DEBUG
         
         # Этот вызов напрямую триггерит системный диалог, если разрешение не выдано
-        CoreGraphics.CGRequestPostEventAccess()
+        # type: ignore[attr-defined] - CGRequestPostEventAccess exists at runtime but not in type stubs
+        CoreGraphics.CGRequestPostEventAccess()  # type: ignore[attr-defined]
 
         logger.info("ℹ️ Accessibility диалог запрошен через CGRequestPostEventAccess")
         # В отличие от AX API, этот вызов не возвращает статус, он только триггерит UI,
         # поэтому мы не можем проверить 'trusted' здесь. Проверка статуса будет позже.
-
-        # Ждём чтобы дать пользователю время ответить
-        logger.debug(f"   ⏸️ Пауза {hold_duration} сек...")
-        await asyncio.sleep(hold_duration)
 
         return True
 
@@ -135,22 +118,17 @@ async def activate_accessibility(hold_duration: float = 0.5) -> bool:
         return False
 
 
-async def activate_input_monitoring(hold_duration: float = 0.5) -> bool:
+async def activate_input_monitoring() -> bool:
     """
     Активировать запрос разрешения Input Monitoring.
 
     Использует публичный API IOHIDRequestAccess, который триггерит системный диалог
     (или автоматически открывает System Settings) если разрешение ещё не выдано.
-    Затем делает паузу, чтобы дать пользователю время выдать доступ.
-
-    Args:
-        hold_duration: сколько секунд ждать после активации (по умолчанию 7.0)
-
     Returns:
         True если активация прошла успешно, False при ошибке
     """
     try:
-        logger.info(f"⌨️ Активация Input Monitoring (пауза {hold_duration} сек)...")
+        logger.info("⌨️ Активация Input Monitoring...")
 
         iokit_path = util.find_library("IOKit")
         if not iokit_path:
@@ -184,8 +162,6 @@ async def activate_input_monitoring(hold_duration: float = 0.5) -> bool:
             logger.info("   macOS автоматически откроет System Settings если нужно")
             logger.info("   Пожалуйста, предоставьте доступ в System Settings → Privacy & Security → Input Monitoring")
 
-        logger.debug(f"   ⏸️ Пауза {hold_duration} сек...")
-        await asyncio.sleep(hold_duration)
         return True
 
     except Exception as e:
@@ -193,22 +169,17 @@ async def activate_input_monitoring(hold_duration: float = 0.5) -> bool:
         return False
 
 
-async def activate_screen_capture(hold_duration: float = 0.5) -> bool:
+async def activate_screen_capture() -> bool:
     """
     Активировать запрос разрешения Screen Capture.
 
     Вызывает CGRequestScreenCaptureAccess для показа диалога.
-    Затем ждёт hold_duration секунд чтобы дать пользователю время ответить.
-
-    Args:
-        hold_duration: сколько секунд ждать после активации (по умолчанию 7.0)
-
     Returns:
         True если активация прошла успешно
         False если произошла ошибка
     """
     try:
-        logger.info(f"📺 Активация Screen Capture (пауза {hold_duration} сек)...")
+        logger.info("📺 Активация Screen Capture...")
 
         # Используем существующий ScreenCapturePermissionManager
         from modules.permissions.macos.screen_capture_permission import ScreenCapturePermissionManager
@@ -228,10 +199,6 @@ async def activate_screen_capture(hold_duration: float = 0.5) -> bool:
         else:
             logger.info("✅ Screen Capture диалог показан")
 
-        # Ждём чтобы дать пользователю время ответить
-        logger.debug(f"   ⏸️ Пауза {hold_duration} сек...")
-        await asyncio.sleep(hold_duration)
-
         return True
 
     except Exception as e:
@@ -239,26 +206,17 @@ async def activate_screen_capture(hold_duration: float = 0.5) -> bool:
         return False
 
 
-async def activate_all_permissions(pause_seconds: float = 7.0) -> dict:
+async def activate_all_permissions() -> dict:
     """
     Активировать все разрешения ПАРАЛЛЕЛЬНО.
-    Длительность паузы берется из центральной конфигурации.
     """
-    try:
-        permission_config = UnifiedConfigLoader.get_instance().get_permission_config()
-        hold_duration = permission_config.get('first_run', {}).get('activation_hold_duration_sec', 0.5)
-        logger.info(f"Используем 'activation_hold_duration_sec' из конфига: {hold_duration} сек.")
-    except Exception as e:
-        logger.warning(f"Не удалось загрузить 'activation_hold_duration_sec' из конфига. Используем значение по-умолчанию 0.5 сек. Ошибка: {e}")
-        hold_duration = 0.5
-
     logger.info("🚀 Активация всех разрешений в параллельном режиме...")
 
     tasks = {
-        'microphone': activate_microphone(hold_duration=hold_duration),
-        'accessibility': activate_accessibility(hold_duration=hold_duration),
-        'input_monitoring': activate_input_monitoring(hold_duration=hold_duration),
-        'screen_capture': activate_screen_capture(hold_duration=hold_duration)
+        'microphone': activate_microphone(),
+        'accessibility': activate_accessibility(),
+        'input_monitoring': activate_input_monitoring(),
+        'screen_capture': activate_screen_capture()
     }
 
     # Запускаем все задачи одновременно

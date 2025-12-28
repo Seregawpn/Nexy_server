@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING, TYPE_CHECKING
 
 import numpy as np
 
@@ -19,15 +19,25 @@ from integration.core.state_manager import ApplicationStateManager, AppMode  # t
 from integration.core.error_handler import ErrorHandler
 
 # NEW: AVFoundationPlayer (Standard)
-try:
+if TYPE_CHECKING:
     from modules.speech_playback.core.avf_player import AVFoundationPlayer, AVFPlayerConfig
+else:
+    AVFoundationPlayer = None
+    AVFPlayerConfig = None
+
+try:
+    from modules.speech_playback.core.avf_player import AVFoundationPlayer, AVFPlayerConfig  # type: ignore[assignment]
     _AVF_PLAYER_AVAILABLE = True
 except ImportError as e:
     logging.getLogger(__name__).error(f"❌ [AUDIO] AVFoundationPlayer import failed: {e}")
     _AVF_PLAYER_AVAILABLE = False
+    AVFoundationPlayer = None  # type: ignore[assignment, misc]
+    AVFPlayerConfig = None  # type: ignore[assignment, misc]
 except Exception as e:
     logging.getLogger(__name__).error(f"❌ [AUDIO] AVFoundationPlayer unexpected error: {e}")
     _AVF_PLAYER_AVAILABLE = False
+    AVFoundationPlayer = None  # type: ignore[assignment, misc]
+    AVFPlayerConfig = None  # type: ignore[assignment, misc]
 
 # ЦЕНТРАЛИЗОВАННАЯ КОНФИГУРАЦИЯ АУДИО
 from config.unified_config_loader import unified_config
@@ -51,7 +61,7 @@ class SpeechPlaybackIntegration:
         # ЦЕНТРАЛИЗОВАННАЯ КОНФИГУРАЦИЯ
         self.config = unified_config.get_speech_playback_config()
 
-        self._avf_player: Optional["AVFoundationPlayer"] = None
+        self._avf_player: Optional[Any] = None  # type: ignore[type-arg]
         
         self._initialized = False
         self._running = False
@@ -69,16 +79,18 @@ class SpeechPlaybackIntegration:
     async def initialize(self) -> bool:
         try:
             # Initialize AVFoundationPlayer
-            if _AVF_PLAYER_AVAILABLE:
+            if _AVF_PLAYER_AVAILABLE and AVFPlayerConfig is not None and AVFoundationPlayer is not None:
                 try:
                     logger.info("🚀 [AUDIO] Initializing AVFoundationPlayer...")
+                    # Используем sample_rate из config (синхронизирован с server_audio_format - источник истины)
+                    # Не используем fallback, т.к. config должен содержать правильное значение из unified_config_loader
                     avf_config = AVFPlayerConfig(
-                        sample_rate=self.config.get('sample_rate', 24000),
+                        sample_rate=self.config.get('sample_rate', 48000),  # Источник истины: server_audio_format через unified_config_loader
                         channels=self.config.get('channels', 1),
                         volume=self.config.get('volume', 0.8)
                     )
                     self._avf_player = AVFoundationPlayer(avf_config)
-                    if self._avf_player.initialize():
+                    if self._avf_player is not None and self._avf_player.initialize():
                         logger.info("✅ [AUDIO] AVFoundationPlayer initialized successfully")
                     else:
                         logger.error("❌ [AUDIO] AVFoundationPlayer init failed")

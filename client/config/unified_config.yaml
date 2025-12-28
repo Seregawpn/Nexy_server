@@ -25,7 +25,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.9  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
+  version: 1.6.0.8.2  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
 # Авто-всё конфигурация аудио - автоматическое определение параметров устройства
 default_audio:
   # Только целевые параметры для STT (что ожидает движок распознавания)
@@ -36,7 +36,7 @@ default_audio:
 # Централизованный формат аудио от сервера (gRPC)
 # ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ для формата аудио, получаемого от сервера
 server_audio_format:
-  sample_rate: 24000          # Частота дискретизации аудио от сервера (24 kHz)
+  sample_rate: 48000          # Частота дискретизации аудио от сервера (48 kHz) - ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ
   channels: 1                  # Количество каналов (1 = mono)
   dtype: "int16"              # Тип данных (int16 = 16-bit PCM)
   bit_depth: 16               # Глубина бит (16-bit)
@@ -324,13 +324,13 @@ permissions:
   # First Run - запрос разрешений при первом запуске приложения
   first_run:
     enabled: true                         # Включить запрос разрешений при первом запуске
-    activation_hold_duration_sec: 13.0    # Сколько держать открытым каждый запрос разрешения (13 секунд)
-    wait_for_grant: true                  # Опрос статуса разрешения после активации (ждём GRANTED или таймаут)
-    grant_wait_timeout_sec: 30            # Максимальное время ожидания GRANTED статуса (30 секунд)
+    # DEPRECATED: Следующие поля не используются в текущей реализации
+    # Текущая реализация ждёт получения разрешения БЕЗ таймаута (бесконечный цикл проверки)
+    wait_for_grant: true                  # [DEPRECATED] Не используется - реализация всегда ждёт GRANTED
+    grant_wait_timeout_sec: 30            # [DEPRECATED] Не используется - реализация ждёт без таймаута
 
   # Управление последовательностью запросов разрешений (устаревшее, оставлено для совместимости)
   sequential: true                      # Запрашивать разрешения по очереди (не одновременно)
-  pause_between_requests_sec: 13.0      # Пауза между запросами разрешений (13 секунд)
   request_timeout_sec: 120.0            # Ждать ответа пользователя 2 минуты (максимум)
   auto_open_settings: false             # Не открывать System Settings автоматически
 
@@ -377,7 +377,7 @@ screenshot_capture:
 speech_playback:
   # audio_device: auto  # Удалено - используем системные дефолты
   enabled: true
-  sample_rate: 24000  # Согласно спецификации gRPC: PCM 24kHz, 16-bit, mono
+  sample_rate: 48000  # Синхронизировано с server_audio_format.sample_rate (источник истины: server_audio_format)
   channels: 1
   dtype: int16
   buffer_size: 512
@@ -500,9 +500,11 @@ welcome_message:
   volume: 0.8
   voice: en-US-JennyNeural
   # Формат аудио (по умолчанию использует server_audio_format из конфигурации)
-  # DEPRECATED: используйте server_audio_format.sample_rate вместо этого
-  sample_rate: 24000  # Согласно спецификации gRPC: PCM 24kHz, 16-bit, mono  # Целевая частота для воспроизведения (если отличается от server_audio_format, будет ресемплинг)
-  channels: 1
+  # DEPRECATED/LEGACY: эти поля НЕ используются в коде, оставлены только для обратной совместимости
+  # ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ: server_audio_format.sample_rate/channels/dtype
+  # Изменение этих значений НЕ повлияет на работу приложения - используйте server_audio_format
+  sample_rate: 48000  # LEGACY - игнорируется, используется server_audio_format.sample_rate
+  channels: 1  # LEGACY - игнорируется, используется server_audio_format.channels
   bit_depth: 16
   ignore_microphone_permission: true
 network_manager:

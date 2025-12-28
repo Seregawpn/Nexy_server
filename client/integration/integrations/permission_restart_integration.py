@@ -7,6 +7,7 @@ critical permissions become available.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -79,6 +80,9 @@ class PermissionRestartIntegration(BaseIntegration):
 
         self._restart_handler: Optional[PermissionsRestartHandler] = None
         self._restart_task: Optional[asyncio.Task] = None
+        self._subscriptions: list[tuple[str, Any]] = []
+        self._ready_emitted: bool = False
+        self._ready_pending_update: bool = False
 
     async def _do_initialize(self) -> bool:
         try:
