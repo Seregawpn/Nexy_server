@@ -56,13 +56,46 @@ class ActionErrorMessageResolver:
             "unsupported_action": ActionErrorMessageTemplate(
                 "This action isn't supported yet."
             ),
+            # MCP error codes
+            "mcp_error": ActionErrorMessageTemplate(
+                "I couldn't open {app}. Please try again."
+            ),
+            "execution_error": ActionErrorMessageTemplate(
+                "I couldn't open {app} because of a system error. Please try again."
+            ),
+            "unknown_action_type": ActionErrorMessageTemplate(
+                "This action isn't supported yet."
+            ),
+            "missing_parameter": ActionErrorMessageTemplate(
+                "I couldn't understand which app to open. Please repeat the name."
+            ),
             "fallback": ActionErrorMessageTemplate(
                 "I couldn't open {app}. Please try again."
             ),
         }
 
-    def resolve(self, error_code: Optional[str], app_name: Optional[str]) -> str:
-        template = self._templates.get(error_code or "")
+    def resolve(self, error_code: Optional[str], app_name: Optional[str], message: Optional[str] = None) -> str:
+        """
+        Разрешает код ошибки в пользовательский текст.
+        
+        Args:
+            error_code: Код ошибки
+            app_name: Имя приложения
+            message: Сообщение об ошибке (используется для уточнения mcp_error)
+        """
+        code = error_code or ""
+        
+        # Специальная обработка mcp_error: пытаемся определить конкретный тип ошибки из сообщения
+        if code == "mcp_error" and message:
+            message_lower = message.lower()
+            if "not found" in message_lower or "isn't installed" in message_lower:
+                code = "app_not_found"
+            elif "timeout" in message_lower or "timed out" in message_lower:
+                code = "timeout"
+            elif "not allowed" in message_lower or "blocked" in message_lower:
+                code = "not_allowed"
+        
+        template = self._templates.get(code)
         if template is None:
             template = self._templates["fallback"]
         return template.format(app_name)

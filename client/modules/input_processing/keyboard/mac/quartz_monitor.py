@@ -4,6 +4,9 @@
 API совместим с KeyboardMonitor: register_callback, set_loop, start_monitoring, stop_monitoring, get_status.
 """
 
+# pyright: reportAttributeAccessIssue=false, reportPossiblyUnboundVariable=false
+# PyObjC imports are dynamically loaded and cannot be statically analyzed
+
 import asyncio
 import logging
 import threading
@@ -11,7 +14,7 @@ import time
 from typing import Optional, Callable, Dict, Any
 
 try:
-    from Quartz import (
+    from Quartz import (  # type: ignore
         CGEventTapCreate,
         CGEventTapEnable,
         CFRunLoopAddSource,
@@ -327,8 +330,8 @@ class QuartzKeyboardMonitor:
 
         try:
             # Унифицируем импорты (используем ApplicationServices вместо Quartz для AX-функций)
-            from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-            from Foundation import NSDictionary, NSNumber
+            from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt  # type: ignore
+            from Foundation import NSDictionary, NSNumber  # type: ignore
             
             # КРИТИЧНО: prompt=False - только проверка статуса, НЕ запрос диалога
             # Диалог должен запрашиваться только в activate_accessibility() при первом запуске
@@ -701,7 +704,7 @@ class QuartzKeyboardMonitor:
             return
         
         try:
-            from Quartz import CGEventTapIsEnabled, CGEventTapEnable
+            from Quartz import CGEventTapIsEnabled, CGEventTapEnable  # type: ignore
             
             is_enabled = CGEventTapIsEnabled(self._tap)
             
@@ -736,7 +739,7 @@ class QuartzKeyboardMonitor:
         # УЛУЧШЕНИЕ: Проверяем реальное состояние модификаторов через CGEventSource
         # Это позволяет обнаружить "залипание" когда система потеряла keyUp событие
         try:
-            from Quartz import CGEventSourceFlagsState, kCGEventSourceStateHIDSystemState
+            from Quartz import CGEventSourceFlagsState, kCGEventSourceStateHIDSystemState  # type: ignore
             actual_flags = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
             actual_control_pressed = bool(actual_flags & kCGEventFlagMaskControl)
             

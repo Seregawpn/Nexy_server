@@ -387,6 +387,11 @@ class GrpcClientIntegration:
             return
 
         # Стримим ответы
+        if self._client is None:
+            logger.error("gRPC client not initialized")
+            await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "client_not_initialized"})
+            return
+        
         try:
             logger.info(f"Starting gRPC stream for session {session_id} with prompt: '{text[:50]}...'")
             got_terminal = False

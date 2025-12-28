@@ -8,7 +8,7 @@ Feature ID: F-2025-014-close-app
 - mcp_close_app_test/server/app_launcher_server.py (если есть)
 """
 
-import pytest
+import pytest  # type: ignore
 from pathlib import Path
 import sys
 

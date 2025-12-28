@@ -126,7 +126,25 @@ class McpActionExecutor:
 
                     # Обработка результата
                     if result.content and len(result.content) > 0:
-                        result_text = result.content[0].text
+                        # Проверяем тип контента - только TextContent имеет атрибут text
+                        first_content = result.content[0]
+                        if hasattr(first_content, 'text'):
+                            result_text = first_content.text
+                        else:
+                            # Для других типов контента (ImageContent, AudioContent и т.д.)
+                            # используем строковое представление или пропускаем
+                            logger.warning(
+                                "[%s] MCP action returned non-text content: %s, session=%s",
+                                FEATURE_ID,
+                                type(first_content).__name__,
+                                session_id or "unknown",
+                            )
+                            return McpActionResult(
+                                success=False,
+                                message="MCP action returned non-text content",
+                                error="unsupported_content_type",
+                                app_name=action_data.get("app_name"),
+                            )
 
                         if result_text.startswith("❌"):
                             # Ошибка

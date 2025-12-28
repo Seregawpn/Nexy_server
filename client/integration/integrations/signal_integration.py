@@ -13,8 +13,16 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+
+# Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
+try:
+    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    # Fallback: explicit modules path if repository layout is used
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 from modules.signals.core.interfaces import SignalRequest, SignalPattern, SignalKind
 from modules.signals.core.service import SimpleSignalService, CooldownPolicy

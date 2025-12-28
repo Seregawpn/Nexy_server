@@ -11,8 +11,16 @@ from typing import Optional, Dict, Any
 # Пути уже добавлены в main.py - не дублируем
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+
+# Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
+try:
+    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    # Fallback: explicit modules path if repository layout is used
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 # Импорты модуля InterruptManagement
 from modules.interrupt_management.core.interrupt_coordinator import InterruptCoordinator, InterruptDependencies
@@ -172,6 +180,10 @@ class InterruptManagementIntegration:
     
     def _setup_interrupt_handlers(self):
         """Настройка обработчиков прерываний"""
+        if self._coordinator is None:
+            logger.warning("InterruptCoordinator not initialized, cannot setup handlers")
+            return
+        
         try:
             # Регистрируем обработчики для каждого типа прерывания
             if self.config.enable_speech_interrupts:
@@ -332,6 +344,9 @@ class InterruptManagementIntegration:
             )
             
             # Отправляем на обработку
+            if self._coordinator is None:
+                logger.error("InterruptCoordinator not initialized, cannot trigger interrupt")
+                return
             await self._coordinator.trigger_interrupt(interrupt_event)
             
         except Exception as e:
@@ -349,8 +364,9 @@ class InterruptManagementIntegration:
         """Обработка отмены прерывания"""
         try:
             interrupt_id = event.get("interrupt_id")
-            if interrupt_id and self._coordinator and hasattr(self._coordinator, 'cancel_interrupt'):
-                await self._coordinator.cancel_interrupt(interrupt_id)
+            if interrupt_id and self._coordinator:
+                # Отменяем конкретное прерывание через _cancel_all_interrupts (метод cancel_interrupt не существует)
+                await self._cancel_all_interrupts()
             else:
                 # Отменяем все прерывания
                 await self._cancel_all_interrupts()
@@ -531,7 +547,8 @@ class InterruptManagementIntegration:
     
     def get_status(self) -> Dict[str, Any]:
         """Получить статус InterruptManagementIntegration"""
-        if not self._coordinator:
+        coordinator = self._coordinator
+        if coordinator is None:
             return {
                 "initialized": self._initialized,
                 "running": self._running,
@@ -542,13 +559,13 @@ class InterruptManagementIntegration:
             "initialized": self._initialized,
             "running": self._running,
             "interrupts": {
-                "active_count": len(self._coordinator.active_interrupts),
-                "total_count": len(self._coordinator.interrupt_history),
-                "is_running": self._coordinator.is_running if hasattr(self._coordinator, 'is_running') else False
+                "active_count": len(coordinator.active_interrupts) if hasattr(coordinator, 'active_interrupts') else 0,
+                "total_count": len(coordinator.interrupt_history) if hasattr(coordinator, 'interrupt_history') else 0,
+                "is_running": coordinator.is_running if hasattr(coordinator, 'is_running') else False
             }
         }
     
-    async def request_interrupt(self, interrupt_type: InterruptType, priority: InterruptPriority = InterruptPriority.NORMAL, source: str = "integration", data: Dict[str, Any] = None) -> bool:
+    async def request_interrupt(self, interrupt_type: InterruptType, priority: InterruptPriority = InterruptPriority.NORMAL, source: str = "integration", data: Optional[Dict[str, Any]] = None) -> bool:
         """Запросить прерывание"""
         if not self._coordinator:
             return False

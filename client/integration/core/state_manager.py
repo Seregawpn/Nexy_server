@@ -89,11 +89,12 @@ class ApplicationStateManager:
                 logger.info(f"🎯 TRAY DEBUG: EventBus подключен: {self._event_bus is not None}")
 
                 # Публикуем централизованные события (если EventBus подключен)
-                if self._event_bus is not None:
+                event_bus = self._event_bus
+                if event_bus is not None:
                     try:
                         import asyncio
                         # Всегда ориентируемся на loop, закреплённый в EventBus
-                        loop = getattr(self._event_bus, "_loop", None)
+                        loop = getattr(event_bus, "_loop", None)
                         logger.info(
                             f"🔄 StateManager: начинаем публикацию событий (EventBus подключен, eb_loop={id(loop) if loop else None})"
                         )
@@ -106,12 +107,12 @@ class ApplicationStateManager:
                             if session_id is not None:
                                 event_data["session_id"] = session_id
                             logger.info(f"🎯 TRAY DEBUG: StateManager event_data: {event_data}")
-                            await self._event_bus.publish("app.mode_changed", event_data)
+                            await event_bus.publish("app.mode_changed", event_data)
                             logger.info("🎯 TRAY DEBUG: StateManager app.mode_changed опубликовано успешно")
 
                             # Проверяем есть ли подписчики
                             try:
-                                subscribers = getattr(self._event_bus, 'subscribers', {}).get("app.mode_changed", [])
+                                subscribers = getattr(event_bus, 'subscribers', {}).get("app.mode_changed", [])
                                 logger.info(
                                     f"🎯 TRAY DEBUG: StateManager подписчиков на app.mode_changed: {len(subscribers)}"
                                 )
@@ -120,7 +121,7 @@ class ApplicationStateManager:
                             logger.info(
                                 f"🔄 StateManager: -> publish app.state_changed: {self.previous_mode} -> {mode}"
                             )
-                            await self._event_bus.publish("app.state_changed", {
+                            await event_bus.publish("app.state_changed", {
                                 "old_mode": self.previous_mode,
                                 "new_mode": mode
                             })

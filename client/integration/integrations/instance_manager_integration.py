@@ -62,7 +62,7 @@ class InstanceManagerIntegration:
             return True
             
         except Exception as e:
-            await self.error_handler.handle_error("instance_manager_initialize", e)
+            await self.error_handler.handle(e, category="initialization", severity="error")
             return False
     
     async def start(self) -> bool:
@@ -116,8 +116,11 @@ class InstanceManagerIntegration:
             
             elif status == InstanceStatus.ERROR:
                 print("❌ Ошибка проверки дублирования")
-                await self.error_handler.handle_error("instance_check_error", 
-                                                     Exception("Failed to check instance status"))
+                await self.error_handler.handle(
+                    Exception("Failed to check instance status"),
+                    category="runtime",
+                    severity="error"
+                )
                 return False
             
             # ПЕРВЫЙ ЭКЗЕМПЛЯР - ПРОДОЛЖАЕМ
@@ -126,8 +129,11 @@ class InstanceManagerIntegration:
             
             if not lock_acquired:
                 print("❌ Не удалось захватить блокировку")
-                await self.error_handler.handle_error("lock_acquisition_failed", 
-                                                     Exception("Failed to acquire lock"))
+                await self.error_handler.handle(
+                    Exception("Failed to acquire lock"),
+                    category="runtime",
+                    severity="error"
+                )
                 return False
             
             print("✅ Nexy запущен успешно (первый экземпляр)")
@@ -148,7 +154,7 @@ class InstanceManagerIntegration:
             print(f"❌ Критическая ошибка в InstanceManagerIntegration.start(): {e}")
             import traceback
             traceback.print_exc()
-            await self.error_handler.handle_error("instance_manager_start", e)
+            await self.error_handler.handle(e, category="runtime", severity="critical")
             return False
     
     async def stop(self) -> bool:
@@ -170,7 +176,7 @@ class InstanceManagerIntegration:
             return True
             
         except Exception as e:
-            await self.error_handler.handle_error("instance_manager_stop", e)
+            await self.error_handler.handle(e, category="runtime", severity="error")
             return False
     
     # Event handlers
@@ -180,7 +186,7 @@ class InstanceManagerIntegration:
             print("📱 Обработка события app.startup")
             # Дополнительная логика при запуске (если нужна)
         except Exception as e:
-            await self.error_handler.handle_error("app_startup_handler", e)
+            await self.error_handler.handle(e, category="runtime", severity="error")
     
     async def _on_app_shutdown(self, event: Dict[str, Any]) -> None:
         """Обработчик события завершения приложения."""
@@ -189,7 +195,7 @@ class InstanceManagerIntegration:
             # Освобождение блокировки при завершении
             await self.stop()
         except Exception as e:
-            await self.error_handler.handle_error("app_shutdown_handler", e)
+            await self.error_handler.handle(e, category="runtime", severity="error")
     
     async def _on_instance_check_request(self, event: Dict[str, Any]) -> None:
         """Обработчик запроса проверки экземпляра."""
@@ -202,4 +208,4 @@ class InstanceManagerIntegration:
                 "timestamp": asyncio.get_event_loop().time()
             })
         except Exception as e:
-            await self.error_handler.handle_error("instance_check_request_handler", e)
+            await self.error_handler.handle(e, category="runtime", severity="error")

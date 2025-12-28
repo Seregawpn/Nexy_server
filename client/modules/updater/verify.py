@@ -7,6 +7,7 @@ import hashlib
 import base64
 import subprocess
 import logging
+import os
 from nacl.signing import VerifyKey
 from typing import Optional
 

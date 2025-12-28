@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class HealthChecker:
     """Система проверки здоровья соединения"""
     
-    def __init__(self, config: HealthCheckConfig = None):
+    def __init__(self, config: Optional[HealthCheckConfig] = None):
         self.config = config or HealthCheckConfig()
         self.task: Optional[asyncio.Task] = None
         self.failure_count = 0

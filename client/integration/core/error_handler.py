@@ -33,7 +33,7 @@ class ErrorHandler:
         self.max_history = 1000
         
     async def handle_error(self, severity: Any, category: Any, 
-                          message: str, context: Dict[str, Any] = None):
+                          message: str, context: Optional[Dict[str, Any]] = None):
         """Обработать ошибку"""
         try:
             if context is None:
@@ -87,7 +87,7 @@ class ErrorHandler:
         except Exception as e:
             logger.error(f"❌ Ошибка в обработчике ошибок: {e}")
 
-    async def handle(self, error: Exception, category: Any = "unknown", severity: Any = "error", context: Dict[str, Any] = None):
+    async def handle(self, error: Exception, category: Any = "unknown", severity: Any = "error", context: Optional[Dict[str, Any]] = None):
         """Совместимый метод обработки ошибок с гибкими типами аргументов.
 
         Args:
@@ -149,8 +149,8 @@ class ErrorHandler:
         import time
         return time.time()
     
-    def get_error_history(self, severity: ErrorSeverity = None, 
-                         category: ErrorCategory = None, limit: int = 100) -> list:
+    def get_error_history(self, severity: Optional[ErrorSeverity] = None, 
+                         category: Optional[ErrorCategory] = None, limit: int = 100) -> list:
         """Получить историю ошибок"""
         try:
             filtered_history = self.error_history

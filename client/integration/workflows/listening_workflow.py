@@ -262,7 +262,7 @@ class ListeningWorkflow(BaseWorkflow):
             logger.info(f"🎤 ListeningWorkflow: возврат в SLEEPING, reason={reason}")
             
             await self._publish_mode_request(
-                AppMode.SLEEPING, 
+                AppMode.SLEEPING,  # type: ignore[arg-type]
                 f"listening_cancelled_{reason}",
                 priority=80  # Высокий приоритет для отмен
             )

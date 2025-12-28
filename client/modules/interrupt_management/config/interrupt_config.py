@@ -3,7 +3,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from ..core.types import InterruptConfig, InterruptType, InterruptPriority
 
@@ -23,7 +23,7 @@ class InterruptModuleConfig:
     full_reset_timeout: float = 15.0
     
     # Приоритеты по умолчанию
-    default_priorities: Dict[InterruptType, InterruptPriority] = None
+    default_priorities: Optional[Dict[InterruptType, InterruptPriority]] = None
     
     def __post_init__(self):
         if self.default_priorities is None:

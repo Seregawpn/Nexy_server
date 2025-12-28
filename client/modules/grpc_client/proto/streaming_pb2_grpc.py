@@ -37,18 +37,18 @@ class StreamingServiceStub(object):
         """
         self.StreamAudio = channel.unary_stream(
                 '/streaming.StreamingService/StreamAudio',
-                request_serializer=streaming__pb2.StreamRequest.SerializeToString,
-                response_deserializer=streaming__pb2.StreamResponse.FromString,
+                request_serializer=streaming__pb2.StreamRequest.SerializeToString,  # type: ignore
+                response_deserializer=streaming__pb2.StreamResponse.FromString,  # type: ignore
                 _registered_method=True)
         self.GenerateWelcomeAudio = channel.unary_stream(
                 '/streaming.StreamingService/GenerateWelcomeAudio',
-                request_serializer=streaming__pb2.WelcomeRequest.SerializeToString,
-                response_deserializer=streaming__pb2.WelcomeResponse.FromString,
+                request_serializer=streaming__pb2.WelcomeRequest.SerializeToString,  # type: ignore
+                response_deserializer=streaming__pb2.WelcomeResponse.FromString,  # type: ignore
                 _registered_method=True)
         self.InterruptSession = channel.unary_unary(
                 '/streaming.StreamingService/InterruptSession',
-                request_serializer=streaming__pb2.InterruptRequest.SerializeToString,
-                response_deserializer=streaming__pb2.InterruptResponse.FromString,
+                request_serializer=streaming__pb2.InterruptRequest.SerializeToString,  # type: ignore
+                response_deserializer=streaming__pb2.InterruptResponse.FromString,  # type: ignore
                 _registered_method=True)
 
 
@@ -82,18 +82,18 @@ def add_StreamingServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'StreamAudio': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamAudio,
-                    request_deserializer=streaming__pb2.StreamRequest.FromString,
-                    response_serializer=streaming__pb2.StreamResponse.SerializeToString,
+                    request_deserializer=streaming__pb2.StreamRequest.FromString,  # type: ignore
+                    response_serializer=streaming__pb2.StreamResponse.SerializeToString,  # type: ignore
             ),
             'GenerateWelcomeAudio': grpc.unary_stream_rpc_method_handler(
                     servicer.GenerateWelcomeAudio,
-                    request_deserializer=streaming__pb2.WelcomeRequest.FromString,
-                    response_serializer=streaming__pb2.WelcomeResponse.SerializeToString,
+                    request_deserializer=streaming__pb2.WelcomeRequest.FromString,  # type: ignore
+                    response_serializer=streaming__pb2.WelcomeResponse.SerializeToString,  # type: ignore
             ),
             'InterruptSession': grpc.unary_unary_rpc_method_handler(
                     servicer.InterruptSession,
-                    request_deserializer=streaming__pb2.InterruptRequest.FromString,
-                    response_serializer=streaming__pb2.InterruptResponse.SerializeToString,
+                    request_deserializer=streaming__pb2.InterruptRequest.FromString,  # type: ignore
+                    response_serializer=streaming__pb2.InterruptResponse.SerializeToString,  # type: ignore
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -118,12 +118,12 @@ class StreamingService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_stream(
+        return grpc.experimental.unary_stream(  # type: ignore
             request,
             target,
             '/streaming.StreamingService/StreamAudio',
-            streaming__pb2.StreamRequest.SerializeToString,
-            streaming__pb2.StreamResponse.FromString,
+            streaming__pb2.StreamRequest.SerializeToString,  # type: ignore
+            streaming__pb2.StreamResponse.FromString,  # type: ignore
             options,
             channel_credentials,
             insecure,
@@ -145,12 +145,12 @@ class StreamingService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_stream(
+        return grpc.experimental.unary_stream(  # type: ignore
             request,
             target,
             '/streaming.StreamingService/GenerateWelcomeAudio',
-            streaming__pb2.WelcomeRequest.SerializeToString,
-            streaming__pb2.WelcomeResponse.FromString,
+            streaming__pb2.WelcomeRequest.SerializeToString,  # type: ignore
+            streaming__pb2.WelcomeResponse.FromString,  # type: ignore
             options,
             channel_credentials,
             insecure,
@@ -172,12 +172,12 @@ class StreamingService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(
+        return grpc.experimental.unary_unary(  # type: ignore
             request,
             target,
             '/streaming.StreamingService/InterruptSession',
-            streaming__pb2.InterruptRequest.SerializeToString,
-            streaming__pb2.InterruptResponse.FromString,
+            streaming__pb2.InterruptRequest.SerializeToString,  # type: ignore
+            streaming__pb2.InterruptResponse.FromString,  # type: ignore
             options,
             channel_credentials,
             insecure,

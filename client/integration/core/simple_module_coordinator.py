@@ -51,8 +51,16 @@ from integration.core.gateways import decide_continue_integration_startup, Decis
 
 # Импорты core компонентов
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
+
+# Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
+try:
+    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    # Fallback: explicit modules path if repository layout is used
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 # Вспомогательные функции для разрешений
 from modules.permissions.first_run.status_checker import (
@@ -127,6 +135,30 @@ class SimpleModuleCoordinator:
 
         # NSApplication activator callback (устанавливается из main.py)
         self.nsapp_activator: Optional[Callable[[], bool]] = None
+    
+    def _ensure_event_bus(self) -> EventBus:
+        """Гарантирует, что event_bus инициализирован"""
+        if self.event_bus is None:
+            raise RuntimeError("EventBus не инициализирован. Вызовите initialize() сначала.")
+        return self.event_bus
+    
+    def _ensure_state_manager(self) -> ApplicationStateManager:
+        """Гарантирует, что state_manager инициализирован"""
+        if self.state_manager is None:
+            raise RuntimeError("ApplicationStateManager не инициализирован. Вызовите initialize() сначала.")
+        return self.state_manager
+    
+    def _ensure_error_handler(self) -> ErrorHandler:
+        """Гарантирует, что error_handler инициализирован"""
+        if self.error_handler is None:
+            raise RuntimeError("ErrorHandler не инициализирован. Вызовите initialize() сначала.")
+        return self.error_handler
+    
+    def _ensure_bg_loop(self) -> asyncio.AbstractEventLoop:
+        """Гарантирует, что фоновый event loop инициализирован"""
+        if self._bg_loop is None:
+            raise RuntimeError("Фоновый event loop не инициализирован. Вызовите initialize() сначала.")
+        return self._bg_loop
         
     async def initialize(self) -> bool:
         """Инициализация всех компонентов и интеграций"""
@@ -206,17 +238,17 @@ class SimpleModuleCoordinator:
             instance_config = config_data.get('instance_manager', {})
 
             self.integrations['instance_manager'] = InstanceManagerIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=instance_config
             )
 
             # Hardware ID Integration — должен стартовать рано, чтобы ID был доступен всем
             self.integrations['hardware_id'] = HardwareIdIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=None  # берёт значения из unified_config.yaml при наличии
             )
 
@@ -228,9 +260,9 @@ class SimpleModuleCoordinator:
                 # Конфигурация будет загружена внутри TrayControllerIntegration
                 tray_config = None  # Автоматически из unified_config.yaml / tray_config.yaml
                 self.integrations['tray'] = TrayControllerIntegration(
-                    event_bus=self.event_bus,
-                    state_manager=self.state_manager,
-                    error_handler=self.error_handler,
+                    event_bus=self._ensure_event_bus(),
+                    state_manager=self._ensure_state_manager(),
+                    error_handler=self._ensure_error_handler(),
                     config=tray_config
                 )
             else:
@@ -239,9 +271,9 @@ class SimpleModuleCoordinator:
             # InputProcessing Integration - используем централизованную конфигурацию
             input_config = self.config.get_input_processing_config()
             self.integrations['input'] = InputProcessingIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=input_config
             )
             
@@ -249,17 +281,17 @@ class SimpleModuleCoordinator:
             updater_cfg = config_data.get('updater', {})
             
             self.integrations['updater'] = UpdaterIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
                 config=updater_cfg
             )
 
             # Permission Restart Integration - автоматический перезапуск после критических разрешений
             perm_restart_cfg = (config_data.get('integrations') or {}).get('permission_restart') or {}
             self.integrations['permission_restart'] = PermissionRestartIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=perm_restart_cfg,
                 updater_integration=self.integrations.get('updater'),
             )
@@ -267,9 +299,9 @@ class SimpleModuleCoordinator:
             # Update Notification Integration - голосовые уведомления о ходе обновления
             update_notify_cfg = (config_data.get('integrations') or {}).get('update_notification') or {}
             self.integrations['update_notification'] = UpdateNotificationIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=update_notify_cfg,
             )
             
@@ -278,9 +310,9 @@ class SimpleModuleCoordinator:
             network_config = None  # Будет создана автоматически из unified_config.yaml
             
             self.integrations['network'] = NetworkManagerIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=network_config
             )
             
@@ -302,17 +334,17 @@ class SimpleModuleCoordinator:
             )
             
             self.integrations['interrupt'] = InterruptManagementIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=interrupt_config
             )
 
             # Screenshot Capture Integration (PROCESSING)
             self.integrations['screenshot_capture'] = ScreenshotCaptureIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 permissions_queue=None,  # Старая очередь не используется
             )
             
@@ -336,24 +368,24 @@ class SimpleModuleCoordinator:
                 vrec_config = VoiceRecognitionConfig(language=self.config.get_stt_language("en-US"))
 
             self.integrations['voice_recognition'] = VoiceRecognitionIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=vrec_config,
             )
 
             # Mode Management Integration (централизация режимов)
             self.integrations['mode_management'] = ModeManagementIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
             )
 
             # Grpc Client Integration
             self.integrations['grpc'] = GrpcClientIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
             )
 
             # Action Execution Integration - выполнение MCP команд (open_app)
@@ -365,9 +397,9 @@ class SimpleModuleCoordinator:
             
             if actions_enabled:
                 self.integrations['action_execution'] = ActionExecutionIntegration(
-                    event_bus=self.event_bus,
-                    state_manager=self.state_manager,
-                    error_handler=self.error_handler,
+                    event_bus=self._ensure_event_bus(),
+                    state_manager=self._ensure_state_manager(),
+                    error_handler=self._ensure_error_handler(),
                 )
                 logger.info("[F-2025-016] ActionExecutionIntegration registered (env=%s, config.enabled=%s)", 
                            env, actions_cfg.enabled if actions_cfg else False)
@@ -377,9 +409,9 @@ class SimpleModuleCoordinator:
 
             # Speech Playback Integration
             self.integrations['speech_playback'] = SpeechPlaybackIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
             )
 
             # Signals Integration (audio cues via EventBus -> playback)
@@ -405,9 +437,9 @@ class SimpleModuleCoordinator:
                 sig_cfg = SignalsIntegrationConfig()
 
             self.integrations['signals'] = SignalIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=sig_cfg,
             )
 
@@ -415,17 +447,17 @@ class SimpleModuleCoordinator:
             autostart_config = config_data.get('autostart', {})
             
             self.integrations['autostart_manager'] = AutostartManagerIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=autostart_config
             )
 
             # Welcome Message Integration - приветствие при запуске
             self.integrations['welcome_message'] = WelcomeMessageIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 permissions_queue=None,  # Старая очередь не используется
             )
 
@@ -433,18 +465,18 @@ class SimpleModuleCoordinator:
             config_data = self.config._load_config()
             voiceover_config = config_data.get("accessibility", {}).get("voiceover_control", {})
             self.integrations['voiceover_ducking'] = VoiceOverDuckingIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=voiceover_config
             )
 
             # First Run Permissions Integration - запрос разрешений при первом запуске
             permissions_first_run_config = config_data.get("permissions", {}).get("first_run", {})
             self.integrations['first_run_permissions'] = FirstRunPermissionsIntegration(
-                event_bus=self.event_bus,
-                state_manager=self.state_manager,
-                error_handler=self.error_handler,
+                event_bus=self._ensure_event_bus(),
+                state_manager=self._ensure_state_manager(),
+                error_handler=self._ensure_error_handler(),
                 config=permissions_first_run_config
             )
 
@@ -454,12 +486,12 @@ class SimpleModuleCoordinator:
             print("🔧 Создание Workflows...")
             
             self.workflows['listening'] = ListeningWorkflow(
-                event_bus=self.event_bus
+                event_bus=self._ensure_event_bus()
             )
             print("✅ ListeningWorkflow создан")
             
             self.workflows['processing'] = ProcessingWorkflow(
-                event_bus=self.event_bus
+                event_bus=self._ensure_event_bus()
             )
             print("✅ ProcessingWorkflow создан")
             
@@ -523,22 +555,22 @@ class SimpleModuleCoordinator:
             logger.info("[COORDINATOR] Настройка критичных подписок на события разрешений...")
             
             # Подписываемся на события разрешений (высокий приоритет)
-            await self.event_bus.subscribe(
+            await self._ensure_event_bus().subscribe(
                 "permissions.first_run_started",
                 self._on_permissions_started,
                 EventPriority.HIGH
             )
-            await self.event_bus.subscribe(
+            await self._ensure_event_bus().subscribe(
                 "permissions.first_run_completed",
                 self._on_permissions_completed,
                 EventPriority.HIGH
             )
-            await self.event_bus.subscribe(
+            await self._ensure_event_bus().subscribe(
                 "permissions.first_run_failed",
                 self._on_permissions_failed,
                 EventPriority.HIGH
             )
-            await self.event_bus.subscribe(
+            await self._ensure_event_bus().subscribe(
                 "permissions.first_run_restart_pending",
                 self._on_permissions_restart_pending,
                 EventPriority.CRITICAL
@@ -554,23 +586,23 @@ class SimpleModuleCoordinator:
         """Настройка координации между модулями"""
         try:
             # Подписываемся на события приложения
-            await self.event_bus.subscribe("app.startup", self._on_app_startup, EventPriority.HIGH)
-            await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
-            await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed, EventPriority.MEDIUM)
+            await self._ensure_event_bus().subscribe("app.startup", self._on_app_startup, EventPriority.HIGH)
+            await self._ensure_event_bus().subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
+            await self._ensure_event_bus().subscribe("app.mode_changed", self._on_mode_changed, EventPriority.MEDIUM)
             
             # Подписываемся на события пользовательского завершения
-            await self.event_bus.subscribe("tray.quit_clicked", self._on_user_quit, EventPriority.HIGH)
+            await self._ensure_event_bus().subscribe("tray.quit_clicked", self._on_user_quit, EventPriority.HIGH)
 
             # Подписываемся на готовность tray (gate-механизм)
-            await self.event_bus.subscribe("tray.integration_ready", self._on_tray_ready, EventPriority.CRITICAL)
+            await self._ensure_event_bus().subscribe("tray.integration_ready", self._on_tray_ready, EventPriority.CRITICAL)
 
             # НЕ подписываемся на keyboard.* события - они обрабатываются напрямую
             # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus)
 
             # Подписываемся на события скриншота для логирования
             try:
-                await self.event_bus.subscribe("screenshot.captured", self._on_screenshot_captured, EventPriority.MEDIUM)
-                await self.event_bus.subscribe("screenshot.error", self._on_screenshot_error, EventPriority.MEDIUM)
+                await self._ensure_event_bus().subscribe("screenshot.captured", self._on_screenshot_captured, EventPriority.MEDIUM)
+                await self._ensure_event_bus().subscribe("screenshot.error", self._on_screenshot_error, EventPriority.MEDIUM)
             except Exception:
                 pass
 
@@ -665,14 +697,14 @@ class SimpleModuleCoordinator:
 
                         # Даём время обработчикам событий сработать (конфигурируемая задержка)
                         try:
-                            delay_ms = int((self.config.get("coordinator") or {}).get("event_settle_delay_ms", 500))
+                            delay_ms = int((self.config._load_config().get("coordinator") or {}).get("event_settle_delay_ms", 500))
                         except Exception:
                             delay_ms = 500
                         await asyncio.sleep(max(0.0, delay_ms / 1000.0))
 
                         # Get update_in_progress from state_manager (via selector for consistency)
                         from integration.core.selectors import is_update_in_progress
-                        update_in_progress = is_update_in_progress(self.state_manager)
+                        update_in_progress = is_update_in_progress(self._ensure_state_manager())
                         
                         snapshot = Snapshot(
                             perm_mic=_map_perm_status(check_microphone_status()),
@@ -691,8 +723,9 @@ class SimpleModuleCoordinator:
                             feature_config = self.config._load_config().get("features", {}).get("use_events_for_update_status", {})
                             if feature_config.get("enabled", False):
                                 # Compare snapshot value vs state_data via selector
-                                state_data_value = is_update_in_progress(self.state_manager)
+                                state_data_value = is_update_in_progress(self._ensure_state_manager())
                                 snapshot_value = snapshot.update_in_progress
+                                session_id = self._ensure_state_manager().current_session_id or "unknown"
                                 if state_data_value != snapshot_value:
                                     logger.warning(
                                         "[COORDINATOR] Shadow-mode mismatch: snapshot.update_in_progress=%s vs state_data=%s (session=%s)",
@@ -742,11 +775,10 @@ class SimpleModuleCoordinator:
                                     self._restart_pending = False
                                     # Legacy: Update state_data for backward compatibility (will be removed after migration)
                                     try:
-                                        self.state_manager.set_restart_pending(False)
-                                        await self.event_bus.publish(
+                                        self._ensure_state_manager().set_restart_pending(False)
+                                        await self._ensure_event_bus().publish(
                                             "permissions.restart_pending.changed",
                                             {"active": False, "session_id": "unknown", "source": "coordinator"},
-                                            EventPriority.MEDIUM,
                                         )
                                     except Exception:
                                         pass
@@ -767,11 +799,10 @@ class SimpleModuleCoordinator:
                                 self._restart_pending = False
                                 # Legacy: Update state_data for backward compatibility (will be removed after migration)
                                 try:
-                                    self.state_manager.set_restart_pending(False)
-                                    await self.event_bus.publish(
+                                    self._ensure_state_manager().set_restart_pending(False)
+                                    await self._ensure_event_bus().publish(
                                         "permissions.restart_pending.changed",
                                         {"active": False, "session_id": "unknown", "source": "coordinator"},
-                                        EventPriority.MEDIUM,
                                     )
                                 except Exception:
                                     pass
@@ -809,7 +840,7 @@ class SimpleModuleCoordinator:
             self.is_running = True
             
             # Публикуем событие запуска
-            await self.event_bus.publish("app.startup", {
+            await self._ensure_event_bus().publish("app.startup", {
                 "coordinator": "simple_module_coordinator",
                 "integrations": list(self.integrations.keys())
             })
@@ -839,7 +870,7 @@ class SimpleModuleCoordinator:
                 self._release_tal_hold(reason=reason)
             
             # Публикуем событие остановки
-            await self.event_bus.publish("app.shutdown", {
+            await self._ensure_event_bus().publish("app.shutdown", {
                 "coordinator": "simple_module_coordinator"
             })
             
@@ -1057,7 +1088,7 @@ class SimpleModuleCoordinator:
             _user_initiated_shutdown = True
             
             # Публикуем событие завершения
-            await self.event_bus.publish("app.shutdown", {
+            await self._ensure_event_bus().publish("app.shutdown", {
                 "source": "user.quit",
                 "user_initiated": True
             })
@@ -1122,7 +1153,7 @@ class SimpleModuleCoordinator:
             self._permissions_in_progress = True
             try:
                 if self.state_manager:
-                    self.state_manager.set_first_run_state(in_progress=True, required=True, completed=False)
+                    self._ensure_state_manager().set_first_run_state(in_progress=True, required=True, completed=False)
             except Exception:
                 logger.debug("[PERMISSIONS] Не удалось обновить first_run state (started)")
         except Exception as e:
@@ -1138,7 +1169,7 @@ class SimpleModuleCoordinator:
             self._permissions_in_progress = False
             try:
                 if self.state_manager:
-                    self.state_manager.set_first_run_state(in_progress=False, required=False, completed=True)
+                    self._ensure_state_manager().set_first_run_state(in_progress=False, required=False, completed=True)
             except Exception:
                 logger.debug("[PERMISSIONS] Не удалось обновить first_run state (completed)")
         except Exception as e:
@@ -1155,7 +1186,7 @@ class SimpleModuleCoordinator:
             self._permissions_in_progress = False
             try:
                 if self.state_manager:
-                    self.state_manager.set_first_run_state(in_progress=False, required=True, completed=False)
+                    self._ensure_state_manager().set_first_run_state(in_progress=False, required=True, completed=False)
             except Exception:
                 logger.debug("[PERMISSIONS] Не удалось обновить first_run state (failed)")
         except Exception as e:
@@ -1205,7 +1236,7 @@ class SimpleModuleCoordinator:
             print(f"🛡️ [ANTI_TAL] _hold_tal_until_tray_ready() ВХОД (tal_hold_active={self._tal_hold_active})")
             logger.info(f"🛡️ [ANTI_TAL] _hold_tal_until_tray_ready() ВХОД (tal_hold_active={self._tal_hold_active})")
             
-            process_info = Foundation.NSProcessInfo.processInfo()
+            process_info = Foundation.NSProcessInfo.processInfo()  # type: ignore[attr-defined]
             
             # КРИТИЧНО: Всегда устанавливаем TAL hold, даже если automaticTerminationSupportEnabled()
             # возвращает False. Это необходимо для периодического обновления assertion после перезапуска.
@@ -1232,7 +1263,7 @@ class SimpleModuleCoordinator:
                         def schedule_refresh():
                             try:
                                 asyncio.set_event_loop(self._bg_loop)
-                                self._tal_refresh_task = self._bg_loop.create_task(self._periodically_refresh_tal_hold())
+                                self._tal_refresh_task = self._ensure_bg_loop().create_task(self._periodically_refresh_tal_hold())
                                 print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop (duplicate call)")
                                 logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop (duplicate call)")
                             except Exception as task_err:
@@ -1278,12 +1309,12 @@ class SimpleModuleCoordinator:
                 def schedule_tasks():
                     try:
                         asyncio.set_event_loop(self._bg_loop)
-                        self._tal_refresh_task = self._bg_loop.create_task(self._periodically_refresh_tal_hold())
+                        self._tal_refresh_task = self._ensure_bg_loop().create_task(self._periodically_refresh_tal_hold())
                         print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop")
                         logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop")
                         
                         # Планируем автоматическое снятие по таймауту (120s - увеличено)
-                        timeout_task = self._bg_loop.create_task(self._release_tal_hold_after_timeout())
+                        timeout_task = self._ensure_bg_loop().create_task(self._release_tal_hold_after_timeout())
                         print(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана в фоновом loop")
                         logger.info(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана в фоновом loop")
                     except Exception as task_err:
@@ -1354,7 +1385,7 @@ class SimpleModuleCoordinator:
                 logger.debug(f"TAL=released (ts={time.time():.2f}, reason={reason}, had_active_hold=False, no_start_time)")
                 self._tal_hold_active = False
                 return
-            process_info = Foundation.NSProcessInfo.processInfo()
+            process_info = Foundation.NSProcessInfo.processInfo()  # type: ignore[attr-defined]
             
             hold_duration = time.time() - self._tal_hold_start
             self._tal_hold_start = None
@@ -1400,7 +1431,7 @@ class SimpleModuleCoordinator:
         """
         try:
             import Foundation
-            process_info = Foundation.NSProcessInfo.processInfo()
+            process_info = Foundation.NSProcessInfo.processInfo()  # type: ignore[attr-defined]
             
             refresh_interval = 30.0  # Обновляем каждые 30 секунд
             max_wait = 120.0  # Максимальное время ожидания (120 секунд)
@@ -1456,10 +1487,10 @@ class SimpleModuleCoordinator:
             return
         try:
             import Foundation
-            process_info = Foundation.NSProcessInfo.processInfo()
+            process_info = Foundation.NSProcessInfo.processInfo()  # type: ignore[attr-defined]
             options = (
-                Foundation.NSActivityUserInitiatedAllowingIdleSystemSleep
-                | Foundation.NSActivityLatencyCritical
+                Foundation.NSActivityUserInitiatedAllowingIdleSystemSleep  # type: ignore[attr-defined]
+                | Foundation.NSActivityLatencyCritical  # type: ignore[attr-defined]
             )
             self._launch_activity_token = process_info.beginActivityWithOptions_reason_(
                 options, "Nexy tray bootstrap"
@@ -1491,7 +1522,7 @@ class SimpleModuleCoordinator:
         if self._launch_activity_token is not None:
             try:
                 import Foundation
-                process_info = Foundation.NSProcessInfo.processInfo()
+                process_info = Foundation.NSProcessInfo.processInfo()  # type: ignore[attr-defined]
                 process_info.endActivity_(self._launch_activity_token)
                 logger.info(f"ACTIVITY=end reason={reason}")
             except Exception as exc:
@@ -1526,7 +1557,7 @@ class SimpleModuleCoordinator:
             # Legacy: Update state_data for backward compatibility during shadow-mode migration
             # This will be removed once all consumers migrate to events/selectors
             try:
-                self.state_manager.set_restart_pending(True)
+                self._ensure_state_manager().set_restart_pending(True)
             except Exception:
                 pass
 
@@ -1537,7 +1568,7 @@ class SimpleModuleCoordinator:
                     # Compare coordinator internal state vs state_data (via snapshot isolation)
                     # Use local import to avoid circular dependency if not already imported
                     from integration.core.selectors import create_snapshot_from_state
-                    state_data_value = create_snapshot_from_state(self.state_manager).restart_pending
+                    state_data_value = create_snapshot_from_state(self._ensure_state_manager()).restart_pending
                     coordinator_value = self._restart_pending
                     if state_data_value != coordinator_value:
                         logger.warning(
@@ -1559,14 +1590,13 @@ class SimpleModuleCoordinator:
             # Publish event (primary source of truth after migration)
             # Consumers should subscribe to permissions.restart_pending.changed instead of reading state_data
             try:
-                await self.event_bus.publish(
+                await self._ensure_event_bus().publish(
                     "permissions.restart_pending.changed",
                     {
                         "active": True,
                         "session_id": session_id,
                         "source": "coordinator",
                     },
-                    EventPriority.MEDIUM,
                 )
             except Exception:
                 pass
@@ -1600,11 +1630,14 @@ class SimpleModuleCoordinator:
             return
         self._bg_loop = asyncio.new_event_loop()
         def _runner():
-            asyncio.set_event_loop(self._bg_loop)
+            loop = self._bg_loop
+            if loop is None:
+                return
+            asyncio.set_event_loop(loop)
             try:
-                self._bg_loop.run_forever()
+                loop.run_forever()
             finally:
-                self._bg_loop.close()
+                loop.close()
         self._bg_thread = threading.Thread(target=_runner, name="nexy-bg-loop", daemon=True)
         self._bg_thread.start()
         print("🧵 Фоновый asyncio loop запущен для EventBus/интеграций")

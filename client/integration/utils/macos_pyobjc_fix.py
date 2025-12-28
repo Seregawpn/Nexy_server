@@ -45,7 +45,7 @@ def fix_pyobjc_foundation():
         # Проверяем, нужен ли фикс
         if not hasattr(Foundation, "NSMakeRect"):
             # Копируем NSMakeRect из AppKit в Foundation
-            Foundation.NSMakeRect = getattr(AppKit, "NSMakeRect")
+            Foundation.NSMakeRect = getattr(AppKit, "NSMakeRect")  # type: ignore[attr-defined]
             logger.info("✅ NSMakeRect скопирован из AppKit в Foundation")
         else:
             logger.info("✅ NSMakeRect уже доступен в Foundation")

@@ -13,7 +13,7 @@ class NotificationsHandler:
     
     def __init__(self):
         try:
-            from UserNotifications import (
+            from UserNotifications import (  # type: ignore[reportMissingImports]
                 UNUserNotificationCenter,
                 UNAuthorizationOptions,
                 UNNotificationRequest,
@@ -24,11 +24,20 @@ class NotificationsHandler:
             self._center = UNUserNotificationCenter.currentNotificationCenter()
             self._authorization_granted: Optional[bool] = None
             self._available = True
+            # Сохраняем классы для использования в методах
+            self._UNAuthorizationOptions = UNAuthorizationOptions
+            self._UNMutableNotificationContent = UNMutableNotificationContent
+            self._UNTimeIntervalNotificationTrigger = UNTimeIntervalNotificationTrigger
+            self._UNNotificationRequest = UNNotificationRequest
         except ImportError as e:
             logger.warning(f"UserNotifications framework недоступен: {e}")
             self._center = None
             self._authorization_granted = False
             self._available = False
+            self._UNAuthorizationOptions = None
+            self._UNMutableNotificationContent = None
+            self._UNTimeIntervalNotificationTrigger = None
+            self._UNNotificationRequest = None
     
     async def check_permission(self) -> bool:
         """
@@ -77,7 +86,10 @@ class NotificationsHandler:
                 return False
             
             # Запрашиваем разрешения на уведомления и звуки
-            options = UNAuthorizationOptions.Alert | UNAuthorizationOptions.Sound | UNAuthorizationOptions.Badge
+            if self._UNAuthorizationOptions is None:
+                logger.warning("⚠️ UNAuthorizationOptions not available")
+                return False
+            options = self._UNAuthorizationOptions.Alert | self._UNAuthorizationOptions.Sound | self._UNAuthorizationOptions.Badge
             
             def request_auth():
                 return self._center.requestAuthorizationWithOptions_completionHandler_(options, None)
@@ -125,16 +137,20 @@ class NotificationsHandler:
                 return False
             
             # Создаем содержимое уведомления
-            content = UNMutableNotificationContent.alloc().init()
+            if self._UNMutableNotificationContent is None or self._UNTimeIntervalNotificationTrigger is None or self._UNNotificationRequest is None:
+                logger.warning("⚠️ Notification classes not available")
+                return False
+            
+            content = self._UNMutableNotificationContent.alloc().init()
             content.setTitle_(title)
             content.setBody_(body)
             content.setSound_("default")
             
             # Создаем триггер (немедленно)
-            trigger = UNTimeIntervalNotificationTrigger.triggerWithTimeInterval_repeats_(0.1, False)
+            trigger = self._UNTimeIntervalNotificationTrigger.triggerWithTimeInterval_repeats_(0.1, False)
             
             # Создаем запрос
-            request = UNNotificationRequest.requestWithIdentifier_trigger_content_(
+            request = self._UNNotificationRequest.requestWithIdentifier_trigger_content_(
                 identifier, trigger, content
             )
             

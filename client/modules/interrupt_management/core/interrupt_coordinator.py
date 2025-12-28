@@ -26,7 +26,7 @@ class InterruptDependencies:
 class InterruptCoordinator:
     """Координатор прерываний - управляет всеми типами прерываний"""
     
-    def __init__(self, config: InterruptConfig = None):
+    def __init__(self, config: Optional[InterruptConfig] = None):
         self.config = config or InterruptConfig()
         self.dependencies = InterruptDependencies()
         

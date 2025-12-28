@@ -117,7 +117,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             logger.debug("VoiceOverDuckingIntegration: Applied mode %s", mode.value)
             
         except Exception as exc:
-            await self.error_handler.handle_error(exc, "handle_mode_change")
+            await self.error_handler.handle(exc, category="runtime", severity="warning", context={"where": "handle_mode_change"})
 
     async def handle_keyboard_press(self, event: Dict[str, Any]) -> None:
         """Обработка нажатия клавиши для ducking."""
@@ -133,7 +133,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
                 logger.debug("VoiceOverDuckingIntegration: Ducking on keyboard press")
                 
         except Exception as exc:
-            await self.error_handler.handle_error(exc, "handle_keyboard_press")
+            await self.error_handler.handle(exc, category="runtime", severity="warning", context={"where": "handle_keyboard_press"})
 
     async def handle_shutdown(self, event: Dict[str, Any]) -> None:
         """Обработка завершения работы приложения."""
@@ -143,7 +143,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
                 logger.info("VoiceOverDuckingIntegration: Shutdown completed")
                 
         except Exception as exc:
-            await self.error_handler.handle_error(exc, "handle_shutdown")
+            await self.error_handler.handle(exc, category="runtime", severity="warning", context={"where": "handle_shutdown"})
 
     async def manual_duck(self, reason: str = "manual") -> bool:
         """Ручное отключение VoiceOver."""
@@ -155,7 +155,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             return await self.controller.duck(reason=reason)
             
         except Exception as exc:
-            await self.error_handler.handle_error(exc, "manual_duck")
+            await self.error_handler.handle(exc, category="runtime", severity="warning", context={"where": "manual_duck"})
             return False
 
     async def manual_release(self, force: bool = False) -> bool:
@@ -169,7 +169,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             return True
             
         except Exception as exc:
-            await self.error_handler.handle_error(exc, "manual_release")
+            await self.error_handler.handle(exc, category="runtime", severity="warning", context={"where": "manual_release"})
             return False
 
     def get_status(self) -> Dict[str, Any]:
@@ -194,6 +194,10 @@ class VoiceOverDuckingIntegration(BaseIntegration):
 
     async def _maybe_initialize_controller(self) -> bool:
         """Инициализируем контроллер, если разрешения уже есть."""
+        if self.controller is None:
+            logger.warning("VoiceOverDuckingIntegration: controller is None, cannot initialize")
+            return False
+        
         try:
             ok = await self.controller.initialize()
             self._controller_ready = bool(ok)

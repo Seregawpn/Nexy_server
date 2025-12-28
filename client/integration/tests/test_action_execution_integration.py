@@ -14,7 +14,7 @@ from integration.integrations.action_execution_integration import ActionExecutio
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
-from modules.action_executor import ActionResult
+from modules.mcp_action import McpActionResult
 
 
 def _published_event_names(mock_event_bus):
@@ -80,9 +80,9 @@ async def test_start_disabled_executor(action_integration, mock_event_bus):
 
 @pytest.mark.asyncio
 async def test_start_enabled_executor(action_integration, mock_event_bus):
-    """Тест: Запуск при enabled executor."""
-    # Включаем executor
-    action_integration._executor._config.enabled = True
+    """Тест: Запуск при enabled MCP executor."""
+    # Включаем MCP executor
+    action_integration._mcp_executor.config.enabled = True
     
     result = await action_integration.initialize()
     assert result is True
@@ -100,9 +100,9 @@ async def test_start_enabled_executor(action_integration, mock_event_bus):
 
 @pytest.mark.asyncio
 async def test_on_action_received_disabled(action_integration, mock_event_bus):
-    """Тест: Получение действия при disabled executor."""
-    # КРИТИЧНО: Устанавливаем executor в disabled состояние для этого теста
-    action_integration._executor._config.enabled = False
+    """Тест: Получение действия при disabled MCP executor."""
+    # КРИТИЧНО: Устанавливаем MCP executor в disabled состояние для этого теста
+    action_integration._mcp_executor.config.enabled = False
     
     event = {
         "session_id": "test-session-1",
@@ -122,7 +122,7 @@ async def test_on_action_received_disabled(action_integration, mock_event_bus):
 @pytest.mark.asyncio
 async def test_on_action_received_invalid_payload(action_integration, mock_event_bus):
     """Тест: Получение действия с невалидным payload."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     # Нет session_id
     event = {
@@ -140,7 +140,7 @@ async def test_on_action_received_invalid_payload(action_integration, mock_event
 @pytest.mark.asyncio
 async def test_on_action_received_invalid_json(action_integration, mock_event_bus):
     """Тест: Получение действия с невалидным JSON."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     event = {
         "session_id": "test-session-2",
@@ -168,11 +168,11 @@ async def test_on_action_received_invalid_json(action_integration, mock_event_bu
 @pytest.mark.asyncio
 async def test_on_action_received_success(action_integration, mock_event_bus):
     """Тест: Успешное получение и выполнение действия."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     # Мокаем успешное выполнение
-    with patch.object(action_integration._executor, 'execute') as mock_execute:
-        mock_execute.return_value = ActionResult(
+    with patch.object(action_integration._mcp_executor, 'execute_action') as mock_execute_action:
+        mock_execute_action.return_value = McpActionResult(
             success=True,
             message="Opened Safari",
             app_name="Safari"
@@ -192,11 +192,11 @@ async def test_on_action_received_success(action_integration, mock_event_bus):
         # Ждем выполнения задачи
         await asyncio.sleep(0.1)
         
-        # Проверяем, что executor был вызван
-        assert mock_execute.called
+        # Проверяем, что MCP executor был вызван
+        assert mock_execute_action.called
         
         # Проверяем аргументы вызова
-        call_args = mock_execute.call_args[0][0]
+        call_args = mock_execute_action.call_args[0][0]
         assert call_args["type"] == "open_app"
         assert call_args["app_name"] == "Safari"
         
@@ -210,14 +210,14 @@ async def test_on_action_received_success(action_integration, mock_event_bus):
 @pytest.mark.asyncio
 async def test_on_action_received_failed_execution(action_integration, mock_event_bus):
     """Тест: Неудачное выполнение действия."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     # Мокаем неудачное выполнение
-    with patch.object(action_integration._executor, 'execute') as mock_execute:
-        mock_execute.return_value = ActionResult(
+    with patch.object(action_integration._mcp_executor, 'execute_action') as mock_execute_action:
+        mock_execute_action.return_value = McpActionResult(
             success=False,
             message="App not found",
-            error="app_not_found",
+            error="mcp_error",
             app_name="UnknownApp"
         )
         
@@ -246,15 +246,15 @@ async def test_on_action_received_failed_execution(action_integration, mock_even
 @pytest.mark.asyncio
 async def test_nonexistent_app_triggers_speech_feedback(action_integration, mock_event_bus):
     """Тест: Несуществующее приложение должно вызвать голосовое уведомление с правильным текстом."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
-    # Мокаем ошибку "app_not_found" для несуществующего приложения
-    with patch.object(action_integration._executor, 'execute') as mock_execute:
+    # Мокаем ошибку "mcp_error" для несуществующего приложения
+    with patch.object(action_integration._mcp_executor, 'execute_action') as mock_execute_action:
         nonexistent_app = "FooBarNonExistentApp"
-        mock_execute.return_value = ActionResult(
+        mock_execute_action.return_value = McpActionResult(
             success=False,
             message=f"Application '{nonexistent_app}' not found",
-            error="app_not_found",  # Код ошибки для несуществующего приложения
+            error="mcp_error",  # Код ошибки для MCP
             app_name=nonexistent_app
         )
         
@@ -288,9 +288,10 @@ async def test_nonexistent_app_triggers_speech_feedback(action_integration, mock
         ]
         assert len(failed_calls) > 0, "Должно быть хотя бы одно событие failed"
         failed_payload = failed_calls[0][0][1]
-        assert failed_payload["error"] == "app_not_found", f"Ожидался error='app_not_found', получен '{failed_payload.get('error')}'"
+        assert failed_payload["error"] == "mcp_error", f"Ожидался error='mcp_error', получен '{failed_payload.get('error')}'"
         assert failed_payload["session_id"] == "test-session-nonexistent"
-        assert failed_payload["feature_id"] == FEATURE_ID
+        # Для open_app используется feature_id "F-2025-013-open-app" (определяется в action_execution_integration.py)
+        assert failed_payload["feature_id"] == "F-2025-013-open-app"
         
         # Проверяем содержимое события speech.playback.request
         speech_calls = [
@@ -308,7 +309,8 @@ async def test_nonexistent_app_triggers_speech_feedback(action_integration, mock
         
         # Проверяем метаданные события
         assert speech_payload["session_id"] == "test-session-nonexistent"
-        assert speech_payload["feature_id"] == FEATURE_ID
+        # Для open_app используется feature_id "F-2025-013-open-app"
+        assert speech_payload["feature_id"] == "F-2025-013-open-app"
         assert speech_payload["source"] == "actions.open_app"
         assert speech_payload["category"] == "action_error"
         assert speech_payload["priority"] == "high"
@@ -319,14 +321,14 @@ async def test_nonexistent_app_triggers_speech_feedback(action_integration, mock
 @pytest.mark.asyncio
 async def test_different_error_codes_trigger_correct_messages(action_integration, mock_event_bus):
     """Тест: Разные коды ошибок должны генерировать правильные сообщения."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     # Тестируем различные коды ошибок
     test_cases = [
         {
-            "error_code": "not_allowed",
+            "error_code": "mcp_error",
             "app_name": "RestrictedApp",
-            "expected_text": "Opening RestrictedApp is blocked by security settings.",
+            "expected_text": "I couldn't open RestrictedApp. Please try again.",
         },
         {
             "error_code": "disabled",
@@ -339,7 +341,7 @@ async def test_different_error_codes_trigger_correct_messages(action_integration
             "expected_text": "I couldn't open SlowApp because the request timed out. Please try again.",
         },
         {
-            "error_code": "command_failed",
+            "error_code": "execution_error",
             "app_name": "BrokenApp",
             "expected_text": "I couldn't open BrokenApp because of a system error. Please try again.",
         },
@@ -355,8 +357,8 @@ async def test_different_error_codes_trigger_correct_messages(action_integration
         mock_event_bus.reset_mock()
         action_integration._spoken_error_sessions.clear()
         
-        with patch.object(action_integration._executor, 'execute') as mock_execute:
-            mock_execute.return_value = ActionResult(
+        with patch.object(action_integration._mcp_executor, 'execute_action') as mock_execute_action:
+            mock_execute_action.return_value = McpActionResult(
                 success=False,
                 message=f"Error: {test_case['error_code']}",
                 error=test_case["error_code"],
@@ -397,10 +399,10 @@ async def test_different_error_codes_trigger_correct_messages(action_integration
 @pytest.mark.asyncio
 async def test_duplicate_action_prevention(action_integration, mock_event_bus):
     """Тест: Предотвращение дублирования действий для одной сессии."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
-    with patch.object(action_integration._executor, 'execute') as mock_execute:
-        mock_execute.return_value = ActionResult(
+    with patch.object(action_integration._mcp_executor, 'execute_action') as mock_execute_action:
+        mock_execute_action.return_value = McpActionResult(
             success=True,
             message="Opened Safari",
             app_name="Safari"
@@ -422,18 +424,18 @@ async def test_duplicate_action_prevention(action_integration, mock_event_bus):
         # Ждем выполнения
         await asyncio.sleep(0.1)
         
-        # Executor должен быть вызван только один раз
-        assert mock_execute.call_count == 1
+        # MCP executor должен быть вызван только один раз
+        assert mock_execute_action.call_count == 1
 
 
 @pytest.mark.asyncio
 async def test_speech_feedback_disabled_by_config(action_integration, mock_event_bus):
     """Если speak_errors=false, события воспроизведения не публикуются."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     action_integration._open_app_config.speak_errors = False
 
-    with patch.object(action_integration._executor, 'execute') as mock_execute:
-        mock_execute.return_value = ActionResult(
+    with patch.object(action_integration._mcp_executor, 'execute_action') as mock_execute_action:
+        mock_execute_action.return_value = McpActionResult(
             success=False,
             message="Action timed out",
             error="timeout",
@@ -487,7 +489,7 @@ async def test_speech_feedback_debounced_per_session(action_integration, mock_ev
 @pytest.mark.asyncio
 async def test_cancel_all_actions(action_integration, mock_event_bus):
     """Тест: Отмена всех действий."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     # Создаем активные задачи
     task1 = asyncio.create_task(asyncio.sleep(10))
@@ -512,7 +514,7 @@ async def test_cancel_all_actions(action_integration, mock_event_bus):
 @pytest.mark.asyncio
 async def test_stop_integration(action_integration, mock_event_bus):
     """Тест: Остановка интеграции."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     await action_integration.initialize()
     await action_integration.start()
@@ -533,7 +535,6 @@ async def test_stop_integration(action_integration, mock_event_bus):
 @pytest.mark.asyncio
 async def test_close_app_validation_success(action_integration, mock_event_bus):
     """Тест: Валидация close_app проходит успешно."""
-    action_integration._executor._config.enabled = True
     action_integration._mcp_executor.config.enabled = True
     
     event = {
@@ -566,7 +567,7 @@ async def test_close_app_validation_success(action_integration, mock_event_bus):
 @pytest.mark.asyncio
 async def test_close_app_validation_missing_app_name(action_integration, mock_event_bus):
     """Тест: Валидация close_app отклоняет отсутствие app_name."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     event = {
         "session_id": "test-session",
@@ -588,7 +589,7 @@ async def test_close_app_validation_missing_app_name(action_integration, mock_ev
 @pytest.mark.asyncio
 async def test_close_app_validation_unsupported_command(action_integration, mock_event_bus):
     """Тест: Валидация отклоняет неподдерживаемую команду."""
-    action_integration._executor._config.enabled = True
+    action_integration._mcp_executor.config.enabled = True
     
     event = {
         "session_id": "test-session",
@@ -611,7 +612,6 @@ async def test_close_app_validation_unsupported_command(action_integration, mock
 @pytest.mark.asyncio
 async def test_close_app_feature_id_logging(action_integration, mock_event_bus):
     """Тест: Правильный feature_id используется для close_app."""
-    action_integration._executor._config.enabled = True
     action_integration._mcp_executor.config.enabled = True
     
     event = {

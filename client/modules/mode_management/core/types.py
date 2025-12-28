@@ -62,8 +62,8 @@ class ModeMetrics:
     total_transitions: int = 0
     successful_transitions: int = 0
     failed_transitions: int = 0
-    time_in_modes: Dict[AppMode, float] = None
-    transitions_by_type: Dict[ModeTransitionType, int] = None
+    time_in_modes: Optional[Dict[AppMode, float]] = None
+    transitions_by_type: Optional[Dict[ModeTransitionType, int]] = None
     average_transition_time: float = 0.0
     
     def __post_init__(self):

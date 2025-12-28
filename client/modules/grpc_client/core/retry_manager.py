@@ -5,7 +5,7 @@
 import asyncio
 import logging
 import random
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 from .types import RetryStrategy, RetryConfig
 
 logger = logging.getLogger(__name__)
@@ -14,12 +14,12 @@ logger = logging.getLogger(__name__)
 class RetryManager:
     """Менеджер повторных попыток с различными стратегиями"""
     
-    def __init__(self, config: RetryConfig = None):
+    def __init__(self, config: Optional[RetryConfig] = None):
         self.config = config or RetryConfig()
     
     async def execute_with_retry(self, operation: Callable, *args, **kwargs) -> Any:
         """Выполняет операцию с retry механизмом"""
-        last_exception = None
+        last_exception: Optional[Exception] = None
         
         for attempt in range(self.config.max_attempts):
             try:
@@ -34,7 +34,9 @@ class RetryManager:
                 else:
                     logger.error(f"❌ Все {self.config.max_attempts} попыток неудачны")
         
-        raise last_exception
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("Retry failed but no exception was captured")
     
     def _calculate_delay(self, attempt: int) -> float:
         """Вычисляет задержку для следующей попытки"""

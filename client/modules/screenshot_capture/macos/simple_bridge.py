@@ -627,7 +627,7 @@ class SimpleCoreGraphicsBridge:
             jpeg_compression = get_jpeg_quality(config.quality, default=0.75)
             jpeg_quality = int(jpeg_compression * 100)  # 0.75 → 75
             
-            logger.debug(f"Оптимизируем JPEG качество: {quality_str} → {jpeg_quality}%")
+            logger.debug(f"Оптимизируем JPEG качество: {jpeg_compression:.2f} → {jpeg_quality}%")
             
             # Используем sips для сжатия JPEG
             cmd = f"sips -s formatOptions {jpeg_quality} {shlex.quote(str(image_path))}"

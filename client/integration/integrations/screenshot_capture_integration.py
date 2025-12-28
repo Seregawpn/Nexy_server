@@ -8,7 +8,7 @@ import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import subprocess
 import shlex
 import os
@@ -17,8 +17,16 @@ import contextlib
 import sys
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+
+# Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
+try:
+    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    # Fallback: explicit modules path if repository layout is used
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 # Модуль захвата скриншотов
 from modules.screenshot_capture.core.screenshot_capture import ScreenshotCapture
@@ -321,7 +329,7 @@ class ScreenshotCaptureIntegration:
                 "error": str(e),
             })
 
-    async def _fallback_capture_cli(self) -> (bool, Optional[Path], Dict[str, Any]):
+    async def _fallback_capture_cli(self) -> Tuple[bool, Optional[Path], Dict[str, Any]]:
         """Пытается сделать скриншот через системную утилиту screencapture (macOS).
         Возвращает (ok, path, meta)."""
         try:
@@ -470,6 +478,10 @@ class ScreenshotCaptureIntegration:
         task.add_done_callback(lambda _: self._prepare_tasks.pop(session_id, None))
 
     async def _prepare_screenshot(self, session_id: float):
+        if self._capture is None:
+            logger.warning("ScreenshotCapture not initialized, cannot prepare screenshot")
+            return
+        
         try:
             result = await asyncio.wait_for(self._capture.capture_screenshot(), timeout=1.0)
             if result and result.success and result.data:

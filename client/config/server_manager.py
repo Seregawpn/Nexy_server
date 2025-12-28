@@ -32,7 +32,7 @@ class ServerManager:
     def __init__(self, config_path: str = "config/unified_config.yaml"):
         resource_path = get_resource_path(config_path)
         self.config_path = resource_path
-        self._config = None
+        self._config: Optional[Dict[str, Any]] = None
         self._load_config()
     
     def _load_config(self):
@@ -40,22 +40,38 @@ class ServerManager:
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self._config = yaml.safe_load(f)
+                if self._config is None:
+                    self._config = {}
         except Exception as e:
             raise RuntimeError(f"Не удалось загрузить конфигурацию из {self.config_path}: {e}")
     
+    def _ensure_config(self) -> Dict[str, Any]:
+        """Гарантирует, что конфигурация загружена"""
+        if self._config is None:
+            raise RuntimeError("Конфигурация не загружена")
+        return self._config
+    
     def _save_config(self):
         """Сохраняет конфигурацию в файл"""
+        config = self._config
+        if config is None:
+            raise RuntimeError("Конфигурация не загружена, невозможно сохранить")
+        
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
-                yaml.dump(self._config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
         except Exception as e:
             raise RuntimeError(f"Не удалось сохранить конфигурацию в {self.config_path}: {e}")
     
     def get_all_servers(self) -> Dict[str, ServerInfo]:
         """Получает информацию о всех серверах"""
+        config = self._config
+        if config is None:
+            return {}
+        
         servers = {}
-        grpc_data = self._config.get('grpc', {})
-        servers_config = grpc_data.get('servers', {})
+        grpc_data = config.get('grpc', {})
+        servers_config = grpc_data.get('servers', {}) if isinstance(grpc_data, dict) else {}
         
         for server_name, server_config in servers_config.items():
             servers[server_name] = ServerInfo(
@@ -80,18 +96,28 @@ class ServerManager:
     def update_server(self, server_name: str, **kwargs) -> bool:
         """Обновляет настройки сервера"""
         try:
-            if 'grpc' not in self._config:
-                self._config['grpc'] = {}
-            if 'servers' not in self._config['grpc']:
-                self._config['grpc']['servers'] = {}
+            config = self._ensure_config()
+            if 'grpc' not in config:
+                config['grpc'] = {}
+            grpc_config = config['grpc']
+            if not isinstance(grpc_config, dict):
+                grpc_config = {}
+                config['grpc'] = grpc_config
             
-            if server_name not in self._config['grpc']['servers']:
-                self._config['grpc']['servers'][server_name] = {}
+            if 'servers' not in grpc_config:
+                grpc_config['servers'] = {}
+            servers = grpc_config['servers']
+            if not isinstance(servers, dict):
+                servers = {}
+                grpc_config['servers'] = servers
+            
+            if server_name not in servers:
+                servers[server_name] = {}
             
             # Обновляем только переданные параметры
             for key, value in kwargs.items():
                 if key in ['host', 'port', 'ssl', 'timeout', 'retry_attempts', 'retry_delay', 'description', 'enabled']:
-                    self._config['grpc']['servers'][server_name][key] = value
+                    servers[server_name][key] = value
             
             self._save_config()
             return True
@@ -117,11 +143,19 @@ class ServerManager:
     def remove_server(self, server_name: str) -> bool:
         """Удаляет сервер"""
         try:
-            if 'grpc' in self._config and 'servers' in self._config['grpc']:
-                if server_name in self._config['grpc']['servers']:
-                    del self._config['grpc']['servers'][server_name]
-                    self._save_config()
-                    return True
+            config = self._ensure_config()
+            grpc_config = config.get('grpc')
+            if not isinstance(grpc_config, dict):
+                return False
+            
+            servers = grpc_config.get('servers')
+            if not isinstance(servers, dict):
+                return False
+            
+            if server_name in servers:
+                del servers[server_name]
+                self._save_config()
+                return True
             return False
         except Exception as e:
             print(f"Ошибка удаления сервера {server_name}: {e}")
@@ -129,14 +163,27 @@ class ServerManager:
     
     def set_default_server(self, server_name: str) -> bool:
         """Устанавливает сервер по умолчанию"""
+        config = self._config
+        if config is None:
+            return False
+        
         try:
             # Обновляем настройку в секции integrations.grpc_client
-            if 'integrations' not in self._config:
-                self._config['integrations'] = {}
-            if 'grpc_client' not in self._config['integrations']:
-                self._config['integrations']['grpc_client'] = {}
+            if 'integrations' not in config:
+                config['integrations'] = {}
+            integrations = config['integrations']
+            if not isinstance(integrations, dict):
+                integrations = {}
+                config['integrations'] = integrations
             
-            self._config['integrations']['grpc_client']['server'] = server_name
+            if 'grpc_client' not in integrations:
+                integrations['grpc_client'] = {}
+            grpc_client = integrations['grpc_client']
+            if not isinstance(grpc_client, dict):
+                grpc_client = {}
+                integrations['grpc_client'] = grpc_client
+            
+            grpc_client['server'] = server_name
             self._save_config()
             return True
             
@@ -147,7 +194,16 @@ class ServerManager:
     def get_default_server(self) -> Optional[str]:
         """Получает сервер по умолчанию"""
         try:
-            return self._config.get('integrations', {}).get('grpc_client', {}).get('server')
+            config = self._ensure_config()
+            integrations = config.get('integrations')
+            if not isinstance(integrations, dict):
+                return None
+            
+            grpc_client = integrations.get('grpc_client')
+            if not isinstance(grpc_client, dict):
+                return None
+            
+            return grpc_client.get('server')
         except Exception:
             return None
     

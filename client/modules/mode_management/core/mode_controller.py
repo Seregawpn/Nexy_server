@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ModeController:
     """Контроллер режимов приложения"""
     
-    def __init__(self, config: ModeConfig = None):
+    def __init__(self, config: Optional[ModeConfig] = None):
         self.config = config or ModeConfig()
         self.current_mode = self.config.default_mode
         self.previous_mode = None
@@ -62,7 +62,7 @@ class ModeController:
         
     async def switch_mode(self, new_mode: AppMode, force: bool = False, 
                          transition_type: ModeTransitionType = ModeTransitionType.MANUAL,
-                         data: Dict[str, Any] = None) -> bool:
+                         data: Optional[Dict[str, Any]] = None) -> bool:
         """Переключает режим приложения"""
         async with self._lock:
             try:
@@ -135,7 +135,7 @@ class ModeController:
         return None
         
     async def _notify_mode_change(self, from_mode: AppMode, to_mode: AppMode, 
-                                 transition_type: ModeTransitionType, data: Dict[str, Any] = None):
+                                 transition_type: ModeTransitionType, data: Optional[Dict[str, Any]] = None):
         """Уведомляет о смене режима"""
         try:
             event = ModeEvent(

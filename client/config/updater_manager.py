@@ -57,6 +57,8 @@ class UpdaterManager:
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self._config = yaml.safe_load(f)
+                if self._config is None:
+                    self._config = {}
             
             # Парсим конфигурацию обновлений
             self._parse_updater_config()
@@ -66,6 +68,8 @@ class UpdaterManager:
     
     def _parse_updater_config(self):
         """Парсит конфигурацию обновлений"""
+        if self._config is None:
+            raise RuntimeError("Конфигурация не загружена")
         updater_raw = self._config.get('updater', {})
         updater_data = self._resolve_environment_section(updater_raw)
         
@@ -140,24 +144,35 @@ class UpdaterManager:
     
     def get_updater_config(self) -> UpdaterConfig:
         """Получает конфигурацию обновлений"""
+        if self._updater_config is None:
+            raise RuntimeError("Конфигурация обновлений не загружена")
         return self._updater_config
     
-    def get_current_channel(self) -> UpdateChannel:
+    def get_current_channel(self) -> Optional[UpdateChannel]:
         """Получает текущий канал обновлений"""
+        if self._updater_config is None:
+            return None
         channel_name = self._updater_config.update_channel
         return self._updater_config.channels.get(channel_name)
     
     def get_all_channels(self) -> Dict[str, UpdateChannel]:
         """Получает все доступные каналы"""
+        if self._updater_config is None:
+            return {}
         return self._updater_config.channels
     
     def switch_channel(self, channel_name: str) -> bool:
         """Переключает канал обновлений"""
         try:
+            if self._updater_config is None or self._config is None:
+                return False
+            
             if channel_name not in self._updater_config.channels:
                 return False
             
             # Обновляем конфигурацию
+            if 'updater' not in self._config:
+                self._config['updater'] = {}
             self._config['updater']['update_channel'] = channel_name
             self._updater_config.update_channel = channel_name
             
@@ -176,10 +191,20 @@ class UpdaterManager:
     def update_channel_url(self, channel_name: str, new_url: str) -> bool:
         """Обновляет URL канала обновлений"""
         try:
+            if self._updater_config is None or self._config is None:
+                return False
+            
             if channel_name not in self._updater_config.channels:
                 return False
             
             # Обновляем в конфигурации
+            if 'updater' not in self._config:
+                self._config['updater'] = {}
+            if 'channels' not in self._config['updater']:
+                self._config['updater']['channels'] = {}
+            if channel_name not in self._config['updater']['channels']:
+                self._config['updater']['channels'][channel_name] = {}
+            
             self._config['updater']['channels'][channel_name]['url'] = new_url
             self._updater_config.channels[channel_name].url = new_url
             
@@ -198,7 +223,12 @@ class UpdaterManager:
     def add_channel(self, channel_name: str, url: str, description: str = "") -> bool:
         """Добавляет новый канал обновлений"""
         try:
+            if self._updater_config is None or self._config is None:
+                return False
+            
             # Добавляем в конфигурацию
+            if 'updater' not in self._config:
+                self._config['updater'] = {}
             if 'channels' not in self._config['updater']:
                 self._config['updater']['channels'] = {}
             
@@ -226,6 +256,9 @@ class UpdaterManager:
     def remove_channel(self, channel_name: str) -> bool:
         """Удаляет канал обновлений"""
         try:
+            if self._updater_config is None or self._config is None:
+                return False
+            
             if channel_name not in self._updater_config.channels:
                 return False
             
@@ -234,7 +267,9 @@ class UpdaterManager:
                 return False
             
             # Удаляем из конфигурации
-            del self._config['updater']['channels'][channel_name]
+            if 'updater' in self._config and 'channels' in self._config['updater']:
+                if channel_name in self._config['updater']['channels']:
+                    del self._config['updater']['channels'][channel_name]
             del self._updater_config.channels[channel_name]
             
             self._save_config()
@@ -247,7 +282,12 @@ class UpdaterManager:
     def update_setting(self, setting_name: str, value: Any) -> bool:
         """Обновляет настройку обновлений"""
         try:
+            if self._updater_config is None or self._config is None:
+                return False
+            
             # Обновляем в конфигурации
+            if 'updater' not in self._config:
+                self._config['updater'] = {}
             self._config['updater'][setting_name] = value
             
             # Обновляем в объекте конфигурации
@@ -263,6 +303,8 @@ class UpdaterManager:
     
     def get_manifest_url(self) -> str:
         """Получает URL манифеста для текущего канала"""
+        if self._updater_config is None:
+            return ""
         channel = self.get_current_channel()
         if channel and channel.url:
             return channel.url
@@ -270,6 +312,8 @@ class UpdaterManager:
     
     def is_enabled(self) -> bool:
         """Проверяет, включены ли обновления"""
+        if self._updater_config is None:
+            return False
         return self._updater_config.enabled
     
     def enable(self) -> bool:
@@ -296,7 +340,7 @@ def get_updater_config() -> UpdaterConfig:
     return updater_manager.get_updater_config()
 
 
-def get_current_channel() -> UpdateChannel:
+def get_current_channel() -> Optional[UpdateChannel]:
     """Получает текущий канал обновлений"""
     return updater_manager.get_current_channel()
 

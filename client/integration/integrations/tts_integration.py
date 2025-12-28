@@ -117,13 +117,14 @@ class TTSIntegration:
             
         except Exception as e:
             logger.error(f"Error processing TTS request: {e}")
-            await self.error_handler.handle_error(
-                error=e,
-                context="TTSIntegration._on_speech_request",
-                severity="warning"
+            await self.error_handler.handle(
+                e,
+                category="runtime",
+                severity="warning",
+                context={"where": "TTSIntegration._on_speech_request"}
             )
     
-    async def _speak_text(self, text: str, voice: str = None) -> None:
+    async def _speak_text(self, text: str, voice: Optional[str] = None) -> None:
         """Воспроизведение текста через системный TTS"""
         try:
             if not self._enabled:

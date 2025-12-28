@@ -210,11 +210,16 @@ class ProcessingWorkflow(BaseWorkflow):
             # Запуск общего таймаута
             if self.total_timeout_task and not self.total_timeout_task.done():
                 self.total_timeout_task.cancel()
-                
-            self.total_timeout_task = self._create_task(
-                self._total_timeout_monitor(session_id), 
-                "total_timeout"
-            )
+            
+            # Проверяем, что session_id не None перед запуском монитора
+            if session_id is not None:
+                self.total_timeout_task = self._create_task(
+                    self._total_timeout_monitor(session_id), 
+                    "total_timeout"
+                )
+            else:
+                logger.warning("⚙️ ProcessingWorkflow: session_id is None, skipping total timeout monitor")
+                self.total_timeout_task = None
             
             # Переходим к этапу захвата
             await self._transition_to_stage(ProcessingStage.CAPTURING)
@@ -527,7 +532,7 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.info(f"⚙️ ProcessingWorkflow: возврат в SLEEPING, reason={reason}")
             
             await self._publish_mode_request(
-                AppMode.SLEEPING, 
+                AppMode.SLEEPING,  # type: ignore[arg-type]
                 f"processing_{reason}",
                 priority=90  # Очень высокий приоритет для завершения
             )

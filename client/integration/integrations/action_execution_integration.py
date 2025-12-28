@@ -1,7 +1,7 @@
 """
-ActionExecutionIntegration — выполнение действий open_app на клиенте.
+ActionExecutionIntegration — выполнение действий open_app и close_app на клиенте.
 
-Подписывается на grpc.response.action и запускает ActionExecutor для выполнения команд.
+Подписывается на grpc.response.action и запускает McpActionExecutor для выполнения команд через MCP.
 Feature ID: F-2025-016-mcp-app-opening-integration
 """
 
@@ -16,7 +16,6 @@ from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
 
 from config.unified_config_loader import UnifiedConfigLoader, OpenAppActionConfig
-from modules.action_executor import ActionExecutor, ActionExecutorConfig
 from modules.mcp_action import McpActionExecutor, McpActionConfig
 from modules.action_errors.messages import resolver as action_error_resolver
 
@@ -28,7 +27,7 @@ logger = get_logger(__name__)
 
 
 class ActionExecutionIntegration(BaseIntegration):
-    """Подписывается на grpc.response.action и запускает ActionExecutor."""
+    """Подписывается на grpc.response.action и запускает McpActionExecutor для выполнения действий через MCP."""
 
     def __init__(
         self,
@@ -47,19 +46,10 @@ class ActionExecutionIntegration(BaseIntegration):
         loader = UnifiedConfigLoader.get_instance()
         actions_cfg = loader.get_actions_config().get("open_app") or OpenAppActionConfig()
         
-        # ActionExecutor для open_app (direct режим)
-        executor_config = ActionExecutorConfig(
-            enabled=actions_cfg.enabled,
-            timeout_sec=actions_cfg.timeout_sec,
-            allowed_apps=actions_cfg.allowed_apps or [],
-            binary=actions_cfg.binary,
-        )
-        
-        self._executor = ActionExecutor(executor_config)
+        # Сохраняем конфигурацию open_app для совместимости
         self._open_app_config = actions_cfg
-        self._config = executor_config
         
-        # McpActionExecutor для close_app (через MCP)
+        # McpActionExecutor для open_app и close_app (через MCP)
         # Загружаем конфигурацию MCP серверов из unified_config
         mcp_configs = loader.get_mcp_config()
         open_app_mcp = mcp_configs.get('open_app', {})
@@ -105,11 +95,12 @@ class ActionExecutionIntegration(BaseIntegration):
         self._spoken_error_sessions: Set[str] = set()
         
         logger.info(
-            "[%s] ActionExecutionIntegration initialized: enabled=%s, timeout=%.1fs, allowed_apps=%s",
+            "[%s] ActionExecutionIntegration initialized: enabled=%s, timeout=%.1fs, open_app_server=%s, close_app_server=%s",
             FEATURE_ID,
-            executor_config.enabled,
-            executor_config.timeout_sec,
-            len(executor_config.allowed_apps) if executor_config.allowed_apps else "all"
+            mcp_config.enabled,
+            mcp_config.timeout_sec,
+            open_app_server_path,
+            close_app_server_path
         )
 
     async def _do_initialize(self) -> bool:
@@ -118,8 +109,8 @@ class ActionExecutionIntegration(BaseIntegration):
 
     async def _do_start(self) -> bool:
         """Запуск интеграции - подписка на события."""
-        if not self._executor.is_enabled():
-            logger.info("[%s] Action executor disabled, skipping start", FEATURE_ID)
+        if not self._mcp_executor.config.enabled:
+            logger.info("[%s] MCP action executor disabled, skipping start", FEATURE_ID)
             return True
 
         await self.event_bus.subscribe(
@@ -147,7 +138,7 @@ class ActionExecutionIntegration(BaseIntegration):
 
     async def _do_stop(self) -> bool:
         """Остановка интеграции - отмена всех действий и отписка от событий."""
-        if not self._executor.is_enabled():
+        if not self._mcp_executor.config.enabled:
             return True
         
         await self._cancel_all_actions(reason="integration_stop")
@@ -175,13 +166,13 @@ class ActionExecutionIntegration(BaseIntegration):
         action_json = data.get("action_json")
         feature_id = data.get("feature_id") or FEATURE_ID
 
-        if not self._executor.is_enabled():
-            logger.info("[%s] Actions disabled, ignoring payload", feature_id)
+        if not self._mcp_executor.config.enabled:
+            logger.info("[%s] MCP actions disabled, ignoring payload", feature_id)
             await self._publish_failure(
                 session_id=session_id,
                 feature_id=feature_id,
                 error_code="disabled",
-                message="Action executor disabled",
+                message="MCP action executor disabled",
                 app_name=None,
             )
             return
@@ -266,8 +257,8 @@ class ActionExecutionIntegration(BaseIntegration):
                 )
                 return
 
-        # Преобразуем формат для ActionExecutor
-        # ActionExecutor ожидает: {"type": "open_app" или "close_app", "app_name": "...", "app_path": "..."}
+        # Преобразуем формат для McpActionExecutor
+        # McpActionExecutor ожидает: {"type": "open_app" или "close_app", "app_name": "...", "app_path": "..."}
         executor_action_data = {
             "type": action_type,
             "app_name": args.get("app_name"),
@@ -298,11 +289,11 @@ class ActionExecutionIntegration(BaseIntegration):
         feature_id: str
     ):
         """
-        Выполняет действие через ActionExecutor.
+        Выполняет действие через McpActionExecutor.
         
         Args:
             session_id: ID сессии
-            action_data: Данные действия для ActionExecutor
+            action_data: Данные действия для McpActionExecutor
             feature_id: ID фичи для логирования
         """
         # Определяем тип действия для событий
@@ -323,18 +314,21 @@ class ActionExecutionIntegration(BaseIntegration):
         try:
             # Выполняем действие в зависимости от типа
             if action_type == "open_app":
-                # Используем ActionExecutor для open_app
-                result = await self._executor.execute(action_data)
+                # Используем McpActionExecutor для open_app (через MCP)
+                result = await self._mcp_executor.execute_action(
+                    action_data,
+                    session_id=session_id
+                )
             elif action_type == "close_app":
-                # Используем McpActionExecutor для close_app
+                # Используем McpActionExecutor для close_app (через MCP)
                 result = await self._mcp_executor.execute_action(
                     action_data,
                     session_id=session_id
                 )
             else:
                 # Неизвестный тип действия
-                from modules.action_executor import ActionResult
-                result = ActionResult(
+                from modules.mcp_action import McpActionResult
+                result = McpActionResult(
                     success=False,
                     message=f"Unsupported action type: {action_type}",
                     error="unsupported_action",
@@ -493,6 +487,8 @@ class ActionExecutionIntegration(BaseIntegration):
             session_id=session_id,
             error_code=error_code,
             app_name=app_name,
+            error_message=message,
+            feature_id=feature_id,
         )
 
     async def _cancel_active_playback(self, *, session_id: Optional[str], reason: str) -> None:
@@ -518,6 +514,8 @@ class ActionExecutionIntegration(BaseIntegration):
         session_id: Optional[str],
         error_code: Optional[str],
         app_name: Optional[str],
+        error_message: Optional[str] = None,
+        feature_id: Optional[str] = None,
     ) -> None:
         """Публикует speech.playback.request с описанием ошибки."""
         if not self._open_app_config.speak_errors or not session_id:
@@ -525,13 +523,22 @@ class ActionExecutionIntegration(BaseIntegration):
         if session_id in self._spoken_error_sessions:
             return
 
-        speech_text = action_error_resolver.resolve(error_code, app_name)
+        # Используем переданный feature_id или FEATURE_ID по умолчанию
+        used_feature_id = feature_id or FEATURE_ID
+        
+        # Определяем source в зависимости от feature_id
+        if "close-app" in used_feature_id:
+            source = "actions.close_app"
+        else:
+            source = "actions.open_app"
+
+        speech_text = action_error_resolver.resolve(error_code, app_name, error_message)
         await self.event_bus.publish(
             "speech.playback.request",
             {
                 "session_id": session_id,
-                "feature_id": FEATURE_ID,
-                "source": "actions.open_app",
+                "feature_id": used_feature_id,
+                "source": source,
                 "category": "action_error",
                 "priority": "high",
                 "use_server_tts": self._open_app_config.use_server_tts,

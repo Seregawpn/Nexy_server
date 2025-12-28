@@ -12,18 +12,28 @@ import importlib.util
 from shutil import which
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+
+# Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
+try:
+    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    # Fallback: explicit modules path if repository layout is used
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 from config.unified_config_loader import UnifiedConfigLoader
 
 logger = logging.getLogger(__name__)
 
 # NEW: GoogleSRController v2 (standard)
 try:
-    from modules.voice_recognition import GoogleSRController, GoogleSRResult
+    from modules.voice_recognition import GoogleSRController, GoogleSRResult  # type: ignore[reportMissingImports]
     _GOOGLE_SR_AVAILABLE = True
 except Exception as e:
     _GOOGLE_SR_AVAILABLE = False
+    GoogleSRController = None  # type: ignore[assignment, misc]
+    GoogleSRResult = None  # type: ignore[assignment, misc]
     logger.error(f"❌ [AUDIO_RECOGNITION] Critical: Failed to import GoogleSRController: {e}")
     import traceback
     logger.error(traceback.format_exc())
@@ -286,7 +296,10 @@ class VoiceRecognitionIntegration:
             else:
                 # Simulation mode
                 logger.info(f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})")
-                await self._start_recognition(session_id)
+                if session_id is not None:
+                    await self._start_recognition(session_id)
+                else:
+                    logger.warning("VOICE: session_id is None, cannot start recognition")
         except Exception as e:
             logger.error(f"VOICE: error in recording_start handler: {e}")
             import traceback

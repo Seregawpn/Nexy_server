@@ -5,7 +5,7 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 import grpc
 import grpc.aio
 
@@ -35,8 +35,8 @@ class ConnectionManager:
         self.health_checker = HealthChecker()
         
         # Callbacks
-        self.on_connection_changed: Optional[callable] = None
-        self.on_error: Optional[callable] = None
+        self.on_connection_changed: Optional[Callable[[ConnectionState], None]] = None
+        self.on_error: Optional[Callable[[Exception, str], None]] = None
     
     def add_server(self, name: str, config: ServerConfig):
         """Добавляет сервер в конфигурацию"""
@@ -265,11 +265,11 @@ class ConnectionManager:
         """Проверяет, подключен ли клиент"""
         return self.connection_state == ConnectionState.CONNECTED
     
-    def set_connection_callback(self, callback: callable):
+    def set_connection_callback(self, callback: Callable[[ConnectionState], None]):
         """Устанавливает callback для изменений состояния соединения"""
         self.on_connection_changed = callback
     
-    def set_error_callback(self, callback: callable):
+    def set_error_callback(self, callback: Callable[[Exception, str], None]):
         """Устанавливает callback для ошибок"""
         self.on_error = callback
     

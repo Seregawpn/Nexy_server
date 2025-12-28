@@ -22,7 +22,7 @@ from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
 from integration.integrations.action_execution_integration import ActionExecutionIntegration, FEATURE_ID
-from modules.action_executor import ActionResult
+from modules.mcp_action import McpActionResult
 
 logging.basicConfig(
     level=logging.INFO,
@@ -95,13 +95,15 @@ class SpeechFeedbackTester:
         
         logger.info(f"📤 Отправляем событие grpc.response.action для '{app_name}'...")
         
-        # Мокаем executor чтобы он возвращал ошибку app_not_found
+        # Мокаем MCP executor чтобы он возвращал ошибку mcp_error с сообщением "not found"
+        # Это позволит resolver правильно определить app_not_found из сообщения
         from unittest.mock import patch
-        with patch.object(self.integration._executor, 'execute') as mock_execute:
-            mock_execute.return_value = ActionResult(
+        self.integration._mcp_executor.config.enabled = True
+        with patch.object(self.integration._mcp_executor, 'execute_action') as mock_execute_action:
+            mock_execute_action.return_value = McpActionResult(
                 success=False,
                 message=f"Application '{app_name}' not found",
-                error="app_not_found",
+                error="mcp_error",  # MCP возвращает mcp_error, но resolver определит app_not_found из сообщения
                 app_name=app_name
             )
             
@@ -125,8 +127,8 @@ class SpeechFeedbackTester:
             logger.info(f"   - session_id: {failed_data.get('session_id')}")
             logger.info(f"   - feature_id: {failed_data.get('feature_id')}")
             
-            if failed_data.get('error') == "app_not_found":
-                logger.info("   ✅ Код ошибки правильный: app_not_found")
+            if failed_data.get('error') in ["mcp_error", "app_not_found"]:
+                logger.info(f"   ✅ Код ошибки правильный: {failed_data.get('error')}")
             else:
                 logger.error(f"   ❌ Неправильный код ошибки: {failed_data.get('error')}")
         else:
@@ -154,9 +156,11 @@ class SpeechFeedbackTester:
                 logger.error(f"      Получено:  '{actual_text}'")
                 
             # Проверяем метаданные
+            # Для open_app используется action-specific feature_id (F-2025-013-open-app)
+            expected_feature_id = "F-2025-013-open-app"
             checks = [
                 (speech_data.get('session_id') == session_id, "session_id"),
-                (speech_data.get('feature_id') == FEATURE_ID, "feature_id"),
+                (speech_data.get('feature_id') == expected_feature_id, "feature_id"),
                 (speech_data.get('source') == "actions.open_app", "source"),
                 (speech_data.get('priority') == "high", "priority"),
                 (speech_data.get('voice') == "en-US", "voice"),

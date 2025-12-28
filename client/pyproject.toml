@@ -68,3 +68,8 @@ extraPaths = [
 ]
 # Report missing imports as warnings instead of errors for dynamically added paths
 reportMissingImports = "warning"
+
+# Ignore missing imports in test files (pytest is a dev dependency)
+[tool.basedpyright.reportMissingImports]
+"**/test*.py" = "none"
+"**/tests/**/*.py" = "none"

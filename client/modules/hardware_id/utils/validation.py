@@ -3,10 +3,12 @@
 Упрощенная версия - только Hardware UUID
 """
 
+from __future__ import annotations
+
 import re
 import logging
 from typing import Optional, Dict, Any
-from ..core.types import HardwareIdValidationError
+from ..core.types import HardwareIdValidationError, HardwareIdResult
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +120,7 @@ class HardwareIdValidator:
         except Exception:
             return True
     
-    def validate_hardware_id_result(self, result: 'HardwareIdResult') -> bool:
+    def validate_hardware_id_result(self, result: HardwareIdResult) -> bool:
         """
         Валидирует результат получения Hardware ID
         

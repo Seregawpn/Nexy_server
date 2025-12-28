@@ -315,7 +315,7 @@ class PermissionRestartIntegration(BaseIntegration):
                 )
                 
                 # Синтетическое событие для инициализации детектора
-                payload = {
+                payload: Dict[str, object] = {
                     "permission": perm_name,
                     "old_status": PermissionStatus.NOT_DETERMINED.value,
                     "new_status": perm_status.value,
@@ -401,9 +401,11 @@ class PermissionRestartIntegration(BaseIntegration):
             return
 
         updater_busy = False
-        if self._updater_integration and hasattr(self._updater_integration, "is_update_in_progress"):
+        updater = self._updater_integration
+        if updater and hasattr(updater, "is_update_in_progress"):
             try:
-                updater_busy = bool(self._updater_integration.is_update_in_progress())
+                # Type narrowing: после проверки hasattr можем безопасно вызвать метод
+                updater_busy = bool(getattr(updater, "is_update_in_progress")())
             except Exception as exc:
                 logger.debug("[PERMISSION_RESTART] Failed to read updater status: %s", exc)
 

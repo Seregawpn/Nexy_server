@@ -21,18 +21,19 @@ async def test_reactive_cancellation():
     await integration.initialize()
     await integration.start()
     
-    # Mock executor to stay active
-    async def mock_execute(action_data):
-        logger.info("Mock executor started, sleeping...")
+    # Mock MCP executor to stay active
+    async def mock_execute_action(action_data, session_id=None):
+        logger.info("Mock MCP executor started, sleeping...")
         try:
             await asyncio.sleep(2.0)
-            from modules.action_executor import ActionResult
-            return ActionResult(success=True, message="Mock success")
+            from modules.mcp_action import McpActionResult
+            return McpActionResult(success=True, message="Mock success")
         except asyncio.CancelledError:
-            logger.info("Mock executor cancelled!")
+            logger.info("Mock MCP executor cancelled!")
             raise
 
-    integration._executor.execute = mock_execute
+    integration._mcp_executor.execute_action = mock_execute_action
+    integration._mcp_executor.config.enabled = True
 
     # Set initial mode to something OTHER than SLEEPING
     logger.info("Setting initial mode to PROCESSING...")

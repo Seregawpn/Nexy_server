@@ -10,14 +10,21 @@ from typing import Dict, Any, Optional, Set
 from enum import Enum
 
 # Импорт режимов из централизованного источника
+# Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
-    from modules.mode_management import AppMode
-except ImportError:
-    from enum import Enum
-    class AppMode(Enum):
-        SLEEPING = "sleeping"
-        LISTENING = "listening" 
-        PROCESSING = "processing"
+    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    # Fallback: explicit modules path if repository layout is used
+    try:
+        from modules.mode_management.core.types import AppMode  # type: ignore[reportMissingImports]
+    except Exception:
+        # Last resort: create a minimal AppMode enum
+        from enum import Enum
+        class AppMode(Enum):  # type: ignore[no-redef]
+            SLEEPING = "sleeping"
+            LISTENING = "listening" 
+            PROCESSING = "processing"
 
 from integration.core.event_bus import EventBus, EventPriority
 
@@ -104,7 +111,7 @@ class BaseWorkflow(ABC):
         """Действия при остановке - может быть переопределено"""
         pass
     
-    def _create_task(self, coro, name: str = None) -> asyncio.Task:
+    def _create_task(self, coro, name: Optional[str] = None) -> asyncio.Task:
         """Создание отслеживаемой задачи"""
         task = asyncio.create_task(coro, name=f"{self.workflow_name}:{name or 'task'}")
         self.active_tasks.add(task)

@@ -14,7 +14,15 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager
+
+# Import AppMode with fallback mechanism (same as state_manager.py)
+try:
+    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    # Fallback: explicit modules path if repository layout is used
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 class PermissionStatus(Enum):
     """Permission status values."""

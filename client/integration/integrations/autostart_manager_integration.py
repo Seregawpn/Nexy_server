@@ -33,7 +33,7 @@ class AutostartManagerIntegration:
     """
     
     def __init__(self, event_bus: EventBus, state_manager: ApplicationStateManager, 
-                 error_handler: ErrorHandler, config: Dict[str, Any] = None):
+                 error_handler: ErrorHandler, config: Optional[Dict[str, Any]] = None):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler

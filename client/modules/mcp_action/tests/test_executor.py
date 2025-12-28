@@ -5,7 +5,7 @@ Feature ID: F-2025-014-close-app
 """
 
 import asyncio
-import pytest
+import pytest  # type: ignore
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 
