@@ -101,6 +101,10 @@ class GoogleSRController:
         if not self._initialized:
             logger.error("❌ Controller not initialized")
             return False
+        
+        # Если ранее был cancel/stop — очищаем флаг, чтобы старт был полноценным
+        if self._stop.is_set():
+            self._stop.clear()
             
         if self._listening.is_set():
             logger.warning("⚠️ Already listening")
@@ -189,6 +193,7 @@ class GoogleSRController:
                     self.last_error = "no_speech"
                     self.failed += 1
                     if self._on_failed:
+                        self._listening.clear()
                         self._on_failed("no_speech")
                     return
                 
@@ -212,11 +217,13 @@ class GoogleSRController:
                     )
                     
                     if self._on_completed:
+                        self._listening.clear()
                         self._on_completed(result)
                 else:
                     self.last_error = "empty_result"
                     self.failed += 1
                     if self._on_failed:
+                        self._listening.clear()
                         self._on_failed("empty_result")
                         
             except sr.UnknownValueError:
@@ -224,12 +231,14 @@ class GoogleSRController:
                 self.last_error = "unknown_value"
                 self.failed += 1
                 if self._on_failed:
+                    self._listening.clear()
                     self._on_failed("unknown_value")
             except sr.RequestError as e:
                 logger.error("❌ Google SR request error: %s", e)
                 self.last_error = f"request_error: {e}"
                 self.failed += 1
                 if self._on_failed:
+                    self._listening.clear()
                     self._on_failed(f"request_error: {e}")
                     
         except OSError as e:
@@ -242,13 +251,18 @@ class GoogleSRController:
                 self.last_error = f"mic_error: {e}"
             self.failed += 1
             if self._on_failed:
+                self._listening.clear()
                 self._on_failed(self.last_error)
         except Exception as e:
             logger.error("❌ Capture error: %s", e)
             self.last_error = f"capture_error: {e}"
             self.failed += 1
             if self._on_failed:
+                self._listening.clear()
                 self._on_failed(self.last_error)
+        finally:
+            # Разрешаем последующий start_listening после завершения сессии
+            self._listening.clear()
 
     def get_current_device(self) -> Optional[str]:
         """Get current input device name."""

@@ -66,6 +66,8 @@ class VoiceRecognitionIntegration:
 
         # Флаг блокировки во время first_run
         self._first_run_in_progress: bool = False
+        # Если распознавание завершилось при активном PTT — публикацию откладываем до RELEASE
+        self._defer_result_until_stop: bool = False
 
     @classmethod
     def run_dependency_check(cls) -> bool:
@@ -310,8 +312,24 @@ class VoiceRecognitionIntegration:
             # Stop GoogleSRController
             if self._google_sr_controller and not self.config.simulate:
                 logger.debug(f"🎤 Calling stop_listening for session {session_id}")
-                self._google_sr_controller.stop_listening()
-                # Callback will handle completion/publishing
+                result = self._google_sr_controller.stop_listening()
+                # Если ранее мы откладывали публикацию (PTT удерживался) — публикуем результат сейчас
+                if self._defer_result_until_stop:
+                    await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+                    if result and result.text:
+                        await self.event_bus.publish("voice.recognition_completed", {
+                            "session_id": session_id,
+                            "text": result.text,
+                            "confidence": result.confidence,
+                            "language": result.language
+                        })
+                    else:
+                        await self.event_bus.publish("voice.recognition_failed", {
+                            "session_id": session_id,
+                            "error": (result.error if result else "no_result"),
+                            "reason": (result.error if result else "no_result")
+                        })
+                    self._defer_result_until_stop = False
             else:
                 # Simulation
                 # In simulation, we typically just wait for the task to finish
@@ -507,6 +525,13 @@ class VoiceRecognitionIntegration:
     async def _publish_v2_completed(self, session_id, result: "GoogleSRResult") -> None:
         """Helper to publish v2 completion via EventBus."""
         try:
+            # Если PTT удерживается — не закрываем микрофон и не публикуем результат
+            if self.state_manager.get_state_data("ptt_pressed", False) and self._recording_active:
+                self._defer_result_until_stop = True
+                if self._google_sr_controller:
+                    self._v2_current_session_id = session_id
+                    self._google_sr_controller.start_listening()
+                return
             await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
             if result.text:
                 await self.event_bus.publish("voice.recognition_completed", {
@@ -549,6 +574,13 @@ class VoiceRecognitionIntegration:
     async def _publish_v2_failed(self, session_id, error: str) -> None:
         """Helper to publish v2 failure via EventBus."""
         try:
+            # Если PTT удерживается — не закрываем микрофон и не публикуем ошибку
+            if self.state_manager.get_state_data("ptt_pressed", False) and self._recording_active:
+                self._defer_result_until_stop = True
+                if self._google_sr_controller:
+                    self._v2_current_session_id = session_id
+                    self._google_sr_controller.start_listening()
+                return
             await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
             await self.event_bus.publish("voice.recognition_failed", {
                 "session_id": session_id,
@@ -572,4 +604,3 @@ class VoiceRecognitionIntegration:
             self.config.simulate = True
             logger.info("🔄 Switching to simulation mode due to microphone probe failure")
             return False
-
