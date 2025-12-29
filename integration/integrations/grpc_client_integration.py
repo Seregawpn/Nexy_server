@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GrpcClientIntegrationConfig:
-    aggregate_timeout_sec: float = 1.5
+    aggregate_timeout_sec: float = 0.3  # ✅ Оптимизировано: 1.5 → 0.3 (скриншот обычно приходит быстрее)
     request_timeout_sec: float = 30.0
     max_retries: int = 3
     retry_delay_sec: float = 1.0
@@ -60,7 +60,7 @@ class GrpcClientIntegration:
                 uc = UnifiedConfigLoader()
                 cfg = (uc._load_config().get('integrations', {}) or {}).get('grpc_client', {})
                 config = GrpcClientIntegrationConfig(
-                    aggregate_timeout_sec=float(cfg.get('aggregate_timeout_sec', 1.5)),
+                    aggregate_timeout_sec=float(cfg.get('aggregate_timeout_sec', 0.3)),  # ✅ Оптимизировано
                     request_timeout_sec=float(cfg.get('request_timeout_sec', 30.0)),
                     max_retries=int(cfg.get('max_retries', 3)),
                     retry_delay_sec=float(cfg.get('retry_delay', 1.0)),
@@ -428,13 +428,13 @@ class GrpcClientIntegration:
         
         logger.info(f"✅ [gRPC] _send: текст найден для session_id={session_id}: '{text[:50]}...' (длина: {len(text)})")
         
-        # Получаем hardware_id
+        # Получаем hardware_id (✅ оптимизировано: 3+3с → 1+0.5с, так как hardware_id кэшируется при старте)
         logger.info(f"🔍 [gRPC] Получение hardware_id для session_id={session_id}")
-        hwid = await self._await_hardware_id(timeout_ms=3000)
+        hwid = await self._await_hardware_id(timeout_ms=1000)  # ✅ Оптимизировано: 3000 → 1000мс
         if not hwid:
             logger.warning(f"⚠️ [gRPC] Hardware ID not available for session {session_id} - requesting explicitly")
             await self.event_bus.publish("hardware.id_request", {"request_id": f"grpc-{session_id}", "wait_ready": True})
-            hwid = await self._await_hardware_id(timeout_ms=3000, request_id=f"grpc-{session_id}")
+            hwid = await self._await_hardware_id(timeout_ms=500, request_id=f"grpc-{session_id}")  # ✅ Оптимизировано: 3000 → 500мс
         if not hwid:
             logger.error(f"❌ [gRPC] No Hardware ID available for gRPC request - session {session_id}")
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "no_hardware_id"})

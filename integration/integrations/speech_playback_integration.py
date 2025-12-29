@@ -103,6 +103,10 @@ class SpeechPlaybackIntegration:
         self._avf_chunk_buffer: Dict[str, List[Dict[str, Any]]] = {}  # session_id -> список чанков
         self._avf_playback_task: Optional[asyncio.Task] = None  # Фоновый процесс воспроизведения
         self._avf_is_playing: Dict[str, bool] = {}  # session_id -> is_playing
+        
+        # ✅ ОПТИМИЗАЦИЯ: Event для мгновенного пробуждения worker вместо polling
+        self._chunk_completed_event: asyncio.Event = asyncio.Event()
+        self._new_chunk_event: asyncio.Event = asyncio.Event()
 
     def _ensure_avf_engine(self, reason: str = "unknown") -> bool:
         """Создаёт AVFAudioEngine, если он ещё не создан."""
@@ -432,6 +436,9 @@ class SpeechPlaybackIntegration:
                     if self._avf_playback_task is None or self._avf_playback_task.done():
                         self._avf_playback_task = asyncio.create_task(self._avf_playback_worker())
                         logger.info("✅ [AVF] Фоновый процесс воспроизведения запущен")
+                    
+                    # ✅ ОПТИМИЗАЦИЯ: Пробуждаем worker мгновенно вместо polling
+                    self._new_chunk_event.set()
                     
                     # Публикуем событие начала воспроизведения (если первый чанк)
                     if not self._avf_is_playing.get(sid, False):
@@ -1393,8 +1400,13 @@ class SpeechPlaybackIntegration:
                 ]
                 
                 if not active_sessions:
-                    # Нет активных сессий, ждём
-                    await asyncio.sleep(0.1)
+                    # ✅ ОПТИМИЗАЦИЯ: Ждём событие вместо polling (0.1s)
+                    # Событие будет установлено при добавлении нового чанка или завершении воспроизведения
+                    self._new_chunk_event.clear()
+                    try:
+                        await asyncio.wait_for(self._new_chunk_event.wait(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        pass  # Timeout - просто проверяем снова
                     continue
                 
                 # Обрабатываем первую активную сессию
@@ -1418,9 +1430,20 @@ class SpeechPlaybackIntegration:
                 # ✅ ИСПРАВЛЕНИЕ: Используем Lock для синхронизации доступа
                 async with self._active_chunks_lock:
                     if sid in self._active_chunks:
-                        # Чанк воспроизводится, ждём completion callback
-                        await asyncio.sleep(0.1)
-                        continue
+                        # ✅ ОПТИМИЗАЦИЯ: Ждём completion callback через Event вместо polling
+                        pass  # Выходим из lock и ждём ниже
+                    else:
+                        pass  # Можем продолжить
+                
+                # Проверяем ещё раз после выхода из lock
+                if sid in self._active_chunks:
+                    # Чанк воспроизводится, ждём completion callback через Event
+                    self._chunk_completed_event.clear()
+                    try:
+                        await asyncio.wait_for(self._chunk_completed_event.wait(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        pass  # Timeout - просто проверяем снова
+                    continue
                 
                 # ✅ ИСПРАВЛЕНИЕ: Воспроизводим чанки ПОСЛЕДОВАТЕЛЬНО, а не все сразу
                 # Это предотвращает ошибку "Воспроизведение уже активно"
@@ -1434,10 +1457,16 @@ class SpeechPlaybackIntegration:
                 # Если есть активный чанк для этой сессии - ждём completion callback вместо принудительной остановки
                 async with self._active_chunks_lock:
                     if sid in self._active_chunks:
-                        # Чанк уже воспроизводится, ждём completion callback
+                        # Чанк уже воспроизводится, ждём completion callback через Event
                         logger.debug(f"🔍 [AVF] Чанк уже воспроизводится для сессии {sid}, ждём completion callback")
-                        await asyncio.sleep(0.1)
-                        continue
+                
+                if sid in self._active_chunks:
+                    self._chunk_completed_event.clear()
+                    try:
+                        await asyncio.wait_for(self._chunk_completed_event.wait(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
                 
                 # ✅ КРИТИЧНО: Проверяем и принудительно сбрасываем состояние перед новым чанком
                 # ✅ ИСПРАВЛЕНИЕ: Проверяем ВСЕ активные чанки, а не только для текущего sid
@@ -1763,6 +1792,9 @@ class SpeechPlaybackIntegration:
                 # ✅ НЕ ПОСЛЕДНИЙ ЧАНК - worker продолжит воспроизведение следующего
                 logger.debug(f"🔍 [AVF] Чанк завершён, но не последний (grpc_done={grpc_done}, buf_empty={buf_empty}), worker продолжит")
                 # Worker автоматически возьмёт следующий чанк из буфера, так как active_chunks[sid] удалён
+            
+            # ✅ ОПТИМИЗАЦИЯ: Пробуждаем worker мгновенно вместо polling (0.1s ожидания)
+            self._chunk_completed_event.set()
                 
         except Exception as e:
             logger.error(f"❌ [AVF] Ошибка обработки audio.playback.completed: {e}", exc_info=True)
