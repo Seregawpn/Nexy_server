@@ -93,6 +93,12 @@ class GrpcClientIntegration:
         # Сеть
         self._network_connected: Optional[bool] = None
 
+        # ПРИМЕЧАНИЕ: Жёсткий контракт протокола
+        # sample_rate и channels теперь ОБЯЗАТЕЛЬНЫ в audio_chunk (добавлены в protobuf).
+        # Любой чанк без этих полей будет отброшен (drop chunk) - это ожидаемое поведение
+        # для обеспечения единого и предсказуемого потока аудио без fallback и скрытой деградации.
+        # Старые версии сервера без sample_rate/channels будут давать тишину - это осознанное решение.
+
         self._initialized = False
         self._running = False
 
@@ -505,28 +511,34 @@ class GrpcClientIntegration:
                         logger.warning(f"⚠️ Received empty audio_chunk - skipping (waiting for end_message)")
                         continue
 
-                    # 🔍 ДИАГНОСТИКА: Проверяем sample_rate в чанке
-                    chunk_sr = getattr(ch, 'sample_rate', None)
-                    chunk_ch = getattr(ch, 'channels', None)
+                    # ЖЕСТКИЙ КОНТРАКТ: sample_rate и channels обязательны в audio_chunk
+                    # В protobuf v3 для int32 полей HasField() не работает, поэтому проверяем на валидные значения
+                    # sample_rate и channels не могут быть 0 (невалидные значения)
+                    chunk_sr = ch.sample_rate if ch.sample_rate > 0 else None
+                    chunk_ch = ch.channels if ch.channels > 0 else None
                     
-                    # 🔍 ДИАГНОСТИКА: Логируем RAW значения из protobuf
+                    # Если поля отсутствуют (равны 0) - это ошибка протокола, drop chunk
+                    if chunk_sr is None or chunk_ch is None:
+                        logger.error(
+                            f"❌ [GRPC_PROTOCOL_ERROR] audio_chunk без sample_rate или channels "
+                            f"(raw: sr={ch.sample_rate}, ch={ch.channels}) для сессии {session_id}. "
+                            f"Чанк отброшен. Сервер должен заполнять эти поля согласно протоколу."
+                        )
+                        continue  # Drop chunk - жесткий контракт
+                    
+                    # Используем значения из чанка
+                    effective_sr = chunk_sr
+                    effective_ch = chunk_ch
                     logger.debug(
                         f"🔍 [GRPC_CHUNK_DIAG] audio_chunk: bytes={len(data)}, dtype={dtype}, "
-                        f"shape={shape}, raw_sample_rate={chunk_sr}, raw_channels={chunk_ch} для сессии {session_id}"
+                        f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {session_id}"
                     )
-                    
-                    if chunk_sr is None:
-                        logger.debug(f"🔍 [GRPC_CHUNK_DIAG] sample_rate не указан в audio_chunk, будет использован fallback: 24000Hz")
-                    elif chunk_sr != 24000:
-                        logger.warning(
-                            f"⚠️ [GRPC_CHUNK_DIAG] sample_rate в audio_chunk ({chunk_sr}Hz) не соответствует спецификации (24000Hz)"
-                        )
 
                     await self.event_bus.publish("grpc.response.audio", {
                         "session_id": session_id,
                         "dtype": dtype,
-                        "sample_rate": chunk_sr,  # Может быть None - fallback будет в speech_playback_integration
-                        "channels": chunk_ch,  # Может быть None - fallback будет в speech_playback_integration
+                        "sample_rate": effective_sr,
+                        "channels": effective_ch,
                         "shape": shape,
                         "bytes": data,
                     })

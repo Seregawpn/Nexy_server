@@ -179,11 +179,45 @@ class SpeechPlaybackIntegration:
             audio_bytes: bytes = data.get("bytes") or b""
             dtype: str = (data.get("dtype") or 'int16').lower()
             shape = data.get("shape") or []
-            src_sample_rate: Optional[int] = data.get("sample_rate") or 24000
-            src_channels: Optional[int] = data.get("channels") or 1
+            src_sample_rate: Optional[int] = data.get("sample_rate")
+            src_channels: Optional[int] = data.get("channels")
             
             if not audio_bytes:
                 return
+
+            # GUARD: Проверка sample_rate из чанка на соответствие конфигурации
+            expected_sample_rate = self.config.get("sample_rate", 48000)
+            if src_sample_rate is not None and src_sample_rate != expected_sample_rate:
+                logger.warning(
+                    f"⚠️ [AUDIO_PLAYBACK] sample_rate mismatch: chunk={src_sample_rate}Hz, "
+                    f"expected={expected_sample_rate}Hz для сессии {sid}. Чанк отброшен."
+                )
+                return  # Drop chunk - избегаем воспроизведения с неверной скоростью
+            
+            # Если sample_rate не указан - это ошибка протокола (должен быть заполнен в grpc_client_integration)
+            if src_sample_rate is None:
+                logger.error(
+                    f"❌ [AUDIO_PLAYBACK] sample_rate отсутствует в audio_chunk для сессии {sid}. "
+                    f"Чанк отброшен. Протокол нарушен."
+                )
+                return  # Drop chunk
+            
+            # Если channels не указан - это ошибка протокола (должен быть заполнен в grpc_client_integration)
+            if src_channels is None:
+                logger.error(
+                    f"❌ [AUDIO_PLAYBACK] channels отсутствует в audio_chunk для сессии {sid}. "
+                    f"Чанк отброшен. Протокол нарушен."
+                )
+                return  # Drop chunk
+            
+            # GUARD: Проверка channels из чанка на соответствие конфигурации
+            expected_channels = self.config.get("channels", 1)
+            if src_channels != expected_channels:
+                logger.warning(
+                    f"⚠️ [AUDIO_PLAYBACK] channels mismatch: chunk={src_channels}, "
+                    f"expected={expected_channels} для сессии {sid}. Чанк отброшен."
+                )
+                return  # Drop chunk - избегаем воспроизведения с неверным количеством каналов
 
             if not await self._ensure_player_ready():
                 return
@@ -278,8 +312,9 @@ class SpeechPlaybackIntegration:
             if audio_data is None:
                 return
             
-            sample_rate = data.get("sample_rate", 24000)
-            channels = data.get("channels", 1)
+            # Используем значения из конфига (единый источник истины) вместо хардкода
+            sample_rate = data.get("sample_rate", self.config.get("sample_rate", 48000))
+            channels = data.get("channels", self.config.get("channels", 1))
             pattern = data.get("pattern", "raw_audio")
             session_id = data.get("session_id")
             

@@ -65,6 +65,8 @@ message AudioChunk {
   bytes audio_data = 1;        // Аудио данные
   string dtype = 2;            // Тип данных (например, 'int16')
   repeated int32 shape = 3;    // Форма массива
+  int32 sample_rate = 4;       // Частота дискретизации (Hz)
+  int32 channels = 5;          // Количество каналов
 }
 
 // Запрос на прерывание сессии

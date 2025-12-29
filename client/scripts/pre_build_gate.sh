@@ -221,14 +221,27 @@ log_info "━━━━━━━━━━━━━━━━━━━━━━━�
 log_info "3. СТАТИЧЕСКИЕ ПРОВЕРКИ"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# 3.1 Валидация схем
+# 3.1 Проверка актуальности protobuf pb2 файлов
+# Скрипт доступен как scripts/regenerate_proto.sh относительно корня клиента
+if [ -f "scripts/regenerate_proto.sh" ]; then
+    if run_check "Проверка актуальности protobuf pb2 файлов" bash scripts/regenerate_proto.sh --check; then
+        ((PASSED++))
+    else
+        ((FAILED++))
+    fi
+else
+    log_warn "regenerate_proto.sh не найден, пропускаем проверку pb2"
+    ((SKIPPED++))
+fi
+
+# 3.2 Валидация схем
 if run_check "Валидация схем конфигурации" python3 scripts/validate_schemas.py; then
     ((PASSED++))
 else
     ((FAILED++))
 fi
 
-# 3.2 Проверка 4-артефактного инварианта
+# 3.3 Проверка 4-артефактного инварианта
 if run_check "4-артефактный инвариант (STATE_CATALOG ↔ interaction_matrix ↔ gateways ↔ tests)" \
     python3 scripts/verify_4_artifacts_invariant.py update_in_progress restart_pending; then
     ((PASSED++))
@@ -236,7 +249,7 @@ else
     ((FAILED++))
 fi
 
-# 3.3 Проверка покрытия правил
+# 3.4 Проверка покрытия правил
 if run_check "Покрытие правил (interaction_matrix.yaml → tests)" \
     python3 scripts/verify_rule_coverage.py; then
     ((PASSED++))
@@ -244,7 +257,7 @@ else
     ((FAILED++))
 fi
 
-# 3.4 Проверка покрытия предикатов
+# 3.5 Проверка покрытия предикатов
 if run_check "Покрытие предикатов (interaction_matrix.yaml → predicates.py)" \
     python3 scripts/verify_predicate_coverage.py; then
     ((PASSED++))
@@ -252,7 +265,7 @@ else
     ((FAILED++))
 fi
 
-# 3.5 Проверка регистрации feature flags
+# 3.6 Проверка регистрации feature flags
 if run_check "Регистрация feature flags (FEATURE_FLAGS.md)" \
     python3 scripts/verify_feature_flags.py; then
     ((PASSED++))
@@ -260,7 +273,7 @@ else
     ((FAILED++))
 fi
 
-# 3.6 Проверка требований (если есть PROJECT_REQUIREMENTS.md)
+# 3.7 Проверка требований (если есть PROJECT_REQUIREMENTS.md)
 if [ -f "Docs/PROJECT_REQUIREMENTS.md" ]; then
     if run_check "Валидация snapshot требований" \
         python3 scripts/update_requirements_snapshot.py --check; then
