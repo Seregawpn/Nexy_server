@@ -29,8 +29,6 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 ├─ config/                      # ⚙️ Конфигурация
 │  ├─ unified_config.yaml       # 🎯 ЕДИНЫЙ источник конфигурации
 │  ├─ unified_config_loader.py  # 🔧 Загрузчик конфигурации
-│  ├─ logging_config.yaml       # 📝 Устарел - используйте unified_config.yaml
-│  ├─ network_config.yaml       # 🌐 Устарел - используйте unified_config.yaml
 │  ├─ tray_config.yaml          # 🎯 Устарел - используйте unified_config.yaml
 │  └─ README.md                 # 📚 Документация конфигурации
 ├─ integration/                 # 🏗️ Слой интеграций (ЗАВЕРШЕН)
@@ -39,26 +37,28 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  │  ├─ state_manager.py       # 🔄 Управление состоянием
 │  │  ├─ simple_module_coordinator.py # 🎯 Главный координатор
 │  │  └─ error_handler.py       # ❌ Обработка ошибок
-│  ├─ integrations/             # 🔗 20 из 20 интеграций (FirstRunPermissionsIntegration, PermissionRestartIntegration, UpdateNotificationIntegration)
-│  │  ├─ tray_controller_integration.py
+│  ├─ integrations/             # 🔗 22 интеграции (полный список см. раздел 13)
+│  │  ├─ action_execution_integration.py
+│  │  ├─ autostart_manager_integration.py
 │  │  ├─ first_run_permissions_integration.py
-│  │  ├─ permission_restart_integration.py
-│  │  ├─ update_notification_integration.py
-│  │  ├─ input_processing_integration.py
-│  │  ├─ voice_recognition_integration.py
-│  │  ├─ screenshot_capture_integration.py
-│  │  ├─ hardware_id_integration.py
 │  │  ├─ grpc_client_integration.py
-│  │  ├─ speech_playback_integration.py
-│  │  ├─ mode_management_integration.py
-│  │  ├─ signal_integration.py
-│  │  ├─ network_manager_integration.py
-│  │  ├─ updater_integration.py
-│  │  ├─ interrupt_management_integration.py
-│  │  ├─ voiceover_ducking_integration.py
-│  │  ├─ welcome_message_integration.py
+│  │  ├─ hardware_id_integration.py
+│  │  ├─ input_processing_integration.py
 │  │  ├─ instance_manager_integration.py
-│  │  └─ autostart_manager_integration.py
+│  │  ├─ interrupt_management_integration.py
+│  │  ├─ mode_management_integration.py
+│  │  ├─ network_manager_integration.py
+│  │  ├─ permission_restart_integration.py
+│  │  ├─ screenshot_capture_integration.py
+│  │  ├─ signal_integration.py
+│  │  ├─ speech_playback_integration.py
+│  │  ├─ tray_controller_integration.py
+│  │  ├─ tts_integration.py
+│  │  ├─ update_notification_integration.py
+│  │  ├─ updater_integration.py
+│  │  ├─ voice_recognition_integration.py
+│  │  ├─ voiceover_ducking_integration.py
+│  │  └─ welcome_message_integration.py
 │  ├─ workflows/                # ⚡ WORKFLOWS (НОВАЯ АРХИТЕКТУРА)
 │  │  ├─ base_workflow.py       # 🏗️ Базовый класс
 │  │  ├─ listening_workflow.py  # 🎤 Координатор LISTENING
@@ -66,13 +66,18 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  │  ├─ workflow_config.py     # ⚙️ Конфигурация workflows
 │  │  └─ README.md              # 📚 Документация workflows
 │  └─ tests/                    # 🧪 Тесты интеграции
-├─ modules/                     # 🧩 19 модулей (без знания EventBus)
+├─ modules/                     # 🧩 21 модуль (без знания EventBus)
+│  ├─ action_errors/             # ⚠️ Обработка ошибок MCP действий
+│  ├─ autostart_manager/        # ⚡ Автозапуск приложения
 │  ├─ grpc_client/              # 📡 gRPC клиент
 │  ├─ hardware_id/              # 🆔 Идентификация устройства
 │  ├─ input_processing/         # ⌨️ Обработка ввода
+│  ├─ instance_manager/         # 🔒 Защита от дублирования экземпляров
 │  ├─ interrupt_management/     # ⚡ Управление прерываниями
+│  ├─ mcp_action/               # 🎯 Выполнение MCP команд (open_app/close_app)
 │  ├─ mode_management/          # 🔄 Управление режимами
 │  ├─ network_manager/          # 🌐 Мониторинг сети
+│  ├─ permission_restart/        # 🔄 Автоматический перезапуск после разрешений
 │  ├─ permissions/              # 🔐 Системные разрешения + first_run модули
 │  ├─ screenshot_capture/       # 📸 Захват экрана
 │  ├─ signals/                  # 🎵 Акустические сигналы
@@ -81,9 +86,7 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  ├─ updater/                  # 🔄 НОВАЯ система обновлений (HTTP + DMG)
 │  ├─ voice_recognition/        # 🎤 Распознавание речи
 │  ├─ voiceover_control/        # ♿ Управление VoiceOver (macOS)
-│  ├─ welcome_message/          # 🔊 Приветственное сообщение
-│  ├─ instance_manager/         # 🔒 Защита от дублирования экземпляров
-│  └─ autostart_manager/        # ⚡ Автозапуск приложения
+│  └─ welcome_message/          # 🔊 Приветственное сообщение
 ├─ assets/                      # 🎨 Ресурсы приложения
 │  └─ icons/                    # 🎯 Иконки для tray
 └─ Docs/                        # 📚 Документация
@@ -95,13 +98,13 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
    ├─ PACKAGING_FINAL_GUIDE.md  # 📦 Инструкция по сборке PKG
    └─ PRE_PACKAGING_VERIFICATION.md  # ✅ Чек-листы перед упаковкой
 
-server/                         # 🖥️ СЕРВЕРНАЯ ЧАСТЬ (Python)
+server/server/                  # 🖥️ СЕРВЕРНАЯ ЧАСТЬ (Python)
 ├─ main.py                      # 🎯 Точка входа сервера
 ├─ requirements.txt             # 📦 Зависимости сервера
 ├─ config.env                   # ⚙️ Переменные окружения
 ├─ config/                      # ⚙️ Конфигурация сервера
 │  ├─ unified_config.py         # 🎯 ЕДИНЫЙ источник конфигурации
-│  └─ unified_config_example.yaml # 📝 Пример конфигурации
+│  └─ unified_config.yaml       # 🎯 Конфигурация (единый источник истины)
 ├─ modules/                     # 🧩 Модули сервера
 │  ├─ grpc_service/             # 📡 gRPC сервис (ПРАВИЛЬНАЯ СТРУКТУРА)
 │  │  ├─ core/                  # Основные компоненты
@@ -202,7 +205,7 @@ server/                         # 🖥️ СЕРВЕРНАЯ ЧАСТЬ (Python)
   - **Анализ** - автоматическая оценка готовности к масштабированию
   - **Отчеты** - детальная статистика производительности
 
-- Модули сервера (server/modules/*)
+- Модули сервера (server/server/modules/*)
   - **text_processing** - обработка текста с Gemini API
   - **audio_generation** - генерация аудио ответов
   - **session_management** - управление пользовательскими сессиями
@@ -346,10 +349,56 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
   - Создаёт и запускает интеграции (в т.ч. ModeManagementIntegration)
   - Прикрепляет EventBus к StateManager для публикации событий смены режимов
 
+**Порядок создания интеграций** (`_create_integrations()`):
+1. instance_manager (ПЕРВЫЙ, блокирующий)
+2. hardware_id
+3. tray (если enabled)
+4. input
+5. updater
+6. permission_restart
+7. update_notification
+8. network
+9. interrupt
+10. screenshot_capture
+11. voice_recognition
+12. mode_management
+13. grpc
+14. action_execution (если enabled)
+15. speech_playback
+16. signals
+17. autostart_manager
+18. welcome_message
+19. voiceover_ducking
+20. first_run_permissions (ПОСЛЕДНЯЯ в создании, но 4-я в запуске)
+
+**Порядок запуска интеграций** (`startup_order`):
+1. instance_manager (ПЕРВЫЙ, блокирующий)
+2. tray (ВТОРОЙ, неблокирующий, критично для UX)
+3. hardware_id
+4. first_run_permissions (4-я в запуске, блокирующая - ПОСЛЕ tray!)
+5. permission_restart
+6. mode_management
+7. input
+8. voice_recognition
+9. network
+10. interrupt
+11. screenshot_capture
+12. grpc
+13. action_execution
+14. speech_playback
+15. signals
+16. update_notification
+17. updater
+18. welcome_message
+19. voiceover_ducking
+20. autostart_manager (ПОСЛЕДНИЙ, неблокирующий)
+
 Последовательность (упрощенно):
 1) Создание core-компонентов → 2) Запуск фонового loop → 2.5) **Настройка критичных подписок** (_setup_critical_subscriptions) → 3) Создание интеграций → 4) initialize() → 5) start() → 6) Остальные подписки EventBus
 
 **КРИТИЧНО:** Подписки на события `permissions.first_run_*` настраиваются в шаге 2.5 (ДО инициализации интеграций), чтобы не потерять события, публикуемые FirstRunPermissionsIntegration.initialize() при обнаружении флага перезапуска. См. ADR_PERMISSION_EVENT_RACE_FIX.md для деталей.
+
+**ВАЖНО:** FirstRunPermissionsIntegration создаётся ПОСЛЕДНЕЙ в `_create_integrations()`, но запускается 4-й в `startup_order` (после tray). Это обеспечивает правильную последовательность: tray готов → first_run_permissions → permission_restart.
 
 ---
 
@@ -409,8 +458,8 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 - **Права и first-run:** `PERMISSIONS_REPORT.md`, `Docs/first_run_flow_spec.md`
 - **План упаковки:** `Docs/PACKAGING_FINAL_GUIDE.md` + `Docs/PRE_PACKAGING_VERIFICATION.md`
 - **Концепция продукта:** `Docs/PRODUCT_CONCEPT.md`
-- **Масштабирование:** `server/SCALING_100_USERS_GUIDE.md`
-- **Модуляризация сервера:** `server/SERVER_MODULARIZATION_PLAN.md`
+- **Масштабирование:** `server/server/Docs/SCALING_100_USERS_GUIDE.md`
+- **Модуляризация сервера:** `server/server/Docs/SERVER_MODULARIZATION_PLAN.md`
 - **STATE_CATALOG (оси состояния):** `Docs/STATE_CATALOG.md` — единый источник истины для осей состояния и таблица ownership
 - **Interaction Matrix (правила):** `config/interaction_matrix.yaml` — правила взаимодействия осей с приоритетами (синхронизирован с STATE_CATALOG.md)
 - **ADR: Исправление race condition разрешений:** `Docs/ADR_PERMISSION_EVENT_RACE_FIX.md` — документация решения проблемы потери событий при первом запуске
@@ -423,11 +472,11 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 - **Конфигурация:** `config/unified_config.yaml`
 
 ### 🖥️ **Серверная архитектура:**
-- **gRPC сервер:** `server/modules/grpc_service/core/grpc_server.py`
-- **Мониторинг:** `server/monitoring/grpc_monitor.py`
-- **Нагрузочное тестирование:** `server/load_testing/load_test.py`
-- **Конфигурация сервера:** `server/config/unified_config_example.yaml`
-- **Переменные окружения:** `server/config.env`
+- **gRPC сервер:** `server/server/modules/grpc_service/core/grpc_server.py`
+- **Мониторинг:** `server/server/monitoring/grpc_monitor.py`
+- **Нагрузочное тестирование:** `server/server/load_testing/load_test.py`
+- **Конфигурация сервера:** `server/server/config/unified_config.yaml`
+- **Переменные окружения:** `server/server/config.env`
 
 Если чего‑то не хватает в этом документе — предложите правки, мы обновим «источник истины» по архитектуре.
 
@@ -435,7 +484,7 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 
 ## 12) Каталог модулей
 
-### 🖥️ **КЛИЕНТСКИЕ МОДУЛИ (client/modules) - 20 МОДУЛЕЙ**
+### 🖥️ **КЛИЕНТСКИЕ МОДУЛИ (client/modules) - 21 МОДУЛЬ**
 
 _macOS автоматически управляет активными аудиоустройствами, поэтому отдельный менеджер больше не требуется._
 - `action_errors` — обработка ошибок MCP действий: типизированные ошибки для open_app/close_app, локализованные сообщения.
@@ -459,7 +508,7 @@ _macOS автоматически управляет активными ауди
 - `voiceover_control` — управление VoiceOver на macOS: умное отключение/включение через Command+F5, отслеживание состояния, диагностика.
 - `welcome_message` — приветственное сообщение: серверная генерация приветствия при запуске, конфигурируемые параметры.
 
-### 🖥️ **СЕРВЕРНЫЕ МОДУЛИ (server/modules)**
+### 🖥️ **СЕРВЕРНЫЕ МОДУЛИ (server/server/modules)**
 
 - `grpc_service` — **gRPC сервис с правильной модульной структурой**: сервер, менеджер, protobuf файлы, конфигурация.
 - `text_processing` — обработка текста с Gemini API, анализ контекста, генерация ответов.
@@ -596,7 +645,7 @@ _macOS автоматически управляет активными ауди
 
 Инвариант: все смены режимов запрашиваются только через `mode.request`; факт смены — только от StateManager.
 
-### 🖥️ **СЕРВЕРНЫЕ ИНТЕГРАЦИИ (server/integrations)**
+### 🖥️ **СЕРВЕРНЫЕ ИНТЕГРАЦИИ (server/server/integrations)**
 
 - `service_integrations/` — интеграции сервисов сервера
   - Координация между различными сервисами

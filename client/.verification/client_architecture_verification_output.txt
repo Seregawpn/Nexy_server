@@ -1,0 +1,566 @@
+DEBUG: STARTING NEW ARCHITECTURE VERIFICATION SCRIPT
+
+🔍 ARCHITECTURE VERIFICATION REPORT
+========================================
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/run_diagnostics.py:56
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/main.py:203
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/packaging/runtime_hook_pyobjc_fix.py:8
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/config/interaction_matrix_loader.py:15
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/tests/test_ctrl_n_combo.py:30
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/tests/test_interrupt_playback.py:27
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/prototypes/test_storm_reconcile.py:26
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/prototypes/test_output_playback.py:22
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/prototypes/test_device_mapping.py:20
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/prototypes/test_device_discovery.py:20
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/prototypes/test_input_connection.py:21
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/prototypes/test_device_identity.py:24
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/test_action_error_speech_feedback.py:31
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/diagnose_icon_issue.py:15
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/verify_architecture.py:8
+   Code: 3. No direct logging.getLogger(__name__) (use get_logger).
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/verify_architecture.py:62
+   Code: "description": "Direct use of logging.getLogger(__name__) (should use integration.utils.get_logger)",
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/test_tray_termination.py:31
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/test_critical_paths.py:32
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/test_audio_production.py:25
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/test_audio_metrics.py:18
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/scripts/test_mcp_e2e_real_server.py:35
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/updater/net.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/updater/updater.py:21
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/updater/dmg.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/updater/pkg.py:11
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/updater/verify.py:14
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/updater/migrate.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/updater/replace.py:10
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/tray_controller/demo.py:21
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/welcome_message/core/audio_generator.py:13
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/welcome_message/core/welcome_player.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/welcome_message/config/welcome_config.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permission_restart/macos/restart_handler.py:15
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permission_restart/macos/permissions_restart_handler.py:24
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permission_restart/core/atomic_flag.py:18
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permission_restart/core/permission_change_detector.py:14
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/grpc_client/core/retry_manager.py:11
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/grpc_client/core/grpc_client.py:27
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/grpc_client/core/connection_manager.py:15
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/grpc_client/core/health_checker.py:11
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/hardware_id/macos/hardware_detector.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/hardware_id/macos/system_profiler.py:11
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/hardware_id/core/config.py:15
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/hardware_id/core/hardware_identifier.py:17
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/hardware_id/utils/caching.py:14
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/hardware_id/utils/validation.py:13
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/interrupt_management/core/interrupt_coordinator.py:16
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/interrupt_management/handlers/recording_interrupt.py:9
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/interrupt_management/handlers/speech_interrupt.py:9
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/screenshot_capture/macos/core_graphics_bridge.py:35
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/screenshot_capture/macos/simple_bridge.py:19
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/screenshot_capture/core/screenshot_capture.py:11
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/tray_controller/macos/tray_icon.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/tray_controller/macos/status_item_manager.py:21
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/tray_controller/macos/menu_handler.py:13
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/tray_controller/core/config.py:11
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/tray_controller/core/tray_types.py:11
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/tray_controller/core/tray_controller.py:14
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/input_processing/keyboard/keyboard_monitor.py:13
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/input_processing/keyboard/mac/quartz_monitor.py:47
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/network_manager/core/network_manager.py:29
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/speech_playback/core/avf_player.py:18
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/speech_playback/core/buffer.py:10
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/speech_playback/utils/device_utils.py:9
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/mode_management/core/mode_controller.py:16
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/mode_management/modes/sleeping_mode.py:10
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/mode_management/modes/listening_mode.py:10
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permissions/macos/accessibility_handler.py:10
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permissions/macos/permission_handler.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permissions/macos/permission_queue_old.py:15
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permissions/macos/screen_capture_permission.py:9
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permissions/macos/notifications_handler.py:9
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permissions/core/config.py:11
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permissions/core/permissions_queue.py:13
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/permissions/first_run/status_checker.py:15
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/voice_recognition/core/audio_device_monitor.py:12
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/voice_recognition/core/audio_route_monitor.py:16
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/voice_recognition/core/google_sr_controller.py:20
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/voice_recognition/core/audio_recovery_manager.py:19
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/voice_recognition/utils/audio_utils.py:9
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/voiceover_control/core/controller.py:19
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/signals/core/service.py:18
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/signals/channels/visual_tray.py:17
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/signals/channels/audio_tone.py:17
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/mcp_action/core/mcp_action_executor.py:20
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/modules/mcp_action/tests/test_close_safari.py:26
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/core/state_manager.py:24
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/core/event_bus.py:10
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/core/base_integration.py:13
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/core/error_handler.py:9
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/tests/verify_reactive_state.py:10
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/tests/verify_shutdown.py:9
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/workflows/processing_workflow.py:15
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/workflows/base_workflow.py:31
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/workflows/listening_workflow.py:14
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/utils/macos_pyobjc_fix.py:23
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/utils/resource_path.py:76
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/utils/resource_path.py:139
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/utils/resource_path.py:177
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/update_notification_integration.py:21
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/signal_integration.py:33
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/interrupt_management_integration.py:32
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:166
+   Code: self.state_manager.set_state_data("ptt_pressed", True)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:167
+   Code: ptt_pressed = self.state_manager.get_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:167
+   Code: ptt_pressed = self.state_manager.get_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:883
+   Code: self.state_manager.set_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:1021
+   Code: self.state_manager.set_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:1047
+   Code: ptt_pressed = self.state_manager.get_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:1047
+   Code: ptt_pressed = self.state_manager.get_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:1190
+   Code: ptt_pressed_before = self.state_manager.get_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:1190
+   Code: ptt_pressed_before = self.state_manager.get_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:1191
+   Code: self.state_manager.set_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:1192
+   Code: ptt_pressed_after = self.state_manager.get_state_data("ptt_pressed", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:1192
+   Code: ptt_pressed_after = self.state_manager.get_state_data("ptt_pressed", False)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/input_processing_integration.py:21
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/autostart_manager_integration.py:18
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/speech_playback_integration.py:32
+   Code: logging.getLogger(__name__).error(f"❌ [AUDIO] AVFoundationPlayer import failed: {e}")
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/speech_playback_integration.py:37
+   Code: logging.getLogger(__name__).error(f"❌ [AUDIO] AVFoundationPlayer unexpected error: {e}")
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/speech_playback_integration.py:45
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voiceover_ducking_integration.py:14
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py:237
+   Code: first_run_in_progress = self.state_manager.get_state_data("first_run_in_progress", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py:237
+   Code: first_run_in_progress = self.state_manager.get_state_data("first_run_in_progress", False)
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py:554
+   Code: if self.state_manager.get_state_data("ptt_pressed", False) and self._recording_active:
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py:554
+   Code: if self.state_manager.get_state_data("ptt_pressed", False) and self._recording_active:
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py:608
+   Code: if self.state_manager.get_state_data("ptt_pressed", False) and self._recording_active:
+----------------------------------------
+❌ [ERROR] Direct State Access
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py:608
+   Code: if self.state_manager.get_state_data("ptt_pressed", False) and self._recording_active:
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py:28
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/voice_recognition_integration.py:88
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/mode_management_integration.py:40
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/tts_integration.py:19
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/instance_manager_integration.py:19
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/integrations/first_run_permissions_integration.py:47
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/core/gateways/decision_engine.py:20
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/core/gateways/common.py:26
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/core/gateways/permission_gateways.py:31
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+⚠️  [WARNING] Logger Instantiation
+   File: /Users/sergiyzasorin/Fix_new/client/integration/core/gateways/base.py:16
+   Code: logger = logging.getLogger(__name__)
+----------------------------------------
+
+Summary: 18 Errors, 118 Warnings
+
+============================================================
+🔍 Checking feature flags registration...
+[93m🔍 Checking feature flags registration...[0m
+
+[92m✅ Loaded 24 flags from FEATURE_FLAGS.md[0m
+[92m✅ Found 14 unique env flags (NEXY_*) in code[0m
+[92m✅ Found 8 config flags in unified_config.yaml[0m
+[92m✅ Found 8 config flags used in code[0m
+
+[92m============================================================[0m
+[92m✅ PASSED: All 22 flags are registered in FEATURE_FLAGS.md[0m
+[92m   (14 env flags, 8 config flags)[0m
+
+
+❌ FAILED: Architectural violations found.

@@ -6,10 +6,12 @@ Ensures code adheres to architectural rules:
 1. No direct access to StateManager (use selectors/gateways).
 2. No direct instantiation of UnifiedConfigLoader (use singleton).
 3. No direct logging.getLogger(__name__) (use get_logger).
+4. All feature flags registered in FEATURE_FLAGS.md.
 
 See .cursorrules for details.
 """
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
@@ -133,6 +135,34 @@ def check_file(filepath: Path) -> List[Dict[str, Any]]:
     
     return violations
 
+def verify_feature_flags() -> int:
+    """
+    Run verify_feature_flags.py as a subprocess.
+    
+    Returns:
+        Exit code (0 = success, 1 = failure)
+    """
+    script_path = Path(__file__).parent / "verify_feature_flags.py"
+    if not script_path.exists():
+        print("⚠️  Warning: verify_feature_flags.py not found, skipping feature flags check")
+        return 0
+    
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script_path)],
+            capture_output=True,
+            text=True,
+            cwd=script_path.parent.parent
+        )
+        print(result.stdout)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        return result.returncode
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to run verify_feature_flags.py: {e}", file=sys.stderr)
+        return 0
+
+
 def main():
     root = Path(__file__).parent.parent
     
@@ -173,8 +203,17 @@ def main():
 
     print(f"\nSummary: {error_count} Errors, {warning_count} Warnings")
     
+    # Check feature flags registration
+    print("\n" + "="*60)
+    print("🔍 Checking feature flags registration...")
+    flags_exit_code = verify_feature_flags()
+    
     if error_count > 0:
         print("\n❌ FAILED: Architectural violations found.")
+        return 1
+    
+    if flags_exit_code != 0:
+        print("\n❌ FAILED: Unregistered feature flags found.")
         return 1
     
     print("\n✅ PASSED: No critical architectural violations.")

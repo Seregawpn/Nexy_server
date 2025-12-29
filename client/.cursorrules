@@ -1,6 +1,27 @@
 # Nexy Client Development Rules
 
 ## 1. Документы перед началом
+
+### 1.0 Flags Discovery (ОБЯЗАТЕЛЬНО перед изменениями)
+
+**ОБЯЗАТЕЛЬНО**: Перед любыми правками логики запустить discovery режим для модуля/интеграции:
+
+```bash
+# Для клиента
+python scripts/verify_feature_flags.py --module <path>
+
+# Для сервера
+python scripts/verify_feature_flags.py --module <path>
+```
+
+**Результаты discovery**:
+- Все найденные флаги (env и config) с метаданными из реестра
+- Контекст использования (файл, строка, функция/класс, код)
+- YAML пути для config-флагов
+- Незарегистрированные флаги помечены как `[UNREGISTERED]`
+
+**Включение в план**: Результаты discovery должны быть включены в план изменений в раздел "Flags Discovery" для предотвращения дублирования и конфликтов.
+
 Перед изменениями обнови контекст по ключевым файлам:
 - `Docs/PROJECT_REQUIREMENTS.md` — единый snapshot требований (обязательно при изменении логики, см. раздел 11.3)
 - `Docs/REQUIREMENTS_SOURCE_MAP.md` — карта всех документов требований с их статусом
@@ -77,14 +98,21 @@
 - **EventBus**: все коммуникации — события, приоритеты задаются через `EventPriority`.
 
 ## 4. Порядок модулей и инициализации
-`SimpleModuleCoordinator` инициализирует интеграции в фиксированной последовательности: InstanceManager → HardwareId → **FirstRunPermissions** → **PermissionRestart** → Tray → ModeManagement → InputProcessing → VoiceRecognition → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → SpeechPlayback → Signals → Updater → AutostartManager → WelcomeMessage → VoiceOverDucking. Не меняй порядок без веских причин — это влияет на зависимости и режимы.
+`SimpleModuleCoordinator` создаёт интеграции в `_create_integrations()` и запускает их в `startup_order`. Порядок создания и запуска различается для оптимизации зависимостей.
 
-**ОБНОВЛЕНО:** FirstRunPermissionsIntegration добавлена на позицию 3 (блокирующая). PermissionRestartIntegration добавлена на позицию 4 (сразу после FirstRunPermissions, как в README и Global Delivery Plan). Permissions модуль теперь имеет полноценную интеграцию для системы первого запуска.
+**Порядок создания интеграций** (`_create_integrations()`):
+InstanceManager → HardwareId → Tray → Input → Updater → PermissionRestart → UpdateNotification → Network → Interrupt → ScreenshotCapture → VoiceRecognition → ModeManagement → GrpcClient → ActionExecution (если enabled) → SpeechPlayback → Signals → AutostartManager → WelcomeMessage → VoiceOverDucking → **FirstRunPermissions (ПОСЛЕДНЯЯ в создании)**.
+
+**Порядок запуска интеграций** (`startup_order`):
+InstanceManager (1-й, блокирующий) → Tray (2-й, неблокирующий) → HardwareId (3-й) → **FirstRunPermissions (4-я в запуске, блокирующая - ПОСЛЕ tray!)** → PermissionRestart (5-я) → ModeManagement → InputProcessing → VoiceRecognition → Network → Interrupt → ScreenshotCapture → GrpcClient → ActionExecution → SpeechPlayback → Signals → UpdateNotification → Updater → WelcomeMessage → VoiceOverDucking → AutostartManager (ПОСЛЕДНИЙ, неблокирующий).
+
+**ВАЖНО:** FirstRunPermissionsIntegration создаётся ПОСЛЕДНЕЙ в `_create_integrations()`, но запускается 4-й в `startup_order` (после tray). Это обеспечивает правильную последовательность: tray готов → first_run_permissions → permission_restart.
 
 **АКТУАЛЬНЫЕ СПИСКИ:**
-- Модули: см. `client/modules/`
-- Интеграции: см. `client/integration/integrations/`
-- Порядок инициализации: см. `SimpleModuleCoordinator._create_integrations()`
+- Модули: см. `client/modules/` (21 модуль, включая action_errors, mcp_action)
+- Интеграции: см. `client/integration/integrations/` (22 интеграции, включая action_execution_integration, tts_integration)
+- Порядок создания: см. `SimpleModuleCoordinator._create_integrations()`
+- Порядок запуска: см. `SimpleModuleCoordinator.start()` → `startup_order`
 
 **Политика расширения:** прежде чем изменять структуру или добавлять новую интеграцию, проверь существующие модули и workflows; их допускается расширять конфигом или событиями. Новый модуль/интеграция создаём только если требуемого поведения нет и его нельзя разумно добавить через текущие компоненты. В этом случае документируй причину и зависимостей в `../Docs/CURRENT_STATUS_REPORT.md` и обнови `unified_config.yaml`.
 
@@ -114,7 +142,18 @@
 
 **ОБЯЗАТЕЛЬНО**: Любое поведение, затрагивающее >2 оси состояния, **ОБЯЗАНО** раскатываться через feature flag и иметь мгновенный откат (kill-switch).
 
-**Реестр флагов**: См. `Docs/FEATURE_FLAGS.md` — карта всех feature flags/kill-switches → код.
+**Реестр флагов**: См. `Docs/FEATURE_FLAGS.md` — единый источник истины для всех feature flags/kill-switches.
+
+**Правило регистрации флагов (ОБЯЗАТЕЛЬНО)**:
+- **Новый флаг запрещён без добавления в `Docs/FEATURE_FLAGS.md`** и прохождения `scripts/verify_feature_flags.py`
+- Перед использованием любого флага в коде он **ОБЯЗАН** быть зарегистрирован в реестре:
+  - **env-флаги**: `NEXY_FEATURE_*`, `NEXY_KS_*`, `NEXY_DISABLE_*` (переменные окружения)
+  - **config-флаги**: `features.*` в `unified_config.yaml` (например: `use_events_for_update_status`, `serial_tcc_prompts`)
+- Формат регистрации: `| name | type | owner | default | scope | kill_switch | description |`
+- Скрипт `scripts/verify_feature_flags.py` автоматически проверяет:
+  - Все env-флаги в коде (regex поиск `NEXY_*`)
+  - Все config-флаги из `unified_config.yaml` секции `features.*`
+- Проверка интегрирована в `scripts/verify_architecture.py` и выполняется перед мерджем
 
 **Конкретные флаги для first-run/permission-restart:**
 - `NEXY_FEATURE_FIRST_RUN_V2` — включить систему первого запуска (v2)
@@ -866,7 +905,18 @@ def publish_event(self, event_name: str, payload: dict):
 
 **ОБЯЗАТЕЛЬНО**: Любое поведение, затрагивающее >2 оси состояния, **ОБЯЗАНО** раскатываться через feature flag и иметь мгновенный откат (kill-switch).
 
-**Реестр флагов**: См. `Docs/FEATURE_FLAGS.md` — карта всех feature flags/kill-switches → код. Все флаги должны быть зарегистрированы в этом реестре перед мерджем.
+**Реестр флагов**: См. `Docs/FEATURE_FLAGS.md` — единый источник истины для всех feature flags/kill-switches.
+
+**Правило регистрации флагов (ОБЯЗАТЕЛЬНО)**:
+- **Новый флаг запрещён без добавления в `Docs/FEATURE_FLAGS.md`** и прохождения `scripts/verify_feature_flags.py`
+- Перед использованием любого флага в коде он **ОБЯЗАН** быть зарегистрирован в реестре:
+  - **env-флаги**: `NEXY_FEATURE_*`, `NEXY_KS_*`, `NEXY_DISABLE_*` (переменные окружения)
+  - **config-флаги**: `features.*` в `unified_config.yaml` (например: `use_events_for_update_status`, `serial_tcc_prompts`)
+- Формат регистрации: `| name | type | owner | default | scope | kill_switch | description |`
+- Скрипт `scripts/verify_feature_flags.py` автоматически проверяет:
+  - Все env-флаги в коде (regex поиск `NEXY_*`)
+  - Все config-флаги из `unified_config.yaml` секции `features.*`
+- Проверка интегрирована в `scripts/verify_architecture.py` и выполняется перед мерджем
 
 **Конкретные флаги для first-run/permission-restart:**
 - `NEXY_FEATURE_FIRST_RUN_V2` — включить систему первого запуска (v2)
