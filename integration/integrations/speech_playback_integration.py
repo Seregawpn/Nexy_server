@@ -685,7 +685,7 @@ class SpeechPlaybackIntegration:
                     old_task.cancel()
                     logger.debug(f"SpeechPlayback: отменён предыдущий _finalize_on_silence для сессии {sid}")
             # ✅ УВЕЛИЧЕН ТАЙМАУТ: 10 секунд вместо 3 для длинных аудио
-            self._silence_tasks[sid] = asyncio.create_task(self._finalize_on_silence(sid, timeout=10.0))
+            self._silence_tasks[sid] = asyncio.create_task(self._finalize_on_silence(sid, timeout=5.0))
         except Exception as e:
             await self._handle_error(e, where="speech.on_grpc_completed", severity="warning")
 
@@ -1225,7 +1225,7 @@ class SpeechPlaybackIntegration:
             await self._handle_error(e, where="speech.on_grpc_cancel", severity="warning")
 
     # -------- Utils --------
-    async def _finalize_on_silence(self, sid, timeout: float = 10.0):
+    async def _finalize_on_silence(self, sid, timeout: float = 5.0):
         """Фолбэк: если после последнего чанка наступила тишина и плеер остановился — завершаем PROCESSING.
         
         ✅ ИСПРАВЛЕНИЕ: Увеличен таймаут до 10 секунд для длинных аудио.
@@ -1313,7 +1313,7 @@ class SpeechPlaybackIntegration:
                                 if not old_task.done():
                                     old_task.cancel()
                                 self._silence_tasks.pop(sid, None)
-                            self._silence_tasks[sid] = asyncio.create_task(self._finalize_on_silence(sid, timeout=10.0))
+                            self._silence_tasks[sid] = asyncio.create_task(self._finalize_on_silence(sid, timeout=5.0))
                             return
                         
                         # Буфер должен быть пуст для AVF
@@ -1480,7 +1480,11 @@ class SpeechPlaybackIntegration:
                     if has_any_active_chunks:
                         # Есть активные чанки для другой сессии - ждём их завершения
                         logger.debug(f"🔍 [AVF] Воспроизведение активно для другой сессии, ждём завершения перед новым чанком для сессии {sid}")
-                        await asyncio.sleep(0.1)
+                        self._chunk_completed_event.clear()
+                        try:
+                            await asyncio.wait_for(self._chunk_completed_event.wait(), timeout=0.5)
+                        except asyncio.TimeoutError:
+                            pass
                         continue
                     
                     # Нет активных чанков ни для одной сессии - можно безопасно остановить
@@ -1491,10 +1495,10 @@ class SpeechPlaybackIntegration:
                         logger.error(f"❌ [AVF] Не удалось остановить воспроизведение перед новым чанком для сессии {sid}")
                         # Возвращаем чанк в начало буфера для повторной попытки
                         chunks.insert(0, chunk)
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.05)
                         continue
-                    # Небольшая задержка для гарантированного сброса состояния
-                    await asyncio.sleep(0.1)
+                    # МИНИМАЛЬНАЯ задержка для гарантированного сброса состояния
+                    await asyncio.sleep(0.05)
                     logger.info(f"✅ [AVF] Воспроизведение остановлено, готовы к новому чанку для сессии {sid}")
                 
                 # Воспроизводим чанк
@@ -1507,7 +1511,7 @@ class SpeechPlaybackIntegration:
                     if self._avf_engine.is_output_active:
                         logger.warning(f"⚠️ [AVF] Состояние всё ещё активно после неудачного play_audio, принудительно останавливаем")
                         await self._avf_engine.stop_output()
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.05)
                 
                 if success:
                     # ✅ НОВОЕ: Сохраняем информацию о текущем чанке для completion callback
@@ -1748,7 +1752,7 @@ class SpeechPlaybackIntegration:
                         logger.debug(f"✅ [AVF] Перезапускаем _finalize_on_silence для сессии {sid} (не последний чанк, продолжаем fallback защиту)")
                     self._silence_tasks.pop(sid, None)
                 # Перезапускаем таймер с тем же таймаутом
-                self._silence_tasks[sid] = asyncio.create_task(self._finalize_on_silence(sid, timeout=10.0))
+                self._silence_tasks[sid] = asyncio.create_task(self._finalize_on_silence(sid, timeout=5.0))
             
             if is_last_chunk:
                 # ✅ ПОСЛЕДНИЙ ЧАНК ЗАВЕРШЁН - публикуем playback.completed

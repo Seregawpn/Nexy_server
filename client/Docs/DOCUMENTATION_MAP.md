@@ -14,9 +14,7 @@
 |----------|-----------|----------|
 | `Docs/STATE_CATALOG.md` | Единый источник истины для осей состояния + таблица ownership | `config/interaction_matrix.yaml`, `integration/core/gateways.py` |
 | `config/interaction_matrix.yaml` | Правила взаимодействия осей с приоритетами | `Docs/STATE_CATALOG.md`, `integration/core/gateways.py` |
-<!-- CODE_REVIEW_ASSISTANT_PROMPT.md перенесён в _archive -->
 | `.cursorrules` | Полные правила разработки (раздел 1.1 — источник истины) | Все документы |
-| `Docs/CODE_REVIEW_ASSISTANT_PROMPT.md` | Промпт для архитектурного ревью (enforcement) | `.cursorrules`, `Docs/STATE_CATALOG.md`, `config/interaction_matrix.yaml` |
 
 ### 2. Концептуальные документы
 
@@ -64,8 +62,7 @@
 
 | Документ | Назначение | Связан с |
 |----------|-----------|----------|
-| `Docs/ADR_PERMISSION_EVENT_RACE_FIX.md` | ADR: исправление race condition в обработке событий разрешений | `integration/core/simple_module_coordinator.py`, `tests/test_coordinator_critical_subscriptions.py` |
-| `Docs/change_impact_permission_event_race_fix.yaml` | Change Impact Analysis для race condition fix | `Docs/ADR_PERMISSION_EVENT_RACE_FIX.md` |
+| `Docs/ADRs/ADR_2025-01-XX_avfoundation_audio_migration.md` | ADR: миграция на AVFoundation для аудио | `modules/audio_avf/`, `integration/integrations/` |
 
 ---
 
@@ -146,7 +143,7 @@
 → `config/interaction_matrix.yaml` (детализация правил)
 
 **Хочу сделать ревью кода:**
-→ `.cursorrules` (разделы 11, 17–21) + `Docs/CODE_REVIEW_ASSISTANT_PROMPT.md`
+→ `.cursorrules` (разделы 11, 17–21)
 
 **Хочу изменить поведение:**
 → `.cursorrules` раздел 11 "Инвариант: изменил поведение? обнови 4 артефакта"
@@ -165,6 +162,8 @@
 ## 🗄 Archived (справочные материалы)
 
 Перенесены для сохранения истории; не являются базовыми источниками истины и не должны использоваться в качестве актуальных правил.
+
+С 2025-12-28: исторические планы и отчеты по аудио-миграции перенесены в `Docs/_archive`.
 
 - `Docs/_archive/PERMISSION_RESTART_LOGIC.md`
 - `Docs/_archive/PERMISSION_RESTART_AND_ACTIVATION_PROMPT.md`
