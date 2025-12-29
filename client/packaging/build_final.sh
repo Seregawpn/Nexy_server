@@ -57,6 +57,10 @@ if ! bash "$CLIENT_DIR/scripts/regenerate_proto.sh" --check; then
 fi
 echo -e "${GREEN}✅ pb2 файлы актуальны${NC}"
 
+# Стейджинг Universal 2 бинарников из vendor_binaries
+echo -e "${YELLOW}🔨 Стейджинг Universal 2 бинарников...${NC}"
+python3 "$CLIENT_DIR/scripts/stage_universal_binaries.py" || error "Стейджинг бинарников не удался"
+
 # Проверяем зависимости и бинарники до сборки
 echo -e "${YELLOW}🔍 Проверяем окружение и универсальные бинарники...${NC}"
 python3 "$CLIENT_DIR/scripts/check_dependencies.py"

@@ -2,7 +2,7 @@
 
 **Приложение:** Nexy AI Assistant
 **Тип:** Menu Bar Application (фоновый режим)
-**Целевая платформа:** macOS 11.0+ (Universal 2: arm64 + x86_64)
+**Целевая платформа:** macOS 12.0+ (Universal 2: arm64 + x86_64)
 **Дата создания:** 2025-10-09
 **Дата завершения:** 2025-11-17
 **Версия документа:** 3.0 (COMPLETED)
@@ -47,22 +47,67 @@
 
 ### 2. Целевая платформа
 - **Архитектура:** Universal 2 (arm64 + x86_64)
-- **Минимальная версия macOS:** 11.0 (Big Sur) для обеих архитектур
-- **Рекомендуемая версия:** 12.0+ (Monterey и выше)
+- **Минимальная версия macOS:** 12.0 (Monterey) для обеих архитектур
+- **Рекомендуемая версия:** 13.0+ (Ventura и выше)
 - **Python версия:** 3.13.7 (универсальная сборка)
 - ⚠️ Arm64-only сборки допускаются только для внутреннего тестирования
 
 #### Python окружение
-- `pyenv 2.6+` установлен локально (через Homebrew) без прав администратора.
-- В корне клиента хранится `.python-version` → `3.13.7`, что гарантирует одинаковую версию для arm64/x86_64.
-- Перед запуском любых packaging-скриптов необходимо выполнить `eval "$(pyenv init -)"`, чтобы `python3` резолвился через pyenv shims.
-- Все зависимости устанавливаются в pyenv-интерпретатор: `python3 -m pip install -r requirements.txt` и `arch -x86_64 python3 -m pip install -r requirements.txt`.
+
+**ОБЯЗАТЕЛЬНО для упаковки:** Используется официальный Universal Python 3.13.7 из `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3`.
+
+**ВАЖНО:** Не использовать arm64-only Python из pyenv для упаковки Universal 2. PyInstaller требует Universal Python для создания Universal 2 бинарников.
+
+**Установка:**
+- Скачать официальный `python-3.13.7-macos11.pkg` с python.org
+- Установить в `/Library/Frameworks/Python.framework/Versions/3.13/`
+- Путь: `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3`
+
+**Приоритет в build_final.sh:**
+1. Официальный Universal Python из `/Library/Frameworks` (приоритет)
+2. pyenv (fallback для dev-режима, но не рекомендуется для упаковки)
+
+**Примечание:** pyenv можно использовать для разработки, но для финальной упаковки Universal 2 требуется официальный Universal Python. См. `Docs/PACKAGING_FINAL_GUIDE.md` раздел 1 для деталей.
 
 ### 3. Размер и производительность
-- **Максимальный размер bundle:** 300 MB
+- **Максимальный размер bundle:** 374 MB (фактический размер Universal 2 с Python.framework)
+  - **Примечание:** Превышение 300 MB приемлемо для Universal 2 сборки с Python.framework
+  - Для оптимизации можно удалить неиспользуемые модули Python или оптимизировать Python.framework
 - **Время запуска:** < 5 секунд
 - **Потребление RAM:** < 200 MB в idle
 - **Потребление CPU:** < 5% в idle
+
+### 4. Battery/Power Management
+
+**Требования к энергопотреблению:**
+- **Idle CPU:** < 5% (измеряется в idle-режиме после полной инициализации)
+- **Idle RAM:** < 200 MB (измеряется в idle-режиме)
+- **Power Assertion:** Только во время критических операций (TAL hold при перезапуске, не более 120 секунд)
+  - **TAL (Termination and Launch) assertion:** Используется только для предотвращения преждевременного завершения при перезапуске после разрешений
+  - **Максимальная длительность TAL hold:** ≤120 секунд (до готовности tray)
+  - **Обновление TAL assertion:** Каждые 30 секунд до готовности tray
+  - **Освобождение TAL:** Немедленно после `tray.ready` или при фатальной ошибке
+
+**Проверка power assertions:**
+```bash
+# Проверка активных power assertions для Nexy
+pmset -g assertions | grep -i "com.nexy.assistant"
+
+# Ожидается: assertions только во время TAL hold (при перезапуске)
+# В idle-режиме (после инициализации) не должно быть активных assertions
+```
+
+**Критерии приемки:**
+- ✅ В idle-режиме (после полной инициализации) нет активных power assertions
+- ✅ TAL assertion устанавливается только при перезапуске после разрешений
+- ✅ TAL assertion освобождается в течение 120 секунд (до `tray.ready`)
+- ✅ Нет длительных power assertions вне TAL-окна
+- ✅ Idle CPU/RAM соответствуют лимитам (см. раздел 3)
+
+**Связанные документы:**
+- `Docs/TAL_TESTING_CHECKLIST.md` — детальная проверка TAL subsystem
+- `scripts/check_tal_after_restart.py` — автоматический анализ TAL логов
+- `client/metrics/registry.md` — метрики и SLO пороги
 
 ---
 
@@ -129,9 +174,10 @@
 
 **Требования:**
 - ✅ **Архитектура:** Mach-O Universal 2 (arm64 + x86_64)
-- ✅ **Путь в проекте:** `resources/ffmpeg/ffmpeg`
+- ✅ **Путь в проекте:** `resources/ffmpeg/ffmpeg` (создаётся автоматически через `scripts/stage_universal_binaries.py`)
 - ✅ **Путь в bundle:** `Contents/Resources/resources/ffmpeg/ffmpeg`
 - ✅ **Исходные срезы:** `vendor_binaries/ffmpeg/arm64/ffmpeg`, `vendor_binaries/ffmpeg/x86_64/ffmpeg`
+- ✅ **Автоматический стейджинг:** Выполняется в `build_final.sh` перед PyInstaller
 - ✅ **Размер:** ~40-50 MB (оптимизированная сборка)
 - ✅ **Права:** Исполняемый (`chmod +x`)
 - ✅ **Зависимости:** Статическая сборка (без динамических библиотек)
@@ -159,9 +205,10 @@ otool -L resources/ffmpeg/ffmpeg
 
 **Требования:**
 - ✅ **Архитектура:** Mach-O Universal 2 (arm64 + x86_64)
-- ✅ **Путь в проекте:** `resources/audio/SwitchAudioSource`
+- ✅ **Путь в проекте:** `resources/audio/SwitchAudioSource` (создаётся автоматически через `scripts/stage_universal_binaries.py`)
 - ✅ **Путь в bundle:** `Contents/Resources/resources/audio/SwitchAudioSource`
 - ✅ **Исходные срезы:** `vendor_binaries/switchaudio/arm64/SwitchAudioSource`, `vendor_binaries/switchaudio/x86_64/SwitchAudioSource`
+- ✅ **Автоматический стейджинг:** Выполняется в `build_final.sh` перед PyInstaller
 - ✅ **Размер:** ~100-500 KB
 - ✅ **Права:** Исполняемый (`chmod +x`)
 - ✅ **Использование:** Резервный инструмент для ручного переключения устройств (основной поток использует системные дефолты macOS)
@@ -183,10 +230,11 @@ lipo -info resources/audio/SwitchAudioSource
 
 **Требования:**
 - ✅ **Версия библиотеки:** SpeechRecognition 3.14.3+
-- ✅ **Встроенный FLAC:** Должен быть в пакете или отдельный бинарник
-- ✅ **Архитектура:** Universal 2 (arm64 + x86_64), если используется внешний бинарник `resources/audio/flac`
+- ✅ **Внешний FLAC:** Universal 2 бинарник `resources/audio/flac` (создаётся автоматически через `scripts/stage_universal_binaries.py`)
+- ✅ **Архитектура:** Universal 2 (arm64 + x86_64)
 - ✅ **Исходные срезы:** `vendor_binaries/flac/arm64/flac`, `vendor_binaries/flac/x86_64/flac`
-- ✅ **Альтернатива:** Использовать встроенный Python encoder
+- ✅ **Автоматический стейджинг:** Выполняется в `build_final.sh` перед PyInstaller
+- ✅ **Runtime hook:** Удалён `runtime_hook_flac.py` (больше не нужен, используется Universal 2 бинарник)
 
 **ВОПРОС:** Уточнить путь к новому FLAC encoder
 
@@ -883,7 +931,7 @@ hiddenimports = [
 - ✅ Nexy.app создан (~200MB)
 - ✅ Все ресурсы скопированы
 - ✅ Info.plist корректный
-- ✅ Размер разумный (<300MB)
+- ✅ Размер разумный (~374MB для Universal 2 с Python.framework)
 
 #### Code Signing:
 - ✅ Все бинарники подписаны

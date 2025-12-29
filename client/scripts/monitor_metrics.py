@@ -51,15 +51,64 @@ class MetricsMonitor:
             content = f.read()
         
         # Парсим SLO пороги из таблиц
-        # Формат: | Метрика | ... | Порог SLO (p95) | ...
-        pattern = r'\|\s*`?([a-z_]+)`?\s*\|[^|]*\|[^|]*\|[^|]*\|\s*([^|]+)\s*\|'
-        matches = re.finditer(pattern, content, re.MULTILINE)
-        
-        for match in matches:
-            metric_name = match.group(1)
-            threshold_str = match.group(2).strip()
+        # Формат: | `metric_name` | Type | Semantics | Порог SLO (p95) | Source |
+        # Используем построчный разбор с regex для надёжного извлечения метрик и порогов
+        for line in content.split('\n'):
+            # Пропускаем разделители таблицы и заголовки
+            if not line.strip() or line.strip().startswith('|---') or ('Метрика' in line and 'Тип' in line):
+                continue
             
-            # Парсим порог (например: "≤5 сек", "≥98%", "≤600ms")
+            # Ищем строки с метриками в обратных кавычках
+            # Поддерживаем метрики с дополнительными символами для универсальности:
+            # - Фигурные скобки {}: decision_rate{type} (используется в registry.md)
+            # - Двоеточия ::
+            # - Дефисы -:
+            # - Цифры: metric_name_v2
+            # Regex паттерн: [a-z0-9_{}:-]+ (буквы, цифры, подчёркивания, фигурные скобки, двоеточия, дефисы)
+            metric_match = re.search(r'`([a-z0-9_{}:-]+)`', line)
+            if not metric_match:
+                continue
+            
+            metric_name = metric_match.group(1)
+            
+            # Ищем порог SLO в строке через regex (независимо от разбиения по |)
+            # Форматы порогов:
+            # - ≤X сек/ms/%/MB
+            # - ~X сек (target), ≤Y сек (допустимо)
+            # - 0 (в idle-режиме)
+            # - 0
+            
+            threshold_str = None
+            
+            # Находим позицию метрики для поиска порога после неё
+            metric_pos = metric_match.end()
+            line_after_metric = line[metric_pos:]
+            
+            # Паттерн 1: ~X сек (target), ≤Y сек (допустимо) - берём максимальное значение
+            # Проверяем сначала сложные пороги
+            complex_match = re.search(r'~(\d+(?:\.\d+)?)\s*сек.*?≤\s*(\d+(?:\.\d+)?)\s*сек', line_after_metric, re.IGNORECASE)
+            if complex_match:
+                # Берём максимальное значение (второе, после ≤)
+                max_value = max(float(complex_match.group(1)), float(complex_match.group(2)))
+                threshold_str = f"≤{max_value} сек"
+            
+            # Паттерн 2: ≤X сек/ms/%/MB (простой случай)
+            if not threshold_str:
+                threshold_match = re.search(r'≤\s*(\d+(?:\.\d+)?)\s*(сек|sec|s|ms|mb|MB|%)', line_after_metric, re.IGNORECASE)
+                if threshold_match:
+                    threshold_str = f"≤{threshold_match.group(1)} {threshold_match.group(2)}"
+            
+            # Паттерн 3: 0 (в idle-режиме) или просто 0
+            if not threshold_str:
+                # Ищем 0 в колонке порога (после третьего |, но ищем в полной строке)
+                zero_match = re.search(r'\|[^|]*\|[^|]*\|[^|]*\|\s*0\s*(?:\([^)]+\))?\s*\|', line)
+                if zero_match:
+                    threshold_str = '0'
+            
+            if not threshold_str or 'N/A' in threshold_str:
+                continue
+            
+            # Парсим порог
             threshold = self._parse_threshold(threshold_str)
             if threshold:
                 self.slo_thresholds[metric_name] = threshold
@@ -84,14 +133,56 @@ class MetricsMonitor:
             value = float(min_match.group(1)) / 100.0
             return {'type': 'min', 'value': value, 'unit': 'rate'}
         
-        # ≤ X ms/sec
-        max_match = re.search(r'≤\s*(\d+(?:\.\d+)?)\s*(ms|sec|s)', threshold_str)
+        # Для сложных порогов (например: "~30 сек (target), ≤35 сек (допустимо)") берём максимальное значение
+        # Ищем все значения ≤ X (поддерживаем кириллицу "сек" и латиницу "sec"/"s")
+        all_max_matches = re.findall(r'≤\s*(\d+(?:\.\d+)?)\s*(ms|sec|s|сек|mb|MB|%)', threshold_str, re.IGNORECASE)
+        if all_max_matches:
+            # Берём максимальное значение
+            max_value = 0
+            max_unit = 'ms'
+            for value_str, unit_str in all_max_matches:
+                value = float(value_str)
+                unit = unit_str.lower()
+                if unit in ['sec', 's', 'сек']:
+                    value *= 1000  # Конвертируем секунды в миллисекунды
+                    unit = 'ms'
+                if value > max_value:
+                    max_value = value
+                    max_unit = unit
+            
+            if max_unit == 'mb':
+                return {'type': 'max', 'value': max_value, 'unit': 'mb'}
+            elif max_unit == '%':
+                return {'type': 'max', 'value': max_value, 'unit': '%'}
+            else:
+                return {'type': 'max', 'value': max_value, 'unit': 'ms'}
+        
+        # ≤ X ms/sec/MB (простой случай)
+        # Поддерживаем кириллицу "сек" и латиницу "sec"/"s"
+        max_match = re.search(r'≤\s*(\d+(?:\.\d+)?)\s*(ms|sec|s|сек|mb|MB|%)', threshold_str, re.IGNORECASE)
         if max_match:
             value = float(max_match.group(1))
-            unit = max_match.group(2)
-            if unit in ['sec', 's']:
-                value *= 1000
-            return {'type': 'max', 'value': value, 'unit': 'ms'}
+            unit = max_match.group(2).lower()
+            if unit in ['sec', 's', 'сек']:
+                value *= 1000  # Конвертируем секунды в миллисекунды
+                return {'type': 'max', 'value': value, 'unit': 'ms'}
+            elif unit == 'mb':
+                return {'type': 'max', 'value': value, 'unit': 'mb'}
+            elif unit == '%':
+                return {'type': 'max', 'value': value, 'unit': '%'}
+            else:
+                return {'type': 'max', 'value': value, 'unit': 'ms'}
+        
+        # ≤ X% (для процентов без явного указания единицы)
+        percent_match = re.search(r'≤\s*(\d+(?:\.\d+)?)\s*%', threshold_str)
+        if percent_match:
+            value = float(percent_match.group(1))
+            return {'type': 'max', 'value': value, 'unit': '%'}
+        
+        # 0 (для power_assertion_active_count и других строгих нулевых порогов)
+        zero_match = re.search(r'^0\s*(?:\([^)]+\))?\s*$', threshold_str.strip())
+        if zero_match:
+            return {'type': 'max', 'value': 0, 'unit': 'count'}
         
         return None
     
@@ -107,6 +198,8 @@ class MetricsMonitor:
         # Ищем метрики в формате: metric_name=value или metric_name: value
         for metric_name in self.slo_thresholds.keys():
             # Паттерны для поиска метрик
+            # ВАЖНО: Используем только прямые логи метрик (например, tal_hold_duration_ms=1234.56)
+            # TAL=refresh/released паттерны удалены, так как теперь есть прямые логи tal_* метрик
             patterns = [
                 rf'{metric_name}=(\d+(?:\.\d+)?)',
                 rf'{metric_name}:(\d+(?:\.\d+)?)',
@@ -236,14 +329,19 @@ class MetricsMonitor:
         if self.report['metrics']:
             print(f"{BLUE}Статистика метрик:{NC}")
             for metric_name, stats in self.report['metrics'].items():
+                # Определяем единицу измерения из SLO порога
+                unit = 'ms'  # По умолчанию миллисекунды
+                if metric_name in self.slo_thresholds:
+                    unit = self.slo_thresholds[metric_name].get('unit', 'ms')
+                
                 print(f"  {metric_name}:")
                 print(f"    Количество: {stats['count']}")
-                print(f"    Min: {stats['min']:.2f}ms")
-                print(f"    Max: {stats['max']:.2f}ms")
-                print(f"    Avg: {stats['avg']:.2f}ms")
-                print(f"    p50: {stats['p50']:.2f}ms")
-                print(f"    p95: {stats['p95']:.2f}ms")
-                print(f"    p99: {stats['p99']:.2f}ms")
+                print(f"    Min: {stats['min']:.2f}{unit}")
+                print(f"    Max: {stats['max']:.2f}{unit}")
+                print(f"    Avg: {stats['avg']:.2f}{unit}")
+                print(f"    p50: {stats['p50']:.2f}{unit}")
+                print(f"    p95: {stats['p95']:.2f}{unit}")
+                print(f"    p99: {stats['p99']:.2f}{unit}")
                 print()
         
         # Выводим нарушения SLO

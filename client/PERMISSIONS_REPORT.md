@@ -20,7 +20,7 @@
 |------------|--------------------|---------------------|-----------|----------|
 | Microphone (TCC) | `FirstRunPermissionsIntegration`, `modules/voice_recognition` | ✅ granted (beta devices) | `scripts/test_first_run_integration.sh` (см. воспроизведение) | `Docs/first_run_flow_spec.md` |
 | Screen Capture | `modules/screenshot_capture`, first-run flow | ✅ granted | Manual checklist (PRE_PACKAGING_VERIFICATION) | `Docs/PRE_PACKAGING_VERIFICATION.md` |
-| Accessibility | `modules/permission_restart/macos/permissions_restart_handler.py` | ⚠️ granted, но детектируется через приватный `TCCAccessRequest` → заменить API | `Docs/EXIT_HANDLER_ISSUE_ANALYSIS.md` §3 | (TODO TCC-AX-001) |
+| Accessibility | `modules/permissions/macos/accessibility_handler.py` | ✅ granted, используется публичный API `AXIsProcessTrustedWithOptions` | `modules/permissions/macos/accessibility_handler.py:23-52` | ✅ Исправлено (2025-01-15) |
 | Input Monitoring | `FirstRunPermissionsIntegration` | ✅ not required post v2 (read-only) | First-run spec | `Docs/first_run_flow_spec.md` |
 | Automation / Screen Recording restart | `PermissionRestartIntegration`, `SimpleModuleCoordinator` | ✅ restart flow в green, TAL hold активен 120 с | `Docs/TAL_TESTING_CHECKLIST.md` | TAL logs |
 
@@ -51,9 +51,9 @@
 
 ## 5. Открытые задачи
 
-| ID | Описание | План действия |
-|----|----------|---------------|
-| **TCC-AX-001** | Удалить использование приватного API `TCCAccessRequest` для Accessibility проверки. | Перевести на `AXIsProcessTrustedWithOptions`, обновить `modules/permission_restart/...`, добавить unit тест + логи. |
+| ID | Описание | План действия | Статус |
+|----|----------|---------------|--------|
+| **TCC-AX-001** | Удалить использование приватного API `TCCAccessRequest` для Accessibility проверки. | Перевести на `AXIsProcessTrustedWithOptions`, обновить `modules/permission_restart/...`, добавить unit тест + логи. | ✅ **ЗАВЕРШЕНО** (2025-01-15): Используется публичный API `AXIsProcessTrustedWithOptions` в `modules/permissions/macos/accessibility_handler.py` |
 | **PERM-RESET-002** | Добавить CLI helper для полного сброса TCC + флагов (удобно для QA). | Обновить `scripts/clear_first_run_flags.py` (проверка существующих значений, дружелюбные сообщения). |
 | **PERM-LOG-003** | Ввести единый лог-формат `permissions.status_checked` для всех осей. | Обновить интеграцию и добавить описание в `Docs/STATE_CATALOG.md`. |
 

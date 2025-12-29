@@ -130,6 +130,7 @@ class SimpleModuleCoordinator:
         self._tal_hold_start: Optional[float] = None  # Время начала TAL удержания
         self._tal_hold_active: bool = False  # Флаг активного TAL hold (для идемпотентности)
         self._tal_refresh_task: Optional[asyncio.Task] = None  # Задача периодического обновления
+        self._idle_metrics_task: Optional[asyncio.Task] = None  # Задача периодического сбора idle метрик
         self._launch_activity_token = None
         self._xpc_transaction_active = False
 
@@ -1210,6 +1211,9 @@ class SimpleModuleCoordinator:
             self._release_tal_hold(reason="tray_ready")
             self._end_launch_activity(reason="tray_ready")
             
+            # Запускаем периодический сбор idle CPU/RAM метрик после tray.ready
+            self._start_idle_metrics_collection()
+            
         except Exception as e:
             logger.error(f"❌ [TRAY_GATE] Ошибка обработки tray.integration_ready: {e}")
     
@@ -1388,6 +1392,7 @@ class SimpleModuleCoordinator:
             process_info = Foundation.NSProcessInfo.processInfo()  # type: ignore[attr-defined]
             
             hold_duration = time.time() - self._tal_hold_start
+            hold_duration_ms = hold_duration * 1000  # Конвертируем в миллисекунды для метрики
             self._tal_hold_start = None
             self._tal_hold_active = False
             
@@ -1401,6 +1406,9 @@ class SimpleModuleCoordinator:
             # так как приложение должно работать постоянно. TAL hold был нужен только
             # для предотвращения завершения до готовности tray icon.
             auto_term_enabled = process_info.automaticTerminationSupportEnabled()
+            
+            # Логируем метрику tal_hold_duration_ms для парсинга monitor_metrics.py
+            logger.info(f"tal_hold_duration_ms={hold_duration_ms:.2f}")
             
             if auto_term_enabled:
                 # Если automatic termination включен, включаем его обратно
@@ -1453,14 +1461,89 @@ class SimpleModuleCoordinator:
                 try:
                     process_info.disableAutomaticTermination_("Waiting for tray icon (refreshing)")
                     elapsed = time.time() - start_time
+                    refresh_interval_ms = refresh_interval * 1000  # Конвертируем в миллисекунды для метрики
                     # КРИТИЧНО: Логируем TAL=refresh в формате для приёмки
                     logger.info(f"TAL=refresh (ts={time.time():.2f}, elapsed={elapsed:.1f}s)")
+                    # Логируем метрику tal_refresh_interval_ms для парсинга monitor_metrics.py
+                    logger.info(f"tal_refresh_interval_ms={refresh_interval_ms:.2f}")
                     logger.debug(f"🔄 [ANTI_TAL] TAL assertion обновлён (tray ещё не готов, elapsed={elapsed:.1f}s)")
                 except Exception as refresh_err:
                     logger.warning(f"⚠️ [ANTI_TAL] Failed to refresh TAL hold: {refresh_err}")
                     
         except Exception as exc:
             logger.error(f"❌ [ANTI_TAL] Error in TAL hold refresh task: {exc}")
+    
+    def _start_idle_metrics_collection(self):
+        """
+        Запускает периодический сбор idle CPU/RAM метрик после tray.ready.
+        Собирает метрики каждые 30 секунд в idle-режиме.
+        
+        ИДЕМПОТЕНТНОСТЬ: Безопасна к повторным вызовам - если задача уже запущена,
+        только логирует повторный вызов и не создаёт дубликаты.
+        """
+        try:
+            # ИДЕМПОТЕНТНОСТЬ: Проверяем, не запущена ли уже задача
+            if self._idle_metrics_task is not None and not self._idle_metrics_task.done():
+                logger.debug("📊 [METRICS] Сбор idle метрик уже запущен, пропускаем повторный запуск")
+                return
+            
+            # Запускаем задачу в фоновом loop если доступен
+            if self._bg_loop and self._bg_loop.is_running():
+                def schedule_task():
+                    try:
+                        asyncio.set_event_loop(self._bg_loop)
+                        self._idle_metrics_task = self._ensure_bg_loop().create_task(self._collect_idle_metrics_periodically())
+                        logger.debug("📊 [METRICS] Задача сбора idle метрик создана в фоновом loop")
+                    except Exception as task_err:
+                        logger.warning(f"⚠️ [METRICS] Ошибка создания задачи сбора idle метрик: {task_err}")
+                
+                self._bg_loop.call_soon_threadsafe(schedule_task)
+            else:
+                # Fallback: используем текущий event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    self._idle_metrics_task = asyncio.create_task(self._collect_idle_metrics_periodically())
+                    logger.debug("📊 [METRICS] Задача сбора idle метрик создана в текущем loop")
+                except RuntimeError:
+                    logger.warning("⚠️ [METRICS] Event loop не активен, idle метрики не будут собираться")
+        except Exception as exc:
+            logger.warning(f"⚠️ [METRICS] Ошибка запуска сбора idle метрик: {exc}")
+    
+    async def _collect_idle_metrics_periodically(self):
+        """
+        Периодически собирает idle CPU/RAM метрики.
+        Собирает каждые 30 секунд после tray.ready.
+        """
+        try:
+            import psutil
+            import os
+            
+            # Ждём 30 секунд после tray.ready для стабилизации idle-режима
+            await asyncio.sleep(30.0)
+            
+            # Собираем метрики каждые 30 секунд
+            while self._tray_ready:
+                try:
+                    process = psutil.Process(os.getpid())
+                    cpu_percent = process.cpu_percent(interval=1.0)
+                    memory_info = process.memory_info()
+                    ram_mb = memory_info.rss / (1024 * 1024)  # Конвертируем в MB
+                    
+                    # Логируем метрики в формате для парсинга monitor_metrics.py
+                    logger.info(f"idle_cpu_pct={cpu_percent:.2f}")
+                    logger.info(f"idle_ram_mb={ram_mb:.2f}")
+                    
+                    logger.debug(f"📊 [METRICS] Idle CPU: {cpu_percent:.2f}%, RAM: {ram_mb:.2f} MB")
+                    
+                    # Собираем каждые 30 секунд
+                    await asyncio.sleep(30.0)
+                except Exception as collect_err:
+                    logger.warning(f"⚠️ [METRICS] Ошибка сбора idle метрик: {collect_err}")
+                    await asyncio.sleep(30.0)
+        except ImportError:
+            logger.warning("⚠️ [METRICS] psutil не установлен, idle метрики не будут собираться")
+        except Exception as exc:
+            logger.warning(f"⚠️ [METRICS] Ошибка в задаче сбора idle метрик: {exc}")
     
     async def _release_tal_hold_after_timeout(self):
         """

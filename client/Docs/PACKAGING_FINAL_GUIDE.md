@@ -6,7 +6,9 @@
 > Это базовый и единственный источник инструкций по сборке Universal 2 `.app` + `.pkg`, подписи и нотарификации. Все чек-листы (`Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md`, `.cursorrules §11.2`) обязаны ссылаться на этот файл и фиксировать фактические результаты.
 
 **Связанные документы:**
-- `MACOS_PACKAGING_REQUIREMENTS.md` — полные требования к Universal 2 сборке
+- `MACOS_PACKAGING_REQUIREMENTS.md` — полные требования к Universal 2 сборке (включая power/battery требования)
+- `client/metrics/registry.md` — метрики и SLO пороги (включая power/battery метрики)
+- `Docs/TAL_TESTING_CHECKLIST.md` — детальная проверка TAL subsystem
 - `scripts/prepare_release.sh` — полная цепочка подготовки релиза (см. `.cursorrules` раздел 11.6)
 - `scripts/validate_release_bundle.py` — проверка метаданных артефакта (см. `.cursorrules` раздел 11.7)
 - `.cursorrules` — правила разработки и Packaging Regression Checklist (раздел 11.2)
@@ -16,7 +18,8 @@
 ## 1. Требования окружения
 
 ### Обязательные компоненты:
-- **macOS:** 13+ (для Rosetta 2 на Apple Silicon)
+- **macOS:** 13+ (для Rosetta 2 на Apple Silicon, сборка Universal 2)
+- **Минимальная версия для приложения:** 12.0 (Monterey) - указано в Info.plist
 - **Python:** 3.13.7 Universal 2 (установлен через официальный `python-3.13.7-macos11.pkg`)
   - **ВАЖНО:** Не использовать arm64-only Python из pyenv
   - Путь: `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3`
@@ -27,9 +30,11 @@
 - **Инструменты:** `pyinstaller`, `pkgbuild`, `productbuild`, `notarytool`, `stapler`, `lipo`
 
 ### Внешние бинарники (Universal 2):
-- **FFmpeg:** `resources/ffmpeg/ffmpeg` (arm64 + x86_64)
-- **SwitchAudioSource:** `resources/audio/SwitchAudioSource` (arm64 + x86_64)
-- **FLAC:** `resources/audio/flac` (arm64 + x86_64)
+- **FFmpeg:** `resources/ffmpeg/ffmpeg` (arm64 + x86_64) - создаётся автоматически из `vendor_binaries/ffmpeg/`
+- **SwitchAudioSource:** `resources/audio/SwitchAudioSource` (arm64 + x86_64) - создаётся автоматически из `vendor_binaries/switchaudio/`
+- **FLAC:** `resources/audio/flac` (arm64 + x86_64) - создаётся автоматически из `vendor_binaries/flac/`
+
+**ВАЖНО:** Бинарники автоматически стейджатся из `vendor_binaries/` в `resources/` через `scripts/stage_universal_binaries.py` перед сборкой PyInstaller.
 
 **Проверка бинарников:**
 ```bash
@@ -50,13 +55,14 @@ cd client
 ```
 
 Скрипт автоматически выполняет:
-1. ✅ Проверку зависимостей (`scripts/check_dependencies.py`)
-2. ✅ Универсализацию .so файлов (если нужно)
-3. ✅ Двойную сборку PyInstaller (arm64 + x86_64)
-4. ✅ Объединение в Universal 2 через `create_universal_app.py`
-5. ✅ Подпись через оптимизированный `sign_all_binaries.sh`
-6. ✅ Нотаризацию .app и PKG
-7. ✅ Создание финальных артефактов
+1. ✅ Стейджинг Universal 2 бинарников (`scripts/stage_universal_binaries.py`)
+2. ✅ Проверку зависимостей (`scripts/check_dependencies.py`)
+3. ✅ Универсализацию .so файлов (если нужно)
+4. ✅ Двойную сборку PyInstaller (arm64 + x86_64)
+5. ✅ Объединение в Universal 2 через `create_universal_app.py`
+6. ✅ Подпись через оптимизированный `sign_all_binaries.sh`
+7. ✅ Нотаризацию .app и PKG
+8. ✅ Создание финальных артефактов
 
 ---
 
@@ -302,6 +308,30 @@ lipo -info dist/Nexy.app/Contents/Resources/resources/ffmpeg/ffmpeg
 lipo -info dist/Nexy.app/Contents/Resources/resources/audio/SwitchAudioSource
 lipo -info dist/Nexy.app/Contents/Resources/resources/audio/flac
 ```
+
+**Проверка power/battery (idle-режим):**
+```bash
+# 1. Запустить приложение и дождаться полной инициализации (tray.ready)
+open dist/Nexy.app
+
+# 2. Подождать 30 секунд после инициализации (idle-режим)
+
+# 3. Проверить активные power assertions (не должно быть в idle)
+pmset -g assertions | grep -i "com.nexy.assistant"
+# Ожидается: пустой вывод (нет активных assertions в idle)
+
+# 4. Проверить потребление CPU/RAM (опционально, через Activity Monitor или psutil)
+# CPU должно быть < 5%, RAM < 200 MB
+```
+
+**Критерии приемки power/battery:**
+- ✅ В idle-режиме (после полной инициализации) нет активных power assertions
+- ✅ TAL assertion устанавливается только при перезапуске после разрешений
+- ✅ TAL assertion освобождается в течение 120 секунд (до `tray.ready`)
+- ✅ Idle CPU/RAM соответствуют лимитам (CPU < 5%, RAM < 200 MB)
+
+**Детальная проверка TAL subsystem:**
+См. `Docs/TAL_TESTING_CHECKLIST.md` и `scripts/check_tal_after_restart.py` для полной верификации TAL логики.
 
 ---
 

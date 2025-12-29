@@ -63,3 +63,13 @@
 | `reconcile_pending_count` | gauge | Количество pending reconcile | ≤1 | `AudioRouteManager` |
 | `active_device_signatures{transport}` | gauge | Активные устройства по типу транспорта | N/A | `AudioRouteManager` |
 | `route_manager_decision_rate{type}` | counter | Распределение решений RouteManager (start/abort/retry/degrade) | N/A | `AudioRouteManager` |
+
+## Power/Battery Metrics
+
+| Метрика | Тип | Семантика | Порог SLO (p95) | Источник |
+|---------|-----|-----------|-----------------|----------|
+| `idle_cpu_pct` | gauge | Процент использования CPU в idle-режиме (после полной инициализации) | ≤5% | Системные метрики (psutil) |
+| `idle_ram_mb` | gauge | Потребление RAM в idle-режиме (после полной инициализации) | ≤200 MB | Системные метрики (psutil) |
+| `tal_hold_duration_ms` | histogram | Длительность TAL (Termination and Launch) assertion (от установки до освобождения) | ≤120 сек | `SimpleModuleCoordinator._hold_tal_until_tray_ready()` |
+| `tal_refresh_interval_ms` | histogram | Интервал обновления TAL assertion | ~30 сек (target), ≤35 сек (допустимо) | `SimpleModuleCoordinator._periodically_refresh_tal_hold()` |
+| `power_assertion_active_count` | gauge | Количество активных power assertions (вне TAL-окна) | 0 (в idle-режиме) | `pmset -g assertions` |
