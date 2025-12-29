@@ -24,15 +24,15 @@ REQUIRED_PACKAGES = {
     "PyAudio": "0.2.14",
     "pyinstaller": "6.16.0",
     "pyinstaller-hooks-contrib": "2025.9",
-    "pyobjc-core": "11.1",
+    "pyobjc-core": "12.1",
     "pyobjc-framework-AVFoundation": "11.1",
-    "pyobjc-framework-Cocoa": "11.1",
+    "pyobjc-framework-Cocoa": "12.1",
     "pyobjc-framework-Quartz": "11.1",
     "pynput": "1.8.1",
     "pydub": "0.25.1",
     "PyYAML": "6.0.3",
     "rumps": "0.4.0",
-    "SpeechRecognition": "3.14.3",
+    "SpeechRecognition": "3.14.4",
 }
 
 BINARY_REQUIREMENTS = [

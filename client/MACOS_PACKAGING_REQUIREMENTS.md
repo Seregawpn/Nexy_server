@@ -256,15 +256,15 @@ lipo -info resources/audio/flac  # если используется внешн�
 
 | Библиотека | Версия | Назначение | Архитектура |
 |------------|--------|------------|-------------|
-| **PyObjC-core** | 11.1 | macOS API доступ | arm64 |
-| **PyObjC-framework-Cocoa** | 11.1 | Cocoa фреймворк | arm64 |
+| **PyObjC-core** | 12.1 | macOS API доступ | arm64 |
+| **PyObjC-framework-Cocoa** | 12.1 | Cocoa фреймворк | arm64 |
 | **PyObjC-framework-Quartz** | 11.1 | Quartz (keyboard, screen) | arm64 |
 | **PyObjC-framework-AVFoundation** | 11.1 | Audio/Video | arm64 |
 | **rumps** | 0.4.0 | Menu bar приложение | pure Python |
 | **grpcio** | 1.75.1 | gRPC клиент | arm64 |
 | **grpcio-tools** | 1.75.1 | Proto компиляция | arm64 |
 | **protobuf** | 6.32.1 | Protocol Buffers | pure Python |
-| **SpeechRecognition** | 3.14.3 | Распознавание речи | pure Python |
+| **SpeechRecognition** | 3.14.4 | Распознавание речи | pure Python |
 | **PyAudio** | 0.2.14 | Микрофон захват | arm64 |
 | **pydub** | 0.25.1 | Аудио обработка | pure Python |
 | **sounddevice** | 0.5.2 | Аудио воспроизведение | arm64 |
