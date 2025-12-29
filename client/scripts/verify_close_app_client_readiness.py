@@ -175,11 +175,16 @@ def check_actions_config():
     try:
         loader = UnifiedConfigLoader.get_instance()
         actions_config = loader.get_actions_config()
-        close_app_action = actions_config.get('close_app', {})
+        close_app_action = actions_config.get('close_app')
         
-        enabled = close_app_action.get('enabled', False)
-        timeout = close_app_action.get('timeout_sec', 10.0)
-        speak_errors = close_app_action.get('speak_errors', True)
+        if not close_app_action:
+            print("\n❌ Конфигурация actions.close_app не найдена!")
+            return False
+        
+        # OpenAppActionConfig - это dataclass, обращаемся к атрибутам напрямую
+        enabled = close_app_action.enabled
+        timeout = close_app_action.timeout_sec
+        speak_errors = close_app_action.speak_errors
         
         print(f"\n📋 Конфигурация actions.close_app:")
         print(f"   enabled: {enabled}")

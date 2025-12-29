@@ -5,6 +5,7 @@ VoiceRecognitionIntegration - координация распознавания 
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import random
@@ -428,9 +429,12 @@ class VoiceRecognitionIntegration:
                     delay = random.uniform(self.config.simulate_min_delay_sec, self.config.simulate_max_delay_sec)
                     await asyncio.sleep(delay)
                     # Имитируем успех/неуспех
+                    ts_ms = int(time.monotonic() * 1000)
                     if random.random() <= self.config.simulate_success_rate:
                         text = "открой браузер"
                         confidence = round(random.uniform(0.75, 0.98), 2)
+                        # TRACE: распознавание завершено успешно (симуляция)
+                        logger.info(f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(text)}, confidence={confidence:.2f}, simulated=true}}")
                         await self.event_bus.publish("voice.recognition_completed", {
                             "session_id": session_id,
                             "text": text,
@@ -438,6 +442,8 @@ class VoiceRecognitionIntegration:
                             "language": self.config.language
                         })
                     else:
+                        # TRACE: распознавание завершено с ошибкой (симуляция)
+                        logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error=no_speech, simulated=true}}")
                         await self.event_bus.publish("voice.recognition_failed", {
                             "session_id": session_id,
                             "error": "no_speech",
@@ -552,7 +558,10 @@ class VoiceRecognitionIntegration:
                     self._google_sr_controller.start_listening()
                 return
             await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+            ts_ms = int(time.monotonic() * 1000)
             if result.text:
+                # TRACE: распознавание завершено успешно
+                logger.info(f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(result.text)}, confidence={result.confidence:.2f}}}")
                 await self.event_bus.publish("voice.recognition_completed", {
                     "session_id": session_id,
                     "text": result.text,
@@ -560,6 +569,8 @@ class VoiceRecognitionIntegration:
                     "language": result.language
                 })
             else:
+                # TRACE: распознавание завершено с ошибкой
+                logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={result.error or 'empty_result'}}}")
                 await self.event_bus.publish("voice.recognition_failed", {
                     "session_id": session_id,
                     "error": result.error or "empty_result",
@@ -601,6 +612,9 @@ class VoiceRecognitionIntegration:
                     self._google_sr_controller.start_listening()
                 return
             await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+            # TRACE: распознавание завершено с ошибкой
+            ts_ms = int(time.monotonic() * 1000)
+            logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={error}}}")
             await self.event_bus.publish("voice.recognition_failed", {
                 "session_id": session_id,
                 "error": error,

@@ -151,6 +151,10 @@ class InputProcessingIntegration:
         """Начало удержания: готовим сессию, но не открываем микрофон (until LONG_PRESS)."""
         print(f"🎤🎤🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
+        # TRACE: начало ввода
+        ts_ms = int(time.monotonic() * 1000)
+        pending_session = event.timestamp or time.monotonic()
+        logger.info(f"TRACE phase=input.press ts={ts_ms} session={pending_session} extra={{key={event.key}}}")
         try:
             # КРИТИЧНО: Сбрасываем отмену предыдущей сессии при новом удержании
             # Это гарантирует, что отмена не "протекает" в следующую сессию
@@ -975,6 +979,9 @@ class InputProcessingIntegration:
                 # КРИТИЧНО: Используем _get_active_session_id для получения session_id
                 active_session_id = self._get_active_session_id()
                 logger.info(f"🛑 PTT: keyUp({event.key}) → RECORDING_STOP, session={active_session_id}, duration={duration*1000:.0f}ms, reason=short_press")
+                # TRACE: остановка записи (SHORT_PRESS)
+                ts_ms = int(time.monotonic() * 1000)
+                logger.info(f"TRACE phase=recording.stop ts={ts_ms} session={active_session_id} extra={{duration={event.duration:.3f}, reason=short_press}}")
                 await self.event_bus.publish(
                     "voice.recording_stop",
                     {
@@ -1125,6 +1132,9 @@ class InputProcessingIntegration:
                 self._recording_start_time = time.time()
                 # КРИТИЧНО: Используем _get_active_session_id для получения session_id
                 active_session_id = self._get_active_session_id()
+                # TRACE: начало записи
+                ts_ms = int(time.monotonic() * 1000)
+                logger.info(f"TRACE phase=recording.start ts={ts_ms} session={active_session_id} extra={{duration={event.duration:.3f}}}")
                 await self.event_bus.publish(
                     "voice.recording_start",
                     {
@@ -1215,6 +1225,9 @@ class InputProcessingIntegration:
                 # Если есть активная сессия, останавливаем её
                 if active_session_id is not None:
                     logger.debug(f"RELEASE: публикуем voice.recording_stop для session {active_session_id}")
+                    # TRACE: остановка записи
+                    ts_ms = int(time.monotonic() * 1000)
+                    logger.info(f"TRACE phase=recording.stop ts={ts_ms} session={active_session_id} extra={{duration={event.duration:.3f}}}")
                     await self.event_bus.publish(
                         "voice.recording_stop",
                         {

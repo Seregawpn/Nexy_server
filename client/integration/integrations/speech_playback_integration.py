@@ -239,6 +239,9 @@ class SpeechPlaybackIntegration:
                 if self._avf_player:
                     # Publish started event if first chunk
                     if not self._had_audio_for_session.get(sid):
+                        # TRACE: начало воспроизведения
+                        ts_ms = int(time.monotonic() * 1000)
+                        logger.info(f"TRACE phase=playback.start ts={ts_ms} session={sid} extra={{chunk_size={len(audio_bytes)}}}")
                         await self.event_bus.publish("playback.started", {"session_id": sid})
                     
                     metadata = {
@@ -307,6 +310,9 @@ class SpeechPlaybackIntegration:
             if data.get("metadata"):
                 meta.update(data.get("metadata"))
 
+            # TRACE: начало воспроизведения (raw audio)
+            ts_ms = int(time.monotonic() * 1000)
+            logger.info(f"TRACE phase=playback.start ts={ts_ms} session={session_id} extra={{pattern={pattern}, raw_audio=true}}")
             # Publish started
             await self.event_bus.publish("playback.started", {"session_id": session_id, "pattern": pattern})
             
@@ -358,6 +364,9 @@ class SpeechPlaybackIntegration:
                 return
 
             meta = {"kind": "signal", "pattern": pattern}
+            # TRACE: начало воспроизведения (signal)
+            ts_ms = int(time.monotonic() * 1000)
+            logger.info(f"TRACE phase=playback.start ts={ts_ms} session=None extra={{pattern={pattern}, signal=true}}")
             await self.event_bus.publish("playback.started", {"signal": True})
             self._avf_player.add_audio_data(arr, metadata=meta)
             
@@ -396,6 +405,9 @@ class SpeechPlaybackIntegration:
             
             # КРИТИЧНО: Публикуем playback.completed только при наличии session_id (чтобы не завершить чужую цепочку)
             if sid is not None:
+                # TRACE: завершение воспроизведения (отмена)
+                ts_ms = int(time.monotonic() * 1000)
+                logger.info(f"TRACE phase=playback.end ts={ts_ms} session={sid} extra={{cancelled=true}}")
                 await self.event_bus.publish("playback.completed", {"session_id": sid})
                 logger.info(f"🛑 SpeechPlayback: playback.completed опубликовано (session_id={sid})")
             else:
@@ -450,6 +462,9 @@ class SpeechPlaybackIntegration:
                 else:
                     # If we haven't received any audio, finalize immediately
                     if sid not in self._cancelled_sessions:
+                        # TRACE: завершение воспроизведения (без аудио)
+                        ts_ms = int(time.monotonic() * 1000)
+                        logger.info(f"TRACE phase=playback.end ts={ts_ms} session={sid} extra={{no_audio=true}}")
                         await self.event_bus.publish("playback.completed", {"session_id": sid})
                         logger.info(f"SpeechPlayback: finalized session {sid} (no audio received)")
         except Exception as e:
@@ -468,6 +483,9 @@ class SpeechPlaybackIntegration:
                 self._grpc_done_sessions[sid] = True
                 self._finalized_sessions[sid] = True
                 
+            # TRACE: завершение воспроизведения с ошибкой
+            ts_ms = int(time.monotonic() * 1000)
+            logger.info(f"TRACE phase=playback.end ts={ts_ms} session={sid} extra={{error={error}, failed=true}}")
             # Publish playback failed
             await self.event_bus.publish("playback.failed", {
                 "session_id": sid,
@@ -515,6 +533,9 @@ class SpeechPlaybackIntegration:
 
             # Переход в SLEEPING (или LISTENING если это был вопрос, но здесь мы просто заканчиваем playback)
             if session_id not in self._cancelled_sessions:
+                # TRACE: завершение воспроизведения
+                ts_ms = int(time.monotonic() * 1000)
+                logger.info(f"TRACE phase=playback.end ts={ts_ms} session={session_id} extra={{finalized=true}}")
                 await self.event_bus.publish("playback.completed", {"session_id": session_id})
                 
                 try:

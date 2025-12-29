@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Добавляем корень проекта в путь
 project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root / "client(prod)"))
+sys.path.insert(0, str(project_root / "client"))
 
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager

@@ -6,6 +6,7 @@ ScreenshotCaptureIntegration - Интеграция модуля захвата 
 import asyncio
 import logging
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
@@ -77,6 +78,8 @@ class ScreenshotCaptureIntegration:
         self._screen_permission_status: Optional[str] = None
         self._screen_permission_prompted = False
         self._screen_permission_task: Optional[asyncio.Task] = None
+        # Ранний захват: отслеживаем активные задачи захвата по session_id
+        self._early_capture_tasks: Dict[float, asyncio.Task] = {}
 
         # Компоненты
         self._capture: Optional[ScreenshotCapture] = None
@@ -115,9 +118,11 @@ class ScreenshotCaptureIntegration:
             # Подписки на события — даже в degraded-режиме, чтобы отдавать screenshot.error
             await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed, EventPriority.HIGH)
             await self.event_bus.subscribe("voice.recording_stop", self._on_voice_recording_stop, EventPriority.HIGH)
+            # Ранний захват скриншота при voice.recording_start (когда запись реально началась)
+            await self.event_bus.subscribe("voice.recording_start", self._on_recording_start, EventPriority.MEDIUM)
             
             # Дополнительная подписка для отладки
-            logger.info("🔧 ScreenshotCapture: Подписки настроены - app.mode_changed, voice.recording_stop")
+            logger.info("🔧 ScreenshotCapture: Подписки настроены - app.mode_changed, voice.recording_stop, voice.recording_start")
             # Подписки на статусы разрешений, чтобы не пытаться снимать без Screen Recording
             try:
                 await self.event_bus.subscribe("permissions.status_checked", self._on_permission_event, EventPriority.MEDIUM)
@@ -175,9 +180,15 @@ class ScreenshotCaptureIntegration:
         else:
             quality_enum = ScreenshotQuality.LOW
 
-        # Формат — только JPEG
+        # Формат из конфига (поддерживается JPEG, PNG, WebP)
         fmt = (self._config.format or "jpeg").lower()
-        format_enum = ScreenshotFormat.JPEG
+        format_map = {
+            "jpeg": ScreenshotFormat.JPEG,
+            "jpg": ScreenshotFormat.JPEG,
+            "png": ScreenshotFormat.PNG,
+            "webp": ScreenshotFormat.WEBP,
+        }
+        format_enum = format_map.get(fmt, ScreenshotFormat.JPEG)
 
         # Регион
         region_map = {
@@ -196,6 +207,45 @@ class ScreenshotCaptureIntegration:
             timeout=5.0,
         )
 
+    async def _on_recording_start(self, event: Dict[str, Any]):
+        """Ранний захват скриншота при voice.recording_start (когда запись реально началась)"""
+        try:
+            # Извлекаем session_id из события
+            data = (event or {}).get("data", {})
+            session_id = data.get("session_id")
+            
+            if session_id is None:
+                return
+            
+            # Сохраняем session_id для последующих событий
+            self._last_session_id = session_id
+            
+            # Проверяем idempotent: если скриншот уже захвачен для этой сессии
+            if session_id == self._captured_for_session:
+                logger.debug(f"📸 ScreenshotCapture: already captured for session {session_id} (recording_start)")
+                return
+            
+            # Проверяем, не запущена ли уже задача захвата для этой сессии
+            if session_id in self._early_capture_tasks:
+                task = self._early_capture_tasks[session_id]
+                if not task.done():
+                    logger.debug(f"📸 ScreenshotCapture: capture already in progress for session {session_id}")
+                    return
+            
+            # TRACE: начало раннего захвата скриншота
+            ts_ms = int(time.monotonic() * 1000)
+            logger.info(f"TRACE phase=screenshot.start ts={ts_ms} session={session_id} extra={{trigger=recording_start}}")
+            
+            # Запускаем асинхронный захват (не блокируем поток)
+            task = asyncio.create_task(self._capture_once_early(session_id))
+            self._early_capture_tasks[session_id] = task
+            task.add_done_callback(lambda _: self._early_capture_tasks.pop(session_id, None))
+            
+            logger.info(f"📸 ScreenshotCapture: Ранний захват запущен для session {session_id} (voice.recording_start)")
+                
+        except Exception as e:
+            logger.error(f"ScreenshotCaptureIntegration: error in recording_start: {e}")
+
     async def _on_voice_recording_stop(self, event: Dict[str, Any]):
         try:
             data = (event or {}).get("data", {})
@@ -204,8 +254,7 @@ class ScreenshotCaptureIntegration:
             
             logger.info(f"🎤 ScreenshotCapture: Получено voice.recording_stop, session_id={session_id}")
             
-            # ПРЯМОЙ ТРИГГЕР: захватываем скриншот сразу при остановке записи
-            # (это происходит при переходе в PROCESSING)
+            # Если скриншот уже захвачен (ранний захват) - используем его
             if session_id is not None:
                 if self._captured_for_session == session_id:
                     logger.debug("ScreenshotCaptureIntegration: already captured for session (voice_stop)")
@@ -214,8 +263,23 @@ class ScreenshotCaptureIntegration:
                     logger.info(f"📸 ScreenshotCapture: Используем подготовленный скриншот для session {session_id}")
                     await self._publish_prepared(session_id)
                 else:
-                    logger.info(f"📸 ScreenshotCapture: ПРЯМОЙ ЗАХВАТ по voice.recording_stop, session_id={session_id}")
-                    await self._capture_once(session_id=session_id)
+                    # Если ранний захват еще не завершился - ждем его или захватываем заново
+                    if session_id in self._early_capture_tasks:
+                        task = self._early_capture_tasks.get(session_id)
+                        if task and not task.done():
+                            logger.info(f"📸 ScreenshotCapture: Ожидаем завершения раннего захвата для session {session_id}")
+                            try:
+                                await asyncio.wait_for(task, timeout=0.5)
+                            except asyncio.TimeoutError:
+                                logger.warning(f"📸 ScreenshotCapture: Таймаут ожидания раннего захвата, захватываем заново")
+                                await self._capture_once(session_id=session_id)
+                        else:
+                            # Задача завершилась, но скриншот не опубликован - захватываем заново
+                            logger.info(f"📸 ScreenshotCapture: Ранний захват завершился без результата, захватываем заново")
+                            await self._capture_once(session_id=session_id)
+                    else:
+                        logger.info(f"📸 ScreenshotCapture: ПРЯМОЙ ЗАХВАТ по voice.recording_stop, session_id={session_id}")
+                        await self._capture_once(session_id=session_id)
                 
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in voice_recording_stop: {e}")
@@ -286,19 +350,39 @@ class ScreenshotCaptureIntegration:
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in state_changed: {e}")
 
-    async def _capture_once(self, session_id: Optional[float]):
+    async def _capture_once_early(self, session_id: Optional[float]):
+        """Ранний захват скриншота (не блокирует, может быть отменен)"""
+        await self._capture_once(session_id, is_early=True)
+    
+    async def _capture_once(self, session_id: Optional[float], is_early: bool = False):
         if not self._capture:
+            fmt = (self._config.format or "jpeg").lower()
+            if fmt == "webp":
+                logger.warning("ScreenshotCaptureIntegration: WebP requires capture module; fallback disabled")
+                await self.event_bus.publish("screenshot.error", {
+                    "session_id": session_id,
+                    "error": "webp_requires_module",
+                })
+                return
             # Fallback: используем системную утилиту screencapture (macOS)
             ok, out_path, meta = await self._fallback_capture_cli()
             if ok and out_path:
+                # TRACE: скриншот готов
+                ts_ms = int(time.monotonic() * 1000)
+                format_value = meta.get("format", "jpeg")
+                logger.info(
+                    f"TRACE phase=screenshot.ready ts={ts_ms} session={session_id} "
+                    f"extra={{format={format_value}, early={is_early}}}"
+                )
+                
                 await self.event_bus.publish("screenshot.captured", {
                     "session_id": session_id,
                     "image_path": str(out_path),
-                    "format": "jpeg",
+                    "format": format_value,
                     "width": meta.get("width"),
                     "height": meta.get("height"),
                     "size_bytes": meta.get("size_bytes"),
-                    "mime_type": "image/jpeg",
+                    "mime_type": meta.get("mime_type", "image/jpeg"),
                     "capture_time": 0.0,
                 })
                 self._captured_for_session = session_id
@@ -315,6 +399,11 @@ class ScreenshotCaptureIntegration:
             # Выполняем захват (в фоне внутри модуля)
             result = await self._capture.capture_screenshot()
             if result and result.success and result.data:
+                # TRACE: скриншот готов
+                ts_ms = int(time.monotonic() * 1000)
+                format_ext = result.data.format.value if hasattr(result.data.format, 'value') else str(result.data.format)
+                logger.info(f"TRACE phase=screenshot.ready ts={ts_ms} session={session_id} extra={{format={format_ext}, early={is_early}}}")
+                
                 await self._store_and_publish(session_id, result)
             else:
                 await self.event_bus.publish("screenshot.error", {
@@ -335,10 +424,19 @@ class ScreenshotCaptureIntegration:
         try:
             tmp_dir = Path(tempfile.gettempdir()) / "nexy_screenshots"
             tmp_dir.mkdir(parents=True, exist_ok=True)
-            out_path = tmp_dir / f"shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
+            fmt = (self._config.format or "jpeg").lower()
+            capture_ts = int(asyncio.get_event_loop().time() * 1000)
+            if fmt == "webp":
+                return False, None, {"error": "webp_requires_module"}
+            if fmt in {"png"}:
+                capture_format = "png"
+                out_path = tmp_dir / f"shot_{capture_ts}.png"
+            else:
+                capture_format = "jpg"
+                out_path = tmp_dir / f"shot_{capture_ts}.jpg"
 
-            # Захват всего экрана без звука, в JPEG
-            cmd = f"screencapture -x -t jpg {shlex.quote(str(out_path))}"
+            # Захват всего экрана без звука, в выбранном формате
+            cmd = f"screencapture -x -t {capture_format} {shlex.quote(str(out_path))}"
             proc = await asyncio.create_subprocess_shell(
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -397,7 +495,20 @@ class ScreenshotCaptureIntegration:
             except Exception:
                 pass
 
-            meta = {"width": width, "height": height, "size_bytes": size_bytes}
+            if fmt == "png":
+                mime_type = "image/png"
+                format_value = "png"
+            else:
+                mime_type = "image/jpeg"
+                format_value = "jpeg"
+
+            meta = {
+                "width": width,
+                "height": height,
+                "size_bytes": size_bytes,
+                "mime_type": mime_type,
+                "format": format_value,
+            }
             return True, out_path, meta
         except Exception as e:
             logger.debug(f"CLI capture fallback failed: {e}")

@@ -276,8 +276,10 @@ class ActionExecutionIntegration(BaseIntegration):
             action_type = executor_action_data.get("type")
             app_name = executor_action_data.get("app_name")
             if action_type == "close_app" and app_name:
-                if app_name in self._active_apps:
-                    existing_session = self._active_apps[app_name]
+                # Нормализуем app_name для проверки (регистронезависимо, без пробелов)
+                app_name_normalized = app_name.strip().lower()
+                if app_name_normalized in self._active_apps:
+                    existing_session = self._active_apps[app_name_normalized]
                     logger.info(
                         "[%s] close_app already running for app=%s (session=%s, new_session=%s)",
                         feature_id,
@@ -285,9 +287,17 @@ class ActionExecutionIntegration(BaseIntegration):
                         existing_session,
                         session_id
                     )
+                    # Публикуем событие failure для второй сессии, чтобы клиент/сервер получили ответ
+                    await self._publish_failure(
+                        session_id=session_id,
+                        feature_id=action_feature_id,
+                        error_code="already_running",
+                        message=f"close_app already running for {app_name} (session={existing_session})",
+                        app_name=app_name,
+                    )
                     return
-                # Регистрируем приложение как активное
-                self._active_apps[app_name] = session_id
+                # Регистрируем приложение как активное (используем нормализованный ключ)
+                self._active_apps[app_name_normalized] = session_id
             
             # Создаем задачу для выполнения действия
             task = asyncio.create_task(
@@ -421,8 +431,10 @@ class ActionExecutionIntegration(BaseIntegration):
                 action_type = action_data.get("type")
                 app_name = action_data.get("app_name")
                 if action_type == "close_app" and app_name:
-                    if self._active_apps.get(app_name) == session_id:
-                        self._active_apps.pop(app_name, None)
+                    # Нормализуем app_name для поиска (регистронезависимо, без пробелов)
+                    app_name_normalized = app_name.strip().lower()
+                    if self._active_apps.get(app_name_normalized) == session_id:
+                        self._active_apps.pop(app_name_normalized, None)
                         logger.debug(
                             "[%s] Removed app from active_apps: %s (session=%s)",
                             feature_id,

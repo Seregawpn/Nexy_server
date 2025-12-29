@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, Optional, Set
@@ -314,12 +315,21 @@ class GrpcClientIntegration:
 
         async def _delayed_send():
             try:
-                # Ждём скриншот небольшую паузу, если его ещё нет
-                if not sess.get('screenshot_path') and self.config.aggregate_timeout_sec > 0:
+                # Оптимизация: если скриншот уже готов (base64 или path) - отправляем сразу
+                current_sess = self._sessions.get(session_id) or {}
+                has_screenshot = bool(current_sess.get('screenshot_base64') or current_sess.get('screenshot_path'))
+                
+                # Ждём ТОЛЬКО если конфиг разрешает ожидание (aggregate_timeout_sec > 0)
+                if not has_screenshot and self.config.aggregate_timeout_sec > 0:
+                    short_wait = min(0.2, self.config.aggregate_timeout_sec)
                     try:
-                        await asyncio.sleep(self.config.aggregate_timeout_sec)
+                        await asyncio.sleep(short_wait)
+                        # Проверяем еще раз после задержки (скриншот мог прийти)
+                        current_sess = self._sessions.get(session_id) or {}
+                        has_screenshot = bool(current_sess.get('screenshot_base64') or current_sess.get('screenshot_path'))
                     except asyncio.CancelledError:
                         return
+                # Всегда отправляем запрос, независимо от наличия скриншота
                 await self._send(session_id)
             finally:
                 self._inflight.pop(session_id, None)
@@ -363,6 +373,10 @@ class GrpcClientIntegration:
                 except Exception as e:
                     logger.debug(f"Failed to read screenshot: {e}")
 
+        # TRACE: начало gRPC запроса (до publish для максимальной точности)
+        ts_ms = int(time.monotonic() * 1000)
+        logger.info(f"TRACE phase=grpc.start ts={ts_ms} session={session_id} extra={{has_screenshot={bool(screenshot_b64)}, text_len={len(text)}}}")
+        
         # Публикуем старт
         await self.event_bus.publish("grpc.request_started", {"session_id": session_id, "has_screenshot": bool(screenshot_b64)})
 
@@ -396,6 +410,7 @@ class GrpcClientIntegration:
             logger.info(f"Starting gRPC stream for session {session_id} with prompt: '{text[:50]}...'")
             got_terminal = False
             chunk_count = 0
+            first_chunk_ts = None
             async for resp in self._client.stream_audio(
                 prompt=text,
                 screenshot_base64=screenshot_b64 or "",
@@ -403,6 +418,11 @@ class GrpcClientIntegration:
                 hardware_id=hwid,
             ):
                 chunk_count += 1
+                
+                # TRACE: первый ответ от gRPC
+                if chunk_count == 1:
+                    first_chunk_ts = int(time.monotonic() * 1000)
+                    logger.info(f"TRACE phase=grpc.response ts={first_chunk_ts} session={session_id} extra={{chunk=1}}")
 
                 # Проверяем, какой тип content установлен (oneof) - ВСЕГДА используем WhichOneof для protobuf!
                 which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None

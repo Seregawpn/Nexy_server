@@ -468,7 +468,14 @@ class UnifiedConfigLoader:
     def get_screen_capture_config(self) -> Dict[str, Any]:
         """Получает настройки захвата экрана"""
         config = self._load_config()
-        return config['screen_capture']
+        # Используем screenshot_capture для настроек захвата (не screen_capture для разрешений)
+        screenshot_config = config.get('screenshot_capture', {})
+        # Маппинг старых ключей на новые для обратной совместимости
+        if 'capture_format' in screenshot_config and 'format' not in screenshot_config:
+            screenshot_config['format'] = screenshot_config['capture_format'].lower()
+        if 'capture_quality' in screenshot_config and 'quality' not in screenshot_config:
+            screenshot_config['quality'] = screenshot_config['capture_quality']
+        return screenshot_config
     
     def get_update_manager_config(self) -> Dict[str, Any]:
         """Получает настройки менеджера обновлений"""
