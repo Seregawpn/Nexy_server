@@ -32,6 +32,7 @@ from modules.permissions.first_run.status_checker import (
     check_accessibility_status,
     check_input_monitoring_status,
     check_screen_capture_status,
+    get_bundle_id,
 )
 
 from modules.permissions.first_run.activator import (
@@ -218,6 +219,16 @@ class FirstRunPermissionsIntegration:
             # Проверяем enabled
             if not self.enabled:
                 logger.info("ℹ️ [PERMISSIONS] Отключено - пропускаем")
+                return True
+
+            # Запрашиваем разрешения только для основного bundle_id
+            bundle_id = getattr(self, "detected_bundle_id", None) or get_bundle_id()
+            allow_non_bundle = os.environ.get("NEXY_ALLOW_NON_BUNDLE_PERMISSIONS") in {"1", "true", "yes"}
+            if bundle_id != "com.nexy.assistant" and not allow_non_bundle:
+                logger.info(
+                    "ℹ️ [PERMISSIONS] Пропускаем запросы (bundle_id=%s, ожидается com.nexy.assistant)",
+                    bundle_id,
+                )
                 return True
 
             # 🧪 ВРЕМЕННАЯ ЗАГЛУШКА для тестирования

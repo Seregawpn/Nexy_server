@@ -42,6 +42,7 @@ from modules.permissions.first_run.status_checker import (
     check_input_monitoring_status,
     check_screen_capture_status,
     PermissionStatus as FirstRunPermissionStatus,
+    get_bundle_id,
 )
 
 from integration.utils.logging_setup import get_logger
@@ -336,6 +337,33 @@ class PermissionRestartIntegration(BaseIntegration):
 
     async def _publish_ready_if_applicable(self, *, source: str) -> None:
         if self._ready_emitted:
+            return
+
+        # Для запусков не из основного bundle считаем готовым, без TCC-запросов
+        bundle_id = get_bundle_id()
+        if bundle_id != "com.nexy.assistant":
+            self._ready_emitted = True
+            self._ready_pending_update = False
+            try:
+                await self.event_bus.publish(
+                    "system.permissions_ready",
+                    {
+                        "source": source,
+                        "permissions": ["accessibility", "input_monitoring", "screen_capture"],
+                        "assumed": True,
+                        "bundle_id": bundle_id,
+                    },
+                )
+                await self.event_bus.publish(
+                    "system.ready_to_greet",
+                    {"source": source, "assumed": True, "bundle_id": bundle_id},
+                )
+                logger.info(
+                    "[PERMISSION_RESTART] Published system.ready_to_greet for non-bundle launch (bundle_id=%s)",
+                    bundle_id,
+                )
+            except Exception as exc:
+                logger.debug("[PERMISSION_RESTART] Failed to publish readiness events (non-bundle): %s", exc)
             return
 
         # DEV/diagnostic escape hatch: skip hard permission checks

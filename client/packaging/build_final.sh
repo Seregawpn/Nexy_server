@@ -44,10 +44,27 @@ ENTITLEMENTS="packaging/entitlements.plist"
 APP_NAME="Nexy"
 BUNDLE_ID="com.nexy.assistant"
 CLEAN_APP="/tmp/${APP_NAME}.app"
+SKIP_NOTARIZATION="${NEXY_SKIP_NOTARIZATION:-0}"
+
+warn() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+error() {
+    echo -e "${RED}❌ $1${NC}"
+    exit 1
+}
+
+log() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
 
 echo -e "${BLUE}🚀 Начинаем финальную упаковку Nexy AI Assistant${NC}"
 echo "Рабочая директория: $CLIENT_DIR"
 echo "Версия: $VERSION"
+if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+    warn "Нотаризация отключена (NEXY_SKIP_NOTARIZATION=1) — сборка для локального теста"
+fi
 
 # Проверка актуальности protobuf файлов
 echo -e "${YELLOW}🔍 Проверка актуальности protobuf pb2 файлов...${NC}"
@@ -115,10 +132,6 @@ clean_xattrs() {
     if find "$app_path" -name '._*' | grep -q .; then
         warn "AppleDouble (._*) файлы найдены на этапе $stage (нормально для macOS)"
     fi
-}
-
-warn() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
 update_app_version() {
@@ -324,11 +337,21 @@ else
     
     # Шаг 1.3: Сборка x86_64 (через Rosetta)
     log "Собираем x86_64 версию (через Rosetta)..."
-    PYI_TARGET_ARCH=x86_64 arch -x86_64 python3 -m PyInstaller packaging/Nexy.spec \
-        --distpath dist-x86_64 \
-        --workpath build-x86_64 \
-        --noconfirm \
-        --clean
+    # Используем Universal Python из /Library/Frameworks для x86_64 сборки
+    UNIVERSAL_PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+    if [ -f "$UNIVERSAL_PYTHON" ]; then
+        PYI_TARGET_ARCH=x86_64 arch -x86_64 "$UNIVERSAL_PYTHON" -m PyInstaller packaging/Nexy.spec \
+            --distpath dist-x86_64 \
+            --workpath build-x86_64 \
+            --noconfirm \
+            --clean
+    else
+        PYI_TARGET_ARCH=x86_64 arch -x86_64 python3 -m PyInstaller packaging/Nexy.spec \
+            --distpath dist-x86_64 \
+            --workpath build-x86_64 \
+            --noconfirm \
+            --clean
+    fi
     
     if [ ! -d "dist-x86_64/$APP_NAME.app" ]; then
         error "x86_64 сборка не удалась. Проверьте логи PyInstaller."
@@ -483,18 +506,21 @@ fi
 
 # Шаг 5: Нотаризация приложения
 echo -e "${BLUE}📤 Шаг 5: Нотаризация приложения${NC}"
+if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+    warn "Пропускаем нотаризацию приложения (test build)"
+else
+    log "Создаем ZIP для нотаризации..."
+    ditto -c -k --noextattr --noqtn "$CLEAN_APP" "$DIST_DIR/$APP_NAME-app-for-notarization.zip"
 
-log "Создаем ZIP для нотаризации..."
-ditto -c -k --noextattr --noqtn "$CLEAN_APP" "$DIST_DIR/$APP_NAME-app-for-notarization.zip"
+    log "Отправляем приложение на нотаризацию..."
+    xcrun notarytool submit "$DIST_DIR/$APP_NAME-app-for-notarization.zip" \
+        --keychain-profile "nexy-notary" \
+        --apple-id "seregawpn@gmail.com" \
+        --wait
 
-log "Отправляем приложение на нотаризацию..."
-xcrun notarytool submit "$DIST_DIR/$APP_NAME-app-for-notarization.zip" \
-    --keychain-profile "nexy-notary" \
-    --apple-id "seregawpn@gmail.com" \
-    --wait
-
-log "Прикрепляем нотаризационную печать..."
-xcrun stapler staple "$CLEAN_APP"
+    log "Прикрепляем нотаризационную печать..."
+    xcrun stapler staple "$CLEAN_APP"
+fi
 
 # Шаг 6: Создание DMG
 echo -e "${BLUE}💿 Шаг 6: Создание DMG${NC}"
@@ -524,15 +550,18 @@ log "DMG создан: $DMG_PATH"
 
 # Шаг 7: Нотаризация DMG
 echo -e "${BLUE}📤 Шаг 7: Нотаризация DMG${NC}"
+if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+    warn "Пропускаем нотаризацию DMG (test build)"
+else
+    log "Отправляем DMG на нотаризацию..."
+    xcrun notarytool submit "$DMG_PATH" \
+        --keychain-profile "nexy-notary" \
+        --apple-id "seregawpn@gmail.com" \
+        --wait
 
-log "Отправляем DMG на нотаризацию..."
-xcrun notarytool submit "$DMG_PATH" \
-    --keychain-profile "nexy-notary" \
-    --apple-id "seregawpn@gmail.com" \
-    --wait
-
-log "Прикрепляем нотаризационную печать к DMG..."
-xcrun stapler staple "$DMG_PATH"
+    log "Прикрепляем нотаризационную печать к DMG..."
+    xcrun stapler staple "$DMG_PATH"
+fi
 
 # Шаг 8: Создание PKG (ПРАВИЛЬНЫЙ СПОСОБ!)
 echo -e "${BLUE}📦 Шаг 8: Создание PKG${NC}"
@@ -541,7 +570,7 @@ log "Создаем временную папку для PKG..."
 rm -rf /tmp/nexy_pkg_clean_final
 mkdir -p /tmp/nexy_pkg_clean_final
 
-log "Копируем нотаризованное приложение в правильную структуру..."
+log "Копируем приложение в правильную структуру..."
 mkdir -p /tmp/nexy_pkg_clean_final/Applications
 # ВАЖНО: Используем ditto БЕЗ --noextattr для сохранения печати нотаризации
 /usr/bin/ditto "$CLEAN_APP" /tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app
@@ -613,15 +642,18 @@ mv "$DIST_DIR/$APP_NAME-final-signed.pkg" "$DIST_DIR/$APP_NAME.pkg"
 
 # Шаг 9: Нотаризация PKG
 echo -e "${BLUE}📤 Шаг 9: Нотаризация PKG${NC}"
+if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+    warn "Пропускаем нотаризацию PKG (test build)"
+else
+    log "Отправляем PKG на нотаризацию..."
+    xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" \
+        --keychain-profile "nexy-notary" \
+        --apple-id "seregawpn@gmail.com" \
+        --wait
 
-log "Отправляем PKG на нотаризацию..."
-xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" \
-    --keychain-profile "nexy-notary" \
-    --apple-id "seregawpn@gmail.com" \
-    --wait
-
-log "Прикрепляем нотаризационную печать к PKG..."
-xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
+    log "Прикрепляем нотаризационную печать к PKG..."
+    xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
+fi
 
     # Шаг 10: Финальная проверка
     echo -e "${BLUE}✅ Шаг 10: Финальная проверка${NC}"
@@ -653,10 +685,14 @@ else
     error "Подпись приложения не прошла проверку"
 fi
 
-if xcrun stapler validate "$DIST_DIR/$APP_NAME-final.app"; then
-    log "Нотаризация приложения корректна"
+if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+    warn "Нотаризация приложения пропущена — stapler validate не выполняем"
 else
-    error "Нотаризация приложения не прошла проверку"
+    if xcrun stapler validate "$DIST_DIR/$APP_NAME-final.app"; then
+        log "Нотаризация приложения корректна"
+    else
+        error "Нотаризация приложения не прошла проверку"
+    fi
 fi
 
 echo ""
@@ -667,10 +703,14 @@ else
     error "Подпись PKG не прошла проверку"
 fi
 
-if xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"; then
-    log "Нотаризация PKG корректна"
+if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+    warn "Нотаризация PKG пропущена — stapler validate не выполняем"
 else
-    error "Нотаризация PKG не прошла проверку"
+    if xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"; then
+        log "Нотаризация PKG корректна"
+    else
+        error "Нотаризация PKG не прошла проверку"
+    fi
 fi
 
 echo ""

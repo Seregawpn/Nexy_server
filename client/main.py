@@ -73,7 +73,7 @@ BOOT_NOTES: list[str] = []
 _ffmpeg_path = init_ffmpeg_for_pydub()
 BOOT_NOTES.append(f"init_ffmpeg_for_pydub: path={(str(_ffmpeg_path) if _ffmpeg_path else 'not found')}")
 
-# --- Автоматический dev-bypass разрешений при запуске из терминала ---
+# --- Опциональный dev-bypass разрешений при запуске из терминала ---
 def _is_terminal_launch() -> bool:
     """Определяет запуск из терминала (dev-режим), не для .app bundle."""
     if getattr(sys, "frozen", False):
@@ -83,10 +83,20 @@ def _is_terminal_launch() -> bool:
     return bool(sys.stdin.isatty() and sys.stdout.isatty() and os.environ.get("TERM"))
 
 
-if _is_terminal_launch():
+def _should_enable_terminal_permissions_bypass() -> bool:
+    """Включает bypass только при явном opt-in через env."""
+    if not _is_terminal_launch():
+        return False
+    value = os.environ.get("NEXY_ENABLE_TERMINAL_PERMISSIONS_BYPASS")
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes"}
+
+
+if _should_enable_terminal_permissions_bypass():
     os.environ.setdefault("NEXY_TEST_SKIP_PERMISSIONS", "1")
     os.environ.setdefault("NEXY_DEV_FORCE_PERMISSIONS", "1")
-    BOOT_NOTES.append("terminal_launch: forced permissions bypass (NEXY_TEST_SKIP_PERMISSIONS=1, NEXY_DEV_FORCE_PERMISSIONS=1)")
+    BOOT_NOTES.append("terminal_launch: permissions bypass enabled (NEXY_TEST_SKIP_PERMISSIONS=1, NEXY_DEV_FORCE_PERMISSIONS=1)")
     print("ℹ️ Terminal launch detected: permissions bypass enabled (test/dev mode)")
 
 # --- Фикс PyObjC для macOS (до импорта rumps) ---
