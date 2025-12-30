@@ -46,19 +46,6 @@ BUNDLE_ID="com.nexy.assistant"
 CLEAN_APP="/tmp/${APP_NAME}.app"
 SKIP_NOTARIZATION="${NEXY_SKIP_NOTARIZATION:-0}"
 
-warn() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-error() {
-    echo -e "${RED}❌ $1${NC}"
-    exit 1
-}
-
-log() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
-
 echo -e "${BLUE}🚀 Начинаем финальную упаковку Nexy AI Assistant${NC}"
 echo "Рабочая директория: $CLIENT_DIR"
 echo "Версия: $VERSION"
@@ -132,6 +119,10 @@ clean_xattrs() {
     if find "$app_path" -name '._*' | grep -q .; then
         warn "AppleDouble (._*) файлы найдены на этапе $stage (нормально для macOS)"
     fi
+}
+
+warn() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
 update_app_version() {

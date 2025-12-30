@@ -156,7 +156,15 @@ class SignalIntegration:
 
             reason = payload.get("reason") or payload.get("source")
 
-            if reason and str(reason).lower() in {"grpc_cancel", "short_press", "keyboard", "interrupt"}:
+            if reason and str(reason).lower() in {
+                "grpc_cancel",
+                "short_press",
+                "keyboard",
+                "interrupt",
+                "interrupt_request",
+                "interrupt_manager",
+                "speech_stop",
+            }:
                 logger.debug("Signals: CANCEL skipped (reason=%s)", reason)
                 return
 
