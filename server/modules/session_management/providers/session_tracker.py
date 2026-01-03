@@ -183,7 +183,7 @@ class SessionTracker(UniversalProviderInterface):
             return False
     
     async def _create_or_update_session(self, hardware_id: str, user_agent: Optional[str] = None, 
-                                      ip_address: Optional[str] = None, context: Dict[str, Any] = None) -> SessionData:
+                                      ip_address: Optional[str] = None, context: Optional[Dict[str, Any]] = None) -> SessionData:
         """
         Создание или обновление сессии
         

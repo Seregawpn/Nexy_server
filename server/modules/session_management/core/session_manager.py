@@ -26,8 +26,8 @@ class SessionManager:
             config: Конфигурация модуля
         """
         self.config = SessionManagementConfig(config)
-        self.hardware_id_provider = None
-        self.session_tracker = None
+        self.hardware_id_provider: Optional[HardwareIDProvider] = None
+        self.session_tracker: Optional[SessionTracker] = None
         self.is_initialized = False
         
         logger.info("SessionManager initialized")
@@ -84,7 +84,7 @@ class SessionManager:
         
         # Инициализируем Hardware ID Provider
         try:
-            if await self.hardware_id_provider.initialize():
+            if self.hardware_id_provider and await self.hardware_id_provider.initialize():
                 initialized_count += 1
                 logger.info("Hardware ID Provider initialized successfully")
             else:
@@ -94,7 +94,7 @@ class SessionManager:
         
         # Инициализируем Session Tracker
         try:
-            if await self.session_tracker.initialize():
+            if self.session_tracker and await self.session_tracker.initialize():
                 initialized_count += 1
                 logger.info("Session Tracker initialized successfully")
             else:
@@ -138,8 +138,11 @@ class SessionManager:
                 'context': context or {}
             }
             
+            if self.session_tracker is None:
+                raise Exception("Session Tracker not initialized")
+            
             session_result = None
-            async for result in self.session_tracker.process(session_data):
+            async for result in self.session_tracker.process(session_data):  # type: ignore
                 session_result = result
                 break
             
@@ -167,6 +170,9 @@ class SessionManager:
             if not self.is_initialized:
                 raise Exception("SessionManager not initialized")
             
+            if self.session_tracker is None:
+                raise Exception("Session Tracker not initialized")
+            
             return await self.session_tracker.get_session_status(session_id)
             
         except Exception as e:
@@ -188,6 +194,9 @@ class SessionManager:
             if not self.is_initialized:
                 raise Exception("SessionManager not initialized")
             
+            if self.session_tracker is None:
+                raise Exception("Session Tracker not initialized")
+            
             return await self.session_tracker.interrupt_session(session_id, reason)
             
         except Exception as e:
@@ -207,6 +216,9 @@ class SessionManager:
         try:
             if not self.is_initialized:
                 raise Exception("SessionManager not initialized")
+            
+            if self.session_tracker is None:
+                raise Exception("Session Tracker not initialized")
             
             return await self.session_tracker.interrupt_all_sessions(reason)
             
@@ -234,12 +246,19 @@ class SessionManager:
     async def _get_hardware_id(self) -> Optional[str]:
         """Получение Hardware ID из провайдера"""
         try:
+            if self.hardware_id_provider is None:
+                raise Exception("Hardware ID Provider not initialized")
+            
             hardware_id_result = None
-            async for result in self.hardware_id_provider.process(None):
+            async for result in self.hardware_id_provider.process(None):  # type: ignore
                 hardware_id_result = result
                 break
             
-            return hardware_id_result
+            # Извлекаем hardware_id из словаря результата
+            if isinstance(hardware_id_result, dict):
+                return hardware_id_result.get('hardware_id')
+            
+            return None
             
         except Exception as e:
             logger.error(f"Error getting hardware ID from provider: {e}")
@@ -380,8 +399,8 @@ class SessionManager:
         """
         summary = {
             "is_initialized": self.is_initialized,
-            "hardware_id_available": self.hardware_id_provider.is_available if self.hardware_id_provider else False,
-            "session_tracker_available": self.session_tracker.is_available if self.session_tracker else False,
+            "hardware_id_available": self.hardware_id_provider.is_initialized if self.hardware_id_provider else False,
+            "session_tracker_available": self.session_tracker.is_initialized if self.session_tracker else False,
             "config_valid": self.config.validate(),
             "session_statistics": self.get_session_statistics(),
             "security_settings": self.get_security_settings()
@@ -398,7 +417,7 @@ class SessionManager:
         return (
             f"SessionManager("
             f"initialized={self.is_initialized}, "
-            f"hardware_id_available={self.hardware_id_provider.is_available if self.hardware_id_provider else False}, "
-            f"session_tracker_available={self.session_tracker.is_available if self.session_tracker else False}"
+            f"hardware_id_available={self.hardware_id_provider.is_initialized if self.hardware_id_provider else False}, "
+            f"session_tracker_available={self.session_tracker.is_initialized if self.session_tracker else False}"
             f")"
         )

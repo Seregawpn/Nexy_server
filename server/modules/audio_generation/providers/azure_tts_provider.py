@@ -53,6 +53,9 @@ class AzureTTSProvider(UniversalProviderInterface):
         self.channels = config.get('channels')
         self.bits_per_sample = config.get('bits_per_sample')
         
+        # Настройки streaming - для разбиения на чанки
+        self.streaming_chunk_size = config.get('streaming_chunk_size', 4096)
+        
         # Таймауты
         self.timeout = config.get('timeout', 60)
         self.connection_timeout = config.get('connection_timeout', 30)
@@ -77,6 +80,9 @@ class AzureTTSProvider(UniversalProviderInterface):
                 logger.error("Azure TTS Provider not available - missing dependencies or credentials")
                 return False
             
+            # Type guard для линтера
+            assert speechsdk is not None, "speechsdk должен быть доступен при is_available=True"
+            
             # Создаем speech config
             self.speech_config = speechsdk.SpeechConfig(
                 subscription=self.speech_key,
@@ -86,9 +92,9 @@ class AzureTTSProvider(UniversalProviderInterface):
             # Настраиваем голос
             self.speech_config.speech_synthesis_voice_name = self.voice_name
             
-            # Настраиваем аудио формат - стандартный формат 48kHz mono
+            # Настраиваем аудио формат - PCM 24kHz для стриминга (можно разбивать на чанки)
             self.speech_config.set_speech_synthesis_output_format(
-                speechsdk.SpeechSynthesisOutputFormat.Raw48Khz16BitMonoPcm
+                speechsdk.SpeechSynthesisOutputFormat.Riff24Khz16BitMonoPcm
             )
             
             # Создаем synthesizer
@@ -126,30 +132,68 @@ class AzureTTSProvider(UniversalProviderInterface):
             if not self.is_initialized or not self.synthesizer:
                 raise Exception("Azure TTS Provider not initialized")
             
+            # Type guard для линтера
+            assert speechsdk is not None, "speechsdk должен быть доступен при is_initialized=True"
+            assert self.synthesizer is not None, "synthesizer должен быть инициализирован"
+            
             # Используем простой текст вместо SSML для избежания ошибок парсинга
             # result = self.synthesizer.speak_ssml_async(ssml).get()
             result = self.synthesizer.speak_text_async(input_data).get()
             
+            # Type guard для result
+            assert result is not None, "result не должен быть None"
+            
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-                # Получаем аудио данные
+                # Получаем аудио данные (RIFF WAV формат)
                 audio_data = result.audio_data
                 
                 if audio_data:
-                    total_bytes = len(audio_data)
-                    logger.info(
-                        "AzureTTS → emitting full sentence audio: bytes=%s",
-                        total_bytes,
-                    )
-                    yield audio_data
-                    logger.info(
-                        "AzureTTS → total bytes=%s, chunks=1 (no internal split)",
-                        total_bytes,
-                    )
+                    # RIFF WAV файл содержит заголовок (первые 44 байта)
+                    # Для стриминга нужно убрать заголовок и отправлять только PCM данные
+                    RIFF_HEADER_SIZE = 44
+                    
+                    if len(audio_data) > RIFF_HEADER_SIZE:
+                        # Убираем RIFF заголовок, оставляем только PCM данные
+                        pcm_data = audio_data[RIFF_HEADER_SIZE:]
+                        total_bytes = len(pcm_data)
+                        
+                        logger.info(
+                            "AzureTTS → received PCM audio: bytes=%s (after removing RIFF header), chunk_size=%s",
+                            total_bytes,
+                            self.streaming_chunk_size,
+                        )
+                        
+                        # Разбиваем PCM на чанки - теперь это безопасно, так как PCM можно разбивать произвольно
+                        chunk_count = 0
+                        offset = 0
+                        while offset < total_bytes:
+                            chunk_end = min(offset + self.streaming_chunk_size, total_bytes)
+                            chunk = pcm_data[offset:chunk_end]
+                            chunk_count += 1
+                            logger.debug(
+                                "AzureTTS → emitting PCM chunk #%s: bytes=%s (offset=%s-%s)",
+                                chunk_count,
+                                len(chunk),
+                                offset,
+                                chunk_end,
+                            )
+                            yield chunk
+                            offset = chunk_end
+                        
+                        logger.info(
+                            "AzureTTS → total PCM bytes=%s, chunks=%s (split by %s bytes)",
+                            total_bytes,
+                            chunk_count,
+                            self.streaming_chunk_size,
+                        )
+                    else:
+                        raise Exception("Audio data too short (no PCM data after header)")
                 else:
                     raise Exception("No audio data generated")
                     
             elif result.reason == speechsdk.ResultReason.Canceled:
                 cancellation_details = result.cancellation_details
+                assert cancellation_details is not None, "cancellation_details не должен быть None при Canceled"
                 raise Exception(f"Synthesis canceled: {cancellation_details.reason} - {cancellation_details.error_details}")
             else:
                 raise Exception(f"Synthesis failed with reason: {result.reason}")
@@ -216,9 +260,16 @@ class AzureTTSProvider(UniversalProviderInterface):
             if not self.synthesizer:
                 return False
             
+            # Type guard для линтера
+            assert speechsdk is not None, "speechsdk должен быть доступен при наличии synthesizer"
+            assert self.synthesizer is not None, "synthesizer должен быть инициализирован"
+            
             # Простой тестовый синтез
             test_text = "Hello, this is a test."
             result = self.synthesizer.speak_text_async(test_text).get()
+            
+            # Type guard для result
+            assert result is not None, "result не должен быть None"
             
             return result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted
             
@@ -312,4 +363,93 @@ class AzureTTSProvider(UniversalProviderInterface):
             "speech_rate": self.speech_rate,
             "speech_pitch": self.speech_pitch,
             "speech_volume": self.speech_volume
+        }
+    
+    def get_pricing_info(self) -> Dict[str, Any]:
+        """
+        Получение информации о стоимости использования Azure TTS
+        
+        Returns:
+            Словарь с информацией о ценах и расчетом стоимости
+        """
+        # Определяем тип голоса для расчета стоимости
+        # en-US-AriaNeural - стандартный нейронный голос
+        is_neural_voice = "Neural" in self.voice_name or any(
+            neural_marker in self.voice_name for neural_marker in ["Neural", "Multilingual", "MultilingualNeural"]
+        )
+        
+        # Актуальные цены Azure TTS (на 2024 год)
+        # Источник: https://azure.microsoft.com/pricing/details/cognitive-services/speech-services/
+        if is_neural_voice:
+            # Стандартные нейронные голоса
+            price_per_million_chars = 15.0  # USD за 1 миллион символов
+            voice_type = "Standard Neural Voice"
+        else:
+            # Стандартные голоса (устаревшие, но могут использоваться)
+            price_per_million_chars = 4.0  # USD за 1 миллион символов
+            voice_type = "Standard Voice"
+        
+        # Бесплатный уровень: 0.5 миллиона символов в месяц
+        free_tier_chars = 500_000
+        
+        pricing_info = {
+            "voice_name": self.voice_name,
+            "voice_type": voice_type,
+            "pricing_tier": "Standard Neural" if is_neural_voice else "Standard",
+            "price_per_million_characters_usd": price_per_million_chars,
+            "free_tier_characters_per_month": free_tier_chars,
+            "currency": "USD",
+            "pricing_source": "https://azure.microsoft.com/pricing/details/cognitive-services/speech-services/",
+            "calculation_examples": {
+                "1000_characters": round(price_per_million_chars / 1000, 6),
+                "10000_characters": round(price_per_million_chars / 100, 4),
+                "100000_characters": round(price_per_million_chars / 10, 2),
+                "1_million_characters": price_per_million_chars,
+                "10_million_characters": price_per_million_chars * 10,
+            },
+            "notes": [
+                "Цены указаны в долларах США (USD)",
+                "Первый 0.5 миллиона символов в месяц бесплатно",
+                "Цены могут варьироваться в зависимости от региона",
+                "Для точных цен проверьте актуальную информацию на сайте Azure",
+                "Стоимость рассчитывается по количеству входных символов (не выходных аудио данных)"
+            ]
+        }
+        
+        return pricing_info
+    
+    def calculate_cost(self, character_count: int) -> Dict[str, Any]:
+        """
+        Расчет стоимости синтеза для заданного количества символов
+        
+        Args:
+            character_count: Количество символов для синтеза
+            
+        Returns:
+            Словарь с расчетом стоимости
+        """
+        pricing_info = self.get_pricing_info()
+        price_per_million = pricing_info["price_per_million_characters_usd"]
+        free_tier = pricing_info["free_tier_characters_per_month"]
+        
+        # Расчет стоимости
+        if character_count <= free_tier:
+            cost_usd = 0.0
+            remaining_free = free_tier - character_count
+            message = f"В пределах бесплатного лимита. Осталось: {remaining_free:,} символов"
+        else:
+            billable_chars = character_count - free_tier
+            cost_usd = (billable_chars / 1_000_000) * price_per_million
+            remaining_free = 0
+            message = f"Превышен бесплатный лимит. К оплате: {billable_chars:,} символов"
+        
+        return {
+            "character_count": character_count,
+            "cost_usd": round(cost_usd, 6),
+            "cost_rub": round(cost_usd * 100, 2),  # Примерный курс (нужно обновлять)
+            "currency": "USD",
+            "free_tier_remaining": remaining_free,
+            "message": message,
+            "price_per_million": price_per_million,
+            "voice_name": self.voice_name
         }

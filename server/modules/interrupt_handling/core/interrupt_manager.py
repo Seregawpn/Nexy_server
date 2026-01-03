@@ -93,8 +93,11 @@ class InterruptManager(UniversalModuleInterface):
             from modules.interrupt_handling.providers.global_flag_provider import GlobalFlagProvider
             from modules.interrupt_handling.providers.session_tracker_provider import SessionTrackerProvider
             
-            self.global_flag_provider = GlobalFlagProvider(self.config)
-            self.session_tracker_provider = SessionTrackerProvider(self.config)
+            # Преобразуем конфигурацию в словарь
+            config_dict = self.config.config if hasattr(self.config, 'config') else {}
+            
+            self.global_flag_provider = GlobalFlagProvider(config_dict)
+            self.session_tracker_provider = SessionTrackerProvider(config_dict)
             
             await self.global_flag_provider.initialize()
             await self.session_tracker_provider.initialize()
@@ -126,7 +129,10 @@ class InterruptManager(UniversalModuleInterface):
                     input_data.get("module_instance")
                 )
             elif operation == "register_callback":
-                return await self.register_callback(input_data.get("callback"))
+                callback = input_data.get("callback")
+                if callback is None:
+                    return {"success": False, "error": "callback is required"}
+                return await self.register_callback(callback)
             elif operation == "check_interrupt":
                 return self.should_interrupt(input_data.get("hardware_id", ""))
             else:

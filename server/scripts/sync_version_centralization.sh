@@ -18,7 +18,7 @@ SERVER_PATH="/home/azureuser/voice-assistant"
 # Локальные файлы для обновления
 LOCAL_FILES=(
     "config/unified_config.py"
-    "config/unified_config_example.yaml"
+    "config/unified_config.yaml"
     "modules/update/config.py"
     "modules/update/providers/update_server_provider.py"
     "main.py"
@@ -286,4 +286,3 @@ echo "Для обновления версии измените SERVER_VERSION �
 echo "  - Локально: отредактируйте config.env"
 echo "  - На удалённом сервере: используйте ./scripts/update_server_version.sh"
 echo ""
-

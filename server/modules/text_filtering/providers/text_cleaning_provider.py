@@ -84,7 +84,7 @@ class TextCleaningProvider(UniversalProviderInterface):
             self.report_error(str(e))
             return {"success": False, "error": str(e)}
     
-    async def clean_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def clean_text(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Очистка текста
         
@@ -156,7 +156,7 @@ class TextCleaningProvider(UniversalProviderInterface):
             self.report_error(str(e))
             return {"success": False, "error": str(e)}
     
-    async def preprocess_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def preprocess_text(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Предобработка текста
         
@@ -297,7 +297,7 @@ class TextCleaningProvider(UniversalProviderInterface):
             }
             
             self.is_initialized = False
-            self.status = ProviderStatus.STOPPED
+            self.status = ProviderStatus.UNKNOWN
             
             logger.info("Text Cleaning Provider cleaned up successfully")
             return True

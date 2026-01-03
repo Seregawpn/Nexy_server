@@ -37,6 +37,7 @@ def test_prompt_contains_action_instructions():
     required_keywords = [
         "command",
         "open_app",
+        "close_app",  # Добавлено для поддержки close_app
         "args",
         "app_name",
         "session_id",
@@ -122,6 +123,30 @@ def test_parser_with_action_response():
             },
             "expected_command": "open_app",
             "expected_app": "Safari"
+        },
+        {
+            "name": "Ответ с командой close_app (правильный формат)",
+            "response": {
+                "text": "Closing Safari.",
+                "command": "close_app",
+                "args": {
+                    "app_name": "Safari"
+                },
+                "session_id": "test_session_456"
+            },
+            "expected_command": "close_app",
+            "expected_app": "Safari"
+        },
+        {
+            "name": "Ответ с командой close_app без app_name (валидация должна провалиться)",
+            "response": {
+                "text": "Closing app.",
+                "command": "close_app",
+                "args": {},
+                "session_id": "test_session_789"
+            },
+            "expected_command": None,  # Без app_name валидация провалится
+            "expected_app": None
         },
         {
             "name": "Ответ без команды (обычный текст)",
@@ -238,7 +263,7 @@ def test_config_loading():
         
         print(f"\n✅ Конфигурация загружена успешно")
         print(f"   - Gemini API Key: {'✅ установлен' if config.text_processing.gemini_api_key else '❌ отсутствует'}")
-        print(f"   - Model: {config.text_processing.gemini_live_model}")
+        print(f"   - Model: {config.text_processing.langchain_model}")
         print(f"   - Forward Actions: {config.features.forward_assistant_actions}")
         print(f"   - Kill Switch: {config.kill_switches.disable_forward_assistant_actions}")
         

@@ -4,7 +4,7 @@
 
 ### **✅ 1. ОБНОВЛЕНА КОНФИГУРАЦИЯ gRPC**
 
-#### **Файл: `server/config/unified_config_example.yaml`**
+#### **Файл: `server/config/unified_config.yaml`**
 ```yaml
 grpc:
   max_workers: 100          # Было: 10 (x10 увеличение)

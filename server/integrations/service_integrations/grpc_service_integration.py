@@ -7,6 +7,13 @@ import asyncio
 import logging
 from typing import Dict, Any, AsyncGenerator, Optional
 from datetime import datetime
+import sys
+from pathlib import Path
+
+# Добавляем путь к модулям grpc_service
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+from modules.grpc_service.core.backpressure import get_backpressure_manager
 
 logger = logging.getLogger(__name__)
 
@@ -87,35 +94,92 @@ class GrpcServiceIntegration:
     
     async def process_request_complete(self, request_data: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Полная обработка gRPC запроса через все workflow интеграции
+        Полная обработка gRPC запроса через все workflow интеграции с проверкой backpressure
         
         Args:
             request_data: Данные gRPC запроса
             
         Yields:
-            Результаты обработки
+            Результаты обработки или ошибки (error_code/error_type для маппинга в grpc_server.py)
+        
+        ВАЖНО: Не выставляем gRPC статус здесь - это делает grpc_server.py (Source of Truth для gRPC кодов)
         """
         if not self.is_initialized:
             logger.error("❌ GrpcServiceIntegration не инициализирован")
             yield {
                 'success': False,
                 'error': 'GrpcServiceIntegration not initialized',
+                'error_code': 'INTERNAL',
+                'error_type': 'not_initialized',
                 'text_response': '',
                 'audio_chunks': []
             }
             return
         
+        # Извлекаем данные из запроса
+        hardware_id = request_data.get('hardware_id', 'unknown')
+        session_id = request_data.get('session_id')
+        
+        # КРИТИЧНО: session_id должен быть сгенерирован в grpc_server.py
+        if not session_id:
+            logger.error(
+                f"❌ session_id отсутствует - нарушение Source of Truth",
+                extra={
+                    'scope': 'grpc_service',
+                    'method': 'process_request_complete',
+                    'decision': 'error',
+                    'ctx': {'reason': 'missing_session_id'}
+                }
+            )
+            yield {
+                'success': False,
+                'error': 'session_id must be provided by gRPC layer',
+                'error_code': 'INVALID_ARGUMENT',
+                'error_type': 'missing_session_id',
+                'text_response': '',
+            }
+            return
+        
+        # CENTRALIZED BACKPRESSURE GUARD: проверяем лимит на стримы
+        backpressure_manager = get_backpressure_manager()
+        stream_acquired, error_msg = await backpressure_manager.acquire_stream(session_id, hardware_id)
+        if not stream_acquired:
+            logger.warning(
+                f"⚠️ Backpressure guard: stream rejected for {session_id}",
+                extra={
+                    'scope': 'grpc_service',
+                    'method': 'process_request_complete',
+                    'decision': 'reject',
+                    'ctx': {
+                        'session_id': session_id,
+                        'hardware_id': hardware_id,
+                        'error': error_msg
+                    }
+                }
+            )
+            yield {
+                'success': False,
+                'error': error_msg or 'Stream limit exceeded',
+                'error_code': 'RESOURCE_EXHAUSTED',
+                'error_type': 'stream_limit_exceeded',
+                'text_response': '',
+            }
+            return
+        
         try:
-            logger.info(f"🔄 Начало полной обработки запроса: {request_data.get('session_id', 'unknown')}")
+            logger.info(f"🔄 Начало полной обработки запроса: {session_id}")
             
-            # Извлекаем данные из запроса
-            hardware_id = request_data.get('hardware_id', 'unknown')
-            session_id = request_data.get('session_id', f"session_{datetime.now().timestamp()}")
+            # Устанавливаем session_id в request_data (если еще не установлен)
             request_data.setdefault('session_id', session_id)
 
             # Используем InterruptWorkflowIntegration для безопасной обработки
             async def _process_full_workflow():
-                async for item in self._process_full_workflow_internal(request_data, hardware_id, session_id):
+                async for item in self._process_full_workflow_internal(
+                    request_data,
+                    hardware_id,
+                    session_id,
+                    backpressure_manager
+                ):
                     yield item
             
             # Обрабатываем через InterruptWorkflowIntegration
@@ -131,25 +195,47 @@ class GrpcServiceIntegration:
                 except Exception as e:
                     logger.error(f"Ошибка в InterruptWorkflowIntegration: {e}")
                     # Fallback к прямой обработке
-                    async for item in self._process_full_workflow_internal(request_data, hardware_id, session_id):
+                    async for item in self._process_full_workflow_internal(
+                        request_data,
+                        hardware_id,
+                        session_id,
+                        backpressure_manager
+                    ):
                         yield item
             else:
                 logger.debug("InterruptWorkflowIntegration не доступен, обрабатываем напрямую")
-                async for result in self._process_full_workflow_internal(request_data, hardware_id, session_id):
+                async for result in self._process_full_workflow_internal(
+                    request_data,
+                    hardware_id,
+                    session_id,
+                    backpressure_manager
+                ):
                     yield result
             
             logger.info(f"✅ Полная обработка запроса завершена: {session_id}")
             
         except Exception as e:
             logger.error(f"❌ Ошибка полной обработки запроса: {e}")
+            # КРИТИЧНО: Всегда предоставляем error_code для маппинга в grpc_server.py
             yield {
                 'success': False,
                 'error': str(e),
+                'error_code': 'INTERNAL',  # По умолчанию INTERNAL для неизвестных ошибок
+                'error_type': 'processing_error',
                 'text_response': '',
                 'audio_chunks': []
             }
+        finally:
+            # CENTRALIZED BACKPRESSURE GUARD: освобождаем стрим (идемпотентно)
+            await backpressure_manager.release_stream(session_id)
     
-    async def _process_full_workflow_internal(self, request_data: Dict[str, Any], hardware_id: str, session_id: str) -> AsyncGenerator[Dict[str, Any], None]:
+    async def _process_full_workflow_internal(
+        self,
+        request_data: Dict[str, Any],
+        hardware_id: str,
+        session_id: str,
+        backpressure_manager
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Внутренняя обработка полного workflow
         
@@ -164,21 +250,69 @@ class GrpcServiceIntegration:
         try:
             logger.debug(f"Внутренняя обработка workflow для {session_id}")
             
-            # 1. Параллельно получаем контекст памяти (неблокирующее)
-            memory_context = None
-            if self.memory_workflow:
-                logger.debug("Получение контекста памяти параллельно")
-                memory_context = await self.memory_workflow.get_memory_context_parallel(hardware_id)
-            
-            # 2. Обрабатываем через StreamingWorkflowIntegration
+            # Обрабатываем через StreamingWorkflowIntegration
             collected_sentences: list[str] = []
             audio_delivered = False
+            has_emitted = False
             final_response_text = ''
             prompt_text = request_data.get('text', '')
 
             if self.streaming_workflow:
-                logger.debug("Обработка через StreamingWorkflowIntegration")
+                logger.info(
+                    f"🔄 Вызов StreamingWorkflowIntegration.process_request_streaming: "
+                    f"session_id={session_id}, workflow_instance_id={id(self.streaming_workflow)}",
+                    extra={
+                        'scope': 'grpc_service',
+                        'method': '_process_full_workflow_internal',
+                        'session_id': session_id,
+                        'workflow_instance_id': id(self.streaming_workflow)
+                    }
+                )
                 async for result in self.streaming_workflow.process_request_streaming(request_data):
+                    will_emit = bool(result.get('text_response')) or bool(result.get('command_payload'))
+                    if isinstance(result.get('audio_chunk'), (bytes, bytearray)):
+                        will_emit = True
+                    if result.get('audio_chunks'):
+                        will_emit = True
+
+                    # CENTRALIZED BACKPRESSURE GUARD: проверяем rate limit только для реальных отправок
+                    if will_emit:
+                        message_allowed, rate_error = await backpressure_manager.check_message_rate(session_id)
+                        if not message_allowed:
+                            logger.warning(
+                                f"⚠️ Backpressure guard: message rate limit exceeded for {session_id}",
+                                extra={
+                                    'scope': 'grpc_service',
+                                    'method': 'process_request_complete',
+                                    'decision': 'reject',
+                                    'ctx': {
+                                        'session_id': session_id,
+                                        'error': rate_error,
+                                        'has_emitted': has_emitted
+                                    }
+                                }
+                            )
+                            if has_emitted:
+                                # Политика: не смешиваем данные и ошибки — сигнализируем о раннем завершении
+                                # Отправляем специальный item с флагом silent=True, чтобы StreamAudio мог выйти до end_message
+                                yield {
+                                    'success': False,
+                                    'error': rate_error or 'Message rate limit exceeded',
+                                    'error_code': 'RESOURCE_EXHAUSTED',
+                                    'error_type': 'rate_limit_exceeded',
+                                    'silent': True,  # Флаг для StreamAudio: тихое завершение без error_message
+                                    'text_response': '',
+                                }
+                                return
+                            yield {
+                                'success': False,
+                                'error': rate_error or 'Message rate limit exceeded',
+                                'error_code': 'RESOURCE_EXHAUSTED',
+                                'error_type': 'rate_limit_exceeded',
+                                'text_response': '',
+                            }
+                            return
+                    
                     try:
                         has_audio = 'audio_chunk' in result and isinstance(result.get('audio_chunk'), (bytes, bytearray))
                         sz = (len(result['audio_chunk']) if has_audio else 0)
@@ -196,6 +330,8 @@ class GrpcServiceIntegration:
                     except Exception:
                         pass
                     yield result
+                    if will_emit:
+                        has_emitted = True
             else:
                 logger.warning("⚠️ StreamingWorkflowIntegration не доступен, возвращаем базовый ответ")
                 yield {
@@ -223,9 +359,12 @@ class GrpcServiceIntegration:
             
         except Exception as e:
             logger.error(f"❌ Ошибка внутренней обработки workflow: {e}")
+            # КРИТИЧНО: Всегда предоставляем error_code для маппинга в grpc_server.py
             yield {
                 'success': False,
                 'error': str(e),
+                'error_code': 'INTERNAL',  # По умолчанию INTERNAL для неизвестных ошибок
+                'error_type': 'workflow_error',
                 'text_response': '',
                 'audio_chunks': []
             }

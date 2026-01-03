@@ -29,10 +29,10 @@ class UpdateManager(UniversalModuleInterface):
         self.is_initialized = False
         
         # Провайдеры
-        self.version_provider = None
-        self.manifest_provider = None
-        self.artifact_provider = None
-        self.update_server_provider = None
+        self.version_provider: Optional[VersionProvider] = None
+        self.manifest_provider: Optional[ManifestProvider] = None
+        self.artifact_provider: Optional[ArtifactProvider] = None
+        self.update_server_provider: Optional[UpdateServerProvider] = None
         
         # Статистика
         self.start_time = None
@@ -281,6 +281,13 @@ class UpdateManager(UniversalModuleInterface):
                 logger.error("❌ Модуль не запущен")
                 return None
             
+            if self.version_provider is None:
+                raise Exception("VersionProvider not initialized")
+            if self.artifact_provider is None:
+                raise Exception("ArtifactProvider not initialized")
+            if self.manifest_provider is None:
+                raise Exception("ManifestProvider not initialized")
+            
             # Валидируем версию
             if not self.version_provider.validate_version(version):
                 logger.error(f"❌ Неверная версия: {version}")
@@ -329,6 +336,8 @@ class UpdateManager(UniversalModuleInterface):
     def cleanup_old_artifacts(self, keep_count: int = 5) -> int:
         """Очистка старых артефактов"""
         try:
+            if self.artifact_provider is None:
+                raise Exception("ArtifactProvider not initialized")
             return self.artifact_provider.cleanup_old_artifacts(keep_count)
         except Exception as e:
             logger.error(f"❌ Ошибка очистки артефактов: {e}")
@@ -337,6 +346,8 @@ class UpdateManager(UniversalModuleInterface):
     def validate_artifact(self, file_path: str, expected_sha256: Optional[str] = None) -> bool:
         """Валидация артефакта"""
         try:
+            if self.artifact_provider is None:
+                raise Exception("ArtifactProvider not initialized")
             return self.artifact_provider.validate_artifact(file_path, expected_sha256)
         except Exception as e:
             logger.error(f"❌ Ошибка валидации артефакта {file_path}: {e}")
@@ -345,6 +356,8 @@ class UpdateManager(UniversalModuleInterface):
     def get_artifact_info(self, file_path: str) -> Optional[Dict[str, Any]]:
         """Получение информации об артефакте"""
         try:
+            if self.artifact_provider is None:
+                raise Exception("ArtifactProvider not initialized")
             return self.artifact_provider.get_file_info(file_path)
         except Exception as e:
             logger.error(f"❌ Ошибка получения информации об артефакте {file_path}: {e}")

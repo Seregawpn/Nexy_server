@@ -259,7 +259,7 @@ class ContentFilteringProvider(UniversalProviderInterface):
             }
             
             self.is_initialized = False
-            self.status = ProviderStatus.STOPPED
+            self.status = ProviderStatus.UNKNOWN
             
             logger.info("Content Filtering Provider cleaned up successfully")
             return True

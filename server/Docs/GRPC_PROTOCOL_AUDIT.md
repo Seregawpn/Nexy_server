@@ -3,6 +3,8 @@
 **Дата:** 3 октября 2025  
 **Цель:** Фиксация текущего состояния `streaming.proto` и правил совместимости
 
+**Источник истины по Flow и контрактам событий:** [`Docs/FLOW_INTERACTION_SPEC.md`](FLOW_INTERACTION_SPEC.md) — канонический документ по серверным Flow и gRPC контрактам. Этот документ (GRPC_PROTOCOL_AUDIT) содержит только аудит протокола, риски и изменения; полные flow и контракты событий описаны в каноне.
+
 ---
 
 ## Текущее состояние `streaming.proto`
@@ -260,4 +262,3 @@
 - `Docs/ARCHITECTURE_OVERVIEW.md` — обзор архитектуры
 - `Docs/PR_CHECKLIST_TEMPLATE.md` — чек-лист PR
 - `scripts/grpc_smoke.py` — smoke-тест для проверки контракта
-

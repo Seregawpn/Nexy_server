@@ -49,7 +49,7 @@ Briefly list alternatives considered.
 
 - Какие guard-условия изменяются
 - Какие новые guard-условия добавляются
-- Ссылка на `Docs/STATE_CATALOG.md` и `client/config/interaction_matrix.yaml`
+- Ссылка на `Docs/STATE_CATALOG.md` и внешний канон матрицы взаимодействий (клиентский `interaction_matrix.yaml`)
 
 **Инварианты:** (если применимо)
 
@@ -89,7 +89,7 @@ Briefly list alternatives considered.
 
 - Обновления в `Docs/ARCHITECTURE_OVERVIEW.md`
 - Обновления в `Docs/STATE_CATALOG.md`
-- Обновления в `client/config/interaction_matrix.yaml` (если применимо)
+- Обновления во внешнем каноне матрицы взаимодействий (клиентский `interaction_matrix.yaml`, если применимо)
 
 ---
 
@@ -114,5 +114,5 @@ Briefly list alternatives considered.
 
 - `Docs/STATE_CATALOG.md` — затронутые оси
 - `Docs/ARCHITECTURE_OVERVIEW.md` — архитектурные изменения
-- `client/config/interaction_matrix.yaml` — изменения матрицы взаимодействий (если применимо)
+- Внешний канон матрицы взаимодействий (клиентский `interaction_matrix.yaml`) — изменения матрицы взаимодействий (если применимо)
 - Связанные ADR (если есть)

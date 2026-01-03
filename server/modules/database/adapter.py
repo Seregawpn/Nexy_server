@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import Dict, Any, AsyncIterator, Union
+from typing import Dict, Any, AsyncIterator, Union, Optional
 
 from integrations.core.universal_module_interface import UniversalModuleInterface
 from integrations.core.module_status import ModuleStatus, ModuleState
@@ -24,7 +24,7 @@ class DatabaseAdapter(UniversalModuleInterface):
     def __init__(self):
         """Инициализация адаптера"""
         super().__init__(name="database")
-        self._manager: DatabaseManager = None
+        self._manager: Optional[DatabaseManager] = None
         self._config: Dict[str, Any] = {}
         self._status = ModuleStatus(state=ModuleState.INIT)
     
@@ -145,12 +145,12 @@ class DatabaseAdapter(UniversalModuleInterface):
         """
         return self._status
     
-    def get_manager(self) -> DatabaseManager:
+    def get_manager(self) -> Optional[DatabaseManager]:
         """
         Получение внутреннего менеджера (для совместимости)
         
         Returns:
-            Экземпляр DatabaseManager
+            Экземпляр DatabaseManager или None
         """
         return self._manager
 

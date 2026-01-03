@@ -82,21 +82,18 @@ class HttpConfig:
 @dataclass
 class AudioConfig:
     """Конфигурация аудио (синхронизирована с клиентом)"""
-    sample_rate: int = 48000
+    sample_rate: int = 48000  # 48kHz - единый источник истины для сервера и клиента
     chunk_size: int = 1024
     format: str = "int16"
     channels: int = 1
     bits_per_sample: int = 16
     
-    # Azure TTS настройки
-    azure_speech_key: str = ""
-    azure_speech_region: str = ""
-    azure_voice_name: str = "en-US-AriaNeural"
-    azure_voice_style: str = "friendly"
-    azure_speech_rate: float = 1.0
-    azure_speech_pitch: float = 1.0
-    azure_speech_volume: float = 1.0
-    azure_audio_format: str = "riff-48khz-16bit-mono-pcm"
+    # Edge TTS настройки (бесплатный, не требует API ключей)
+    edge_tts_voice_name: str = "en-US-AriaNeural"
+    edge_tts_rate: str = "+0%"
+    edge_tts_volume: str = "+0%"
+    edge_tts_pitch: str = "+0Hz"
+    audio_format: str = "pcm"  # PCM для стриминга
     
     # Streaming настройки
     streaming_chunk_size: int = 4096
@@ -105,19 +102,16 @@ class AudioConfig:
     @classmethod
     def from_env(cls) -> 'AudioConfig':
         return cls(
-            sample_rate=int(os.getenv('SAMPLE_RATE', '48000')),
+            sample_rate=int(os.getenv('SAMPLE_RATE', '48000')),  # 48kHz по умолчанию (синхронизировано с клиентом)
             chunk_size=int(os.getenv('CHUNK_SIZE', '1024')),
             format=os.getenv('AUDIO_FORMAT', 'int16'),
             channels=int(os.getenv('AUDIO_CHANNELS', '1')),
             bits_per_sample=int(os.getenv('AUDIO_BITS_PER_SAMPLE', '16')),
-            azure_speech_key=os.getenv('AZURE_SPEECH_KEY', ''),
-            azure_speech_region=os.getenv('AZURE_SPEECH_REGION', ''),
-            azure_voice_name=os.getenv('AZURE_VOICE_NAME', 'en-US-AriaNeural'),
-            azure_voice_style=os.getenv('AZURE_VOICE_STYLE', 'friendly'),
-            azure_speech_rate=float(os.getenv('AZURE_SPEECH_RATE', '1.0')),
-            azure_speech_pitch=float(os.getenv('AZURE_SPEECH_PITCH', '1.0')),
-            azure_speech_volume=float(os.getenv('AZURE_SPEECH_VOLUME', '1.0')),
-            azure_audio_format=os.getenv('AZURE_AUDIO_FORMAT', 'riff-48khz-16bit-mono-pcm'),
+            edge_tts_voice_name=os.getenv('EDGE_TTS_VOICE_NAME', 'en-US-AriaNeural'),
+            edge_tts_rate=os.getenv('EDGE_TTS_RATE', '+0%'),
+            edge_tts_volume=os.getenv('EDGE_TTS_VOLUME', '+0%'),
+            edge_tts_pitch=os.getenv('EDGE_TTS_PITCH', '+0Hz'),
+            audio_format=os.getenv('AUDIO_FORMAT', 'pcm'),
             streaming_chunk_size=int(os.getenv('STREAMING_CHUNK_SIZE', '4096')),
             streaming_enabled=os.getenv('STREAMING_ENABLED', 'true').lower() == 'true'
         )
@@ -127,11 +121,12 @@ class TextProcessingConfig:
     """Конфигурация обработки текста"""
     gemini_api_key: str = ""
     
-    # Live API настройки
-    gemini_live_model: str = "gemini-live-2.5-flash-preview"
-    gemini_live_temperature: float = 0.7
-    gemini_live_max_tokens: int = 2048
-    gemini_live_tools: list = field(default_factory=lambda: ['google_search'])
+    # LangChain настройки
+    langchain_model: str = "gemini-3-flash-preview"
+    # Общие настройки для text processing
+    temperature: float = 0.7
+    max_tokens: int = 2048
+    tools: list = field(default_factory=lambda: ['google_search'])
     gemini_system_prompt: str = (
         "You are Nexy Assistant — a friendly, empathetic, and highly concise AI designed for blind and low-vision users on macOS.\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -150,13 +145,19 @@ class TextProcessingConfig:
         "Before generating the JSON response, classify the user request:\n\n"
         "──────────────────────\n\n"
         "1. Action Intent (System Actions)\n\n"
-        "User wants to perform an action (e.g., opening an application).\n\n"
+        "User wants to perform an action (e.g., opening or closing an application).\n\n"
         "If user asks to open/launch an app:\n"
         "- Use **Action JSON format** with:\n"
         "  • \"command\": \"open_app\"\n"
         "  • \"args\": {\"app_name\": \"<exact macOS app name>\"}\n"
         "  • \"session_id\": <MUST reuse from request, REQUIRED, never null>\n"
         "  • \"text\": short confirmation (\"Opening Safari now.\")\n\n"
+        "If user asks to close/quit an app:\n"
+        "- Use **Action JSON format** with:\n"
+        "  • \"command\": \"close_app\"\n"
+        "  • \"args\": {\"app_name\": \"<exact macOS app name>\"}\n"
+        "  • \"session_id\": <MUST reuse from request, REQUIRED, never null>\n"
+        "  • \"text\": short confirmation (\"Closing Safari now.\")\n\n"
         "If action is unsupported:\n"
         "- Use **Text-only JSON format** with explanation + one helpful suggestion\n\n"
         "If user needs navigation steps:\n"
@@ -212,7 +213,8 @@ class TextProcessingConfig:
         "[Action Output Format — DO NOT OUTPUT]\n\n"
         "You MUST use **one of the two formats below**:\n\n"
         "──────────────\n\n"
-        "1) Action Response (when performing an action, e.g. opening an app)\n\n"
+        "1) Action Response (when performing an action, e.g. opening or closing an app)\n\n"
+        "Example 1: Opening an app\n"
         "{\n"
         "  \"session_id\": \"<MUST use session_id from request, REQUIRED>\",\n"
         "  \"command\": \"open_app\",\n"
@@ -221,10 +223,20 @@ class TextProcessingConfig:
         "  },\n"
         "  \"text\": \"Opening Calculator.\"\n"
         "}\n\n"
+        "Example 2: Closing an app\n"
+        "{\n"
+        "  \"session_id\": \"<MUST use session_id from request, REQUIRED>\",\n"
+        "  \"command\": \"close_app\",\n"
+        "  \"args\": {\n"
+        "    \"app_name\": \"Safari\"\n"
+        "  },\n"
+        "  \"text\": \"Closing Safari.\"\n"
+        "}\n\n"
         "Rules:\n"
         "- session_id: REQUIRED, must be the exact session_id from the request (never null)\n"
         "- text: 1–3 short sentences\n"
-        "- args must contain app_name\n"
+        "- For open_app: args must contain app_name\n"
+        "- For close_app: args must contain app_name\n"
         "- NEVER add any extra fields\n"
         "- If session_id is missing or null → action will be ignored, only text will be used\n\n"
         "──────────────\n\n"
@@ -238,8 +250,8 @@ class TextProcessingConfig:
     )
     
     # Настройки изображений
-    image_format: str = "jpeg"
-    image_mime_type: str = "image/jpeg"
+    image_format: str = "webp"
+    image_mime_type: str = "image/webp"
     image_max_size: int = 10 * 1024 * 1024  # 10MB
     streaming_chunk_size: int = 8192
     
@@ -251,26 +263,26 @@ class TextProcessingConfig:
     
     # Производительность
     max_concurrent_requests: int = 10
-    request_timeout: int = 60
+    request_timeout: int = 300  # Увеличено до 5 минут для длинных TTS ответов (было 60)
     
     @classmethod
     def from_env(cls) -> 'TextProcessingConfig':
         return cls(
             gemini_api_key=os.getenv('GEMINI_API_KEY', ''),
-            gemini_live_model=os.getenv('GEMINI_LIVE_MODEL', 'gemini-live-2.5-flash-preview'),
-            gemini_live_temperature=float(os.getenv('GEMINI_LIVE_TEMPERATURE', '0.7')),
-            gemini_live_max_tokens=int(os.getenv('GEMINI_LIVE_MAX_TOKENS', '2048')),
-            gemini_live_tools=os.getenv('GEMINI_LIVE_TOOLS', 'google_search').split(',') if os.getenv('GEMINI_LIVE_TOOLS') else ['google_search'],
+            langchain_model=os.getenv('LANGCHAIN_MODEL', 'gemini-3-flash-preview'),
+            temperature=float(os.getenv('TEXT_PROCESSING_TEMPERATURE', os.getenv('GEMINI_LIVE_TEMPERATURE', '0.7'))),
+            max_tokens=int(os.getenv('TEXT_PROCESSING_MAX_TOKENS', os.getenv('GEMINI_LIVE_MAX_TOKENS', '2048'))),
+            tools=os.getenv('TEXT_PROCESSING_TOOLS', os.getenv('GEMINI_LIVE_TOOLS', 'google_search')).split(',') if os.getenv('TEXT_PROCESSING_TOOLS') or os.getenv('GEMINI_LIVE_TOOLS') else ['google_search'],
             gemini_system_prompt=os.getenv('GEMINI_SYSTEM_PROMPT', cls.gemini_system_prompt),
-            image_format=os.getenv('IMAGE_FORMAT', 'jpeg'),
-            image_mime_type=os.getenv('IMAGE_MIME_TYPE', 'image/jpeg'),
+            image_format=os.getenv('IMAGE_FORMAT', 'webp'),
+            image_mime_type=os.getenv('IMAGE_MIME_TYPE', 'image/webp'),
             image_max_size=int(os.getenv('IMAGE_MAX_SIZE', str(10 * 1024 * 1024))),
             streaming_chunk_size=int(os.getenv('STREAMING_CHUNK_SIZE', '8192')),
             fallback_timeout=int(os.getenv('FALLBACK_TIMEOUT', '30')),
             circuit_breaker_threshold=int(os.getenv('CIRCUIT_BREAKER_THRESHOLD', '3')),
             circuit_breaker_timeout=int(os.getenv('CIRCUIT_BREAKER_TIMEOUT', '300')),
             max_concurrent_requests=int(os.getenv('MAX_CONCURRENT_REQUESTS', '10')),
-            request_timeout=int(os.getenv('REQUEST_TIMEOUT', '60'))
+            request_timeout=int(os.getenv('REQUEST_TIMEOUT', '300'))  # Синхронизировано: 5 минут для длинных TTS ответов
         )
 
 @dataclass
@@ -330,11 +342,11 @@ class InterruptConfig:
 class WorkflowConfig:
     """Конфигурация потокового workflow"""
 
-    stream_min_chars: int = 15
-    stream_min_words: int = 3
-    stream_first_sentence_min_words: int = 2
+    stream_min_chars: int = 5
+    stream_min_words: int = 2
+    stream_first_sentence_min_words: int = 1
     stream_punct_flush_strict: bool = True
-    force_flush_max_chars: int = 0
+    force_flush_max_chars: int = 300
 
     @classmethod
     def from_env(cls) -> 'WorkflowConfig':
@@ -463,18 +475,25 @@ class FeaturesConfig:
 
 @dataclass
 class BackpressureConfig:
-    """Конфигурация backpressure для стримов"""
+    """
+    Конфигурация backpressure для стримов
+    
+    Note:
+        max_message_rate_per_second: Максимальное количество сообщений в секунду на стрим.
+        Если установлено в 0 или меньше, rate limit отключается полностью.
+        Используйте 0 для отключения ограничения частоты сообщений (например, для аудио стримов с высокой частотой).
+    """
     max_concurrent_streams: int = 50
-    idle_timeout_seconds: int = 300
-    max_message_rate_per_second: int = 10
+    idle_timeout_seconds: int = 900  # Увеличено до 15 минут для длинных TTS ответов (было 300)
+    max_message_rate_per_second: int = 0  # Синхронизировано: 0 = отключить rate limit по умолчанию (было 20)
     grace_period_seconds: int = 30
     
     @classmethod
     def from_env(cls) -> 'BackpressureConfig':
         return cls(
             max_concurrent_streams=int(os.getenv('BACKPRESSURE_MAX_STREAMS', '50')),
-            idle_timeout_seconds=int(os.getenv('BACKPRESSURE_IDLE_TIMEOUT', '300')),
-            max_message_rate_per_second=int(os.getenv('BACKPRESSURE_MAX_RATE', '10')),
+            idle_timeout_seconds=int(os.getenv('BACKPRESSURE_IDLE_TIMEOUT', '900')),  # Синхронизировано: 15 минут для длинных TTS ответов
+            max_message_rate_per_second=int(os.getenv('BACKPRESSURE_MAX_RATE', '0')),  # Синхронизировано: 0 = отключить rate limit по умолчанию
             grace_period_seconds=int(os.getenv('BACKPRESSURE_GRACE_PERIOD', '30'))
         )
     
@@ -503,8 +522,8 @@ class BackpressureConfig:
         """Конфигурация для prod окружения"""
         return cls(
             max_concurrent_streams=50,
-            idle_timeout_seconds=300,
-            max_message_rate_per_second=10,
+            idle_timeout_seconds=900,  # Увеличено до 15 минут для длинных TTS ответов (было 300)
+            max_message_rate_per_second=0,  # Синхронизировано: 0 = отключить rate limit по умолчанию
             grace_period_seconds=30
         )
 
@@ -554,21 +573,16 @@ class UnifiedServerConfig:
         if not self.text_processing.gemini_api_key:
             errors.append("GEMINI_API_KEY не установлен")
         
-        if not self.audio.azure_speech_key:
-            errors.append("AZURE_SPEECH_KEY не установлен")
-            
-        if not self.audio.azure_speech_region:
-            errors.append("AZURE_SPEECH_REGION не установлен")
+        # Edge TTS не требует ключей - пропускаем проверку
         
         # Проверяем диапазоны значений
-        if not (0 <= self.text_processing.gemini_live_temperature <= 2):
-            errors.append("gemini_live_temperature должен быть между 0 и 2")
+        if not (0 <= self.text_processing.temperature <= 2):
+            errors.append("temperature должен быть между 0 и 2")
             
-        if not (0.5 <= self.audio.azure_speech_rate <= 2.0):
-            errors.append("azure_speech_rate должен быть между 0.5 и 2.0")
-            
-        if self.audio.sample_rate not in [8000, 16000, 22050, 44100, 48000]:
-            errors.append("sample_rate должен быть одним из: 8000, 16000, 22050, 44100, 48000")
+        # Edge TTS использует строковые параметры, не проверяем диапазоны
+        
+        if self.audio.sample_rate not in [8000, 16000, 22050, 24000, 44100, 48000]:
+            errors.append("sample_rate должен быть одним из: 8000, 16000, 22050, 24000, 44100, 48000")
 
         if self.server.build != self.server.version:
             errors.append("SERVER_BUILD должен совпадать с SERVER_VERSION")
@@ -680,22 +694,22 @@ class UnifiedServerConfig:
             Словарь с конфигурацией провайдера
         """
         provider_configs = {
-            'gemini_live': {
+            'langchain': {
                 'api_key': self.text_processing.gemini_api_key,
-                'model': self.text_processing.gemini_live_model,
-                'temperature': self.text_processing.gemini_live_temperature,
-                'max_tokens': self.text_processing.gemini_live_max_tokens,
-                'timeout': self.text_processing.request_timeout
+                'model': self.text_processing.langchain_model,
+                'temperature': self.text_processing.temperature,
+                'max_tokens': self.text_processing.max_tokens,
+                'tools': self.text_processing.tools,
+                'system_prompt': self.text_processing.gemini_system_prompt,
+                'image_mime_type': self.text_processing.image_mime_type,
+                'image_max_size': self.text_processing.image_max_size,
             },
-            'azure_tts': {
-                'speech_key': self.audio.azure_speech_key,
-                'speech_region': self.audio.azure_speech_region,
-                'voice_name': self.audio.azure_voice_name,
-                'voice_style': self.audio.azure_voice_style,
-                'speech_rate': self.audio.azure_speech_rate,
-                'speech_pitch': self.audio.azure_speech_pitch,
-                'speech_volume': self.audio.azure_speech_volume,
-                'audio_format': self.audio.azure_audio_format,
+            'edge_tts': {
+                'voice_name': self.audio.edge_tts_voice_name,
+                'rate': self.audio.edge_tts_rate,
+                'volume': self.audio.edge_tts_volume,
+                'pitch': self.audio.edge_tts_pitch,
+                'audio_format': self.audio.audio_format,
                 'sample_rate': self.audio.sample_rate,
                 'channels': self.audio.channels,
                 'bits_per_sample': self.audio.bits_per_sample,
@@ -783,7 +797,16 @@ class UnifiedServerConfig:
             Экземпляр UnifiedServerConfig
         """
         with open(file_path, 'r', encoding='utf-8') as f:
-            config_dict = yaml.safe_load(f)
+            loaded_data = yaml.safe_load(f)
+        
+        # Убеждаемся, что загруженные данные - это словарь
+        if not isinstance(loaded_data, dict):
+            if loaded_data is None:
+                loaded_data = {}
+            else:
+                raise ValueError(f"YAML файл должен содержать словарь, получен {type(loaded_data).__name__}")
+        
+        config_dict: Dict[str, Any] = loaded_data
         
         # Создаем экземпляры конфигураций из словаря
         database = DatabaseConfig(**config_dict.get('database', {}))
@@ -849,15 +872,17 @@ class UnifiedServerConfig:
                 'sample_rate': self.audio.sample_rate,
                 'chunk_size': self.audio.chunk_size,
                 'format': self.audio.format,
-                'azure_speech_key_set': bool(self.audio.azure_speech_key),
-                'azure_speech_region_set': bool(self.audio.azure_speech_region),
-                'azure_voice_name': self.audio.azure_voice_name,
+                'edge_tts_voice_name': self.audio.edge_tts_voice_name,
+                'edge_tts_rate': self.audio.edge_tts_rate,
+                'edge_tts_volume': self.audio.edge_tts_volume,
+                'edge_tts_pitch': self.audio.edge_tts_pitch,
                 'streaming_enabled': self.audio.streaming_enabled
             },
             'text_processing': {
                 'gemini_api_key_set': bool(self.text_processing.gemini_api_key),
-                'gemini_live_model': self.text_processing.gemini_live_model,
-                'gemini_live_temperature': self.text_processing.gemini_live_temperature,
+                'langchain_model': self.text_processing.langchain_model,
+                'temperature': self.text_processing.temperature,
+                'max_tokens': self.text_processing.max_tokens,
                 'max_concurrent_requests': self.text_processing.max_concurrent_requests
             },
             'memory': {
@@ -917,5 +942,5 @@ if __name__ == "__main__":
             print(f"  {key}: {value}")
     
     # Сохраняем пример конфигурации
-    config.save_to_yaml("server/config/unified_config_example.yaml")
-    print("\n✅ Пример конфигурации сохранен в server/config/unified_config_example.yaml")
+    config.save_to_yaml("server/config/unified_config.yaml")
+    print("\n✅ Пример конфигурации сохранен в server/config/unified_config.yaml")

@@ -336,7 +336,7 @@ class SessionTrackerProvider(UniversalProviderInterface):
             self.max_concurrent_sessions = 0
             
             self.is_initialized = False
-            self.status = ProviderStatus.STOPPED
+            self.status = ProviderStatus.UNKNOWN
             
             logger.info("Session Tracker Provider cleaned up successfully")
             return True

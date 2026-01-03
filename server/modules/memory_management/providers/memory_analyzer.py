@@ -18,7 +18,7 @@ try:
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
-    genai = None
+    genai = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +37,11 @@ class MemoryAnalyzer:
         Args:
             gemini_api_key: API ключ для Gemini
         """
-        if not GEMINI_AVAILABLE:
+        if not GEMINI_AVAILABLE or genai is None:
             raise ImportError("google.generativeai not available")
         
         self.api_key = gemini_api_key
-        genai.configure(api_key=gemini_api_key)
+        genai.configure(api_key=gemini_api_key)  # type: ignore
         
         # Настройки модели
         self.model_name = "gemini-2.5-flash-lite"
@@ -106,6 +106,9 @@ class MemoryAnalyzer:
             )
             
             # Создаем модель
+            if genai is None:
+                raise ImportError("google.generativeai not available")
+            
             model = genai.GenerativeModel(
                 model_name=self.model_name,
                 generation_config=genai.types.GenerationConfig(

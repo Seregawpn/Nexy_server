@@ -211,7 +211,7 @@ class AssistantResponseParser:
             ParsedResponse
         """
         # Попытка валидации через Pydantic (если доступен)
-        if PYDANTIC_AVAILABLE and LLMResponseValidator:
+        if PYDANTIC_AVAILABLE and LLMResponseValidator and ActionResponse is not None:
             # Используем session_id из данных, если есть, иначе из параметра
             context_session_id = data.get('session_id') or session_id
             validated_model, error_msg = LLMResponseValidator.validate_response(data, session_id=context_session_id)
@@ -310,6 +310,11 @@ class AssistantResponseParser:
         if command == 'open_app':
             if 'app_name' not in args or not args.get('app_name'):
                 validation_errors.append("Для команды 'open_app' требуется поле 'args.app_name'")
+        
+        # Для команды close_app проверяем наличие app_name
+        if command == 'close_app':
+            if 'app_name' not in args or not args.get('app_name'):
+                validation_errors.append("Для команды 'close_app' требуется поле 'args.app_name'")
         
         # Логируем ошибки валидации
         if validation_errors:

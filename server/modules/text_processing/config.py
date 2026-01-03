@@ -26,11 +26,12 @@ class TextProcessingConfig:
         self.gemini_api_key = self.config.get('gemini_api_key', unified_config.text_processing.gemini_api_key)
         self.gemini_system_prompt = self.config.get('gemini_system_prompt', getattr(unified_config.text_processing, 'gemini_system_prompt', ''))
         
-        # Live API настройки
-        self.gemini_live_model = self.config.get('gemini_live_model', unified_config.text_processing.gemini_live_model)
-        self.gemini_live_temperature = self.config.get('gemini_live_temperature', unified_config.text_processing.gemini_live_temperature)
-        self.gemini_live_max_tokens = self.config.get('gemini_live_max_tokens', unified_config.text_processing.gemini_live_max_tokens)
-        self.gemini_live_tools = self.config.get('gemini_live_tools', unified_config.text_processing.gemini_live_tools)
+        # LangChain настройки
+        self.langchain_model = self.config.get('langchain_model', getattr(unified_config.text_processing, 'langchain_model', 'gemini-3-flash-preview'))
+        # Общие настройки для temperature, max_tokens, tools
+        self.temperature = self.config.get('temperature', getattr(unified_config.text_processing, 'temperature', 0.7))
+        self.max_tokens = self.config.get('max_tokens', getattr(unified_config.text_processing, 'max_tokens', 2048))
+        self.tools = self.config.get('tools', getattr(unified_config.text_processing, 'tools', ['google_search']))
         
         # Настройки изображений
         self.image_format = self.config.get('image_format', unified_config.text_processing.image_format)
@@ -58,27 +59,24 @@ class TextProcessingConfig:
         Получение конфигурации для конкретного провайдера
         
         Args:
-            provider_name: Имя провайдера
+            provider_name: Имя провайдера (только 'langchain' поддерживается)
             
         Returns:
             Словарь с конфигурацией провайдера
         """
-        provider_configs = {
-            'gemini_live': {
+        if provider_name == 'langchain':
+            return {
                 'api_key': self.gemini_api_key,
-                'model': self.gemini_live_model,
-                'temperature': self.gemini_live_temperature,
-                'max_tokens': self.gemini_live_max_tokens,
-                'tools': self.gemini_live_tools,
+                'model': self.langchain_model,
+                'temperature': self.temperature,
+                'max_tokens': self.max_tokens,
+                'tools': self.tools,
                 'system_prompt': self.gemini_system_prompt,
                 'image_mime_type': self.image_mime_type,
                 'image_max_size': self.image_max_size,
-                'streaming_chunk_size': self.streaming_chunk_size,
-                'timeout': self.request_timeout
-            },
-        }
+            }
         
-        return provider_configs.get(provider_name, {})
+        return {}
     
     def get_fallback_config(self) -> Dict[str, Any]:
         """
@@ -107,12 +105,12 @@ class TextProcessingConfig:
             return False
             
         # Проверяем корректность параметров
-        if not (0 <= self.gemini_live_temperature <= 2):
-            print("❌ gemini_live_temperature должен быть между 0 и 2")
+        if not (0 <= self.temperature <= 2):
+            print("❌ temperature должен быть между 0 и 2")
             return False
             
-        if self.gemini_live_max_tokens <= 0:
-            print("❌ gemini_live_max_tokens должен быть положительным")
+        if self.max_tokens <= 0:
+            print("❌ max_tokens должен быть положительным")
             return False
             
         if self.fallback_timeout <= 0:
@@ -130,10 +128,10 @@ class TextProcessingConfig:
         """
         return {
             'gemini_api_key_set': bool(self.gemini_api_key),
-            'gemini_live_model': self.gemini_live_model,
-            'gemini_live_temperature': self.gemini_live_temperature,
-            'gemini_live_max_tokens': self.gemini_live_max_tokens,
-            'gemini_live_tools': self.gemini_live_tools,
+            'langchain_model': self.langchain_model,
+            'temperature': self.temperature,
+            'max_tokens': self.max_tokens,
+            'tools': self.tools,
             'image_format': self.image_format,
             'image_mime_type': self.image_mime_type,
             'image_max_size': self.image_max_size,

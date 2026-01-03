@@ -9,6 +9,22 @@
 - `Docs/GLOBAL_DELIVERY_PLAN.md` — требования к доставке и Azure VM
 - `Docs/GO_TO_MARKET_BETA_PLAN_RU.md` — план выхода на рынок
 
+### 1.1 Механизм обмена документами между ассистентами
+
+Если работа требует взаимодействия нескольких ассистентов (Codex, Cursor, Antigravity), используем единый протокол:
+- Документируем задачи/анализ/ревью в `Docs/assistant_exchange/` по правилам `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`.
+- Каждый ассистент пишет в свой подкаталог, имена фиксированы: `codex`, `cursor`, `antigravity`.
+- Для перекрестной проверки создается документ типа `review` с ссылкой на проверяемый файл.
+- После каждого выполненного задания создается отчетный документ (новый файл, без перезаписи) по шаблону `Docs/assistant_exchange/TEMPLATE.md`.
+- Индивидуальные prompt-файлы ассистентов: `Docs/ANTIGRAVITY_PROMPT.md`, `Docs/CODEX_PROMPT.md`.
+
+## 1.1 Принципы устранения конфликтов и дубликатов
+- **Request-scoped state**: состояние запроса не хранится в экземплярах workflow.
+- **Single-flight по session_id**: один активный StreamAudio на `session_id`.
+- **Source of Truth**: `session_id` и gRPC статусы формируются только в `grpc_server.py`.
+- **Централизация guard-логики**: backpressure и rate-limit проверяются в `GrpcServiceIntegration`.
+- **Политика ошибок стрима**: ошибка до начала — gRPC статус + error_message; после частичных данных — тихое завершение.
+
 ## 2. Среда и запуск
 - Python 3.11+, разворачивай в отдельном `venv`; зависимости — `server/requirements.txt`
 - Точка входа: `python server/main.py` (внутренние порты: aiohttp health-check 8080, gRPC 50051, update-сервер 8081 при доступности)
@@ -58,7 +74,7 @@
 - **CI-проверки протокола:** `Docs/CI_GRPC_CHECKS.md` (smoke/health/port, отсутствие breaking изменений)
 
 ## 6. Конфигурация и секреты
-- Основные настройки: `server/config/unified_config_example.yaml` и `server/config/unified_config.py`
+- Основные настройки: `server/server/config/unified_config.yaml` и `server/server/config/unified_config.py`
 - Ожидаемые переменные берутся из `.env`/`config.env`; секреты (API-ключи, токены) храним вне репозитория
 - Новые параметры документируй в `Docs/ARCHITECTURE_OVERVIEW.md` и добавляй в пример конфигурации
 - Не создавай рассыпанные YAML/JSON; используй существующие загрузчики

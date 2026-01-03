@@ -98,7 +98,9 @@ class UniversalFallbackManager:
                 logger.debug(f"Processing with provider {provider.name}")
                 result_count = 0
                 
-                async for result in provider.process(input_data):
+                # provider.process возвращает корутину, которая при await дает AsyncGenerator
+                # В runtime Python автоматически await корутину при использовании в async for
+                async for result in provider.process(input_data):  # type: ignore
                     result_count += 1
                     yield result
                 

@@ -248,7 +248,7 @@ class GlobalFlagProvider(UniversalProviderInterface):
             self.last_interrupt_time = None
             
             self.is_initialized = False
-            self.status = ProviderStatus.STOPPED
+            self.status = ProviderStatus.UNKNOWN
             
             logger.info("Global Flag Provider cleaned up successfully")
             return True

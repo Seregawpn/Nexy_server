@@ -102,7 +102,7 @@ async def test_live_api_connection():
         from google.genai import types
         config = get_config()
         api_key = config.text_processing.gemini_api_key
-        model_name = config.text_processing.gemini_live_model
+        model_name = config.text_processing.langchain_model
         
         if not api_key:
             print("   ❌ API ключ отсутствует")
@@ -199,7 +199,7 @@ def test_model_availability():
     
     try:
         config = get_config()
-        model_name = config.text_processing.gemini_live_model
+        model_name = config.text_processing.langchain_model
         
         print(f"   🔍 Текущая модель: {model_name}")
         

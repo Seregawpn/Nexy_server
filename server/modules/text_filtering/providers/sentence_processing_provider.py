@@ -83,7 +83,7 @@ class SentenceProcessingProvider(UniversalProviderInterface):
             self.report_error(str(e))
             return {"success": False, "error": str(e)}
     
-    async def split_sentences(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def split_sentences(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Разбиение текста на предложения с учётом технических фраз
         
@@ -283,7 +283,7 @@ class SentenceProcessingProvider(UniversalProviderInterface):
             }
             
             self.is_initialized = False
-            self.status = ProviderStatus.STOPPED
+            self.status = ProviderStatus.UNKNOWN
             
             logger.info("Sentence Processing Provider cleaned up successfully")
             return True

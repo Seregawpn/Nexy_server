@@ -4,7 +4,7 @@ TextProcessingModule - модуль обработки текста, реали�
 """
 
 import logging
-from typing import Dict, Any, AsyncIterator, Union
+from typing import Dict, Any, AsyncIterator, Union, Optional
 
 from integrations.core.universal_module_interface import UniversalModuleInterface
 from integrations.core.module_status import ModuleStatus, ModuleState
@@ -29,8 +29,8 @@ class TextProcessingModule(UniversalModuleInterface):
     def __init__(self):
         """Инициализация модуля"""
         super().__init__(name="text_processing")
-        self._processor: TextProcessor = None
-        self._config: TextProcessingConfig = None
+        self._processor: Optional[TextProcessor] = None
+        self._config: Optional[TextProcessingConfig] = None
         self._status = ModuleStatus(state=ModuleState.INIT)
     
     async def initialize(self, config: dict) -> None:
@@ -76,7 +76,7 @@ class TextProcessingModule(UniversalModuleInterface):
         Args:
             request: Запрос на обработку текста
                 - text: str - текст для обработки
-                - image_data: bytes (опционально) - изображение в формате JPEG
+                - image_data: str (опционально) - изображение в формате WebP (base64 строка)
                 - use_search: bool (опционально) - использовать Google Search
         
         Returns:
@@ -88,6 +88,12 @@ class TextProcessingModule(UniversalModuleInterface):
         try:
             self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
             
+            if self._processor is None:
+                raise Exception("TextProcessor not initialized")
+            
+            # Сохраняем ссылку для линтера (после проверки processor не None)
+            processor = self._processor
+            
             text = request.get("text", "")
             image_data = request.get("image_data")
             use_search = request.get("use_search", False)
@@ -96,17 +102,21 @@ class TextProcessingModule(UniversalModuleInterface):
                 raise ValueError("Текст для обработки не указан")
             
             # Если есть изображение, используем метод с изображением
+            # Возвращаем текст напрямую
             if image_data:
                 async def stream_with_image():
-                    async for chunk in self._processor.process_text_streaming(
+                    async for chunk in processor.process_text_streaming(
                         text, image_data
                     ):
+                        # Возвращаем текст напрямую
                         yield {"text": chunk, "type": "text_chunk"}
                 return stream_with_image()
             else:
                 # Обычная обработка текста
+                # Возвращаем текст напрямую
                 async def stream_text():
-                    async for chunk in self._processor.process_text_streaming(text):
+                    async for chunk in processor.process_text_streaming(text):
+                        # Возвращаем текст напрямую
                         yield {"text": chunk, "type": "text_chunk"}
                 return stream_text()
                 
@@ -158,12 +168,12 @@ class TextProcessingModule(UniversalModuleInterface):
         """
         return self._status
     
-    def get_processor(self) -> TextProcessor:
+    def get_processor(self) -> Optional[TextProcessor]:
         """
         Получение внутреннего процессора (для совместимости)
         
         Returns:
-            Экземпляр TextProcessor
+            Экземпляр TextProcessor или None
         """
         return self._processor
 

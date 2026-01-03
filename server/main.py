@@ -3,6 +3,7 @@ import logging
 import signal
 import sys
 import os
+import socket
 from dataclasses import asdict
 from aiohttp import web
 from modules.grpc_service.core.grpc_server import run_server as serve
@@ -129,6 +130,44 @@ async def cancel_task(task: asyncio.Task):
         pass
 
 
+def is_port_available(host: str, port: int) -> bool:
+    """Проверка доступности порта"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            result = sock.connect_ex((host, port))
+            return result != 0  # Порт доступен, если соединение не удалось
+    except Exception:
+        return False
+
+
+def get_port_process_info(port: int) -> str:
+    """Получение информации о процессе, занимающем порт (macOS/Linux)"""
+    try:
+        import subprocess
+        # Для macOS используем lsof
+        result = subprocess.run(
+            ['lsof', '-ti', f':{port}'],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            pid = result.stdout.strip()
+            # Получаем имя процесса
+            proc_info = subprocess.run(
+                ['ps', '-p', pid, '-o', 'comm='],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            proc_name = proc_info.stdout.strip() if proc_info.returncode == 0 else 'unknown'
+            return f"PID {pid} ({proc_name})"
+    except Exception:
+        pass
+    return "unknown process"
+
+
 def setup_signal_handlers():
     """Настройка обработчиков сигналов для graceful shutdown (PR-7)"""
     def signal_handler(signum, frame):
@@ -194,22 +233,63 @@ async def main():
     app.router.add_get('/', root_handler)
     app.router.add_get('/status', status_handler)
     
-    # Запускаем HTTP сервер на порту 8080
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, http_config.host, http_config.port)
-    await site.start()
-    servers_cleanup.append(runner.cleanup)
+    # Проверяем доступность порта перед запуском
+    if not is_port_available(http_config.host, http_config.port):
+        port_info = get_port_process_info(http_config.port)
+        error_msg = (
+            f"Порт {http_config.port} уже занят процессом {port_info}. "
+            f"Используйте другой порт через переменную окружения HTTP_PORT или остановите процесс: "
+            f"lsof -ti :{http_config.port} | xargs kill"
+        )
+        logger.error(error_msg, extra={
+            'scope': 'server',
+            'decision': 'error',
+            'ctx': {
+                'host': http_config.host,
+                'port': http_config.port,
+                'port_info': port_info,
+                'error': 'port_already_in_use'
+            }
+        })
+        raise OSError(f"[Errno 48] Address already in use: {http_config.host}:{http_config.port}")
     
-    logger.info("HTTP server started", extra={
-        'scope': 'server',
-        'decision': 'start',
-        'ctx': {
-            'host': http_config.host,
-            'port': http_config.port,
-            'endpoints': ['/health', '/status']
-        }
-    })
+    # Запускаем HTTP сервер на порту 8080
+    try:
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, http_config.host, http_config.port)
+        await site.start()
+        servers_cleanup.append(runner.cleanup)
+        
+        logger.info("HTTP server started", extra={
+            'scope': 'server',
+            'decision': 'start',
+            'ctx': {
+                'host': http_config.host,
+                'port': http_config.port,
+                'endpoints': ['/health', '/status']
+            }
+        })
+    except OSError as e:
+        if e.errno == 48:  # Address already in use
+            port_info = get_port_process_info(http_config.port)
+            error_msg = (
+                f"Не удалось запустить HTTP сервер на {http_config.host}:{http_config.port}. "
+                f"Порт занят процессом {port_info}. "
+                f"Решение: установите HTTP_PORT=<другой_порт> или остановите процесс: "
+                f"lsof -ti :{http_config.port} | xargs kill"
+            )
+            logger.error(error_msg, extra={
+                'scope': 'server',
+                'decision': 'error',
+                'ctx': {
+                    'host': http_config.host,
+                    'port': http_config.port,
+                    'port_info': port_info,
+                    'error': str(e)
+                }
+            })
+        raise
     
     # Запускаем сервер обновлений на порту 8081
     update_manager = None
@@ -225,8 +305,11 @@ async def main():
                 'decision': 'start',
                 'ctx': {'host': update_manager.config.host, 'port': update_manager.config.port}
             })
+            # Сохраняем ссылку на update_manager для cleanup функции
+            manager_ref = update_manager
             async def stop_update_manager():
-                await update_manager.stop()
+                if manager_ref is not None:
+                    await manager_ref.stop()
             servers_cleanup.append(stop_update_manager)
         except Exception as e:
             logger.error(f"Update server startup failed: {e}", extra={
@@ -245,6 +328,26 @@ async def main():
         'decision': 'start',
         'ctx': {'host': grpc_config.host, 'port': grpc_config.port}
     })
+    
+    # Проверяем доступность порта gRPC перед запуском
+    if not is_port_available(grpc_config.host, grpc_config.port):
+        port_info = get_port_process_info(grpc_config.port)
+        error_msg = (
+            f"Порт gRPC {grpc_config.port} уже занят процессом {port_info}. "
+            f"Используйте другой порт через переменную окружения GRPC_PORT или остановите процесс: "
+            f"lsof -ti :{grpc_config.port} | xargs kill"
+        )
+        logger.error(error_msg, extra={
+            'scope': 'grpc',
+            'decision': 'error',
+            'ctx': {
+                'host': grpc_config.host,
+                'port': grpc_config.port,
+                'port_info': port_info,
+                'error': 'port_already_in_use'
+            }
+        })
+        raise OSError(f"[Errno 48] Address already in use: {grpc_config.host}:{grpc_config.port}")
     
     try:
         # Запускаем gRPC сервер в фоне

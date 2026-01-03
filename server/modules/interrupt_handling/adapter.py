@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import Dict, Any, AsyncIterator, Union
+from typing import Dict, Any, AsyncIterator, Union, Optional
 
 from integrations.core.universal_module_interface import UniversalModuleInterface
 from integrations.core.module_status import ModuleStatus, ModuleState
@@ -28,7 +28,7 @@ class InterruptHandlingAdapter(UniversalModuleInterface):
     def __init__(self):
         """Инициализация адаптера"""
         super().__init__(name="interrupt_handling")
-        self._manager: InterruptManager = None
+        self._manager: Optional[InterruptManager] = None
         self._config: Dict[str, Any] = {}
         self._status = ModuleStatus(state=ModuleState.INIT)
     
@@ -85,6 +85,9 @@ class InterruptHandlingAdapter(UniversalModuleInterface):
         try:
             self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
             
+            if self._manager is None:
+                raise Exception("InterruptManager not initialized")
+            
             action = request.get("action", "check_interrupt")
             session_id = request.get("session_id")
             hardware_id = request.get("hardware_id")
@@ -111,6 +114,8 @@ class InterruptHandlingAdapter(UniversalModuleInterface):
                 result = {"success": success}
             elif action == "register_callback":
                 callback = request.get("callback")
+                if callback is None:
+                    raise ValueError("callback обязателен для register_callback")
                 success = await self._manager.register_callback(callback)
                 result = {"success": success}
             elif action == "clear_interrupt":
@@ -168,11 +173,11 @@ class InterruptHandlingAdapter(UniversalModuleInterface):
         """
         return self._status
     
-    def get_manager(self) -> InterruptManager:
+    def get_manager(self) -> Optional[InterruptManager]:
         """
         Получение внутреннего менеджера (для совместимости)
         
         Returns:
-            Экземпляр InterruptManager
+            Экземпляр InterruptManager или None
         """
         return self._manager

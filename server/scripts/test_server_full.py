@@ -2,7 +2,7 @@
 """
 Полный тест сервера: инициализация и обработка запросов
 Проверяет:
-1. Инициализацию TextProcessor с Gemini Live API
+1. Инициализацию TextProcessor с LangChain провайдером
 2. Обработку запросов через StreamingWorkflowIntegration
 3. Формат ответов (текст и JSON команды)
 """
@@ -30,16 +30,18 @@ async def test_text_processor_initialization():
         config = get_config()
         print(f"✅ Конфигурация загружена")
         print(f"   API ключ: {config.text_processing.gemini_api_key[:10]}...{config.text_processing.gemini_api_key[-4:]}")
-        print(f"   Модель: {config.text_processing.gemini_live_model}")
+        print(f"   Модель: {config.text_processing.langchain_model}")
         
         # Создаем модуль
         module = TextProcessingModule()
         print(f"✅ TextProcessingModule создан")
         
-        # Инициализируем
-        provider_config = config.get_provider_config('gemini_live')
+        # Инициализируем с полным конфигом модуля
+        # TextProcessingConfig использует unified_config как fallback,
+        # поэтому можно передать пустой dict или конфиг провайдера
+        module_config = config.get_module_config('text_processing')
         try:
-            await module.initialize(provider_config)
+            await module.initialize(module_config)
             print(f"✅ TextProcessingModule инициализирован успешно")
             
             # Проверяем внутренний процессор

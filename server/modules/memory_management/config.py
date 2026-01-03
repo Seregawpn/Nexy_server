@@ -3,14 +3,14 @@
 Использует централизованную конфигурацию
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from config.unified_config import get_config
 
 class MemoryConfig:
     """Конфигурация модуля управления памятью"""
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Инициализация конфигурации из централизованной системы
         

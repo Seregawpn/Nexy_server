@@ -6,8 +6,8 @@
 import os
 import sys
 import base64
-from nacl.signing import SigningKey
-from nacl.encoding import Base64Encoder
+from nacl.signing import SigningKey  # type: ignore[reportMissingImports]
+from nacl.encoding import Base64Encoder  # type: ignore[reportMissingImports]
 
 def sign_file(file_path: str, private_key_path: str) -> str:
     """

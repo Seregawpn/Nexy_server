@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import Dict, Any, AsyncIterator, Union
+from typing import Dict, Any, AsyncIterator, Union, Optional
 
 from integrations.core.universal_module_interface import UniversalModuleInterface
 from integrations.core.module_status import ModuleStatus, ModuleState
@@ -28,7 +28,7 @@ class TextFilteringAdapter(UniversalModuleInterface):
     def __init__(self):
         """Инициализация адаптера"""
         super().__init__(name="text_filtering")
-        self._manager: TextFilterManager = None
+        self._manager: Optional[TextFilterManager] = None
         self._config: Dict[str, Any] = {}
         self._status = ModuleStatus(state=ModuleState.INIT)
     
@@ -84,6 +84,9 @@ class TextFilteringAdapter(UniversalModuleInterface):
         """
         try:
             self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
+            
+            if self._manager is None:
+                raise Exception("TextFilterManager not initialized")
             
             text = request.get("text", "")
             operation = request.get("operation") or request.get("action") or "filter_text"
@@ -161,11 +164,11 @@ class TextFilteringAdapter(UniversalModuleInterface):
         """
         return self._status
     
-    def get_manager(self) -> TextFilterManager:
+    def get_manager(self) -> Optional[TextFilterManager]:
         """
         Получение внутреннего менеджера (для совместимости)
         
         Returns:
-            Экземпляр TextFilterManager
+            Экземпляр TextFilterManager или None
         """
         return self._manager

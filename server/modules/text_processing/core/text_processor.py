@@ -1,25 +1,25 @@
 """
 Основной TextProcessor - координатор модуля обработки текста
 
-Протестированная реализация с Live API (только стриминг):
-- Этап 1: Стриминговая обработка текста (текст → поток текста)
-- Этап 2: Стриминговая обработка с JPEG (текст + изображение → поток текста)  
-- Этап 3: Google Search (текст + изображение + поиск → поток текста)
+Использует LangChain провайдер для обработки текста:
+- Стриминговая обработка текста (текст → поток текста)
+- Стриминговая обработка с изображениями (текст + изображение WebP/JPEG → поток текста)  
+- Google Search (текст + изображение + поиск → поток текста)
 """
 
 import logging
-from typing import Dict, Any, Optional, AsyncGenerator
+from typing import Dict, Any, Optional, Union, AsyncGenerator
 from modules.text_processing.config import TextProcessingConfig
-from modules.text_processing.providers.gemini_live_provider import GeminiLiveProvider
+from modules.text_processing.providers.langchain_gemini_provider import LangChainGeminiProvider
 
 logger = logging.getLogger(__name__)
 
 class TextProcessor:
     """
-    Основной процессор текста с Live API (только стриминг)
+    Основной процессор текста с использованием LangChain провайдера
     
-    Координирует работу Live API провайдера и обеспечивает единый интерфейс
-    для стриминговой обработки текстовых запросов с поддержкой изображений и поиска.
+    Обеспечивает единый интерфейс для стриминговой обработки 
+    текстовых запросов с поддержкой изображений и поиска.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -31,28 +31,30 @@ class TextProcessor:
         """
         self.config = TextProcessingConfig(config)
         
-        # ТОЛЬКО Live API провайдер (без fallback)
-        self.live_provider = GeminiLiveProvider(self.config.get_provider_config('gemini_live'))
+        # Всегда используем LangChain провайдер
+        logger.info("TextProcessor: Using LangChain provider")
+        self.live_provider = LangChainGeminiProvider(self.config.get_provider_config('langchain'))
+        
         self.is_initialized = False
         
-        logger.info("TextProcessor initialized with Live API")
+        logger.info("TextProcessor initialized with LangChain provider")
     
     async def initialize(self) -> bool:
         """
-        Инициализация Live API
+        Инициализация LangChain провайдера
         
         Returns:
             True если инициализация успешна, False иначе
         """
         try:
-            logger.info("Initializing TextProcessor with Live API...")
+            logger.info("Initializing TextProcessor with LangChain provider...")
             
             if await self.live_provider.initialize():
                 self.is_initialized = True
-                logger.info("TextProcessor initialized with Live API")
+                logger.info("TextProcessor initialized with LangChain provider")
                 return True
             else:
-                logger.error("Failed to initialize Live API")
+                logger.error("Failed to initialize LangChain provider")
                 return False
                 
         except Exception as e:
@@ -60,13 +62,14 @@ class TextProcessor:
             return False
     
     
-    async def process_text_streaming(self, text: str, image_data: bytes = None) -> AsyncGenerator[str, None]:
+    async def process_text_streaming(self, text: str, image_data: Optional[Union[str, bytes]] = None) -> AsyncGenerator[str, None]:
         """
-        Стриминговая обработка текста с изображением через Live API
+        Стриминговая обработка текста с изображением через LangChain провайдер
+        Возвращает текст напрямую
         
         Args:
             text: Текстовый запрос
-            image_data: JPEG данные изображения (опционально)
+            image_data: Base64 строка (str) или bytes изображения в формате WebP/JPEG (опционально)
             
         Yields:
             Части текстового ответа
@@ -75,11 +78,16 @@ class TextProcessor:
             if not self.is_initialized:
                 raise Exception("TextProcessor not initialized")
             
-            async for chunk in self.live_provider.process_with_image(text, image_data):
-                yield chunk
+            # Вызываем правильный метод в зависимости от наличия изображения
+            if image_data:
+                async for chunk in self.live_provider.process_with_image(text, image_data):
+                    yield chunk
+            else:
+                async for chunk in self.live_provider.process(text):
+                    yield chunk
                 
         except Exception as e:
-            logger.error(f"Text streaming with JPEG error: {e}")
+            logger.error(f"Text streaming error: {e}")
             raise e
     
     async def cleanup(self) -> bool:
@@ -92,7 +100,7 @@ class TextProcessor:
         try:
             logger.info("Cleaning up TextProcessor...")
             
-            # Очищаем Live API провайдер
+            # Очищаем LangChain провайдер
             if self.live_provider:
                 await self.live_provider.cleanup()
             
@@ -138,7 +146,7 @@ class TextProcessor:
         Получение списка здоровых провайдеров
         
         Returns:
-            Список здоровых провайдеров (только Live API)
+            Список здоровых провайдеров (LangChain)
         """
         if self.live_provider and self.live_provider.is_initialized:
             return [self.live_provider]
@@ -179,14 +187,15 @@ class TextProcessor:
     
     def __str__(self) -> str:
         """Строковое представление процессора"""
-        return f"TextProcessor(initialized={self.is_initialized}, live_api={self.live_provider.is_initialized if self.live_provider else False})"
+        return f"TextProcessor(initialized={self.is_initialized}, provider=langchain, provider_initialized={self.live_provider.is_initialized if self.live_provider else False})"
     
     def __repr__(self) -> str:
         """Представление процессора для отладки"""
         return (
             f"TextProcessor("
             f"initialized={self.is_initialized}, "
-            f"live_api_initialized={self.live_provider.is_initialized if self.live_provider else False}, "
-            f"live_api_available={self.live_provider.is_available if self.live_provider else False}"
+            f"provider=langchain, "
+            f"provider_initialized={self.live_provider.is_initialized if self.live_provider else False}, "
+            f"provider_available={self.live_provider.is_available if self.live_provider else False}"
             f")"
         )

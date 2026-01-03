@@ -7,6 +7,7 @@ import os
 import json
 import hashlib
 import sys
+from typing import Optional
 from datetime import datetime
 from sign_file import sign_file
 
@@ -19,8 +20,8 @@ def calculate_sha256(file_path: str) -> str:
     return sha256_hash.hexdigest()
 
 def generate_manifest(artifact_path: str, version: str, build: int, 
-                     artifact_type: str = "dmg", private_key_path: str = None,
-                     notes_url: str = None, critical: bool = False) -> dict:
+                     artifact_type: str = "dmg", private_key_path: Optional[str] = None,
+                     notes_url: Optional[str] = None, critical: bool = False) -> dict:
     """
     Генерация манифеста обновлений
     

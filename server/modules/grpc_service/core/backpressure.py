@@ -87,7 +87,13 @@ class BackpressureManager:
     
     async def start(self):
         """Запуск фоновой задачи очистки"""
-        self._cleanup_task = asyncio.create_task(self._cleanup_idle_streams())
+        # Запускаем idle-cleanup, если idle_timeout_seconds > 0
+        if self.limits.idle_timeout_seconds > 0:
+            self._cleanup_task = asyncio.create_task(self._cleanup_idle_streams())
+            logger.info(f"Backpressure idle-cleanup started (timeout: {self.limits.idle_timeout_seconds}s)")
+        else:
+            self._cleanup_task = None
+            logger.debug("Backpressure idle-cleanup disabled (idle_timeout_seconds = 0)")
     
     async def stop(self):
         """Остановка фоновой задачи"""
@@ -110,10 +116,28 @@ class BackpressureManager:
             (success, error_message)
         """
         async with self.lock:
-            # Проверяем лимит на одновременно открытые стримы
-            if len(self.active_streams) >= self.limits.max_concurrent_streams:
-                # Отдельный код ошибки для лимита стримов (PR-7)
-                return (False, f"STREAM_LIMIT_EXCEEDED: Maximum concurrent streams limit reached ({self.limits.max_concurrent_streams})")
+            # ПРОВЕРКА ЛИМИТА: не превышен ли max_concurrent_streams
+            current_active = len(self.active_streams)
+            if current_active >= self.limits.max_concurrent_streams:
+                error_msg = (
+                    f"STREAM_LIMIT_EXCEEDED: Maximum concurrent streams ({self.limits.max_concurrent_streams}) "
+                    f"reached. Current active: {current_active}"
+                )
+                logger.warning(
+                    error_msg,
+                    extra={
+                        'scope': 'grpc',
+                        'method': 'StreamAudio',
+                        'decision': 'stream_rejected',
+                        'ctx': {
+                            'stream_id': stream_id,
+                            'hardware_id': hardware_id,
+                            'active_streams': current_active,
+                            'max_streams': self.limits.max_concurrent_streams
+                        }
+                    }
+                )
+                return (False, error_msg)
             
             # Регистрируем стрим
             stream_info = StreamInfo(
@@ -123,7 +147,7 @@ class BackpressureManager:
             self.active_streams[stream_id] = stream_info
             
             logger.info(
-                f"Stream acquired: {stream_id} (active: {len(self.active_streams)}/{self.limits.max_concurrent_streams})",
+                f"Stream acquired: {stream_id} (active: {len(self.active_streams)})",
                 extra={
                     'scope': 'grpc',
                     'method': 'StreamAudio',
@@ -141,30 +165,43 @@ class BackpressureManager:
     
     async def release_stream(self, stream_id: str):
         """
-        Освобождение стрима
+        Освобождение стрима (идемпотентно)
         
         Args:
             stream_id: Идентификатор стрима
         """
         async with self.lock:
-            if stream_id in self.active_streams:
-                stream_info = self.active_streams.pop(stream_id)
-                duration = time.time() - stream_info.start_time
-                
-                logger.info(
-                    f"Stream released: {stream_id} (duration: {duration:.2f}s, messages: {stream_info.message_count})",
+            # Идемпотентность: используем pop с None, чтобы не было ошибки при повторном вызове
+            stream_info = self.active_streams.pop(stream_id, None)
+            if stream_info is None:
+                # Стрим уже был освобожден - это нормально (идемпотентность)
+                logger.debug(
+                    f"Stream already released: {stream_id}",
                     extra={
                         'scope': 'grpc',
                         'method': 'StreamAudio',
-                        'decision': 'stream_released',
-                        'ctx': {
-                            'stream_id': stream_id,
-                            'duration_seconds': duration,
-                            'message_count': stream_info.message_count,
-                            'active_streams': len(self.active_streams)
-                        }
+                        'decision': 'stream_already_released',
+                        'ctx': {'stream_id': stream_id}
                     }
                 )
+                return
+            
+            duration = time.time() - stream_info.start_time
+            
+            logger.info(
+                f"Stream released: {stream_id} (duration: {duration:.2f}s, messages: {stream_info.message_count})",
+                extra={
+                    'scope': 'grpc',
+                    'method': 'StreamAudio',
+                    'decision': 'stream_released',
+                    'ctx': {
+                        'stream_id': stream_id,
+                        'duration_seconds': duration,
+                        'message_count': stream_info.message_count,
+                        'active_streams': len(self.active_streams)
+                    }
+                }
+            )
     
     async def check_message_rate(self, stream_id: str) -> tuple[bool, Optional[str]]:
         """
@@ -175,17 +212,24 @@ class BackpressureManager:
         
         Returns:
             (allowed, error_message)
+        
+        Note:
+            Если max_message_rate_per_second <= 0, rate limit отключен и всегда возвращается (True, None)
         """
         async with self.lock:
             if stream_id not in self.active_streams:
                 return (False, "Stream not found")
             
+            # ОТКЛЮЧЕНИЕ RATE LIMIT: если max_message_rate_per_second <= 0, лимит отключен
+            if self.limits.max_message_rate_per_second <= 0:
+                stream_info = self.active_streams[stream_id]
+                current_time = time.time()
+                stream_info.last_message_time = current_time
+                stream_info.message_count += 1
+                return (True, None)
+            
             stream_info = self.active_streams[stream_id]
             current_time = time.time()
-            
-            # Обновляем время последнего сообщения
-            stream_info.last_message_time = current_time
-            stream_info.message_count += 1
             
             # Очищаем старые временные метки (старше 1 секунды)
             stream_info.message_timestamps = [
@@ -193,9 +237,30 @@ class BackpressureManager:
                 if current_time - ts < 1.0
             ]
             
-            # Проверяем rate limit
+            # ПРОВЕРКА ЛИМИТА: не превышен ли max_message_rate_per_second
             if len(stream_info.message_timestamps) >= self.limits.max_message_rate_per_second:
-                return (False, f"Message rate limit exceeded ({self.limits.max_message_rate_per_second} messages/second)")
+                error_msg = (
+                    f"MESSAGE_RATE_EXCEEDED: Maximum message rate ({self.limits.max_message_rate_per_second} msg/s) "
+                    f"reached for stream {stream_id}"
+                )
+                logger.warning(
+                    error_msg,
+                    extra={
+                        'scope': 'grpc',
+                        'method': 'StreamAudio',
+                        'decision': 'rate_limit_exceeded',
+                        'ctx': {
+                            'stream_id': stream_id,
+                            'message_rate': len(stream_info.message_timestamps),
+                            'max_rate': self.limits.max_message_rate_per_second
+                        }
+                    }
+                )
+                return (False, error_msg)
+            
+            # Обновляем время последнего сообщения
+            stream_info.last_message_time = current_time
+            stream_info.message_count += 1
             
             # Добавляем текущую временную метку
             stream_info.message_timestamps.append(current_time)
@@ -203,7 +268,7 @@ class BackpressureManager:
             return (True, None)
     
     async def _cleanup_idle_streams(self):
-        """Фоновая задача для очистки неактивных стримов"""
+        """Фоновая задача для очистки неактивных стримов (идемпотентно)"""
         while True:
             try:
                 await asyncio.sleep(30)  # Проверяем каждые 30 секунд
@@ -218,9 +283,14 @@ class BackpressureManager:
                         if idle_time > self.limits.idle_timeout_seconds:
                             idle_streams.append((stream_id, stream_info))
                     
-                    # Удаляем неактивные стримы
+                    # Удаляем неактивные стримы (идемпотентно: используем pop)
                     for stream_id, stream_info in idle_streams:
-                        del self.active_streams[stream_id]
+                        # Идемпотентность: проверяем, что стрим еще существует
+                        if stream_id not in self.active_streams:
+                            continue
+                        
+                        idle_time = current_time - stream_info.last_message_time
+                        self.active_streams.pop(stream_id, None)
                         
                         logger.warning(
                             f"Stream closed due to idle timeout: {stream_id} (idle: {idle_time:.2f}s)",
@@ -271,4 +341,3 @@ def get_backpressure_manager() -> BackpressureManager:
     if _global_backpressure is None:
         _global_backpressure = BackpressureManager()
     return _global_backpressure
-

@@ -72,7 +72,7 @@ class PostgreSQLProvider(UniversalProviderInterface):
         self.health_check_interval = config.get('health_check_interval', 300)
         
         # Пулы соединений
-        self.connection_pool = None
+        self.connection_pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
         self.connection = None
         
         logger.info(f"PostgreSQL Provider initialized with host: {self.host}:{self.port}")
@@ -193,6 +193,10 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def _test_connection(self) -> bool:
         """Тестирование подключения к БД"""
         try:
+            if self.connection_pool is None:
+                logger.error("Connection pool is not initialized")
+                return False
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -211,7 +215,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                     
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Database connection test error: {e}")
@@ -256,6 +261,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def _create_record(self, table: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Создание записи в таблице"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -306,7 +314,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                         
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error creating record in {table}: {e}")
@@ -320,6 +329,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def _read_records(self, table: str, filters: Dict[str, Any]) -> Dict[str, Any]:
         """Чтение записей из таблицы"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -372,7 +384,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                     
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error reading records from {table}: {e}")
@@ -386,6 +399,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def _update_record(self, table: str, data: Dict[str, Any], filters: Dict[str, Any]) -> Dict[str, Any]:
         """Обновление записи в таблице"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -445,7 +461,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                         
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error updating record in {table}: {e}")
@@ -459,6 +476,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def _delete_record(self, table: str, filters: Dict[str, Any]) -> Dict[str, Any]:
         """Удаление записи из таблицы"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -508,7 +528,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                         
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error deleting record from {table}: {e}")
@@ -570,7 +591,7 @@ class PostgreSQLProvider(UniversalProviderInterface):
     # СПЕЦИАЛИЗИРОВАННЫЕ МЕТОДЫ ДЛЯ КАЖДОЙ ТАБЛИЦЫ
     # =====================================================
     
-    async def create_user(self, hardware_id_hash: str, metadata: Dict[str, Any] = None) -> Optional[str]:
+    async def create_user(self, hardware_id_hash: str, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Создание нового пользователя"""
         data = {
             'hardware_id_hash': hardware_id_hash,
@@ -596,7 +617,7 @@ class PostgreSQLProvider(UniversalProviderInterface):
         else:
             return None
     
-    async def create_session(self, user_id: str, metadata: Dict[str, Any] = None) -> Optional[str]:
+    async def create_session(self, user_id: str, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Создание новой сессии"""
         data = {
             'user_id': user_id,
@@ -624,7 +645,7 @@ class PostgreSQLProvider(UniversalProviderInterface):
         
         return result['success']
     
-    async def create_command(self, session_id: str, prompt: str, metadata: Dict[str, Any] = None, language: str = 'en') -> Optional[str]:
+    async def create_command(self, session_id: str, prompt: str, metadata: Optional[Dict[str, Any]] = None, language: str = 'en') -> Optional[str]:
         """Создание новой команды"""
         data = {
             'session_id': session_id,
@@ -642,8 +663,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
             return None
     
     async def create_llm_answer(self, command_id: str, prompt: str, response: str,
-                               model_info: Dict[str, Any] = None,
-                               performance_metrics: Dict[str, Any] = None) -> Optional[str]:
+                               model_info: Optional[Dict[str, Any]] = None,
+                               performance_metrics: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Создание ответа LLM"""
         data = {
             'command_id': command_id,
@@ -661,8 +682,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
             logger.error(f"Failed to create LLM answer: {result['error']}")
             return None
     
-    async def create_screenshot(self, session_id: str, file_path: str = None, file_url: str = None,
-                               metadata: Dict[str, Any] = None) -> Optional[str]:
+    async def create_screenshot(self, session_id: str, file_path: Optional[str] = None, file_url: Optional[str] = None,
+                               metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Создание записи о скриншоте"""
         data = {
             'session_id': session_id,
@@ -731,6 +752,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def cleanup_expired_short_term_memory(self, hours: int = 24) -> int:
         """Очистка устаревшей краткосрочной памяти"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -750,7 +774,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                     
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error cleaning up expired short-term memory: {e}")
@@ -759,6 +784,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def get_memory_statistics(self) -> Dict[str, Any]:
         """Получение статистики памяти"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -775,7 +803,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                         
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error getting memory statistics: {e}")
@@ -784,6 +813,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def get_users_with_active_memory(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Получение пользователей с активной памятью"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -805,7 +837,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                     
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error getting users with active memory: {e}")
@@ -818,6 +851,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def get_user_statistics(self, user_id: str) -> Dict[str, Any]:
         """Получение статистики пользователя"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -842,7 +878,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                     
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error getting user statistics: {e}")
@@ -851,6 +888,9 @@ class PostgreSQLProvider(UniversalProviderInterface):
     async def get_session_commands(self, session_id: str) -> List[Dict[str, Any]]:
         """Получение всех команд сессии с ответами LLM"""
         try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
             # Получаем соединение из пула
             conn = self.connection_pool.getconn()
             
@@ -873,7 +913,8 @@ class PostgreSQLProvider(UniversalProviderInterface):
                     
             finally:
                 # Возвращаем соединение в пул
-                self.connection_pool.putconn(conn)
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
                 
         except Exception as e:
             logger.error(f"Error getting session commands: {e}")

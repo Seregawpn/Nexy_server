@@ -21,13 +21,10 @@ logger = logging.getLogger(__name__)
 # Совместимость с разными версиями grpcio
 # HandlerCallDetails может отсутствовать в старых версиях
 if TYPE_CHECKING:
-    try:
-        from grpc.aio import HandlerCallDetails
-    except (ImportError, AttributeError):
-        HandlerCallDetails = Any
+    from grpc.aio import HandlerCallDetails  # type: ignore[attr-defined]
 else:
     # В runtime используем Any для совместимости
-    HandlerCallDetails = Any
+    HandlerCallDetails = Any  # type: ignore
 
 
 class ErrorCodeMapper:
@@ -118,7 +115,7 @@ class LoggingInterceptor(aio.ServerInterceptor):
     async def intercept_service(
         self,
         continuation: Callable,
-        handler_call_details: HandlerCallDetails
+        handler_call_details: "HandlerCallDetails"
     ) -> Any:
         """
         Перехват вызова сервиса

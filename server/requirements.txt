@@ -22,11 +22,12 @@ grpcio
 grpcio-tools
 protobuf
 
-# Edge TTS (бесплатный, без API ключей)
-edge-tts
+# Edge TTS (бесплатный, без API ключей) - основной провайдер TTS
+# Версия 7.2.7+ обязательна (в более старых версиях была проблема с NoAudioReceived)
+edge-tts>=7.2.7
 
-# Azure Speech Services
-azure-cognitiveservices-speech
+# Azure Speech Services (устаревший, можно удалить если не используется)
+# azure-cognitiveservices-speech
 
 # База данных
 psycopg2-binary
@@ -40,3 +41,6 @@ psutil
 
 # Валидация данных (Pydantic)
 pydantic
+
+# Криптография для подписи обновлений (Ed25519)
+PyNaCl

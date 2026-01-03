@@ -95,14 +95,62 @@ python scripts/check_grpc_health.py localhost 8080
 
 ```bash
 # Все тесты
-python -m pytest tests/ -v
+python3 -m pytest server/tests/ -v
 
 # Конкретный файл
-python -m pytest tests/test_pr2_1_coordinator.py -v
+python3 -m pytest server/tests/test_pr2_1_coordinator.py -v
 
 # Конкретный тест
-python -m pytest tests/test_pr2_1_coordinator.py::TestModuleCoordinatorIntegration::test_coordinator_registration -v
+python3 -m pytest server/tests/test_pr2_1_coordinator.py::TestModuleCoordinatorIntegration::test_coordinator_registration -v
 ```
+
+---
+
+## Smoke-тест единого вызова памяти
+
+### Запуск smoke-теста памяти
+
+```bash
+# Локальный запуск
+python3 -m pytest server/tests/test_memory_single_call_smoke.py -v
+
+# С подробным выводом
+python3 -m pytest server/tests/test_memory_single_call_smoke.py -v -s
+```
+
+### Что проверяет smoke-тест памяти
+
+1. **Единый вызов в StreamingWorkflowIntegration**
+   - Память запрашивается ровно один раз в `StreamingWorkflowIntegration`
+   - Вызов происходит в правильном месте (line 145)
+   - Правильный `hardware_id` передаётся в вызов
+
+2. **Отсутствие дублирования в GrpcServiceIntegration**
+   - В `GrpcServiceIntegration` нет прямого вызова памяти
+   - Память запрашивается только через `StreamingWorkflowIntegration`
+
+3. **Полный flow без дублирования**
+   - При полном flow через `GrpcServiceIntegration` память запрашивается только один раз
+   - Нет дублирующих вызовов `get_memory_context_parallel`
+
+### Ожидаемый результат
+
+```
+============================= test session starts ==============================
+collected 3 items
+
+server/tests/test_memory_single_call_smoke.py::TestMemorySingleCallSmoke::test_memory_called_once_in_streaming_workflow PASSED
+server/tests/test_memory_single_call_smoke.py::TestMemorySingleCallSmoke::test_memory_not_called_in_grpc_service PASSED
+server/tests/test_memory_single_call_smoke.py::TestMemorySingleCallSmoke::test_no_duplicate_memory_calls_in_full_flow PASSED
+
+============================== 3 passed in 0.12s ===============================
+```
+
+### Критическая проверка
+
+Тест проверяет, что `get_memory_context_parallel` вызывается **ровно 1 раз** при обработке запроса. Если тест падает с сообщением о множественных вызовах, это означает наличие дублирования в коде.
+
+---
 
 ### Что проверяют unit тесты
 

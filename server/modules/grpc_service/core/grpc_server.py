@@ -11,6 +11,7 @@ import grpc.aio
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import time
+import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional, AsyncGenerator
 
@@ -20,8 +21,8 @@ from config.unified_config import get_config
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-import streaming_pb2
-import streaming_pb2_grpc
+import streaming_pb2  # type: ignore
+import streaming_pb2_grpc  # type: ignore
 
 # Импорт новых модулей
 from .grpc_service_manager import GrpcServiceManager
@@ -46,7 +47,6 @@ from utils.metrics_collector import (
 
 # gRPC Interceptor (PR-7)
 from .grpc_interceptor import get_interceptor
-from .backpressure import get_backpressure_manager
 
 # Логирование настроено в main.py
 logger = logging.getLogger(__name__)
@@ -106,10 +106,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             logger.info("🧹 Очистка ресурсов нового сервера...")
             
             if self.is_initialized:
-                # Останавливаем все модули
-                await self.grpc_service_manager.stop()
-                logger.info("✅ Все модули остановлены")
-
                 # Очищаем gRPC Service Manager
                 await self.grpc_service_manager.cleanup()
                 logger.info("✅ gRPC Service Manager очищен")
@@ -120,45 +116,27 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
         except Exception as e:
             logger.error(f"❌ Ошибка очистки нового сервера: {e}")
     
-    async def StreamAudio(self, request: streaming_pb2.StreamRequest, context) -> AsyncGenerator[streaming_pb2.StreamResponse, None]:
+    async def StreamAudio(self, request: streaming_pb2.StreamRequest, context) -> AsyncGenerator[streaming_pb2.StreamResponse, None]:  # type: ignore
         """Обработка StreamRequest через новые модули с мониторингом"""
         start_time = time.time()
-        session_id = request.session_id or f"session_{datetime.now().timestamp()}"
+        
+        # КРИТИЧНО: Source of Truth для session_id - grpc_server.py (входная точка)
+        # Генерируем session_id здесь, если отсутствует
+        session_id = request.session_id or f"session_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
         hardware_id = request.hardware_id or "unknown"
+        
+        # Получаем конфигурацию аудио для заполнения sample_rate, channels и dtype
+        unified_config = get_config()
+        audio_config = unified_config.audio if hasattr(unified_config, 'audio') else None
+        sample_rate = audio_config.sample_rate if audio_config else 48000
+        channels = audio_config.channels if audio_config else 1
+        dtype = audio_config.format if audio_config else 'int16'  # Используем dtype из конфига
         
         logger.info(f"📨 Получен StreamRequest: session={session_id}, hardware_id={hardware_id}")
         logger.info(f"📨 StreamRequest данные: prompt_len={len(request.prompt)}, screenshot_len={len(request.screenshot) if request.screenshot else 0}")
         
-        # Backpressure: проверяем лимит на стримы (PR-7)
-        backpressure_manager = get_backpressure_manager()
-        stream_acquired, error_msg = await backpressure_manager.acquire_stream(session_id, hardware_id)
-        if not stream_acquired:
-            # Отдельный код ошибки для лимита стримов (PR-7)
-            error_code = "RESOURCE_EXHAUSTED"
-            if error_msg and "STREAM_LIMIT_EXCEEDED" in error_msg:
-                error_code = "RESOURCE_EXHAUSTED"  # Можно использовать специальный код, если нужен
-                # Логируем отдельно для различения от rate limit
-                log_rpc_error(
-                    logger,
-                    method="StreamAudio",
-                    error_code=error_code,
-                    error_message=error_msg.replace("STREAM_LIMIT_EXCEEDED: ", ""),
-                    ctx={
-                        "session_id": session_id,
-                        "hardware_id": hardware_id,
-                        "error_type": "stream_limit_exceeded"
-                    }
-                )
-            else:
-                log_rpc_error(
-                    logger,
-                    method="StreamAudio",
-                    error_code=error_code,
-                    error_message=error_msg or "Stream limit exceeded",
-                    ctx={"session_id": session_id, "hardware_id": hardware_id}
-                )
-            yield streaming_pb2.StreamResponse(error_message=error_msg.replace("STREAM_LIMIT_EXCEEDED: ", "") if error_msg and "STREAM_LIMIT_EXCEEDED" in error_msg else (error_msg or "Stream limit exceeded"))
-            return
+        # КРИТИЧНО: Backpressure guard теперь централизован в GrpcServiceIntegration
+        # Удалены дублирующие проверки acquire_stream/check_message_rate/release_stream
         
         try:
             # Увеличиваем счетчик активных соединений
@@ -179,7 +157,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                     ctx={"session_id": session_id, "hardware_id": hardware_id}
                 )
                 log_decision(logger, decision="abort", method="StreamAudio", ctx={"reason": "interrupt_workflow_unavailable"})
-                yield streaming_pb2.StreamResponse(error_message="Interrupt workflow unavailable")
+                yield streaming_pb2.StreamResponse(error_message="Interrupt workflow unavailable")  # type: ignore
                 return
 
             # Проверяем глобальный флаг прерывания через workflow
@@ -191,7 +169,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                     method="StreamAudio",
                     ctx={"reason": "global_interrupt", "session_id": session_id, "hardware_id": hardware_id}
                 )
-                response = streaming_pb2.StreamResponse(
+                response = streaming_pb2.StreamResponse(  # type: ignore
                     error_message="Глобальное прерывание активно"
                 )
                 yield response
@@ -212,42 +190,109 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             
             # Потоковая обработка: передаём результаты по мере готовности
             sent_any = False
+            terminated_early = False  # Флаг раннего завершения (rate-limit после частичных данных)
+            metrics_is_error: Optional[bool] = None
             logger.info(f"🔄 Начинаем потоковую обработку для {session_id}")
             async for item in self.grpc_service_manager.process(request_data):
                 logger.info(f"🔄 Получен item от grpc_service_manager: {list(item.keys())}")
+                
+                # КРИТИЧНО: Проверка ошибки на верхнем уровне - до обработки любых данных
                 success = item.get('success', False)
                 if not success:
-                    err = item.get('error') or 'Ошибка обработки запроса'
-                    # Структурированное логирование ошибки (PR-4)
+                    # Проверяем флаг silent для тихого завершения (rate-limit после частичных данных)
+                    is_silent = item.get('silent', False)
+                    if is_silent:
+                        # Раннее завершение после частичных данных: тихое завершение без error_message
+                        terminated_early = True
+                        logger.warning(
+                            f"⚠️ Раннее завершение стрима для {session_id} (rate-limit после частичных данных)",
+                            extra={
+                                'scope': 'grpc',
+                                'method': 'StreamAudio',
+                                'decision': 'silent_termination',
+                                'ctx': {
+                                    'session_id': session_id,
+                                    'hardware_id': hardware_id,
+                                    'error_code': item.get('error_code', 'RESOURCE_EXHAUSTED'),
+                                    'error_type': item.get('error_type', 'rate_limit_exceeded'),
+                                    'error': item.get('error', 'Message rate limit exceeded')
+                                }
+                            }
+                        )
+                        # Тихое завершение: просто return без error_message и без context.set_code()
+                        break  # Используем break вместо return, чтобы пропустить end_message
+                    
+                    # СТРОГАЯ ПОЛИТИКА ОШИБОК: не смешиваем данные и ошибки
+                    # Если уже были отправлены чанки - тихое завершение без error_message и без gRPC статуса
+                    if sent_any:
+                        terminated_early = True
+                        logger.warning(
+                            f"⚠️ Ошибка после начала стрима для {session_id}: тихое завершение (данные уже отправлены)",
+                            extra={
+                                'scope': 'grpc',
+                                'method': 'StreamAudio',
+                                'decision': 'silent_termination',
+                                'ctx': {
+                                    'session_id': session_id,
+                                    'hardware_id': hardware_id,
+                                    'error_code': item.get('error_code', 'INTERNAL'),
+                                    'error_type': item.get('error_type', 'unknown'),
+                                    'error': item.get('error', 'Unknown error')
+                                }
+                            }
+                        )
+                        # Тихое завершение: просто return без error_message и без context.set_code()
+                        break  # Используем break вместо return, чтобы пропустить end_message
+                    
+                    # ОШИБКА ДО начала стрима: отправляем error_message и устанавливаем gRPC статус
+                    error_code = item.get('error_code', 'INTERNAL')  # По умолчанию INTERNAL если не указан
+                    error_type = item.get('error_type', 'unknown')
+                    error_msg = item.get('error', 'Unknown error')
+                    
+                    # Полный маппинг error_code → grpc.StatusCode (Source of Truth для gRPC статусов)
+                    grpc_status = grpc.StatusCode.INTERNAL  # Default
+                    if error_code == 'RESOURCE_EXHAUSTED':
+                        grpc_status = grpc.StatusCode.RESOURCE_EXHAUSTED
+                    elif error_code == 'UNAVAILABLE':
+                        grpc_status = grpc.StatusCode.UNAVAILABLE
+                    elif error_code == 'INVALID_ARGUMENT':
+                        grpc_status = grpc.StatusCode.INVALID_ARGUMENT
+                    elif error_code == 'NOT_FOUND':
+                        grpc_status = grpc.StatusCode.NOT_FOUND
+                    elif error_code == 'PERMISSION_DENIED':
+                        grpc_status = grpc.StatusCode.PERMISSION_DENIED
+                    elif error_code == 'DEADLINE_EXCEEDED':
+                        grpc_status = grpc.StatusCode.DEADLINE_EXCEEDED
+                    elif error_code == 'CANCELLED':
+                        grpc_status = grpc.StatusCode.CANCELLED
+                    
+                    # Устанавливаем gRPC статус (Source of Truth для gRPC кодов)
+                    context.set_code(grpc_status)
+                    context.set_details(error_msg)
+                    
+                    # Структурированное логирование ошибки
                     dur_ms = (time.time() - start_time) * 1000
                     log_rpc_error(
                         logger,
                         method="StreamAudio",
-                        error_code="INTERNAL",
-                        error_message=err,
+                        error_code=error_code,
+                        error_message=error_msg,
                         dur_ms=dur_ms,
-                        ctx={"session_id": session_id, "hardware_id": hardware_id}
-                    )
-                    log_decision(logger, decision="error", method="StreamAudio", ctx={"error": err})
-                    yield streaming_pb2.StreamResponse(error_message=err)
-                    return
-                # Backpressure: проверяем rate limit для сообщений (PR-7)
-                message_allowed, rate_error = await backpressure_manager.check_message_rate(session_id)
-                if not message_allowed:
-                    # Отдельный код ошибки для rate limit (не смешиваем с лимитом стримов)
-                    log_rpc_error(
-                        logger,
-                        method="StreamAudio",
-                        error_code="RESOURCE_EXHAUSTED",
-                        error_message=rate_error or "Message rate limit exceeded",
                         ctx={
-                            "session_id": session_id,
-                            "hardware_id": hardware_id,
-                            "error_type": "rate_limit_exceeded"
+                            'session_id': session_id,
+                            'hardware_id': hardware_id,
+                            'error_type': error_type,
+                            'grpc_status': grpc_status.name
                         }
                     )
-                    yield streaming_pb2.StreamResponse(error_message=rate_error or "Message rate limit exceeded")
+                    log_decision(logger, decision="error", method="StreamAudio", ctx={"error": error_msg, "error_code": error_code})
+                    
+                    # Строгая политика ошибок: один финальный error_message, затем return
+                    yield streaming_pb2.StreamResponse(error_message=error_msg)  # type: ignore
                     return
+                
+                # КРИТИЧНО: Backpressure rate limit проверка теперь централизована в GrpcServiceIntegration
+                # Удалена дублирующая проверка check_message_rate
                 
                 # Фаза 3: MCP command_payload (отправляем как text_chunk с префиксом __MCP__)
                 cmd_payload = item.get('command_payload')
@@ -258,7 +303,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                         mcp_json = json.dumps(cmd_payload, ensure_ascii=False)
                         mcp_text_chunk = f"__MCP__{mcp_json}"
                         logger.info(f"→ StreamAudio: sending MCP command_payload len={len(mcp_text_chunk)} for session={session_id}, command={cmd_payload.get('payload', {}).get('command', 'unknown')}")
-                        yield streaming_pb2.StreamResponse(text_chunk=mcp_text_chunk)
+                        yield streaming_pb2.StreamResponse(text_chunk=mcp_text_chunk)  # type: ignore
                         sent_any = True
                     except Exception as mcp_error:
                         logger.warning(f"⚠️ Ошибка сериализации MCP command_payload: {mcp_error}")
@@ -267,49 +312,82 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 txt = item.get('text_response')
                 if txt:
                     logger.info(f"→ StreamAudio: sending text_chunk len={len(txt)} for session={session_id}")
-                    yield streaming_pb2.StreamResponse(text_chunk=txt)
+                    yield streaming_pb2.StreamResponse(text_chunk=txt)  # type: ignore
                     sent_any = True
                 # Одиночный аудио-чанк
                 ch = item.get('audio_chunk')
                 if isinstance(ch, (bytes, bytearray)) and len(ch) > 0:
                     logger.info(f"→ StreamAudio: sending audio_chunk bytes={len(ch)} for session={session_id}")
-                    yield streaming_pb2.StreamResponse(
-                        audio_chunk=streaming_pb2.AudioChunk(audio_data=ch, dtype='int16', shape=[])
+                    # Используем dtype из конфига (audio.format) с sample_rate и channels
+                    yield streaming_pb2.StreamResponse(  # type: ignore
+                        audio_chunk=streaming_pb2.AudioChunk(  # type: ignore
+                            audio_data=ch,
+                            dtype=dtype,
+                            shape=[],
+                            sample_rate=sample_rate,
+                            channels=channels
+                        )
                     )
                     sent_any = True
                 # Список аудио-чанков (на случай, если интеграция вернёт массив)
                 for idx, chunk_data in enumerate(item.get('audio_chunks') or []):
                     if chunk_data:
                         logger.info(f"→ StreamAudio: sending audio_chunk[{idx}] bytes={len(chunk_data)} for session={session_id}")
-                        yield streaming_pb2.StreamResponse(
-                            audio_chunk=streaming_pb2.AudioChunk(audio_data=chunk_data, dtype='int16', shape=[])
+                        yield streaming_pb2.StreamResponse(  # type: ignore
+                            audio_chunk=streaming_pb2.AudioChunk(  # type: ignore
+                                audio_data=chunk_data,
+                                dtype=dtype,
+                                shape=[],
+                                sample_rate=sample_rate,
+                                channels=channels
+                            )
                         )
                         sent_any = True
+            
             # Завершение стрима
-            # Структурированное логирование успешного завершения (PR-4)
-            dur_ms = (time.time() - start_time) * 1000
-            log_decision(
-                logger,
-                decision="complete",
-                method="StreamAudio",
-                dur_ms=dur_ms,
-                ctx={"session_id": session_id, "hardware_id": hardware_id, "sent_any": sent_any}
-            )
-            yield streaming_pb2.StreamResponse(end_message="Обработка завершена")
+            # КРИТИЧНО: Не отправляем end_message при раннем завершении (terminated_early)
+            if not terminated_early:
+                # Структурированное логирование успешного завершения (PR-4)
+                dur_ms = (time.time() - start_time) * 1000
+                log_decision(
+                    logger,
+                    decision="complete",
+                    method="StreamAudio",
+                    dur_ms=dur_ms,
+                    ctx={"session_id": session_id, "hardware_id": hardware_id, "sent_any": sent_any}
+                )
+                yield streaming_pb2.StreamResponse(end_message="Обработка завершена")  # type: ignore
+                metrics_is_error = False
+            else:
+                # Метрики: раннее завершение считается ошибкой (rate-limit после частичных данных)
+                dur_ms = (time.time() - start_time) * 1000
+                log_decision(
+                    logger,
+                    decision="terminated_early",
+                    method="StreamAudio",
+                    dur_ms=dur_ms,
+                    ctx={
+                        "session_id": session_id,
+                        "hardware_id": hardware_id,
+                        "sent_any": sent_any,
+                        "reason": "rate_limit_after_partial_data"
+                    }
+                )
+                metrics_is_error = True
         except grpc.RpcError as e:
             # Структурированное логирование gRPC ошибки (PR-4)
             dur_ms = (time.time() - start_time) * 1000
             log_rpc_error(
                 logger,
                 method="StreamAudio",
-                error_code=e.code().name if hasattr(e.code(), 'name') else str(e.code()),
-                error_message=e.details(),
+                error_code=e.code().name if hasattr(e.code(), 'name') else str(e.code()),  # type: ignore
+                error_message=e.details(),  # type: ignore
                 dur_ms=dur_ms,
                 ctx={"session_id": session_id, "hardware_id": hardware_id}
             )
-            record_request(time.time() - start_time, is_error=True)
-            response = streaming_pb2.StreamResponse(
-                error_message=f"gRPC ошибка: {e.details()}"
+            metrics_is_error = True
+            response = streaming_pb2.StreamResponse(  # type: ignore
+                error_message=f"gRPC ошибка: {e.details()}"  # type: ignore
             )
             yield response
         except Exception as e:
@@ -333,16 +411,15 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             
             # Записываем ошибку в метрики (PR-4: метрики поверх логов)
             response_time = time.time() - start_time
-            record_request(response_time, is_error=True)
-            record_metric("StreamAudio", response_time * 1000, is_error=True)
+            metrics_is_error = True
             
-            response = streaming_pb2.StreamResponse(
+            response = streaming_pb2.StreamResponse(  # type: ignore
                 error_message=f"Внутренняя ошибка сервера: {str(e)}"
             )
             yield response
         finally:
-            # Backpressure: освобождаем стрим (PR-7)
-            await backpressure_manager.release_stream(session_id)
+            # КРИТИЧНО: Backpressure release_stream теперь централизован в GrpcServiceIntegration
+            # Удалена дублирующая проверка release_stream
             
             # Уменьшаем счетчик активных соединений
             current_connections = get_metrics().get('active_connections', 0)
@@ -350,10 +427,11 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             
             # Записываем метрику запроса (PR-4: метрики поверх логов)
             response_time = time.time() - start_time
-            record_request(response_time, is_error=False)
-            record_metric("StreamAudio", response_time * 1000, is_error=False)
+            is_error = True if metrics_is_error is None else metrics_is_error
+            record_request(response_time, is_error=is_error)
+            record_metric("StreamAudio", response_time * 1000, is_error=is_error)
     
-    async def InterruptSession(self, request: streaming_pb2.InterruptRequest, context) -> streaming_pb2.InterruptResponse:
+    async def InterruptSession(self, request: streaming_pb2.InterruptRequest, context) -> streaming_pb2.InterruptResponse:  # type: ignore
         """Обработка InterruptRequest через Interrupt Manager"""
         start_time = time.time()
         hardware_id = request.hardware_id or "unknown"
@@ -372,7 +450,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             interrupt_workflow = self.grpc_service_manager.interrupt_workflow
             if not interrupt_workflow:
                 logger.error("Interrupt workflow недоступен, прерывание невозможно")
-                return streaming_pb2.InterruptResponse(
+                return streaming_pb2.InterruptResponse(  # type: ignore
                     success=False,
                     message="Interrupt workflow unavailable",
                     interrupted_sessions=[]
@@ -400,7 +478,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 record_decision_metric("InterruptSession", "complete")
                 record_metric("InterruptSession", dur_ms, is_error=False)
                 
-                return streaming_pb2.InterruptResponse(
+                return streaming_pb2.InterruptResponse(  # type: ignore
                     success=True,
                     message="Сессии успешно прерваны",
                     interrupted_sessions=interrupt_result.get('cleaned_sessions', [])
@@ -424,7 +502,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 record_decision_metric("InterruptSession", "fail")
                 record_metric("InterruptSession", dur_ms, is_error=True)
                 
-                return streaming_pb2.InterruptResponse(
+                return streaming_pb2.InterruptResponse(  # type: ignore
                     success=False,
                     message=interrupt_result.get('message', 'Не удалось прервать сессии'),
                     interrupted_sessions=[]
@@ -452,13 +530,13 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             record_decision_metric("InterruptSession", "error")
             record_metric("InterruptSession", dur_ms, is_error=True)
             
-            return streaming_pb2.InterruptResponse(
+            return streaming_pb2.InterruptResponse(  # type: ignore
                 success=False,
                 message=f"Ошибка обработки прерывания: {str(e)}",
                 interrupted_sessions=[]
             )
     
-    async def GenerateWelcomeAudio(self, request: streaming_pb2.WelcomeRequest, context) -> AsyncGenerator[streaming_pb2.WelcomeResponse, None]:
+    async def GenerateWelcomeAudio(self, request: streaming_pb2.WelcomeRequest, context) -> AsyncGenerator[streaming_pb2.WelcomeResponse, None]:  # type: ignore
         """
         Генерация приветственного аудио сообщения
         
@@ -472,6 +550,13 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
         start_time = time.time()
         session_id = request.session_id or "welcome"
         text = request.text or "Hi! Nexy is here. How can I help you?"
+        
+        # Получаем конфигурацию аудио для заполнения sample_rate, channels и dtype
+        unified_config = get_config()
+        audio_config = unified_config.audio if hasattr(unified_config, 'audio') else None
+        sample_rate = audio_config.sample_rate if audio_config else 48000
+        channels = audio_config.channels if audio_config else 1
+        dtype = audio_config.format if audio_config else 'int16'  # Используем dtype из конфига
         
         # Структурированное логирование начала обработки (PR-4)
         log_decision(
@@ -512,12 +597,14 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                         chunk_count += 1
                         logger.info(f"🎵 GenerateWelcomeAudio: sending audio_chunk #{chunk_count} bytes={len(audio_chunk)}")
                         
-                        # Формируем WelcomeResponse с audio_chunk
-                        yield streaming_pb2.WelcomeResponse(
-                            audio_chunk=streaming_pb2.AudioChunk(
+                        # Формируем WelcomeResponse с audio_chunk (PCM формат с sample_rate, channels и dtype из конфига)
+                        yield streaming_pb2.WelcomeResponse(  # type: ignore
+                            audio_chunk=streaming_pb2.AudioChunk(  # type: ignore
                                 audio_data=audio_chunk,
-                                dtype='int16',
-                                shape=[]
+                                dtype=dtype,
+                                shape=[],
+                                sample_rate=sample_rate,
+                                channels=channels
                             )
                         )
             else:
@@ -529,11 +616,13 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                     audio_chunk = process_result.get("audio") or process_result.get("audio_chunk")
                     if audio_chunk and len(audio_chunk) > 0:
                         chunk_count = 1
-                        yield streaming_pb2.WelcomeResponse(
-                            audio_chunk=streaming_pb2.AudioChunk(
+                        yield streaming_pb2.WelcomeResponse(  # type: ignore
+                            audio_chunk=streaming_pb2.AudioChunk(  # type: ignore
                                 audio_data=audio_chunk,
-                                dtype='int16',
-                                shape=[]
+                                dtype=dtype,
+                                shape=[],
+                                sample_rate=sample_rate,
+                                channels=channels
                             )
                         )
             
@@ -549,7 +638,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             record_decision_metric("GenerateWelcomeAudio", "complete")
             record_metric("GenerateWelcomeAudio", dur_ms, is_error=False)
             
-            yield streaming_pb2.WelcomeResponse(end_message="Welcome audio generation completed")
+            yield streaming_pb2.WelcomeResponse(end_message="Welcome audio generation completed")  # type: ignore
             
         except Exception as e:
             # Структурированное логирование ошибки (PR-4)
@@ -577,7 +666,7 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"Ошибка генерации приветственного аудио: {str(e)}")
             
-            yield streaming_pb2.WelcomeResponse(
+            yield streaming_pb2.WelcomeResponse(  # type: ignore
                 error_message=f"Ошибка генерации приветственного аудио: {str(e)}"
             )
 

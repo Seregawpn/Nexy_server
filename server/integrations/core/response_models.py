@@ -49,6 +49,19 @@ class OpenAppArgs(BaseModel):
         return v
 
 
+class CloseAppArgs(BaseModel):
+    """Arguments for close_app command"""
+    app_name: str = Field(..., min_length=1, description="macOS application name (without .app extension)")
+    
+    @field_validator('app_name')
+    @classmethod
+    def validate_app_name(cls, v: str) -> str:
+        """Remove .app extension if present"""
+        if v.endswith('.app'):
+            return v[:-4]
+        return v
+
+
 class ActionResponse(BaseModel):
     """
     Model for action responses (with command)
@@ -72,7 +85,7 @@ class ActionResponse(BaseModel):
     @classmethod
     def validate_command(cls, v: str) -> str:
         """Validate command type"""
-        allowed_commands = ['open_app']
+        allowed_commands = ['open_app', 'close_app']
         if v not in allowed_commands:
             raise ValueError(f"Unknown command: {v}. Allowed: {allowed_commands}")
         return v
@@ -86,6 +99,12 @@ class ActionResponse(BaseModel):
                 OpenAppArgs(**self.args)
             except Exception as e:
                 raise ValueError(f"Invalid args for open_app command: {e}")
+        elif self.command == 'close_app':
+            # Try to validate as CloseAppArgs
+            try:
+                CloseAppArgs(**self.args)
+            except Exception as e:
+                raise ValueError(f"Invalid args for close_app command: {e}")
         return self
 
 

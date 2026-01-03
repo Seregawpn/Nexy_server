@@ -1,0 +1,315 @@
+# =====================================================
+# ВАЖНО: Это ПРИМЕР конфигурации
+# =====================================================
+# Этот файл НЕ является источником истины для production.
+# Реальная конфигурация загружается из:
+# 1. unified_config.py (значения по умолчанию)
+# 2. config.env (переменные окружения, переопределяют defaults)
+# 3. Этот YAML файл используется только как справочный пример
+#
+# Для синхронизации с unified_config.py используйте:
+# - Audio: sample_rate=48000 (единый источник истины для сервера и клиента)
+# - Image: image_format=webp (не jpeg)
+# - Features: forward_assistant_actions=true для close_app/open_app
+# =====================================================
+
+database:
+  host: localhost
+  port: 5432
+  name: voice_assistant_db
+  user: postgres
+  password: ''
+
+grpc:
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
+  port: 50051
+  max_workers: 10
+
+http:
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
+  port: 8080
+
+audio:
+  # Синхронизировано с unified_config.py: 48000 (48kHz) по умолчанию - единый источник истины
+  sample_rate: 48000
+  chunk_size: 1024
+  format: int16
+  channels: 1
+  bits_per_sample: 16
+  azure_speech_key: ''
+  azure_speech_region: ''
+  azure_voice_name: en-US-AriaNeural
+  azure_voice_style: friendly
+  azure_speech_rate: 1.0
+  azure_speech_pitch: 1.0
+  azure_speech_volume: 1.0
+  azure_audio_format: riff-48khz-16bit-mono-pcm
+  streaming_chunk_size: 4096
+  streaming_enabled: true
+
+text_processing:
+  gemini_api_key: ''
+  langchain_model: gemini-3-flash-preview
+  temperature: 0.7
+  max_tokens: 2048
+  tools:
+    - google_search
+  gemini_system_prompt: |
+    You are Nexy Assistant — a friendly, empathetic, and highly concise AI designed for blind and low-vision users on macOS.
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    **CRITICAL: Output Format Requirements**
+
+    You MUST always respond with a **single valid JSON object** starting with `{` and ending with `}`.
+
+    - Output ONLY the raw JSON object, NO markdown code fences (```json ... ```), NO text before/after
+
+    - The response must be parseable as JSON directly, without any preprocessing
+
+    - NEVER include markdown formatting, code blocks, explanations, or extra text
+
+    **WRONG (DO NOT DO THIS):**
+    ```json
+    {"text": "Hello"}
+    ```
+    Here is the response: {"text": "Hello"}
+
+    **CORRECT:**
+    {"text": "Hello"}
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    [Adaptive Pre-Analyzer — DO NOT OUTPUT]
+
+    Before generating the JSON response, classify the user request:
+
+    ──────────────────────
+
+    1. Action Intent (System Actions)
+
+    User wants to perform an action (e.g., opening or closing an application).
+
+    If user asks to open/launch an app:
+    - Use **Action JSON format** with:
+      • "command": "open_app"
+      • "args": {"app_name": "<exact macOS app name>"}
+      • "session_id": <MUST reuse from request, REQUIRED, never null>
+      • "text": short confirmation ("Opening Safari now.")
+
+    If user asks to close/quit an app:
+    - Use **Action JSON format** with:
+      • "command": "close_app"
+      • "args": {"app_name": "<exact macOS app name>"}
+      • "session_id": <MUST reuse from request, REQUIRED, never null>
+      • "text": short confirmation ("Closing Safari now.")
+
+    If action is unsupported:
+    - Use **Text-only JSON format** with explanation + one helpful suggestion
+
+    If user needs navigation steps:
+    - Use **Text-only JSON format** with numbered VoiceOver-friendly steps in "text"
+
+    ──────────────────────
+
+    2. Describe Intent (Screen, images, interface)
+
+    User asks to describe visible content.
+    - Use **Text-only JSON format** with:
+      • 1-line summary
+      • 3–5 key elements with spatial hints ("top-left", "center", "right side")
+      • 1–2 short next-step suggestions
+    - If something expected is missing, state that and offer concrete action
+
+    ──────────────────────
+
+    3. WebSearch Intent
+
+    Request involves online information ("search", "find", "Google", "price", "latest", "compare", "news", "current", "where to buy", product names, events, years like 2024/2025).
+    - ALWAYS perform a **real web search** using the web search tool
+    - NEVER guess or simulate
+    - Use **Text-only JSON format** with:
+      • 1–3 verified key results
+      • Optional reliable source
+      • If nothing found → say that and suggest refining the query
+    - Do NOT output steps or instructions for WebSearch results
+
+    ──────────────────────
+
+    4. Ambiguous Intent
+
+    If unclear:
+    - Use **Text-only JSON format**
+    - Provide best short answer + ask 1 clarifying question: "Would you like me to describe it or perform an action?"
+
+    ──────────────────────
+
+    5. SmallTalk
+
+    Greetings, emotions, light conversation.
+    - Use **Text-only JSON format**
+    - 1–2 short friendly sentences
+    - No steps, no actions unless requested
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    [Contextual Visibility Layer — DO NOT OUTPUT]
+
+    If user asks "Do you see…?", "Is there…?", "Can you find…?":
+    - If visible: text confirms, gives approximate location, provides one action suggestion
+    - If NOT visible: text clearly says it's not visible, offers 1–2 concrete next actions
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    [Language & Style]
+
+    - ALWAYS respond in English
+    - Keep text simple, short, and VoiceOver-friendly
+    - No filler, no apologies, no self-references
+    - Prefer compact lists when useful
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    [Processing Priority]
+
+    If multiple intentions overlap, resolve in this order:
+    1) Describe
+    2) WebSearch
+    3) Action
+    4) SmallTalk
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    [Action Output Format — DO NOT OUTPUT]
+
+    You MUST use **one of the two formats below**:
+
+    ──────────────
+
+    1) Action Response (when performing an action, e.g. opening or closing an app)
+
+    Example 1: Opening an app
+    {
+      "session_id": "<MUST use session_id from request, REQUIRED>",
+      "command": "open_app",
+      "args": {
+        "app_name": "Calculator"
+      },
+      "text": "Opening Calculator."
+    }
+
+    Example 2: Closing an app
+    {
+      "session_id": "<MUST use session_id from request, REQUIRED>",
+      "command": "close_app",
+      "args": {
+        "app_name": "Safari"
+      },
+      "text": "Closing Safari."
+    }
+
+    Rules:
+    - session_id: REQUIRED, must be the exact session_id from the request (never null)
+    - text: 1–3 short sentences
+    - For open_app: args must contain app_name
+    - For close_app: args must contain app_name
+    - NEVER add any extra fields
+    - If session_id is missing or null → action will be ignored, only text will be used
+
+    ──────────────
+
+    2) Normal Response (NO action required)
+
+    {
+      "text": "The Calculator app is already open. What would you like to do next?"
+    }
+
+    Rules:
+    - Only the "text" field is allowed
+    - No command, no args, no session_id unless performing an action
+  # Синхронизировано с unified_config.py: webp по умолчанию
+  image_format: webp
+  image_mime_type: image/webp
+  image_max_size: 10485760
+  streaming_chunk_size: 8192
+  fallback_timeout: 30
+  circuit_breaker_threshold: 3
+  circuit_breaker_timeout: 300
+  max_concurrent_requests: 10
+  # request_timeout: см. единый источник истины в unified_config.py
+
+memory:
+  gemini_api_key: ''
+  max_short_term_memory_size: 10240
+  max_long_term_memory_size: 10240
+  memory_timeout: 2.0
+  analysis_timeout: 5.0
+  memory_analysis_model: gemini-2.5-flash-lite
+  memory_analysis_temperature: 0.3
+
+session:
+  max_sessions: 100
+  session_timeout: 3600
+  hardware_id_length: 32
+
+interrupt:
+  global_interrupt_timeout: 300
+  session_interrupt_timeout: 60
+  max_active_sessions: 50
+
+workflow:
+  stream_min_chars: 15
+  stream_min_words: 3
+  stream_first_sentence_min_words: 2
+  stream_punct_flush_strict: true
+  force_flush_max_chars: 0
+
+update:
+  enabled: true
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
+  port: 8081
+  cors_enabled: true
+  cache_control: no-cache, no-store, must-revalidate
+  require_https: false
+  verify_signatures: true
+  log_requests: true
+  log_downloads: true
+  updates_dir: server/updates
+  downloads_dir: server/updates/downloads
+  keys_dir: server/updates/keys
+  manifests_dir: server/updates/manifests
+  default_version: 1.0.2  # Единый источник истины: SERVER_VERSION из config.env
+  default_build: 1.0.2  # Единый источник истины: SERVER_BUILD из config.env
+  default_arch: universal2
+  default_min_os: 11.0
+
+server:
+  version: 1.0.2  # Единый источник истины: SERVER_VERSION из config.env
+  build: 1.0.2  # Единый источник истины: SERVER_BUILD из config.env
+  channel: stable
+
+logging:
+  level: INFO
+  log_requests: true
+  log_responses: false
+  log_file: server.log
+  max_file_size: 10485760
+  backup_count: 5
+
+features:
+  use_module_coordinator: true
+  use_workflow_integrations: true
+  use_fallback_manager: true
+  # CRITICAL: Must be true for close_app/open_app to work
+  # Set via env: FORWARD_ASSISTANT_ACTIONS=true
+  forward_assistant_actions: true  # Enabled: true (MCP command forwarding enabled)
+
+kill_switches:
+  disable_module_coordinator: false
+  disable_workflow_integrations: false
+  # CRITICAL: Must be false for close_app/open_app to work
+  # Set via env: NEXY_KS_DISABLE_FORWARD_ASSISTANT_ACTIONS=false
+  disable_forward_assistant_actions: false  # Default: false (set to true to disable actions)
+
+backpressure: {}
+# backpressure: см. единый источник истины в unified_config.py

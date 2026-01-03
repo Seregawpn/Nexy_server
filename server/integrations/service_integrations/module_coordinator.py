@@ -35,6 +35,10 @@ class ModuleCoordinator:
         self._modules: Dict[str, UniversalModuleInterface] = {}
         self._capabilities: Dict[str, str] = {}  # capability -> module_name
         self._initialized = False
+        # Опциональные модули - при ошибке инициализации не падаем
+        self._optional_modules = {'audio_generation', 'text_filtering', 'interrupt_handling'}
+        # Неудачно инициализированные модули (для отслеживания)
+        self._failed_modules: Dict[str, str] = {}  # capability -> error_message
         
         logger.info("ModuleCoordinator создан")
     
@@ -42,8 +46,9 @@ class ModuleCoordinator:
         self,
         capability: str,
         module: UniversalModuleInterface,
-        module_config: Dict[str, Any]
-    ) -> None:
+        module_config: Dict[str, Any],
+        optional: bool = False
+    ) -> bool:
         """
         Регистрация модуля по capability
         
@@ -51,15 +56,22 @@ class ModuleCoordinator:
             capability: Способность модуля (например, "text_processing", "audio_generation")
             module: Экземпляр модуля, реализующий UniversalModuleInterface
             module_config: Конфигурация модуля (из unified_config)
+            optional: Если True, ошибка инициализации не приведет к исключению
+        
+        Returns:
+            True если модуль успешно зарегистрирован, False если инициализация не удалась (для optional)
         
         Raises:
             ValueError: Если capability уже зарегистрирован
-            Exception: Если инициализация модуля не удалась
+            Exception: Если инициализация модуля не удалась и модуль не опциональный
         """
         if capability in self._capabilities:
             raise ValueError(f"Capability '{capability}' уже зарегистрирован")
         
-        logger.info(f"Регистрация модуля '{module.name}' с capability '{capability}'")
+        # Проверяем, является ли модуль опциональным
+        is_optional = optional or capability in self._optional_modules
+        
+        logger.info(f"Регистрация модуля '{module.name}' с capability '{capability}' (optional={is_optional})")
         
         try:
             # Инициализируем модуль
@@ -70,10 +82,24 @@ class ModuleCoordinator:
             self._capabilities[capability] = module.name
             
             logger.info(f"✅ Модуль '{module.name}' зарегистрирован с capability '{capability}'")
+            return True
             
         except Exception as e:
-            logger.error(f"❌ Ошибка регистрации модуля '{module.name}': {e}")
-            raise
+            error_msg = str(e)
+            logger.error(f"❌ Ошибка регистрации модуля '{module.name}': {error_msg}")
+            
+            if is_optional:
+                # Для опциональных модулей логируем предупреждение и продолжаем работу
+                logger.warning(
+                    f"⚠️ Модуль '{capability}' не инициализирован (опциональный), "
+                    f"сервер продолжит работу без него. Ошибка: {error_msg}",
+                    extra={'scope': 'module', 'decision': 'degrade', 'ctx': {'capability': capability, 'error': error_msg}}
+                )
+                self._failed_modules[capability] = error_msg
+                return False
+            else:
+                # Для критических модулей пробрасываем исключение
+                raise
     
     def get(self, capability: str) -> UniversalModuleInterface:
         """

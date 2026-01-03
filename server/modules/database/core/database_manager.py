@@ -25,7 +25,7 @@ class DatabaseManager:
             config: Конфигурация модуля
         """
         self.config = DatabaseConfig(config)
-        self.postgresql_provider = None
+        self.postgresql_provider: Optional[PostgreSQLProvider] = None
         self.is_initialized = False
         
         logger.info("DatabaseManager initialized")
@@ -75,6 +75,8 @@ class DatabaseManager:
     async def _initialize_provider(self):
         """Инициализация провайдера"""
         try:
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not created")
             if await self.postgresql_provider.initialize():
                 logger.info("PostgreSQL Provider initialized successfully")
             else:
@@ -115,7 +117,7 @@ class DatabaseManager:
     # УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ
     # =====================================================
     
-    async def create_user(self, hardware_id_hash: str, metadata: Dict[str, Any] = None) -> Optional[str]:
+    async def create_user(self, hardware_id_hash: str, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Создание нового пользователя
         
@@ -129,6 +131,9 @@ class DatabaseManager:
         try:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
+            
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
             
             return await self.postgresql_provider.create_user(hardware_id_hash, metadata)
             
@@ -150,6 +155,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.get_user_by_hardware_id(hardware_id_hash)
             
         except Exception as e:
@@ -160,7 +168,7 @@ class DatabaseManager:
     # УПРАВЛЕНИЕ СЕССИЯМИ
     # =====================================================
     
-    async def create_session(self, user_id: str, metadata: Dict[str, Any] = None) -> Optional[str]:
+    async def create_session(self, user_id: str, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Создание новой сессии
         
@@ -174,6 +182,9 @@ class DatabaseManager:
         try:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
+            
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
             
             return await self.postgresql_provider.create_session(user_id, metadata)
             
@@ -195,6 +206,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.end_session(session_id)
             
         except Exception as e:
@@ -205,7 +219,7 @@ class DatabaseManager:
     # УПРАВЛЕНИЕ КОМАНДАМИ
     # =====================================================
     
-    async def create_command(self, session_id: str, prompt: str, metadata: Dict[str, Any] = None, language: str = 'en') -> Optional[str]:
+    async def create_command(self, session_id: str, prompt: str, metadata: Optional[Dict[str, Any]] = None, language: str = 'en') -> Optional[str]:
         """
         Создание новой команды
         
@@ -222,6 +236,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.create_command(session_id, prompt, metadata, language)
             
         except Exception as e:
@@ -233,8 +250,8 @@ class DatabaseManager:
     # =====================================================
     
     async def create_llm_answer(self, command_id: str, prompt: str, response: str,
-                               model_info: Dict[str, Any] = None,
-                               performance_metrics: Dict[str, Any] = None) -> Optional[str]:
+                               model_info: Optional[Dict[str, Any]] = None,
+                               performance_metrics: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Создание ответа LLM
         
@@ -252,6 +269,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.create_llm_answer(
                 command_id, prompt, response, model_info, performance_metrics
             )
@@ -264,8 +284,8 @@ class DatabaseManager:
     # УПРАВЛЕНИЕ СКРИНШОТАМИ
     # =====================================================
     
-    async def create_screenshot(self, session_id: str, file_path: str = None, file_url: str = None,
-                               metadata: Dict[str, Any] = None) -> Optional[str]:
+    async def create_screenshot(self, session_id: str, file_path: Optional[str] = None, file_url: Optional[str] = None,
+                               metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Создание записи о скриншоте
         
@@ -281,6 +301,9 @@ class DatabaseManager:
         try:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
+            
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
             
             return await self.postgresql_provider.create_screenshot(session_id, file_path, file_url, metadata)
             
@@ -309,6 +332,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.create_performance_metric(session_id, metric_type, metric_value)
             
         except Exception as e:
@@ -333,6 +359,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.get_user_statistics(user_id)
             
         except Exception as e:
@@ -352,6 +381,9 @@ class DatabaseManager:
         try:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
+            
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
             
             return await self.postgresql_provider.get_session_commands(session_id)
             
@@ -377,6 +409,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.get_user_memory(hardware_id_hash)
             
         except Exception as e:
@@ -399,6 +434,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.update_user_memory(hardware_id_hash, short_memory, long_memory)
             
         except Exception as e:
@@ -419,6 +457,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.cleanup_expired_short_term_memory(hours)
             
         except Exception as e:
@@ -435,6 +476,9 @@ class DatabaseManager:
         try:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
+            
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
             
             return await self.postgresql_provider.get_memory_statistics()
             
@@ -456,6 +500,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             return await self.postgresql_provider.get_users_with_active_memory(limit)
             
         except Exception as e:
@@ -466,7 +513,7 @@ class DatabaseManager:
     # УНИВЕРСАЛЬНЫЕ МЕТОДЫ
     # =====================================================
     
-    async def execute_query(self, operation: str, table: str, data: Dict[str, Any] = None, filters: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def execute_query(self, operation: str, table: str, data: Optional[Dict[str, Any]] = None, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Универсальное выполнение запроса к базе данных
         
@@ -483,6 +530,9 @@ class DatabaseManager:
             if not self.is_initialized:
                 raise Exception("DatabaseManager not initialized")
             
+            if self.postgresql_provider is None:
+                raise Exception("PostgreSQL Provider not initialized")
+            
             input_data = {
                 'operation': operation,
                 'table': table,
@@ -490,10 +540,18 @@ class DatabaseManager:
                 'filters': filters or {}
             }
             
-            result = None
+            result: Optional[Dict[str, Any]] = None
             async for res in self.postgresql_provider.process(input_data):
                 result = res
                 break
+            
+            if result is None:
+                return {
+                    'success': False,
+                    'error': 'No result returned',
+                    'operation': operation,
+                    'table': table
+                }
             
             return result
             

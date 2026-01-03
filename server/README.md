@@ -119,7 +119,7 @@ Docs/
 
 ### Основные файлы
 
-- `config/unified_config_example.yaml` — пример конфигурации
+- `config/unified_config.yaml` — конфигурация
 - `config.env.example` — пример переменных окружения
 - `config/unified_config.py` — загрузчик конфигурации
 
@@ -135,7 +135,7 @@ Docs/
 backpressure:
   max_concurrent_streams: 50      # Максимум одновременно открытых StreamAudio
   idle_timeout_seconds: 300        # Таймаут для неактивных стримов (5 минут)
-  max_message_rate_per_second: 10 # Максимум сообщений в секунду на стрим
+  max_message_rate_per_second: 20 # Максимум сообщений в секунду на стрим (увеличено для аудио)
   grace_period_seconds: 30         # Период ожидания перед принудительным закрытием
 ```
 

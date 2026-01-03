@@ -81,9 +81,9 @@ NEXY_KS_DISABLE_FORWARD_ASSISTANT_ACTIONS=true  # Kill-switch
 
 ## Документация
 
-- **План реализации:** `Docs/MCP_COMMAND_INTEGRATION_PLAN.md`
 - **Архитектура:** `Docs/ARCHITECTURE_OVERVIEW.md` → раздел "Ответы ассистента и MCP команды"
 - **Правила разработки:** `Docs/SERVER_DEVELOPMENT_RULES.md` → раздел "Ответы ассистента и MCP команды"
+- **Исторический план:** `Docs/MCP_COMMAND_INTEGRATION_PLAN.md` (не канон, для справки)
 
 ## Тесты
 
@@ -133,6 +133,6 @@ python3 -m pytest server/tests/test_grpc_mcp_integration.py -v
 
 ## Контакты
 
-- **Документация:** `Docs/MCP_COMMAND_INTEGRATION_PLAN.md`
-- **Вопросы:** См. раздел "Следующие шаги" в плане реализации
+- **Канон:** `Docs/MCP_INTEGRATION_SUMMARY.md` (этот документ)
+- **Исторический план:** `Docs/MCP_COMMAND_INTEGRATION_PLAN.md` (для справки)
 

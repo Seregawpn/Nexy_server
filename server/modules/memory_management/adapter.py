@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import Dict, Any, AsyncIterator, Union
+from typing import Dict, Any, AsyncIterator, Union, Optional
 
 from integrations.core.universal_module_interface import UniversalModuleInterface
 from integrations.core.module_status import ModuleStatus, ModuleState
@@ -24,9 +24,9 @@ class MemoryManagementAdapter(UniversalModuleInterface):
     def __init__(self):
         """Инициализация адаптера"""
         super().__init__(name="memory_management")
-        self._manager: MemoryManager = None
+        self._manager: Optional[MemoryManager] = None
         self._config: Dict[str, Any] = {}
-        self._status = ModuleStatus(state=ModuleState.INIT)
+        self._status = ModuleStatus(ModuleState.INIT)
         self._db_manager = None  # Для установки после инициализации database
     
     async def initialize(self, config: dict) -> None:
@@ -40,7 +40,8 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             Exception: Если инициализация не удалась
         """
         try:
-            self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
+            self._status = ModuleStatus(ModuleState.INIT)
+            self._status.health = "degraded"
             logger.info(f"Инициализация адаптера {self.name}...")
             
             self._config = config
@@ -50,17 +51,16 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             
             # Инициализируем менеджер
             if await self._manager.initialize():
-                self._status = ModuleStatus(state=ModuleState.READY, health="ok")
+                self._status = ModuleStatus(ModuleState.READY)
+                self._status.health = "ok"
                 logger.info(f"✅ Адаптер {self.name} инициализирован")
             else:
                 raise Exception("Не удалось инициализировать MemoryManager")
                 
         except Exception as e:
-            self._status = ModuleStatus(
-                state=ModuleState.ERROR,
-                health="down",
-                last_error=str(e)
-            )
+            self._status = ModuleStatus(ModuleState.ERROR)
+            self._status.health = "down"
+            self._status.last_error = str(e)
             logger.error(f"❌ Ошибка инициализации адаптера {self.name}: {e}")
             raise
     
@@ -91,7 +91,11 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             Результат обработки
         """
         try:
-            self._status = ModuleStatus(state=ModuleState.PROCESSING, health="ok")
+            if self._manager is None:
+                raise Exception("MemoryManager not initialized")
+            
+            self._status = ModuleStatus(ModuleState.PROCESSING)
+            self._status.health = "ok"
             
             action = request.get("action", "get_memory")
             session_id = request.get("session_id")
@@ -100,17 +104,21 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             # Аппаратный идентификатор считается источником правды, но для
             # обратной совместимости допускаем session_id.
             subject_id = hardware_id or session_id
-            if action not in ("update_memory", "analyze") and not subject_id:
+            if action not in ("update_background", "analyze") and not subject_id:
                 raise ValueError("hardware_id или session_id должны быть указаны")
 
             result = {}
             
             if action == "get_memory":
                 # Получаем память для сессии
+                if subject_id is None:
+                    raise ValueError("hardware_id или session_id должны быть указаны")
                 memory = await self._manager.get_memory_context(subject_id)
                 result = {"memory": memory}
             elif action == "get_context":
                 # Новый унифицированный action для получения памяти
+                if subject_id is None:
+                    raise ValueError("hardware_id или session_id должны быть указаны")
                 memory = await self._manager.get_memory_context(subject_id)
                 result = {"memory": memory}
             elif action == "update_background":
@@ -121,36 +129,36 @@ class MemoryManagementAdapter(UniversalModuleInterface):
                 await self._manager.update_memory_background(hardware_id, prompt, response)
                 result = {"success": True}
             elif action == "update_memory":
-                # Обновляем память
+                # Обновляем память через update_memory_background
                 if not session_id:
                     raise ValueError("session_id не указан")
                 prompt = request.get("prompt", "")
                 response = request.get("response", "")
-                await self._manager.update_memory(session_id, prompt, response)
+                # Используем session_id как hardware_id для обратной совместимости
+                await self._manager.update_memory_background(session_id, prompt, response)
                 result = {"success": True}
             elif action == "analyze":
                 # Анализируем память
                 prompt = request.get("prompt", "")
                 response = request.get("response", "")
-                analysis = await self._manager.analyze_memory(prompt, response)
-                result = {"analysis": analysis}
+                short_memory, long_memory = await self._manager.analyze_conversation(prompt, response)
+                result = {"analysis": {"short_memory": short_memory, "long_memory": long_memory}}
             else:
                 raise ValueError(f"Неизвестное действие: {action}")
             
             return result
                 
         except Exception as e:
-            self._status = ModuleStatus(
-                state=ModuleState.ERROR,
-                health="down",
-                last_error=str(e)
-            )
+            self._status = ModuleStatus(ModuleState.ERROR)
+            self._status.health = "down"
+            self._status.last_error = str(e)
             logger.error(f"❌ Ошибка обработки в адаптере {self.name}: {e}")
             raise
         finally:
             # Возвращаем статус в READY после обработки
             if self._status.state == ModuleState.PROCESSING:
-                self._status = ModuleStatus(state=ModuleState.READY, health="ok")
+                self._status = ModuleStatus(ModuleState.READY)
+                self._status.health = "ok"
     
     async def cleanup(self) -> None:
         """
@@ -159,22 +167,19 @@ class MemoryManagementAdapter(UniversalModuleInterface):
         try:
             logger.info(f"Очистка адаптера {self.name}...")
             
-            if self._manager and hasattr(self._manager, 'cleanup'):
-                await self._manager.cleanup()
-            
+            # MemoryManager не имеет метода cleanup, просто очищаем ссылку
             self._manager = None
             self._config = {}
-            self._status = ModuleStatus(state=ModuleState.STOPPED, health="down")
+            self._status = ModuleStatus(ModuleState.STOPPED)
+            self._status.health = "down"
             
             logger.info(f"✅ Адаптер {self.name} очищен")
             
         except Exception as e:
             logger.error(f"❌ Ошибка очистки адаптера {self.name}: {e}")
-            self._status = ModuleStatus(
-                state=ModuleState.ERROR,
-                health="down",
-                last_error=str(e)
-            )
+            self._status = ModuleStatus(ModuleState.ERROR)
+            self._status.health = "down"
+            self._status.last_error = str(e)
     
     def status(self) -> ModuleStatus:
         """
@@ -185,11 +190,11 @@ class MemoryManagementAdapter(UniversalModuleInterface):
         """
         return self._status
     
-    def get_manager(self) -> MemoryManager:
+    def get_manager(self) -> Optional[MemoryManager]:
         """
         Получение внутреннего менеджера (для совместимости)
         
         Returns:
-            Экземпляр MemoryManager
+            Экземпляр MemoryManager или None
         """
         return self._manager

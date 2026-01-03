@@ -5,8 +5,8 @@
 
 import os
 import base64
-from nacl.signing import SigningKey
-from nacl.encoding import Base64Encoder
+from nacl.signing import SigningKey  # type: ignore[reportMissingImports]
+from nacl.encoding import Base64Encoder  # type: ignore[reportMissingImports]
 
 def generate_ed25519_keys():
     """Генерация пары Ed25519 ключей"""

@@ -26,10 +26,12 @@ class MemoryWorkflowIntegration:
         self.memory_module = memory_manager
         self.is_initialized = False
         self.memory_cache = {}  # Кэш для быстрого доступа
-        self.cache_ttl = 300  # 5 минут TTL для кэша
-        self.memory_fetch_timeout = 0.3  # Максимальное время ожидания памяти
+        self.cache_ttl = 600  # 10 минут TTL для кэша (увеличено с 5 минут)
+        self.cache_refresh_before_expiry = 30  # Обновлять кэш за 30 сек до истечения
+        self.memory_fetch_timeout = 0.1  # Максимальное время ожидания памяти (уменьшено с 0.3)
         self.memory_update_timeout = 1.0  # Таймаут записи памяти
         self._memory_tasks = {}
+        self._refresh_tasks = {}  # Задачи предобновления кэша
         
         logger.info("MemoryWorkflowIntegration создан")
     
@@ -189,6 +191,11 @@ class MemoryWorkflowIntegration:
                 logger.warning("⚠️ Недостаточно данных для обновления памяти: hardware_id/prompt/response")
                 return
 
+            # После проверки all() мы знаем, что hardware_id не None
+            assert hardware_id is not None, "hardware_id should not be None after all() check"
+            assert prompt is not None, "prompt should not be None after all() check"
+            assert response is not None, "response should not be None after all() check"
+
             await asyncio.wait_for(
                 self._call_memory_module({
                     "action": "update_background",
@@ -198,6 +205,10 @@ class MemoryWorkflowIntegration:
                 }),
                 timeout=self.memory_update_timeout
             )
+            
+            # После сохранения обновляем кэш памяти
+            logger.debug("Обновление кэша памяти после сохранения")
+            await self._fetch_and_cache_memory(hardware_id)
             
             logger.debug("✅ Фоновое сохранение в память завершено")
             
@@ -351,10 +362,82 @@ class MemoryWorkflowIntegration:
                 'timestamp': datetime.now()
             }
             
+            # Запускаем задачу предобновления кэша за 30 сек до истечения
+            self._schedule_cache_refresh(hardware_id)
+            
             logger.debug(f"Контекст памяти для {hardware_id} закэширован")
             
         except Exception as e:
             logger.warning(f"⚠️ Ошибка кэширования памяти: {e}")
+    
+    def _schedule_cache_refresh(self, hardware_id: str):
+        """
+        Планирование предобновления кэша за 30 сек до истечения
+        
+        Args:
+            hardware_id: Идентификатор оборудования
+        """
+        try:
+            # Отменяем предыдущую задачу, если есть
+            if hardware_id in self._refresh_tasks:
+                task = self._refresh_tasks[hardware_id]
+                if not task.done():
+                    task.cancel()
+            
+            # Вычисляем время до обновления
+            refresh_delay = self.cache_ttl - self.cache_refresh_before_expiry
+            
+            # Создаем задачу предобновления
+            async def refresh_cache():
+                await asyncio.sleep(refresh_delay)
+                logger.debug(f"Предобновление кэша памяти для {hardware_id}")
+                await self._fetch_and_cache_memory(hardware_id)
+                self._refresh_tasks.pop(hardware_id, None)
+            
+            task = asyncio.create_task(refresh_cache())
+            self._refresh_tasks[hardware_id] = task
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка планирования обновления кэша: {e}")
+    
+    async def prefetch_memory(self, hardware_id: str) -> bool:
+        """
+        Предзагрузка памяти для hardware_id (для использования при создании сессии)
+        
+        Args:
+            hardware_id: Идентификатор оборудования
+            
+        Returns:
+            True если предзагрузка запущена, False при ошибке
+        """
+        if not self.is_initialized:
+            logger.debug("MemoryWorkflowIntegration не инициализирован, пропускаем предзагрузку")
+            return False
+        
+        try:
+            # Проверяем, есть ли уже в кэше
+            cached_context = self._get_cached_memory(hardware_id)
+            if cached_context:
+                logger.debug(f"Память для {hardware_id} уже в кэше, предзагрузка не нужна")
+                return True
+            
+            # Проверяем, не выполняется ли уже запрос
+            existing_task = self._memory_tasks.get(hardware_id)
+            if existing_task and not existing_task.done():
+                logger.debug(f"Запрос памяти для {hardware_id} уже выполняется")
+                return True
+            
+            # Запускаем предзагрузку в фоне
+            logger.debug(f"Запуск предзагрузки памяти для {hardware_id}")
+            task = asyncio.create_task(self._fetch_and_cache_memory(hardware_id))
+            self._memory_tasks[hardware_id] = task
+            task.add_done_callback(lambda _: self._memory_tasks.pop(hardware_id, None))
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка предзагрузки памяти для {hardware_id}: {e}")
+            return False
     
     async def cleanup(self):
         """Очистка ресурсов"""

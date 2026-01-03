@@ -2,10 +2,10 @@
 Text Processing Providers - Провайдеры для обработки текста
 
 Содержит:
-- GeminiLiveProvider - основной провайдер для Live API
-- Поддержка стриминга, JPEG изображений и Google Search
+- LangChainGeminiProvider - провайдер для обработки текста через LangChain
+- Поддержка стриминга, изображений (WebP/JPEG) и Google Search
 """
 
-from .gemini_live_provider import GeminiLiveProvider
+from .langchain_gemini_provider import LangChainGeminiProvider
 
-__all__ = ['GeminiLiveProvider']
+__all__ = ['LangChainGeminiProvider']

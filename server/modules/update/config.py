@@ -114,7 +114,9 @@ class UpdateConfig:
             if not (1 <= self.port <= 65535):
                 return False
             
-            # Проверяем директории
+            # Проверяем директории (только если путь задан)
+            if self.updates_dir is None:
+                return False
             if not Path(self.updates_dir).exists():
                 return False
             

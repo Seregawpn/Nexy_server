@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from aiohttp import web, web_request, web_response
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,7 @@ class UpdateServerProvider:
                 content_type='text/plain'
             )
     
-    async def download_handler(self, request: web_request.Request) -> web_response.Response:
+    async def download_handler(self, request: web_request.Request) -> Union[web_response.Response, web.FileResponse]:
         """Обработчик загрузки артефактов"""
         try:
             filename = request.match_info['filename']

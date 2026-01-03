@@ -370,7 +370,7 @@ class GrpcServiceManager(UniversalModuleInterface):
             Словарь со статусом
         """
         status_obj = self.status()
-        status_dict = status_obj.to_dict() if hasattr(status_obj, 'to_dict') else {
+        status_dict: Dict[str, Any] = status_obj.to_dict() if hasattr(status_obj, 'to_dict') else {
             'state': status_obj.state.value if hasattr(status_obj.state, 'value') else str(status_obj.state),
             'health': status_obj.health if hasattr(status_obj, 'health') else 'unknown'
         }

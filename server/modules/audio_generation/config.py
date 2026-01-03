@@ -22,16 +22,14 @@ class AudioGenerationConfig:
         self.config = config or {}
         
         # Используем централизованные настройки с возможностью переопределения
-        self.azure_speech_key = self.config.get('azure_speech_key', unified_config.audio.azure_speech_key)
-        self.azure_speech_region = self.config.get('azure_speech_region', unified_config.audio.azure_speech_region)
-        self.azure_voice_name = self.config.get('azure_voice_name', unified_config.audio.azure_voice_name)
-        self.azure_voice_style = self.config.get('azure_voice_style', unified_config.audio.azure_voice_style)
-        self.azure_speech_rate = self.config.get('azure_speech_rate', unified_config.audio.azure_speech_rate)
-        self.azure_speech_pitch = self.config.get('azure_speech_pitch', unified_config.audio.azure_speech_pitch)
-        self.azure_speech_volume = self.config.get('azure_speech_volume', unified_config.audio.azure_speech_volume)
+        # Edge TTS настройки
+        self.edge_tts_voice_name = self.config.get('edge_tts_voice_name', unified_config.audio.edge_tts_voice_name)
+        self.edge_tts_rate = self.config.get('edge_tts_rate', unified_config.audio.edge_tts_rate)
+        self.edge_tts_volume = self.config.get('edge_tts_volume', unified_config.audio.edge_tts_volume)
+        self.edge_tts_pitch = self.config.get('edge_tts_pitch', unified_config.audio.edge_tts_pitch)
         
         # Настройки аудио формата
-        self.audio_format = self.config.get('audio_format', unified_config.audio.azure_audio_format)
+        self.audio_format = self.config.get('audio_format', unified_config.audio.audio_format)
         self.sample_rate = self.config.get('sample_rate', unified_config.audio.sample_rate)
         self.channels = self.config.get('channels', unified_config.audio.channels)
         self.bits_per_sample = self.config.get('bits_per_sample', unified_config.audio.bits_per_sample)
@@ -45,32 +43,34 @@ class AudioGenerationConfig:
         self.streaming_chunk_size = self.config.get('streaming_chunk_size', unified_config.audio.streaming_chunk_size)
         self.streaming_enabled = self.config.get('streaming_enabled', unified_config.audio.streaming_enabled)
         
+        # Настройки конвертации
+        self.convert_to_pcm = self.config.get('convert_to_pcm', True)
+        
         # Настройки логирования
         self.log_level = self.config.get('log_level', unified_config.logging.level)
         self.log_requests = self.config.get('log_requests', unified_config.logging.log_requests)
         self.log_responses = self.config.get('log_responses', unified_config.logging.log_responses)
-        
-    def get_azure_config(self) -> Dict[str, Any]:
+    
+    def get_edge_tts_config(self) -> Dict[str, Any]:
         """
-        Получение конфигурации Azure TTS
+        Получение конфигурации Edge TTS
         
         Returns:
-            Словарь с конфигурацией Azure
+            Словарь с конфигурацией Edge TTS
         """
         return {
-            'speech_key': self.azure_speech_key,
-            'speech_region': self.azure_speech_region,
-            'voice_name': self.azure_voice_name,
-            'voice_style': self.azure_voice_style,
-            'speech_rate': self.azure_speech_rate,
-            'speech_pitch': self.azure_speech_pitch,
-            'speech_volume': self.azure_speech_volume,
+            'voice_name': self.edge_tts_voice_name,
+            'rate': self.edge_tts_rate,
+            'volume': self.edge_tts_volume,
+            'pitch': self.edge_tts_pitch,
             'audio_format': self.audio_format,
             'sample_rate': self.sample_rate,
             'channels': self.channels,
             'bits_per_sample': self.bits_per_sample,
+            'streaming_chunk_size': self.streaming_chunk_size,
             'timeout': self.request_timeout,
-            'connection_timeout': self.connection_timeout
+            'connection_timeout': self.connection_timeout,
+            'convert_to_pcm': self.convert_to_pcm
         }
     
     def get_streaming_config(self) -> Dict[str, Any]:
@@ -95,31 +95,11 @@ class AudioGenerationConfig:
         Returns:
             True если конфигурация валидна, False иначе
         """
-        # Проверяем наличие Azure ключей
-        if not self.azure_speech_key:
-            print("⚠️ AZURE_SPEECH_KEY не установлен")
-            return False
-            
-        if not self.azure_speech_region:
-            print("⚠️ AZURE_SPEECH_REGION не установлен")
-            return False
-            
-        # Проверяем корректность параметров речи
-        if not (0.5 <= self.azure_speech_rate <= 2.0):
-            print("❌ azure_speech_rate должен быть между 0.5 и 2.0")
-            return False
-            
-        if not (0.5 <= self.azure_speech_pitch <= 2.0):
-            print("❌ azure_speech_pitch должен быть между 0.5 и 2.0")
-            return False
-            
-        if not (0.0 <= self.azure_speech_volume <= 1.0):
-            print("❌ azure_speech_volume должен быть между 0.0 и 1.0")
-            return False
-            
+        # Edge TTS не требует ключей, только проверяем параметры
+        
         # Проверяем корректность аудио параметров
-        if self.sample_rate not in [8000, 16000, 22050, 44100, 48000]:
-            print("❌ sample_rate должен быть одним из: 8000, 16000, 22050, 44100, 48000")
+        if self.sample_rate not in [8000, 16000, 22050, 24000, 44100, 48000]:
+            print("❌ sample_rate должен быть одним из: 8000, 16000, 22050, 24000, 44100, 48000")
             return False
             
         if self.channels not in [1, 2]:
@@ -137,7 +117,17 @@ class AudioGenerationConfig:
         if self.streaming_chunk_size <= 0:
             print("❌ streaming_chunk_size должен быть положительным")
             return False
-            
+        
+        # Проверяем формат rate/volume/pitch (Edge TTS использует строки типа "+0%", "-20Hz")
+        if not isinstance(self.edge_tts_rate, str):
+            print("⚠️ edge_tts_rate должен быть строкой (например, '+0%', '-20%')")
+        
+        if not isinstance(self.edge_tts_volume, str):
+            print("⚠️ edge_tts_volume должен быть строкой (например, '+0%', '-20%')")
+        
+        if not isinstance(self.edge_tts_pitch, str):
+            print("⚠️ edge_tts_pitch должен быть строкой (например, '+0Hz', '-20Hz')")
+        
         return True
     
     def get_status(self) -> Dict[str, Any]:
@@ -148,13 +138,10 @@ class AudioGenerationConfig:
             Словарь со статусом конфигурации
         """
         return {
-            'azure_speech_key_set': bool(self.azure_speech_key),
-            'azure_speech_region_set': bool(self.azure_speech_region),
-            'azure_voice_name': self.azure_voice_name,
-            'azure_voice_style': self.azure_voice_style,
-            'azure_speech_rate': self.azure_speech_rate,
-            'azure_speech_pitch': self.azure_speech_pitch,
-            'azure_speech_volume': self.azure_speech_volume,
+            'edge_tts_voice_name': self.edge_tts_voice_name,
+            'edge_tts_rate': self.edge_tts_rate,
+            'edge_tts_volume': self.edge_tts_volume,
+            'edge_tts_pitch': self.edge_tts_pitch,
             'audio_format': self.audio_format,
             'sample_rate': self.sample_rate,
             'channels': self.channels,
@@ -164,6 +151,7 @@ class AudioGenerationConfig:
             'connection_timeout': self.connection_timeout,
             'streaming_chunk_size': self.streaming_chunk_size,
             'streaming_enabled': self.streaming_enabled,
+            'convert_to_pcm': self.convert_to_pcm,
             'log_level': self.log_level,
             'log_requests': self.log_requests,
             'log_responses': self.log_responses
@@ -187,33 +175,16 @@ class AudioGenerationConfig:
                 'en-US-NancyNeural',
                 'en-US-TonyNeural',
                 'en-US-MichelleNeural',
-                'en-US-ChristopherNeural'
+                'en-US-ChristopherNeural',
+                'ru-RU-SvetlanaNeural',
+                'ru-RU-DmitryNeural',
+                'ru-RU-EkaterinaNeural'
             ],
-            'voice_styles': [
-                'friendly',
-                'cheerful',
-                'sad',
-                'angry',
-                'fearful',
-                'disgruntled',
-                'serious',
-                'affectionate',
-                'gentle',
-                'calm'
-            ],
+            'rate_options': ['+0%', '-20%', '-50%', '+20%', '+50%'],
+            'volume_options': ['+0%', '-20%', '-50%', '+20%', '+50%'],
+            'pitch_options': ['+0Hz', '-20Hz', '-50Hz', '+20Hz', '+50Hz'],
             'audio_formats': [
-                'riff-16khz-16bit-mono-pcm',
-                'riff-24khz-16bit-mono-pcm',
-                'riff-48khz-16bit-mono-pcm',
-                'riff-22050hz-16bit-mono-pcm',
-                'riff-44100hz-16bit-mono-pcm',
-                'audio-16khz-32kbitrate-mono-mp3',
-                'audio-16khz-64kbitrate-mono-mp3',
-                'audio-16khz-128kbitrate-mono-mp3',
-                'audio-24khz-48kbitrate-mono-mp3',
-                'audio-24khz-96kbitrate-mono-mp3',
-                'audio-24khz-160kbitrate-mono-mp3',
-                'audio-48khz-96kbitrate-mono-mp3',
-                'audio-48khz-192kbitrate-mono-mp3'
+                'pcm',
+                'mp3'
             ]
         }

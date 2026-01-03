@@ -128,7 +128,7 @@ class TextFilterManager(UniversalModuleInterface):
             logger.error(f"Error processing text filtering request: {e}")
             return {"success": False, "error": str(e)}
     
-    async def filter_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def filter_text(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Полная фильтрация текста
         
@@ -235,7 +235,7 @@ class TextFilterManager(UniversalModuleInterface):
             self.total_errors += 1
             return {"success": False, "error": str(e)}
     
-    async def clean_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def clean_text(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Очистка текста
         
@@ -261,7 +261,7 @@ class TextFilterManager(UniversalModuleInterface):
             logger.error(f"Error cleaning text: {e}")
             return {"success": False, "error": str(e)}
     
-    async def split_sentences(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def split_sentences(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Разбиение текста на предложения с учётом технических фраз
         
@@ -312,7 +312,7 @@ class TextFilterManager(UniversalModuleInterface):
             logger.error(f"Error counting words: {e}")
             return len([w for w in text.split() if w.strip()])
     
-    async def validate_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def validate_text(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Валидация текста
         
@@ -363,7 +363,7 @@ class TextFilterManager(UniversalModuleInterface):
             logger.error(f"Error validating text: {e}")
             return {"success": False, "error": str(e)}
     
-    async def preprocess_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def preprocess_text(self, text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Предобработка текста
         
