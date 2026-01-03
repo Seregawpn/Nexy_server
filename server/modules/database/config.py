@@ -18,12 +18,13 @@ class DatabaseConfig:
         self.config = config or {}
         
         # Настройки подключения к БД
-        self.connection_string = self.config.get('connection_string', 'postgresql://localhost/voice_assistant_db')
-        self.host = self.config.get('host', 'localhost')
-        self.port = self.config.get('port', 5432)
-        self.database = self.config.get('database', 'voice_assistant_db')
-        self.username = self.config.get('username', 'postgres')
-        self.password = self.config.get('password', '')
+        # Сначала проверяем переменные окружения, затем config, затем дефолты
+        self.connection_string = self.config.get('connection_string', os.getenv('DATABASE_URL', 'postgresql://localhost/voice_assistant_db'))
+        self.host = self.config.get('host', os.getenv('DB_HOST', 'localhost'))
+        self.port = self.config.get('port', int(os.getenv('DB_PORT', '5432')))
+        self.database = self.config.get('database', os.getenv('DB_NAME', 'voice_assistant_db'))
+        self.username = self.config.get('username', os.getenv('DB_USER', 'postgres'))
+        self.password = self.config.get('password', os.getenv('DB_PASSWORD', ''))
         
         # Настройки пула соединений
         self.min_connections = self.config.get('min_connections', 1)
