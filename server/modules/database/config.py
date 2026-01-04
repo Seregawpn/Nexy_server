@@ -202,6 +202,38 @@ class DatabaseConfig:
         Returns:
             True если конфигурация валидна, False иначе
         """
+        # Проверяем наличие плейсхолдеров (незаполненные значения)
+        placeholder_values = {
+            'YOUR_DB_USER_HERE',
+            'YOUR_DB_PASSWORD_HERE',
+            'YOUR_DB_NAME_HERE',
+            'YOUR_DB_HOST_HERE',
+            'YOUR_DATABASE_USER_HERE',
+            'YOUR_DATABASE_PASSWORD_HERE',
+            'YOUR_DATABASE_NAME_HERE',
+            'YOUR_DATABASE_HOST_HERE'
+        }
+        
+        if self.username in placeholder_values:
+            print(f"❌ DB_USER содержит плейсхолдер: {self.username}")
+            print("   Пожалуйста, укажите реальное имя пользователя БД в config.env")
+            return False
+            
+        if self.password in placeholder_values:
+            print(f"❌ DB_PASSWORD содержит плейсхолдер: {self.password}")
+            print("   Пожалуйста, укажите реальный пароль БД в config.env")
+            return False
+            
+        if self.database in placeholder_values:
+            print(f"❌ DB_NAME содержит плейсхолдер: {self.database}")
+            print("   Пожалуйста, укажите реальное имя БД в config.env")
+            return False
+            
+        if self.host in placeholder_values:
+            print(f"❌ DB_HOST содержит плейсхолдер: {self.host}")
+            print("   Пожалуйста, укажите реальный хост БД в config.env")
+            return False
+        
         # Проверяем корректность параметров подключения
         if not self.host:
             print("❌ host не может быть пустым")

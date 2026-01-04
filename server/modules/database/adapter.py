@@ -52,7 +52,12 @@ class DatabaseAdapter(UniversalModuleInterface):
                 self._status = ModuleStatus(state=ModuleState.READY, health="ok")
                 logger.info(f"✅ Адаптер {self.name} инициализирован")
             else:
-                raise Exception("Не удалось инициализировать DatabaseManager")
+                error_msg = (
+                    "Не удалось инициализировать DatabaseManager. "
+                    "Проверьте конфигурацию БД в config.env. "
+                    "Сервер продолжит работу без функциональности БД."
+                )
+                raise Exception(error_msg)
                 
         except Exception as e:
             self._status = ModuleStatus(
@@ -60,7 +65,12 @@ class DatabaseAdapter(UniversalModuleInterface):
                 health="down",
                 last_error=str(e)
             )
-            logger.error(f"❌ Ошибка инициализации адаптера {self.name}: {e}")
+            error_msg = (
+                f"❌ Ошибка инициализации адаптера {self.name}: {e}. "
+                "Это некритическая ошибка - сервер продолжит работу без модуля database. "
+                "Для исправления проверьте конфигурацию БД в config.env."
+            )
+            logger.error(error_msg)
             raise
     
     async def process(self, request: Dict[str, Any]) -> Union[Dict[str, Any], AsyncIterator[Dict[str, Any]]]:

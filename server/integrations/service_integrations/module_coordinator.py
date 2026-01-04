@@ -36,7 +36,9 @@ class ModuleCoordinator:
         self._capabilities: Dict[str, str] = {}  # capability -> module_name
         self._initialized = False
         # Опциональные модули - при ошибке инициализации не падаем
-        self._optional_modules = {'audio_generation', 'text_filtering', 'interrupt_handling'}
+        # database добавлен как опциональный, чтобы сервер мог запуститься без БД
+        # (например, если конфигурация БД не заполнена или БД недоступна)
+        self._optional_modules = {'audio_generation', 'text_filtering', 'interrupt_handling', 'database'}
         # Неудачно инициализированные модули (для отслеживания)
         self._failed_modules: Dict[str, str] = {}  # capability -> error_message
         

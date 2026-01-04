@@ -42,7 +42,13 @@ class DatabaseManager:
             
             # Валидируем конфигурацию
             if not self.config.validate():
-                logger.error("Database configuration validation failed")
+                error_msg = (
+                    "Database configuration validation failed. "
+                    "Please check your config.env file and ensure all database parameters are correctly set. "
+                    f"Current config: host={self.config.host}, port={self.config.port}, "
+                    f"database={self.config.database}, username={self.config.username}"
+                )
+                logger.error(error_msg)
                 return False
             
             # Создаем провайдер
@@ -56,7 +62,15 @@ class DatabaseManager:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to initialize DatabaseManager: {e}")
+            error_msg = (
+                f"Failed to initialize DatabaseManager: {e}. "
+                "This is a non-critical error - the server will continue without database functionality. "
+                "To fix this issue, please: "
+                "1. Check that PostgreSQL is running and accessible "
+                f"2. Verify database credentials in config.env "
+                f"3. Ensure the database user '{self.config.username}' exists and has proper permissions"
+            )
+            logger.error(error_msg)
             return False
     
     async def _create_provider(self):

@@ -20,8 +20,12 @@ from modules.grpc_service.core.backpressure import get_backpressure_manager
 
 # 🚀 Тест автоматического деплоя - 30 сентября 2025
 
-# Загружаем config.env
-load_dotenv('config.env')
+# Загружаем config.env (определяем путь относительно расположения main.py)
+import os
+from pathlib import Path
+MAIN_DIR = Path(__file__).parent
+CONFIG_ENV_PATH = MAIN_DIR / 'config.env'
+load_dotenv(CONFIG_ENV_PATH)
 
 # Загружаем конфигурацию
 unified_config = get_config()
@@ -33,6 +37,55 @@ http_config = unified_config.http
 log_level = unified_config.logging.level if hasattr(unified_config, 'logging') else 'INFO'
 setup_structured_logging(level=log_level)
 logger = logging.getLogger(__name__)
+
+# Валидация конфигурации БД перед запуском
+def validate_database_config():
+    """
+    Валидация конфигурации базы данных перед запуском сервера
+    
+    Проверяет наличие плейсхолдеров и выдает понятные сообщения об ошибках.
+    Если конфигурация невалидна, сервер может продолжить работу без БД
+    (если модуль database помечен как опциональный).
+    """
+    try:
+        from modules.database.config import DatabaseConfig
+        
+        db_config_dict = unified_config.get_module_config('database')
+        db_config = DatabaseConfig(db_config_dict)
+        
+        if not db_config.validate():
+            logger.warning(
+                "⚠️ Конфигурация базы данных невалидна. "
+                "Сервер попытается запуститься, но модуль database может быть недоступен. "
+                "Проверьте файл config.env и убедитесь, что все параметры БД заполнены корректно.",
+                extra={
+                    'scope': 'database',
+                    'decision': 'degrade',
+                    'ctx': {
+                        'host': db_config.host,
+                        'port': db_config.port,
+                        'database': db_config.database,
+                        'username': db_config.username,
+                        'password_set': bool(db_config.password)
+                    }
+                }
+            )
+            return False
+        return True
+    except Exception as e:
+        logger.warning(
+            f"⚠️ Не удалось проверить конфигурацию БД: {e}. "
+            "Сервер попытается запуститься, но модуль database может быть недоступен.",
+            extra={
+                'scope': 'database',
+                'decision': 'degrade',
+                'ctx': {'error': str(e)}
+            }
+        )
+        return False
+
+# Выполняем валидацию конфигурации БД
+validate_database_config()
 
 # Версия сервера (единая точка истины для health/status эндпоинтов)
 SERVER_VERSION = server_metadata.version
