@@ -2,6 +2,8 @@
 
 **Цель**: Навигация по всей документации проекта. Показывает связи между документами и их назначение.
 
+**См. также:** `Docs/REQUIREMENTS_SOURCE_MAP.md` — карта источников требований (матрица требований с владельцами и статусами).
+
 ---
 
 ## 📋 Категории документов
@@ -46,15 +48,18 @@
 | `client/metrics/registry.md` | Реестр метрик с SLO порогами | `tests/perf/test_slo.py`, `Docs/GLOBAL_DELIVERY_PLAN.md` |
 | `Docs/templates/change_impact.yaml` | Шаблон для Impact-гейт | `.cursorrules` (раздел 11) |
 | `Docs/templates/ADR_MIN.md` | Шаблон микро-ADR | `.cursorrules` (раздел 14.7) |
-| `Docs/TAL_TESTING_CHECKLIST.md` | Единый гайд по TAL hold/refresh, диагностике и тестам | `integration/core/simple_module_coordinator.py`, `scripts/check_tal_after_restart.py` |
 
 ### 6. Packaging & Delivery
 
 | Документ | Назначение | Связан с |
 |----------|-----------|----------|
+| `Docs/RELEASE_TESTING_GUIDE.md` | **Единый план тестирования релиза** (координирует все тест-гайды) | Все документы ниже |
 | `Docs/PACKAGING_FINAL_GUIDE.md` | Единственная инструкция по сборке .app/PKG, notarization | `.cursorrules` §2, §11.2 |
 | `Docs/PRE_PACKAGING_VERIFICATION.md` | Канонический чек-лист и логи готовности перед упаковкой | `Docs/PACKAGING_FINAL_GUIDE.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md` |
+| `Docs/PREFLIGHT_TEST_GUIDE.md` | Preflight-тест first-run permissions flow | `Docs/first_run_flow_spec.md`, `Docs/RELEASE_TESTING_GUIDE.md` |
+| `Docs/TESTING_PACKAGED_APP.md` | Тестирование упакованного .app/PKG/DMG | `Docs/PACKAGING_FINAL_GUIDE.md`, `Docs/RELEASE_TESTING_GUIDE.md` |
 | `Docs/PACKAGING_READINESS_CHECKLIST.md` | Короткое резюме статуса упаковки, указывает на `PRE_PACKAGING_VERIFICATION.md` | `.cursorrules` §11.2 |
+| `Docs/PACKAGING_VERIFICATION_CHECKLIST.md` | Проверка артефактов упаковки (подпись, нотаризация) | `scripts/verify_packaging_artifacts.sh`, `Docs/RELEASE_TESTING_GUIDE.md` |
 | `Docs/GLOBAL_DELIVERY_PLAN.md` | Фазы rollout, Azure/AppCast, release гейты | `Docs/PACKAGING_FINAL_GUIDE.md`, `Docs/CURRENT_STATUS_REPORT.md` |
 | `PERMISSIONS_REPORT.md` | Актуальные статусы TCC, открытые задачи | `Docs/STATE_CATALOG.md`, `Docs/TAL_TESTING_CHECKLIST.md` |
 
@@ -164,6 +169,7 @@
 Перенесены для сохранения истории; не являются базовыми источниками истины и не должны использоваться в качестве актуальных правил.
 
 С 2025-12-28: исторические планы и отчеты по аудио-миграции перенесены в `Docs/_archive`.
+С 2025-01-XX: разовые отчеты и устаревшие документы переносятся в `Docs/_archive`.
 
 - `Docs/_archive/PERMISSION_RESTART_LOGIC.md`
 - `Docs/_archive/PERMISSION_RESTART_AND_ACTIVATION_PROMPT.md`
@@ -172,6 +178,7 @@
 - `Docs/_archive/PERMISSION_MONITORING_FEATURE.md`
 - `Docs/_archive/Video.md`
 - `Docs/_archive/NEXY_CLIENT_DEVELOPMENT_RULES.md`
+- `Docs/_archive/LOG_ANALYSIS_REPORT_2025-12-29.md` — разовый отчет анализа логов
 
 Для актуальных правил см. `.cursorrules`, `Docs/STATE_CATALOG.md`, `config/interaction_matrix.yaml`.
 

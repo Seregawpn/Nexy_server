@@ -3,12 +3,59 @@
 ## Overview
 The “first run” experience prepares the Nexy client for normal operation by:
 - requesting all macOS privacy permissions the app relies on;
-- persisting flags so the flow executes exactly once unless explicitly reset;
+- persisting flags as a cache (not a hard stop) for completed permission state;
 - restarting the app after permissions are granted so every subsystem observes the new state.
 
 The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionRestartIntegration`, with the `SimpleModuleCoordinator` orchestrating state.
 
 ---
+
+## Diagram
+
+```mermaid
+flowchart TD
+    A[App старт] --> B[Предпроверка статусов TCC]
+    B --> C{Все GRANTED?}
+    C -- Да --> D[Publish permissions.first_run_completed]
+    C -- Нет --> E[Publish permissions.first_run_started]
+
+    E --> F[Итерация по required_permissions]
+    F --> G{Статус permission}
+
+    G -- GRANTED --> H[Confirmation retry 2x (2s)]
+    H --> I{Стабильный GRANTED?}
+    I -- Да --> J[Publish permissions.changed + status_checked]
+    I -- Нет --> F
+
+    G -- DENIED --> K[Publish permissions.changed + status_checked]
+    K --> F
+
+    G -- NOT_DETERMINED --> L[Activate permission]
+    L --> M{Screen Capture?}
+    M -- Да --> N[Mark session guard shown]
+    M -- Нет --> O[Continue polling]
+    N --> O
+
+    O --> P{Elapsed >= max_wait_sec?}
+    P -- Нет --> F
+    P -- Да --> Q{Microphone?}
+    Q -- Да --> R[Assume GRANTED (stale cache)]
+    Q -- Нет --> S[Timeout => DENIED]
+    R --> J
+    S --> K
+
+    J --> F
+    F --> T{needs_restart?}
+    T -- Да --> U[Publish permissions.first_run_restart_pending]
+    U --> V[PermissionRestartIntegration schedules restart]
+    T -- Нет --> D
+```
+
+Notes:
+- `max_wait_sec` is configured via `permissions.first_run.max_wait_sec`.
+- Screen Capture uses session guard to avoid repeating the dialog within one запуск.
+- Restart is blocked during first-run until `restart_pending` is set.
+```
 
 ## Sequence
 
@@ -17,8 +64,8 @@ The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionResta
    - `FirstRunPermissionsIntegration.start()` runs early, before voice-recognition/audio chains.
 
 2. **Eligibility Check**  
-   - The integration inspects the “first run” flag in the user data directory (`~/Library/Application Support/Nexy/permissions_first_run_completed.flag`).  
-   - If the flag exists, the flow is skipped; otherwise it proceeds.
+   - The integration always checks actual TCC statuses on startup.  
+   - The “first run” flag is treated as a cache and does NOT bypass status checks.
 
 3. **Permission Requests**  
    - For each permission (microphone, accessibility, input monitoring, screen capture) the integration:
@@ -27,7 +74,7 @@ The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionResta
      3. **Immediately after activation**, re-checks the TCC status. If not GRANTED, opens System Settings and waits via polling (infinite loop checking every 1 second).  
      4. Publishes `permissions.status_checked` after status changes; if it changed, emits `permissions.changed`.
    - **Important**: The integration waits for GRANTED status **without timeout** (infinite polling loop). The `wait_for_grant` and `grant_wait_timeout_sec` config fields are deprecated and not used.
-   - macOS decides whether to show a prompt; the integration does not skip any permission even if a decision already exists.
+   - macOS decides whether to show a prompt; the integration requests **only missing** permissions.
 
 4. **Flow Completion**  
    - After all permissions are processed, the integration:
@@ -46,8 +93,9 @@ The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionResta
      4. Persist `restart_completed.flag` in the user data directory when the new instance comes up.
 
 6. **Post-Restart Launch**  
-   - On the next start, the integration sees both `permissions_first_run_completed.flag` and `restart_completed.flag`, clears the restart flag, and emits `permissions.first_run_completed`.  
-   - No further permission requests are performed until the flags are removed/reset manually (e.g., for testing).
+   - On the next start, the integration clears `restart_completed.flag` and re-checks real TCC statuses.  
+   - If all permissions are GRANTED, it emits `permissions.first_run_completed` and maintains the cache flag.  
+   - If any permission is missing, it requests only those missing permissions.
 
 ---
 
@@ -59,19 +107,22 @@ The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionResta
 | `restart_completed.flag` | same directory | When the post-first-run instance starts | Confirms that the restart took place. |
 | (optional) `permission_request_attempted.flag` | same directory | On first attempt (even if user denied) | Prevents re-running flow after a manual reset — recommended for UX. |
 
-*Note:* In addition to files, `ApplicationStateManager` maintains transient keys (`permissions_restart_pending`) for integrations that still rely on state data.
+*Note:* In addition to files, `ApplicationStateManager` maintains transient keys (`permissions_restart_pending`) for integrations that still rely on state data. Flags are a cache, not the source of truth.
 
 ---
 
 ## EventBus Contracts
 
-- `permissions.first_run_started`: emitted with a session ID at the start of the flow.  
-- `permissions.status_checked`: emitted before and after each permission activation.  
-- `permissions.changed`: emitted when TCC reports a new status.  
-- `permissions.first_run_restart_pending`: tells the coordinator to schedule a restart.  
-- `permissions.first_run_completed`: emitted by the next instance after the restart is detected.
+**Источник истины:** [`FLOW_INTERACTION_SPEC.md`](FLOW_INTERACTION_SPEC.md) — разделы 3.8 (Разрешения first-run) и 4.2 (First-Run Permissions Flow).
 
-All events include `session_id` and a `source` field for traceability.
+Канонические контракты событий:
+- `permissions.first_run_started` — начало flow (см. раздел 3.8 канона)
+- `permissions.status_checked` — проверка статуса разрешения (см. раздел 3.8 канона)
+- `permissions.changed` — изменение статуса разрешения (см. раздел 3.8 канона)
+- `permissions.first_run_restart_pending` — требуется перезапуск (см. раздел 3.8 канона)
+- `permissions.first_run_completed` — завершение flow (см. раздел 3.8 канона)
+
+Полные спецификации payload (обязательные/опциональные поля) и последовательность событий описаны в каноническом документе.
 
 ---
 
@@ -102,9 +153,8 @@ All events include `session_id` and a `source` field for traceability.
 
 ## Status Summary
 
-- **Permissions requested?** Yes—always triggered regardless of existing TCC records.  
+- **Permissions requested?** Yes—missing permissions are requested on each startup after status checks.  
 - **macOS decides dialogs?** Yes—activation APIs defer to TCC.  
-- **Flags persisted?** Yes—`permissions_first_run_completed.flag` and `restart_completed.flag`.  
+- **Flags persisted?** Yes—`permissions_first_run_completed.flag` and `restart_completed.flag` (cache only).  
 - **Restart ensured?** Yes—new PID verification prevents premature exit.  
 - **Architecture preserved?** Yes—integrations communicate via EventBus/state manager without bypassing existing modules.
-

@@ -233,14 +233,14 @@ if [ "$DRY_RUN" = true ]; then
     log_warn "[DRY-RUN] Пропуск pkgbuild/productbuild"
     ((PASSED++))
 else
-    BUILD_FINAL_SCRIPT="$PROJECT_ROOT/packaging/build_final.sh"
-    if [ ! -f "$BUILD_FINAL_SCRIPT" ]; then
-        log_error "build_final.sh не найден"
+    RELEASE_BUILD_SCRIPT="$PROJECT_ROOT/scripts/release_build.sh"
+    if [ ! -f "$RELEASE_BUILD_SCRIPT" ]; then
+        log_error "release_build.sh не найден"
         exit 1
     fi
     
-    log_info "Запуск build_final.sh для создания PKG..."
-    if bash "$BUILD_FINAL_SCRIPT"; then
+    log_info "Запуск release_build.sh release для создания PKG..."
+    if bash "$RELEASE_BUILD_SCRIPT" release; then
         log_info "✅ PKG создан"
         ((PASSED++))
     else
@@ -272,7 +272,7 @@ elif [ "$DRY_RUN" = true ]; then
 else
     log_step "ШАГ 6: NOTARIZATION"
     
-    # Нотарификация уже выполнена в build_final.sh
+    # Нотарификация уже выполнена в release_build.sh
     # Проверяем статус
     if [ -f "$PROJECT_ROOT/dist/Nexy.pkg" ]; then
         log_info "Проверка статуса нотарификации PKG..."
@@ -352,4 +352,3 @@ else
     echo ""
     exit 1
 fi
-

@@ -134,6 +134,7 @@ class MacOSTrayMenu:
                         except Exception as e:
                             logger.error(f"❌ ДИАГНОСТИКА: Ошибка чтения директории: {e}")
             
+            
             # КРИТИЧНО: Настраиваем обработчик завершения
             # Это предотвращает автоматическое завершение приложения
             # _setup_quit_handler() сам установит fallback если нужно
@@ -151,7 +152,8 @@ class MacOSTrayMenu:
             return
         
         # Обработчики событий будут добавлены через rumps
-    
+
+
     def add_menu_item(self, item: TrayMenuItem):
         """Добавить элемент меню"""
         if not self.app:

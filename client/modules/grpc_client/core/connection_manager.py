@@ -85,6 +85,11 @@ class ConnectionManager:
             # Настройки gRPC
             options = self._create_grpc_options(server_config)
 
+            # КРИТИЧНО: Логируем loop id при создании канала для диагностики
+            current_loop = asyncio.get_running_loop()
+            loop_id = id(current_loop)
+            logger.info(f"🔌 [GRPC_LOOP] Creating channel in loop={loop_id} (running={current_loop.is_running()})")
+            
             # Создаем канал
             logger.info(f"🔌 [DEBUG] Создание канала - use_ssl={server_config.use_ssl}")
             if server_config.use_ssl:
@@ -151,7 +156,7 @@ class ConnectionManager:
                 # Запускаем health checker
                 self.health_checker.start(self._check_connection_health)
                 
-                logger.info(f"✅ Подключение к {address} установлено")
+                logger.info(f"✅ Подключение к {address} установлено (loop={loop_id})")
                 return True
                 
             except asyncio.TimeoutError:

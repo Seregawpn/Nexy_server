@@ -7,6 +7,14 @@ LIBS_ONLY=false
 APP_PATH=""
 IDENTITY="Developer ID Application: Sergiy Zasorin (5NKLL2CLB9)"
 
+# Настройка timestamp режима (из переменной окружения или auto)
+TIMESTAMP_MODE=${TIMESTAMP_MODE:-auto}
+if [[ "$TIMESTAMP_MODE" == "none" ]]; then
+    TIMESTAMP_FLAG="--timestamp=none"
+else
+    TIMESTAMP_FLAG="--timestamp"
+fi
+
 # Парсим аргументы
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -42,11 +50,14 @@ echo "App name: $APP_NAME"
 echo ""
 
 # Подписываем все Mach-O файлы (кроме главного executable)
+# КРИТИЧНО: Используем file для поиска всех Mach-O файлов, а не -perm -111
+# Это гарантирует подпись .so/.dylib файлов без exec-бита
 echo "🔐 Подписываем библиотеки..."
 count=0
-find "$APP_PATH/Contents" -type f -perm -111 2>/dev/null | grep -v "/Contents/MacOS/$APP_NAME$" | while read -r BIN; do
+find "$APP_PATH/Contents" -type f 2>/dev/null | grep -v "/Contents/MacOS/$APP_NAME$" | while read -r BIN; do
+    # Проверяем тип файла через file (все Mach-O файлы, включая .so/.dylib)
     if file -b "$BIN" 2>/dev/null | grep -q "Mach-O"; then
-        codesign --force --timestamp --options=runtime \
+        codesign --force $TIMESTAMP_FLAG --options=runtime \
             --sign "$IDENTITY" "$BIN" >/dev/null 2>&1 || true
         count=$((count + 1))
         if [ $((count % 50)) -eq 0 ]; then
@@ -55,8 +66,14 @@ find "$APP_PATH/Contents" -type f -perm -111 2>/dev/null | grep -v "/Contents/Ma
     fi
 done
 
-# Пересчитываем для вывода
-signed_count=$(find "$APP_PATH/Contents" -type f -perm -111 -exec sh -c 'codesign -dv "$1" 2>&1 | grep -q "valid on disk" && echo "$1"' _ {} \; 2>/dev/null | wc -l | tr -d ' ')
+# Пересчитываем для вывода (проверяем все Mach-O файлы, не только с exec-битом)
+signed_count=$(find "$APP_PATH/Contents" -type f 2>/dev/null | while read -r BIN; do
+    if file -b "$BIN" 2>/dev/null | grep -q "Mach-O"; then
+        if codesign -dv "$BIN" 2>&1 | grep -q "valid on disk"; then
+            echo "$BIN"
+        fi
+    fi
+done | wc -l | tr -d ' ')
 echo "✅ Подписано библиотек: $signed_count"
 
 if [ "$LIBS_ONLY" = false ]; then
@@ -69,13 +86,13 @@ if [ "$LIBS_ONLY" = false ]; then
     ENTITLEMENTS="$CLIENT_DIR/packaging/entitlements.plist"
 
     if [ -f "$ENTITLEMENTS" ]; then
-        codesign --force --timestamp --options=runtime \
+        codesign --force $TIMESTAMP_FLAG --options=runtime \
             --sign "$IDENTITY" \
             --entitlements "$ENTITLEMENTS" \
             "$MAIN_EXE"
     else
         echo "⚠️  Entitlements не найден, подписываем без него"
-        codesign --force --timestamp --options=runtime \
+        codesign --force $TIMESTAMP_FLAG --options=runtime \
             --sign "$IDENTITY" \
             "$MAIN_EXE"
     fi
@@ -83,12 +100,12 @@ if [ "$LIBS_ONLY" = false ]; then
     # Подписываем весь bundle
     echo "🔐 Подписываем bundle..."
     if [ -f "$ENTITLEMENTS" ]; then
-        codesign --force --timestamp --options=runtime \
+        codesign --force $TIMESTAMP_FLAG --options=runtime \
             --sign "$IDENTITY" \
             --entitlements "$ENTITLEMENTS" \
             "$APP_PATH"
     else
-        codesign --force --timestamp --options=runtime \
+        codesign --force $TIMESTAMP_FLAG --options=runtime \
             --sign "$IDENTITY" \
             "$APP_PATH"
     fi

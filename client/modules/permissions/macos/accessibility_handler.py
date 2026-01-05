@@ -51,20 +51,27 @@ class AccessibilityHandler:
             return False
 
     def check_accessibility_permission(self) -> bool:
-        """Check whether the app is trusted for Accessibility using only public APIs."""
+        """Check whether the app is trusted for Accessibility using only public APIs.
+        
+        БЕЗОПАСНАЯ ВЕРСИЯ: Максимально защищена от crash через multiple try-except.
+        """
         try:
+            print(f"♿ [ACCESS_HANDLER] Проверяем Accessibility через AXIsProcessTrustedWithOptions...")
             trusted = self._ax_trusted_public_check(prompt=False)
 
             if trusted:
                 logger.info("✅ Accessibility permission granted (public API)")
+                print(f"✅ [ACCESS_HANDLER] Accessibility GRANTED")
             else:
                 logger.warning("⚠️ Accessibility permission not granted (public API)")
+                print(f"⚠️ [ACCESS_HANDLER] Accessibility NOT GRANTED")
 
             return trusted
 
         except Exception as e:
-            logger.error(f"❌ Error checking accessibility permission: {e}")
-            # Возвращаем False, чтобы другие компоненты попытались запросить доступ
+            logger.warning(f"⚠️ Error checking accessibility permission (safe fallback): {e}")
+            print(f"⚠️ [ACCESS_HANDLER] Exception в check_accessibility_permission: {e}")
+            # Возвращаем False, чтобы flow продолжился и показал инструкции
             return False
     
     def check_input_monitoring_permission(self) -> bool:

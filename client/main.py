@@ -13,11 +13,49 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
+# --- Фикс PyObjC для macOS (применяется ВСЕГДА, ДО ВСЕХ ДРУГИХ ИМПОРТОВ) ---
+# КРИТИЧНО: Должен выполняться ДО любых импортов rumps/PyObjC
+# ВАЖНО: Этот фикс применяется ДО любых других импортов, которые могут тянуть AppKit/rumps
+# В .app bundle фикс также применяется в runtime_hook_pyobjc_fix.py, но для dev-режима нужен здесь
+def _apply_pyobjc_fix_early():
+    """
+    Применяет PyObjC fix для NSMakeRect и других символов.
+    
+    КРИТИЧНО: Выполняется ДО любых импортов, которые могут косвенно импортировать rumps/AppKit.
+    """
+    try:
+        # Проверяем, что мы на macOS
+        if platform.system() != "Darwin":
+            return "not_macos"
+        
+        # Применяем инлайн-фикс напрямую
+        import AppKit
+        import Foundation
+        
+        fixed_symbols = []
+        for symbol in ["NSMakeRect", "NSMakePoint", "NSMakeSize", "NSMakeRange"]:
+            if not hasattr(Foundation, symbol) and hasattr(AppKit, symbol):
+                setattr(Foundation, symbol, getattr(AppKit, symbol))
+                fixed_symbols.append(symbol)
+        
+        if fixed_symbols:
+            return f"fixed_inline:{','.join(fixed_symbols)}"
+        else:
+            return "symbols_already_present"
+    except ImportError as e:
+        return f"import_error:{e}"
+    except Exception as e:
+        return f"error:{e}"
+
+# ПРИМЕНЯЕМ ФИКС СРАЗУ, ДО ЛЮБЫХ ДРУГИХ ИМПОРТОВ
+_pyobjc_fix_result_early = _apply_pyobjc_fix_early()
+
 # Добавляем пути к модулям (централизованно)
 CLIENT_ROOT = Path(__file__).parent
-sys.path.insert(0, str(CLIENT_ROOT))
+ROOT_DIR = CLIENT_ROOT.parent
+sys.path.insert(0, str(ROOT_DIR))            # Для доступа к корневому 'integration'
+sys.path.insert(0, str(CLIENT_ROOT))         # Для доступа к локальным модулям
 sys.path.insert(0, str(CLIENT_ROOT / "modules"))
-sys.path.insert(0, str(CLIENT_ROOT / "integration"))
 
 # --- Ранняя инициализация pydub/ffmpeg (до любых вызовов pydub) ---
 def init_ffmpeg_for_pydub():
@@ -99,33 +137,9 @@ if _should_enable_terminal_permissions_bypass():
     BOOT_NOTES.append("terminal_launch: permissions bypass enabled (NEXY_TEST_SKIP_PERMISSIONS=1, NEXY_DEV_FORCE_PERMISSIONS=1)")
     print("ℹ️ Terminal launch detected: permissions bypass enabled (test/dev mode)")
 
-# --- Фикс PyObjC для macOS (до импорта rumps) ---
-# ВАЖНО: Должен быть выполнен ДО импорта любых модулей, использующих rumps
-# Исправляет проблему "dlsym cannot find symbol NSMakeRect in CFBundle"
-try:
-    # Правильный порядок импорта: сначала AppKit, потом Foundation
-    import AppKit
-    import Foundation
-    
-    # Убеждаемся, что AppKit полностью загружен
-    if hasattr(AppKit, 'NSMakeRect'):
-        # Копируем символы из AppKit в Foundation для совместимости
-        # type: ignore[attr-defined] - PyObjC динамически создает атрибуты
-        Foundation.NSMakeRect = AppKit.NSMakeRect  # type: ignore[attr-defined]
-        Foundation.NSMakePoint = AppKit.NSMakePoint  # type: ignore[attr-defined]
-        Foundation.NSMakeSize = AppKit.NSMakeSize  # type: ignore[attr-defined]
-        Foundation.NSMakeRange = AppKit.NSMakeRange  # type: ignore[attr-defined]
-        print("✅ AppKit символы успешно скопированы в Foundation")
-    else:
-        print("⚠️ AppKit.NSMakeRect не найден")
-    BOOT_NOTES.append("pyobjc_fix: success (main.py)")
-
-except ImportError as e:
-    print(f"⚠️ PyObjC недоступен: {e}")
-    BOOT_NOTES.append(f"pyobjc_fix: import_error:{e}")
-except Exception as e:
-    print(f"⚠️ Ошибка инициализации PyObjC: {e}")
-    BOOT_NOTES.append(f"pyobjc_fix: error:{e}")
+# Фикс уже применен выше (в _apply_pyobjc_fix_early)
+# Добавляем результат в BOOT_NOTES для логирования
+BOOT_NOTES.append(f"pyobjc_fix: {_pyobjc_fix_result_early}")
 
 # Функция активации NSApplication - вызывается при каждом запуске
 def activate_nsapplication_for_menu_bar():
@@ -395,6 +409,14 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt)")
         print("\n⏹️ Приложение прервано пользователем")
+    except SystemExit as e:
+        # SystemExit должен пробрасываться для корректного завершения процесса
+        # Логируем только если это не дубликат экземпляра (код 1)
+        if e.code != 1:
+            logger.info(f"⏹️ SystemExit с кодом {e.code}")
+        else:
+            logger.info("⏹️ Дубликат экземпляра обнаружен - завершение с кодом 1")
+        raise  # Пробрасываем дальше для корректного завершения
     except Exception as e:
         logger.critical(f"💥 КРИТИЧЕСКАЯ ОШИБКА в event loop: {e}", exc_info=True)
         log_crash_to_file(type(e), e, e.__traceback__, "Exception in event loop")

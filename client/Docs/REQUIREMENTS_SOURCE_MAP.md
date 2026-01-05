@@ -2,6 +2,8 @@
 
 **Цель**: Таблица всех документов, описывающих требования к проекту, с их статусом, областью ответственности и владельцами.
 
+**См. также:** `Docs/DOCUMENTATION_MAP.md` — общая навигация по всей документации проекта (включая технические артефакты, ADR, packaging).
+
 **Дата создания**: 2025-01-30  
 **Версия**: 1.0  
 **Владелец**: Tech Lead клиента
@@ -29,7 +31,7 @@
 | `client/metrics/registry.md` | Метрики, SLO | Tech Lead клиента | ✅ Актуален | Реестр метрик с SLO порогами |
 | `Docs/DOCUMENTATION_MAP.md` | Навигация по документации | Tech Lead клиента | ✅ Актуален | Карта всей документации проекта, связи между документами |
 | `Docs/PRODUCTION_RULES_SUMMARY.md` | Правила продакшн-уровня | Tech Lead клиента | ✅ Актуален | Краткое резюме правил уровня продакшн |
-| `Docs/SERVER_PROTOBUF_SPECIFICATION.md` | gRPC, протокол | gRPC Service Owner | ✅ Актуален | Спецификация protobuf для gRPC |
+| `server/server/Docs/SERVER_PROTOBUF_SPECIFICATION.md` | gRPC, протокол | gRPC Service Owner | ✅ Актуален | Спецификация protobuf для gRPC |
 | `Docs/templates/change_impact.yaml` | Impact-гейт | Tech Lead клиента | ✅ Актуален | Шаблон для Impact-гейт (обязателен для изменений >2 осей) |
 | `Docs/templates/ADR_MIN.md` | ADR | Tech Lead клиента | ✅ Актуален | Шаблон микро-ADR |
 | `Docs/EXIT_HANDLER_ISSUE_ANALYSIS.md` | TAL, exit handler | Permissions SWAT | ✅ Актуален | Анализ проблемы exit handler, TAL hold |
@@ -93,7 +95,7 @@
 - **Статус**: ✅ Актуален
 
 ### gRPC/Protocol
-- **Документы**: `Docs/SERVER_PROTOBUF_SPECIFICATION.md`
+- **Документы**: `server/server/Docs/SERVER_PROTOBUF_SPECIFICATION.md`
 - **Владелец**: gRPC Service Owner
 - **Статус**: ✅ Актуален
 

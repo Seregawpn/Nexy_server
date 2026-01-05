@@ -6,7 +6,6 @@
 > Это базовый и единственный источник инструкций по сборке Universal 2 `.app` + `.pkg`, подписи и нотарификации. Все чек-листы (`Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md`, `.cursorrules §11.2`) обязаны ссылаться на этот файл и фиксировать фактические результаты.
 
 **Связанные документы:**
-- `MACOS_PACKAGING_REQUIREMENTS.md` — полные требования к Universal 2 сборке (включая power/battery требования)
 - `client/metrics/registry.md` — метрики и SLO пороги (включая power/battery метрики)
 - `Docs/TAL_TESTING_CHECKLIST.md` — детальная проверка TAL subsystem
 - `scripts/prepare_release.sh` — полная цепочка подготовки релиза (см. `.cursorrules` раздел 11.6)
@@ -14,6 +13,35 @@
 - `.cursorrules` — правила разработки и Packaging Regression Checklist (раздел 11.2)
 
 ---
+
+## 0. Правила изменения (Change Triggers)
+
+**Цель:** после любых изменений быстро привести упаковку и документы в корректное состояние.
+
+### 0.1. Триггеры (обязательные действия)
+Любое изменение в следующих областях требует полного цикла упаковки и проверки:
+- `main.py`, `integration/`, `modules/`
+- `resources/`, `assets/`, `vendor_binaries/`
+- `packaging/`, `scripts/`
+- `requirements.txt`, `pyproject.toml`
+
+**Действия после изменения:**
+1. Обновить упаковочные артефакты по этой инструкции (см. раздел 2).
+2. Пройти `Docs/PRE_PACKAGING_VERIFICATION.md` и зафиксировать результаты.
+3. Выполнить `./scripts/verify_packaging_artifacts.sh` и зафиксировать результаты.
+
+### 0.2. Требования соответствия macOS (минимум)
+- Подпись всех Mach-O (Developer ID Application).
+- Нотаризация `.app`/`.pkg` (если не включен `NEXY_SKIP_NOTARIZATION=1`).
+- Universal 2 бинарники для app и внешних ресурсов.
+- Корректные ресурсы в `Contents/Resources/`.
+- Минимальная версия macOS в `Info.plist` = 12.0.
+
+### 0.3. Если добавлены новые модули/интеграции/ресурсы
+**Минимальный список обновлений:**
+- `packaging/Nexy.spec` (включение новых файлов/ресурсов)
+- `scripts/stage_universal_binaries.py` (если добавлен бинарник в `vendor_binaries/`)
+- Документация в этом файле (если меняется процедура)
 
 ## 1. Требования окружения
 
@@ -27,6 +55,7 @@
 - **Rosetta 2:** Установлен на Apple Silicon для x86_64 сборки
 - **Сертификаты:** Developer ID Application / Installer в keychain
 - **Apple Developer аккаунт:** Доступ для notarization (`notarytool` JSON key)
+- **Keychain профиль notarytool:** `nexy-notary` (настроен заранее)
 - **Инструменты:** `pyinstaller`, `pkgbuild`, `productbuild`, `notarytool`, `stapler`, `lipo`
 
 ### Внешние бинарники (Universal 2):
@@ -46,7 +75,99 @@ lipo -info resources/ffmpeg/ffmpeg
 
 ## 2. Автоматическая Universal 2 сборка
 
-**РЕКОМЕНДУЕМЫЙ СПОСОБ:** Использовать автоматизированный скрипт `packaging/build_final.sh`
+**РЕКОМЕНДУЕМЫЙ СПОСОБ:** Использовать автоматизированный скрипт `scripts/release_build.sh`
+
+### 2.0. Автоматизированная сборка (РЕКОМЕНДУЕТСЯ)
+
+**Единый скрипт для всех режимов сборки:**
+```bash
+cd client
+
+# Режим RELEASE (полная сборка с timestamp и нотаризацией)
+./scripts/release_build.sh release
+
+# Режим LOCAL (локальная сборка без нотаризации)
+./scripts/release_build.sh local
+```
+
+**Что делает `release_build.sh`:**
+- Автоматически настраивает `TIMESTAMP_MODE` и `NEXY_SKIP_NOTARIZATION`
+- Запускает `build_final.sh` с правильными параметрами
+- Запускает `verify_packaging_artifacts.sh` для проверки артефактов
+- Жестко падает при ошибках подписи/нотаризации
+- Выводит финальный статус всех артефактов
+
+**Режимы:**
+- **`release`** (по умолчанию): `TIMESTAMP_MODE=auto`, нотаризация включена
+- **`local`**: `TIMESTAMP_MODE=none`, `NEXY_SKIP_NOTARIZATION=1`
+
+**КРИТИЧНО: Защита подписи после сборки:**
+- ❌ НЕ открывайте `.app` в Finder после сборки
+- ❌ НЕ выполняйте `xattr -cr` на `.app`
+- ❌ НЕ копируйте `.app` через Finder или `cp -R`
+- ✅ Используйте только `ditto --noextattr --noqtn` для копирования
+
+### 2.1. Ручная сборка (для отладки)
+
+**Если нужен прямой контроль над процессом:**
+
+**Полная сборка и проверка артефактов:**
+```bash
+cd client
+./packaging/build_final.sh
+./scripts/verify_packaging_artifacts.sh
+```
+
+**Проверка только .app (без PKG/DMG):**
+```bash
+./scripts/verify_packaging_artifacts.sh --app-only
+```
+
+**Dev-режим без нотарификации:**
+```bash
+NEXY_SKIP_NOTARIZATION=1 ./packaging/build_final.sh
+./scripts/verify_packaging_artifacts.sh --app-only
+```
+
+**Локальная сборка без timestamp (если timestamp сервис недоступен):**
+```bash
+TIMESTAMP_MODE=none NEXY_SKIP_NOTARIZATION=1 ./packaging/build_final.sh
+./scripts/verify_packaging_artifacts.sh --app-only
+```
+
+**Переиспользовать существующий `dist/Nexy.app` (Universal 2):**
+```bash
+./packaging/build_final.sh --skip-build
+./scripts/verify_packaging_artifacts.sh
+```
+
+### 2.2. Что проверяет `verify_packaging_artifacts.sh`
+
+1. **.app:**
+   - Подпись (`codesign --verify --deep --strict`)
+   - Нотаризация (`xcrun stapler validate`)
+   - Архитектура (Universal 2: arm64 + x86_64)
+   - Размер
+
+2. **.app внутри PKG:**
+   - Распаковка PKG и извлечение Payload
+   - Проверка подписи .app из Payload
+   - Проверка нотаризации .app из Payload
+
+3. **PKG:**
+   - Подпись (`pkgutil --check-signature`)
+   - Проверка через spctl
+   - Нотаризация (`xcrun stapler validate`)
+   - Размер
+
+4. **DMG:**
+   - Целостность (`hdiutil verify`)
+   - Монтирование и проверка содержимого
+   - Проверка подписи .app в DMG
+   - Размер
+
+5. **Runtime Hook:**
+   - Проверка `~/nexy_pyobjc_fix.log` на ошибки `dlsym cannot find symbol NSMake*`
 
 ### Быстрый старт:
 ```bash
@@ -55,14 +176,31 @@ cd client
 ```
 
 Скрипт автоматически выполняет:
-1. ✅ Стейджинг Universal 2 бинарников (`scripts/stage_universal_binaries.py`)
-2. ✅ Проверку зависимостей (`scripts/check_dependencies.py`)
-3. ✅ Универсализацию .so файлов (если нужно)
-4. ✅ Двойную сборку PyInstaller (arm64 + x86_64)
-5. ✅ Объединение в Universal 2 через `create_universal_app.py`
-6. ✅ Подпись через оптимизированный `sign_all_binaries.sh`
-7. ✅ Нотаризацию .app и PKG
-8. ✅ Создание финальных артефактов
+1. ✅ Проверку актуальности protobuf (`scripts/regenerate_proto.sh --check`)
+2. ✅ Стейджинг Universal 2 бинарников (`scripts/stage_universal_binaries.py`)
+3. ✅ Проверку зависимостей (`scripts/check_dependencies.py`)
+4. ✅ Обновление версий модулей (`scripts/update_module_versions.py`)
+5. ✅ Универсализацию .so файлов (если нужно)
+6. ✅ Двойную сборку PyInstaller (arm64 + x86_64)
+7. ✅ Объединение в Universal 2 через `create_universal_app.py`
+8. ✅ Подготовку Python.framework к подписи (очистка _CodeSignature/AppleDouble)
+9. ✅ Подпись через оптимизированный `sign_all_binaries.sh` (все Mach-O)
+10. ✅ Нотаризацию .app (если не установлен `NEXY_SKIP_NOTARIZATION=1`)
+11. ✅ Создание и нотаризацию DMG (если не установлен `NEXY_SKIP_NOTARIZATION=1`)
+12. ✅ Создание, подпись и нотаризацию PKG (если не установлен `NEXY_SKIP_NOTARIZATION=1`)
+
+**Итоговые артефакты:**
+- `dist/Nexy.app`
+- `dist/Nexy.pkg`
+- `dist/Nexy.dmg`
+
+**Важно:** если в `dist/Nexy.app` уже есть Universal 2, `build_final.sh` может
+использовать его без пересборки. Для полной пересборки удалите `dist/Nexy.app`.
+
+**Технические гарантии `build_final.sh`:**
+- Глобально отключает AppleDouble/resource fork (`COPYFILE_DISABLE=1`)
+- Агрессивно чистит xattrs/`._*` на каждом этапе копирования
+- Проверяет наличие `Developer ID Application/Installer` в keychain и валится при отсутствии
 
 ---
 
@@ -73,8 +211,14 @@ cd client
 ### 3.1. Предварительные проверки
 
 ```bash
+# Проверка актуальности protobuf
+bash scripts/regenerate_proto.sh --check
+
 # Проверка зависимостей и бинарников
 python3 scripts/check_dependencies.py
+
+# Обновление версий в Info.plist модулей
+python3 scripts/update_module_versions.py
 
 # Проверка архитектуры Python
 python3 -c "import platform; print(platform.machine())"  # Должно быть arm64
@@ -114,6 +258,10 @@ PYI_TARGET_ARCH=x86_64 arch -x86_64 python3 -m PyInstaller packaging/Nexy.spec \
     --clean
 ```
 
+**ВАЖНО:** В `packaging/Nexy.spec` runtime hook `packaging/runtime_hook_pyobjc_fix.py`
+должен быть задан абсолютным путём (через `client_dir`), чтобы PyObjC‑fix
+гарантированно отрабатывал в упакованном `.app`.
+
 ### 3.4. Объединение в Universal 2
 
 ```bash
@@ -141,6 +289,8 @@ rm -rf dist-arm64 dist-x86_64 build-arm64 build-x86_64
 ## 4. Подпись Universal 2 .app
 
 ### 4.1. Оптимизированная подпись (рекомендуется)
+
+**ВАЖНО:** Скрипт подписи использует `file` для поиска всех Mach-O файлов (включая .so/.dylib без exec-бита), а не фильтр `-perm -111`. Это гарантирует валидную подпись всех Mach-O файлов в bundle.
 
 ```bash
 # Использует оптимизированный скрипт для быстрой подписи всех библиотек
@@ -194,25 +344,48 @@ xcrun stapler validate dist/Nexy.app
 
 ---
 
-## 6. Создание PKG
+## 6. Создание DMG
 
-### 6.1. Подготовка структуры
+**Автоматически выполняется в `build_final.sh`.** Формирование DMG выполняется
+через `hdiutil` и затем проходит нотарификацию (если не установлен `NEXY_SKIP_NOTARIZATION=1`).
 
-**КРИТИЧНО:** Используйте `ditto` БЕЗ `--noextattr` для сохранения печати нотаризации!
+---
+
+## 7. Создание PKG (Zero-xattr policy)
+
+### 7.1. Подготовка структуры (Zero-xattr policy)
+
+**КРИТИЧНО:** Используйте `ditto` С `--noextattr --noqtn` + агрессивную очистку xattrs!
+
+> **Примечание:** Печать нотаризации (stapler ticket) хранится в code signature `.app`, а не в xattrs.
+> Удаление xattrs НЕ удаляет печать — `xcrun stapler validate` работает после `xattr -cr`.
 
 ```bash
+export COPYFILE_DISABLE=1  # Отключает AppleDouble глобально
+
 rm -rf /tmp/nexy_pkg_clean_final
 mkdir -p /tmp/nexy_pkg_clean_final/Applications
 
-# Копируем с сохранением extended attributes (для нотаризации)
-/usr/bin/ditto dist/Nexy.app /tmp/nexy_pkg_clean_final/Applications/Nexy.app
+# Копируем БЕЗ extended attributes (предотвращает ._* файлы)
+/usr/bin/ditto --noextattr --noqtn dist/Nexy.app /tmp/nexy_pkg_clean_final/Applications/Nexy.app
 
-# Удаляем только AppleDouble файлы
-find "/tmp/nexy_pkg_clean_final/Applications/Nexy.app" -name '._*' -delete 2>/dev/null || true
-find "/tmp/nexy_pkg_clean_final/Applications/Nexy.app" -name '.DS_Store' -delete 2>/dev/null || true
+# Агрессивная очистка xattrs на всём staging дереве
+xattr -cr "/tmp/nexy_pkg_clean_final" 2>/dev/null || true
+find "/tmp/nexy_pkg_clean_final" -type f -exec xattr -c {} \; 2>/dev/null || true
+find "/tmp/nexy_pkg_clean_final" -type d -exec xattr -c {} \; 2>/dev/null || true
+find "/tmp/nexy_pkg_clean_final" -name '._*' -delete 2>/dev/null || true
+find "/tmp/nexy_pkg_clean_final" -name '.DS_Store' -delete 2>/dev/null || true
+
+# ЖЁСТКАЯ ВАЛИДАЦИЯ: должно быть 0 AppleDouble файлов
+APPLE_COUNT=$(find "/tmp/nexy_pkg_clean_final" -name '._*' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$APPLE_COUNT" != "0" ]; then
+    echo "ERROR: AppleDouble files found ($APPLE_COUNT). PKG will be broken!"
+    exit 1
+fi
+echo "✓ Zero AppleDouble files in staging"
 ```
 
-### 6.2. Создание component PKG
+### 7.2. Создание component PKG
 
 ```bash
 pkgbuild --root /tmp/nexy_pkg_clean_final \
@@ -222,7 +395,7 @@ pkgbuild --root /tmp/nexy_pkg_clean_final \
     dist/Nexy-raw.pkg
 ```
 
-### 6.3. Создание distribution PKG
+### 7.3. Создание distribution PKG
 
 ```bash
 productbuild --package-path dist \
@@ -230,7 +403,7 @@ productbuild --package-path dist \
     dist/Nexy-distribution.pkg
 ```
 
-### 6.4. Подпись PKG
+### 7.4. Подпись PKG
 
 ```bash
 productsign --sign "Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)" \
@@ -241,9 +414,9 @@ productsign --sign "Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)" \
 
 ---
 
-## 7. Нотаризация PKG
+## 8. Нотаризация PKG
 
-### 7.1. Отправка на нотаризацию
+### 8.1. Отправка на нотаризацию
 
 ```bash
 xcrun notarytool submit dist/Nexy.pkg \
@@ -252,7 +425,7 @@ xcrun notarytool submit dist/Nexy.pkg \
     --wait
 ```
 
-### 7.2. Прикрепление печати
+### 8.2. Прикрепление печати
 
 ```bash
 xcrun stapler staple dist/Nexy.pkg
@@ -261,9 +434,80 @@ xcrun stapler validate dist/Nexy.pkg
 
 ---
 
-## 8. Валидация релизного бандла
+## 9. КРИТИЧНО: Защита подписи после сборки
 
-**ОБЯЗАТЕЛЬНО:** Перед загрузкой на сервер выполни валидацию метаданных:
+**ВАЖНО:** После завершения сборки подпись `.app` может быть повреждена внешними операциями.
+
+**Запрещенные операции после сборки:**
+- ❌ Открытие `.app` в Finder (может изменить extended attributes)
+- ❌ Выполнение `xattr -cr` на `.app` (удаляет подпись кода!)
+- ❌ Копирование через `cp -R` или Finder (не сохраняет подпись)
+- ❌ Архивирование через `zip` без специальных флагов
+
+**Разрешенные операции:**
+- ✅ Использование `ditto --noextattr --noqtn` для копирования
+- ✅ Использование `safe_copy_preserve_signature` из `build_final.sh`
+- ✅ Проверка через `codesign --verify --deep --strict`
+
+**Система checkpoint-ов:**
+`build_final.sh` включает 6 контрольных точек для диагностики подписи:
+- CHECKPOINT 01: После создания CLEAN_APP
+- CHECKPOINT 02: После подписи CLEAN_APP
+- CHECKPOINT 03: После stapler на CLEAN_APP
+- CHECKPOINT 04: После копирования в dist/
+- CHECKPOINT 05: Финальная проверка CLEAN_APP
+- CHECKPOINT 06: Финальная проверка dist/$APP_NAME.app
+
+Все checkpoint-ы логируют детальную информацию в `/tmp/checkpoint_<name>_codesign.log`.
+
+---
+
+## 10. Валидация релизного бандла
+
+**ОБЯЗАТЕЛЬНО:** Перед загрузкой на сервер выполни валидацию артефактов:
+
+```bash
+codesign --verify --deep --strict dist/Nexy.app
+xcrun stapler validate dist/Nexy.app
+pkgutil --check-signature dist/Nexy.pkg
+xcrun stapler validate dist/Nexy.pkg
+spctl --assess --type execute --verbose dist/Nexy.app
+spctl --assess --type open --verbose dist/Nexy.dmg
+```
+
+**РАЗРЕШЕНО:**
+- ✅ Использовать `safe_copy_preserve_signature` (встроено в `build_final.sh`)
+- ✅ Использовать `ditto --noextattr --noqtn` для копирования
+- ✅ Проверять подпись через `codesign --verify --deep --strict`
+
+**Автоматическая защита:**
+`build_final.sh` автоматически:
+- Использует `safe_copy_preserve_signature` для копирования после подписания
+- Проверяет подпись после каждого критического копирования
+- Сравнивает хеш содержимого до/после копирования
+- Проверяет время модификации для обнаружения пост-сборки изменений
+
+Дополнительно (защита от post-signing изменений):
+```bash
+# Хеш содержимого .app должен совпадать до/после копирования в dist/
+# build_final.sh автоматически проверяет это
+```
+
+Если `spctl --assess --type open` для DMG не проходит, используй резерв:
+
+```bash
+hdiutil verify dist/Nexy.dmg
+```
+
+### 10.1. Release verification log
+
+Скрипт `packaging/build_final.sh` сохраняет итоговую проверку в:
+
+```
+dist/packaging_verification.log
+```
+
+Этот лог прикладывается к release checklist и review-документу.
 
 ```bash
 # Валидация .app
@@ -281,7 +525,7 @@ python3 scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
 
 ---
 
-## 9. Smoke-тесты Universal 2
+## 11. Smoke-тесты Universal 2
 
 **ОБЯЗАТЕЛЬНО:** Протестировать на обеих архитектурах:
 
@@ -335,7 +579,7 @@ pmset -g assertions | grep -i "com.nexy.assistant"
 
 ---
 
-## 10. Частые проблемы и решения
+## 12. Частые проблемы и решения
 
 ### 10.1. `IncompatibleBinaryArchError` при x86_64 сборке
 
@@ -350,14 +594,12 @@ arch -x86_64 python3 -m pip install --target /tmp/x86_64_site_packages -r requir
 python3 scripts/merge_so_from_x86_64.py
 ```
 
-### 10.2. Потеря печати нотаризации при копировании
+### 10.2. ~~Потеря печати нотаризации при копировании~~ (УСТАРЕЛО)
 
-**Проблема:** Печать нотаризации теряется при копировании через `ditto --noextattr`
+**Обновление:** Печать нотаризации (stapler ticket) хранится в **code signature** `.app`,
+а не в extended attributes. Использование `ditto --noextattr` НЕ удаляет печать.
 
-**Решение:** Использовать `ditto` БЕЗ `--noextattr` при копировании для PKG:
-```bash
-/usr/bin/ditto dist/Nexy.app /tmp/nexy_pkg_clean_final/Applications/Nexy.app
-```
+**Текущее решение:** Использовать `ditto --noextattr --noqtn` + очистку xattrs (см. раздел 7.1)
 
 ### 10.3. Вложенная структура .app
 
@@ -387,18 +629,18 @@ rm -rf dist/Nexy.app/Nexy.app
 
 ---
 
-## 11. Чек-листы и отчёты
+## 13. Чек-листы и отчёты
 
 - **Перед упаковкой:** `Docs/PRE_PACKAGING_VERIFICATION.md`
 - **Резюме статуса:** `Docs/PACKAGING_READINESS_CHECKLIST.md`
-- **Требования:** `MACOS_PACKAGING_REQUIREMENTS.md`
+- **Требования:** этот документ (разделы 1–5)
 - **Process rules:** `.cursorrules §11.2 Packaging Regression Checklist`
 
 После каждого релиза **обязательно** обновите все документы ссылками на реальные логи/версии.
 
 ---
 
-## 12. Изменения в версии 2.0
+## 14. Изменения в версии 2.0
 
 - ✅ Добавлена автоматическая Universal 2 сборка в `build_final.sh`
 - ✅ Интегрирована универсализация .so файлов

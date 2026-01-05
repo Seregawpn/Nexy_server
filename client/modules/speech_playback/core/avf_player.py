@@ -95,8 +95,11 @@ class AVFoundationPlayer:
                 mixer = self._engine.mainMixerNode()
                 self._engine.connect_to_format_(self._player_node, mixer, fmt)
                 
-                # Set volume
-                mixer.setOutputVolume_(self.config.volume)
+                # КРИТИЧНО: Устанавливаем volume=1.0 для гарантии слышимого вывода
+                # Это важно для приветствия и других важных сообщений
+                mixer.setOutputVolume_(1.0)
+                self._player_node.setVolume_(1.0)
+                logger.info(f"🔊 [AVF_PLAYER] Volume set to 1.0 (mixer and player_node)")
                 
                 # Prepare engine
                 self._engine.prepare()
@@ -193,12 +196,19 @@ class AVFoundationPlayer:
             logger.error("❌ Player not initialized")
             return False
         
+        # Импортируем AVAudioSession для логирования output device
+        try:
+            from AVFoundation import AVAudioSession
+        except ImportError:
+            AVAudioSession = None
+        
         with self._lock:
             try:
-                # Set volumes to maximum for player and mixer
+                # КРИТИЧНО: Устанавливаем volume=1.0 для гарантии слышимого вывода
                 self._player_node.setVolume_(1.0)
                 mixer = self._engine.mainMixerNode()
                 mixer.setOutputVolume_(1.0)
+                logger.info(f"🔊 [AVF_PLAYER] Volume set to 1.0 at playback start (mixer and player_node)")
                 
                 # Start engine if not running
                 # Note: mainMixerNode -> outputNode connection is AUTOMATIC in AVAudioEngine
@@ -206,6 +216,34 @@ class AVFoundationPlayer:
                     success, error = self._engine.startAndReturnError_(None)
                     if success:
                         logger.info("🔊 AVAudioEngine started successfully")
+                        
+                        # КРИТИЧНО: Логируем output device/format для диагностики
+                        try:
+                            output_node = self._engine.outputNode()
+                            output_format = output_node.outputFormatForBus_(0)
+                            logger.info(
+                                f"🔊 [AVF_PLAYER] Output format: {output_format.sampleRate()}Hz, "
+                                f"{output_format.channelCount()}ch, format={output_format.commonFormat()}"
+                            )
+                            
+                            # Логируем текущий output device (если доступно)
+                            if AVAudioSession:
+                                try:
+                                    session = AVAudioSession.sharedInstance()
+                                    current_route = session.currentRoute()
+                                    if current_route:
+                                        outputs = current_route.outputs()
+                                        if outputs and len(outputs) > 0:
+                                            output = outputs[0]
+                                            device_name = output.portName() if hasattr(output, 'portName') else "unknown"
+                                            port_type = output.portType() if hasattr(output, 'portType') else "unknown"
+                                            logger.info(
+                                                f"🔊 [AVF_PLAYER] Output device: {device_name} (type: {port_type})"
+                                            )
+                                except Exception as device_e:
+                                    logger.debug(f"⚠️ [AVF_PLAYER] Could not get output device info: {device_e}")
+                        except Exception as format_e:
+                            logger.warning(f"⚠️ [AVF_PLAYER] Could not get output format: {format_e}")
                     else:
                         logger.error(f"❌ Failed to start AVAudioEngine: {error}")
                         return False

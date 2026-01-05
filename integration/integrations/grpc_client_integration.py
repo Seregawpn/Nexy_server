@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, Optional, Set
@@ -27,16 +28,18 @@ from modules.grpc_client.core.grpc_client import GrpcClient
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
 MCP_PREFIX = "__MCP__"
 
-logger = logging.getLogger(__name__)
+from integration.utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
 class GrpcClientIntegrationConfig:
-    aggregate_timeout_sec: float = 0.3  # ✅ Оптимизировано: 1.5 → 0.3 (скриншот обычно приходит быстрее)
+    aggregate_timeout_sec: float = 0.0  # Default 0: send immediately, no artificial delay
     request_timeout_sec: float = 30.0
     max_retries: int = 3
     retry_delay_sec: float = 1.0
-    server: str = "production"  # local|production|fallback (по умолчанию production для Azure)
+    server: str = "production"  # local|production|fallback
     use_network_gate: bool = True
 
 
@@ -57,10 +60,10 @@ class GrpcClientIntegration:
         # Конфиг интеграции
         if config is None:
             try:
-                uc = UnifiedConfigLoader()
+                uc = UnifiedConfigLoader.get_instance()
                 cfg = (uc._load_config().get('integrations', {}) or {}).get('grpc_client', {})
                 config = GrpcClientIntegrationConfig(
-                    aggregate_timeout_sec=float(cfg.get('aggregate_timeout_sec', 0.3)),  # ✅ Оптимизировано
+                    aggregate_timeout_sec=float(cfg.get('aggregate_timeout_sec', 0.0)),  # Default 0
                     request_timeout_sec=float(cfg.get('request_timeout_sec', 30.0)),
                     max_retries=int(cfg.get('max_retries', 3)),
                     retry_delay_sec=float(cfg.get('retry_delay', 1.0)),
@@ -90,8 +93,18 @@ class GrpcClientIntegration:
         # Сеть
         self._network_connected: Optional[bool] = None
 
+        # ПРИМЕЧАНИЕ: Жёсткий контракт протокола
+        # sample_rate и channels теперь ОБЯЗАТЕЛЬНЫ в audio_chunk (добавлены в protobuf).
+        # Любой чанк без этих полей будет отброшен (drop chunk) - это ожидаемое поведение
+        # для обеспечения единого и предсказуемого потока аудио без fallback и скрытой деградации.
+        # Старые версии сервера без sample_rate/channels будут давать тишину - это осознанное решение.
+
         self._initialized = False
         self._running = False
+        
+        # Concurrency guards
+        self._hwid_event = asyncio.Event()  # Replaces polling for hardware_id
+        self._connect_lock = asyncio.Lock()  # Single-flight for _ensure_connected
 
     # ---------------- Lifecycle ----------------
     async def initialize(self) -> bool:
@@ -99,7 +112,7 @@ class GrpcClientIntegration:
             logger.info("Initializing GrpcClientIntegration...")
             # Собираем конфигурацию gRPC из unified_config
             try:
-                uc = UnifiedConfigLoader()
+                uc = UnifiedConfigLoader.get_instance()
                 net = uc.get_network_config()
                 servers_cfg = {}
                 for name, s in net.grpc_servers.items():
@@ -132,7 +145,6 @@ class GrpcClientIntegration:
 
             # Подписки
             await self.event_bus.subscribe("voice.recognition_completed", self._on_voice_completed, EventPriority.HIGH)
-            await self.event_bus.subscribe("voice.recognition_failed", self._on_voice_failed, EventPriority.HIGH)
             await self.event_bus.subscribe("screenshot.captured", self._on_screenshot_captured, EventPriority.HIGH)
             await self.event_bus.subscribe("hardware.id_obtained", self._on_hardware_id, EventPriority.HIGH)
             await self.event_bus.subscribe("hardware.id_response", self._on_hardware_id_response, EventPriority.HIGH)
@@ -163,9 +175,11 @@ class GrpcClientIntegration:
         # Проверяем наличие hardware_id перед запуском
         await self._check_hardware_id_availability()
         
-        # Ленивая коннекция — подключимся при первой отправке
+        # EAGER CONNECT: подключаемся сразу, не дожидаясь первого запроса
+        asyncio.create_task(self._ensure_connected())
+        
         self._running = True
-        logger.info("GrpcClientIntegration started (lazy connect)")
+        logger.info("GrpcClientIntegration started (eager connect initiated)")
         return True
 
     async def stop(self) -> bool:
@@ -189,86 +203,35 @@ class GrpcClientIntegration:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             text = data.get("text")
-            # #region agent log
-            import json
-            try:
-                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "C",
-                        "location": "grpc_client_integration.py:186",
-                        "message": "_on_voice_completed called",
-                        "data": {
-                            "session_id": sid,
-                            "text_present": bool(text),
-                            "text_length": len(text) if text else 0
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + "\n")
-            except: pass
-            # #endregion
-            logger.info(f"🔍 [gRPC] _on_voice_completed вызван: session_id={sid}, text={'present' if text else 'missing'}, text_length={len(text) if text else 0}")
-            
             if not sid or not text:
-                logger.warning(f"⚠️ [gRPC] _on_voice_completed: пропуск - session_id={sid}, text={'present' if text else 'missing'}")
                 return
-            
             sess = self._sessions.setdefault(sid, {})
             sess['text'] = text
-            logger.info(f"✅ [gRPC] Текст сохранён в сессию {sid}: '{text[:50]}...' (длина: {len(text)})")
             await self._maybe_send(sid)
         except Exception as e:
             await self._handle_error(e, where="grpc.on_voice_completed", severity="warning")
-
-    async def _on_voice_failed(self, event):
-        """Обработка voice.recognition_failed - отправляем запрос на сервер даже без текста"""
-        try:
-            data = (event or {}).get("data", {})
-            sid = data.get("session_id")
-            error = data.get("error", "unknown")
-            # #region agent log
-            import json
-            try:
-                with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "D",
-                        "location": "grpc_client_integration.py:_on_voice_failed",
-                        "message": "_on_voice_failed called",
-                        "data": {
-                            "session_id": sid,
-                            "error": error,
-                            "should_send_empty": True
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + "\n")
-            except: pass
-            # #endregion
-            logger.info(f"🔍 [gRPC] _on_voice_failed вызван: session_id={sid}, error={error}")
-            
-            if not sid:
-                logger.warning(f"⚠️ [gRPC] _on_voice_failed: пропуск - нет session_id")
-                return
-            
-            # Сохраняем пустой текст для отправки на сервер
-            sess = self._sessions.setdefault(sid, {})
-            sess['text'] = ""  # Пустой текст для отправки на сервер
-            logger.info(f"✅ [gRPC] Пустой текст сохранён в сессию {sid} для отправки на сервер (recognition_failed)")
-            await self._maybe_send(sid)
-        except Exception as e:
-            await self._handle_error(e, where="grpc.on_voice_failed", severity="warning")
 
     async def _on_screenshot_captured(self, event):
         try:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             path = data.get("image_path")
-            if not sid or not path:
+            base64_data = data.get("base64_data")  # Base64 напрямую из события
+            
+            if not sid:
                 return
+            
             sess = self._sessions.setdefault(sid, {})
-            sess['screenshot_path'] = path
+            
+            # Приоритет: Base64 из события (WebP уже закодирован)
+            if base64_data:
+                sess['screenshot_base64'] = base64_data
+                logger.debug(f"✅ Screenshot Base64 получен напрямую из события (формат: {data.get('format', 'unknown')})")
+            
+            # Fallback: путь к файлу (для обратной совместимости)
+            if path:
+                sess['screenshot_path'] = path
+            
             sess['width'] = data.get('width')
             sess['height'] = data.get('height')
             await self._maybe_send(sid)
@@ -281,6 +244,7 @@ class GrpcClientIntegration:
             uuid = data.get("uuid")
             if uuid:
                 self._hardware_id = uuid
+                self._hwid_event.set()  # Wake up any waiters
         except Exception:
             pass
 
@@ -348,64 +312,37 @@ class GrpcClientIntegration:
 
     # ---------------- Core logic ----------------
     async def _maybe_send(self, session_id):
-        """Если есть текст (или пустой текст после recognition_failed) — запускаем отправку; скриншот ждём коротко."""
+        """Если есть текст — запускаем отправку; скриншот ждём коротко."""
         sess = self._sessions.get(session_id) or {}
-        text = sess.get('text')
-        screenshot_path = sess.get('screenshot_path')
-        
-        # #region agent log
-        import json
-        try:
-            with open('/Users/sergiyzasorin/Development/Nexy/Fix/client/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "D",
-                    "location": "grpc_client_integration.py:291",
-                    "message": "_maybe_send called",
-                    "data": {
-                        "session_id": session_id,
-                        "text_present": bool(text),
-                        "text_length": len(text) if text else 0,
-                        "text_is_empty": text == "",
-                        "screenshot_present": bool(screenshot_path)
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + "\n")
-        except: pass
-        # #endregion
-        
-        logger.info(f"🔍 [gRPC] _maybe_send вызван для session_id={session_id}: text={'present' if text else 'missing'}, screenshot={'present' if screenshot_path else 'missing'}")
-        
-        # Изменено: разрешаем отправку даже с пустым текстом (после recognition_failed)
-        if text is None:
-            logger.warning(f"⚠️ [gRPC] _maybe_send: нет текста для session_id={session_id}, пропуск отправки")
+        if not sess.get('text'):
             return
 
         # Уже отправляем? — не дублируем
         if session_id in self._inflight:
-            logger.info(f"ℹ️ [gRPC] _maybe_send: запрос уже в процессе для session_id={session_id}, пропуск дублирования")
             return
 
         # Сеть: если явно оффлайн и включена сет.защелка — не отправляем
         if self.config.use_network_gate and self._network_connected is False:
-            logger.warning(f"⚠️ [gRPC] _maybe_send: сеть оффлайн, пропуск отправки для session_id={session_id}")
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "offline"})
             return
 
-        logger.info(f"✅ [gRPC] _maybe_send: запускаем отправку для session_id={session_id}, текст: '{text[:50]}...'")
-        
         async def _delayed_send():
             try:
-                # Ждём скриншот небольшую паузу, если его ещё нет
-                if not sess.get('screenshot_path') and self.config.aggregate_timeout_sec > 0:
-                    logger.info(f"⏳ [gRPC] Ожидание скриншота {self.config.aggregate_timeout_sec} сек для session_id={session_id}")
+                # Оптимизация: если скриншот уже готов (base64 или path) - отправляем сразу
+                current_sess = self._sessions.get(session_id) or {}
+                has_screenshot = bool(current_sess.get('screenshot_base64') or current_sess.get('screenshot_path'))
+                
+                # Ждём ТОЛЬКО если конфиг разрешает ожидание (aggregate_timeout_sec > 0)
+                if not has_screenshot and self.config.aggregate_timeout_sec > 0:
+                    short_wait = min(0.2, self.config.aggregate_timeout_sec)
                     try:
-                        await asyncio.sleep(self.config.aggregate_timeout_sec)
+                        await asyncio.sleep(short_wait)
+                        # Проверяем еще раз после задержки (скриншот мог прийти)
+                        current_sess = self._sessions.get(session_id) or {}
+                        has_screenshot = bool(current_sess.get('screenshot_base64') or current_sess.get('screenshot_path'))
                     except asyncio.CancelledError:
-                        logger.warning(f"⚠️ [gRPC] _delayed_send отменён для session_id={session_id}")
                         return
-                logger.info(f"🚀 [gRPC] Вызываем _send для session_id={session_id}")
+                # Всегда отправляем запрос, независимо от наличия скриншота
                 await self._send(session_id)
             finally:
                 self._inflight.pop(session_id, None)
@@ -413,78 +350,69 @@ class GrpcClientIntegration:
         task = asyncio.create_task(_delayed_send())
         self._cancel_notified.discard(session_id)
         self._inflight[session_id] = task
-        logger.info(f"✅ [gRPC] Задача отправки создана для session_id={session_id}")
 
     async def _send(self, session_id):
         sess = self._sessions.get(session_id) or {}
         text = sess.get('text')
-        screenshot_path = sess.get('screenshot_path')
-        
-        logger.info(f"🔍 [gRPC] _send вызван для session_id={session_id}: text={'present' if text else 'missing'}, screenshot={'present' if screenshot_path else 'missing'}")
-        
         if not text:
-            logger.error(f"❌ [gRPC] _send: нет текста для session_id={session_id}, пропуск отправки")
             return
-        
-        logger.info(f"✅ [gRPC] _send: текст найден для session_id={session_id}: '{text[:50]}...' (длина: {len(text)})")
-        
-        # Получаем hardware_id (✅ оптимизировано: 3+3с → 1+0.5с, так как hardware_id кэшируется при старте)
-        logger.info(f"🔍 [gRPC] Получение hardware_id для session_id={session_id}")
-        hwid = await self._await_hardware_id(timeout_ms=1000)  # ✅ Оптимизировано: 3000 → 1000мс
+        # Получаем hardware_id
+        hwid = await self._await_hardware_id(timeout_ms=3000)
         if not hwid:
-            logger.warning(f"⚠️ [gRPC] Hardware ID not available for session {session_id} - requesting explicitly")
+            logger.warning(f"Hardware ID not available for session {session_id} - requesting explicitly")
             await self.event_bus.publish("hardware.id_request", {"request_id": f"grpc-{session_id}", "wait_ready": True})
-            hwid = await self._await_hardware_id(timeout_ms=500, request_id=f"grpc-{session_id}")  # ✅ Оптимизировано: 3000 → 500мс
+            hwid = await self._await_hardware_id(timeout_ms=3000, request_id=f"grpc-{session_id}")
         if not hwid:
-            logger.error(f"❌ [gRPC] No Hardware ID available for gRPC request - session {session_id}")
+            logger.error(f"No Hardware ID available for gRPC request - session {session_id}")
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "no_hardware_id"})
             return
         
-        logger.info(f"✅ [gRPC] Using Hardware ID: {hwid[:8]}... for session {session_id}")
+        logger.info(f"Using Hardware ID: {hwid[:8]}... for session {session_id}")
 
-        # Кодируем скриншот (если есть)
-        screenshot_b64 = None
+        # Получаем Base64 скриншота напрямую из события (если есть)
+        screenshot_b64 = sess.get('screenshot_base64')  # Приоритет: Base64 из события
         width = sess.get('width')
         height = sess.get('height')
-        path = sess.get('screenshot_path')
-        if path:
-            try:
-                p = Path(path)
-                if p.exists():
-                    data = p.read_bytes()
-                    screenshot_b64 = base64.b64encode(data).decode('ascii')
-            except Exception as e:
-                logger.debug(f"Failed to read screenshot: {e}")
+        
+        # Fallback: читаем файл (для обратной совместимости) - non-blocking via executor
+        if not screenshot_b64:
+            path = sess.get('screenshot_path')
+            if path:
+                try:
+                    loop = asyncio.get_running_loop()
+                    def _read_and_encode():
+                        p = Path(path)
+                        if p.exists():
+                            return base64.b64encode(p.read_bytes()).decode('ascii')
+                        return None
+                    screenshot_b64 = await loop.run_in_executor(None, _read_and_encode)
+                except Exception as e:
+                    logger.debug(f"Failed to read screenshot: {e}")
 
+        # TRACE: начало gRPC запроса (до publish для максимальной точности)
+        ts_ms = int(time.monotonic() * 1000)
+        logger.info(f"TRACE phase=grpc.start ts={ts_ms} session={session_id} extra={{has_screenshot={bool(screenshot_b64)}, text_len={len(text)}}}")
+        
         # Публикуем старт
         await self.event_bus.publish("grpc.request_started", {"session_id": session_id, "has_screenshot": bool(screenshot_b64)})
 
-        # Ленивая коннекция к серверу
-        try:
-            if self._client and not self._client.is_connected():
-                logger.info(f"Connecting to gRPC server: {self.config.server}")
-                # Явно выбираем окружение из конфигурации интеграции (local|production|fallback)
-                success = await self._client.connect(self.config.server)
-                if success:
-                    logger.info(f"✅ gRPC connected to {self.config.server}")
-                else:
-                    logger.error(f"❌ Failed to connect to gRPC server: {self.config.server}")
-                    await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "connect_failed"})
-                    return
-            else:
-                logger.info(f"gRPC already connected to {self.config.server}")
-        except Exception as e:
-            logger.error(f"gRPC connection error: {e}")
-            await self._handle_error(e, where="grpc.connect", severity="warning")
+        # Используем single-flight _ensure_connected
+        connected = await self._ensure_connected()
+        if not connected:
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "connect_failed"})
             return
 
         # Стримим ответы
+        if self._client is None:
+            logger.error("gRPC client not initialized")
+            await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "client_not_initialized"})
+            return
+        
         try:
-            logger.info(f"🚀 [gRPC] Starting gRPC stream for session {session_id}")
-            logger.info(f"📤 [gRPC] Параметры запроса: prompt='{text[:50]}...' (длина: {len(text)}), screenshot={'present' if screenshot_b64 else 'missing'}, hardware_id={hwid[:8]}...")
+            logger.info(f"Starting gRPC stream for session {session_id} with prompt: '{text[:50]}...'")
             got_terminal = False
             chunk_count = 0
+            first_chunk_ts = None
             async for resp in self._client.stream_audio(
                 prompt=text,
                 screenshot_base64=screenshot_b64 or "",
@@ -492,19 +420,18 @@ class GrpcClientIntegration:
                 hardware_id=hwid,
             ):
                 chunk_count += 1
+                
+                # TRACE: первый ответ от gRPC
+                if chunk_count == 1:
+                    first_chunk_ts = int(time.monotonic() * 1000)
+                    logger.info(f"TRACE phase=grpc.response ts={first_chunk_ts} session={session_id} extra={{chunk=1}}")
 
                 # Проверяем, какой тип content установлен (oneof) - ВСЕГДА используем WhichOneof для protobuf!
                 which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None
 
                 # Диагностика: логируем только важные события
-                # ✅ FIX: Всегда логируем первый чанк и терминальные сообщения для диагностики
                 if chunk_count == 1 or chunk_count % 10 == 0 or which_oneof in ('end_message', 'error_message'):
                     logger.info(f"🔍 gRPC response #{chunk_count}: WhichOneof('content')={which_oneof}")
-                
-                # ✅ FIX: Дополнительное логирование для диагностики отсутствия данных
-                if chunk_count == 1 and which_oneof == 'end_message':
-                    logger.warning(f"⚠️ КРИТИЧНО: Сервер отправил только end_message без audio_chunk или text_chunk для session {session_id}")
-                    logger.warning(f"⚠️ Это означает, что сервер не сгенерировал аудио или текст для ответа")
 
                 # Обрабатываем СТРОГО по типу oneof
                 if which_oneof == 'text_chunk':
@@ -580,13 +507,34 @@ class GrpcClientIntegration:
                         logger.warning(f"⚠️ Received empty audio_chunk - skipping (waiting for end_message)")
                         continue
 
-                    logger.info(f"gRPC received audio_chunk bytes={len(data)} dtype={dtype} shape={shape} for session {session_id}")
+                    # ЖЕСТКИЙ КОНТРАКТ: sample_rate и channels обязательны в audio_chunk
+                    # В protobuf v3 для int32 полей HasField() не работает, поэтому проверяем на валидные значения
+                    # sample_rate и channels не могут быть 0 (невалидные значения)
+                    chunk_sr = ch.sample_rate if ch.sample_rate > 0 else None
+                    chunk_ch = ch.channels if ch.channels > 0 else None
+                    
+                    # Если поля отсутствуют (равны 0) - это ошибка протокола, drop chunk
+                    if chunk_sr is None or chunk_ch is None:
+                        logger.error(
+                            f"❌ [GRPC_PROTOCOL_ERROR] audio_chunk без sample_rate или channels "
+                            f"(raw: sr={ch.sample_rate}, ch={ch.channels}) для сессии {session_id}. "
+                            f"Чанк отброшен. Сервер должен заполнять эти поля согласно протоколу."
+                        )
+                        continue  # Drop chunk - жесткий контракт
+                    
+                    # Используем значения из чанка
+                    effective_sr = chunk_sr
+                    effective_ch = chunk_ch
+                    logger.debug(
+                        f"🔍 [GRPC_CHUNK_DIAG] audio_chunk: bytes={len(data)}, dtype={dtype}, "
+                        f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {session_id}"
+                    )
 
                     await self.event_bus.publish("grpc.response.audio", {
                         "session_id": session_id,
                         "dtype": dtype,
-                        "sample_rate": getattr(ch, 'sample_rate', None),
-                        "channels": getattr(ch, 'channels', None),
+                        "sample_rate": effective_sr,
+                        "channels": effective_ch,
                         "shape": shape,
                         "bytes": data,
                     })
@@ -621,10 +569,38 @@ class GrpcClientIntegration:
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": str(e)})
 
     # ---------------- Utilities ----------------
+    async def _ensure_connected(self) -> bool:
+        """Single-flight connection: ensures only one connect attempt runs at a time."""
+        if self._client and self._client.is_connected():
+            return True
+        
+        async with self._connect_lock:
+            # Double-check after acquiring lock
+            if self._client and self._client.is_connected():
+                return True
+            
+            if not self._client:
+                logger.error("gRPC client not initialized")
+                return False
+            
+            try:
+                logger.info(f"_ensure_connected: Connecting to gRPC server: {self.config.server}")
+                success = await self._client.connect(self.config.server)
+                if success:
+                    logger.info(f"✅ _ensure_connected: gRPC connected to {self.config.server}")
+                else:
+                    logger.error(f"❌ _ensure_connected: Failed to connect to gRPC server")
+                return success
+            except Exception as e:
+                logger.error(f"❌ _ensure_connected error: {e}")
+                return False
+    
     async def _await_hardware_id(self, timeout_ms: int = 1500, request_id: Optional[str] = None) -> Optional[str]:
+        """Wait for hardware_id using asyncio.Event (no polling)."""
         if self._hardware_id:
             return self._hardware_id
-        # Если ждём конкретный request_id ответа
+        
+        # If waiting for specific request_id response
         if request_id:
             fut = asyncio.get_running_loop().create_future()
             self._pending_hwid[request_id] = fut
@@ -632,17 +608,15 @@ class GrpcClientIntegration:
                 return await asyncio.wait_for(fut, timeout=timeout_ms / 1000.0)
             except asyncio.TimeoutError:
                 return None
-        # Иначе ждём событие hardware.id_obtained (кэш интеграции HardwareID заполнит _hardware_id)
+        
+        # Wait for hardware.id_obtained event using Event (no polling!)
         try:
-            # Неблокирующее ожидание: опрашиваем несколько раз
-            deadline = asyncio.get_event_loop().time() + (timeout_ms / 1000.0)
-            while asyncio.get_event_loop().time() < deadline:
-                if self._hardware_id:
-                    return self._hardware_id
-                await asyncio.sleep(0.05)
+            await asyncio.wait_for(self._hwid_event.wait(), timeout=timeout_ms / 1000.0)
+            return self._hardware_id
+        except asyncio.TimeoutError:
+            return None
         except Exception:
-            pass
-        return None
+            return None
 
     async def _handle_error(self, e: Exception, *, where: str, severity: str = "error"):
         if hasattr(self.error_handler, 'handle'):

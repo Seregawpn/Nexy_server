@@ -210,11 +210,16 @@ class ProcessingWorkflow(BaseWorkflow):
             # Запуск общего таймаута
             if self.total_timeout_task and not self.total_timeout_task.done():
                 self.total_timeout_task.cancel()
-                
-            self.total_timeout_task = self._create_task(
-                self._total_timeout_monitor(session_id), 
-                "total_timeout"
-            )
+            
+            # Проверяем, что session_id не None перед запуском монитора
+            if session_id is not None:
+                self.total_timeout_task = self._create_task(
+                    self._total_timeout_monitor(session_id), 
+                    "total_timeout"
+                )
+            else:
+                logger.warning("⚙️ ProcessingWorkflow: session_id is None, skipping total timeout monitor")
+                self.total_timeout_task = None
             
             # Переходим к этапу захвата
             await self._transition_to_stage(ProcessingStage.CAPTURING)
@@ -259,8 +264,7 @@ class ProcessingWorkflow(BaseWorkflow):
         try:
             data = event.get("data", {})
             session_id = data.get("session_id")
-            # ✅ ИСПРАВЛЕНИЕ: Поддерживаем оба ключа (image_path и path) для обратной совместимости
-            screenshot_path = data.get("image_path") or data.get("path")
+            screenshot_path = data.get("path")
             
             logger.info(f"📸 ProcessingWorkflow: скриншот захвачен, path={screenshot_path}")
             
@@ -468,14 +472,7 @@ class ProcessingWorkflow(BaseWorkflow):
     async def _cancel_active_processes(self):
         """Отмена всех активных процессов через ЕДИНЫЙ канал прерывания"""
         try:
-            # ✅ КРИТИЧНО: Используем self.current_session_id как основной источник
-            # Если он None, это означает, что workflow уже завершен или не был запущен
-            # В этом случае не публикуем playback.cancelled, так как нет активной сессии
             session_id = self.current_session_id
-            
-            if session_id is None:
-                logger.warning(f"⚠️ ProcessingWorkflow: current_session_id=None, пропускаем публикацию playback.cancelled (workflow не активен)")
-                return
             
             # Отменяем gRPC запрос
             if not self.grpc_completed:
@@ -485,8 +482,7 @@ class ProcessingWorkflow(BaseWorkflow):
                     "reason": "user_interrupt"
                 })
             
-            # ✅ КРИТИЧНО: ЕДИНЫЙ канал прерывания аудио - публикуем playback.cancelled
-            # Гарантируем, что session_id всегда передается (проверено выше)
+            # ЕДИНЫЙ канал прерывания аудио - публикуем playback.cancelled
             if not self.playback_completed:
                 logger.info("⚙️ ProcessingWorkflow: останавливаем воспроизведение через ЕДИНЫЙ канал")
                 await self.event_bus.publish("playback.cancelled", {
@@ -536,7 +532,7 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.info(f"⚙️ ProcessingWorkflow: возврат в SLEEPING, reason={reason}")
             
             await self._publish_mode_request(
-                AppMode.SLEEPING, 
+                AppMode.SLEEPING,  # type: ignore[arg-type]
                 f"processing_{reason}",
                 priority=90  # Очень высокий приоритет для завершения
             )
@@ -619,6 +615,11 @@ class ProcessingWorkflow(BaseWorkflow):
         # Фильтрация по сессии
         data = event.get("data", {})
         event_session = data.get("session_id")
+        
+        # КРИТИЧНО: Если current_session_id есть, а event_session нет - событие не релевантно
+        # Это предотвращает завершение чужой цепочки PROCESSING
+        if self.current_session_id and event_session is None:
+            return False
         
         if self.current_session_id and event_session:
             return event_session == self.current_session_id

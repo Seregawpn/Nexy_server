@@ -15,14 +15,22 @@ import logging
 from typing import Optional, Dict, Any
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
+from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+
+# Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
+try:
+    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    # Fallback: explicit modules path if repository layout is used
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 # Централизованный контроллер режимов
 try:
-    from mode_management import (  # type: ignore
+    from mode_management import (
         ModeController, ModeTransition, ModeTransitionType, ModeConfig,
-    )
+    )  # type: ignore[reportMissingImports]
 except Exception:
     # Fallback to explicit modules path when running from repo
     from modules.mode_management import (
@@ -90,9 +98,6 @@ class ModeManagementIntegration:
             self.controller.register_transition(ModeTransition(AppMode.SLEEPING, AppMode.PROCESSING, ModeTransitionType.MANUAL))
             # 🆕 Позволяем отменить слушание и вернуться в сон вручную
             self.controller.register_transition(ModeTransition(AppMode.LISTENING, AppMode.SLEEPING, ModeTransitionType.MANUAL))
-            # ✅ КРИТИЧНО: Разрешаем переход из PROCESSING в LISTENING (прерывание текущей обработки)
-            # Это необходимо для прерывания воспроизведения приветствия при зажатии shortcut
-            self.controller.register_transition(ModeTransition(AppMode.PROCESSING, AppMode.LISTENING, ModeTransitionType.MANUAL))
 
             # Мост: при смене режима контроллером — обновляем StateManager,
             # который централизованно публикует события (app.mode_changed/app.state_changed)
@@ -164,44 +169,21 @@ class ModeManagementIntegration:
 
             logger.info(f"🔄 MODE_REQUEST: target={target}, source={data.get('source')}, session_id={data.get('session_id')}, priority={data.get('priority')}")
 
-            # ✅ КРИТИЧНО: Конвертируем target в AppMode enum, если это строка
             if isinstance(target, str):
                 try:
-                    # AppMode использует lowercase значения ("sleeping", "listening", "processing")
                     target = AppMode(target.lower())
                 except Exception:
-                    # Пробуем uppercase для совместимости
+                    # допускаем значения вида "PROCESSING" без понижения регистра
                     try:
-                        target = AppMode(target.upper().lower())
+                        target = AppMode(target.lower())
                     except Exception:
                         logger.warning(f"MODE_REQUEST: Invalid target={target}, ignoring")
                         return
-            
-            # ✅ КРИТИЧНО: Убеждаемся, что target - это AppMode enum, а не строка
-            if isinstance(target, str):
-                logger.warning(f"MODE_REQUEST: target={target} is still a string after conversion, ignoring")
-                return
-            
-            # ✅ КРИТИЧНО: Проверяем, что target - это валидный AppMode enum
-            # Используем hasattr для проверки, что это enum, и проверяем значение
-            if not hasattr(target, 'value') or target.value not in ("sleeping", "listening", "processing"):
-                logger.warning(f"MODE_REQUEST: target={target} (type={type(target)}, value={getattr(target, 'value', None)}) not in allowed modes, ignoring")
-                return
-                
-            # Дополнительная проверка через сравнение с известными значениями
             if target not in (AppMode.SLEEPING, AppMode.LISTENING, AppMode.PROCESSING):
-                logger.warning(f"MODE_REQUEST: target={target} (type={type(target)}, value={getattr(target, 'value', None)}) not in allowed modes tuple, ignoring")
+                logger.warning(f"MODE_REQUEST: target={target} not in allowed modes, ignoring")
                 return
 
-            # ✅ КРИТИЧНО: Обрабатываем priority как число или EventPriority enum
-            priority_raw = data.get("priority", 0)
-            if isinstance(priority_raw, EventPriority):
-                priority = priority_raw.value  # Извлекаем числовое значение из enum
-            elif isinstance(priority_raw, (int, float)):
-                priority = int(priority_raw)
-            else:
-                priority = 0  # По умолчанию, если не удалось преобразовать
-            
+            priority = int(data.get("priority", 0))
             source = str(data.get("source", "unknown"))
             session_id = data.get("session_id")
 
@@ -241,65 +223,12 @@ class ModeManagementIntegration:
                 logger.debug(f"Mode request ignored (same mode): {target}")
                 return
             
-            # ✅ КРИТИЧНО: Проверка блокировки SLEEPING в режиме PROCESSING
-            # Применяется для всех источников, кроме явных interrupt с высоким приоритетом
-            if current_mode == AppMode.PROCESSING:
+            if current_mode == AppMode.PROCESSING and source != 'interrupt':
                 current_session_id = self.state_manager.get_current_session_id()
-                is_microphone_active = self.state_manager.is_microphone_active()
-                logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={current_session_id}, request={session_id}, mic_active={is_microphone_active}, source={source})")
-                
-                # ✅ КРИТИЧНО: Если запрос на SLEEPING без session_id - блокируем, если:
-                # 1. Есть активная сессия (current_session_id is not None), ИЛИ
-                # 2. Микрофон активен (is_microphone_active=True) - запись продолжается, даже если session_id был сброшен, ИЛИ
-                # 3. Режим PROCESSING и source не 'interrupt' - обработка продолжается, даже если session_id был сброшен
-                # Это предотвращает прерывание активного воспроизведения/записи (например, от welcome_message во время пользовательского запроса)
-                # Проверяем как enum, так и строковое представление для надежности
-                is_sleeping_request = (
-                    target == AppMode.SLEEPING or 
-                    (isinstance(target, str) and target.upper() == "SLEEPING") or
-                    str(target) == "AppMode.SLEEPING" or
-                    str(target) == "sleeping"
-                )
-                logger.debug(f"🔍 MODE_REQUEST: is_sleeping_request={is_sleeping_request}, target={target}, target_type={type(target)}, session_id={session_id}, current_session_id={current_session_id}, mic_active={is_microphone_active}, source={source}")
-                
-                # ✅ КРИТИЧНО: Блокируем переход в SLEEPING, если:
-                # - Запрос без session_id И (есть активная сессия ИЛИ микрофон активен ИЛИ source не 'interrupt' с высоким приоритетом)
-                # Это предотвращает прерывание активной обработки, даже если session_id был сброшен
-                # Исключение: явный interrupt с высоким приоритетом (priority >= 90) разрешен
-                if is_sleeping_request and session_id is None:
-                    # Разрешаем interrupt с высоким приоритетом (priority >= 90)
-                    # Это позволяет ProcessingWorkflow.processing_interrupted (priority=90) прервать обработку
-                    if (source == 'interrupt' or (priority is not None and priority >= 90)):
-                        logger.debug(f"🔍 MODE_REQUEST: разрешаем SLEEPING от interrupt с высоким приоритетом (source={source}, priority={priority})")
-                        # Продолжаем обработку ниже
-                    elif current_session_id is not None:
-                        logger.warning(f"⚠️ MODE_REQUEST: запрос на SLEEPING без session_id при активной сессии {current_session_id} (source={source}, target={target}, target_type={type(target)}) - блокируем")
-                        return
-                    elif is_microphone_active:
-                        logger.warning(f"⚠️ MODE_REQUEST: запрос на SLEEPING без session_id при активном микрофоне (source={source}, target={target}, target_type={type(target)}) - блокируем (запись продолжается)")
-                        return
-                    # ✅ КРИТИЧНО: Если current_session_id=None и микрофон не активен, но режим PROCESSING - 
-                    # это означает, что обработка еще продолжается (воспроизведение или gRPC запрос)
-                    # Блокируем переход в SLEEPING, чтобы не прерывать активную обработку
-                    # Исключение: только interrupt с высоким приоритетом (priority >= 90) разрешен
-                    else:
-                        logger.warning(f"⚠️ MODE_REQUEST: запрос на SLEEPING без session_id в режиме PROCESSING (source={source}, target={target}, target_type={type(target)}, priority={priority}) - блокируем (обработка продолжается)")
-                        return
-                
-                # ✅ КРИТИЧНО: Проверка session_id для переходов из PROCESSING
-                # Исключение: переход в LISTENING всегда разрешён (пользователь хочет начать новую запись)
+                logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={current_session_id}, request={session_id})")
                 if current_session_id is not None and session_id is not None:
-                    # ✅ КРИТИЧНО: Нормализуем session_id к строкам для сравнения
-                    # session_id может быть float (из input_processing) или str (из state_manager)
-                    current_session_id_str = str(current_session_id)
-                    session_id_str = str(session_id)
-                    
-                    # Разрешаем переход в LISTENING даже с другим session_id (прерывание текущей обработки)
-                    if target == AppMode.LISTENING:
-                        logger.info(f"🔄 MODE_REQUEST: разрешаем переход в LISTENING из PROCESSING (прерывание текущей обработки, active={current_session_id_str}, request={session_id_str})")
-                        # Продолжаем обработку ниже - переход будет применён
-                    elif session_id_str != current_session_id_str:
-                        logger.debug(f"Mode request ignored due to session mismatch in PROCESSING (active={current_session_id_str}, request={session_id_str})")
+                    if session_id != current_session_id:
+                        logger.debug("Mode request ignored due to session mismatch in PROCESSING")
                         return
 
             # Приоритеты: если заявка из более низкого приоритета — применяем только если нет конфликтов

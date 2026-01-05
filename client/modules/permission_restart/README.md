@@ -21,24 +21,15 @@ updater coordination hook.
 
 ## Event Contract
 
-The integration publishes diagnostics via the EventBus:
+**Источник истины:** [`Docs/FLOW_INTERACTION_SPEC.md`](../../Docs/FLOW_INTERACTION_SPEC.md) — разделы 3.9 (Permission Restart) и 4.3 (Permission Restart Flow).
 
-```text
-permission_restart.scheduled {
-  session_id: str | null,
-  reason: str,
-  delay_sec: float,
-  critical_permissions: [str]
-}
+Канонические контракты событий:
+- `permission_restart.scheduled` — планирование перезапуска (см. раздел 3.9 канона)
+- `permission_restart.executing` — выполнение перезапуска (см. раздел 3.9 канона)
 
-permission_restart.executing {
-  session_id: str | null,
-  reason: str
-}
-```
+Полные спецификации payload (обязательные/опциональные поля) и последовательность flow описаны в каноническом документе.
 
-Consumers can subscribe to these events to surface UI notifications or log
-entries.
+Consumers can subscribe to these events to surface UI notifications or log entries.
 
 ## Configuration
 

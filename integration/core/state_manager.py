@@ -13,19 +13,13 @@ application modes across all integrations.
 """
 try:
     # Preferred: top-level import (packaged or PYTHONPATH includes modules)
-    from mode_management import AppMode  # type: ignore
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
 except Exception:
-    try:
-        # Fallback: explicit modules path if repository layout is used
-        from modules.mode_management import AppMode  # type: ignore
-    except Exception:
-        # Last-resort minimal inline enum to not break local tools; values match
-        # the centralized one. Should not be used in production.
-        from enum import Enum
-        class AppMode(Enum):
-            SLEEPING = "sleeping"
-            LISTENING = "listening"
-            PROCESSING = "processing"
+    # Fallback: explicit modules path if repository layout is used
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
+
+# Экспортируем AppMode для использования в других модулях
+__all__ = ['ApplicationStateManager', 'AppMode']
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +27,8 @@ class ApplicationStateManager:
     """Менеджер состояния приложения"""
     
     def __init__(self):
+        # Thread-safety lock for state mutations
+        self._lock = threading.Lock()
         self.current_mode = AppMode.SLEEPING
         self.previous_mode = None
         self.mode_history = []
@@ -42,13 +38,6 @@ class ApplicationStateManager:
         # EventBus (необязателен). Устанавливается координатором.
         self._event_bus = None
         self._loop = None  # основной asyncio loop, на который публикуем события
-        
-        # ✅ ЭТАП 1: Централизованное управление состоянием микрофона
-        # Состояние микрофона: "idle", "opening", "active", "closing", "error"
-        self._microphone_state: str = "idle"
-        self._microphone_session_id: Optional[str] = None
-        self._microphone_lock = threading.Lock()  # Thread-safe доступ к состоянию микрофона
-        self._microphone_last_change: float = 0.0  # Timestamp последнего изменения состояния
 
     def attach_event_bus(self, event_bus):
         """Прикрепить EventBus для публикации событий смены режима"""
@@ -67,95 +56,97 @@ class ApplicationStateManager:
         Публикует app.mode_changed если:
         - Режим изменился, ИЛИ
         - session_id изменился (даже если режим не изменился)
+        
+        Thread-safe: state mutations are protected by lock.
+        Event publication happens OUTSIDE lock to prevent deadlocks.
         """
+        # Snapshot for event publication (outside lock)
+        should_publish = False
+        snapshot_mode = None
+        snapshot_previous_mode = None
+        snapshot_session_id = None
+        event_bus = None
+        
         try:
-            mode_changed = self.current_mode != mode
-            session_changed = session_id is not None and self.current_session_id != session_id
-            
-            # Обновляем режим если изменился
-            if mode_changed:
-                self.previous_mode = self.current_mode
-                self.current_mode = mode
+            # === CRITICAL SECTION: Mutate state under lock ===
+            with self._lock:
+                mode_changed = self.current_mode != mode
                 
-                # Добавляем в историю
-                self.mode_history.append({
-                    "mode": mode,
-                    "previous_mode": self.previous_mode,
-                    "timestamp": self._get_timestamp()
-                })
+                # Обновляем режим если изменился
+                if mode_changed:
+                    self.previous_mode = self.current_mode
+                    self.current_mode = mode
+                    
+                    # Добавляем в историю
+                    self.mode_history.append({
+                        "mode": mode,
+                        "previous_mode": self.previous_mode,
+                        "timestamp": self._get_timestamp()
+                    })
+                    
+                    # Ограничиваем историю
+                    if len(self.mode_history) > 100:
+                        self.mode_history.pop(0)
+                    
+                    logger.info(f"🔄 Режим изменен: {self.previous_mode.value} → {mode.value}")
                 
-                # Ограничиваем историю
-                if len(self.mode_history) > 100:
-                    self.mode_history.pop(0)
+                # Обновляем session_id если передан
+                if session_id is not None:
+                    self.current_session_id = session_id
                 
-                logger.info(f"🔄 Режим изменен: {self.previous_mode.value} → {mode.value}")
+                # Prepare snapshot for publishing OUTSIDE lock
+                if mode_changed:
+                    should_publish = True
+                    snapshot_mode = self.current_mode
+                    snapshot_previous_mode = self.previous_mode
+                    snapshot_session_id = self.current_session_id if session_id is not None else None
+                    event_bus = self._event_bus
+            # === END CRITICAL SECTION ===
             
-            # Обновляем session_id если передан
-            if session_id is not None:
-                self.current_session_id = session_id
-            
-            # Публикуем событие ТОЛЬКО если режим изменился
-            # session_id обновляется через update_session_id() без публикации события
-            if mode_changed:
-                # 🎯 TRAY DEBUG: Синхронный лог ПЕРЕД публикацией
-                logger.info(f"🎯 TRAY DEBUG: set_mode() готов публиковать app.mode_changed: {mode}, session_id={session_id}")
-                logger.info(f"🎯 TRAY DEBUG: EventBus подключен: {self._event_bus is not None}")
-
-                # Публикуем централизованные события (если EventBus подключен)
-                if self._event_bus is not None:
-                    try:
-                        import asyncio
-                        # Всегда ориентируемся на loop, закреплённый в EventBus
-                        loop = getattr(self._event_bus, "_loop", None)
-                        logger.info(
-                            f"🔄 StateManager: начинаем публикацию событий (EventBus подключен, eb_loop={id(loop) if loop else None})"
-                        )
-
-                        async def _publish_changes():
-                            logger.info(
-                                f"🎯 TRAY DEBUG: StateManager публикует app.mode_changed: {mode} (type: {type(mode)})"
-                            )
-                            event_data = {"mode": mode}
-                            if session_id is not None:
-                                event_data["session_id"] = session_id
-                            logger.info(f"🎯 TRAY DEBUG: StateManager event_data: {event_data}")
-                            await self._event_bus.publish("app.mode_changed", event_data)
-                            logger.info("🎯 TRAY DEBUG: StateManager app.mode_changed опубликовано успешно")
-
-                            # Проверяем есть ли подписчики
-                            try:
-                                subscribers = getattr(self._event_bus, 'subscribers', {}).get("app.mode_changed", [])
-                                logger.info(
-                                    f"🎯 TRAY DEBUG: StateManager подписчиков на app.mode_changed: {len(subscribers)}"
-                                )
-                            except Exception:
-                                pass
-                            logger.info(
-                                f"🔄 StateManager: -> publish app.state_changed: {self.previous_mode} -> {mode}"
-                            )
-                            await self._event_bus.publish("app.state_changed", {
-                                "old_mode": self.previous_mode,
-                                "new_mode": mode
-                            })
-
-                        # Если у EventBus есть живой loop — публикуем на нём
-                        if loop is not None and getattr(loop, 'is_running', lambda: False)():
-                            logger.info("🔄 StateManager: публикуем через run_coroutine_threadsafe на loop EventBus (без ожидания)")
-                            # Не ждём завершения — исключаем блокировку UI-сигналов
-                            asyncio.run_coroutine_threadsafe(_publish_changes(), loop)
-                        else:
-                            logger.info("🔄 StateManager: публикуем через asyncio.create_task (fallback)")
-                            asyncio.create_task(_publish_changes())
-                        logger.info("✅ StateManager: события опубликованы успешно")
-                    except Exception as e:
-                        logger.error(f"❌ StateManager: Не удалось опубликовать события смены режима: {e}")
-                        import traceback
-                        logger.error(f"❌ StateManager: Traceback: {traceback.format_exc()}")
-                else:
-                    logger.warning(f"⚠️ StateManager: EventBus не подключен, события не публикуются")
+            # Publish events OUTSIDE lock to prevent deadlocks
+            if should_publish and event_bus is not None:
+                self._publish_mode_changed(
+                    event_bus, snapshot_mode, snapshot_previous_mode, snapshot_session_id
+                )
+            elif should_publish:
+                logger.warning("⚠️ StateManager: EventBus не подключен, события не публикуются")
             
         except Exception as e:
             logger.error(f"❌ Ошибка установки режима: {e}")
+    
+    def _publish_mode_changed(self, event_bus, mode, previous_mode, session_id):
+        """Publish mode change events. Called OUTSIDE lock."""
+        try:
+            import asyncio
+            loop = getattr(event_bus, "_loop", None)
+            
+            async def _publish_changes():
+                event_data = {"mode": mode}
+                if session_id is not None:
+                    event_data["session_id"] = session_id
+                await event_bus.publish("app.mode_changed", event_data)
+                await event_bus.publish("app.state_changed", {
+                    "old_mode": previous_mode,
+                    "new_mode": mode
+                })
+            
+            def _log_exception(fut):
+                """Callback to log exceptions from fire-and-forget coroutines."""
+                try:
+                    exc = fut.exception()
+                    if exc:
+                        logger.error(f"❌ StateManager event publish failed: {exc}")
+                except Exception:
+                    pass
+            
+            if loop is not None and getattr(loop, 'is_running', lambda: False)():
+                fut = asyncio.run_coroutine_threadsafe(_publish_changes(), loop)
+                fut.add_done_callback(_log_exception)
+            else:
+                asyncio.create_task(_publish_changes())
+            
+        except Exception as e:
+            logger.error(f"❌ StateManager: Не удалось опубликовать события: {e}")
     
     def update_session_id(self, session_id: Optional[str]) -> bool:
         """
@@ -171,35 +162,40 @@ class ApplicationStateManager:
             True если session_id изменился, False если остался прежним
         """
         try:
-            if session_id != self.current_session_id:
-                old_session_id = self.current_session_id
-                self.current_session_id = session_id
-                logger.debug(
-                    f"🔄 Session ID обновлен (без публикации события): "
-                    f"{old_session_id} → {session_id}"
-                )
-                return True
-            return False
+            with self._lock:
+                if session_id != self.current_session_id:
+                    old_session_id = self.current_session_id
+                    self.current_session_id = session_id
+                    logger.debug(
+                        f"🔄 Session ID обновлен (без публикации события): "
+                        f"{old_session_id} → {session_id}"
+                    )
+                    return True
+                return False
         except Exception as e:
             logger.error(f"❌ Ошибка обновления session_id: {e}")
             return False
     
     def get_current_session_id(self) -> Optional[str]:
         """Получить текущий session_id"""
-        return self.current_session_id
+        with self._lock:
+            return self.current_session_id
     
     def get_current_mode(self) -> AppMode:
         """Получить текущий режим"""
-        return self.current_mode
+        with self._lock:
+            return self.current_mode
     
     def get_previous_mode(self) -> Optional[AppMode]:
         """Получить предыдущий режим"""
-        return self.previous_mode
+        with self._lock:
+            return self.previous_mode
     
     def set_state_data(self, key: str, value: Any):
-        """Установить данные состояния"""
+        """Установить данные состояния (thread-safe)"""
         try:
-            self.state_data[key] = value
+            with self._lock:
+                self.state_data[key] = value
             logger.debug(f"📊 Данные состояния обновлены: {key}")
             
         except Exception as e:
@@ -207,12 +203,34 @@ class ApplicationStateManager:
     
     def get_state_data(self, key: str, default: Any = None) -> Any:
         """Получить данные состояния"""
-        return self.state_data.get(key, default)
+        with self._lock:
+            return self.state_data.get(key, default)
     
     def get_mode_history(self, limit: int = 10) -> list:
         """Получить историю режимов"""
-        return self.mode_history[-limit:]
+        with self._lock:
+            return self.mode_history[-limit:]
     
+    # Typed State Setters (Architectural Guards)
+    
+    def set_first_run_state(self, in_progress: bool, required: bool, completed: bool):
+        """Update first run state flags safely."""
+        self.set_state_data("first_run_in_progress", in_progress)
+        self.set_state_data("first_run_required", required)
+        self.set_state_data("first_run_completed", completed)
+        
+    def set_restart_pending(self, pending: bool):
+        """Update restart pending flag."""
+        self.set_state_data("permissions_restart_pending", pending)
+        
+    def set_update_in_progress(self, in_progress: bool):
+        """Update update in progress status."""
+        self.set_state_data("update_in_progress", in_progress)
+        
+    def set_restart_completed_fallback(self, completed: bool):
+        """Update restart completed fallback flag."""
+        self.set_state_data("permissions_restart_completed_fallback", completed)
+
     def _get_timestamp(self) -> float:
         """Получить текущий timestamp"""
         import time
@@ -224,104 +242,5 @@ class ApplicationStateManager:
             "current_mode": self.current_mode.value,
             "previous_mode": self.previous_mode.value if self.previous_mode else None,
             "mode_history_size": len(self.mode_history),
-            "state_data_keys": list(self.state_data.keys()),
-            "microphone_state": self._microphone_state,
-            "microphone_session_id": self._microphone_session_id
+            "state_data_keys": list(self.state_data.keys())
         }
-    
-    # ✅ ЭТАП 1: Методы управления состоянием микрофона (единый источник истины)
-    
-    def set_microphone_state(self, state: str, session_id: Optional[str] = None, reason: str = "unknown") -> bool:
-        """
-        Установить состояние микрофона (thread-safe).
-        
-        Состояния:
-        - "idle": Микрофон закрыт, нет активных операций
-        - "opening": Микрофон открывается (асинхронная операция)
-        - "active": Микрофон активен, запись идет
-        - "closing": Микрофон закрывается (асинхронная операция)
-        - "error": Ошибка, требуется восстановление
-        
-        Args:
-            state: Новое состояние микрофона
-            session_id: ID сессии (опционально)
-            reason: Причина изменения состояния (для логирования)
-            
-        Returns:
-            True если состояние изменилось, False если осталось прежним
-        """
-        import time
-        with self._microphone_lock:
-            old_state = self._microphone_state
-            if old_state != state:
-                self._microphone_state = state
-                self._microphone_session_id = session_id
-                self._microphone_last_change = time.time()
-                logger.info(
-                    f"🔄 [MIC_STATE] {old_state} → {state} "
-                    f"(session={session_id}, reason={reason})"
-                )
-                return True
-            else:
-                # Состояние не изменилось, но обновляем session_id если нужно
-                if session_id is not None and self._microphone_session_id != session_id:
-                    self._microphone_session_id = session_id
-                    logger.debug(
-                        f"🔄 [MIC_STATE] session_id обновлен: {self._microphone_session_id} → {session_id} "
-                        f"(state={state}, reason={reason})"
-                    )
-                return False
-    
-    def get_microphone_state(self) -> tuple[str, Optional[str]]:
-        """
-        Получить текущее состояние микрофона (thread-safe).
-        
-        Returns:
-            Кортеж (state, session_id): текущее состояние и session_id
-        """
-        with self._microphone_lock:
-            return (self._microphone_state, self._microphone_session_id)
-    
-    def is_microphone_active(self) -> bool:
-        """
-        Проверить, активен ли микрофон (thread-safe).
-        
-        Returns:
-            True если микрофон активен (state == "active"), False в противном случае
-        """
-        with self._microphone_lock:
-            return self._microphone_state == "active"
-    
-    def get_microphone_session_id(self) -> Optional[str]:
-        """
-        Получить session_id текущего микрофона (thread-safe).
-        
-        Returns:
-            session_id если микрофон активен, None в противном случае
-        """
-        with self._microphone_lock:
-            return self._microphone_session_id if self._microphone_state == "active" else None
-    
-    def force_close_microphone(self, reason: str = "unknown") -> bool:
-        """
-        Принудительно закрыть микрофон (восстановление при ошибках).
-        
-        Args:
-            reason: Причина принудительного закрытия
-            
-        Returns:
-            True если состояние изменилось, False если уже было "idle"
-        """
-        with self._microphone_lock:
-            old_state = self._microphone_state
-            if old_state != "idle":
-                self._microphone_state = "idle"
-                self._microphone_session_id = None
-                import time
-                self._microphone_last_change = time.time()
-                logger.warning(
-                    f"⚠️ [MIC_STATE] Принудительное закрытие микрофона: "
-                    f"{old_state} → idle (reason={reason})"
-                )
-                return True
-            return False

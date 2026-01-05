@@ -7,6 +7,7 @@ SimpleModuleCoordinator - Центральный координатор моду
 import asyncio
 import ctypes
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -53,6 +54,7 @@ from integration.core.gateways import decide_continue_integration_startup, Decis
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
+from integration.core.integration_factory import IntegrationFactory
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -116,6 +118,7 @@ class SimpleModuleCoordinator:
         # Состояние
         self.is_initialized = False
         self.is_running = False
+        self._duplicate_instance_detected = False  # Флаг для обнаружения дубликата экземпляра
         # Фоновый asyncio loop и поток для асинхронных интеграций
         self._bg_loop = None
         self._bg_thread = None
@@ -232,272 +235,16 @@ class SimpleModuleCoordinator:
             return False
     
     async def _create_integrations(self):
-        """Создание всех интеграций"""
+        """Создание всех интеграций через IntegrationFactory."""
         try:
-            # КРИТИЧНО: InstanceManagerIntegration должен быть ПЕРВЫМ и БЛОКИРУЮЩИМ
-            config_data = self.config._load_config()
-            instance_config = config_data.get('instance_manager', {})
-
-            self.integrations['instance_manager'] = InstanceManagerIntegration(
+            factory = IntegrationFactory(
                 event_bus=self._ensure_event_bus(),
                 state_manager=self._ensure_state_manager(),
                 error_handler=self._ensure_error_handler(),
-                config=instance_config
+                config=self.config,
             )
-
-            # Hardware ID Integration — должен стартовать рано, чтобы ID был доступен всем
-            self.integrations['hardware_id'] = HardwareIdIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=None  # берёт значения из unified_config.yaml при наличии
-            )
-
-            # TrayController Integration - уважаем глобальный флаг enabled из unified_config
-            tray_cfg_all = (config_data.get('integrations') or {}).get('tray_controller') or {}
-            tray_enabled = bool(tray_cfg_all.get('enabled', True))
-
-            if tray_enabled:
-                # Конфигурация будет загружена внутри TrayControllerIntegration
-                tray_config = None  # Автоматически из unified_config.yaml / tray_config.yaml
-                self.integrations['tray'] = TrayControllerIntegration(
-                    event_bus=self._ensure_event_bus(),
-                    state_manager=self._ensure_state_manager(),
-                    error_handler=self._ensure_error_handler(),
-                    config=tray_config
-                )
-            else:
-                logger.info("[TRAY] Disabled via config.integrations.tray_controller.enabled=false - skipping tray integration")
-            
-            # InputProcessing Integration - используем централизованную конфигурацию
-            input_config = self.config.get_input_processing_config()
-            self.integrations['input'] = InputProcessingIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=input_config
-            )
-            
-            # Updater Integration - новая система обновлений
-            updater_cfg = config_data.get('updater', {})
-            
-            self.integrations['updater'] = UpdaterIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                config=updater_cfg
-            )
-
-            # Permission Restart Integration - автоматический перезапуск после критических разрешений
-            perm_restart_cfg = (config_data.get('integrations') or {}).get('permission_restart') or {}
-            self.integrations['permission_restart'] = PermissionRestartIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=perm_restart_cfg,
-                updater_integration=self.integrations.get('updater'),
-            )
-
-            # Update Notification Integration - голосовые уведомления о ходе обновления
-            update_notify_cfg = (config_data.get('integrations') or {}).get('update_notification') or {}
-            self.integrations['update_notification'] = UpdateNotificationIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=update_notify_cfg,
-            )
-            
-            # Network Manager Integration - используем конфигурацию модуля
-            # Конфигурация будет загружена внутри NetworkManagerIntegration
-            network_config = None  # Будет создана автоматически из unified_config.yaml
-            
-            self.integrations['network'] = NetworkManagerIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=network_config
-            )
-            
-            # Default Audio Integration удален - используем audio_default напрямую
-            # AudioDefault будет интегрирован через VoiceRecognitionIntegration
-            
-            # Interrupt Management Integration - загружаем из конфигурации
-            int_cfg_all = (config_data.get('integrations') or {})
-            int_cfg = int_cfg_all.get('interrupt_management') or {}
-            interrupt_config = InterruptManagementIntegrationConfig(
-                max_concurrent_interrupts=int_cfg.get('max_concurrent_interrupts', 1),
-                interrupt_timeout=int_cfg.get('interrupt_timeout', 5.0),
-                retry_attempts=int_cfg.get('retry_attempts', 3),
-                retry_delay=int_cfg.get('retry_delay', 1.0),
-                enable_speech_interrupts=int_cfg.get('enable_speech_interrupts', True),
-                enable_recording_interrupts=int_cfg.get('enable_recording_interrupts', True),
-                enable_session_interrupts=int_cfg.get('enable_session_interrupts', True),
-                enable_full_reset=int_cfg.get('enable_full_reset', False)
-            )
-            
-            self.integrations['interrupt'] = InterruptManagementIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=interrupt_config
-            )
-
-            # Screenshot Capture Integration (PROCESSING)
-            self.integrations['screenshot_capture'] = ScreenshotCaptureIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                permissions_queue=None,  # Старая очередь не используется
-            )
-            
-            # Voice Recognition Integration - конфигурация по умолчанию/из unified_config
-            try:
-                vrec_cfg_raw = config_data['integrations'].get('voice_recognition', {})
-                # Централизованный язык: берем из STT
-                language = self.config.get_stt_language("en-US")
-                vrec_config = VoiceRecognitionConfig(
-                    timeout_sec=vrec_cfg_raw.get('timeout_sec', 10.0),
-                    simulate=vrec_cfg_raw.get('simulate', False),
-                    simulate_success_rate=vrec_cfg_raw.get('simulate_success_rate', 0.7),
-                    simulate_min_delay_sec=vrec_cfg_raw.get('simulate_min_delay_sec', 1.0),
-                    simulate_max_delay_sec=vrec_cfg_raw.get('simulate_max_delay_sec', 3.0),
-                    language=language,
-                )
-                logger.debug(f"Voice config: simulate={vrec_config.simulate}, language={language}")
-            except Exception as e:
-                # Fallback с централизованным языком
-                logger.error(f"Voice config error: {e}, using fallback")
-                vrec_config = VoiceRecognitionConfig(language=self.config.get_stt_language("en-US"))
-
-            self.integrations['voice_recognition'] = VoiceRecognitionIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=vrec_config,
-            )
-
-            # Mode Management Integration (централизация режимов)
-            self.integrations['mode_management'] = ModeManagementIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-            )
-
-            # Grpc Client Integration
-            self.integrations['grpc'] = GrpcClientIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-            )
-
-            # Action Execution Integration - выполнение MCP команд (open_app)
-            # Включается только в dev окружении или если явно включено в конфиге
-            actions_cfg = self.config.get_actions_config().get('open_app')
-            env = self.config.get_environment()
-            # Включаем только если: (dev окружение ИЛИ enabled в конфиге) И не выключено через kill-switch
-            actions_enabled = (env == 'development' or (actions_cfg and actions_cfg.enabled)) if actions_cfg else (env == 'development')
-            
-            if actions_enabled:
-                self.integrations['action_execution'] = ActionExecutionIntegration(
-                    event_bus=self._ensure_event_bus(),
-                    state_manager=self._ensure_state_manager(),
-                    error_handler=self._ensure_error_handler(),
-                )
-                logger.info("[F-2025-016] ActionExecutionIntegration registered (env=%s, config.enabled=%s)", 
-                           env, actions_cfg.enabled if actions_cfg else False)
-            else:
-                logger.info("[F-2025-016] ActionExecutionIntegration skipped (env=%s, config.enabled=%s)", 
-                           env, actions_cfg.enabled if actions_cfg else False)
-
-            # Speech Playback Integration
-            self.integrations['speech_playback'] = SpeechPlaybackIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-            )
-
-            # Signals Integration (audio cues via EventBus -> playback)
-            try:
-                sig_raw = config_data.get('integrations', {}).get('signals', {})
-                patterns_cfg = {}
-                for name, p in sig_raw.get('patterns', {}).items():
-                    patterns_cfg[name] = PatternConfig(
-                        audio=p.get('audio', True),
-                        visual=p.get('visual', False),
-                        volume=p.get('volume', 0.2),
-                        tone_hz=p.get('tone_hz', 880),
-                        duration_ms=p.get('duration_ms', 120),
-                        cooldown_ms=p.get('cooldown_ms', 300),
-                    )
-                sig_cfg = SignalsIntegrationConfig(
-                    enabled=sig_raw.get('enabled', True),
-                    sample_rate=sig_raw.get('sample_rate', 48_000),
-                    default_volume=sig_raw.get('default_volume', 0.2),
-                    patterns=patterns_cfg or None,
-                )
-            except Exception:
-                sig_cfg = SignalsIntegrationConfig()
-
-            self.integrations['signals'] = SignalIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=sig_cfg,
-            )
-
-            # AutostartManagerIntegration - мониторинг LaunchAgent
-            autostart_config = config_data.get('autostart', {})
-            
-            self.integrations['autostart_manager'] = AutostartManagerIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=autostart_config
-            )
-
-            # Welcome Message Integration - приветствие при запуске
-            self.integrations['welcome_message'] = WelcomeMessageIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                permissions_queue=None,  # Старая очередь не используется
-            )
-
-            # VoiceOver Ducking Integration - управление VoiceOver
-            config_data = self.config._load_config()
-            voiceover_config = config_data.get("accessibility", {}).get("voiceover_control", {})
-            self.integrations['voiceover_ducking'] = VoiceOverDuckingIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=voiceover_config
-            )
-
-            # First Run Permissions Integration - запрос разрешений при первом запуске
-            permissions_first_run_config = config_data.get("permissions", {}).get("first_run", {})
-            self.integrations['first_run_permissions'] = FirstRunPermissionsIntegration(
-                event_bus=self._ensure_event_bus(),
-                state_manager=self._ensure_state_manager(),
-                error_handler=self._ensure_error_handler(),
-                config=permissions_first_run_config
-            )
-
-            print("✅ Интеграции созданы: instance_manager, hardware_id, first_run_permissions, permission_restart, update_notification, tray, mode_management, input, updater, network, interrupt, voice_recognition, screenshot_capture, grpc, speech_playback, signals, autostart_manager, welcome_message, voiceover_ducking")
-
-            # 3. Создаем Workflows (координаторы режимов)
-            print("🔧 Создание Workflows...")
-            
-            self.workflows['listening'] = ListeningWorkflow(
-                event_bus=self._ensure_event_bus()
-            )
-            print("✅ ListeningWorkflow создан")
-            
-            self.workflows['processing'] = ProcessingWorkflow(
-                event_bus=self._ensure_event_bus()
-            )
-            print("✅ ProcessingWorkflow создан")
-            
-            print("✅ Все Workflows созданы успешно")
-            
+            self.integrations, self.workflows = await factory.create_all()
+            print(f"✅ Интеграции созданы через IntegrationFactory: {len(self.integrations)} integrations, {len(self.workflows)} workflows")
         except Exception as e:
             print(f"❌ Ошибка создания интеграций: {e}")
             raise
@@ -575,6 +322,11 @@ class SimpleModuleCoordinator:
                 "permissions.first_run_restart_pending",
                 self._on_permissions_restart_pending,
                 EventPriority.CRITICAL
+            )
+            await self._ensure_event_bus().subscribe(
+                "permissions.changed",
+                self._on_permissions_changed,
+                EventPriority.HIGH
             )
             
             logger.info("[COORDINATOR] Критичные подписки настроены успешно")
@@ -689,6 +441,7 @@ class SimpleModuleCoordinator:
                     # КРИТИЧНО: InstanceManagerIntegration может завершить приложение
                     if name == "instance_manager" and not success:
                         print("❌ Дублирование обнаружено - приложение завершено")
+                        self._duplicate_instance_detected = True
                         return False
                     
                     # КРИТИЧНО: Проверяем запрошен ли перезапуск после first_run_permissions
@@ -942,7 +695,19 @@ class SimpleModuleCoordinator:
 
             app = tray_integration.get_app()
             if not app:
-                print("❌ Не удалось получить приложение трея")
+                # Headless режим: tray не поднялся (возможно, проблема с PyObjC или NSApplication)
+                # Вместо завершения приложения переходим в headless-цикл
+                logger.warning(
+                    "⚠️ [TRAY] Tray unavailable (get_app()==None) - entering headless mode. "
+                    "Possible causes: PyObjC fix not applied, NSApplication not activated, or rumps initialization failed."
+                )
+                print("⚠️ [TRAY] Tray unavailable - entering headless mode")
+                print("🖥️ Headless mode: Tray unavailable. Running without menu bar. Press Ctrl+C to exit.")
+                print("📝 Check nexy_debug.log for details about PyObjC fix and NSApplication activation")
+                
+                # Переходим в headless-цикл вместо завершения
+                while self.is_running:
+                    await asyncio.sleep(3600)
                 return
 
             print("🎯 Запуск приложения с иконкой в меню-баре...")
@@ -1059,6 +824,13 @@ class SimpleModuleCoordinator:
             await self.stop()
             print("🔍 CRITICAL: coordinator.stop() completed")
             logger.info("🔍 CRITICAL: coordinator.stop() completed")
+            
+            # КРИТИЧНО: Если обнаружен дубликат экземпляра, завершаем с кодом 1 после cleanup
+            # Используем SystemExit вместо os._exit для корректного прохождения через finally в main.py
+            if self._duplicate_instance_detected:
+                logger.info("💀 Duplicate instance detected - raising SystemExit(1) after cleanup")
+                print("💀 Дубликат экземпляра обнаружен - завершение с кодом 1 после cleanup")
+                raise SystemExit(1)  # Пробрасываем исключение для корректного завершения через main.py
     
     # Обработчики событий (только координация, не дублирование логики)
     
@@ -1192,6 +964,52 @@ class SimpleModuleCoordinator:
                 logger.debug("[PERMISSIONS] Не удалось обновить first_run state (failed)")
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_failed: {e}")
+
+    async def _on_permissions_changed(self, event):
+        """
+        Обработка изменения статуса разрешения - UX-сигналы для микрофона и timeout.
+        
+        ВАЖНО: Интеграция first_run_permissions теперь может продолжать запуск после таймаута
+        (изменение контракта v2). Это означает, что разрешения могут быть выданы позже,
+        что может потребовать перезапуска приложения для активации.
+        
+        ВАЖНО: Различие между timeout и реальным отказом:
+        - Реальный отказ: new_status="denied", source="permissions.denied", is_timeout=False
+        - Timeout: new_status="denied", source="permissions.timeout", is_timeout=True
+        Подписчики должны проверять is_timeout для корректной обработки.
+        """
+        try:
+            data = (event or {}).get("data", {})
+            permission = data.get("permission", "unknown")
+            old_status = data.get("old_status", "unknown")
+            new_status = data.get("new_status", "unknown")
+            source = data.get("source", "unknown")
+            is_timeout = data.get("is_timeout", False)  # Явная проверка таймаута
+            session_id = data.get("session_id", "unknown")
+            
+            # Логируем UX-сигнал для микрофона при выдаче разрешения
+            if permission == "microphone" and new_status == "granted":
+                logger.info(f"🎤 [COORDINATOR] Mic granted, waiting for other permissions (session={session_id})")
+                print(f"🎤 [COORDINATOR] Mic granted, waiting for other permissions")
+            
+            # Логируем UX-сигнал для timeout разрешений, требующих Settings
+            # ВАЖНО: Проверяем is_timeout явно, чтобы не путать с реальным отказом
+            if is_timeout and new_status == "denied":
+                settings_required_permissions = ["accessibility", "input_monitoring", "screen_capture"]
+                if permission in settings_required_permissions:
+                    perm_display_name = permission.replace("_", " ").title()
+                    logger.warning(
+                        f"⏱️ [COORDINATOR] Open System Settings to grant {perm_display_name} "
+                        f"(timeout after waiting, session={session_id})"
+                    )
+                    print(f"⏱️ [COORDINATOR] Open System Settings to grant {perm_display_name}")
+            elif new_status == "denied" and not is_timeout:
+                # Реальный отказ (не timeout) - можно логировать отдельно, если нужно
+                logger.debug(
+                    f"[COORDINATOR] Permission {permission} explicitly denied by user (session={session_id})"
+                )
+        except Exception as e:
+            logger.error(f"❌ [COORDINATOR] Ошибка обработки permissions.changed: {e}")
 
     async def _on_tray_ready(self, event):
         """Обработка готовности tray - снятие gate для блокирующих операций и TAL удержания"""

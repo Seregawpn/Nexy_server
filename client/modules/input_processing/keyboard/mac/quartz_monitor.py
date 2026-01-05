@@ -233,6 +233,10 @@ class QuartzKeyboardMonitor:
                 # Проверяем, что это событие для Control (keycode 59 или 62)
                 if keycode in self.CONTROL_KEYCODES:
                     with self.state_lock:
+                        # Сохраняем предыдущее состояние для принятия решения о подавлении
+                        was_combo_active = self._combo_active
+                        was_n_pressed = self._n_pressed
+                        
                         self._control_pressed = control_pressed
                         # Обновляем время последнего события для защиты от залипания
                         self._control_last_event_time = now if control_pressed else None
@@ -240,7 +244,18 @@ class QuartzKeyboardMonitor:
                         # Обновляем состояние комбинации
                         self._update_combo_state()
                         
-                        # Подавление событий не требуется для Control (не блокируем другие hotkeys)
+                        # КРИТИЧНО: Подавляем flagsChanged для Control если:
+                        # 1. Комбинация была/стала активна, ИЛИ
+                        # 2. Клавиша N зажата (даже если комбинация формально неактивна)
+                        # Это предотвращает системные щелчки macOS (NSBeep)
+                        should_suppress = was_combo_active or self._combo_active or was_n_pressed or self._n_pressed
+                        if should_suppress:
+                            logger.debug(
+                                f"🔒 Quartz: подавляем flagsChanged Control "
+                                f"(was_combo={was_combo_active}, combo={self._combo_active}, "
+                                f"was_n={was_n_pressed}, n={self._n_pressed})"
+                            )
+                            return None
                 
                 return event
             
@@ -268,6 +283,10 @@ class QuartzKeyboardMonitor:
                         # Cooldown только для keyDown N
                         if (now - self.last_event_time) < self.event_cooldown:
                             logger.debug("🔒 Quartz: keyDown N пропущен из-за cooldown")
+                            # КРИТИЧНО: Подавляем событие даже при cooldown если Control зажат
+                            # Это предотвращает системные щелчки macOS
+                            if self._control_pressed:
+                                return None
                             return event
                         
                         self._n_pressed = True
@@ -399,45 +418,12 @@ class QuartzKeyboardMonitor:
             logger.warning("⚠️ Мониторинг уже запущен")
             return False
 
-        # КРИТИЧНО: Проверяем разрешения ПЕРЕД созданием event tap
-        # ВАЖНО: Используем только публичный API с prompt=False (только проверка статуса, без запроса диалога)
-        # Запрос диалога должен происходить только в activate_accessibility() при первом запуске
-        logger.info("🔐 Проверяем разрешения для Quartz Event Tap...")
-        print("🔐 Проверяем разрешения для Quartz Event Tap...")
-
-        try:
-            # Унифицируем импорты (используем ApplicationServices вместо Quartz для AX-функций)
-            from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt  # type: ignore
-            from Foundation import NSDictionary, NSNumber  # type: ignore
-            
-            # КРИТИЧНО: prompt=False - только проверка статуса, НЕ запрос диалога
-            # Диалог должен запрашиваться только в activate_accessibility() при первом запуске
-            options = NSDictionary.dictionaryWithObject_forKey_(
-                NSNumber.numberWithBool_(False),  # prompt=False - только проверка
-                    kAXTrustedCheckOptionPrompt,
-                )
-            has_accessibility = bool(AXIsProcessTrustedWithOptions(options))
-
-            logger.info(f"🔐 Accessibility permission: {has_accessibility}")
-            print(f"🔐 Accessibility permission: {has_accessibility}")
-
-            if not has_accessibility:
-                logger.warning("⚠️ Accessibility разрешения НЕ выданы!")
-                logger.warning("⚠️ Перейдите в: System Settings > Privacy & Security > Accessibility")
-                logger.warning("⚠️ Добавьте Nexy.app и включите переключатель")
-                print("⚠️ Accessibility разрешения НЕ выданы!")
-                print("⚠️ Перейдите в: System Settings > Privacy & Security > Accessibility")
-                print("⚠️ Добавьте Nexy.app и включите переключатель")
-                # Не блокируем создание event tap - позволяем CGEventTapCreate вернуть None
-        except ImportError as import_err:
-            logger.warning(f"⚠️ Quartz/AX API недоступен для проверки разрешений: {import_err}")
-            logger.warning(f"⚠️ Проверьте, что PyObjC-framework-Quartz установлен")
-            print(f"⚠️ Quartz/AX API недоступен: {import_err}")
-            has_accessibility = False
-        except Exception as e:
-            logger.warning(f"⚠️ Не удалось проверить Accessibility permissions: {e}")
-            print(f"⚠️ Не удалось проверить Accessibility permissions: {e}")
-            has_accessibility = False
+        # БЕЗОПАСНЫЙ РЕЖИМ: НЕ вызываем AXIsProcessTrustedWithOptions здесь!
+        # Любой вызов AX API может вызвать crash при первом запуске после сброса разрешений.
+        # Вместо этого полагаемся на CGEventTapCreate - он вернёт None если разрешений нет.
+        logger.info("🔐 Quartz: пропускаем проверку AX API (может вызвать crash)")
+        print("🔐 Quartz: пропускаем проверку AX API, полагаемся на CGEventTapCreate")
+        has_accessibility = None  # Unknown - проверим через CGEventTapCreate
 
         try:
             # Создаем Event Tap

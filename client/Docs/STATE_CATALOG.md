@@ -92,7 +92,7 @@
   4. Новый процесс в `initialize()` находит флаг
   5. Публикуется `permissions.first_run_completed`
   6. Флаг удаляется
-- **связанные документы**: `Docs/ADR-001-first-run-restart-hotfix.md`, `Docs/change_impact.yaml`
+- **связанные документы**: `Docs/ADRs/ADR_2025-01-XX_avfoundation_audio_migration.md`
 
 #### 9) process.lifecycle **[НОВАЯ ОСЬ - Phase 2]**
 - **владелец**: Tech Lead клиента

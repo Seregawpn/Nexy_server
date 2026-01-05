@@ -20,6 +20,20 @@ NC='\033[0m' # No Color
 CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$CLIENT_DIR/dist"
 
+# --- CLI flags ---
+SKIP_BUILD=0
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-build)
+            SKIP_BUILD=1
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
 # Используем установленный Universal Python 3.13.7 (через официальный pkg)
 # Приоритет: официальный Python > pyenv > системный
 if [ -d "/Library/Frameworks/Python.framework/Versions/3.13/bin" ]; then
@@ -44,14 +58,10 @@ ENTITLEMENTS="packaging/entitlements.plist"
 APP_NAME="Nexy"
 BUNDLE_ID="com.nexy.assistant"
 CLEAN_APP="/tmp/${APP_NAME}.app"
-SKIP_NOTARIZATION="${NEXY_SKIP_NOTARIZATION:-0}"
 
 echo -e "${BLUE}🚀 Начинаем финальную упаковку Nexy AI Assistant${NC}"
 echo "Рабочая директория: $CLIENT_DIR"
 echo "Версия: $VERSION"
-if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Нотаризация отключена (NEXY_SKIP_NOTARIZATION=1) — сборка для локального теста"
-fi
 
 # Проверка актуальности protobuf файлов
 echo -e "${YELLOW}🔍 Проверка актуальности protobuf pb2 файлов...${NC}"
@@ -79,13 +89,30 @@ log() {
 }
 
 # Функция безопасного копирования (без extended attributes)
+# ВНИМАНИЕ: Используется ТОЛЬКО ДО подписания! xattr -cr удаляет подпись!
 safe_copy() {
     # $1 = src, $2 = dst
     /usr/bin/ditto --noextattr --noqtn "$1" "$2"
-    # Дополнительная очистка после копирования
+    # Дополнительная очистка после копирования (ТОЛЬКО ДО подписания!)
     xattr -cr "$2" 2>/dev/null || true
     find "$2" -name '._*' -delete 2>/dev/null || true
     find "$2" -name '.DS_Store' -delete 2>/dev/null || true
+}
+
+# Функция копирования с сохранением подписи (ПОСЛЕ подписания!)
+# КРИТИЧНО: НЕ выполняет xattr -cr, так как это удаляет подпись кода!
+safe_copy_preserve_signature() {
+    # $1 = src, $2 = dst
+    /usr/bin/ditto --noextattr --noqtn "$1" "$2"
+    # ТОЛЬКО удаляем AppleDouble и .DS_Store, НЕ трогаем xattrs (подпись!)
+    find "$2" -name '._*' -delete 2>/dev/null || true
+    find "$2" -name '.DS_Store' -delete 2>/dev/null || true
+    # Проверяем подпись после копирования
+    if [ -d "$2" ] && codesign --verify --deep --strict "$2" >/dev/null 2>&1; then
+        log "Подпись сохранена после копирования: $2"
+    else
+        error "КРИТИЧЕСКАЯ ОШИБКА: Подпись сломалась при копировании: $2"
+    fi
 }
 
 # Функция проверки и очистки extended attributes
@@ -123,6 +150,64 @@ clean_xattrs() {
 
 warn() {
     echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+# Функция контрольной точки для проверки подписи
+# Проверяет подпись, записывает mtime и хеш для диагностики
+checkpoint() {
+    local checkpoint_name="$1"
+    local app_path="$2"
+    
+    if [ ! -d "$app_path" ]; then
+        error "CHECKPOINT $checkpoint_name: .app не найден: $app_path"
+        return 1
+    fi
+    
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "CHECKPOINT: $checkpoint_name"
+    log "Path: $app_path"
+    
+    # Проверка подписи
+    if codesign --verify --deep --strict --verbose=2 "$app_path" >/tmp/checkpoint_${checkpoint_name}_codesign.log 2>&1; then
+        log "✅ codesign --verify: OK"
+    else
+        error "❌ codesign --verify: FAIL"
+        log "Детали ошибки:"
+        cat /tmp/checkpoint_${checkpoint_name}_codesign.log | head -20 | while IFS= read -r line; do
+            log "  $line"
+        done
+        return 1
+    fi
+    
+    # Mtime
+    local mtime=$(stat -f "%m" "$app_path" 2>/dev/null || echo "0")
+    local mtime_readable=$(date -r "$mtime" 2>/dev/null || echo "unknown")
+    log "mtime: $mtime ($mtime_readable)"
+    
+    # Hash (только для файлов, не директорий - используем find для получения списка файлов)
+    local hash=$(find "$app_path" -type f -exec shasum -a 256 {} \; 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+    log "hash: $hash"
+    
+    # Размер
+    local size=$(du -sh "$app_path" 2>/dev/null | cut -f1)
+    log "size: $size"
+    
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    return 0
+}
+
+# Функция хеширования содержимого .app (для проверки post-signing изменений)
+hash_app_bundle() {
+    local app_path="$1"
+    if [ ! -d "$app_path" ]; then
+        echo "missing"
+        return
+    fi
+    (
+        cd "$app_path" && \
+        find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256
+    ) | shasum -a 256 | awk '{print $1}'
 }
 
 update_app_version() {
@@ -268,111 +353,121 @@ fi
 echo -e "${BLUE}🧹 Шаг 1: Очистка и Universal 2 сборка${NC}"
 cd "$CLIENT_DIR"
 
-log "Очищаем старые файлы..."
-# Проверяем, есть ли уже Universal .app
-UNIVERSAL_APP=""
-if [ -d "dist/$APP_NAME.app" ]; then
-    # Проверяем, что это Universal 2
-    if lipo -info "dist/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
-        log "Найден Universal 2 .app, сохраняем для использования..."
-        UNIVERSAL_APP="/tmp/${APP_NAME}_universal_backup.app"
-        rm -rf "$UNIVERSAL_APP"
-        safe_copy "dist/$APP_NAME.app" "$UNIVERSAL_APP"
-    fi
-fi
-
-# Безопасная очистка: удаляем содержимое, а не сами директории
-rm -rf dist/* dist/.* build/* build/.* dist-arm64 dist-x86_64 build-arm64 build-x86_64 *.pyc __pycache__/ 2>/dev/null || true
-find . -name "*.pyc" -delete 2>/dev/null || true
-find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-
-if [ -n "$UNIVERSAL_APP" ] && [ -d "$UNIVERSAL_APP" ]; then
-    log "Восстанавливаем Universal 2 .app (пропускаем PyInstaller сборку)..."
-    safe_copy "$UNIVERSAL_APP" "dist/$APP_NAME.app"
-    rm -rf "$UNIVERSAL_APP"
-else
-    log "Выполняем Universal 2 сборку (arm64 + x86_64)..."
-    
-    # Активируем .venv для использования правильных версий пакетов
-    if [ -f "$CLIENT_DIR/.venv/bin/activate" ]; then
-        source "$CLIENT_DIR/.venv/bin/activate"
-    fi
-    
-    # Проверяем, что Python универсальный
-    log "Проверяем архитектуру Python..."
-    PYTHON_ARCH=$(python3 -c "import platform; print(platform.machine())" 2>/dev/null || echo "unknown")
-    log "Текущая архитектура Python: $PYTHON_ARCH"
-    
-    # Шаг 1.1: Универсализация .so файлов (если нужно)
-    log "Проверяем необходимость универсализации .so файлов..."
-    if [ -d "/tmp/x86_64_site_packages" ]; then
-        log "Найдена временная x86_64 установка, универсализируем .so файлы..."
-        python3 "$CLIENT_DIR/scripts/merge_so_from_x86_64.py" || warn "Универсализация .so файлов завершилась с предупреждениями"
-    else
-        log "Временная x86_64 установка не найдена, пропускаем универсализацию .so"
-        log "Примечание: если x86_64 сборка упадет, установите пакеты через: arch -x86_64 python3 -m pip install -r requirements.txt"
-    fi
-    
-    # Шаг 1.2: Сборка arm64
-    log "Собираем arm64 версию..."
-    PYI_TARGET_ARCH=arm64 python3 -m PyInstaller packaging/Nexy.spec \
-        --distpath dist-arm64 \
-        --workpath build-arm64 \
-        --noconfirm \
-        --clean
-    
-    if [ ! -d "dist-arm64/$APP_NAME.app" ]; then
-        error "arm64 сборка не удалась. Проверьте логи PyInstaller."
-    fi
-    log "arm64 сборка завершена"
-    
-    # Шаг 1.3: Сборка x86_64 (через Rosetta)
-    log "Собираем x86_64 версию (через Rosetta)..."
-    # Используем Universal Python из /Library/Frameworks для x86_64 сборки
-    UNIVERSAL_PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
-    if [ -f "$UNIVERSAL_PYTHON" ]; then
-        PYI_TARGET_ARCH=x86_64 arch -x86_64 "$UNIVERSAL_PYTHON" -m PyInstaller packaging/Nexy.spec \
-            --distpath dist-x86_64 \
-            --workpath build-x86_64 \
-            --noconfirm \
-            --clean
-    else
-        PYI_TARGET_ARCH=x86_64 arch -x86_64 python3 -m PyInstaller packaging/Nexy.spec \
-            --distpath dist-x86_64 \
-            --workpath build-x86_64 \
-            --noconfirm \
-            --clean
-    fi
-    
-    if [ ! -d "dist-x86_64/$APP_NAME.app" ]; then
-        error "x86_64 сборка не удалась. Проверьте логи PyInstaller."
-    fi
-    log "x86_64 сборка завершена"
-    
-    # Шаг 1.4: Объединение в Universal 2
-    log "Объединяем arm64 и x86_64 в Universal 2 .app..."
-    python3 "$CLIENT_DIR/scripts/create_universal_app.py" \
-        --arm64 "dist-arm64/$APP_NAME.app" \
-        --x86 "dist-x86_64/$APP_NAME.app" \
-        --output "dist/$APP_NAME.app" \
-        --verbose
-    
+if [ "$SKIP_BUILD" -eq 1 ]; then
+    log "SKIP_BUILD=1: используем существующий dist/$APP_NAME.app"
     if [ ! -d "dist/$APP_NAME.app" ]; then
-        error "Объединение в Universal 2 не удалось."
+        error "dist/$APP_NAME.app не найден. Уберите --skip-build или соберите .app."
     fi
-    
-    # Проверяем результат
-    log "Проверяем архитектуры Universal .app..."
-    MAIN_ARCHS=$(lipo -info "dist/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null || echo "")
-    if echo "$MAIN_ARCHS" | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
-        log "✅ Universal 2 .app создан успешно (x86_64 + arm64)"
+    if ! lipo -info "dist/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null | grep -q "x86_64.*arm64\\|arm64.*x86_64"; then
+        error "dist/$APP_NAME.app не является Universal 2. Пересоберите без --skip-build."
+    fi
+else
+    log "Очищаем старые файлы..."
+    # Проверяем, есть ли уже Universal .app
+    UNIVERSAL_APP=""
+    if [ -d "dist/$APP_NAME.app" ]; then
+        # Проверяем, что это Universal 2
+        if lipo -info "dist/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null | grep -q "x86_64.*arm64\\|arm64.*x86_64"; then
+            log "Найден Universal 2 .app, сохраняем для использования..."
+            UNIVERSAL_APP="/tmp/${APP_NAME}_universal_backup.app"
+            rm -rf "$UNIVERSAL_APP"
+            safe_copy "dist/$APP_NAME.app" "$UNIVERSAL_APP"
+        fi
+    fi
+
+    # Безопасная очистка: удаляем содержимое, а не сами директории
+    rm -rf dist/* dist/.* build/* build/.* dist-arm64 dist-x86_64 build-arm64 build-x86_64 *.pyc __pycache__/ 2>/dev/null || true
+    find . -name "*.pyc" -delete 2>/dev/null || true
+    find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+    if [ -n "$UNIVERSAL_APP" ] && [ -d "$UNIVERSAL_APP" ]; then
+        log "Восстанавливаем Universal 2 .app (пропускаем PyInstaller сборку)..."
+        safe_copy "$UNIVERSAL_APP" "dist/$APP_NAME.app"
+        rm -rf "$UNIVERSAL_APP"
     else
-        warn "⚠️  Главный бинарник может быть не Universal 2: $MAIN_ARCHS"
-    fi
+        log "Выполняем Universal 2 сборку (arm64 + x86_64)..."
     
-    # Очищаем временные директории сборки
-    log "Очищаем временные директории сборки..."
-    rm -rf dist-arm64 dist-x86_64 build-arm64 build-x86_64
+        # Активируем .venv для использования правильных версий пакетов
+        if [ -f "$CLIENT_DIR/.venv/bin/activate" ]; then
+            source "$CLIENT_DIR/.venv/bin/activate"
+        fi
+    
+        # Проверяем, что Python универсальный
+        log "Проверяем архитектуру Python..."
+        PYTHON_ARCH=$(python3 -c "import platform; print(platform.machine())" 2>/dev/null || echo "unknown")
+        log "Текущая архитектура Python: $PYTHON_ARCH"
+    
+        # Шаг 1.1: Универсализация .so файлов (если нужно)
+        log "Проверяем необходимость универсализации .so файлов..."
+        if [ -d "/tmp/x86_64_site_packages" ]; then
+            log "Найдена временная x86_64 установка, универсализируем .so файлы..."
+            python3 "$CLIENT_DIR/scripts/merge_so_from_x86_64.py" || warn "Универсализация .so файлов завершилась с предупреждениями"
+        else
+            log "Временная x86_64 установка не найдена, пропускаем универсализацию .so"
+            log "Примечание: если x86_64 сборка упадет, установите пакеты через: arch -x86_64 python3 -m pip install -r requirements.txt"
+        fi
+    
+        # Шаг 1.2: Сборка arm64
+        log "Собираем arm64 версию..."
+        PYI_TARGET_ARCH=arm64 python3 -m PyInstaller packaging/Nexy.spec \
+            --distpath dist-arm64 \
+            --workpath build-arm64 \
+            --noconfirm \
+            --clean
+    
+        if [ ! -d "dist-arm64/$APP_NAME.app" ]; then
+            error "arm64 сборка не удалась. Проверьте логи PyInstaller."
+        fi
+        log "arm64 сборка завершена"
+    
+        # Шаг 1.3: Сборка x86_64 (через Rosetta)
+        log "Собираем x86_64 версию (через Rosetta)..."
+        # Используем Universal Python из /Library/Frameworks для x86_64 сборки
+        UNIVERSAL_PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+        if [ -f "$UNIVERSAL_PYTHON" ]; then
+            PYI_TARGET_ARCH=x86_64 arch -x86_64 "$UNIVERSAL_PYTHON" -m PyInstaller packaging/Nexy.spec \
+                --distpath dist-x86_64 \
+                --workpath build-x86_64 \
+                --noconfirm \
+                --clean
+        else
+            PYI_TARGET_ARCH=x86_64 arch -x86_64 python3 -m PyInstaller packaging/Nexy.spec \
+                --distpath dist-x86_64 \
+                --workpath build-x86_64 \
+                --noconfirm \
+                --clean
+        fi
+    
+        if [ ! -d "dist-x86_64/$APP_NAME.app" ]; then
+            error "x86_64 сборка не удалась. Проверьте логи PyInstaller."
+        fi
+        log "x86_64 сборка завершена"
+    
+        # Шаг 1.4: Объединение в Universal 2
+        log "Объединяем arm64 и x86_64 в Universal 2 .app..."
+        python3 "$CLIENT_DIR/scripts/create_universal_app.py" \
+            --arm64 "dist-arm64/$APP_NAME.app" \
+            --x86 "dist-x86_64/$APP_NAME.app" \
+            --output "dist/$APP_NAME.app" \
+            --verbose
+    
+        if [ ! -d "dist/$APP_NAME.app" ]; then
+            error "Объединение в Universal 2 не удалось."
+        fi
+    
+        # Проверяем результат
+        log "Проверяем архитектуры Universal .app..."
+        MAIN_ARCHS=$(lipo -info "dist/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null || echo "")
+        if echo "$MAIN_ARCHS" | grep -q "x86_64.*arm64\\|arm64.*x86_64"; then
+            log "✅ Universal 2 .app создан успешно (x86_64 + arm64)"
+        else
+            warn "⚠️  Главный бинарник может быть не Universal 2: $MAIN_ARCHS"
+        fi
+    
+        # Очищаем временные директории сборки
+        log "Очищаем временные директории сборки..."
+        rm -rf dist-arm64 dist-x86_64 build-arm64 build-x86_64
+    fi
 fi
 
 if [ ! -d "dist/$APP_NAME.app" ]; then
@@ -400,6 +495,10 @@ safe_copy "dist/$APP_NAME.app" "$CLEAN_APP"
 log "Проверяем и очищаем extended attributes в копии..."
 clean_xattrs "$CLEAN_APP" "создание чистой копии"
 
+# CHECKPOINT 1: После создания CLEAN_APP (до подписания)
+# Подпись еще не должна быть валидной (это нормально)
+checkpoint "01_after_clean_app_creation" "$CLEAN_APP" || warn "CHECKPOINT 01: Подпись еще не валидна (ожидаемо до подписания)"
+
 # Обновляем версии в Info.plist в обоих бандлах
 log "Устанавливаем версию приложения $VERSION..."
 update_app_version "dist/$APP_NAME.app"
@@ -419,13 +518,43 @@ fix_python_framework "$CLEAN_APP"
     
     log "Extended attributes успешно очищены"
 
+    # FIX for notarization: Replace 32-bit/low-SDK flac-mac with universal flac
+    log "Заменяем проблемные flac-mac бинарники на универсальный flac..."
+    GOOD_FLAC="$CLIENT_DIR/resources/audio/flac"
+    if [ -f "$GOOD_FLAC" ]; then
+        find "$CLEAN_APP" -name "flac-mac" -type f | while read -r BAD_FLAC; do
+            log "Заменяем: $BAD_FLAC"
+            # Удаляем старый файл чтобы разорвать хардлинки если есть
+            rm -f "$BAD_FLAC"
+            cp "$GOOD_FLAC" "$BAD_FLAC"
+            chmod +x "$BAD_FLAC"
+            # Remove any extended attributes from the copy
+            xattr -c "$BAD_FLAC" 2>/dev/null || true
+        done
+    else
+        warn "Универсальный flac не найден в $GOOD_FLAC, пропускаем замену"
+    fi
+
 # Шаг 3: Подпись приложения (ПРАВИЛЬНЫЙ ПОРЯДОК!)
 echo -e "${BLUE}🔐 Шаг 3: Подпись приложения${NC}"
 
+# Настройка timestamp режима (доступно для всех codesign)
+TIMESTAMP_MODE=${TIMESTAMP_MODE:-auto}
+if [[ "$TIMESTAMP_MODE" == "none" ]]; then
+    TIMESTAMP_FLAG="--timestamp=none"
+    warn "Используется --timestamp=none (локальная сборка без timestamp сервиса)"
+else
+    TIMESTAMP_FLAG="--timestamp"
+fi
+
 log "Удаляем старые подписи..."
 codesign --remove-signature "$CLEAN_APP" 2>/dev/null || true
-# Удаляем подписи со всех исполняемых файлов в Contents (включая Resources)
-find "$CLEAN_APP/Contents" -type f -perm -111 -exec codesign --remove-signature {} \; 2>/dev/null || true
+# Удаляем подписи со всех Mach-O файлов в Contents (включая .so/.dylib без exec-бита)
+find "$CLEAN_APP/Contents" -type f 2>/dev/null | while read -r BIN; do
+    if file -b "$BIN" 2>/dev/null | grep -q "Mach-O"; then
+        codesign --remove-signature "$BIN" 2>/dev/null || true
+    fi
+done
 
 log "Подписываем вложенные Mach-O файлы (СНАЧАЛА!)..."
 # Используем оптимизированный скрипт для быстрой подписи
@@ -437,10 +566,11 @@ if [ -f "$SIGN_SCRIPT" ]; then
     done
 else
     # Fallback: подписываем все вложенные библиотеки БЕЗ entitlements
+    # КРИТИЧНО: Используем file для поиска всех Mach-O файлов, а не -perm -111
     count=0
-    find "$CLEAN_APP/Contents" -type f -perm -111 2>/dev/null | grep -v "/Contents/MacOS/$APP_NAME$" | while read -r BIN; do
+    find "$CLEAN_APP/Contents" -type f 2>/dev/null | grep -v "/Contents/MacOS/$APP_NAME$" | while read -r BIN; do
         if file -b "$BIN" 2>/dev/null | grep -q "Mach-O"; then
-            codesign --force --timestamp --options=runtime \
+            codesign --force $TIMESTAMP_FLAG --options=runtime \
                 --sign "$IDENTITY" "$BIN" >/dev/null 2>&1 || true
             count=$((count + 1))
             if [ $((count % 50)) -eq 0 ]; then
@@ -454,7 +584,7 @@ fi
 FFMPEG_BIN="$CLEAN_APP/Contents/Frameworks/resources/ffmpeg/ffmpeg"
 if [ -f "$FFMPEG_BIN" ]; then
     echo "  Подписываем встроенный ffmpeg: $FFMPEG_BIN"
-    codesign --force --timestamp --options=runtime \
+    codesign --force $TIMESTAMP_FLAG --options=runtime \
         --sign "$IDENTITY" "$FFMPEG_BIN" || true
 fi
 
@@ -462,20 +592,23 @@ fi
 SWITCHAUDIO_BIN="$CLEAN_APP/Contents/Resources/resources/audio/SwitchAudioSource"
 if [ -f "$SWITCHAUDIO_BIN" ]; then
     echo "  Подписываем SwitchAudioSource: $SWITCHAUDIO_BIN"
-    codesign --force --timestamp --options=runtime \
+    codesign --force $TIMESTAMP_FLAG --options=runtime \
         --sign "$IDENTITY" "$SWITCHAUDIO_BIN" || true
 fi
 
 log "Подписываем главный executable с entitlements..."
 MAIN_EXE="$CLEAN_APP/Contents/MacOS/$APP_NAME"
-codesign --force --timestamp --options=runtime \
+codesign --force $TIMESTAMP_FLAG --options=runtime \
     --entitlements "$ENTITLEMENTS" \
     --sign "$IDENTITY" "$MAIN_EXE"
 
 log "Подписываем весь бандл (ФИНАЛ!)..."
-codesign --force --timestamp --options=runtime \
+codesign --force $TIMESTAMP_FLAG --options=runtime \
     --entitlements "$ENTITLEMENTS" \
     --sign "$IDENTITY" "$CLEAN_APP"
+
+# CHECKPOINT 2: После подписи CLEAN_APP
+checkpoint "02_after_signing_clean_app" "$CLEAN_APP" || error "CHECKPOINT 02: Подпись CLEAN_APP не прошла проверку!"
 
 # Шаг 4: Проверка подписи приложения
 echo -e "${BLUE}🔍 Шаг 4: Проверка подписи приложения${NC}"
@@ -497,8 +630,14 @@ fi
 
 # Шаг 5: Нотаризация приложения
 echo -e "${BLUE}📤 Шаг 5: Нотаризация приложения${NC}"
+
+SKIP_NOTARIZATION="${NEXY_SKIP_NOTARIZATION:-0}"
+if [[ "$TIMESTAMP_MODE" == "none" && "$SKIP_NOTARIZATION" != "1" ]]; then
+    warn "TIMESTAMP_MODE=none несовместим с нотаризацией; принудительно пропускаем нотаризацию"
+    SKIP_NOTARIZATION="1"
+fi
 if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем нотаризацию приложения (test build)"
+    warn "Пропускаем нотаризацию приложения (NEXY_SKIP_NOTARIZATION=1)"
 else
     log "Создаем ZIP для нотаризации..."
     ditto -c -k --noextattr --noqtn "$CLEAN_APP" "$DIST_DIR/$APP_NAME-app-for-notarization.zip"
@@ -511,6 +650,9 @@ else
 
     log "Прикрепляем нотаризационную печать..."
     xcrun stapler staple "$CLEAN_APP"
+    
+    # CHECKPOINT 3: После stapler на CLEAN_APP
+    checkpoint "03_after_stapler_clean_app" "$CLEAN_APP" || error "CHECKPOINT 03: Подпись CLEAN_APP не прошла проверку после stapler!"
 fi
 
 # Шаг 6: Создание DMG
@@ -539,10 +681,25 @@ rm -f "$TEMP_DMG"
 
 log "DMG создан: $DMG_PATH"
 
+# Шаг 6.1: Подпись DMG (КРИТИЧНО для spctl --assess!)
+echo -e "${BLUE}🔐 Шаг 6.1: Подпись DMG${NC}"
+
+log "Подписываем DMG..."
+codesign --force $TIMESTAMP_FLAG --options=runtime \
+    --sign "$IDENTITY" "$DMG_PATH"
+
+log "Проверяем подпись DMG..."
+if codesign --verify --verbose=2 "$DMG_PATH" 2>/dev/null; then
+    log "Подпись DMG корректна"
+else
+    warn "codesign --verify для DMG показал предупреждение, но продолжаем"
+fi
+
 # Шаг 7: Нотаризация DMG
 echo -e "${BLUE}📤 Шаг 7: Нотаризация DMG${NC}"
+
 if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем нотаризацию DMG (test build)"
+    warn "Пропускаем нотаризацию DMG (NEXY_SKIP_NOTARIZATION=1)"
 else
     log "Отправляем DMG на нотаризацию..."
     xcrun notarytool submit "$DMG_PATH" \
@@ -561,29 +718,45 @@ log "Создаем временную папку для PKG..."
 rm -rf /tmp/nexy_pkg_clean_final
 mkdir -p /tmp/nexy_pkg_clean_final
 
-log "Копируем приложение в правильную структуру..."
+log "Копируем нотаризованное приложение в правильную структуру..."
 mkdir -p /tmp/nexy_pkg_clean_final/Applications
-# ВАЖНО: Используем ditto БЕЗ --noextattr для сохранения печати нотаризации
-/usr/bin/ditto "$CLEAN_APP" /tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app
-# Удаляем только AppleDouble файлы, но сохраняем extended attributes для нотаризации
-find "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app" -name '._*' -delete 2>/dev/null || true
-find "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app" -name '.DS_Store' -delete 2>/dev/null || true
+# КРИТИЧНО: Используем safe_copy_preserve_signature для сохранения подписи!
+# Очистка происходит ДО pkgbuild, чтобы не ломать подпись после сборки PKG
+safe_copy_preserve_signature "$CLEAN_APP" "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app"
 
-# КРИТИЧНО: Удаляем AppleDouble файлы из Python.framework (могут создаться при копировании)
-log "Удаляем AppleDouble файлы из Python.framework перед pkgbuild..."
-find "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app/Contents/Frameworks/Python.framework" -name "._*" -delete 2>/dev/null || true
-echo "  ✓ AppleDouble файлы удалены из Python.framework"
+# КРИТИЧНО: Полная очистка xattrs на всём staging дереве
+# clean_xattrs - единственный владелец логики очистки (централизовано)
+# clean_xattrs "/tmp/nexy_pkg_clean_final" "PKG staging" -> REMOVED to prevent breaking signature
+# ditto --noextattr above already handles cleanup
+log "Skipping xattr cleanup on staging to preserve signature..."
+
+# ЖЁСТКАЯ ВАЛИДАЦИЯ: fail если остались AppleDouble
+log "Проверяем отсутствие AppleDouble..."
+APPLE_COUNT=$(find "/tmp/nexy_pkg_clean_final" -name '._*' 2>/dev/null | wc -l | tr -d ' ')
+log "AppleDouble файлов: $APPLE_COUNT"
+
+if [ "$APPLE_COUNT" != "0" ]; then
+    error "КРИТИЧЕСКАЯ ОШИБКА: Остались AppleDouble файлы ($APPLE_COUNT шт). PKG будет содержать ._* файлы!"
+fi
 
 log "Создаем component PKG..."
 # Устанавливаем в корень, так как приложение уже в папке Applications/
 INSTALL_LOCATION="/"
 log "Устанавливаем в: $INSTALL_LOCATION (приложение уже в Applications/)"
 
+# КРИТИЧНО: COPYFILE_DISABLE=1 установлен глобально (строка 10)
+# Это гарантирует, что pkgbuild не создаст AppleDouble файлы в PKG
+# .app в /tmp/nexy_pkg_clean_final НЕ модифицируется после копирования
 pkgbuild --root /tmp/nexy_pkg_clean_final \
     --identifier "${BUNDLE_ID}.pkg" \
     --version "$VERSION" \
     --install-location "$INSTALL_LOCATION" \
     "$DIST_DIR/$APP_NAME-raw.pkg"
+
+# КРИТИЧНО: Удаляем AppleDouble файлы из PKG Payload
+# pkgbuild может создавать ._* файлы несмотря на COPYFILE_DISABLE=1
+log "Очищаем AppleDouble файлы из raw PKG..."
+clean_appledouble_from_pkg "$DIST_DIR/$APP_NAME-raw.pkg"
 
 log "Генерируем distribution.xml с версией $VERSION..."
 cat > packaging/distribution.xml <<EOF
@@ -617,24 +790,17 @@ else
 fi
 
 log "Подписываем PKG правильным сертификатом..."
+# КРИТИЧНО: НЕ пересобираем PKG после подписи - это ломает подпись .app внутри
+# Очистка AppleDouble файлов происходит ДО pkgbuild (см. строки 590-593)
 productsign --sign "$INSTALLER_IDENTITY" $TIMESTAMP_FLAG \
     "$DIST_DIR/$APP_NAME-distribution.pkg" \
     "$DIST_DIR/$APP_NAME.pkg"
 
-# КРИТИЧНО: Очищаем AppleDouble файлы из PKG (могут появиться при productbuild/productsign)
-clean_appledouble_from_pkg "$DIST_DIR/$APP_NAME.pkg"
-
-# Переподписываем PKG после очистки AppleDouble
-log "Переподписываем PKG после очистки..."
-productsign --sign "$INSTALLER_IDENTITY" $TIMESTAMP_FLAG \
-    "$DIST_DIR/$APP_NAME.pkg" \
-    "$DIST_DIR/$APP_NAME-final-signed.pkg"
-mv "$DIST_DIR/$APP_NAME-final-signed.pkg" "$DIST_DIR/$APP_NAME.pkg"
-
 # Шаг 9: Нотаризация PKG
 echo -e "${BLUE}📤 Шаг 9: Нотаризация PKG${NC}"
+
 if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем нотаризацию PKG (test build)"
+    warn "Пропускаем нотаризацию PKG (NEXY_SKIP_NOTARIZATION=1)"
 else
     log "Отправляем PKG на нотаризацию..."
     xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" \
@@ -646,40 +812,59 @@ else
     xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
 fi
 
-    # Шаг 10: Финальная проверка
-    echo -e "${BLUE}✅ Шаг 10: Финальная проверка${NC}"
-    
-    log "Копируем финальное приложение в dist..."
-    safe_copy "$CLEAN_APP" "$DIST_DIR/$APP_NAME-final.app"
-    clean_xattrs "$DIST_DIR/$APP_NAME-final.app" "финальная копия"
-    
-    # Дополнительная агрессивная очистка перед финальной проверкой
-    log "Выполняем дополнительную очистку extended attributes..."
-    xattr -d com.apple.FinderInfo "$DIST_DIR/$APP_NAME-final.app" 2>/dev/null || true
-    xattr -d com.apple.ResourceFork "$DIST_DIR/$APP_NAME-final.app" 2>/dev/null || true
-    xattr -d com.apple.quarantine "$DIST_DIR/$APP_NAME-final.app" 2>/dev/null || true
-    xattr -d com.apple.metadata:kMDItemWhereFroms "$DIST_DIR/$APP_NAME-final.app" 2>/dev/null || true
-    xattr -d com.apple.metadata:kMDItemDownloadedDate "$DIST_DIR/$APP_NAME-final.app" 2>/dev/null || true
-    xattr -cr "$DIST_DIR/$APP_NAME-final.app" || true
-    find "$DIST_DIR/$APP_NAME-final.app" -name '._*' -delete || true
-    find "$DIST_DIR/$APP_NAME-final.app" -name '.DS_Store' -delete || true
-    find "$DIST_DIR/$APP_NAME-final.app" -type f -exec xattr -c {} \; 2>/dev/null || true
-    find "$DIST_DIR/$APP_NAME-final.app" -type d -exec xattr -c {} \; 2>/dev/null || true
+# Шаг 10: Финальная проверка
+echo -e "${BLUE}✅ Шаг 10: Финальная проверка${NC}"
+
+# КРИТИЧНО: Копируем финальный подписанный и стапленный .app в dist/
+# ВАЖНО: Используем safe_copy_preserve_signature для сохранения подписи!
+log "Обновляем dist/Nexy.app финальной версией..."
+CLEAN_HASH=$(hash_app_bundle "$CLEAN_APP")
+rm -rf "$DIST_DIR/$APP_NAME.app"
+safe_copy_preserve_signature "$CLEAN_APP" "$DIST_DIR/$APP_NAME.app"
+DIST_HASH=$(hash_app_bundle "$DIST_DIR/$APP_NAME.app")
+if [ "$CLEAN_HASH" != "$DIST_HASH" ]; then
+    error "Hash mismatch после копирования: CLEAN_APP != dist/$APP_NAME.app"
+fi
+
+# CHECKPOINT 4: После копирования в dist/
+checkpoint "04_after_copy_to_dist" "$DIST_DIR/$APP_NAME.app" || error "CHECKPOINT 04: Подпись dist/$APP_NAME.app не прошла проверку после копирования!"
+
+# КРИТИЧНО: Защита от пост-сборки изменений
+# Сохраняем время модификации для последующей проверки
+APP_MTIME=$(stat -f "%m" "$DIST_DIR/$APP_NAME.app" 2>/dev/null || echo "0")
+log "Время модификации .app после копирования: $(date -r "$APP_MTIME" 2>/dev/null || echo "unknown")"
+
+# Проверяем финальный артефакт в dist/
+log "Проверяем подпись финального приложения в dist/..."
+
+# КРИТИЧНО: Проверка, что .app не был изменен после копирования
+if [ -n "$APP_MTIME" ] && [ "$APP_MTIME" != "0" ]; then
+    CURRENT_MTIME=$(stat -f "%m" "$DIST_DIR/$APP_NAME.app" 2>/dev/null || echo "0")
+    if [ "$CURRENT_MTIME" != "$APP_MTIME" ]; then
+        error "КРИТИЧЕСКАЯ ОШИБКА: .app был изменен после копирования! (mtime изменился)"
+    fi
+fi
 
 echo "=== ФИНАЛЬНАЯ ПРОВЕРКА ВСЕХ АРТЕФАКТОВ ==="
 echo ""
 
 echo "1. ПРИЛОЖЕНИЕ:"
-if codesign --verify --deep --strict --verbose=2 "$DIST_DIR/$APP_NAME-final.app"; then
+# CHECKPOINT 5: Финальная проверка CLEAN_APP
+checkpoint "05_final_check_clean_app" "$CLEAN_APP" || error "CHECKPOINT 05: Финальная проверка CLEAN_APP не прошла!"
+
+# CHECKPOINT 6: Финальная проверка dist/$APP_NAME.app
+checkpoint "06_final_check_dist_app" "$DIST_DIR/$APP_NAME.app" || error "CHECKPOINT 06: Финальная проверка dist/$APP_NAME.app не прошла!"
+
+if codesign --verify --deep --strict --verbose=2 "$CLEAN_APP"; then
     log "Подпись приложения корректна"
 else
     error "Подпись приложения не прошла проверку"
 fi
 
 if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Нотаризация приложения пропущена — stapler validate не выполняем"
+    warn "Пропускаем проверку нотаризации приложения (NEXY_SKIP_NOTARIZATION=1)"
 else
-    if xcrun stapler validate "$DIST_DIR/$APP_NAME-final.app"; then
+    if xcrun stapler validate "$CLEAN_APP"; then
         log "Нотаризация приложения корректна"
     else
         error "Нотаризация приложения не прошла проверку"
@@ -695,12 +880,43 @@ else
 fi
 
 if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Нотаризация PKG пропущена — stapler validate не выполняем"
+    warn "Пропускаем проверку нотаризации PKG (NEXY_SKIP_NOTARIZATION=1)"
 else
     if xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"; then
         log "Нотаризация PKG корректна"
     else
         error "Нотаризация PKG не прошла проверку"
+    fi
+fi
+
+echo ""
+echo "3. DMG:"
+log "Проверяем подпись DMG..."
+if codesign --verify --verbose=2 "$DMG_PATH" 2>/dev/null; then
+    log "Подпись DMG корректна"
+else
+    error "Подпись DMG не прошла проверку"
+fi
+
+if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+    warn "Пропускаем проверку нотаризации DMG (NEXY_SKIP_NOTARIZATION=1)"
+else
+    if xcrun stapler validate "$DMG_PATH"; then
+        log "Нотаризация DMG корректна"
+    else
+        error "Нотаризация DMG не прошла проверку"
+    fi
+fi
+
+log "Проверяем DMG через spctl..."
+if spctl --assess --type open --verbose "$DMG_PATH" 2>/dev/null; then
+    log "DMG проверка spctl прошла"
+else
+    warn "spctl для DMG не прошел, пробуем hdiutil verify"
+    if hdiutil verify "$DMG_PATH" >/dev/null; then
+        log "DMG проверка hdiutil прошла"
+    else
+        error "DMG проверка не прошла"
     fi
 fi
 
@@ -755,30 +971,76 @@ else
     error "Приложение из PKG не прошло проверку подписи"
 fi
 
+# Шаг 11: Gate с логом (релизный чек)
+echo ""
+echo -e "${BLUE}🧾 Шаг 11: Итоговая верификация артефактов${NC}"
+VERIFY_LOG="$DIST_DIR/packaging_verification.log"
+{
+    echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "app_path=$DIST_DIR/$APP_NAME.app"
+    echo "pkg_path=$DIST_DIR/$APP_NAME.pkg"
+    echo "dmg_path=$DMG_PATH"
+    echo ""
+    echo "codesign app:"
+    codesign --verify --deep --strict --verbose=2 "$DIST_DIR/$APP_NAME.app"
+    echo ""
+    echo "stapler app:"
+    if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+        echo "SKIPPED (NEXY_SKIP_NOTARIZATION=1)"
+    else
+        xcrun stapler validate "$DIST_DIR/$APP_NAME.app"
+    fi
+    echo ""
+    echo "pkg signature:"
+    pkgutil --check-signature "$DIST_DIR/$APP_NAME.pkg"
+    echo ""
+    echo "stapler pkg:"
+    if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+        echo "SKIPPED (NEXY_SKIP_NOTARIZATION=1)"
+    else
+        xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"
+    fi
+    echo ""
+    echo "spctl app:"
+    spctl --assess --type execute --verbose "$DIST_DIR/$APP_NAME.app"
+    echo ""
+    echo "spctl dmg:"
+    spctl --assess --type open --verbose "$DMG_PATH"
+} | tee "$VERIFY_LOG"
+log "Verification log saved: $VERIFY_LOG"
+
 # Очистка временных файлов
 log "Очищаем временные файлы..."
 rm -rf /tmp/nexy_pkg_clean_final /tmp/nexy_final_check /tmp/nexy_final_extracted
 
 echo ""
-echo -e "${BLUE}🧹 Чистим лишние артефакты, оставляем только PKG и DMG...${NC}"
-# Удаляем промежуточные и лишние артефакты из dist
+echo -e "${BLUE}🧹 Чистим промежуточные артефакты...${NC}"
+# Удаляем только промежуточные артефакты, оставляем финальные
 rm -f "$DIST_DIR/$APP_NAME-app-for-notarization.zip" 2>/dev/null || true
 rm -f "$DIST_DIR/$APP_NAME-raw.pkg" 2>/dev/null || true
 rm -f "$DIST_DIR/$APP_NAME-distribution.pkg" 2>/dev/null || true
 rm -f "$DIST_DIR/$APP_NAME-final-signed.pkg" 2>/dev/null || true
-rm -rf "$DIST_DIR/$APP_NAME-final.app" 2>/dev/null || true
-rm -rf "$DIST_DIR/$APP_NAME.app" 2>/dev/null || true
+# КРИТИЧНО: НЕ удаляем CLEAN_APP - он нужен для проверки подписи
+# КРИТИЧНО: НЕ удаляем исходный dist/$APP_NAME.app - он может быть нужен для проверки
 
 echo -e "${GREEN}🎉 УПАКОВКА ЗАВЕРШЕНА УСПЕШНО!${NC}"
 echo -e "${BLUE}📁 Результаты:${NC}"
 echo "  • PKG: $DIST_DIR/$APP_NAME.pkg"
 echo "  • DMG: $DMG_PATH"
+echo "  • Приложение (для проверки): $DIST_DIR/$APP_NAME.app"
 echo "  • Размер PKG: $(du -h "$DIST_DIR/$APP_NAME.pkg" | cut -f1)"
 echo "  • Размер DMG: $(du -h "$DMG_PATH" | cut -f1)"
 echo ""
+echo -e "${YELLOW}⚠️  ВАЖНО: Защита подписи${NC}"
+echo "  • НЕ открывайте .app в Finder до проверки (это может изменить extended attributes)"
+echo "  • НЕ выполняйте xattr -cr на .app (это удалит подпись!)"
+echo "  • НЕ копируйте .app через Finder (используйте ditto --noextattr --noqtn)"
+echo "  • Для проверки используйте: ./scripts/verify_packaging_artifacts.sh"
+echo ""
 echo -e "${YELLOW}📋 Следующие шаги:${NC}"
-echo "  1. Установите PKG: open $DIST_DIR/$APP_NAME.pkg (или: sudo installer -pkg $DIST_DIR/$APP_NAME.pkg -target /)"
-echo "  2. Либо используйте DMG для drag-and-drop: $DMG_PATH"
-echo "  3. Распространяйте PKG/DMG пользователям"
+echo "  1. Проверьте артефакты: ./scripts/verify_packaging_artifacts.sh"
+echo "  2. Установите PKG: open $DIST_DIR/$APP_NAME.pkg (или: sudo installer -pkg $DIST_DIR/$APP_NAME.pkg -target /)"
+echo "  3. Либо используйте DMG для drag-and-drop: $DMG_PATH"
+echo "  4. Распространяйте PKG/DMG пользователям"
 echo ""
 echo -e "${GREEN}✅ ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ!${NC}"
