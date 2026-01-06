@@ -20,7 +20,7 @@
 |------------|--------------------|---------------------|-----------|----------|
 | Microphone (TCC) | `FirstRunPermissionsIntegration`, `modules/voice_recognition` | ✅ granted (beta devices) | `scripts/test_first_run_integration.sh` (см. воспроизведение) | `Docs/first_run_flow_spec.md` |
 | Screen Capture | `modules/screenshot_capture`, first-run flow | ✅ granted | Manual checklist (PRE_PACKAGING_VERIFICATION) | `Docs/PRE_PACKAGING_VERIFICATION.md` |
-| Accessibility | `modules/permissions/macos/accessibility_handler.py` | ✅ granted, используется публичный API `AXIsProcessTrustedWithOptions` | `modules/permissions/macos/accessibility_handler.py:23-52` | ✅ Исправлено (2025-01-15) |
+| Accessibility | `modules/permissions/first_run/status_checker.py` | ✅ granted, используется публичный API `AXIsProcessTrustedWithOptions` | `modules/permissions/first_run/status_checker.py:152-210` | ✅ Исправлено (2025-01-15) |
 | Input Monitoring | `FirstRunPermissionsIntegration` | ✅ not required post v2 (read-only) | First-run spec | `Docs/first_run_flow_spec.md` |
 | Automation / Screen Recording restart | `PermissionRestartIntegration`, `SimpleModuleCoordinator` | ✅ restart flow в green, TAL hold активен 120 с | `Docs/TAL_TESTING_CHECKLIST.md` | TAL logs |
 

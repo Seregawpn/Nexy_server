@@ -9,7 +9,7 @@
 # - Специализированные проверки (TAL, permissions, updater)
 #
 # Использование:
-#   ./scripts/pre_build_gate.sh [--skip-tests] [--skip-lint] [--verbose]
+#   ./scripts/pre_build_gate.sh [--skip-tests] [--skip-lint] [--skip-gui] [--verbose]
 #
 # Exit codes:
 #   0 - все проверки пройдены
@@ -27,6 +27,7 @@ NC='\033[0m' # No Color
 # Флаги
 SKIP_TESTS=false
 SKIP_LINT=false
+SKIP_GUI=false
 VERBOSE=false
 
 # Парсинг аргументов
@@ -40,13 +41,17 @@ while [[ $# -gt 0 ]]; do
             SKIP_LINT=true
             shift
             ;;
+        --skip-gui)
+            SKIP_GUI=true
+            shift
+            ;;
         --verbose|-v)
             VERBOSE=true
             shift
             ;;
         *)
             echo "Неизвестный аргумент: $1"
-            echo "Использование: $0 [--skip-tests] [--skip-lint] [--verbose]"
+            echo "Использование: $0 [--skip-tests] [--skip-lint] [--skip-gui] [--verbose]"
             exit 1
             ;;
     esac
@@ -315,19 +320,29 @@ fi
 
 # 4.3 Проверка критических путей
 if [ -f "scripts/test_critical_paths.py" ]; then
-    if run_check "Критические пути" python3 scripts/test_critical_paths.py; then
-        ((PASSED++))
+    if [ "$SKIP_GUI" = true ] || [ "$SKIP_TESTS" = true ]; then
+        log_warn "Пропуск критических путей (GUI/Tests skip включен)"
+        ((SKIPPED++))
     else
-        ((FAILED++))
+        if run_check "Критические пути" python3 scripts/test_critical_paths.py; then
+            ((PASSED++))
+        else
+            ((FAILED++))
+        fi
     fi
 fi
 
 # 4.4 Проверка tray termination
 if [ -f "scripts/test_tray_termination.py" ]; then
-    if run_check "Tray termination проверки" python3 scripts/test_tray_termination.py; then
-        ((PASSED++))
+    if [ "$SKIP_GUI" = true ] || [ "$SKIP_TESTS" = true ]; then
+        log_warn "Пропуск tray termination (GUI/Tests skip включен)"
+        ((SKIPPED++))
     else
-        ((FAILED++))
+        if run_check "Tray termination проверки" python3 scripts/test_tray_termination.py; then
+            ((PASSED++))
+        else
+            ((FAILED++))
+        fi
     fi
 fi
 
@@ -359,4 +374,3 @@ else
     log_error "Исправьте ошибки перед продолжением сборки"
     exit 1
 fi
-

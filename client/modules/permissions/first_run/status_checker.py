@@ -153,9 +153,13 @@ def check_accessibility_status() -> PermissionStatus:
     """
     Проверить статус разрешения Accessibility.
     
-    Использует subprocess-изоляцию для вызова AX API, чтобы защитить основной
-    процесс от потенциальных крашей после сброса разрешений.
+    ЕДИНСТВЕННЫЙ SOURCE OF TRUTH для проверки Accessibility.
     
+    ВАЖНО: НЕ используем AXIsProcessTrustedWithOptions — он вызывает TCC ошибку:
+    "attempted to call TCCAccessRequest for kTCCServiceAccessibility 
+    without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement"
+    
+    Вместо этого используем tccutil check — безопасный метод.
     Rate-limit: не чаще 1 раза в 2 секунды (кеширование результата).
 
     Returns:
@@ -165,7 +169,6 @@ def check_accessibility_status() -> PermissionStatus:
         logger.debug("♿ Accessibility: forced GRANTED via NEXY_DEV_FORCE_PERMISSIONS")
         return PermissionStatus.GRANTED
 
-    # Rate limiting: используем кеш результата
     import time
     import subprocess
     
@@ -183,57 +186,39 @@ def check_accessibility_status() -> PermissionStatus:
         return _ax_cache_result
     
     try:
-        # SUBPROCESS ISOLATION: AX check в отдельном процессе (защита от краша)
-        # ВАЖНО: НЕ использовать sys.executable в PyInstaller bundle - это запустит новый Nexy!
-        # Используем /usr/bin/python3 для изоляции
-        ax_check_script = '''
-import sys
-try:
-    from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-    from Foundation import NSDictionary, NSNumber
-    options = NSDictionary.dictionaryWithObject_forKey_(
-        NSNumber.numberWithBool_(False),
-        kAXTrustedCheckOptionPrompt
-    )
-    result = AXIsProcessTrustedWithOptions(options)
-    print("true" if result else "false")
-    sys.exit(0)
-except ImportError as e:
-    print("import_error", file=sys.stderr)
-    sys.exit(2)
-except Exception as e:
-    print(f"error:{e}", file=sys.stderr)
-    sys.exit(1)
-'''
-        # Используем системный Python, НЕ sys.executable (который в bundle = Nexy binary)
+        # Получаем bundle_id
+        try:
+            from Foundation import NSBundle
+            bundle_id = NSBundle.mainBundle().bundleIdentifier() or "com.nexy.assistant"
+        except Exception:
+            bundle_id = "com.nexy.assistant"
+        
+        # tccutil check Accessibility <bundle_id> — БЕЗОПАСНЫЙ метод
+        # Возвращает 0 если разрешение есть, не-0 если нет
+        # НЕ вызывает TCC ошибки в отличие от AXIsProcessTrustedWithOptions
         result = subprocess.run(
-            ["/usr/bin/python3", "-c", ax_check_script],
+            ['tccutil', 'check', 'Accessibility', bundle_id],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
         
-        if result.returncode == 0:
-            trusted = result.stdout.strip().lower() == "true"
-            status = PermissionStatus.GRANTED if trusted else PermissionStatus.DENIED
-            logger.info(f"♿ Accessibility: accessibility_subprocess_check={trusted}")
-            
-            # Обновляем кеш
-            _ax_cache_result = status
-            _ax_cache_time = current_time
-            
-            return status
-        elif result.returncode == 2:
-            # ImportError - PyObjC не установлен в системном Python
-            logger.warning("♿ Accessibility: PyObjC not available in /usr/bin/python3, returning DENIED")
-            return PermissionStatus.DENIED
-        
-        logger.warning(f"♿ Accessibility: accessibility_subprocess_failed stderr={result.stderr.strip()}")
-        return PermissionStatus.DENIED  # DENIED чтобы не зацикливаться
+        trusted = result.returncode == 0
+        resolved = PermissionStatus.GRANTED if trusted else PermissionStatus.DENIED
+        logger.info(f"♿ Accessibility: tccutil check {bundle_id} → {resolved.value}")
+
+        # Обновляем кеш
+        _ax_cache_result = resolved
+        _ax_cache_time = current_time
+
+        return resolved
         
     except subprocess.TimeoutExpired:
-        logger.warning("♿ Accessibility: subprocess timeout")
-        return PermissionStatus.NOT_DETERMINED
+        logger.warning("♿ Accessibility: tccutil timeout")
+        return PermissionStatus.DENIED
+    except FileNotFoundError:
+        logger.warning("♿ Accessibility: tccutil not found, returning DENIED")
+        return PermissionStatus.DENIED
     except Exception as e:
         logger.warning(f"♿ Accessibility check failed: {e}")
         return PermissionStatus.NOT_DETERMINED

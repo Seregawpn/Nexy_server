@@ -7,6 +7,7 @@ import subprocess
 import logging
 from typing import Dict, Optional
 from ..core.types import PermissionType, PermissionStatus, PermissionResult
+from modules.permissions.first_run.status_checker import check_accessibility_status
 from .accessibility_handler import AccessibilityHandler
 
 logger = logging.getLogger(__name__)
@@ -116,9 +117,9 @@ class MacOSPermissionHandler:
             )
 
     async def check_accessibility_permission(self) -> PermissionResult:
-        """Check the Accessibility permission using AccessibilityHandler."""
+        """Check the Accessibility permission using the centralized status checker."""
         try:
-            granted = self.accessibility_handler.check_accessibility_permission()
+            granted = check_accessibility_status() == PermissionStatus.GRANTED
             return PermissionResult(
                 success=True,
                 permission=PermissionType.ACCESSIBILITY,

@@ -1,0 +1,127 @@
+{
+    "meta": {
+        "version": "2.1.0",
+        "updated_at": "2026-01-05T20:26:59.061668"
+    },
+    "config": {
+        "blocking_mode": "warning",
+        "statuses": [
+            {
+                "id": "plan",
+                "label": "План",
+                "icon": "📋",
+                "color": "#eab308"
+            },
+            {
+                "id": "in_progress",
+                "label": "В процессе",
+                "icon": "🔨",
+                "color": "#3b82f6"
+            },
+            {
+                "id": "testing",
+                "label": "Тестируется",
+                "icon": "🧪",
+                "color": "#9333ea"
+            },
+            {
+                "id": "released",
+                "label": "Готово к релизу",
+                "icon": "✅",
+                "color": "#22c55e"
+            }
+        ],
+        "priorities": {
+            "P0": {
+                "label": "Critical",
+                "color": "#9333ea"
+            },
+            "P1": {
+                "label": "High",
+                "color": "#ef4444"
+            },
+            "P2": {
+                "label": "Medium",
+                "color": "#eab308"
+            },
+            "P3": {
+                "label": "Low",
+                "color": "#22c55e"
+            }
+        }
+    },
+    "epics": [
+        {
+            "id": "EPIC-MVP",
+            "title": "MVP: Core Functionality",
+            "color": "#3b82f6",
+            "start_date": "2026-01-01",
+            "due_date": "2026-02-01"
+        },
+        {
+            "id": "EPIC-UI",
+            "title": "UI & UX Polish",
+            "color": "#ec4899",
+            "start_date": "2026-01-10",
+            "due_date": "2026-02-15"
+        }
+    ],
+    "cards": [
+        {
+            "id": "NEXY-001",
+            "epicId": "EPIC-MVP",
+            "title": "Thread Safety StateManager",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "Sergiy",
+            "estimate": "4h",
+            "blockedBy": [],
+            "description": "Ensure thread safety in State Manager using locks.",
+            "file_path": "main.py",
+            "updated_at": "2026-01-05",
+            "_isBlocked": false
+        },
+        {
+            "id": "NEXY-002",
+            "epicId": "EPIC-UI",
+            "title": "Interactive Kanban V2",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "Antigravity",
+            "estimate": "2d",
+            "blockedBy": [
+                "NEXY-001"
+            ],
+            "description": "Implement Single Source of Truth architecture and Gantt chart.",
+            "updated_at": "2026-01-05",
+            "_isBlocked": true
+        },
+        {
+            "id": "CLI-001",
+            "epicId": "EPIC-MVP",
+            "title": "Example Client Task",
+            "status": "plan",
+            "priority": "P2",
+            "owner": "ClientAssistant",
+            "description": "Template task. Replace or delete.",
+            "updated_at": "2026-01-05T19:08:00-05:00",
+            "workspace": "client",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity"
+        },
+        {
+            "id": "SRV-001",
+            "epicId": "EPIC-MVP",
+            "title": "Example Server Task",
+            "status": "plan",
+            "priority": "P2",
+            "owner": "ServerAssistant",
+            "description": "Template task. Replace or delete.",
+            "updated_at": "2026-01-05T19:08:00-05:00",
+            "workspace": "server",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity"
+        }
+    ],
+    "releases": []
+}

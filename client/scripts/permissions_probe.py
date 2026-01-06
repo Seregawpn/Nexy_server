@@ -35,7 +35,6 @@ from modules.permissions.first_run.status_checker import (
     get_bundle_id,
     PermissionStatus,
 )
-from modules.permissions.macos.accessibility_handler import AccessibilityHandler
 
 # Настройка логирования
 logging.basicConfig(
@@ -163,24 +162,14 @@ def check_all_permissions() -> Dict[str, Dict[str, Any]]:
     input_status_checker = check_input_monitoring_status()
     input_tccutil = run_tccutil_check("ListenEvent", bundle_id)  # tccutil использует ListenEvent
     
-    # Дополнительная проверка через AccessibilityHandler
-    handler = AccessibilityHandler()
-    input_handler_check = handler.check_input_monitoring_permission()
-    
     results["input_monitoring"] = {
         "status_checker": input_status_checker,
         "tccutil": input_tccutil,
-        "accessibility_handler": input_handler_check,
         "match": (
             input_tccutil is not None and
             ((input_status_checker == PermissionStatus.GRANTED and input_tccutil) or
              (input_status_checker != PermissionStatus.GRANTED and not input_tccutil))
         ) if input_tccutil is not None else None,
-        "handler_match": (
-            input_status_checker == PermissionStatus.GRANTED and input_handler_check
-        ) or (
-            input_status_checker != PermissionStatus.GRANTED and not input_handler_check
-        ),
     }
     
     # 4. Screen Capture
@@ -220,12 +209,6 @@ def print_results(results: Dict[str, Dict[str, Any]]):
         tccutil = perm_results.get("tccutil")
         print(f"  tccutil check:      {format_tccutil_result(tccutil)}")
         
-        # AccessibilityHandler результат (только для input_monitoring)
-        if "accessibility_handler" in perm_results:
-            handler_result = perm_results["accessibility_handler"]
-            handler_str = "✅ GRANTED" if handler_result else "❌ DENIED"
-            print(f"  AccessibilityHandler: {handler_str}")
-        
         # Совпадение результатов
         match = perm_results.get("match")
         if match is not None:
@@ -233,12 +216,6 @@ def print_results(results: Dict[str, Dict[str, Any]]):
             print(f"  Совпадение:         {match_str}")
         else:
             print(f"  Совпадение:         ❓ НЕВОЗМОЖНО ПРОВЕРИТЬ (tccutil error)")
-        
-        # Совпадение с AccessibilityHandler (только для input_monitoring)
-        if "handler_match" in perm_results:
-            handler_match = perm_results["handler_match"]
-            handler_match_str = "✅ СОВПАДАЕТ" if handler_match else "⚠️  НЕ СОВПАДАЕТ"
-            print(f"  Handler совпадение: {handler_match_str}")
         
         print()
     

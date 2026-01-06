@@ -1,0 +1,18 @@
+{
+    "workspace": "client",
+    "id_prefix": "CLI",
+    "next_id": 2,
+    "tasks": [
+        {
+            "id": "CLI-001",
+            "epicId": "EPIC-MVP",
+            "title": "Example Client Task",
+            "status": "plan",
+            "priority": "P2",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "description": "Template task. Replace or delete.",
+            "updated_at": "2026-01-05T19:08:00-05:00"
+        }
+    ]
+}

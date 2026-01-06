@@ -1,6 +1,8 @@
 """
 Accessibility and Input Monitoring permissions helper for macOS.
-Checks current status and opens System Settings when needed.
+
+UI-ONLY HELPER: Opens System Settings and provides instructions.
+For permission CHECKS, use check_accessibility_status() from status_checker.py.
 """
 
 import logging
@@ -9,8 +11,14 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+
 class AccessibilityHandler:
-    """Accessibility permissions helper for macOS."""
+    """Accessibility permissions UI helper for macOS.
+    
+    NOTE: This class is for UI actions only (open_settings, get_instructions).
+    For permission CHECKS, use check_accessibility_status() from 
+    modules.permissions.first_run.status_checker.
+    """
     
     def __init__(self):
         try:
@@ -20,58 +28,29 @@ class AccessibilityHandler:
         except Exception:
             self.bundle_id = "com.nexy.assistant"
     
-    def _ax_trusted_public_check(self, *, prompt: bool = False) -> bool:
-        """
-        Invoke the public Quartz API (AXIsProcessTrustedWithOptions).
-        `prompt` controls whether macOS should show the system dialog.
-        """
-        try:
-            from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-            from Foundation import NSDictionary, NSNumber
-        except ImportError as import_err:
-            # Явный WARN лог при ImportError
-            logger.warning(f"⚠️ Quartz/AX API недоступен: {import_err}")
-            logger.warning(f"⚠️ Проверьте, что PyObjC-framework-Quartz установлен")
-            logger.warning("⚠️ Считаем, что разрешение не выдано")
-            return False
-
-        try:
-            options = NSDictionary.dictionaryWithObject_forKey_(
-            NSNumber.numberWithBool_(bool(prompt)),
-            kAXTrustedCheckOptionPrompt,
-            )
-            return bool(AXIsProcessTrustedWithOptions(options))
-        except Exception as e:
-            logger.error(f"❌ Ошибка вызова AXIsProcessTrustedWithOptions: {e}")
-            return False
-        except ImportError as import_err:
-            logger.warning(f"⚠️ Quartz/AX API недоступен: {import_err}")
-            logger.warning(f"⚠️ Проверьте, что PyObjC-framework-Quartz установлен")
-            logger.warning("⚠️ Считаем, что разрешение не выдано")
-            return False
-
     def check_accessibility_permission(self) -> bool:
-        """Check whether the app is trusted for Accessibility using only public APIs.
+        """Check whether the app is trusted for Accessibility.
         
-        БЕЗОПАСНАЯ ВЕРСИЯ: Максимально защищена от crash через multiple try-except.
+        ВАЖНО: Делегирует проверку в check_accessibility_status() — единственный
+        источник истины для Accessibility проверок.
         """
         try:
-            print(f"♿ [ACCESS_HANDLER] Проверяем Accessibility через AXIsProcessTrustedWithOptions...")
-            trusted = self._ax_trusted_public_check(prompt=False)
-
+            from modules.permissions.first_run.status_checker import (
+                check_accessibility_status,
+                PermissionStatus
+            )
+            status = check_accessibility_status()
+            trusted = status == PermissionStatus.GRANTED
+            
             if trusted:
-                logger.info("✅ Accessibility permission granted (public API)")
-                print(f"✅ [ACCESS_HANDLER] Accessibility GRANTED")
+                logger.info("✅ Accessibility permission granted")
             else:
-                logger.warning("⚠️ Accessibility permission not granted (public API)")
-                print(f"⚠️ [ACCESS_HANDLER] Accessibility NOT GRANTED")
-
+                logger.warning("⚠️ Accessibility permission not granted")
+            
             return trusted
-
+            
         except Exception as e:
-            logger.warning(f"⚠️ Error checking accessibility permission (safe fallback): {e}")
-            print(f"⚠️ [ACCESS_HANDLER] Exception в check_accessibility_permission: {e}")
-            # Возвращаем False, чтобы flow продолжился и показал инструкции
+            logger.warning(f"⚠️ Error checking accessibility permission: {e}")
             return False
     
     def check_input_monitoring_permission(self) -> bool:

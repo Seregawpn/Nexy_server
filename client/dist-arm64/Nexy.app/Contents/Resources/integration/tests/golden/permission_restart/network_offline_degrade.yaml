@@ -1,0 +1,20 @@
+# Golden test: Network offline → DEGRADE
+# Snapshot of axes → Expected decision
+---
+name: "network_offline_degrade"
+description: "Network offline should degrade to offline mode"
+snapshot:
+  perm_mic: "granted"
+  perm_screen: "granted"
+  perm_accessibility: "granted"
+  device_input: "default_ok"
+  network: "offline"  # Degrades
+  first_run: false
+  app_mode: "LISTENING"
+expected_decision: "degrade"
+expected_source: "listening_gateway"
+expected_ctx_keys:
+  - "mic"
+  - "device"
+  - "network"
+

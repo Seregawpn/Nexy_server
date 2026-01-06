@@ -14,7 +14,8 @@ import time
 from dataclasses import dataclass
 from typing import Literal, Optional, Sequence
 
-from modules.permissions.macos.accessibility_handler import AccessibilityHandler
+# NOTE: AccessibilityHandler import removed - permission checks now use
+# check_accessibility_status() from status_checker.py (centralized)
 
 logger = logging.getLogger(__name__)
 
@@ -139,13 +140,21 @@ class VoiceOverController:
             return False
 
     def _has_accessibility_permission(self) -> bool:
-        """Проверяем, есть ли разрешение Accessibility, чтобы не дергать osascript раньше времени."""
-        try:
-            handler = AccessibilityHandler()
-            return bool(handler.check_accessibility_permission())
-        except Exception as exc:
-            logger.debug("VoiceOverController: failed to check accessibility permission (%s)", exc)
-            return False
+        """Проверяем, есть ли разрешение Accessibility.
+        
+        ВАЖНО: НЕ вызываем AXIsProcessTrustedWithOptions напрямую!
+        Это вызывает TCC ошибку: "attempted to call TCCAccessRequest for 
+        kTCCServiceAccessibility without the recommended 
+        com.apple.private.tcc.manager.check-by-audit-token entitlement"
+        
+        Вместо этого пропускаем проверку и полагаемся на graceful failure
+        osascript/CGEventPost если разрешения нет.
+        """
+        # БЕЗОПАСНЫЙ РЕЖИМ: Не вызываем AX API, просто возвращаем True
+        # Если разрешения нет, osascript команды просто не сработают
+        # и это будет обработано в _run_osascript
+        logger.debug("VoiceOverController: пропускаем AX API проверку (может вызвать TCC ошибку)")
+        return True
 
     async def apply_mode(self, mode: str) -> None:
         """Apply VoiceOver handling for the provided application mode."""

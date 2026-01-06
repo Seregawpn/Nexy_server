@@ -56,41 +56,31 @@ def check_microphone() -> tuple[Status, str]:
 
 
 def check_accessibility() -> tuple[Status, str]:
-    """Check accessibility via subprocess (isolated from main app)."""
-    ax_script = '''
-import sys
-try:
-    from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-    from Foundation import NSDictionary, NSNumber
-    options = NSDictionary.dictionaryWithObject_forKey_(
-        NSNumber.numberWithBool_(False),  # Don't prompt
-        kAXTrustedCheckOptionPrompt
-    )
-    trusted = AXIsProcessTrustedWithOptions(options)
-    print("GRANTED" if trusted else "DENIED")
-except ImportError as e:
-    print(f"IMPORT_ERROR:{e}")
-except Exception as e:
-    print(f"ERROR:{e}")
-'''
+    """Check accessibility via tccutil (safe method, no TCC errors)."""
     try:
+        # Get bundle_id
+        try:
+            from Foundation import NSBundle
+            bundle_id = NSBundle.mainBundle().bundleIdentifier() or "com.nexy.assistant"
+        except Exception:
+            bundle_id = "com.nexy.assistant"
+        
+        # tccutil check Accessibility <bundle_id>
         result = subprocess.run(
-            ["/usr/bin/python3", "-c", ax_script],
+            ['tccutil', 'check', 'Accessibility', bundle_id],
             capture_output=True,
             text=True,
             timeout=5
         )
-        output = result.stdout.strip()
-        if output == "GRANTED":
-            return Status.GRANTED, "AXIsProcessTrustedWithOptions=True"
-        elif output == "DENIED":
-            return Status.DENIED, "AXIsProcessTrustedWithOptions=False"
-        elif output.startswith("IMPORT_ERROR"):
-            return Status.UNAVAILABLE, output
+        
+        if result.returncode == 0:
+            return Status.GRANTED, f"tccutil check Accessibility {bundle_id}=True"
         else:
-            return Status.ERROR, f"stdout={output}, stderr={result.stderr}"
+            return Status.DENIED, f"tccutil check Accessibility {bundle_id}=False"
     except subprocess.TimeoutExpired:
-        return Status.ERROR, "subprocess timeout"
+        return Status.ERROR, "tccutil timeout"
+    except FileNotFoundError:
+        return Status.UNAVAILABLE, "tccutil not found"
     except Exception as e:
         return Status.ERROR, str(e)
 

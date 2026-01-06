@@ -4,6 +4,19 @@
 - Ассистент: <codex|cursor|antigravity|ultra>
 - Тип: <task-brief|analysis|review|handoff>
 - Дата: <YYYY-MM-DD>
+- ID (INS-###): <из Docs/CRM_INSTRUCTION_REGISTRY.md>
+
+## Diagnosis
+<Что не так, где несоответствие>
+
+## Root Cause
+<Причина → механизм → эффект>
+
+## Optimal Fix
+<Цель, место в архитектуре, Source of Truth, план внедрения>
+
+## Verification
+<DoD, шаги проверки, ожидаемое поведение>
 
 ## Запрос/цель
 <Кратко, что нужно сделать или проверить>

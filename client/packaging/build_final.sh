@@ -1,7 +1,10 @@
 #!/bin/bash
 
 # 📦 Nexy AI Assistant - Финальная упаковка и подпись Universal 2 (ОБНОВЛЕНО 17.11.2025)
-# Использование: ./packaging/build_final.sh
+# Использование: ./packaging/build_final.sh [--skip-build] [--clean-install]
+#   --skip-build     Пропустить PyInstaller сборку (использовать существующий .app)
+#   --clean-install  Удалить старый /Applications/Nexy.app, сбросить TCC разрешения,
+#                    и автоматически установить новый .pkg после сборки
 # Автоматически выполняет Universal 2 сборку (arm64 + x86_64)
 
 set -e  # Остановить при ошибку
@@ -22,10 +25,15 @@ DIST_DIR="$CLIENT_DIR/dist"
 
 # --- CLI flags ---
 SKIP_BUILD=0
+CLEAN_INSTALL=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-build)
             SKIP_BUILD=1
+            shift
+            ;;
+        --clean-install)
+            CLEAN_INSTALL=1
             shift
             ;;
         *)
@@ -33,6 +41,41 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# --- Clean install: удаление старого app и сброс разрешений ---
+if [ "$CLEAN_INSTALL" -eq 1 ]; then
+    echo -e "${YELLOW}🧹 CLEAN INSTALL: Очистка перед сборкой...${NC}"
+    
+    # 1. Останавливаем приложение
+    echo "  1. Останавливаем Nexy (если запущено)..."
+    pkill -9 -f "Nexy.app" 2>/dev/null || true
+    pkill -9 -f "/Applications/Nexy.app" 2>/dev/null || true
+    sleep 1
+    
+    # 2. Удаляем старое приложение из /Applications
+    if [ -d "/Applications/Nexy.app" ]; then
+        echo "  2. Удаляем /Applications/Nexy.app..."
+        sudo rm -rf "/Applications/Nexy.app"
+        echo "     ✓ Удалено"
+    else
+        echo "  2. /Applications/Nexy.app не найден (пропускаем)"
+    fi
+    
+    # 3. Очищаем receipts и кеш installer
+    echo "  3. Очищаем installer receipts..."
+    sudo rm -rf /Library/Receipts/com.nexy.assistant* 2>/dev/null || true
+    sudo pkgutil --forget com.nexy.assistant.pkg 2>/dev/null || true
+    echo "     ✓ Receipts очищены"
+    
+    # 4. Сбрасываем TCC разрешения
+    echo "  4. Сбрасываем TCC разрешения..."
+    sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
+    killall tccd 2>/dev/null || true
+    echo "     ✓ Разрешения сброшены"
+    
+    echo -e "${GREEN}✅ Очистка завершена${NC}"
+    echo ""
+fi
 
 # Используем установленный Universal Python 3.13.7 (через официальный pkg)
 # Приоритет: официальный Python > pyenv > системный
@@ -53,7 +96,7 @@ VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('$CLIENT_DIR/config
 
 # Конфигурация
 IDENTITY="Developer ID Application: Sergiy Zasorin (5NKLL2CLB9)"
-INSTALLER_IDENTITY="Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)"
+# INSTALLER_IDENTITY будет установлен после проверки сертификата (строка 365)
 ENTITLEMENTS="packaging/entitlements.plist"
 APP_NAME="Nexy"
 BUNDLE_ID="com.nexy.assistant"
@@ -88,9 +131,48 @@ log() {
     echo -e "${GREEN}✅ $1${NC}"
 }
 
+SIGNING_STAGE="pre" # pre -> signed -> post_staple
+
+# Разрешаем изменения .app только до подписи
+require_pre_sign() {
+    if [ "$SIGNING_STAGE" != "pre" ]; then
+        error "Изменение .app запрещено после подписи (stage=$SIGNING_STAGE)"
+    fi
+}
+
+record_bundle_state() {
+    local label="$1"
+    local app_path="$2"
+    local hash
+    local mtime
+    hash=$(hash_app_bundle "$app_path")
+    mtime=$(stat -f "%m" "$app_path" 2>/dev/null || echo "0")
+    eval "STATE_${label}_HASH=\"$hash\""
+    eval "STATE_${label}_MTIME=\"$mtime\""
+    log "State recorded [$label]: hash=$hash mtime=$mtime"
+}
+
+assert_bundle_state() {
+    local label="$1"
+    local app_path="$2"
+    local current_hash
+    local current_mtime
+    current_hash=$(hash_app_bundle "$app_path")
+    current_mtime=$(stat -f "%m" "$app_path" 2>/dev/null || echo "0")
+    eval "local expected_hash=\$STATE_${label}_HASH"
+    eval "local expected_mtime=\$STATE_${label}_MTIME"
+    if [ -z "$expected_hash" ] || [ -z "$expected_mtime" ]; then
+        error "State [$label] не записан для проверки целостности"
+    fi
+    if [ "$current_hash" != "$expected_hash" ] || [ "$current_mtime" != "$expected_mtime" ]; then
+        error "КРИТИЧЕСКАЯ ОШИБКА: .app изменен после этапа [$label]"
+    fi
+}
+
 # Функция безопасного копирования (без extended attributes)
 # ВНИМАНИЕ: Используется ТОЛЬКО ДО подписания! xattr -cr удаляет подпись!
 safe_copy() {
+    require_pre_sign
     # $1 = src, $2 = dst
     /usr/bin/ditto --noextattr --noqtn "$1" "$2"
     # Дополнительная очистка после копирования (ТОЛЬКО ДО подписания!)
@@ -117,6 +199,7 @@ safe_copy_preserve_signature() {
 
 # Функция проверки и очистки extended attributes
 clean_xattrs() {
+    require_pre_sign
     local app_path="$1"
     local stage="$2"
     
@@ -157,6 +240,7 @@ warn() {
 checkpoint() {
     local checkpoint_name="$1"
     local app_path="$2"
+    local allow_unsigned="${3:-false}"
     
     if [ ! -d "$app_path" ]; then
         error "CHECKPOINT $checkpoint_name: .app не найден: $app_path"
@@ -168,15 +252,25 @@ checkpoint() {
     log "Path: $app_path"
     
     # Проверка подписи
-    if codesign --verify --deep --strict --verbose=2 "$app_path" >/tmp/checkpoint_${checkpoint_name}_codesign.log 2>&1; then
+    # КРИТИЧНО: При allow_unsigned=true codesign может вернуть ненулевой код, но это ожидаемо
+    # Используем явную проверку кода возврата для предотвращения падения из-за set -e
+    codesign --verify --deep --strict --verbose=2 "$app_path" >/tmp/checkpoint_${checkpoint_name}_codesign.log 2>&1 || local codesign_exit=$?
+    
+    if [ -z "${codesign_exit:-}" ]; then
+        # codesign вернул 0 - подпись валидна
         log "✅ codesign --verify: OK"
     else
-        error "❌ codesign --verify: FAIL"
-        log "Детали ошибки:"
-        cat /tmp/checkpoint_${checkpoint_name}_codesign.log | head -20 | while IFS= read -r line; do
-            log "  $line"
-        done
-        return 1
+        # codesign вернул ненулевой код
+        if [ "$allow_unsigned" = "true" ]; then
+            warn "❌ codesign --verify: FAIL (ожидаемо до подписания, exit code: $codesign_exit)"
+        else
+            error "❌ codesign --verify: FAIL (exit code: $codesign_exit)"
+            log "Детали ошибки:"
+            cat /tmp/checkpoint_${checkpoint_name}_codesign.log | head -20 | while IFS= read -r line; do
+                log "  $line"
+            done
+            return 1
+        fi
     fi
     
     # Mtime
@@ -210,7 +304,16 @@ hash_app_bundle() {
     ) | shasum -a 256 | awk '{print $1}'
 }
 
+lock_dist_app() {
+    local app_path="$1"
+    if [ -d "$app_path" ]; then
+        chmod -R a-w "$app_path" 2>/dev/null || true
+        log "Финальный .app переведен в read-only режим: $app_path"
+    fi
+}
+
 update_app_version() {
+    require_pre_sign
     local app_path="$1"
     local plist_path="$app_path/Contents/Info.plist"
     if [ -f "$plist_path" ]; then
@@ -228,6 +331,7 @@ error() {
 
 # Функция для подготовки Python.framework к подписи и нотаризации
 fix_python_framework() {
+    require_pre_sign
     local app_path="$1"
     local framework_path="$app_path/Contents/Frameworks/Python.framework"
 
@@ -341,12 +445,26 @@ fi
 
 # Проверяем сертификаты
 echo -e "${BLUE}🔍 Проверяем сертификаты...${NC}"
-if ! security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
-    error "Developer ID Application сертификат не найден"
+
+# Разблокируем keychain для доступа к сертификатам (если требуется)
+# Пытаемся разблокировать login.keychain (основной keychain пользователя)
+if security show-keychain-info login.keychain >/dev/null 2>&1; then
+    # Пытаемся разблокировать без пароля (если keychain уже разблокирован или настроен на автоматическую разблокировку)
+    security unlock-keychain login.keychain 2>/dev/null || true
+    echo "✓ Keychain проверен/разблокирован"
 fi
 
+if ! security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
+    error "Developer ID Application сертификат не найден. Проверьте: security find-identity -v -p codesigning"
+fi
+
+# Developer ID Installer нужен только для создания PKG
+# Для сборки .app/DMG он не обязателен, поэтому делаем проверку необязательной
 if ! security find-identity -v -p basic | grep -q "Developer ID Installer"; then
-    error "Developer ID Installer сертификат не найден"
+    warn "Developer ID Installer сертификат не найден (PKG не будет создан)"
+    INSTALLER_IDENTITY=""
+else
+    INSTALLER_IDENTITY="Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)"
 fi
 
 # Шаг 1: Очистка и Universal 2 сборка
@@ -497,7 +615,7 @@ clean_xattrs "$CLEAN_APP" "создание чистой копии"
 
 # CHECKPOINT 1: После создания CLEAN_APP (до подписания)
 # Подпись еще не должна быть валидной (это нормально)
-checkpoint "01_after_clean_app_creation" "$CLEAN_APP" || warn "CHECKPOINT 01: Подпись еще не валидна (ожидаемо до подписания)"
+checkpoint "01_after_clean_app_creation" "$CLEAN_APP" "true"
 
 # Обновляем версии в Info.plist в обоих бандлах
 log "Устанавливаем версию приложения $VERSION..."
@@ -516,7 +634,7 @@ fix_python_framework "$CLEAN_APP"
     find "$CLEAN_APP" -name '._*' -delete || true
     find "$CLEAN_APP" -name '.DS_Store' -delete || true
     
-    log "Extended attributes успешно очищены"
+log "Extended attributes успешно очищены"
 
     # FIX for notarization: Replace 32-bit/low-SDK flac-mac with universal flac
     log "Заменяем проблемные flac-mac бинарники на универсальный flac..."
@@ -534,6 +652,9 @@ fix_python_framework "$CLEAN_APP"
     else
         warn "Универсальный flac не найден в $GOOD_FLAC, пропускаем замену"
     fi
+
+# Фиксируем состояние после всех разрешенных pre-sign изменений
+record_bundle_state "CLEAN_APP_PRE_SIGN" "$CLEAN_APP"
 
 # Шаг 3: Подпись приложения (ПРАВИЛЬНЫЙ ПОРЯДОК!)
 echo -e "${BLUE}🔐 Шаг 3: Подпись приложения${NC}"
@@ -607,6 +728,8 @@ codesign --force $TIMESTAMP_FLAG --options=runtime \
     --entitlements "$ENTITLEMENTS" \
     --sign "$IDENTITY" "$CLEAN_APP"
 
+SIGNING_STAGE="signed"
+
 # CHECKPOINT 2: После подписи CLEAN_APP
 checkpoint "02_after_signing_clean_app" "$CLEAN_APP" || error "CHECKPOINT 02: Подпись CLEAN_APP не прошла проверку!"
 
@@ -655,12 +778,17 @@ else
     checkpoint "03_after_stapler_clean_app" "$CLEAN_APP" || error "CHECKPOINT 03: Подпись CLEAN_APP не прошла проверку после stapler!"
 fi
 
+SIGNING_STAGE="post_staple"
+record_bundle_state "CLEAN_APP_POST_STAPLE" "$CLEAN_APP"
+
 # Шаг 6: Создание DMG
 echo -e "${BLUE}💿 Шаг 6: Создание DMG${NC}"
 
 DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
 TEMP_DMG="$DIST_DIR/$APP_NAME-temp.dmg"
 VOLUME_NAME="$APP_NAME"
+
+assert_bundle_state "CLEAN_APP_POST_STAPLE" "$CLEAN_APP"
 
 log "Создаем временный DMG..."
 APP_SIZE_KB=$(du -sk "$CLEAN_APP" | awk '{print $1}')
@@ -711,8 +839,11 @@ else
     xcrun stapler staple "$DMG_PATH"
 fi
 
-# Шаг 8: Создание PKG (ПРАВИЛЬНЫЙ СПОСОБ!)
-echo -e "${BLUE}📦 Шаг 8: Создание PKG${NC}"
+# Шаг 8: Создание PKG (только если есть Installer сертификат)
+if [ -z "$INSTALLER_IDENTITY" ]; then
+    warn "Пропускаем создание PKG (Developer ID Installer сертификат не найден)"
+else
+echo -e "${BLUE}📦 Шаг 8: Создание PKG (ПРАВИЛЬНЫЙ СПОСОБ!)${NC}"
 
 log "Создаем временную папку для PKG..."
 rm -rf /tmp/nexy_pkg_clean_final
@@ -811,6 +942,7 @@ else
     log "Прикрепляем нотаризационную печать к PKG..."
     xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
 fi
+fi  # Конец блока создания PKG (если INSTALLER_IDENTITY установлен)
 
 # Шаг 10: Финальная проверка
 echo -e "${BLUE}✅ Шаг 10: Финальная проверка${NC}"
@@ -818,6 +950,7 @@ echo -e "${BLUE}✅ Шаг 10: Финальная проверка${NC}"
 # КРИТИЧНО: Копируем финальный подписанный и стапленный .app в dist/
 # ВАЖНО: Используем safe_copy_preserve_signature для сохранения подписи!
 log "Обновляем dist/Nexy.app финальной версией..."
+assert_bundle_state "CLEAN_APP_POST_STAPLE" "$CLEAN_APP"
 CLEAN_HASH=$(hash_app_bundle "$CLEAN_APP")
 rm -rf "$DIST_DIR/$APP_NAME.app"
 safe_copy_preserve_signature "$CLEAN_APP" "$DIST_DIR/$APP_NAME.app"
@@ -825,6 +958,8 @@ DIST_HASH=$(hash_app_bundle "$DIST_DIR/$APP_NAME.app")
 if [ "$CLEAN_HASH" != "$DIST_HASH" ]; then
     error "Hash mismatch после копирования: CLEAN_APP != dist/$APP_NAME.app"
 fi
+lock_dist_app "$DIST_DIR/$APP_NAME.app"
+DIST_HASH_AFTER_COPY="$DIST_HASH"
 
 # CHECKPOINT 4: После копирования в dist/
 checkpoint "04_after_copy_to_dist" "$DIST_DIR/$APP_NAME.app" || error "CHECKPOINT 04: Подпись dist/$APP_NAME.app не прошла проверку после копирования!"
@@ -871,60 +1006,101 @@ else
     fi
 fi
 
-echo ""
-echo "2. PKG:"
-if pkgutil --check-signature "$DIST_DIR/$APP_NAME.pkg"; then
-    log "Подпись PKG корректна"
+# Проверка архитектуры (Universal 2)
+log "Проверяем архитектуру приложения..."
+MAIN_ARCHS=$(lipo -info "$DIST_DIR/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null || echo "")
+if echo "$MAIN_ARCHS" | grep -q "x86_64.*arm64\|arm64.*x86_64"; then
+    log "Universal 2 архитектура подтверждена: $MAIN_ARCHS"
 else
-    error "Подпись PKG не прошла проверку"
+    warn "Архитектура может быть не Universal 2: $MAIN_ARCHS"
 fi
 
-if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем проверку нотаризации PKG (NEXY_SKIP_NOTARIZATION=1)"
-else
-    if xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"; then
-        log "Нотаризация PKG корректна"
+# Проверка размера
+APP_SIZE=$(du -sh "$DIST_DIR/$APP_NAME.app" | cut -f1)
+log "Размер приложения: $APP_SIZE"
+
+# Финальная проверка целостности dist/.app после всех операций
+FINAL_DIST_HASH=$(hash_app_bundle "$DIST_DIR/$APP_NAME.app")
+if [ "$FINAL_DIST_HASH" != "$DIST_HASH_AFTER_COPY" ]; then
+    error "dist/$APP_NAME.app был изменен после финального копирования (hash mismatch)"
+fi
+log "Целостность dist/$APP_NAME.app подтверждена (hash совпадает)"
+
+echo ""
+echo "2. PKG:"
+if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
+    if pkgutil --check-signature "$DIST_DIR/$APP_NAME.pkg"; then
+        log "Подпись PKG корректна"
     else
-        error "Нотаризация PKG не прошла проверку"
+        error "Подпись PKG не прошла проверку"
     fi
+
+    if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+        warn "Пропускаем проверку нотаризации PKG (NEXY_SKIP_NOTARIZATION=1)"
+    else
+        if xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"; then
+            log "Нотаризация PKG корректна"
+        else
+            error "Нотаризация PKG не прошла проверку"
+        fi
+    fi
+else
+    warn "PKG не создан (пропускаем проверку PKG)"
 fi
 
 echo ""
 echo "3. DMG:"
-log "Проверяем подпись DMG..."
-if codesign --verify --verbose=2 "$DMG_PATH" 2>/dev/null; then
-    log "Подпись DMG корректна"
-else
-    error "Подпись DMG не прошла проверку"
-fi
-
-if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем проверку нотаризации DMG (NEXY_SKIP_NOTARIZATION=1)"
-else
-    if xcrun stapler validate "$DMG_PATH"; then
-        log "Нотаризация DMG корректна"
+if [ -f "$DMG_PATH" ]; then
+    log "Проверяем подпись DMG..."
+    if codesign --verify --verbose=2 "$DMG_PATH" 2>/dev/null; then
+        log "Подпись DMG корректна"
     else
-        error "Нотаризация DMG не прошла проверку"
+        error "Подпись DMG не прошла проверку"
     fi
-fi
 
-log "Проверяем DMG через spctl..."
-if spctl --assess --type open --verbose "$DMG_PATH" 2>/dev/null; then
-    log "DMG проверка spctl прошла"
-else
-    warn "spctl для DMG не прошел, пробуем hdiutil verify"
-    if hdiutil verify "$DMG_PATH" >/dev/null; then
-        log "DMG проверка hdiutil прошла"
+    DMG_NOTARIZED=0
+    if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+        warn "Пропускаем проверку нотаризации DMG (NEXY_SKIP_NOTARIZATION=1)"
     else
-        error "DMG проверка не прошла"
+        if xcrun stapler validate "$DMG_PATH"; then
+            log "Нотаризация DMG корректна"
+            DMG_NOTARIZED=1
+        else
+            error "Нотаризация DMG не прошла проверку"
+        fi
     fi
+
+    log "Проверяем DMG через spctl..."
+    spctl_output=$(spctl --assess --type open --verbose "$DMG_PATH" 2>&1)
+    spctl_status=$?
+    if [ "$spctl_status" -eq 0 ]; then
+        log "DMG проверка spctl прошла"
+    else
+        if echo "$spctl_output" | grep -q "Insufficient Context"; then
+            warn "spctl для DMG вернул Insufficient Context (обычно нет quarantine xattr)"
+            if [ "$DMG_NOTARIZED" -eq 1 ]; then
+                log "Нотаризация DMG уже подтверждена stapler validate"
+            fi
+        else
+            warn "spctl для DMG не прошел (reason: $(echo "$spctl_output" | head -1))"
+        fi
+        warn "Пробуем hdiutil verify"
+        if hdiutil verify "$DMG_PATH" >/dev/null; then
+            log "DMG проверка hdiutil прошла"
+        else
+            error "DMG проверка не прошла"
+        fi
+    fi
+else
+    warn "DMG не создан (пропускаем проверку DMG)"
 fi
 
 echo ""
 echo "3. ПРОВЕРКА СОДЕРЖИМОГО PKG:"
-# Удаляем старую директорию если существует
-rm -rf /tmp/nexy_final_check 2>/dev/null || true
-pkgutil --expand "$DIST_DIR/$APP_NAME.pkg" /tmp/nexy_final_check
+if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
+    # Удаляем старую директорию если существует
+    rm -rf /tmp/nexy_final_check 2>/dev/null || true
+    pkgutil --expand "$DIST_DIR/$APP_NAME.pkg" /tmp/nexy_final_check
 
 # Находим вложенный component PKG внутри distribution PKG
 NESTED_PKG_DIR=$(find /tmp/nexy_final_check -maxdepth 2 -type d -name "*.pkg" | head -n1)
@@ -965,10 +1141,13 @@ if [ ! -d "/tmp/nexy_final_extracted/Applications/$APP_NAME.app" ]; then
     error "В Payload отсутствует Applications/$APP_NAME.app"
 fi
 
-if codesign --verify --deep --strict --verbose=2 /tmp/nexy_final_extracted/Applications/$APP_NAME.app; then
-    log "Приложение из PKG корректно подписано"
+    if codesign --verify --deep --strict --verbose=2 /tmp/nexy_final_extracted/Applications/$APP_NAME.app; then
+        log "Приложение из PKG корректно подписано"
+    else
+        error "Приложение из PKG не прошло проверку подписи"
+    fi
 else
-    error "Приложение из PKG не прошло проверку подписи"
+    warn "PKG не создан (пропускаем проверку содержимого PKG)"
 fi
 
 # Шаг 11: Gate с логом (релизный чек)
@@ -978,8 +1157,16 @@ VERIFY_LOG="$DIST_DIR/packaging_verification.log"
 {
     echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "app_path=$DIST_DIR/$APP_NAME.app"
-    echo "pkg_path=$DIST_DIR/$APP_NAME.pkg"
-    echo "dmg_path=$DMG_PATH"
+    if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
+        echo "pkg_path=$DIST_DIR/$APP_NAME.pkg"
+    else
+        echo "pkg_path=SKIPPED"
+    fi
+    if [ -f "$DMG_PATH" ]; then
+        echo "dmg_path=$DMG_PATH"
+    else
+        echo "dmg_path=SKIPPED"
+    fi
     echo ""
     echo "codesign app:"
     codesign --verify --deep --strict --verbose=2 "$DIST_DIR/$APP_NAME.app"
@@ -991,23 +1178,43 @@ VERIFY_LOG="$DIST_DIR/packaging_verification.log"
         xcrun stapler validate "$DIST_DIR/$APP_NAME.app"
     fi
     echo ""
-    echo "pkg signature:"
-    pkgutil --check-signature "$DIST_DIR/$APP_NAME.pkg"
-    echo ""
-    echo "stapler pkg:"
-    if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-        echo "SKIPPED (NEXY_SKIP_NOTARIZATION=1)"
+    if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
+        echo "pkg signature:"
+        pkgutil --check-signature "$DIST_DIR/$APP_NAME.pkg"
+        echo ""
+        echo "stapler pkg:"
+        if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
+            echo "SKIPPED (NEXY_SKIP_NOTARIZATION=1)"
+        else
+            xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"
+        fi
+        echo ""
     else
-        xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"
+        echo "pkg signature: SKIPPED (pkg not created)"
+        echo ""
     fi
-    echo ""
     echo "spctl app:"
     spctl --assess --type execute --verbose "$DIST_DIR/$APP_NAME.app"
     echo ""
+    if [ -f "$DMG_PATH" ]; then
     echo "spctl dmg:"
     spctl --assess --type open --verbose "$DMG_PATH"
+else
+    echo "spctl dmg: SKIPPED (dmg not created)"
+fi
 } | tee "$VERIFY_LOG"
 log "Verification log saved: $VERIFY_LOG"
+
+# Проверка runtime hook (если приложение запускалось)
+RUNTIME_LOG="/tmp/nexy_pyobjc_fix.log"
+if [ -f "$RUNTIME_LOG" ]; then
+    log "Проверяем runtime hook лог..."
+    if grep -q "dlsym.*cannot find symbol.*NSMake" "$RUNTIME_LOG" 2>/dev/null; then
+        warn "Найдены ошибки dlsym в runtime hook логе (это может быть нормально для первого запуска)"
+    else
+        log "Ошибок dlsym не найдено в runtime hook логе"
+    fi
+fi
 
 # Очистка временных файлов
 log "Очищаем временные файлы..."
@@ -1025,22 +1232,58 @@ rm -f "$DIST_DIR/$APP_NAME-final-signed.pkg" 2>/dev/null || true
 
 echo -e "${GREEN}🎉 УПАКОВКА ЗАВЕРШЕНА УСПЕШНО!${NC}"
 echo -e "${BLUE}📁 Результаты:${NC}"
-echo "  • PKG: $DIST_DIR/$APP_NAME.pkg"
-echo "  • DMG: $DMG_PATH"
+if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
+    echo "  • PKG: $DIST_DIR/$APP_NAME.pkg"
+else
+    echo "  • PKG: SKIPPED"
+fi
+if [ -f "$DMG_PATH" ]; then
+    echo "  • DMG: $DMG_PATH"
+else
+    echo "  • DMG: SKIPPED"
+fi
 echo "  • Приложение (для проверки): $DIST_DIR/$APP_NAME.app"
-echo "  • Размер PKG: $(du -h "$DIST_DIR/$APP_NAME.pkg" | cut -f1)"
-echo "  • Размер DMG: $(du -h "$DMG_PATH" | cut -f1)"
+if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
+    echo "  • Размер PKG: $(du -h "$DIST_DIR/$APP_NAME.pkg" | cut -f1)"
+fi
+if [ -f "$DMG_PATH" ]; then
+    echo "  • Размер DMG: $(du -h "$DMG_PATH" | cut -f1)"
+fi
 echo ""
 echo -e "${YELLOW}⚠️  ВАЖНО: Защита подписи${NC}"
-echo "  • НЕ открывайте .app в Finder до проверки (это может изменить extended attributes)"
+echo "  • НЕ открывайте .app в Finder (это может изменить extended attributes)"
 echo "  • НЕ выполняйте xattr -cr на .app (это удалит подпись!)"
 echo "  • НЕ копируйте .app через Finder (используйте ditto --noextattr --noqtn)"
-echo "  • Для проверки используйте: ./scripts/verify_packaging_artifacts.sh"
-echo ""
-echo -e "${YELLOW}📋 Следующие шаги:${NC}"
-echo "  1. Проверьте артефакты: ./scripts/verify_packaging_artifacts.sh"
-echo "  2. Установите PKG: open $DIST_DIR/$APP_NAME.pkg (или: sudo installer -pkg $DIST_DIR/$APP_NAME.pkg -target /)"
-echo "  3. Либо используйте DMG для drag-and-drop: $DMG_PATH"
-echo "  4. Распространяйте PKG/DMG пользователям"
 echo ""
 echo -e "${GREEN}✅ ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ!${NC}"
+echo ""
+echo -e "${BLUE}📁 Готовые артефакты:${NC}"
+if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
+    echo "  • PKG: $DIST_DIR/$APP_NAME.pkg"
+    echo "    Установка: open $DIST_DIR/$APP_NAME.pkg"
+fi
+if [ -f "$DMG_PATH" ]; then
+    echo "  • DMG: $DMG_PATH"
+    echo "    Установка: open $DMG_PATH"
+fi
+echo "  • Приложение: $DIST_DIR/$APP_NAME.app"
+echo ""
+
+# --- Auto-install when --clean-install ---
+if [ "$CLEAN_INSTALL" -eq 1 ] && [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
+    echo -e "${BLUE}📦 AUTO-INSTALL: Устанавливаем новый PKG...${NC}"
+    sudo installer -pkg "$DIST_DIR/$APP_NAME.pkg" -target /
+    
+    # Проверяем установку
+    if [ -f "/Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME" ]; then
+        NEW_TIMESTAMP=$(stat -f "%Sm" "/Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME")
+        echo -e "${GREEN}✅ Установлено: /Applications/$APP_NAME.app ($NEW_TIMESTAMP)${NC}"
+        
+        # Запускаем приложение
+        echo -e "${BLUE}🚀 Запускаем приложение...${NC}"
+        open "/Applications/$APP_NAME.app"
+    else
+        echo -e "${RED}❌ Ошибка установки: /Applications/$APP_NAME.app не найден${NC}"
+    fi
+fi
+

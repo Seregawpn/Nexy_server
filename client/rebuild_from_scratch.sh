@@ -575,49 +575,50 @@ if [ -d "/Applications/Nexy.app" ]; then
     else
         log_info "Архитектура установленного приложения: $INSTALLED_ARCHS"
     fi
-else
-    log_error "/Applications/Nexy.app не найден!"
-    exit 1
-fi
 
-log_info "Перерегистрируем приложение в Launch Services..."
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-    -f /Applications/Nexy.app 2>&1 | tee -a "$FULL_LOG"
-log_success "Приложение перерегистрировано"
+    log_info "Перерегистрируем приложение в Launch Services..."
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+        -f /Applications/Nexy.app 2>&1 | tee -a "$FULL_LOG"
+    log_success "Приложение перерегистрировано"
 
-echo ""
-log_info "Запускаем приложение через 'open' (как пользователь)..."
-log_info "Логи приложения: ~/Library/Application Support/Nexy/logs/"
-log_warning "ВНИМАНИЕ: GUI приложение может запросить разрешения!"
-log_warning "Если появятся диалоги - подтверждайте их"
-echo ""
-
-# Запускаем через open (правильный способ для GUI приложений на macOS)
-open /Applications/Nexy.app
-
-log_info "Ожидание 10 секунд для инициализации..."
-sleep 10
-
-# Проверяем, запущено ли приложение
-APP_PID=$(pgrep -f "Nexy.app/Contents/MacOS/Nexy" | head -1)
-
-if [ -n "$APP_PID" ]; then
-    log_success "Приложение работает (PID: $APP_PID)"
-    log_info "Приложение запущено через 'open', логи доступны в файлах приложения"
-else
-    log_error "Приложение не запустилось или сразу завершилось!"
     echo ""
-    
-    log_info "Проверка crash reports:"
-    ls -lt ~/Library/Logs/DiagnosticReports/Nexy*.crash 2>/dev/null | head -5 || log_info "Crash reports не найдены"
-    
-    if ls ~/Library/Logs/DiagnosticReports/Nexy*.crash 2>/dev/null | head -1 > /dev/null; then
-        LATEST_CRASH=$(ls -t ~/Library/Logs/DiagnosticReports/Nexy*.crash 2>/dev/null | head -1)
-        log_info "Последний crash report:"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        head -50 "$LATEST_CRASH"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "Запускаем приложение через 'open' (как пользователь)..."
+    log_info "Логи приложения: ~/Library/Application Support/Nexy/logs/"
+    log_warning "ВНИМАНИЕ: GUI приложение может запросить разрешения!"
+    log_warning "Если появятся диалоги - подтверждайте их"
+    echo ""
+
+    # Запускаем через open (правильный способ для GUI приложений на macOS)
+    open /Applications/Nexy.app
+
+    log_info "Ожидание 10 секунд для инициализации..."
+    sleep 10
+
+    # Проверяем, запущено ли приложение
+    APP_PID=$(pgrep -f "Nexy.app/Contents/MacOS/Nexy" | head -1)
+
+    if [ -n "$APP_PID" ]; then
+        log_success "Приложение работает (PID: $APP_PID)"
+        log_info "Приложение запущено через 'open', логи доступны в файлах приложения"
+    else
+        log_warning "Приложение не запустилось или сразу завершилось"
+        echo ""
+        
+        log_info "Проверка crash reports:"
+        ls -lt ~/Library/Logs/DiagnosticReports/Nexy*.crash 2>/dev/null | head -5 || log_info "Crash reports не найдены"
+        
+        if ls ~/Library/Logs/DiagnosticReports/Nexy*.crash 2>/dev/null | head -1 > /dev/null; then
+            LATEST_CRASH=$(ls -t ~/Library/Logs/DiagnosticReports/Nexy*.crash 2>/dev/null | head -1)
+            log_info "Последний crash report:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            head -50 "$LATEST_CRASH"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        fi
     fi
+else
+    log_warning "/Applications/Nexy.app не найден (это нормально, если установка не выполнялась)"
+    log_info "Приложение можно установить вручную: cp -R dist/Nexy.app /Applications/"
+    log_info "Или через PKG: sudo installer -pkg dist/Nexy.pkg -target /"
 fi
 
 echo ""
