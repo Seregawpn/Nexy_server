@@ -25,7 +25,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.28  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
+  version: 1.6.0.30  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
 # Авто-всё конфигурация аудио - автоматическое определение параметров устройства
 default_audio:
   # Только целевые параметры для STT (что ожидает движок распознавания)
@@ -229,16 +229,15 @@ integrations:
     retry_delay: 5.0
     show_instructions: false
     required_permissions:
+    - accessibility
     - microphone
     - screen_capture
-    - network
-    - accessibility
     - input_monitoring
   permission_restart:
     enabled: true
     critical_permissions:
-    - microphone
     - accessibility
+    - microphone
     - input_monitoring
     - screen_capture
     restart_delay_sec: 5.0
@@ -325,7 +324,7 @@ permissions:
   first_run:
     enabled: true                         # Включить запрос разрешений при первом запуске
     max_wait_sec: 15                      # Единый таймаут для каждого разрешения (15 секунд)
-    open_settings_after_sec: 10           # Открыть System Settings если NOT_DETERMINED через 10 секунд
+    open_settings_after_sec: 5            # Открыть System Settings если NOT_DETERMINED через 5 секунд
     # DEPRECATED: Следующие поля не используются в текущей реализации
     wait_for_grant: true                  # [DEPRECATED]
     grant_wait_timeout_sec: 30            # [DEPRECATED]
