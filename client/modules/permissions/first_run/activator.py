@@ -79,123 +79,35 @@ async def activate_accessibility() -> bool:
     """
     Активировать запрос разрешения Accessibility.
 
-    Используем AXIsProcessTrustedWithOptions с kAXTrustedCheckOptionPrompt=True.
+    КРИТИЧНО (macOS Sequoia 26+):
+    AXIsProcessTrustedWithOptions КРАШИТ ПРОЦЕСС независимо от опций!
+    Даже с prompt=True система вызывает внутренний TCCAccessRequest который
+    требует приватный entitlement com.apple.private.tcc.manager.check-by-audit-token.
     
-    ПРИМЕЧАНИЕ: macOS 15 логирует ошибку:
-    "attempted to call TCCAccessRequest for kTCCServiceAccessibility 
-    without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement"
-    
-    Но это НЕ блокирует работу! Диалог всё равно показывается и приложение
-    добавляется в список Accessibility. Ошибка просто логируется в system log.
+    БЕЗОПАСНЫЙ ПОДХОД: Открываем System Settings напрямую.
+    Это единственный безопасный способ показать пользователю где включить Accessibility.
 
     Returns:
-        True если активация прошла успешно
+        True если настройки открыты успешно
         False если произошла ошибка
     """
     try:
-        logger.info("♿ Активация Accessibility через AXIsProcessTrustedWithOptions...")
-        print("♿ [ACTIVATOR] Начало активации Accessibility (нативный диалог)")
+        logger.info("♿ Активация Accessibility - открываем System Settings...")
+        print("♿ [ACTIVATOR] Открываем System Settings > Security & Privacy > Accessibility")
 
-        import ctypes
-        from ctypes import util as ctypes_util
-
-        # Загружаем ApplicationServices framework
-        app_services_path = ctypes_util.find_library("ApplicationServices")
-        if not app_services_path:
-            logger.warning("⚠️ ApplicationServices недоступен")
-            return False
-
-        app_services = ctypes.CDLL(app_services_path)
+        import subprocess
         
-        # Загружаем CoreFoundation для создания CFDictionary
-        cf_path = ctypes_util.find_library("CoreFoundation")
-        if not cf_path:
-            logger.warning("⚠️ CoreFoundation недоступен")
-            return False
-            
-        cf = ctypes.CDLL(cf_path)
-
-        # Настраиваем функции
-        app_services.AXIsProcessTrustedWithOptions.argtypes = [ctypes.c_void_p]
-        app_services.AXIsProcessTrustedWithOptions.restype = ctypes.c_bool
-
-        # Создаём CFString для kAXTrustedCheckOptionPrompt
-        cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
-        cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+        # Открываем System Settings на странице Accessibility
+        # Это безопасный способ - не вызывает TCCAccessRequest
+        subprocess.run([
+            "open", 
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        ], check=False)
         
-        cf.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
-        cf.CFBooleanGetValue.restype = ctypes.c_bool
+        logger.info("✅ Accessibility: System Settings открыты")
+        print("✅ [ACTIVATOR] Accessibility: System Settings открыты")
         
-        cf.CFDictionaryCreate.argtypes = [
-            ctypes.c_void_p,  # allocator
-            ctypes.POINTER(ctypes.c_void_p),  # keys
-            ctypes.POINTER(ctypes.c_void_p),  # values
-            ctypes.c_long,  # numValues
-            ctypes.c_void_p,  # keyCallBacks
-            ctypes.c_void_p,  # valueCallBacks
-        ]
-        cf.CFDictionaryCreate.restype = ctypes.c_void_p
-        
-        cf.CFRelease.argtypes = [ctypes.c_void_p]
-        cf.CFRelease.restype = None
-
-        # Получаем kCFBooleanTrue
-        kCFBooleanTrue = ctypes.c_void_p.in_dll(cf, "kCFBooleanTrue")
-        
-        # Создаём ключ "AXTrustedCheckOptionPrompt"
-        kAXTrustedCheckOptionPrompt = cf.CFStringCreateWithCString(
-            None, 
-            b"AXTrustedCheckOptionPrompt",
-            0  # kCFStringEncodingUTF8
-        )
-        
-        if not kAXTrustedCheckOptionPrompt:
-            logger.warning("⚠️ Не удалось создать CFString")
-            return False
-
-        try:
-            # Создаём CFDictionary с опциями
-            keys = (ctypes.c_void_p * 1)(kAXTrustedCheckOptionPrompt)
-            # ВАЖНО: используем kCFBooleanTrue.value чтобы получить сам указатель
-            values = (ctypes.c_void_p * 1)(kCFBooleanTrue.value)
-            
-            options = cf.CFDictionaryCreate(
-                None,  # allocator
-                keys,
-                values,
-                1,  # numValues
-                None,  # keyCallBacks (use default)
-                None,  # valueCallBacks (use default)
-            )
-            
-            if not options:
-                logger.warning("⚠️ Не удалось создать CFDictionary")
-                return False
-            
-            try:
-                # Вызываем AXIsProcessTrustedWithOptions с prompt=True
-                # Это покажет нативный системный диалог для Accessibility
-                # Примечание: macOS 15 логирует TCC error, но диалог всё равно работает
-                logger.info("♿ Вызов AXIsProcessTrustedWithOptions(prompt=True)...")
-                is_trusted = app_services.AXIsProcessTrustedWithOptions(options)
-                
-                logger.info(f"♿ AXIsProcessTrustedWithOptions result: {is_trusted}")
-                print(f"♿ [ACTIVATOR] AXIsProcessTrustedWithOptions = {is_trusted}")
-                
-                if is_trusted:
-                    logger.info("✅ Accessibility: разрешение предоставлено")
-                    print("✅ [ACTIVATOR] Accessibility: разрешение предоставлено")
-                else:
-                    logger.info("⏳ Accessibility: диалог показан, ожидаем действия пользователя")
-                    print("⏳ [ACTIVATOR] Accessibility: диалог показан, ожидаем действия пользователя")
-                
-                return True
-                
-            finally:
-                cf.CFRelease(options)
-                
-        finally:
-            cf.CFRelease(kAXTrustedCheckOptionPrompt)
+        return True
 
     except Exception as e:
         logger.error(f"❌ Ошибка активации Accessibility: {e}")

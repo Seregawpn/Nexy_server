@@ -155,11 +155,13 @@ def check_accessibility_status() -> PermissionStatus:
     
     ЕДИНСТВЕННЫЙ SOURCE OF TRUTH для проверки Accessibility.
     
-    Использует AXIsProcessTrustedWithOptions БЕЗ опции kAXTrustedCheckOptionPrompt.
-    Это позволяет проверить статус разрешения без показа диалогов.
+    КРИТИЧНО (macOS Sequoia 26+): 
+    AXIsProcessTrustedWithOptions КРАШИТ ПРОЦЕСС когда статус NOT_DETERMINED!
+    Система внутренне вызывает TCCAccessRequest который требует приватный entitlement
+    com.apple.private.tcc.manager.check-by-audit-token.
     
-    ПРИМЕЧАНИЕ: TCC логирует информационное сообщение при вызове этого API,
-    но это НЕ является ошибкой - метод работает корректно.
+    БЕЗОПАСНЫЙ ПОДХОД: Используем AXIsProcessTrusted() через ctypes.
+    Эта функция просто возвращает Bool без внутреннего TCC запроса.
     
     Rate-limit: не чаще 1 раза в 2 секунды (кеширование результата).
 
@@ -186,9 +188,13 @@ def check_accessibility_status() -> PermissionStatus:
         return _ax_cache_result
     
     try:
-        # Используем AXIsProcessTrustedWithOptions без опции prompt
-        # Это проверяет статус БЕЗ показа диалога
         from ctypes import util as ctypes_util
+        
+        # БЕЗОПАСНЫЙ СПОСОБ: Используем AXIsProcessTrusted() (без Options)
+        # Этот API просто возвращает Bool и НЕ вызывает TCCAccessRequest.
+        # 
+        # ВАЖНО: НЕ используем AXIsProcessTrustedWithOptions!
+        # На macOS Sequoia этот API крашит процесс при NOT_DETERMINED статусе.
         
         app_services_path = ctypes_util.find_library("ApplicationServices")
         if not app_services_path:
@@ -197,16 +203,15 @@ def check_accessibility_status() -> PermissionStatus:
 
         app_services = ctypes.CDLL(app_services_path)
         
-        # Вызываем AXIsProcessTrustedWithOptions с NULL (без опций)
-        # Это НЕ показывает диалог, просто проверяет статус
-        app_services.AXIsProcessTrustedWithOptions.argtypes = [ctypes.c_void_p]
-        app_services.AXIsProcessTrustedWithOptions.restype = ctypes.c_bool
-        
-        # NULL = без опций = без показа диалога
-        is_trusted = app_services.AXIsProcessTrustedWithOptions(None)
-        
-        resolved = PermissionStatus.GRANTED if is_trusted else PermissionStatus.DENIED
-        logger.info(f"♿ Accessibility: AXIsProcessTrustedWithOptions(None) → {resolved.value}")
+        try:
+            app_services.AXIsProcessTrusted.argtypes = []
+            app_services.AXIsProcessTrusted.restype = ctypes.c_bool
+            is_trusted = app_services.AXIsProcessTrusted()
+            resolved = PermissionStatus.GRANTED if is_trusted else PermissionStatus.DENIED
+            logger.info(f"♿ Accessibility: AXIsProcessTrusted() → {resolved.value}")
+        except Exception as e:
+            logger.warning(f"⚠️ AXIsProcessTrusted failed: {e}")
+            return PermissionStatus.NOT_DETERMINED
 
         # Обновляем кеш
         _ax_cache_result = resolved

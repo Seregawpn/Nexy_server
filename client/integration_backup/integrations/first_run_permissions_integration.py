@@ -320,9 +320,9 @@ class FirstRunPermissionsIntegration:
         
         activate_func, check_func = activators[perm]
         
-        # Активируем запрос
+        # Активируем запрос (async функции!)
         try:
-            activate_func()
+            await activate_func()
         except Exception as e:
             logger.warning(f"⚠️ [PERMISSIONS] Activation error for {perm}: {e}")
         

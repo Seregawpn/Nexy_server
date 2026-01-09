@@ -5,6 +5,7 @@ VoiceRecognitionIntegration - координация распознавания 
 
 import asyncio
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, TYPE_CHECKING
@@ -79,6 +80,9 @@ class VoiceRecognitionIntegration:
         # GoogleSRController (Input)
         self._google_sr_controller: Optional[Any] = None  # type: ignore[assignment]
 
+        # Thread-safe lock для защиты shared state от concurrent callbacks GoogleSRController
+        self._state_lock = threading.Lock()
+        
         # NOTE: _first_run_in_progress cache removed - use selectors.is_first_run_in_progress() instead
         # Если распознавание завершилось при активном PTT — публикацию откладываем до RELEASE
         self._defer_result_until_stop: bool = False
@@ -261,8 +265,7 @@ class VoiceRecognitionIntegration:
             if self._google_sr_controller and not self.config.simulate:
                 try:
                     logger.info(f"🚀 [AUDIO] Starting GoogleSRController for session {session_id}")
-                    # Store session_id for callbacks
-                    self._v2_current_session_id = session_id
+                    # session_id уже установлен в state_manager через _set_session_id выше
                     success = self._google_sr_controller.start_listening()
                     if success:
                         await self.event_bus.publish("voice.recognition_started", {
@@ -505,7 +508,8 @@ class VoiceRecognitionIntegration:
     def _on_sr_v2_completed(self, result: Any) -> None:  # type: ignore[type-arg]
         """Callback when v2 controller completes recognition."""
         try:
-            session_id = getattr(self, '_v2_current_session_id', None)
+            # Используем state_manager как единственный источник истины для session_id
+            session_id = self._get_active_session_id()
             logger.info(f"✅ [AUDIO_V2] Recognition completed: {result.text[:50] if result.text else '(empty)'}...")
             
             # Publish event via asyncio (we're in a thread)
@@ -526,13 +530,23 @@ class VoiceRecognitionIntegration:
     async def _publish_v2_completed(self, session_id: Optional[str], result: Any) -> None:  # type: ignore[type-arg]
         """Helper to publish v2 completion via EventBus."""
         try:
-            # REQ-004: use selector for ptt check
-            if selectors.is_ptt_pressed(self.state_manager) and self._recording_active:
-                self._defer_result_until_stop = True
+            # Thread-safe проверка и модификация состояния
+            with self._state_lock:
+                ptt_pressed = selectors.is_ptt_pressed(self.state_manager)
+                if ptt_pressed and self._recording_active:
+                    self._defer_result_until_stop = True
+                    should_restart = True
+                else:
+                    self._recording_active = False
+                    should_restart = False
+            
+            # Действия ВНЕ lock'а (избегаем deadlock'ов)
+            if should_restart:
+                self._set_session_id(session_id, reason="v2_completed_ptt_held")
                 if self._google_sr_controller:
-                    self._v2_current_session_id = session_id
                     self._google_sr_controller.start_listening()
                 return
+            
             await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
             ts_ms = int(time.monotonic() * 1000)
             if result.text:
@@ -552,14 +566,14 @@ class VoiceRecognitionIntegration:
                     "error": result.error or "empty_result",
                     "reason": "no_text"
                 })
-            self._recording_active = False
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error publishing completed: {e}")
     
     def _on_sr_v2_failed(self, error: str) -> None:
         """Callback when v2 controller fails."""
         try:
-            session_id = getattr(self, '_v2_current_session_id', None)
+            # Используем state_manager как единственный источник истины для session_id
+            session_id = self._get_active_session_id()
             logger.warning(f"⚠️ [AUDIO_V2] Recognition failed: {error}")
             
             # Publish event via asyncio (we're in a thread)
@@ -580,13 +594,23 @@ class VoiceRecognitionIntegration:
     async def _publish_v2_failed(self, session_id, error: str) -> None:
         """Helper to publish v2 failure via EventBus."""
         try:
-            # REQ-004: use selector for ptt check
-            if selectors.is_ptt_pressed(self.state_manager) and self._recording_active:
-                self._defer_result_until_stop = True
+            # Thread-safe проверка и модификация состояния
+            with self._state_lock:
+                ptt_pressed = selectors.is_ptt_pressed(self.state_manager)
+                if ptt_pressed and self._recording_active:
+                    self._defer_result_until_stop = True
+                    should_restart = True
+                else:
+                    self._recording_active = False
+                    should_restart = False
+            
+            # Действия ВНЕ lock'а (избегаем deadlock'ов)
+            if should_restart:
+                self._set_session_id(session_id, reason="v2_failed_ptt_held")
                 if self._google_sr_controller:
-                    self._v2_current_session_id = session_id
                     self._google_sr_controller.start_listening()
                 return
+            
             await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
             # TRACE: распознавание завершено с ошибкой
             ts_ms = int(time.monotonic() * 1000)
@@ -596,7 +620,6 @@ class VoiceRecognitionIntegration:
                 "error": error,
                 "reason": error
             })
-            self._recording_active = False
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error publishing failed: {e}")
     
