@@ -28,9 +28,9 @@ except Exception:
 
 # Централизованный контроллер режимов
 try:
-    from mode_management import (
+    from mode_management import (  # type: ignore[reportMissingImports]
         ModeController, ModeTransition, ModeTransitionType, ModeConfig,
-    )  # type: ignore[reportMissingImports]
+    )
 except Exception:
     # Fallback to explicit modules path when running from repo
     from modules.mode_management import (

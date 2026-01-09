@@ -123,9 +123,9 @@ class SimpleModuleCoordinator:
         self._bg_loop = None
         self._bg_thread = None
 
-        # Состояние процесса разрешений
-        self._permissions_in_progress = False
-        self._restart_pending = False  # Флаг ожидания перезапуска после first_run
+
+        # NOTE: Legacy caches removed - use StateManager via selectors instead
+        # _permissions_in_progress and _restart_pending were duplicating StateManager state
 
         # Состояние tray (gate-механизм для блокирующих операций)
         self._tray_ready = False
@@ -292,17 +292,16 @@ class SimpleModuleCoordinator:
     
     async def _setup_critical_subscriptions(self):
         """
-        Настройка критичных подписок на события ДО инициализации интеграций.
+        Настройка критичных подписок на события разрешений.
         
-        КРИТИЧНО: Должна вызываться ДО _initialize_integrations(), чтобы
-        не потерять события permissions.first_run_completed, публикуемые
-        в FirstRunPermissionsIntegration.initialize() при обнаружении
-        флага перезапуска.
+        События:
+        - permissions.first_run_started: Начало запроса разрешений
+        - permissions.first_run_completed: Завершение (all_granted=True/False)
+        - permissions.changed: Изменение статуса разрешений
         """
         try:
-            logger.info("[COORDINATOR] Настройка критичных подписок на события разрешений...")
+            logger.info("[COORDINATOR] Setting up permission event subscriptions...")
             
-            # Подписываемся на события разрешений (высокий приоритет)
             await self._ensure_event_bus().subscribe(
                 "permissions.first_run_started",
                 self._on_permissions_started,
@@ -314,22 +313,12 @@ class SimpleModuleCoordinator:
                 EventPriority.HIGH
             )
             await self._ensure_event_bus().subscribe(
-                "permissions.first_run_failed",
-                self._on_permissions_failed,
-                EventPriority.HIGH
-            )
-            await self._ensure_event_bus().subscribe(
-                "permissions.first_run_restart_pending",
-                self._on_permissions_restart_pending,
-                EventPriority.CRITICAL
-            )
-            await self._ensure_event_bus().subscribe(
                 "permissions.changed",
                 self._on_permissions_changed,
                 EventPriority.HIGH
             )
             
-            logger.info("[COORDINATOR] Критичные подписки настроены успешно")
+            logger.info("[COORDINATOR] Permission subscriptions configured")
             
         except Exception as e:
             logger.error(f"[COORDINATOR] Ошибка настройки критичных подписок: {e}")
@@ -444,129 +433,14 @@ class SimpleModuleCoordinator:
                         self._duplicate_instance_detected = True
                         return False
                     
-                    # КРИТИЧНО: Проверяем запрошен ли перезапуск после first_run_permissions
+                    # КРИТИЧНО: Проверяем результат first_run_permissions
+                    # Новая логика: перезапуск происходит автоматически внутри интеграции
+                    # Если мы здесь — значит:
+                    # 1. Все разрешения были получены ранее (флаг permissions_granted.flag)
+                    # 2. Или не все получены, но показан диалог и продолжаем с ограничениями
                     if name == "first_run_permissions" and success:
-                        import time
-                        decision_start = time.time()
-
-                        # Даём время обработчикам событий сработать (конфигурируемая задержка)
-                        try:
-                            delay_ms = int((self.config._load_config().get("coordinator") or {}).get("event_settle_delay_ms", 500))
-                        except Exception:
-                            delay_ms = 500
-                        await asyncio.sleep(max(0.0, delay_ms / 1000.0))
-
-                        # Get update_in_progress from state_manager (via selector for consistency)
-                        from integration.core.selectors import is_update_in_progress
-                        update_in_progress = is_update_in_progress(self._ensure_state_manager())
-                        
-                        snapshot = Snapshot(
-                            perm_mic=_map_perm_status(check_microphone_status()),
-                            perm_screen=_map_perm_status(check_screen_capture_status()),
-                            perm_accessibility=_map_perm_status(check_accessibility_status()),
-                            device_input=DeviceStatus.DEFAULT_OK,
-                            network=NetworkStatus.ONLINE,
-                            first_run=self._permissions_in_progress,
-                            app_mode=AppMode.SLEEPING,
-                            restart_pending=self._restart_pending,  # Use internal state, not state_data (source: permissions.restart_pending.changed event)
-                            update_in_progress=update_in_progress,  # Use selector for consistency
-                        )
-
-                        # Shadow-mode: diagnostic logging for update_in_progress
-                        try:
-                            feature_config = self.config._load_config().get("features", {}).get("use_events_for_update_status", {})
-                            if feature_config.get("enabled", False):
-                                # Compare snapshot value vs state_data via selector
-                                state_data_value = is_update_in_progress(self._ensure_state_manager())
-                                snapshot_value = snapshot.update_in_progress
-                                session_id = self._ensure_state_manager().current_session_id or "unknown"
-                                if state_data_value != snapshot_value:
-                                    logger.warning(
-                                        "[COORDINATOR] Shadow-mode mismatch: snapshot.update_in_progress=%s vs state_data=%s (session=%s)",
-                                        snapshot_value,
-                                        state_data_value,
-                                        session_id,
-                                    )
-                                else:
-                                    logger.debug(
-                                        "[COORDINATOR] Shadow-mode sync: snapshot.update_in_progress=%s == state_data=%s (session=%s)",
-                                        snapshot_value,
-                                        state_data_value,
-                                        session_id,
-                                    )
-                        except Exception:
-                            pass  # Don't fail if feature flag check fails
-
-                        decision = decide_continue_integration_startup(snapshot)
-                        decision_duration_ms = int((time.time() - decision_start) * 1000)
-
-                        if decision == Decision.ABORT:
-                            logger.info(
-                                "decision=abort reason=first_run_restart_pending "
-                                f"ctx={{firstRun={snapshot.first_run},restart_pending={snapshot.restart_pending},"
-                                f"appMode={snapshot.app_mode.value}}} source=coordinator duration_ms={decision_duration_ms}"
-                            )
-                            print("🔄 [PERMISSIONS] Первый запуск разрешений - запуск перезапуска приложения")
-                            print("⏹️ [PERMISSIONS] Остальные интеграции НЕ будут запущены")
-
-                            first_run_integration = self.integrations.get("first_run_permissions")
-                            if first_run_integration and hasattr(first_run_integration, "request_restart"):
-                                restart_start = time.time()
-                                restart_success = await first_run_integration.request_restart()
-                                restart_duration_ms = int((time.time() - restart_start) * 1000)
-
-                                if not restart_success:
-                                    logger.warning(
-                                        f"⚠️ [PERMISSIONS] Перезапуск не удался после {restart_duration_ms}ms - продолжаем запуск интеграций"
-                                    )
-                                    print(f"⚠️ [PERMISSIONS] Перезапуск не удался ({restart_duration_ms}ms) - продолжаем запуск")
-                                    logger.warning(
-                                        "[PERMISSIONS] request_restart returned False (duration_ms=%s, session=%s)",
-                                        restart_duration_ms,
-                                        getattr(first_run_integration, "_restart_session_id", None),
-                                    )
-                                    self._permissions_in_progress = False
-                                    self._restart_pending = False
-                                    # Legacy: Update state_data for backward compatibility (will be removed after migration)
-                                    try:
-                                        self._ensure_state_manager().set_restart_pending(False)
-                                        await self._ensure_event_bus().publish(
-                                            "permissions.restart_pending.changed",
-                                            {"active": False, "session_id": "unknown", "source": "coordinator"},
-                                        )
-                                    except Exception:
-                                        pass
-                                else:
-                                    logger.info(f"✅ [PERMISSIONS] Перезапуск инициирован успешно ({restart_duration_ms}ms)")
-                                    logger.info(
-                                        "[PERMISSIONS] request_restart succeeded (duration_ms=%s, session=%s)",
-                                        restart_duration_ms,
-                                        getattr(first_run_integration, "_restart_session_id", None),
-                                    )
-                                    return True
-                            else:
-                                logger.error(
-                                    "❌ [PERMISSIONS] FirstRunPermissionsIntegration не поддерживает request_restart()"
-                                )
-                                print("❌ [PERMISSIONS] Не удал��сь вызвать перезапуск - продолжаем запуск")
-                                self._permissions_in_progress = False
-                                self._restart_pending = False
-                                # Legacy: Update state_data for backward compatibility (will be removed after migration)
-                                try:
-                                    self._ensure_state_manager().set_restart_pending(False)
-                                    await self._ensure_event_bus().publish(
-                                        "permissions.restart_pending.changed",
-                                        {"active": False, "session_id": "unknown", "source": "coordinator"},
-                                    )
-                                except Exception:
-                                    pass
-                        else:
-                            logger.info(
-                                "decision=continue reason=no_restart_pending "
-                                f"ctx={{firstRun={snapshot.first_run},restart_pending={snapshot.restart_pending}}} "
-                                f"source=coordinator duration_ms={decision_duration_ms}"
-                            )
-                            print("✅ [PERMISSIONS] Первый запуск уже завершён ранее, продолжаем запуск...")
+                        logger.info("✅ [PERMISSIONS] Permissions check completed, continuing startup...")
+                        print("✅ [PERMISSIONS] Проверка разрешений завершена, продолжаем запуск...")
                     
                     if not success:
                         print(f"❌ Ошибка запуска {name}")
@@ -915,55 +789,57 @@ class SimpleModuleCoordinator:
         except Exception as e:
             logger.debug(f"Failed to log screenshot.error: {e}")
 
-    # НОВОЕ: Обработчики событий разрешений
+    # Обработчики событий разрешений
     async def _on_permissions_started(self, event):
-        """Начало запроса разрешений - блокируем остальные интеграции"""
+        """Начало запроса разрешений"""
         try:
             data = (event or {}).get("data", {})
             session_id = data.get("session_id", "unknown")
+            logger.info(f"⏳ [PERMISSIONS] Permission request started (session={session_id})")
             print(f"⏳ [PERMISSIONS] Начат процесс запроса разрешений (session={session_id})")
-            logger.info(f"⏳ [PERMISSIONS] Начат процесс запроса разрешений (session={session_id})")
-            self._permissions_in_progress = True
+            
+            # Обновляем StateManager (единственный источник истины)
             try:
                 if self.state_manager:
-                    self._ensure_state_manager().set_first_run_state(in_progress=True, required=True, completed=False)
+                    self._ensure_state_manager().set_first_run_state(
+                        in_progress=True, required=True, completed=False
+                    )
             except Exception:
-                logger.debug("[PERMISSIONS] Не удалось обновить first_run state (started)")
+                logger.debug("[PERMISSIONS] Failed to update first_run state (started)")
         except Exception as e:
-            logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_started: {e}")
+            logger.error(f"❌ [PERMISSIONS] Error handling permissions.first_run_started: {e}")
 
     async def _on_permissions_completed(self, event):
-        """Завершение запроса разрешений - продолжаем запуск"""
+        """Завершение запроса разрешений"""
         try:
             data = (event or {}).get("data", {})
             session_id = data.get("session_id", "unknown")
-            print(f"✅ [PERMISSIONS] Запрос разрешений завершен (session={session_id})")
-            logger.info(f"✅ [PERMISSIONS] Запрос разрешений завершен (session={session_id})")
-            self._permissions_in_progress = False
+            all_granted = data.get("all_granted", True)
+            missing = data.get("missing", [])
+            
+            if all_granted:
+                logger.info(f"✅ [PERMISSIONS] All permissions granted (session={session_id})")
+                print(f"✅ [PERMISSIONS] Все разрешения получены (session={session_id})")
+            else:
+                logger.warning(f"⚠️ [PERMISSIONS] Some permissions missing: {missing} (session={session_id})")
+                print(f"⚠️ [PERMISSIONS] Некоторые разрешения не получены: {missing}")
+            
+            # Обновляем StateManager
             try:
                 if self.state_manager:
-                    self._ensure_state_manager().set_first_run_state(in_progress=False, required=False, completed=True)
+                    self._ensure_state_manager().set_first_run_state(
+                        in_progress=False, required=False, completed=True
+                    )
             except Exception:
-                logger.debug("[PERMISSIONS] Не удалось обновить first_run state (completed)")
+                logger.debug("[PERMISSIONS] Failed to update first_run state (completed)")
         except Exception as e:
-            logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_completed: {e}")
+            logger.error(f"❌ [PERMISSIONS] Error handling permissions.first_run_completed: {e}")
 
     async def _on_permissions_failed(self, event):
-        """Ошибка запроса разрешений - продолжаем с предупреждением"""
-        try:
-            data = (event or {}).get("data", {})
-            session_id = data.get("session_id", "unknown")
-            error = data.get("error", "unknown error")
-            print(f"⚠️ [PERMISSIONS] Ошибка запроса разрешений (session={session_id}): {error}")
-            logger.warning(f"⚠️ [PERMISSIONS] Ошибка запроса разрешений (session={session_id}): {error}")
-            self._permissions_in_progress = False
-            try:
-                if self.state_manager:
-                    self._ensure_state_manager().set_first_run_state(in_progress=False, required=True, completed=False)
-            except Exception:
-                logger.debug("[PERMISSIONS] Не удалось обновить first_run state (failed)")
-        except Exception as e:
-            logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_failed: {e}")
+        """DEPRECATED: Событие больше не используется"""
+        import warnings
+        warnings.warn("_on_permissions_failed is deprecated", DeprecationWarning)
+        logger.warning("[PERMISSIONS] Received deprecated permissions.first_run_failed event")
 
     async def _on_permissions_changed(self, event):
         """
@@ -1442,77 +1318,26 @@ class SimpleModuleCoordinator:
                 self._xpc_transaction_active = False
 
     async def _on_permissions_restart_pending(self, event):
-        """Обработка события перезапуска после первого запуска"""
-        try:
-            data = (event or {}).get("data", {})
-            session_id = data.get("session_id", "unknown")
-            print(f"🔄 [PERMISSIONS] Приложение будет перезапущено (session={session_id})")
-            print(f"⏹️ [PERMISSIONS] Остальные интеграции НЕ будут запущены")
-            logger.info(f"🔄 [PERMISSIONS] Перезапуск приложения запрошен (session={session_id})")
-
-            # Устанавливаем флаг ожидания перезапуска (internal state only)
-            # Это сигнал для метода start() остановить запуск интеграций
-            # NOTE: Per rule 21.3, мы не используем set_state_data() - состояние публикуется через события
-            self._restart_pending = True
-
-            # Legacy: Update state_data for backward compatibility during shadow-mode migration
-            # This will be removed once all consumers migrate to events/selectors
-            try:
-                self._ensure_state_manager().set_restart_pending(True)
-            except Exception:
-                pass
-
-            # Shadow-mode: diagnostic logging for coordinator._restart_pending vs state_data comparison
-            try:
-                feature_config = self.config._load_config().get("features", {}).get("use_events_for_restart_pending", {})
-                if feature_config.get("enabled", False):
-                    # Compare coordinator internal state vs state_data (via snapshot isolation)
-                    # Use local import to avoid circular dependency if not already imported
-                    from integration.core.selectors import create_snapshot_from_state
-                    state_data_value = create_snapshot_from_state(self._ensure_state_manager()).restart_pending
-                    coordinator_value = self._restart_pending
-                    if state_data_value != coordinator_value:
-                        logger.warning(
-                            "[COORDINATOR] Shadow-mode mismatch: coordinator._restart_pending=%s vs state_data=%s (session=%s)",
-                            coordinator_value,
-                            state_data_value,
-                            session_id,
-                        )
-                    else:
-                        logger.debug(
-                            "[COORDINATOR] Shadow-mode sync: coordinator._restart_pending=%s == state_data=%s (session=%s)",
-                            coordinator_value,
-                            state_data_value,
-                            session_id,
-                        )
-            except Exception:
-                pass  # Don't fail if feature flag check fails
-
-            # Publish event (primary source of truth after migration)
-            # Consumers should subscribe to permissions.restart_pending.changed instead of reading state_data
-            try:
-                await self._ensure_event_bus().publish(
-                    "permissions.restart_pending.changed",
-                    {
-                        "active": True,
-                        "session_id": session_id,
-                        "source": "coordinator",
-                    },
-                )
-            except Exception:
-                pass
-
-            # НЕ сбрасываем _permissions_in_progress - это предотвратит запуск интеграций
-            # Флаг сбросится автоматически при следующем запуске приложения
-        except Exception as e:
-            logger.error(f"❌ [PERMISSIONS] Ошибка обработки permissions.first_run_restart_pending: {e}")
+        """DEPRECATED: Событие больше не используется. Перезапуск происходит автоматически в интеграции."""
+        import warnings
+        warnings.warn("_on_permissions_restart_pending is deprecated", DeprecationWarning)
+        logger.warning("[PERMISSIONS] Received deprecated permissions.first_run_restart_pending event")
 
     def get_status(self) -> Dict[str, Any]:
         """Получить статус всех компонентов"""
+        from integration.core.selectors import is_first_run_in_progress
+        
+        permissions_in_progress = False
+        try:
+            if self.state_manager:
+                permissions_in_progress = is_first_run_in_progress(self._ensure_state_manager())
+        except Exception:
+            pass
+        
         return {
             "is_initialized": self.is_initialized,
             "is_running": self.is_running,
-            "permissions_in_progress": self._permissions_in_progress,
+            "permissions_in_progress": permissions_in_progress,
             "core_components": {
                 "event_bus": self.event_bus is not None,
                 "state_manager": self.state_manager is not None,

@@ -76,8 +76,8 @@ class NetworkManagerIntegration:
             # Создаем NetworkManager (он сам загрузит конфигурацию из unified_config)
             self._manager = NetworkManager()
             
-            # Добавляем callback для событий сети
-            self._manager.add_callback(self._on_network_event)
+            # Добавляем callback для событий сети (синхронная обертка для асинхронного метода)
+            self._manager.add_callback(self._on_network_event_sync)
             
             # Инициализируем NetworkManager
             success = await self._manager.initialize()
@@ -216,6 +216,20 @@ class NetworkManagerIntegration:
                 )
             else:
                 logger.error(f"Error in NetworkManagerIntegration.app_shutdown: {e}")
+    
+    def _on_network_event_sync(self, event: NetworkEvent) -> None:
+        """Синхронная обертка для асинхронного обработчика событий сети"""
+        try:
+            # Получаем текущий event loop
+            try:
+                loop = asyncio.get_running_loop()
+                # Event loop запущен - создаем task
+                loop.create_task(self._on_network_event(event))
+            except RuntimeError:
+                # Event loop не запущен - запускаем синхронно
+                asyncio.run(self._on_network_event(event))
+        except Exception as e:
+            logger.error(f"Error in _on_network_event_sync: {e}")
     
     async def _on_network_event(self, event: NetworkEvent):
         """Обработка событий от NetworkManager"""

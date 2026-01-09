@@ -1,7 +1,7 @@
 {
     "meta": {
         "version": "2.1.0",
-        "updated_at": "2026-01-05T20:26:59.061668"
+        "updated_at": "2026-01-08T19:51:21.484176"
     },
     "config": {
         "blocking_mode": "warning",
@@ -121,7 +121,120 @@
             "workspace": "server",
             "created_by": "Antigravity",
             "modified_by": "Antigravity"
+        },
+        {
+            "id": "NEXY-003",
+            "type": "goal",
+            "epicId": "EPIC-MVP",
+            "title": "CRM v2.1 Go-Live",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "Antigravity",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-08T14:11:00-05:00",
+            "registry_ref": "INS-009",
+            "description": "## Цель\n\nЗапустить CRM v2.1 в режим эксплуатации.\n\n## Acceptance Criteria\n\n1. Все механизмы реализованы (revision, 409, atomic write, audit)\n2. Ассистенты синхронизированы с правилами\n3. 3 smoke tests пройдены\n4. crm_doctor.py не находит ошибок\n\n## Test Plan\n\n1. Сценарий конфликта (409)\n2. Сценарий шума (noise control)\n3. Сценарий блокера\n\n## Definition of Done\n\nВсе пункты CRM_GO_LIVE_CHECKLIST.md выполнены.",
+            "responsible_docs": [
+                {
+                    "path": "Docs/CRM_CONSOLIDATED_RULES.md",
+                    "type": "source_of_truth"
+                },
+                {
+                    "path": "Docs/CRM_GO_LIVE_CHECKLIST.md",
+                    "type": "instruction"
+                }
+            ],
+            "subtasks": [
+                {
+                    "title": "Declare rules immutable",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement revision + 409",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement atomic write + backup",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement audit log",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement snapshot generation",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement WIP limits",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Update assistant prompts",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Write crm_doctor.py",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Smoke test: Conflict",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Smoke test: Noise",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Smoke test: Blocker",
+                    "status": "plan",
+                    "workspace": "master"
+                }
+            ],
+            "blockedBy": []
         }
     ],
-    "releases": []
+    "releases": [],
+    "project_state": {
+        "focus": "master",
+        "active_goals": [
+            "NEXY-003"
+        ],
+        "current_problems": [],
+        "current_risks": [],
+        "top_blockers": [
+            {
+                "task": "NEXY-002",
+                "blocked_by": "NEXY-001",
+                "impact": "high"
+            }
+        ],
+        "wip_status": {
+            "master": {
+                "in_progress": 2,
+                "testing": 0
+            },
+            "client": {
+                "in_progress": 0,
+                "testing": 0
+            },
+            "server": {
+                "in_progress": 0,
+                "testing": 0
+            }
+        },
+        "last_sync_at": "2026-01-08T19:51:21.484135"
+    }
 }

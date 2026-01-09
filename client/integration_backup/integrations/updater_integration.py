@@ -10,8 +10,15 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager, AppMode
-from integration.core.selectors import is_first_run_in_progress, is_update_in_progress
+from integration.core.state_manager import ApplicationStateManager
+
+# Import AppMode with fallback mechanism (same as other integrations)
+try:
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
+
+from integration.core.selectors import is_first_run_in_progress, is_update_in_progress  # type: ignore[attr-defined]
 from modules.updater import Updater
 from modules.updater.config import UpdaterConfig
 from config.updater_manager import get_updater_manager
@@ -298,11 +305,11 @@ class UpdaterIntegration:
         self._last_download_percent = 0
         self._last_install_percent = 0
         if loop is not None:
-            self.updater.on_download_progress = lambda downloaded, total: asyncio.run_coroutine_threadsafe(
+            self.updater.on_download_progress = lambda downloaded, total: asyncio.run_coroutine_threadsafe(  # type: ignore[assignment]
                 self._handle_download_progress(downloaded, total, trigger),
                 loop,
             )
-            self.updater.on_install_progress = lambda stage, percent: asyncio.run_coroutine_threadsafe(
+            self.updater.on_install_progress = lambda stage, percent: asyncio.run_coroutine_threadsafe(  # type: ignore[assignment]
                 self._handle_install_progress(stage, percent, trigger),
                 loop,
             )
@@ -311,8 +318,8 @@ class UpdaterIntegration:
             # In production, loop should always be available
             logger.debug("[UPDATER] No loop available for progress callbacks (test mode?)")
             # Use simple async call - will be handled by event loop when available
-            self.updater.on_download_progress = lambda downloaded, total: None  # Skip in test mode
-            self.updater.on_install_progress = lambda stage, percent: None  # Skip in test mode
+            self.updater.on_download_progress = lambda downloaded, total: None  # type: ignore[assignment]  # Skip in test mode
+            self.updater.on_install_progress = lambda stage, percent: None  # type: ignore[assignment]  # Skip in test mode
 
         # ШАГ 4: Выполняем скачивание и установку (проверка уже выполнена!)
         try:

@@ -22,6 +22,7 @@ The `kanban_progress_collector.py` script relies on the exact format of the tabl
 | **INS-006** | **Kanban Development** | [PROJECT_KANBAN.html](./PROJECT_KANBAN.html) | The CRM/Kanban tool itself (Self-hosted). |
 | **INS-007** | Deployment Checklist | [DEPLOY_CHECKLIST.md](./DEPLOY_CHECKLIST.md) | Step-by-step deployment verification (Progress Test). |
 | **INS-008** | Assistant Instructions | [CRM_ASSISTANT_INSTRUCTIONS.md](./CRM_ASSISTANT_INSTRUCTIONS.md) | How AI assistants create/manage tasks |
+| **INS-009** | **Go-Live Checklist** | [CRM_GO_LIVE_CHECKLIST.md](./CRM_GO_LIVE_CHECKLIST.md) | Criteria for CRM v2.1 launch |
 
 ## Task Templates
 | Registry ID | Title | Template Source | Usage |

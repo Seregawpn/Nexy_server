@@ -391,6 +391,7 @@
             <div class="nav-title">Views</div>
             <div class="nav-item active" onclick="app.filterByEpic('all')">📚 All Tasks</div>
             <div class="nav-item" onclick="app.filterByEpic('my')">👤 My Tasks</div>
+            <div class="nav-item" onclick="app.toggleArchived()" id="nav-archived">📦 Archived</div>
         </div>
         <div class="nav-section">
             <div class="nav-title">Epics</div>
@@ -678,6 +679,13 @@
 
             getCardsByStatus(status, filterEpicId) {
                 let cards = this.data.cards.filter(c => c.status === status);
+
+                // Archived filter: by default hide archived, unless showArchived is on
+                if (app.showArchived) {
+                    cards = cards.filter(c => c.archived === true);
+                } else {
+                    cards = cards.filter(c => !c.archived);
+                }
 
                 // Workspace filter
                 if (app.currentWorkspace && app.currentWorkspace !== 'all') {
@@ -1123,6 +1131,7 @@
                 this.currentFilter = 'all';
                 this.currentWorkspace = 'all';
                 this.currentView = 'board';
+                this.showArchived = false;
             }
 
             async init() {
@@ -1143,8 +1152,13 @@
                 }
             }
 
-            filterByEpic(id) { this.currentFilter = id; this.view.render(); }
+            filterByEpic(id) { this.showArchived = false; this.currentFilter = id; this.view.render(); }
             filterByWorkspace(ws) { this.currentWorkspace = ws; this.view.render(); }
+            toggleArchived() {
+                this.showArchived = !this.showArchived;
+                document.getElementById('nav-archived').classList.toggle('active', this.showArchived);
+                this.view.render();
+            }
             switchView(v) {
                 this.currentView = v;
                 document.getElementById('view-board').classList.toggle('hide', v !== 'board');

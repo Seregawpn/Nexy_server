@@ -79,69 +79,192 @@ async def activate_accessibility() -> bool:
     """
     Активировать запрос разрешения Accessibility.
 
-    ВАЖНО: Любые вызовы AX или CG API для Accessibility могут вызывать crash
-    при первом запуске после сброса разрешений. Поэтому мы НЕ вызываем никаких
-    системных API здесь - просто возвращаем True и полагаемся на open_settings
-    для показа инструкций пользователю.
+    Используем AXIsProcessTrustedWithOptions с kAXTrustedCheckOptionPrompt=True.
+    
+    ПРИМЕЧАНИЕ: macOS 15 логирует ошибку:
+    "attempted to call TCCAccessRequest for kTCCServiceAccessibility 
+    without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement"
+    
+    Но это НЕ блокирует работу! Диалог всё равно показывается и приложение
+    добавляется в список Accessibility. Ошибка просто логируется в system log.
 
     Returns:
-        True всегда - активация "успешна" (пользователь будет направлен в Settings)
+        True если активация прошла успешно
+        False если произошла ошибка
     """
-    logger.info("♿ Активация Accessibility (безопасный режим - без системных API)...")
-    print(f"♿ [ACTIVATOR] Accessibility: пропускаем системный диалог, используем open_settings")
-    
-    # НЕ вызываем никаких AX/CG API - они могут crash'ить приложение
-    # Вместо этого open_settings покажет System Preferences и help dialog
-    
-    return True
+    try:
+        logger.info("♿ Активация Accessibility через AXIsProcessTrustedWithOptions...")
+        print("♿ [ACTIVATOR] Начало активации Accessibility (нативный диалог)")
+
+        import ctypes
+        from ctypes import util as ctypes_util
+
+        # Загружаем ApplicationServices framework
+        app_services_path = ctypes_util.find_library("ApplicationServices")
+        if not app_services_path:
+            logger.warning("⚠️ ApplicationServices недоступен")
+            return False
+
+        app_services = ctypes.CDLL(app_services_path)
+        
+        # Загружаем CoreFoundation для создания CFDictionary
+        cf_path = ctypes_util.find_library("CoreFoundation")
+        if not cf_path:
+            logger.warning("⚠️ CoreFoundation недоступен")
+            return False
+            
+        cf = ctypes.CDLL(cf_path)
+
+        # Настраиваем функции
+        app_services.AXIsProcessTrustedWithOptions.argtypes = [ctypes.c_void_p]
+        app_services.AXIsProcessTrustedWithOptions.restype = ctypes.c_bool
+
+        # Создаём CFString для kAXTrustedCheckOptionPrompt
+        cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+        cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+        
+        cf.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
+        cf.CFBooleanGetValue.restype = ctypes.c_bool
+        
+        cf.CFDictionaryCreate.argtypes = [
+            ctypes.c_void_p,  # allocator
+            ctypes.POINTER(ctypes.c_void_p),  # keys
+            ctypes.POINTER(ctypes.c_void_p),  # values
+            ctypes.c_long,  # numValues
+            ctypes.c_void_p,  # keyCallBacks
+            ctypes.c_void_p,  # valueCallBacks
+        ]
+        cf.CFDictionaryCreate.restype = ctypes.c_void_p
+        
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        cf.CFRelease.restype = None
+
+        # Получаем kCFBooleanTrue
+        kCFBooleanTrue = ctypes.c_void_p.in_dll(cf, "kCFBooleanTrue")
+        
+        # Создаём ключ "AXTrustedCheckOptionPrompt"
+        kAXTrustedCheckOptionPrompt = cf.CFStringCreateWithCString(
+            None, 
+            b"AXTrustedCheckOptionPrompt",
+            0  # kCFStringEncodingUTF8
+        )
+        
+        if not kAXTrustedCheckOptionPrompt:
+            logger.warning("⚠️ Не удалось создать CFString")
+            return False
+
+        try:
+            # Создаём CFDictionary с опциями
+            keys = (ctypes.c_void_p * 1)(kAXTrustedCheckOptionPrompt)
+            # ВАЖНО: используем kCFBooleanTrue.value чтобы получить сам указатель
+            values = (ctypes.c_void_p * 1)(kCFBooleanTrue.value)
+            
+            options = cf.CFDictionaryCreate(
+                None,  # allocator
+                keys,
+                values,
+                1,  # numValues
+                None,  # keyCallBacks (use default)
+                None,  # valueCallBacks (use default)
+            )
+            
+            if not options:
+                logger.warning("⚠️ Не удалось создать CFDictionary")
+                return False
+            
+            try:
+                # Вызываем AXIsProcessTrustedWithOptions с prompt=True
+                # Это покажет нативный системный диалог для Accessibility
+                # Примечание: macOS 15 логирует TCC error, но диалог всё равно работает
+                logger.info("♿ Вызов AXIsProcessTrustedWithOptions(prompt=True)...")
+                is_trusted = app_services.AXIsProcessTrustedWithOptions(options)
+                
+                logger.info(f"♿ AXIsProcessTrustedWithOptions result: {is_trusted}")
+                print(f"♿ [ACTIVATOR] AXIsProcessTrustedWithOptions = {is_trusted}")
+                
+                if is_trusted:
+                    logger.info("✅ Accessibility: разрешение предоставлено")
+                    print("✅ [ACTIVATOR] Accessibility: разрешение предоставлено")
+                else:
+                    logger.info("⏳ Accessibility: диалог показан, ожидаем действия пользователя")
+                    print("⏳ [ACTIVATOR] Accessibility: диалог показан, ожидаем действия пользователя")
+                
+                return True
+                
+            finally:
+                cf.CFRelease(options)
+                
+        finally:
+            cf.CFRelease(kAXTrustedCheckOptionPrompt)
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка активации Accessibility: {e}")
+        print(f"❌ [ACTIVATOR] Accessibility error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 async def activate_input_monitoring() -> bool:
     """
     Активировать запрос разрешения Input Monitoring.
 
-    Использует pynput Listener, который гарантированно триггерит системный диалог TCC
-    или добавляет приложение в список Input Monitoring (даже если оно Denied).
-    IOHIDRequestAccess часто бывает недостаточно в новых macOS.
+    ВАЖНО: НЕ используем pynput для активации!
+    pynput внутренне вызывает AXIsProcessTrustedWithOptions, который триггерит
+    TCC error для Accessibility при первом запуске:
+    "attempted to call TCCAccessRequest for kTCCServiceAccessibility 
+    without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement"
+    
+    Вместо этого используем IOHIDRequestAccess - нативный API который:
+    - Добавляет приложение в список Input Monitoring
+    - Показывает системный диалог запроса разрешения
+    - НЕ триггерит проверку Accessibility
 
     Returns:
-        True если активация прошла успешно (попытка перехвата сделана)
+        True если активация прошла успешно
     """
     try:
-        logger.info("⌨️ Активация Input Monitoring через pynput...")
-        print(f"⌨️ [ACTIVATOR] Начало активации Input Monitoring (pynput)")
+        logger.info("⌨️ Активация Input Monitoring через IOHIDRequestAccess...")
+        print(f"⌨️ [ACTIVATOR] Начало активации Input Monitoring (IOHIDRequestAccess)")
 
-        from pynput import keyboard
+        # Используем IOHIDRequestAccess - безопасный нативный API
+        iokit_path = util.find_library("IOKit")
+        if not iokit_path:
+            logger.warning("⚠️ IOKit недоступен")
+            return False
 
-        # Создаем Listener - это действие требует прав Input Monitoring.
-        # Если прав нет, macOS покажет диалог или добавит приложение в список.
-        # Мы не ждем нажатий, нам сам факт запуска Listener важен.
+        iokit = ctypes.CDLL(iokit_path)
+
         try:
-            # Запускаем listener в неблокирующем режиме на короткое время
-            def on_press(key): pass
-            
-            listener = keyboard.Listener(on_press=on_press)
-            listener.start()
-            
-            # Даем системе время заметить попытку перехвата (0.5 сек достаточно)
-            await asyncio.sleep(0.5)
-            
-            if listener.running:
-                listener.stop()
-                
-            logger.info("✅ Input Monitoring триггер сработал (pynput listener started/stopped)")
-            return True
+            request_access = iokit.IOHIDRequestAccess
+        except AttributeError:
+            logger.warning("⚠️ IOHIDRequestAccess недоступен (старая macOS?)")
+            return False
 
-        except Exception as e:
-            # Если прав совсем нет, pynput может кинуть исключение - это тоже триггер
-            logger.info(f"ℹ️ Pynput exception (это нормально, триггер сработал): {e}")
-            return True
+        # IOHIDRequestAccess(requestType) -> bool
+        # requestType = 1 для kIOHIDRequestTypeListenEvent (Input Monitoring)
+        request_access.argtypes = [ctypes.c_uint32]
+        request_access.restype = ctypes.c_bool
 
-    except ImportError:
-        logger.error("❌ pynput не установлен, не можем активировать Input Monitoring")
-        return False
+        kIOHIDRequestTypeListenEvent = 1  # Input Monitoring
+
+        # Вызов IOHIDRequestAccess:
+        # - Если разрешение NOT_DETERMINED: показывает системный диалог
+        # - Если разрешение DENIED: добавляет в список (пользователь может включить вручную)
+        # - Если разрешение GRANTED: возвращает True без диалога
+        result = request_access(kIOHIDRequestTypeListenEvent)
+        
+        logger.info(f"✅ IOHIDRequestAccess(ListenEvent) вызван, result={result}")
+        print(f"✅ [ACTIVATOR] IOHIDRequestAccess result={result}")
+        
+        # Даем системе время обработать запрос
+        await asyncio.sleep(0.1)
+        
+        return True
+
     except Exception as e:
         logger.error(f"❌ Ошибка активации Input Monitoring: {e}")
+        print(f"❌ [ACTIVATOR] Input Monitoring error: {e}")
         return False
 
 

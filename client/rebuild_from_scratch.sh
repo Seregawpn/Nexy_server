@@ -113,6 +113,86 @@ log_info "Лог сохранён: $FULL_LOG"
 echo ""
 
 # ============================================================================
+# ЭТАП 0: PREFLIGHT ПРОВЕРКИ (обязательные перед сборкой)
+# ============================================================================
+log_step "0️⃣  PREFLIGHT ПРОВЕРКИ"
+
+PREFLIGHT_LOG="$LOG_DIR/preflight_${TIMESTAMP}.log"
+PREFLIGHT_FAILED=false
+
+log_info "Запуск preflight проверок..."
+log_info "Лог preflight: $PREFLIGHT_LOG"
+echo ""
+
+# Запускаем verify_imports.py
+if [ -f "scripts/verify_imports.py" ]; then
+    log_info "Запуск verify_imports.py..."
+    if python3 scripts/verify_imports.py 2>&1 | tee "$PREFLIGHT_LOG"; then
+        log_success "verify_imports.py - все проверки пройдены"
+    else
+        log_error "verify_imports.py - есть ошибки!"
+        PREFLIGHT_FAILED=true
+    fi
+else
+    log_warning "scripts/verify_imports.py не найден, пропускаем"
+fi
+
+echo ""
+
+# Запускаем verify_pyinstaller.py
+if [ -f "scripts/verify_pyinstaller.py" ]; then
+    log_info "Запуск verify_pyinstaller.py..."
+    if python3 scripts/verify_pyinstaller.py 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+        log_success "verify_pyinstaller.py - все проверки пройдены"
+    else
+        log_error "verify_pyinstaller.py - есть ошибки!"
+        PREFLIGHT_FAILED=true
+    fi
+else
+    log_warning "scripts/verify_pyinstaller.py не найден, пропускаем"
+fi
+
+echo ""
+
+# Запускаем check_dependencies.py
+if [ -f "scripts/check_dependencies.py" ]; then
+    log_info "Запуск check_dependencies.py..."
+    if python3 scripts/check_dependencies.py 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+        log_success "check_dependencies.py - все проверки пройдены"
+    else
+        log_error "check_dependencies.py - есть ошибки!"
+        PREFLIGHT_FAILED=true
+    fi
+else
+    log_warning "scripts/check_dependencies.py не найден, пропускаем"
+fi
+
+echo ""
+
+# Проверяем результат preflight
+if [ "$PREFLIGHT_FAILED" = true ]; then
+    log_error "╔══════════════════════════════════════════════════════════════════════════╗"
+    log_error "║          ❌ PREFLIGHT ПРОВЕРКИ НЕ ПРОЙДЕНЫ!                              ║"
+    log_error "╚══════════════════════════════════════════════════════════════════════════╝"
+    log_error ""
+    log_error "Сборка остановлена из-за ошибок preflight проверок."
+    log_error "Подробности см. в логе: $PREFLIGHT_LOG"
+    log_error ""
+    log_error "Исправьте ошибки и запустите сборку заново."
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "ОШИБКИ ИЗ PREFLIGHT ЛОГА:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    grep -E "❌|не найден|ImportError|SyntaxError|Error" "$PREFLIGHT_LOG" 2>/dev/null || true
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    exit 1
+fi
+
+log_success "✅ Все preflight проверки пройдены успешно!"
+echo ""
+pause_for_review
+
+# ============================================================================
 # ЭТАП 1: Очистка окружения
 # ============================================================================
 log_step "1️⃣  ОЧИСТКА ОКРУЖЕНИЯ"

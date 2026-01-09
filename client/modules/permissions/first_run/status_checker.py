@@ -155,11 +155,12 @@ def check_accessibility_status() -> PermissionStatus:
     
     ЕДИНСТВЕННЫЙ SOURCE OF TRUTH для проверки Accessibility.
     
-    ВАЖНО: НЕ используем AXIsProcessTrustedWithOptions — он вызывает TCC ошибку:
-    "attempted to call TCCAccessRequest for kTCCServiceAccessibility 
-    without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement"
+    Использует AXIsProcessTrustedWithOptions БЕЗ опции kAXTrustedCheckOptionPrompt.
+    Это позволяет проверить статус разрешения без показа диалогов.
     
-    Вместо этого используем tccutil check — безопасный метод.
+    ПРИМЕЧАНИЕ: TCC логирует информационное сообщение при вызове этого API,
+    но это НЕ является ошибкой - метод работает корректно.
+    
     Rate-limit: не чаще 1 раза в 2 секунды (кеширование результата).
 
     Returns:
@@ -170,7 +171,6 @@ def check_accessibility_status() -> PermissionStatus:
         return PermissionStatus.GRANTED
 
     import time
-    import subprocess
     
     # Глобальный кеш для rate limiting
     global _ax_cache_result, _ax_cache_time
@@ -186,26 +186,27 @@ def check_accessibility_status() -> PermissionStatus:
         return _ax_cache_result
     
     try:
-        # Получаем bundle_id
-        try:
-            from Foundation import NSBundle
-            bundle_id = NSBundle.mainBundle().bundleIdentifier() or "com.nexy.assistant"
-        except Exception:
-            bundle_id = "com.nexy.assistant"
+        # Используем AXIsProcessTrustedWithOptions без опции prompt
+        # Это проверяет статус БЕЗ показа диалога
+        from ctypes import util as ctypes_util
         
-        # tccutil check Accessibility <bundle_id> — БЕЗОПАСНЫЙ метод
-        # Возвращает 0 если разрешение есть, не-0 если нет
-        # НЕ вызывает TCC ошибки в отличие от AXIsProcessTrustedWithOptions
-        result = subprocess.run(
-            ['tccutil', 'check', 'Accessibility', bundle_id],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        app_services_path = ctypes_util.find_library("ApplicationServices")
+        if not app_services_path:
+            logger.warning("⚠️ ApplicationServices framework не найден")
+            return PermissionStatus.NOT_DETERMINED
+
+        app_services = ctypes.CDLL(app_services_path)
         
-        trusted = result.returncode == 0
-        resolved = PermissionStatus.GRANTED if trusted else PermissionStatus.DENIED
-        logger.info(f"♿ Accessibility: tccutil check {bundle_id} → {resolved.value}")
+        # Вызываем AXIsProcessTrustedWithOptions с NULL (без опций)
+        # Это НЕ показывает диалог, просто проверяет статус
+        app_services.AXIsProcessTrustedWithOptions.argtypes = [ctypes.c_void_p]
+        app_services.AXIsProcessTrustedWithOptions.restype = ctypes.c_bool
+        
+        # NULL = без опций = без показа диалога
+        is_trusted = app_services.AXIsProcessTrustedWithOptions(None)
+        
+        resolved = PermissionStatus.GRANTED if is_trusted else PermissionStatus.DENIED
+        logger.info(f"♿ Accessibility: AXIsProcessTrustedWithOptions(None) → {resolved.value}")
 
         # Обновляем кеш
         _ax_cache_result = resolved
@@ -213,12 +214,6 @@ def check_accessibility_status() -> PermissionStatus:
 
         return resolved
         
-    except subprocess.TimeoutExpired:
-        logger.warning("♿ Accessibility: tccutil timeout")
-        return PermissionStatus.DENIED
-    except FileNotFoundError:
-        logger.warning("♿ Accessibility: tccutil not found, returning DENIED")
-        return PermissionStatus.DENIED
     except Exception as e:
         logger.warning(f"♿ Accessibility check failed: {e}")
         return PermissionStatus.NOT_DETERMINED

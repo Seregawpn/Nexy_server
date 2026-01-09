@@ -734,7 +734,7 @@ class InputProcessingIntegration:
             
             import AppKit
             
-            nsapp = AppKit.NSApplication.sharedApplication()
+            nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
             if not nsapp:
                 logger.warning("⚠️ _setup_hidden_hotkey_handler: NSApplication not available")
                 return
@@ -742,21 +742,21 @@ class InputProcessingIntegration:
             # Получаем или создаём главное меню
             main_menu = nsapp.mainMenu()
             if not main_menu:
-                main_menu = AppKit.NSMenu.alloc().init()
+                main_menu = AppKit.NSMenu.alloc().init()  # type: ignore[attr-defined]
                 nsapp.setMainMenu_(main_menu)
                 logger.debug("✅ Создано главное меню для hidden hotkey handler")
             
             # Создаём скрытый пункт меню для Ctrl+N
             # keyEquivalent="n" + NSControlKeyMask = Ctrl+N
             # action=None - событие просто поглощается, никакой action не вызывается
-            hidden_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            hidden_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(  # type: ignore[attr-defined]
                 "",  # Пустой заголовок - элемент не виден
                 None,  # Никакой action - просто поглощаем событие
                 "n"  # keyEquivalent
             )
             
             # Устанавливаем модификатор Ctrl
-            hidden_item.setKeyEquivalentModifierMask_(AppKit.NSControlKeyMask)
+            hidden_item.setKeyEquivalentModifierMask_(AppKit.NSControlKeyMask)  # type: ignore[attr-defined]
             
             # Добавляем в главное меню (скрытый, потому что заголовок пустой)
             main_menu.addItem_(hidden_item)

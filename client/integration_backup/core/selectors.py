@@ -155,21 +155,34 @@ def is_processing_mode(s: Snapshot) -> bool:
     return s.app_mode == AppMode.PROCESSING
 
 
-# Restart state selectors (Phase 2 - ADR-001)
+# Restart state selectors (DEPRECATED - Phase 2 cleanup)
 
 
 def is_restart_pending(s: Snapshot) -> bool:
-    """Check if application restart is pending after first-run permissions."""
+    """
+    DEPRECATED: Перезапуск теперь происходит автоматически в FirstRunPermissionsIntegration.
+    Используйте is_first_run_in_progress() вместо этого.
+    """
+    import warnings
+    warnings.warn(
+        "is_restart_pending is deprecated. Use is_first_run_in_progress() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return s.restart_pending
 
 
 def is_first_run_restart_pending(s: Snapshot) -> bool:
     """
-    Check if this is first run AND restart is pending.
-
-    This is the critical condition that blocks integration startup
-    until the application restarts.
+    DEPRECATED: Перезапуск теперь происходит автоматически в FirstRunPermissionsIntegration.
+    Используйте is_first_run_in_progress() вместо этого.
     """
+    import warnings
+    warnings.warn(
+        "is_first_run_restart_pending is deprecated. Use is_first_run_in_progress() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return s.first_run and s.restart_pending
 
 
@@ -221,14 +234,17 @@ def is_update_in_progress(state_manager: ApplicationStateManager) -> bool:
 
 
 def is_restart_completed_fallback(state_manager: ApplicationStateManager) -> bool:
-    """Check if restart completed fallback flag is set.
-    
-    This is used when permission flags are missing/unreliable after a restart.
     """
-    try:
-        return bool(state_manager.get_state_data("permissions_restart_completed_fallback", False))
-    except Exception:
-        return False
+    DEPRECATED: Больше не используется — перезапуск происходит автоматически.
+    Всегда возвращает False.
+    """
+    import warnings
+    warnings.warn(
+        "is_restart_completed_fallback is deprecated and always returns False.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return False
 
 
 # ==============================================================================

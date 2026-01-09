@@ -535,7 +535,7 @@ class InterruptManagementIntegration:
         """Отмена всех активных прерываний"""
         try:
             if self._coordinator and hasattr(self._coordinator, 'cancel_all_interrupts'):
-                await self._coordinator.cancel_all_interrupts()
+                await self._coordinator.cancel_all_interrupts()  # type: ignore[attr-defined]
                 logger.info("All active interrupts cancelled")
             elif self._coordinator and hasattr(self._coordinator, 'active_interrupts'):
                 # Отменяем все активные прерывания вручную
@@ -562,7 +562,7 @@ class InterruptManagementIntegration:
             "interrupts": {
                 "active_count": len(coordinator.active_interrupts) if hasattr(coordinator, 'active_interrupts') else 0,
                 "total_count": len(coordinator.interrupt_history) if hasattr(coordinator, 'interrupt_history') else 0,
-                "is_running": coordinator.is_running if hasattr(coordinator, 'is_running') else False
+                "is_running": coordinator.is_running if hasattr(coordinator, 'is_running') else False  # type: ignore[attr-defined]
             }
         }
     

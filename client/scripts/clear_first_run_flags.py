@@ -2,7 +2,7 @@
 """
 Скрипт для очистки флагов первого запуска приложения Nexy.
 
-Удаляет все флаги, связанные с first_run, чтобы можно было заново пройти процедуру первого запуска.
+Удаляет все флаги, связанные с permissions, чтобы можно было заново пройти процедуру первого запуска.
 """
 
 import sys
@@ -14,7 +14,7 @@ CLIENT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(CLIENT_ROOT))
 sys.path.insert(0, str(CLIENT_ROOT / "integration"))
 
-from integration.utils.resource_path import get_user_data_dir, get_user_cache_dir
+from integration.utils.resource_path import get_user_data_dir
 
 def clear_flags():
     """Очищает все флаги первого запуска"""
@@ -24,12 +24,13 @@ def clear_flags():
     cleared_count = 0
     checked_paths = []
     
-    # 1. Очистка permissions_first_run_completed.flag
-    print("\n📋 Проверка permissions_first_run_completed.flag:")
-    
     # Стандартный путь
     data_dir = get_user_data_dir("Nexy")
-    flag_file = data_dir / "permissions_first_run_completed.flag"
+    
+    # 1. Очистка permissions_granted.flag (новый флаг)
+    print("\n📋 Проверка permissions_granted.flag:")
+    
+    flag_file = data_dir / "permissions_granted.flag"
     checked_paths.append(flag_file)
     
     if flag_file.exists():
@@ -42,34 +43,25 @@ def clear_flags():
     else:
         print(f"  ℹ️  Не найден: {flag_file}")
     
-    # Sandbox путь (если отличается)
-    bundle_id = os.environ.get("APP_BUNDLE_ID", "com.nexy.assistant")
-    sandbox_data_dir = Path.home() / "Library" / "Containers" / bundle_id / "Data" / "Library" / "Application Support" / "Nexy"
-    sandbox_flag_file = sandbox_data_dir / "permissions_first_run_completed.flag"
-    if sandbox_flag_file != flag_file and sandbox_flag_file.exists():
-        checked_paths.append(sandbox_flag_file)
+    # 2. Очистка старого флага (для миграции)
+    print("\n📋 Проверка permissions_first_run_completed.flag (legacy):")
+    
+    old_flag_file = data_dir / "permissions_first_run_completed.flag"
+    checked_paths.append(old_flag_file)
+    
+    if old_flag_file.exists():
         try:
-            sandbox_flag_file.unlink()
-            print(f"  ✅ Удалён (sandbox): {sandbox_flag_file}")
+            old_flag_file.unlink()
+            print(f"  ✅ Удалён: {old_flag_file}")
             cleared_count += 1
         except Exception as e:
-            print(f"  ❌ Ошибка удаления {sandbox_flag_file}: {e}")
+            print(f"  ❌ Ошибка удаления {old_flag_file}: {e}")
+    else:
+        print(f"  ℹ️  Не найден: {old_flag_file}")
     
-    # /tmp fallback
-    tmp_flag_file = Path("/tmp") / "Nexy" / "permissions_first_run_completed.flag"
-    if tmp_flag_file.exists():
-        checked_paths.append(tmp_flag_file)
-        try:
-            tmp_flag_file.unlink()
-            print(f"  ✅ Удалён (/tmp): {tmp_flag_file}")
-            cleared_count += 1
-        except Exception as e:
-            print(f"  ❌ Ошибка удаления {tmp_flag_file}: {e}")
+    # 3. Очистка restart_completed.flag (legacy, больше не используется)
+    print("\n📋 Проверка restart_completed.flag (legacy, deprecated):")
     
-    # 2. Очистка restart_completed.flag
-    print("\n📋 Проверка restart_completed.flag:")
-    
-    # Стандартный путь (Application Support, не Caches!)
     restart_flag_file = data_dir / "restart_completed.flag"
     checked_paths.append(restart_flag_file)
     
@@ -83,35 +75,40 @@ def clear_flags():
     else:
         print(f"  ℹ️  Не найден: {restart_flag_file}")
     
-    # Sandbox путь (если отличается)
-    sandbox_restart_flag_file = sandbox_data_dir / "restart_completed.flag"
-    if sandbox_restart_flag_file != restart_flag_file and sandbox_restart_flag_file.exists():
-        checked_paths.append(sandbox_restart_flag_file)
-        try:
-            sandbox_restart_flag_file.unlink()
-            print(f"  ✅ Удалён (sandbox): {sandbox_restart_flag_file}")
-            cleared_count += 1
-        except Exception as e:
-            print(f"  ❌ Ошибка удаления {sandbox_restart_flag_file}: {e}")
+    # 4. Sandbox пути (если отличаются)
+    bundle_id = os.environ.get("APP_BUNDLE_ID", "com.nexy.assistant")
+    sandbox_data_dir = Path.home() / "Library" / "Containers" / bundle_id / "Data" / "Library" / "Application Support" / "Nexy"
     
-    # /tmp fallback
-    tmp_restart_flag_file = Path("/tmp") / "Nexy" / "restart_completed.flag"
-    if tmp_restart_flag_file.exists():
-        checked_paths.append(tmp_restart_flag_file)
-        try:
-            tmp_restart_flag_file.unlink()
-            print(f"  ✅ Удалён (/tmp): {tmp_restart_flag_file}")
-            cleared_count += 1
-        except Exception as e:
-            print(f"  ❌ Ошибка удаления {tmp_restart_flag_file}: {e}")
+    for flag_name in ["permissions_granted.flag", "permissions_first_run_completed.flag", "restart_completed.flag"]:
+        sandbox_flag = sandbox_data_dir / flag_name
+        if sandbox_flag.exists() and sandbox_flag not in checked_paths:
+            checked_paths.append(sandbox_flag)
+            try:
+                sandbox_flag.unlink()
+                print(f"  ✅ Удалён (sandbox): {sandbox_flag}")
+                cleared_count += 1
+            except Exception as e:
+                print(f"  ❌ Ошибка удаления {sandbox_flag}: {e}")
     
-    # 3. Очистка env переменной (если установлена)
+    # 5. /tmp fallback
+    for flag_name in ["permissions_granted.flag", "permissions_first_run_completed.flag", "restart_completed.flag"]:
+        tmp_flag = Path("/tmp") / "Nexy" / flag_name
+        if tmp_flag.exists() and tmp_flag not in checked_paths:
+            checked_paths.append(tmp_flag)
+            try:
+                tmp_flag.unlink()
+                print(f"  ✅ Удалён (/tmp): {tmp_flag}")
+                cleared_count += 1
+            except Exception as e:
+                print(f"  ❌ Ошибка удаления {tmp_flag}: {e}")
+    
+    # 6. Очистка env переменной (если установлена)
     print("\n📋 Проверка environment переменных:")
-    if os.environ.get("NEXY_FIRST_RUN_RESTARTED") == "1":
-        print("  ⚠️  NEXY_FIRST_RUN_RESTARTED=1 установлена (не удаляется автоматически)")
-        print("     Для очистки выполните: unset NEXY_FIRST_RUN_RESTARTED")
+    if os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1":
+        print("  ⚠️  NEXY_TEST_SKIP_PERMISSIONS=1 установлена (тестовый режим)")
+        print("     Для очистки выполните: unset NEXY_TEST_SKIP_PERMISSIONS")
     else:
-        print("  ℹ️  NEXY_FIRST_RUN_RESTARTED не установлена")
+        print("  ℹ️  NEXY_TEST_SKIP_PERMISSIONS не установлена")
     
     # Итоги
     print("\n" + "=" * 60)
@@ -119,7 +116,7 @@ def clear_flags():
     print(f"📁 Проверено путей: {len(checked_paths)}")
     
     if cleared_count > 0:
-        print("\n🎉 Флаги успешно очищены! При следующем запуске приложение пройдёт процедуру первого запуска заново.")
+        print("\n🎉 Флаги успешно очищены! При следующем запуске приложение запросит разрешения заново.")
     else:
         print("\nℹ️  Флаги не найдены. Возможно, они уже были очищены ранее.")
     
@@ -137,5 +134,3 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
-

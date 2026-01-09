@@ -25,7 +25,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.30  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
+  version: 1.6.0.31  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
 # Авто-всё конфигурация аудио - автоматическое определение параметров устройства
 default_audio:
   # Только целевые параметры для STT (что ожидает движок распознавания)
@@ -321,18 +321,16 @@ network:
   - 1.1.1.1
 permissions:
   # First Run - запрос разрешений при первом запуске приложения
+  # Логика: Проверка → Запрос (15 сек каждое) → Перезапуск если все получены или диалог если нет
   first_run:
-    enabled: true                         # Включить запрос разрешений при первом запуске
-    max_wait_sec: 15                      # Единый таймаут для каждого разрешения (15 секунд)
-    open_settings_after_sec: 5            # Открыть System Settings если NOT_DETERMINED через 5 секунд
-    # DEPRECATED: Следующие поля не используются в текущей реализации
-    wait_for_grant: true                  # [DEPRECATED]
-    grant_wait_timeout_sec: 30            # [DEPRECATED]
+    enabled: true                         # Включить запрос разрешений
+    request_timeout_sec: 15               # Таймаут на каждое разрешение (секунды)
+    open_settings_after_sec: 10           # Открыть System Settings если нет ответа
 
-  # Управление последовательностью запросов разрешений (устаревшее, оставлено для совместимости)
-  sequential: true                      # Запрашивать разрешения по очереди (не одновременно)
-  request_timeout_sec: 120.0            # Ждать ответа пользователя 2 минуты (максимум)
-  auto_open_settings: false             # Не открывать System Settings автоматически
+  # Устаревшие поля (для обратной совместимости)
+  sequential: true                        # [LEGACY] Уже не используется
+  request_timeout_sec: 120.0              # [LEGACY] Уже не используется
+  auto_open_settings: false               # [LEGACY] Уже не используется
 
   microphone:
     enabled: true
@@ -421,13 +419,13 @@ tray:
     background_retry_interval_sec: 45  # Интервал фонового retry (30-60s)
 updater:
   default:
-    enabled: true
+    enabled: false
     update_channel: stable
     appcast_url: https://20.151.51.172/updates/appcast.xml
     manifest_url: https://20.151.51.172/updates/appcast.xml
-    auto_check: true
+    auto_check: false
     check_interval: 3600
-    check_on_startup: true
+    check_on_startup: false
     auto_install: true
     install_after_download: false
     silent_mode: true

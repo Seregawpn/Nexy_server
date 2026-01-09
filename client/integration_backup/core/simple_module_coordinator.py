@@ -121,9 +121,10 @@ class SimpleModuleCoordinator:
         self._bg_loop = None
         self._bg_thread = None
 
-        # Состояние процесса разрешений
-        self._permissions_in_progress = False
-        self._restart_pending = False  # Флаг ожидания перезапуска после first_run
+        # Состояние процесса разрешений (LEGACY CACHE - source of truth is state_manager)
+        # NOTE: Эти флаги сохранены для обратной совместимости, но Snapshot читает из state_manager
+        self._permissions_in_progress = False  # Legacy cache, use is_first_run_in_progress(state_manager)
+        self._restart_pending = False  # Legacy cache, use state_manager.get_state_data("permissions_restart_pending")
 
         # Состояние tray (gate-механизм для блокирующих операций)
         self._tray_ready = False
@@ -448,9 +449,15 @@ class SimpleModuleCoordinator:
                             delay_ms = 500
                         await asyncio.sleep(max(0.0, delay_ms / 1000.0))
 
-                        # Get update_in_progress from state_manager (via selector for consistency)
-                        from integration.core.selectors import is_update_in_progress
-                        update_in_progress = is_update_in_progress(self._ensure_state_manager())
+                        # Get all state from state_manager (single source of truth - eliminates duplication)
+                        from integration.core.selectors import (
+                            is_update_in_progress, 
+                            is_first_run_in_progress,
+                        )
+                        state_mgr = self._ensure_state_manager()
+                        update_in_progress = is_update_in_progress(state_mgr)
+                        first_run_in_progress = is_first_run_in_progress(state_mgr)
+                        restart_pending = bool(state_mgr.get_state_data("permissions_restart_pending", False))
                         
                         snapshot = Snapshot(
                             perm_mic=_map_perm_status(check_microphone_status()),
@@ -458,10 +465,10 @@ class SimpleModuleCoordinator:
                             perm_accessibility=_map_perm_status(check_accessibility_status()),
                             device_input=DeviceStatus.DEFAULT_OK,
                             network=NetworkStatus.ONLINE,
-                            first_run=self._permissions_in_progress,
+                            first_run=first_run_in_progress,  # Use state_manager (single source of truth)
                             app_mode=AppMode.SLEEPING,
-                            restart_pending=self._restart_pending,  # Use internal state, not state_data (source: permissions.restart_pending.changed event)
-                            update_in_progress=update_in_progress,  # Use selector for consistency
+                            restart_pending=restart_pending,  # Use state_manager (single source of truth)
+                            update_in_progress=update_in_progress,
                         )
 
                         # Shadow-mode: diagnostic logging for update_in_progress

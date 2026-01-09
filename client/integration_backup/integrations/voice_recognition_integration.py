@@ -7,10 +7,13 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 import random
 import importlib.util
 from shutil import which
+
+if TYPE_CHECKING:
+    from modules.voice_recognition import GoogleSRController, GoogleSRResult
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
@@ -74,10 +77,9 @@ class VoiceRecognitionIntegration:
         self._running: bool = False
         
         # GoogleSRController (Input)
-        self._google_sr_controller: Optional["GoogleSRController"] = None
+        self._google_sr_controller: Optional[Any] = None  # type: ignore[assignment]
 
-        # Флаг блокировки во время first_run
-        self._first_run_in_progress: bool = False
+        # NOTE: _first_run_in_progress cache removed - use selectors.is_first_run_in_progress() instead
         # Если распознавание завершилось при активном PTT — публикацию откладываем до RELEASE
         self._defer_result_until_stop: bool = False
 
@@ -99,16 +101,14 @@ class VoiceRecognitionIntegration:
             await self.event_bus.subscribe("keyboard.short_press", self._on_cancel_request, EventPriority.CRITICAL)
             await self.event_bus.subscribe("app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM)
 
-            # КРИТИЧНО: Подписываемся на события first_run для блокировки активации
-            await self.event_bus.subscribe("permissions.first_run_started", self._on_first_run_started, EventPriority.CRITICAL)
-            await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.CRITICAL)
-            await self.event_bus.subscribe("permissions.first_run_failed", self._on_first_run_completed, EventPriority.CRITICAL)
+            # NOTE: Больше не подписываемся на события first_run
+            # Вместо этого используем selector is_first_run_in_progress() для проверки
 
             # Инициализация контроллера
-            if _GOOGLE_SR_AVAILABLE and not self.config.simulate:
+            if _GOOGLE_SR_AVAILABLE and not self.config.simulate and GoogleSRController is not None:
                 try:
                     logger.info("🚀 [AUDIO] Initializing GoogleSRController...")
-                    self._google_sr_controller = GoogleSRController(
+                    self._google_sr_controller = GoogleSRController(  # type: ignore[misc]
                         language_code=self.config.language,
                         phrase_time_limit=self.config.timeout_sec,
                         device_index=None,  # System default
@@ -116,7 +116,7 @@ class VoiceRecognitionIntegration:
                         on_completed=self._on_sr_v2_completed,
                         on_failed=self._on_sr_v2_failed,
                     )
-                    if self._google_sr_controller.initialize():
+                    if self._google_sr_controller and hasattr(self._google_sr_controller, 'initialize') and self._google_sr_controller.initialize():  # type: ignore[attr-defined]
                         logger.info("✅ [AUDIO] GoogleSRController initialized successfully")
                     else:
                         logger.warning("⚠️ [AUDIO] GoogleSRController init failed, using simulation")
@@ -234,12 +234,9 @@ class VoiceRecognitionIntegration:
         try:
             logger.debug(f"🎤 [VOICE_DEBUG] _on_recording_start event received: {event}")
             
-            # REQ-004: use selector for first_run check
-            first_run_in_progress = selectors.is_first_run_in_progress(self.state_manager)
-            if first_run_in_progress or self._first_run_in_progress:
-                logger.warning(
-                    "⚠️ [VOICE] Блокировка активации - first_run в процессе."
-                )
+            # REQ-004: use selector for first_run check (single source of truth)
+            if selectors.is_first_run_in_progress(self.state_manager):
+                logger.warning("⚠️ [VOICE] Blocked - first_run in progress")
                 return
 
             if "data" in event:
@@ -387,30 +384,8 @@ class VoiceRecognitionIntegration:
         except Exception as e:
             logger.debug(f"VOICE: mode_changed guard failed: {e}")
 
-    async def _on_first_run_started(self, event: Dict[str, Any]):
-        """Обработчик начала процедуры first_run - блокируем активацию"""
-        try:
-            self._first_run_in_progress = True
-            logger.info(
-                "🔒 [VOICE_RECOGNITION] First run начат - блокировка активации микрофона"
-            )
-            # Отменяем любую текущую запись/распознавание
-            await self._cancel_recognition(reason="first_run_started")
-            if self._recording_active:
-                self._recording_active = False
-                logger.info("   Остановлена активная запись (если была)")
-        except Exception as e:
-            logger.error(f"❌ [VOICE_RECOGNITION] Ошибка обработки first_run_started: {e}")
-
-    async def _on_first_run_completed(self, event: Dict[str, Any]):
-        """Обработчик завершения/ошибки процедуры first_run - разблокируем активацию"""
-        try:
-            self._first_run_in_progress = False
-            logger.info(
-                "🔓 [VOICE_RECOGNITION] First run завершён - разблокировка активации микрофона"
-            )
-        except Exception as e:
-            logger.error(f"❌ [VOICE_RECOGNITION] Ошибка обработки first_run_completed: {e}")
+    # NOTE: _on_first_run_started and _on_first_run_completed removed
+    # State is now checked via selectors.is_first_run_in_progress() directly
 
     async def _start_recognition(self, session_id: float):
         # Публикуем старт распознавания
@@ -527,7 +502,7 @@ class VoiceRecognitionIntegration:
         """Callback when v2 controller starts listening."""
         logger.debug("🚀 [AUDIO_V2] v2 started listening (callback)")
     
-    def _on_sr_v2_completed(self, result: "GoogleSRResult") -> None:
+    def _on_sr_v2_completed(self, result: Any) -> None:  # type: ignore[type-arg]
         """Callback when v2 controller completes recognition."""
         try:
             session_id = getattr(self, '_v2_current_session_id', None)
@@ -548,7 +523,7 @@ class VoiceRecognitionIntegration:
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error in completed callback: {e}")
     
-    async def _publish_v2_completed(self, session_id, result: "GoogleSRResult") -> None:
+    async def _publish_v2_completed(self, session_id: Optional[str], result: Any) -> None:  # type: ignore[type-arg]
         """Helper to publish v2 completion via EventBus."""
         try:
             # REQ-004: use selector for ptt check
