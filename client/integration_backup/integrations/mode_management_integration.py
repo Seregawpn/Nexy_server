@@ -183,7 +183,20 @@ class ModeManagementIntegration:
                 logger.warning(f"MODE_REQUEST: target={target} not in allowed modes, ignoring")
                 return
 
-            priority = int(data.get("priority", 0))
+            # Нормализация priority: поддерживаем EventPriority enum, int, str
+            priority_raw = data.get("priority", 0)
+            if isinstance(priority_raw, EventPriority):
+                priority = priority_raw.value
+            elif isinstance(priority_raw, (int, float)):
+                priority = int(priority_raw)
+            elif isinstance(priority_raw, str):
+                # Попытка преобразовать строку в int (например, "3" -> 3)
+                try:
+                    priority = int(priority_raw)
+                except (ValueError, TypeError):
+                    priority = 0
+            else:
+                priority = 0
             source = str(data.get("source", "unknown"))
             session_id = data.get("session_id")
 

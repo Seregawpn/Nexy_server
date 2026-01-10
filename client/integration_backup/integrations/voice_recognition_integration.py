@@ -324,13 +324,23 @@ class VoiceRecognitionIntegration:
 
             self._recording_active = False
             
-            # Stop GoogleSRController
+            # ✅ КРИТИЧНО: Публикуем voice.mic_closed СРАЗУ, не дожидаясь завершения распознавания
+            # Это устраняет задержку 5-10 секунд после отпускания клавиши
+            await self.event_bus.publish("voice.mic_closed", {
+                "session_id": session_id,
+                "source": "recording_stop"
+            })
+            logger.info(f"🎤 VOICE: microphone closed immediately for session {session_id}")
+            
+            # Stop GoogleSRController в executor, чтобы не блокировать event loop
             if self._google_sr_controller and not self.config.simulate:
-                logger.debug(f"🎤 Calling stop_listening for session {session_id}")
-                result = self._google_sr_controller.stop_listening()
+                logger.debug(f"🎤 Calling stop_listening for session {session_id} (non-blocking)")
+                loop = asyncio.get_running_loop()
+                # Переносим stop_listening() в executor, чтобы не блокировать event loop
+                result = await loop.run_in_executor(None, self._google_sr_controller.stop_listening)
+                
                 # Если ранее мы откладывали публикацию (PTT удерживался) — публикуем результат сейчас
                 if self._defer_result_until_stop:
-                    await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
                     if result and result.text:
                         await self.event_bus.publish("voice.recognition_completed", {
                             "session_id": session_id,

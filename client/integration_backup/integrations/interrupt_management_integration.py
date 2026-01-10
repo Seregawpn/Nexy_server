@@ -408,11 +408,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Speech stopped successfully"
+            return True  # ✅ Возвращаем True при успехе
             
         except Exception as e:
             logger.error(f"Error handling speech stop: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ Возвращаем False при ошибке
     
     async def _handle_speech_pause(self, interrupt_event: InterruptEvent):
         """Обработка паузы речи"""
@@ -429,11 +431,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Speech paused successfully"
+            return True  # ✅ Возвращаем True при успехе
             
         except Exception as e:
             logger.error(f"Error handling speech pause: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ Возвращаем False при ошибке
     
     async def _handle_recording_stop(self, interrupt_event: InterruptEvent):
         """Обработка остановки записи"""
@@ -460,11 +464,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Recording stopped successfully"
+            return True  # ✅ Возвращаем True при успехе
             
         except Exception as e:
             logger.error(f"Error handling recording stop: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ Возвращаем False при ошибке
     
     async def _handle_session_clear(self, interrupt_event: InterruptEvent):
         """Обработка очистки сессии"""
@@ -491,11 +497,13 @@ class InterruptManagementIntegration:
             
             interrupt_event.status = InterruptStatus.COMPLETED
             interrupt_event.result = "Session cleared successfully"
+            return True  # ✅ Возвращаем True при успехе
             
         except Exception as e:
             logger.error(f"Error handling session clear: {e}")
             interrupt_event.status = InterruptStatus.FAILED
             interrupt_event.error = str(e)
+            return False  # ✅ Возвращаем False при ошибке
     
     async def _handle_full_reset(self, interrupt_event: InterruptEvent):
         """Обработка полного сброса"""

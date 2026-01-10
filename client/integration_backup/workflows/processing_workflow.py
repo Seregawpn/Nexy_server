@@ -463,7 +463,7 @@ class ProcessingWorkflow(BaseWorkflow):
                     "target": AppMode.SLEEPING,
                     "source": "processing_workflow",
                     "reason": "interrupted",
-                    "priority": EventPriority.HIGH
+                    "priority": EventPriority.HIGH.value  # ✅ Передается int значение
                 })
             
         except Exception as e:
