@@ -91,7 +91,33 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- Clean install: удаление старого app и сброс разрешений ---
+# --- Удаление флагов first-run (по умолчанию при каждой сборке) ---
+echo -e "${YELLOW}🧹 Удаление флагов first-run...${NC}"
+NEXY_SUPPORT_DIR="$HOME/Library/Application Support/Nexy"
+if [ -d "$NEXY_SUPPORT_DIR" ]; then
+    find "$NEXY_SUPPORT_DIR" -name "*.flag" -type f -delete 2>/dev/null || true
+    echo "     ✓ Флаги first-run удалены"
+else
+    echo "     ✓ Директория Nexy не найдена (первый запуск)"
+fi
+
+# --- Сброс TCC разрешений (по умолчанию при каждой сборке) ---
+echo -e "${YELLOW}🔐 Сброс TCC разрешений...${NC}"
+sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
+killall tccd 2>/dev/null || true
+echo "     ✓ TCC разрешения сброшены"
+
+# --- Удаление старого приложения (по умолчанию при каждой сборке) ---
+echo -e "${YELLOW}🗑️  Удаление старого приложения...${NC}"
+pkill -9 -f "Nexy.app" 2>/dev/null || true
+pkill -9 -f "/Applications/Nexy.app" 2>/dev/null || true
+if [ -d "/Applications/Nexy.app" ]; then
+    sudo rm -rf "/Applications/Nexy.app"
+    echo "     ✓ /Applications/Nexy.app удалён"
+else
+    echo "     ✓ /Applications/Nexy.app не найден (пропускаем)"
+fi
+
 if [ "$CLEAN_INSTALL" -eq 1 ]; then
     echo -e "${YELLOW}🧹 CLEAN INSTALL: Очистка перед сборкой...${NC}"
     
@@ -121,6 +147,16 @@ if [ "$CLEAN_INSTALL" -eq 1 ]; then
     sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
     killall tccd 2>/dev/null || true
     echo "     ✓ Разрешения сброшены"
+    
+    # 5. Удаляем флаги first-run (для чистого тестирования)
+    echo "  5. Удаляем флаги first-run..."
+    NEXY_SUPPORT_DIR="$HOME/Library/Application Support/Nexy"
+    if [ -d "$NEXY_SUPPORT_DIR" ]; then
+        find "$NEXY_SUPPORT_DIR" -name "*.flag" -type f -delete 2>/dev/null || true
+        echo "     ✓ Флаги first-run удалены"
+    else
+        echo "     ✓ Директория Nexy не найдена (первый запуск)"
+    fi
     
     echo -e "${GREEN}✅ Очистка завершена${NC}"
     echo ""
@@ -1459,8 +1495,12 @@ rm -f "$DIST_DIR/$APP_NAME-app-for-notarization.zip" 2>/dev/null || true
 rm -f "$DIST_DIR/$APP_NAME-raw.pkg" 2>/dev/null || true
 rm -f "$DIST_DIR/$APP_NAME-distribution.pkg" 2>/dev/null || true
 rm -f "$DIST_DIR/$APP_NAME-final-signed.pkg" 2>/dev/null || true
-# КРИТИЧНО: НЕ удаляем CLEAN_APP - он нужен для проверки подписи
-# КРИТИЧНО: НЕ удаляем исходный dist/$APP_NAME.app - он может быть нужен для проверки
+# Удаляем .app из dist/ - оставляем только PKG и DMG
+if [ -d "$DIST_DIR/$APP_NAME.app" ]; then
+    chmod -R u+w "$DIST_DIR/$APP_NAME.app" 2>/dev/null || true
+    rm -rf "$DIST_DIR/$APP_NAME.app"
+    echo "     ✓ dist/$APP_NAME.app удалён (оставлены только PKG и DMG)"
+fi
 
 echo -e "${GREEN}🎉 УПАКОВКА ЗАВЕРШЕНА УСПЕШНО!${NC}"
 echo -e "${BLUE}📁 Результаты:${NC}"
@@ -1474,7 +1514,6 @@ if [ -f "$DMG_PATH" ]; then
 else
     echo "  • DMG: SKIPPED"
 fi
-echo "  • Приложение (для проверки): $DIST_DIR/$APP_NAME.app"
 if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
     echo "  • Размер PKG: $(du -h "$DIST_DIR/$APP_NAME.pkg" | cut -f1)"
 fi

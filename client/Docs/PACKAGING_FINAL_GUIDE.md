@@ -519,9 +519,11 @@ pmset -g assertions | grep -i "com.nexy.assistant"
 
 ## 12. Диагностика и логи
 
-**ВАЖНО:** Для анализа активации ассистента, first-run и проблем с разрешениями — сначала проверяйте основной лог приложения.
+**ВАЖНО:** Основной лог приложения (`nexy_debug.log`) содержит все события и используется для диагностики любых проблем, включая активацию ассистента, first-run, разрешения, режимы работы и ошибки.
 
 ### 12.1. Основной лог приложения
+
+**Описание:** `nexy_debug.log` — это общий лог приложения, содержащий все события: startup, permissions, mode transitions, voice recognition, speech playback, errors и другие. Это не специализированный лог только для first-run, а единый источник всех событий приложения.
 
 **Путь:**
 ```bash
@@ -543,7 +545,7 @@ tail -f $(python3 -c "import tempfile; import os; print(os.path.join(tempfile.ge
 # Поиск ошибок
 grep ERROR $(python3 -c "import tempfile; import os; print(os.path.join(tempfile.gettempdir(), 'nexy_debug.log'))")
 
-# Поиск логов первого запуска
+# Фильтрация по конкретным событиям (пример: first-run)
 grep first_run $(python3 -c "import tempfile; import os; print(os.path.join(tempfile.gettempdir(), 'nexy_debug.log'))")
 ```
 

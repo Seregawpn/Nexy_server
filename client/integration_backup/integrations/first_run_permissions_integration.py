@@ -199,69 +199,78 @@ class FirstRunPermissionsIntegration:
         start_time = time.time()
 
         try:
-            # 1. Проверяем все разрешения
-            statuses = self._check_all_permissions()
+            # 1. Проверяем все разрешения (НАЧАЛЬНЫЕ статусы)
+            initial_statuses = self._check_all_permissions()
             logger.info(
-                f"📋 [PERMISSIONS] session={session_id} statuses: "
-                f"mic={statuses['microphone'].value}, "
-                f"accessibility={statuses['accessibility'].value}, "
-                f"screen={statuses['screen_capture'].value}, "
-                f"input={statuses['input_monitoring'].value}"
+                f"📋 [PERMISSIONS] session={session_id} INITIAL statuses: "
+                f"mic={initial_statuses['microphone'].value}, "
+                f"accessibility={initial_statuses['accessibility'].value}, "
+                f"screen={initial_statuses['screen_capture'].value}, "
+                f"input={initial_statuses['input_monitoring'].value}"
             )
 
             # 2. Если все есть → продолжаем
-            if self._all_granted(statuses):
+            if self._all_granted(initial_statuses):
                 logger.info(f"✅ [PERMISSIONS] session={session_id} All permissions granted")
                 self._touch_flag()
                 await self._publish_completed(session_id, all_granted=True)
                 return True
 
-            # 3. Не все → запрашиваем
+            # 3. Не все → запрашиваем (polling по 15 сек каждое)
             logger.info(f"⏳ [PERMISSIONS] session={session_id} Requesting missing permissions...")
             await self._publish_started(session_id)
             
-            needs_restart = False
-            newly_granted: List[str] = []
-            
             for perm in self.required_permissions:
-                if statuses[perm] != PermissionStatus.GRANTED:
-                    granted = await self._request_permission(perm, session_id)
-                    if granted:
-                        newly_granted.append(perm)
-                        if perm in self.RESTART_REQUIRED_PERMISSIONS:
-                            needs_restart = True
+                if initial_statuses[perm] != PermissionStatus.GRANTED:
+                    await self._request_permission(perm, session_id)
 
-            # 4. Проверяем финальный результат
+            # 4. Проверяем финальный результат ПОСЛЕ всех polling-ов
             final_statuses = self._check_all_permissions()
             duration_ms = int((time.time() - start_time) * 1000)
+            all_granted = self._all_granted(final_statuses)
+            missing = [p for p, s in final_statuses.items() if s != PermissionStatus.GRANTED]
+            
+            # 5. Определяем нужен ли restart:
+            # Сравниваем НАЧАЛЬНЫЕ и ФИНАЛЬНЫЕ статусы для RESTART_REQUIRED разрешений
+            # Если хотя бы одно из них перешло от NOT GRANTED → GRANTED, нужен restart
+            newly_granted_restart_required = []
+            for perm in self.RESTART_REQUIRED_PERMISSIONS:
+                initial = initial_statuses.get(perm, PermissionStatus.NOT_DETERMINED)
+                final = final_statuses.get(perm, PermissionStatus.NOT_DETERMINED)
+                if initial != PermissionStatus.GRANTED and final == PermissionStatus.GRANTED:
+                    newly_granted_restart_required.append(perm)
+            
+            needs_restart = len(newly_granted_restart_required) > 0
 
-            if self._all_granted(final_statuses):
-                # Все получены
-                logger.info(
-                    f"✅ [PERMISSIONS] session={session_id} All granted, "
-                    f"needs_restart={needs_restart}, duration_ms={duration_ms}"
-                )
+            logger.info(
+                f"📊 [PERMISSIONS] session={session_id} Results: "
+                f"all_granted={all_granted}, needs_restart={needs_restart}, "
+                f"newly_granted_restart_required={newly_granted_restart_required}, "
+                f"missing={missing}, duration_ms={duration_ms}"
+            )
+
+            # 6. Перезапуск нужен если ХОТЯ БЫ ОДНО restart-required разрешение было получено
+            # Это касается accessibility, input_monitoring, screen_capture
+            if needs_restart:
+                logger.info(f"🔄 [PERMISSIONS] session={session_id} Restarting app to activate permissions: {newly_granted_restart_required}")
                 self._touch_flag()
-                
-                if needs_restart:
-                    # Перезапуск для активации Accessibility/Screen
-                    await self._restart_app(session_id)
-                    return True
-                else:
-                    await self._publish_completed(session_id, all_granted=True)
-                    return True
-            else:
-                # Не все получены → показываем диалог
-                missing = [p for p, s in final_statuses.items() if s != PermissionStatus.GRANTED]
-                logger.warning(
-                    f"⚠️ [PERMISSIONS] session={session_id} Missing: {missing}, duration_ms={duration_ms}"
-                )
-                
-                await self._show_missing_permissions_dialog(missing)
-                
-                # Продолжаем с ограничениями
-                await self._publish_completed(session_id, all_granted=False, missing=missing)
+                await self._restart_app(session_id)
                 return True
+
+            # 7. Если все разрешения получены → готово
+            if all_granted:
+                logger.info(f"✅ [PERMISSIONS] session={session_id} All granted, no restart needed")
+                self._touch_flag()
+                await self._publish_completed(session_id, all_granted=True)
+                return True
+
+            # 8. Не все получены и перезапуск не нужен → показываем диалог
+            logger.warning(f"⚠️ [PERMISSIONS] session={session_id} Missing: {missing}")
+            await self._show_missing_permissions_dialog(missing)
+            
+            # Продолжаем с ограничениями
+            await self._publish_completed(session_id, all_granted=False, missing=missing)
+            return True
 
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] session={session_id} Error: {e}")
@@ -326,10 +335,9 @@ class FirstRunPermissionsIntegration:
         except Exception as e:
             logger.warning(f"⚠️ [PERMISSIONS] Activation error for {perm}: {e}")
         
-        # Ждём с таймаутом
+        # Ждём с таймаутом (polling каждую секунду)
         start_time = time.time()
-        check_interval = 0.5
-        settings_opened = False
+        check_interval = 1.0
         
         while (time.time() - start_time) < self.request_timeout_sec:
             status = check_func()
@@ -345,11 +353,8 @@ class FirstRunPermissionsIntegration:
                 else:
                     logger.warning(f"⚠️ [PERMISSIONS] session={session_id} {perm} status unstable, continuing...")
             
-            # Открываем Settings после open_settings_after_sec
-            elapsed = time.time() - start_time
-            if not settings_opened and elapsed >= self.open_settings_after_sec:
-                settings_opened = True
-                self._open_settings_for_permission(perm)
+            # НЕ открываем System Settings автоматически - пользователь должен сам решить
+            # Polling продолжает проверять статус каждую секунду
             
             await asyncio.sleep(check_interval)
         

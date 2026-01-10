@@ -174,18 +174,8 @@ def check_accessibility_status() -> PermissionStatus:
 
     import time
     
-    # Глобальный кеш для rate limiting
-    global _ax_cache_result, _ax_cache_time
-    try:
-        _ax_cache_result
-    except NameError:
-        _ax_cache_result = None
-        _ax_cache_time = 0.0
-    
-    current_time = time.time()
-    if _ax_cache_result is not None and (current_time - _ax_cache_time) < 2.0:
-        logger.debug(f"♿ Accessibility: using cached result = {_ax_cache_result.value}")
-        return _ax_cache_result
+    # Кеш отключён — для polling нужны реальные проверки каждую секунду
+    # Ранее был кеш 2 секунды, но он мешал polling'у
     
     try:
         from ctypes import util as ctypes_util
@@ -212,10 +202,6 @@ def check_accessibility_status() -> PermissionStatus:
         except Exception as e:
             logger.warning(f"⚠️ AXIsProcessTrusted failed: {e}")
             return PermissionStatus.NOT_DETERMINED
-
-        # Обновляем кеш
-        _ax_cache_result = resolved
-        _ax_cache_time = current_time
 
         return resolved
         

@@ -560,11 +560,12 @@ python scripts/monitor_metrics.py --output metrics_report.json
 ### 11.2 Packaging Regression Checklist
 - Любые изменения, влияющие на рантайм, ресурсы, конфигурацию, зависимости или упаковку, сопровождаются заполненным checklist до ревью.
 - Checklist ссылается на `Docs/PACKAGING_FINAL_GUIDE.md` и соответствующие `client/modules/*/MACOS_PACKAGING_GUIDE.md`; шаги нельзя пропускать без ADR.
+- **Диагностика packaged-запуска**: для проверки логов собранного `.app` используй раздел 12 "Диагностика и логи" в `Docs/PACKAGING_FINAL_GUIDE.md` (пути к `nexy_debug.log`, `nexy_crash.log`, `updater.log`, system log).
 - Минимальный набор проверок:
   1. PyInstaller сборка (`rebuild_from_scratch.sh` или аналог) — приложить лог выполнения.
   2. `pkgbuild` + `productbuild` + notarization dry-run — зафиксировать команды и статусы.
   3. Валидация `unified_config.yaml`, `Docs/PACKAGING_FINAL_GUIDE.md`, модульных MACOS_PACKAGING_GUIDE на актуальность после изменений.
-  4. Smoke-тест `cold_start_diagnostics.sh` и запуск собранной `.app` из `dist/` (логи приложены).
+  4. Smoke-тест `cold_start_diagnostics.sh` и запуск собранной `.app` из `dist/` (логи приложены, см. `Docs/PACKAGING_FINAL_GUIDE.md` раздел 12).
   5. Проверка ресурсов (ffmpeg, assets) на присутствие в пакете и валидные пути.
 - Итоговый статус фиксируй в `Docs/PACKAGING_READINESS_CHECKLIST.md` (ссылка на обновлённый `Docs/PRE_PACKAGING_VERIFICATION.md`).
 - Результаты checklist прикладываются к PR/таске вместе с логами. Без выполненного checklist правки не мержим.

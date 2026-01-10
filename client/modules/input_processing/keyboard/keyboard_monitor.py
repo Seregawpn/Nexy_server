@@ -53,16 +53,26 @@ class KeyboardMonitor:
         self._combo_active = False
         self._combo_start_time: Optional[float] = None
         
-        # Инициализируем клавиатуру
-        self._init_keyboard()
+        # pynput будет импортирован лениво в start_monitoring()
+        # чтобы не триггерить проверку Accessibility при создании объекта
+        self.keyboard = None
     
     def _init_keyboard(self):
-        """Инициализирует клавиатуру"""
+        """
+        Инициализирует клавиатуру (lazy import).
+        
+        ВАЖНО: pynput при импорте вызывает AXIsProcessTrustedWithOptions,
+        что триггерит проверку Accessibility. Поэтому импортируем только
+        когда start_monitoring() вызван (после получения всех разрешений).
+        """
+        if self.keyboard is not None:
+            return  # Уже инициализировано
+        
         try:
             import pynput.keyboard as keyboard
             self.keyboard = keyboard
             self.keyboard_available = True
-            logger.info("✅ Клавиатура инициализирована")
+            logger.info("✅ Клавиатура инициализирована (pynput загружен)")
         except ImportError as e:
             logger.warning(f"⚠️ pynput недоступен: {e}")
             self.keyboard_available = False
@@ -73,6 +83,9 @@ class KeyboardMonitor:
     
     def start_monitoring(self):
         """Начинает мониторинг клавиатуры"""
+        # Lazy init: импортируем pynput только сейчас
+        self._init_keyboard()
+        
         if not self.keyboard_available:
             logger.warning("⚠️ Клавиатура недоступна, мониторинг не запущен")
             return False

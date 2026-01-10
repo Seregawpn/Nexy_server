@@ -200,16 +200,10 @@ class GrpcClient:
     def _set_default_server(self):
         """Устанавливает сервер по умолчанию из конфигурации"""
         try:
-            # Пытаемся получить сервер из unified_config.yaml
-            import yaml
-            config_path = get_resource_path('config/unified_config.yaml')
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-
-            # Получаем настройки gRPC клиента из секции integrations
-            integrations = config.get('integrations', {})
-            grpc_config = integrations.get('grpc_client', {})
-            default_server = grpc_config.get('server', 'local')
+            # ЦЕНТРАЛИЗОВАНО: Используем ServerManager вместо прямого чтения YAML
+            from config.server_manager import get_default_server
+            
+            default_server = get_default_server() or 'local'
 
             # DEBUG: Логируем выбор сервера
             logger.info(f"🔌 [DEBUG] Config says default server: '{default_server}'")

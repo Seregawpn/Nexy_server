@@ -7,6 +7,9 @@ Activator для активации разрешений macOS.
 
 import asyncio
 import ctypes
+import os
+import subprocess
+import sys
 from ctypes import util
 
 
@@ -26,6 +29,16 @@ async def activate_microphone() -> bool:
         False если произошла ошибка
     """
     try:
+        # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
+        from .status_checker import check_microphone_status, PermissionStatus
+        
+        current_status = check_microphone_status()
+        if current_status == PermissionStatus.GRANTED:
+            logger.info("✅ Microphone: Разрешение уже предоставлено, пропускаем активацию")
+            print("✅ [ACTIVATOR] Microphone: Разрешение уже есть")
+            return True
+        
+        # ШАГ 2: Разрешение не предоставлено - активируем
         logger.info("🎙️ Активация микрофона...")
         print(f"🎙️ [ACTIVATOR] Начало активации микрофона")  # DEBUG: Для console.app
 
@@ -79,33 +92,93 @@ async def activate_accessibility() -> bool:
     """
     Активировать запрос разрешения Accessibility.
 
-    КРИТИЧНО (macOS Sequoia 26+):
+    КРИТИЧНО (macOS Sequoia 15+):
     AXIsProcessTrustedWithOptions КРАШИТ ПРОЦЕСС независимо от опций!
-    Даже с prompt=True система вызывает внутренний TCCAccessRequest который
-    требует приватный entitlement com.apple.private.tcc.manager.check-by-audit-token.
     
-    БЕЗОПАСНЫЙ ПОДХОД: Открываем System Settings напрямую.
-    Это единственный безопасный способ показать пользователю где включить Accessibility.
+    БЕЗОПАСНЫЙ ПОДХОД: 
+    1. Сначала проверяем статус
+    2. Если не предоставлено - пробуем AppleScript с System Events (может вызвать диалог)
+    3. Если AppleScript не сработал - пользователь должен включить вручную в Settings
 
     Returns:
-        True если настройки открыты успешно
+        True если разрешение уже предоставлено или попытка активации выполнена
         False если произошла ошибка
     """
     try:
-        logger.info("♿ Активация Accessibility - открываем System Settings...")
-        print("♿ [ACTIVATOR] Открываем System Settings > Security & Privacy > Accessibility")
-
-        import subprocess
+        # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
+        from .status_checker import check_accessibility_status, PermissionStatus
         
-        # Открываем System Settings на странице Accessibility
-        # Это безопасный способ - не вызывает TCCAccessRequest
-        subprocess.run([
-            "open", 
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-        ], check=False)
+        current_status = check_accessibility_status()
+        if current_status == PermissionStatus.GRANTED:
+            logger.info("✅ Accessibility: Разрешение уже предоставлено, пропускаем активацию")
+            print("✅ [ACTIVATOR] Accessibility: Разрешение уже есть")
+            return True
         
-        logger.info("✅ Accessibility: System Settings открыты")
-        print("✅ [ACTIVATOR] Accessibility: System Settings открыты")
+        logger.info("♿ Accessibility: разрешение не предоставлено, пробуем активировать...")
+        print("♿ [ACTIVATOR] Accessibility: пробуем вызвать диалог...")
+        
+        # ШАГ 2: Пробуем AppleScript с System Events
+        # Это действие ТРЕБУЕТ Accessibility и может вызвать системный диалог
+        try:
+            logger.info("♿ Активация Accessibility через AppleScript + System Events...")
+            
+            # AppleScript который требует Accessibility для выполнения
+            applescript = '''
+            tell application "System Events"
+                -- Простое действие, требующее Accessibility
+                set frontApp to name of first application process whose frontmost is true
+            end tell
+            '''
+            
+            result = subprocess.run(
+                ["osascript", "-e", applescript],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0:
+                # Успех! Значит разрешение уже было или только что дано
+                logger.info(f"✅ AppleScript выполнен успешно: {result.stdout.strip()}")
+                print(f"✅ [ACTIVATOR] AppleScript OK: {result.stdout.strip()}")
+            else:
+                # Ошибка - либо диалог показан, либо отказано
+                logger.info(f"♿ AppleScript вернул ошибку (диалог мог появиться): {result.stderr.strip()}")
+                print(f"♿ [ACTIVATOR] AppleScript error (это нормально): {result.stderr.strip()[:100]}")
+                
+        except subprocess.TimeoutExpired:
+            logger.warning("⚠️ AppleScript timeout - возможно ждёт ответа пользователя")
+            print("⚠️ [ACTIVATOR] AppleScript timeout")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось выполнить AppleScript: {e}")
+            print(f"⚠️ [ACTIVATOR] AppleScript exception: {e}")
+        
+        # ШАГ 3: Проверяем ещё раз после попытки
+        await asyncio.sleep(0.5)  # Даём системе время обновить статус
+        
+        new_status = check_accessibility_status()
+        if new_status == PermissionStatus.GRANTED:
+            logger.info("✅ Accessibility: разрешение получено после AppleScript!")
+            print("✅ [ACTIVATOR] Accessibility: разрешение получено!")
+            return True
+        
+        # ШАГ 4: AppleScript не сработал — открываем System Settings напрямую
+        # На macOS Sequoia AppleScript не всегда показывает диалог
+        logger.info("♿ Accessibility: открываем System Settings для предоставления разрешения...")
+        print("♿ [ACTIVATOR] Accessibility: открываем System Settings...")
+        
+        try:
+            subprocess.run([
+                "open", 
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            ], check=True)
+            logger.info("✅ System Settings открыт для Accessibility")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось открыть System Settings: {e}")
+        
+        # Разрешение ещё не получено - polling отследит когда пользователь включит
+        logger.info("♿ Accessibility: ожидаем предоставления разрешения...")
+        print("♿ [ACTIVATOR] Accessibility: ожидаем (пользователь должен включить в System Settings)")
         
         return True
 
@@ -136,6 +209,16 @@ async def activate_input_monitoring() -> bool:
         True если активация прошла успешно
     """
     try:
+        # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
+        from .status_checker import check_input_monitoring_status, PermissionStatus
+        
+        current_status = check_input_monitoring_status()
+        if current_status == PermissionStatus.GRANTED:
+            logger.info("✅ Input Monitoring: Разрешение уже предоставлено, пропускаем активацию")
+            print("✅ [ACTIVATOR] Input Monitoring: Разрешение уже есть")
+            return True
+        
+        # ШАГ 2: Разрешение не предоставлено - активируем
         logger.info("⌨️ Активация Input Monitoring через IOHIDRequestAccess...")
         print(f"⌨️ [ACTIVATOR] Начало активации Input Monitoring (IOHIDRequestAccess)")
 
@@ -190,6 +273,16 @@ async def activate_screen_capture() -> bool:
         False если произошла ошибка
     """
     try:
+        # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
+        from .status_checker import check_screen_capture_status, PermissionStatus
+        
+        current_status = check_screen_capture_status()
+        if current_status == PermissionStatus.GRANTED:
+            logger.info("✅ Screen Capture: Разрешение уже предоставлено, пропускаем активацию")
+            print("✅ [ACTIVATOR] Screen Capture: Разрешение уже есть")
+            return True
+        
+        # ШАГ 2: Разрешение не предоставлено - активируем
         logger.info("📺 Активация Screen Capture...")
 
         # Используем существующий ScreenCapturePermissionManager
@@ -219,21 +312,33 @@ async def activate_screen_capture() -> bool:
 
 async def activate_all_permissions() -> dict:
     """
-    Активировать все разрешения ПАРАЛЛЕЛЬНО.
-    """
-    logger.info("🚀 Активация всех разрешений в параллельном режиме...")
-
-    tasks = {
-        'microphone': activate_microphone(),
-        'accessibility': activate_accessibility(),
-        'input_monitoring': activate_input_monitoring(),
-        'screen_capture': activate_screen_capture()
-    }
-
-    # Запускаем все задачи одновременно
-    task_results = await asyncio.gather(*tasks.values())
+    Активировать все разрешения ПОСЛЕДОВАТЕЛЬНО.
     
-    results = dict(zip(tasks.keys(), task_results))
-    logger.info(f"   🏁 Все запросы разрешений завершены. Результаты: {results}")
-
+    ВАЖНО: Запускаем разрешения по одному, чтобы диалоги не появлялись одновременно.
+    Это улучшает UX и предотвращает путаницу пользователя.
+    """
+    logger.info("🚀 Активация всех разрешений в последовательном режиме...")
+    
+    results = {}
+    
+    # Порядок важен: сначала микрофон (самый простой), потом остальные
+    permission_order = [
+        ('microphone', activate_microphone),
+        ('accessibility', activate_accessibility),
+        ('input_monitoring', activate_input_monitoring),
+        ('screen_capture', activate_screen_capture),
+    ]
+    
+    for perm_name, activate_func in permission_order:
+        logger.info(f"📝 Активация {perm_name}...")
+        try:
+            result = await activate_func()
+            results[perm_name] = result
+            logger.info(f"   → {perm_name}: {result}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка активации {perm_name}: {e}")
+            results[perm_name] = False
+    
+    logger.info(f"🏁 Все запросы разрешений завершены. Результаты: {results}")
+    
     return results

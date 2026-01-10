@@ -104,10 +104,15 @@ class WelcomeAudioGenerator:
 
     def _load_grpc_settings(self):
         try:
+            # ЦЕНТРАЛИЗОВАНО: Используем ServerManager для получения сервера
+            from config.server_manager import get_default_server
+            
             loader = UnifiedConfigLoader.get_instance()
             config_data = loader._load_config()
             integrations_cfg = (config_data.get('integrations') or {}).get('grpc_client', {})
-            self._grpc_server_name = integrations_cfg.get('server')
+            
+            # Используем централизованный ServerManager вместо прямого чтения конфига
+            self._grpc_server_name = get_default_server() or 'local'
             integration_timeout = float(integrations_cfg.get('request_timeout_sec', self._grpc_timeout))
             self._grpc_timeout = float(self.config.server_timeout_sec or integration_timeout)
 
