@@ -17,3 +17,8 @@
 ## Фокус сервера
 - Работай внутри текущих модулей и интеграций сервера.
 - Не нарушай существующие границы модулей.
+
+## CRM Task Management (Server)
+- Единый алгоритм: `Docs/CRM_ASSISTANT_INSTRUCTIONS.md`.
+- Файл задач: `server/.crm/TASKS.json` (SRV-XXX).
+- После изменений: `python3 scripts/task_aggregator.py`.
