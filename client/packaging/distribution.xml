@@ -8,8 +8,8 @@
         <line choice="main" />
     </choices-outline>
     <choice id="main" visible="false">
-        <pkg-ref id="com.nexy.assistant.pkg" version="1.6.0.34" />
+        <pkg-ref id="com.nexy.assistant.pkg" version="1.6.0.36" />
     </choice>
 
-    <pkg-ref id="com.nexy.assistant.pkg" version="1.6.0.34">Nexy-raw.pkg</pkg-ref>
+    <pkg-ref id="com.nexy.assistant.pkg" version="1.6.0.36">Nexy-raw.pkg</pkg-ref>
 </installer-gui-script>

@@ -20,6 +20,26 @@ accessibility:
     debug_logging: false
     log_osascript_commands: false
     log_voiceover_state: false
+# ============================================================================
+# ЦЕНТРАЛИЗОВАННЫЕ НАСТРОЙКИ СЕРВЕРА
+# ============================================================================
+# ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ IP АДРЕСА И ПОРТОВ СЕРВЕРА
+# 
+# Для обновления IP адреса используйте скрипт:
+#   python scripts/update_server_ip.py <новый_ip>
+# 
+# Скрипт автоматически обновит все места:
+# - grpc.servers.production.host (использует YAML anchor)
+# - updater.default.appcast_url и manifest_url
+# - updater.default.channels.*.url
+# - комментарии в конфигурации
+#
+# Или измените значение ниже и запустите скрипт для синхронизации остальных мест
+server:
+  production_host: &server_production_host 20.63.24.187  # IP адрес production сервера (ИЗМЕНИТЬ ЗДЕСЬ)
+  production_grpc_port: &server_production_grpc_port 443  # Порт для gRPC
+  production_http_port: &server_production_http_port 443  # Порт для HTTP (health, status, updates)
+
 app:
   bundle_id: com.nexy.assistant
   debug: false
@@ -148,8 +168,8 @@ grpc:
       retry_delay: 1.0
       description: Локальный сервер для разработки
     production:
-      host: 20.63.24.187
-      port: 443
+      host: *server_production_host  # Используется из server_production_host (см. начало файла)
+      port: *server_production_grpc_port  # Используется из server_production_grpc_port
       ssl: true
       ssl_verify: false  # Временно отключено для self-signed сертификата
       use_http2: true    # Включить HTTP/2 (ALPN h2)
@@ -173,7 +193,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: production  # local|production|fallback - подключение к удаленному серверу 20.63.24.187:443
+    server: production  # local|production|fallback - подключение к удаленному серверу (IP: см. server.production_host в начале файла)
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 30.0
     max_retries: 3
@@ -419,13 +439,15 @@ tray:
     background_retry_interval_sec: 45  # Интервал фонового retry (30-60s)
 updater:
   default:
-    enabled: false
+    enabled: true
     update_channel: stable
-    appcast_url: https://20.151.51.172/updates/appcast.xml
-    manifest_url: https://20.151.51.172/updates/appcast.xml
-    auto_check: false
+    # URL генерируются из server.production_host (см. начало файла)
+    # Для обновления IP используйте: python scripts/update_server_ip.py <новый_ip>
+    appcast_url: https://20.63.24.187/updates/appcast.xml  # Используется server.production_host
+    manifest_url: https://20.63.24.187/updates/appcast.xml  # Используется server.production_host
+    auto_check: true
     check_interval: 3600
-    check_on_startup: false
+    check_on_startup: true
     auto_install: true
     install_after_download: false
     silent_mode: true
@@ -443,14 +465,16 @@ updater:
       auto_download: true
       progress_notifications: true
     channels:
+      # URL генерируются из server.production_host (см. начало файла)
+      # Для обновления IP используйте: python scripts/update_server_ip.py <новый_ip>
       stable:
-        url: https://20.151.51.172/updates/appcast.xml
+        url: https://20.63.24.187/updates/appcast.xml  # Используется server.production_host
         description: Стабильные релизы
       beta:
-        url: https://20.151.51.172/updates/appcast-beta.xml
+        url: https://20.63.24.187/updates/appcast-beta.xml  # Используется server.production_host
         description: Бета версии
       alpha:
-        url: https://20.151.51.172/updates/appcast-alpha.xml
+        url: https://20.63.24.187/updates/appcast-alpha.xml  # Используется server.production_host
         description: Альфа версии
   development:
     enabled: false
@@ -567,6 +591,11 @@ features:
   #   rollout_percentage: 0
   # ks_new_feature_name:
   #   enabled: false
+
+  # [TEMPLATE] Place for your new feature flags
+  # your_feature:
+  #   enabled: true
+
   
   # Actions feature flags
   # Feature ID: F-2025-013-open-app (open_app)
