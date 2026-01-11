@@ -24,6 +24,28 @@ if config_path.exists():
 
 logger = logging.getLogger(__name__)
 
+
+def get_version_from_file() -> str:
+    """
+    Читает версию из VERSION файла (единый источник истины)
+    
+    Returns:
+        str: Версия из VERSION файла или дефолтное значение
+    """
+    # Ищем VERSION файл в корне проекта (на уровень выше server/)
+    version_file = Path(__file__).parent.parent.parent / "VERSION"
+    
+    if version_file.exists():
+        try:
+            version = version_file.read_text().strip()
+            if version:
+                return version
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать VERSION файл: {e}")
+    
+    # Fallback: используем переменную окружения или дефолт
+    return os.getenv('SERVER_VERSION', '1.6.0.35')
+
 @dataclass
 class DatabaseConfig:
     """Конфигурация базы данных"""
@@ -383,8 +405,8 @@ class UpdateServiceConfig:
     downloads_dir: Optional[str] = None
     keys_dir: Optional[str] = None
     manifests_dir: Optional[str] = None
-    default_version: str = '1.6.0.35'
-    default_build: str = '1.6.0.35'
+    default_version: str = get_version_from_file()
+    default_build: str = get_version_from_file()
     default_arch: str = 'universal2'
     default_min_os: str = '11.0'
 
@@ -409,8 +431,8 @@ class UpdateServiceConfig:
             downloads_dir=os.getenv('UPDATE_DOWNLOADS_DIR') or str(base_dir / 'downloads'),
             keys_dir=os.getenv('UPDATE_KEYS_DIR') or str(base_dir / 'keys'),
             manifests_dir=os.getenv('UPDATE_MANIFESTS_DIR') or str(base_dir / 'manifests'),
-            default_version=os.getenv('SERVER_VERSION', '1.6.0.35'),
-            default_build=os.getenv('SERVER_BUILD', os.getenv('SERVER_VERSION', '1.6.0.35')),
+            default_version=os.getenv('SERVER_VERSION') or get_version_from_file(),
+            default_build=os.getenv('SERVER_BUILD') or get_version_from_file(),
             default_arch=os.getenv('UPDATE_DEFAULT_ARCH', 'universal2'),
             default_min_os=os.getenv('UPDATE_DEFAULT_MIN_OS', '11.0')
         )
@@ -420,14 +442,14 @@ class UpdateServiceConfig:
 class ServerMetadataConfig:
     """Метаданные сервера"""
 
-    version: str = '1.6.0.35'
-    build: str = '1.6.0.35'
+    version: str = get_version_from_file()
+    build: str = get_version_from_file()
     channel: str = 'stable'
 
     @classmethod
     def from_env(cls) -> 'ServerMetadataConfig':
-        version = os.getenv('SERVER_VERSION', '1.6.0.35')
-        build = os.getenv('SERVER_BUILD', version)
+        version = os.getenv('SERVER_VERSION') or get_version_from_file()
+        build = os.getenv('SERVER_BUILD') or version
         return cls(
             version=version,
             build=build,
