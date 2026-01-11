@@ -383,8 +383,8 @@ class UpdateServiceConfig:
     downloads_dir: Optional[str] = None
     keys_dir: Optional[str] = None
     manifests_dir: Optional[str] = None
-    default_version: str = '1.6.0.34'
-    default_build: str = '1.6.0.34'
+    default_version: str = '1.6.0.35'
+    default_build: str = '1.6.0.35'
     default_arch: str = 'universal2'
     default_min_os: str = '11.0'
 
@@ -409,8 +409,8 @@ class UpdateServiceConfig:
             downloads_dir=os.getenv('UPDATE_DOWNLOADS_DIR') or str(base_dir / 'downloads'),
             keys_dir=os.getenv('UPDATE_KEYS_DIR') or str(base_dir / 'keys'),
             manifests_dir=os.getenv('UPDATE_MANIFESTS_DIR') or str(base_dir / 'manifests'),
-            default_version=os.getenv('SERVER_VERSION', '1.6.0.34'),
-            default_build=os.getenv('SERVER_BUILD', os.getenv('SERVER_VERSION', '1.6.0.34')),
+            default_version=os.getenv('SERVER_VERSION', '1.6.0.35'),
+            default_build=os.getenv('SERVER_BUILD', os.getenv('SERVER_VERSION', '1.6.0.35')),
             default_arch=os.getenv('UPDATE_DEFAULT_ARCH', 'universal2'),
             default_min_os=os.getenv('UPDATE_DEFAULT_MIN_OS', '11.0')
         )
@@ -420,13 +420,13 @@ class UpdateServiceConfig:
 class ServerMetadataConfig:
     """Метаданные сервера"""
 
-    version: str = '1.6.0.34'
-    build: str = '1.6.0.34'
+    version: str = '1.6.0.35'
+    build: str = '1.6.0.35'
     channel: str = 'stable'
 
     @classmethod
     def from_env(cls) -> 'ServerMetadataConfig':
-        version = os.getenv('SERVER_VERSION', '1.6.0.34')
+        version = os.getenv('SERVER_VERSION', '1.6.0.35')
         build = os.getenv('SERVER_BUILD', version)
         return cls(
             version=version,
