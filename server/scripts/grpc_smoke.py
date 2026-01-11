@@ -77,8 +77,10 @@ class GrpcSmokeTest:
             if self.port == 443:
                 # Для HTTPS нужно настроить SSL credentials
                 # В production используется Nginx reverse proxy с TLS
-                credentials = grpc.ssl_channel_credentials()
-                self.channel = aio.secure_channel(address, credentials)
+                # Для self-signed сертификатов используем insecure channel
+                # (в production это должно быть secure_channel с правильными credentials)
+                logger.warning("⚠️ Используется insecure channel для порта 443 (self-signed cert)")
+                self.channel = aio.insecure_channel(address)
             else:
                 # Для локального тестирования используем insecure channel
                 self.channel = aio.insecure_channel(address)
