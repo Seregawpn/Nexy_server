@@ -13,7 +13,8 @@ from pathlib import Path
 # Добавляем путь к модулям grpc_service
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from modules.grpc_service.core.backpressure import get_backpressure_manager
+# Ленивый импорт backpressure для избежания циклических зависимостей
+# backpressure импортируется только когда он действительно нужен
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,8 @@ class GrpcServiceIntegration:
             return
         
         # CENTRALIZED BACKPRESSURE GUARD: проверяем лимит на стримы
+        # Ленивый импорт для избежания циклических зависимостей
+        from modules.grpc_service.core.backpressure import get_backpressure_manager
         backpressure_manager = get_backpressure_manager()
         stream_acquired, error_msg = await backpressure_manager.acquire_stream(session_id, hardware_id)
         if not stream_acquired:

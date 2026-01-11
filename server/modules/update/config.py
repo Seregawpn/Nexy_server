@@ -7,6 +7,27 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from pathlib import Path
 
+# Импортируем функцию для получения версии из единого источника истины
+# Используем относительный импорт через sys.path для избежания циклических зависимостей
+import sys
+from pathlib import Path as PathLib
+_config_path = PathLib(__file__).parent.parent.parent / "config"
+if str(_config_path) not in sys.path:
+    sys.path.insert(0, str(_config_path))
+try:
+    from unified_config import get_version_from_file
+except ImportError:
+    # Fallback если импорт не удался (для тестов или других случаев)
+    def get_version_from_file() -> str:
+        import os
+        version_file = PathLib(__file__).parent.parent.parent.parent / "VERSION"
+        if version_file.exists():
+            try:
+                return version_file.read_text().strip()
+            except Exception:
+                pass
+        return os.getenv('SERVER_VERSION', '1.6.0.35')
+
 
 @dataclass
 class UpdateConfig:
@@ -28,8 +49,9 @@ class UpdateConfig:
     cache_control: str = "no-cache, no-store, must-revalidate"
     
     # Настройки манифестов (берутся из SERVER_VERSION и SERVER_BUILD через unified_config)
-    default_version: str = "1.0.2"
-    default_build: str = "1.0.2"
+    # Единый источник истины: VERSION файл или переменная окружения SERVER_VERSION
+    default_version: str = get_version_from_file()
+    default_build: str = get_version_from_file()
     default_arch: str = "universal2"
     default_min_os: str = "11.0"
     

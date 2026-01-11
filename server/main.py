@@ -6,7 +6,8 @@ import os
 import socket
 from dataclasses import asdict
 from aiohttp import web
-from modules.grpc_service.core.grpc_server import run_server as serve
+# Ленивый импорт для избежания циклических зависимостей
+# run_server будет импортирован позже, когда он действительно нужен
 from dotenv import load_dotenv
 from config.unified_config import get_config
 from utils.logging_formatter import (
@@ -403,12 +404,29 @@ async def main():
         raise OSError(f"[Errno 48] Address already in use: {grpc_config.host}:{grpc_config.port}")
     
     try:
+        # Ленивый импорт run_server для избежания циклических зависимостей
+        from modules.grpc_service.core.grpc_server import run_server as serve
+        
+        # Обертка для правильной типизации: run_server может вернуть False,
+        # но create_task ожидает корутину, поэтому оборачиваем в async функцию
+        async def run_grpc_server():
+            """Обертка для запуска gRPC сервера с обработкой ошибок инициализации"""
+            result = await serve(
+                host=grpc_config.host,
+                port=grpc_config.port,
+                max_workers=grpc_config.max_workers
+            )
+            if result is False:
+                logger.error("gRPC server initialization failed", extra={
+                    'scope': 'grpc',
+                    'decision': 'error',
+                    'ctx': {'error': 'initialization_failed'}
+                })
+                raise RuntimeError("gRPC server initialization failed")
+            return result
+        
         # Запускаем gRPC сервер в фоне
-        serve_task = asyncio.create_task(serve(
-            host=grpc_config.host,
-            port=grpc_config.port,
-            max_workers=grpc_config.max_workers
-        ))
+        serve_task = asyncio.create_task(run_grpc_server())
         
         # Регистрируем cleanup функцию
         servers_cleanup.append(lambda: cancel_task(metrics_task))
