@@ -69,6 +69,7 @@ message WelcomeMetadata {
   double duration_sec = 2;    // Длительность аудио в секундах
   int32 sample_rate = 3;      // Частота дискретизации
   int32 channels = 4;         // Количество каналов
+  string dtype = 5;           // Тип данных (например, 'int16')
 }
 
 // Ответ на генерацию приветственного аудио

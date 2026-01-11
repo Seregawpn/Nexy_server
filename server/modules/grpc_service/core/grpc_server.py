@@ -574,6 +574,18 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             
             logger.info(f"🎵 GenerateWelcomeAudio: generating audio for text: '{text[:80]}...'")
             
+            # Отправляем метаданные в начале стрима (PR-4: убрать неопределенность формата)
+            # Это позволяет клиенту знать формат аудио до получения первого chunk
+            yield streaming_pb2.WelcomeResponse(  # type: ignore
+                metadata=streaming_pb2.WelcomeMetadata(  # type: ignore
+                    method="edge_tts",  # Метод генерации
+                    duration_sec=0.0,  # Будет обновлено после генерации, если доступно
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    dtype=dtype  # Тип данных для устранения неопределенности
+                )
+            )
+            
             # Генерируем аудио через модуль
             # audio_module.process - это async функция, возвращает AsyncIterator[Dict[str, Any]]
             # Нужно await, чтобы получить AsyncIterator
