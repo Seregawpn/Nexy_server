@@ -219,6 +219,9 @@ class StreamingWorkflowIntegration:
             )
         
         try:
+            import time
+            request_start_time = time.time()
+            
             logger.info(f"🔄 Начало обработки запроса: {session_id}")
             logger.info(f"→ Input text len={len(request_data.get('text','') or '')}, has_screenshot={bool(request_data.get('screenshot'))}")
             logger.info(f"→ Input text content: '{request_data.get('text', '')[:100]}...'")
@@ -241,7 +244,11 @@ class StreamingWorkflowIntegration:
                 )
             
             # Получаем память (из кэша или запрашиваем)
+            memory_start_time = time.time()
             memory_context = await self._get_memory_context_parallel(hardware_id)
+            memory_time = (time.time() - memory_start_time) * 1000
+            memory_size = len(str(memory_context)) if memory_context else 0
+            logger.info(f"⏱️  Memory context получен за {memory_time:.2f}ms (размер: {memory_size} символов)")
             MAX_JSON_BUFFER_SIZE = 10000  # Максимальный размер буфера (10KB)
             json_parse_attempts = 0  # Счетчик попыток парсинга JSON
             MAX_JSON_PARSE_ATTEMPTS = 10  # Максимум попыток парсинга JSON
@@ -252,12 +259,20 @@ class StreamingWorkflowIntegration:
             total_audio_chunks = 0
             total_audio_bytes = 0
             sentence_audio_map: dict[int, int] = {}
+            
+            # Метрики времени
+            first_text_time = None
+            first_audio_time = None
+            llm_start_time = time.time()
 
             async for sentence in self._iter_processed_sentences(
                 request_data.get('text', ''),
                 request_data.get('screenshot'),
                 memory_context
             ):
+                if first_text_time is None:
+                    first_text_time = (time.time() - llm_start_time) * 1000
+                    logger.info(f"⏱️  Первый текст от LLM получен через {first_text_time:.2f}ms")
                 input_sentence_counter += 1
                 logger.debug(f"📝 In sentence #{input_sentence_counter}: {len(sentence)} символов")
 
@@ -447,6 +462,10 @@ class StreamingWorkflowIntegration:
                             tts_text = to_emit if to_emit.endswith(self.end_punctuations) else f"{to_emit}."
                             # Генерируем и стримим аудио чанки
                             segment_audio_chunks = 0
+                            tts_start_time = time.time()
+                            if first_audio_time is None:
+                                first_audio_time = (time.time() - request_start_time) * 1000
+                                logger.info(f"⏱️  Первый audio_chunk начал генерироваться через {first_audio_time:.2f}ms")
                             async for audio_chunk in self._stream_audio_for_sentence(tts_text, emitted_segment_counter):
                                 if not audio_chunk:
                                     continue
@@ -460,7 +479,8 @@ class StreamingWorkflowIntegration:
                                     'sentence_index': emitted_segment_counter
                                 }
                             sentence_audio_map[emitted_segment_counter] = segment_audio_chunks
-                            logger.debug(f"🎧 Segment #{emitted_segment_counter} → {segment_audio_chunks} чанков, {total_audio_bytes} байт")
+                            tts_time = (time.time() - tts_start_time) * 1000
+                            logger.info(f"⏱️  TTS для segment #{emitted_segment_counter} занял {tts_time:.2f}ms ({segment_audio_chunks} чанков, {total_audio_bytes} байт)")
                         else:
                             # Пустой текст - пропускаем аудио
                             logger.debug(f"⏭️ Пропуск аудио для пустого текста в segment #{emitted_segment_counter}")
@@ -626,9 +646,17 @@ class StreamingWorkflowIntegration:
                 else:
                     logger.debug("Фича-флаг forward_assistant_actions выключен или kill-switch активен, пропускаем command_payload")
 
+            total_time = (time.time() - request_start_time) * 1000
             logger.info(
                 f"✅ Запрос обработан успешно: segments={emitted_segment_counter}, audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}"
             )
+            logger.info(f"⏱️  ИТОГОВЫЕ МЕТРИКИ ВРЕМЕНИ:")
+            logger.info(f"   • Memory context: {memory_time:.2f}ms")
+            if first_text_time:
+                logger.info(f"   • До первого text (LLM): {first_text_time:.2f}ms")
+            if first_audio_time:
+                logger.info(f"   • До первого audio (TTS): {first_audio_time:.2f}ms")
+            logger.info(f"   • Общее время: {total_time:.2f}ms ({total_time/1000:.2f} сек)")
             yield final_result
 
         except Exception as e:
@@ -672,13 +700,17 @@ class StreamingWorkflowIntegration:
                 logger.debug("MemoryWorkflow не доступен, пропускаем получение памяти")
                 return None
             
-            logger.debug(f"Получение контекста памяти для {hardware_id}")
+            import time
+            start_time = time.time()
+            logger.info(f"⏱️  Начало получения контекста памяти для {hardware_id}")
             memory_context = await self.memory_workflow.get_memory_context_parallel(hardware_id)
+            elapsed = (time.time() - start_time) * 1000
             
             if memory_context:
-                logger.debug(f"✅ Получен контекст памяти: {len(memory_context)} элементов")
+                context_size = len(str(memory_context))
+                logger.info(f"⏱️  Контекст памяти получен за {elapsed:.2f}ms: {len(memory_context)} элементов, {context_size} символов")
             else:
-                logger.debug("⚠️ Контекст памяти пуст")
+                logger.info(f"⏱️  Контекст памяти пуст (получен за {elapsed:.2f}ms)")
             
             return memory_context
             
@@ -693,7 +725,11 @@ class StreamingWorkflowIntegration:
         memory_context: Optional[Dict[str, Any]]
     ) -> AsyncGenerator[str, None]:
         """Стримингово возвращает предложения с учётом памяти и скриншота."""
+        import time
+        enrich_start = time.time()
         enriched_text = self._enrich_with_memory(text, memory_context)
+        enrich_time = (time.time() - enrich_start) * 1000
+        logger.info(f"⏱️  Обогащение текста памятью заняло {enrich_time:.2f}ms (исходный: {len(text)} символов, обогащенный: {len(enriched_text)} символов)")
 
         # Изображение уже приходит в формате base64 (WebP)
         screenshot_data: Optional[str] = None
@@ -706,7 +742,8 @@ class StreamingWorkflowIntegration:
 
         yielded_any = False
         if self.text_module and hasattr(self.text_module, 'process'):
-            logger.info(f"🔄 Стриминг текста через Text Module: '{enriched_text[:80]}...'")
+            llm_start = time.time()
+            logger.info(f"⏱️  Начало LLM обработки через Text Module: '{enriched_text[:80]}...'")
             try:
                 chunk_count = 0
                 async for chunk in self._stream_text_module(enriched_text, screenshot_data):
@@ -714,12 +751,16 @@ class StreamingWorkflowIntegration:
                     logger.debug(f"📦 Получен chunk #{chunk_count} от Text Module: type={type(chunk)}, value={str(chunk)[:100] if chunk else 'None'}...")
                     sentence = (self._extract_text_chunk(chunk) or '').strip()
                     if sentence:
+                        if chunk_count == 1:
+                            first_chunk_time = (time.time() - llm_start) * 1000
+                            logger.info(f"⏱️  Первый chunk от LLM получен через {first_chunk_time:.2f}ms")
                         yielded_any = True
                         logger.info(f"📨 TextModule sentence #{chunk_count}: '{sentence[:120]}...' (len={len(sentence)})")
                         yield sentence
                     else:
                         logger.warning(f"⚠️ Chunk #{chunk_count} не содержит текста после извлечения")
-                logger.info(f"✅ Получено {chunk_count} chunks от Text Module, yielded_any={yielded_any}")
+                llm_total_time = (time.time() - llm_start) * 1000
+                logger.info(f"⏱️  LLM обработка завершена за {llm_total_time:.2f}ms: получено {chunk_count} chunks, yielded_any={yielded_any}")
             except Exception as processing_error:
                 logger.error(f"⚠️ Ошибка Text Module: {processing_error}. Используем fallback")
                 import traceback
