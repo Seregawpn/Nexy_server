@@ -91,7 +91,7 @@ class ConnectionManager:
             logger.info(f"🔌 [GRPC_LOOP] Creating channel in loop={loop_id} (running={current_loop.is_running()})")
             
             # Создаем канал
-            logger.info(f"🔌 [DEBUG] Создание канала - use_ssl={server_config.use_ssl}")
+            logger.info(f"🔌 [DEBUG] Создание канала - use_ssl={server_config.use_ssl}, ssl_verify={server_config.ssl_verify}")
             if server_config.use_ssl:
                 # Создаем SSL credentials с учётом ssl_verify
                 logger.info(f"🔌 [DEBUG] SSL enabled, ssl_verify={server_config.ssl_verify}")
@@ -99,15 +99,19 @@ class ConnectionManager:
                     # Проверять сертификат (по умолчанию - системные CA)
                     logger.info(f"🔌 [DEBUG] Using system CA certificates")
                     credentials = grpc.ssl_channel_credentials()
+                    self.channel = grpc.aio.secure_channel(
+                        address,
+                        credentials,
+                        options=options
+                    )
                 else:
-                    # Для self-signed сертификата загружаем сертификат сервера
+                    # Для self-signed сертификата загружаем сертификат и используем secure_channel
                     logger.warning(f"⚠️ SSL verification disabled for {address} - используется self-signed сертификат")
                     logger.info(f"🔌 [DEBUG] Attempting to load self-signed certificate...")
-
+                    
                     # Пытаемся загрузить сертификат production сервера
                     try:
                         from integration.utils.resource_path import get_resource_path
-                        logger.info(f"🔌 [DEBUG] Imported get_resource_path")
                         cert_path = get_resource_path('resources/certs/production_server.pem')
                         logger.info(f"🔌 [DEBUG] Certificate path resolved to: {cert_path}")
                         with open(cert_path, 'rb') as f:
@@ -116,25 +120,17 @@ class ConnectionManager:
                         logger.info(f"✅ Загружен self-signed сертификат: {cert_path}")
                         credentials = grpc.ssl_channel_credentials(root_certificates=root_cert)
                         logger.info(f"🔌 [DEBUG] SSL credentials created with custom certificate")
-                    except Exception as e:
-                        logger.error(f"❌ Не удалось загрузить сертификат: {e}")
-                        logger.error(f"🔌 [DEBUG] Exception details: {type(e).__name__}: {str(e)}")
-                        import traceback
-                        logger.error(f"🔌 [DEBUG] Traceback:\n{traceback.format_exc()}")
-                        logger.warning("⚠️ Используем credentials без проверки (небезопасно!)")
-                        credentials = grpc.ssl_channel_credentials(
-                            root_certificates=None,
-                            private_key=None,
-                            certificate_chain=None
-                        )
                         # Добавляем опцию для отключения проверки имени хоста
                         options.append(('grpc.ssl_target_name_override', server_config.address))
-
-                self.channel = grpc.aio.secure_channel(
-                    address,
-                    credentials,
-                    options=options
-                )
+                        self.channel = grpc.aio.secure_channel(
+                            address,
+                            credentials,
+                            options=options
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Не удалось загрузить сертификат: {e}")
+                        logger.warning("⚠️ Fallback: используем insecure_channel (небезопасно!)")
+                        self.channel = grpc.aio.insecure_channel(address, options=options)
             else:
                 self.channel = grpc.aio.insecure_channel(address, options=options)
             

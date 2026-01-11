@@ -1,6 +1,45 @@
 {
     "workspace": "client",
     "id_prefix": "CLI",
-    "next_id": 2,
-    "tasks": []
+    "next_id": 4,
+    "tasks": [
+        {
+            "id": "CLI-001",
+            "epicId": "EPIC-MVP",
+            "title": "Test Client-Server Communication",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "Antigravity",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:50:00-05:00",
+            "description": "## Цель\n\nПроверить связь клиента с удалённым сервером.\n\n## Test Scenarios\n\n- [ ] gRPC streaming (voice recognition)\n- [ ] Command execution flow\n- [ ] Network error handling\n- [ ] Reconnect on disconnect\n- [ ] Latency metrics\n\n## Definition of Done\n\nВсе сценарии проходят, latency < 500ms.",
+            "file_path": "integration/core/grpc_client.py"
+        },
+        {
+            "id": "CLI-002",
+            "epicId": "EPIC-MVP",
+            "title": "Test Auto-Update Integration",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "Antigravity",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:50:00-05:00",
+            "description": "## Цель\n\nПроверить механизм автообновления клиента.\n\n## Test Scenarios\n\n- [ ] Update check on startup\n- [ ] Download new version\n- [ ] Install and restart\n- [ ] Rollback on failure\n\n## Definition of Done\n\nКлиент обновляется автоматически.",
+            "file_path": "modules/updater/"
+        },
+        {
+            "id": "CLI-003",
+            "epicId": "EPIC-MVP",
+            "title": "Test First-Run on Fresh Install",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "User",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:50:00-05:00",
+            "description": "## Цель\n\nПроверить полный цикл первого запуска.\n\n## Test Scenarios\n\n- [ ] Fresh install from PKG\n- [ ] Permission requests flow\n- [ ] Restart after permissions\n- [ ] TAL hold verification\n- [ ] First voice command\n\n## Definition of Done\n\nПриложение работает после первой установки."
+        }
+    ]
 }

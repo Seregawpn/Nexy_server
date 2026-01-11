@@ -25,7 +25,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.35  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
+  version: 1.6.0.36  # ЕДИНСТВЕННОЕ МЕСТО ДЛЯ ИЗМЕНЕНИЯ ВЕРСИИ - при сборке автоматически обновятся все файлы
 # Авто-всё конфигурация аудио - автоматическое определение параметров устройства
 default_audio:
   # Только целевые параметры для STT (что ожидает движок распознавания)
@@ -148,7 +148,7 @@ grpc:
       retry_delay: 1.0
       description: Локальный сервер для разработки
     production:
-      host: 20.151.51.172
+      host: 20.63.24.187
       port: 443
       ssl: true
       ssl_verify: false  # Временно отключено для self-signed сертификата
@@ -173,7 +173,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: local  # local|production|fallback - для dev используем local (172.16.226.162:50051)
+    server: production  # local|production|fallback - подключение к удаленному серверу 20.63.24.187:443
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 30.0
     max_retries: 3

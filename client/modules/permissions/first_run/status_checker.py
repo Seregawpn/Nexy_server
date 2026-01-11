@@ -197,16 +197,60 @@ def check_accessibility_status() -> PermissionStatus:
             app_services.AXIsProcessTrusted.argtypes = []
             app_services.AXIsProcessTrusted.restype = ctypes.c_bool
             is_trusted = app_services.AXIsProcessTrusted()
-            resolved = PermissionStatus.GRANTED if is_trusted else PermissionStatus.DENIED
-            logger.info(f"♿ Accessibility: AXIsProcessTrusted() → {resolved.value}")
+            
+            if is_trusted:
+                logger.debug("♿ Accessibility: GRANTED (AXIsProcessTrusted)")
+                return PermissionStatus.GRANTED
+                
+            # Fallback: Functional check via AppleScript
+            # AXIsProcessTrusted can return stale/false results on Sequoia
+            # We try to actually PERFORM an action that requires permissions.
+            logger.debug("♿ Accessibility: AXIsProcessTrusted=False, trying functional fallback")
+            return _check_accessibility_via_script()
+            
         except Exception as e:
             logger.warning(f"⚠️ AXIsProcessTrusted failed: {e}")
-            return PermissionStatus.NOT_DETERMINED
-
-        return resolved
-        
+            return _check_accessibility_via_script()
+            
     except Exception as e:
         logger.warning(f"♿ Accessibility check failed: {e}")
+        return PermissionStatus.NOT_DETERMINED
+
+
+def _check_accessibility_via_script() -> PermissionStatus:
+    """
+    Проверить Accessibility функциональным тестом (AppleScript).
+    Если скрипт выполняется успешно, значит разрешение ЕСТЬ, 
+    даже если AXIsProcessTrusted говорит False.
+    """
+    import subprocess
+    try:
+        # Простой скрипт, требующий взаимодействия с System Events
+        # (получение имени переднего процесса)
+        cmd = [
+            "osascript", 
+            "-e", 
+            'tell application "System Events" to get name of first application process whose frontmost is true'
+        ]
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=1.0  # Быстрый таймаут
+        )
+        
+        if result.returncode == 0:
+            logger.info("♿ Accessibility: GRANTED (Functional Script Check)")
+            # Если скрипт сработал - разрешение ТОЧНО есть
+            return PermissionStatus.GRANTED
+        else:
+            # Ошибка выполнения - разрешения нет или другая ошибка
+            # logger.debug(f"♿ Functional check failed: {result.stderr.strip()[:100]}")
+            return PermissionStatus.NOT_DETERMINED
+            
+    except Exception as e:
+        logger.debug(f"♿ Functional check error: {e}")
         return PermissionStatus.NOT_DETERMINED
 
 

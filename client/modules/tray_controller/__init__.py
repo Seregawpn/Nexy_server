@@ -16,7 +16,7 @@ __all__ = [
     'TrayConfigManager'
 ]
 
-__version__ = "1.6.0.34"
+__version__ = "1.6.0.36"
 __author__ = "Nexy Team"
 
 

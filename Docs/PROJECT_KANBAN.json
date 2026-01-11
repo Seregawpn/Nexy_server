@@ -1,7 +1,7 @@
 {
     "meta": {
         "version": "2.1.0",
-        "updated_at": "2026-01-10T13:45:04.911953",
+        "updated_at": "2026-01-11T12:18:00.390963",
         "revision": 1,
         "smoke_test": 2
     },
@@ -101,15 +101,16 @@
         {
             "id": "CLI-001",
             "epicId": "EPIC-MVP",
-            "title": "Example Client Task",
+            "title": "Test Client-Server Communication",
             "status": "plan",
-            "priority": "P2",
-            "owner": "ClientAssistant",
-            "description": "Template task. Replace or delete.",
-            "updated_at": "2026-01-05T19:08:00-05:00",
+            "priority": "P1",
+            "owner": "client",
+            "description": "## Цель\n\nПроверить связь клиента с удалённым сервером.\n\n## Test Scenarios\n\n- [ ] gRPC streaming (voice recognition)\n- [ ] Command execution flow\n- [ ] Network error handling\n- [ ] Reconnect on disconnect\n- [ ] Latency metrics\n\n## Definition of Done\n\nВсе сценарии проходят, latency < 500ms.",
+            "updated_at": "2026-01-11T10:50:00-05:00",
             "workspace": "client",
             "created_by": "Antigravity",
-            "modified_by": "Antigravity"
+            "modified_by": "Antigravity",
+            "file_path": "integration/core/grpc_client.py"
         },
         {
             "id": "SRV-001",
@@ -206,6 +207,100 @@
                 }
             ],
             "blockedBy": []
+        },
+        {
+            "id": "NEXY-004",
+            "type": "task",
+            "epicId": "EPIC-MVP",
+            "title": "Server Deployment to Remote",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "User",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:45:00-05:00",
+            "description": "## Цель\n\nПеренести серверную часть на удалённый сервер.\n\n## Subtasks\n\n1. [ ] Выбрать/подготовить VPS\n2. [ ] Скопировать server/ на VPS\n3. [ ] Настроить Python venv\n4. [ ] Настроить config.env\n5. [ ] Запустить как systemd service\n6. [ ] Настроить nginx reverse proxy\n7. [ ] Настроить SSL (Let's Encrypt)\n8. [ ] Настроить firewall\n\n## Definition of Done\n\nСервер доступен по HTTPS, API отвечает.",
+            "blockedBy": []
+        },
+        {
+            "id": "NEXY-005",
+            "type": "task",
+            "epicId": "EPIC-MVP",
+            "title": "Client-Server Integration Testing",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "Antigravity",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:45:00-05:00",
+            "description": "## Цель\n\nПроверить корректную работу клиентской части с удалённым сервером.\n\n## Test Scenarios\n\n1. [ ] Голосовое распознавание (streaming)\n2. [ ] Обработка команд\n3. [ ] Обработка ошибок сети\n4. [ ] Reconnect при обрыве\n5. [ ] Latency метрики\n\n## Definition of Done\n\nВсе сценарии проходят, latency < 500ms.",
+            "blockedBy": [
+                "NEXY-004"
+            ]
+        },
+        {
+            "id": "NEXY-006",
+            "type": "task",
+            "epicId": "EPIC-MVP",
+            "title": "Configure Auto-Update System",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "Antigravity",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:45:00-05:00",
+            "description": "## Цель\n\nНастроить автоматическое обновление клиента.\n\n## Subtasks\n\n1. [ ] Проанализировать server/server/updates/\n2. [ ] Настроить update endpoint на сервере\n3. [ ] Проверить update check в клиенте\n4. [ ] Протестировать полный цикл обновления\n\n## Definition of Done\n\nКлиент проверяет обновления, скачивает и устанавливает.",
+            "blockedBy": [
+                "NEXY-004"
+            ]
+        },
+        {
+            "id": "NEXY-007",
+            "type": "task",
+            "epicId": "EPIC-MVP",
+            "title": "Full E2E MVP Testing",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "User",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:45:00-05:00",
+            "description": "## Цель\n\nПолное тестирование MVP перед выдачей пользователям.\n\n## Test Scenarios\n\n1. [ ] Fresh install (PKG)\n2. [ ] First-run permissions flow\n3. [ ] Voice recognition + command execution\n4. [ ] Auto-update flow\n5. [ ] Crash recovery\n6. [ ] Various macOS versions (12, 13, 14)\n7. [ ] Both architectures (arm64, x86_64)\n\n## Definition of Done\n\nВсе сценарии проходят на минимум 2 устройствах.",
+            "blockedBy": [
+                "NEXY-005",
+                "NEXY-006"
+            ]
+        },
+        {
+            "id": "CLI-002",
+            "epicId": "EPIC-MVP",
+            "title": "Test Auto-Update Integration",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:50:00-05:00",
+            "description": "## Цель\n\nПроверить механизм автообновления клиента.\n\n## Test Scenarios\n\n- [ ] Update check on startup\n- [ ] Download new version\n- [ ] Install and restart\n- [ ] Rollback on failure\n\n## Definition of Done\n\nКлиент обновляется автоматически.",
+            "file_path": "modules/updater/",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-003",
+            "epicId": "EPIC-MVP",
+            "title": "Test First-Run on Fresh Install",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:50:00-05:00",
+            "description": "## Цель\n\nПроверить полный цикл первого запуска.\n\n## Test Scenarios\n\n- [ ] Fresh install from PKG\n- [ ] Permission requests flow\n- [ ] Restart after permissions\n- [ ] TAL hold verification\n- [ ] First voice command\n\n## Definition of Done\n\nПриложение работает после первой установки.",
+            "workspace": "client"
         }
     ],
     "releases": [],
@@ -220,6 +315,26 @@
             {
                 "task": "NEXY-002",
                 "blocked_by": "NEXY-001",
+                "impact": "high"
+            },
+            {
+                "task": "NEXY-005",
+                "blocked_by": "NEXY-004",
+                "impact": "high"
+            },
+            {
+                "task": "NEXY-006",
+                "blocked_by": "NEXY-004",
+                "impact": "high"
+            },
+            {
+                "task": "NEXY-007",
+                "blocked_by": "NEXY-005",
+                "impact": "high"
+            },
+            {
+                "task": "NEXY-007",
+                "blocked_by": "NEXY-006",
                 "impact": "high"
             }
         ],
@@ -237,6 +352,6 @@
                 "testing": 0
             }
         },
-        "last_sync_at": "2026-01-10T13:45:04.911912"
+        "last_sync_at": "2026-01-11T12:18:00.390928"
     }
 }
