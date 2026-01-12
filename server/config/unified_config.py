@@ -44,7 +44,7 @@ def get_version_from_file() -> str:
             logger.warning(f"Не удалось прочитать VERSION файл: {e}")
     
     # Fallback: используем переменную окружения или дефолт
-    return os.getenv('SERVER_VERSION', '1.6.0.37')
+    return os.getenv('SERVER_VERSION', '1.6.0.39')
 
 @dataclass
 class DatabaseConfig:
@@ -369,6 +369,9 @@ class WorkflowConfig:
     stream_first_sentence_min_words: int = 1
     stream_punct_flush_strict: bool = True
     force_flush_max_chars: int = 300
+    # Guard по hardware_id: если True, блокирует параллельные сессии одного устройства
+    # Если False (по умолчанию), допускаются параллельные сессии одного hardware_id
+    prevent_concurrent_hardware_id_sessions: bool = False
 
     @classmethod
     def from_env(cls) -> 'WorkflowConfig':
@@ -384,7 +387,10 @@ class WorkflowConfig:
             stream_punct_flush_strict=os.getenv(
                 'STREAM_PUNCT_FLUSH_STRICT', os.getenv('TTS_PUNCT_FLUSH_STRICT', 'true')
             ).lower() == 'true',
-            force_flush_max_chars=int(os.getenv('STREAM_FORCE_FLUSH_MAX_CHARS', '0') or 0)
+            force_flush_max_chars=int(os.getenv('STREAM_FORCE_FLUSH_MAX_CHARS', '0') or 0),
+            prevent_concurrent_hardware_id_sessions=os.getenv(
+                'PREVENT_CONCURRENT_HARDWARE_ID_SESSIONS', 'false'
+            ).lower() == 'true'
         )
 
 

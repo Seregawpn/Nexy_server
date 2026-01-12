@@ -263,6 +263,10 @@ workflow:
   stream_first_sentence_min_words: 2
   stream_punct_flush_strict: true
   force_flush_max_chars: 0
+  # Guard по hardware_id: если true, блокирует параллельные сессии одного устройства
+  # Если false (по умолчанию), допускаются параллельные сессии одного hardware_id
+  # Управляется через env: PREVENT_CONCURRENT_HARDWARE_ID_SESSIONS=true
+  prevent_concurrent_hardware_id_sessions: false
 
 update:
   enabled: true
@@ -278,14 +282,14 @@ update:
   downloads_dir: server/updates/downloads
   keys_dir: server/updates/keys
   manifests_dir: server/updates/manifests
-  default_version: 1.6.0.37  # Единый источник истины: SERVER_VERSION из config.env
-  default_build: 1.6.0.37  # Единый источник истины: SERVER_BUILD из config.env
+  default_version: 1.6.0.39  # Единый источник истины: SERVER_VERSION из config.env
+  default_build: 1.6.0.39  # Единый источник истины: SERVER_BUILD из config.env
   default_arch: universal2
   default_min_os: 11.0
 
 server:
-  version: 1.6.0.37  # Единый источник истины: SERVER_VERSION из config.env
-  build: 1.6.0.37  # Единый источник истины: SERVER_BUILD из config.env
+  version: 1.6.0.39  # Единый источник истины: SERVER_VERSION из config.env
+  build: 1.6.0.39  # Единый источник истины: SERVER_BUILD из config.env
   channel: stable
 
 logging:
