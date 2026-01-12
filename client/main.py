@@ -56,7 +56,12 @@ CLIENT_ROOT = Path(__file__).parent
 ROOT_DIR = CLIENT_ROOT.parent
 sys.path.insert(0, str(ROOT_DIR))            # Для доступа к корневому 'integration'
 sys.path.insert(0, str(CLIENT_ROOT))         # Для доступа к локальным модулям
-sys.path.insert(0, str(CLIENT_ROOT / "modules"))
+# КРИТИЧНО: client/modules должен быть ПЕРЕД modules, чтобы полная версия GrpcClient загружалась раньше неполной
+if (CLIENT_ROOT / "modules").exists():
+    sys.path.insert(0, str(CLIENT_ROOT / "modules"))  # client/modules (полная версия)
+# Добавляем корневой modules только если нужен для других модулей (низкий приоритет)
+if (ROOT_DIR / "modules").exists():
+    sys.path.insert(0, str(ROOT_DIR / "modules"))  # modules/ (неполная версия, низкий приоритет)
 
 # --- Ранняя инициализация pydub/ffmpeg (до любых вызовов pydub) ---
 def init_ffmpeg_for_pydub():

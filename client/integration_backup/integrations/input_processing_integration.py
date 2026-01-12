@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 import time
+import uuid
 
 # Импорты модулей input_processing
 from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
@@ -18,6 +19,9 @@ from integration.core.state_manager import ApplicationStateManager, AppMode  # t
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
 from integration.core import selectors
 from config.unified_config_loader import InputProcessingConfig
+from integration.utils.resource_path import get_user_data_dir
+import os
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +54,11 @@ class InputProcessingIntegration:
         self._last_short_ts: float = 0.0
         # Текущее состояние gRPC-потока
         self._session_waiting_grpc: bool = False
-        self._active_grpc_session_id: Optional[float] = None
+        self._active_grpc_session_id: Optional[str] = None
         # Подготовленная, но ещё не подтверждённая (LONG_PRESS) сессия
-        self._pending_session_id: Optional[float] = None
+        self._pending_session_id: Optional[str] = None
         # Последний валидный session_id для отмены текущего gRPC/плеера
-        self._cancel_session_id: Optional[float] = None
+        self._cancel_session_id: Optional[str] = None
         # Время начала записи для проверки минимальной длительности
         self._recording_start_time: float = 0.0
         # Минимальная длительность записи
@@ -78,6 +82,8 @@ class InputProcessingIntegration:
         self._mic_monitor_task: Optional[asyncio.Task] = None
         # КРИТИЧНО: Флаг для отмены pending записи при RELEASE до завершения LONG_PRESS
         self._pending_recording_cancelled: bool = False
+        # Флаг для отмены текущего нажатия (short-tap cancel)
+        self._cancelled_this_press: bool = False
         
     async def initialize(self) -> bool:
         """Инициализация input_processing (клавиатура)"""
@@ -156,7 +162,7 @@ class InputProcessingIntegration:
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         # TRACE: начало ввода
         ts_ms = int(time.monotonic() * 1000)
-        pending_session = event.timestamp or time.monotonic()
+        pending_session = self._new_session_id()
         logger.info(f"TRACE phase=input.press ts={ts_ms} session={pending_session} extra={{key={event.key}}}")
         try:
             # КРИТИЧНО: Сбрасываем отмену предыдущей сессии при новом удержании
@@ -182,10 +188,22 @@ class InputProcessingIntegration:
                 logger.debug("PRESS: сохранён session_id для отмены: %s", previous_session)
 
             # Подготавливаем потенциальный новый session_id, но не активируем его до LONG_PRESS
-            self._pending_session_id = event.timestamp or time.monotonic()
+            self._pending_session_id = pending_session
             self._session_recognized = False
             self._recording_started = False
+            self._cancelled_this_press = False  # Сбрасываем флаг отмены при новом нажатии
             logger.debug("PRESS: pending_session_id=%s", self._pending_session_id)
+
+            # КРИТИЧНО: Если playback активен, публикуем interrupt.request для остановки речи
+            if self._playback_active:
+                active_session_id = self._get_active_session_id() or self._active_grpc_session_id
+                await self.event_bus.publish("interrupt.request", {
+                    "type": "speech_stop",
+                    "source": "keyboard",
+                    "timestamp": event.timestamp,
+                    "session_id": active_session_id
+                })
+                logger.info("🛑 PRESS: interrupt.request опубликовано (playback_active=true)")
 
             # Публикуем событие press чтобы другие модули (например VoiceOver) могли отреагировать мгновенно
             logger.info(f"🔑 [INPUT] Публикую keyboard.press событие...")
@@ -334,6 +352,7 @@ class InputProcessingIntegration:
         self._cancel_session_id = None
         self._recording_start_time = 0.0
         self._pending_recording_cancelled = False  # Сбрасываем флаг отмены pending записи
+        self._cancelled_this_press = False  # Сбрасываем флаг отмены текущего нажатия
 
     # ========== МЕТОДЫ-ПОМОЩНИКИ ДЛЯ ПРОВЕРКИ СОСТОЯНИЯ ==========
     # Эти методы упрощают логику проверок и делают код более читаемым.
@@ -356,8 +375,7 @@ class InputProcessingIntegration:
             True если есть активная сессия (из state_manager - единый источник истины)
         """
         # Используем state_manager как единый источник истины
-        session_id = self.state_manager.get_current_session_id()
-        return session_id is not None
+        return selectors.get_current_session_id(self.state_manager) is not None
     
     def _should_stop_recording(self) -> bool:
         """
@@ -368,24 +386,16 @@ class InputProcessingIntegration:
         """
         return self._is_recording_active() or self._has_active_session()
     
-    def _get_active_session_id(self) -> Optional[float]:
+    def _get_active_session_id(self) -> Optional[str]:
         """
         Получить активный session_id из state_manager (единый источник истины).
         
         Returns:
-            Активный session_id или None (конвертируется в float для совместимости)
+            Активный session_id или None.
         """
-        # Используем state_manager как единый источник истины
-        session_id = self.state_manager.get_current_session_id()
-        if session_id is not None:
-            # Конвертируем в float для совместимости (state_manager хранит строки)
-            try:
-                return float(session_id)
-            except (ValueError, TypeError):
-                return None
-        return None
+        return selectors.get_current_session_id(self.state_manager)
     
-    def _set_session_id(self, session_id: Optional[float], reason: str = "unknown"):
+    def _set_session_id(self, session_id: Optional[str], reason: str = "unknown"):
         """
         Установить session_id в state_manager (единый источник истины).
         
@@ -393,20 +403,18 @@ class InputProcessingIntegration:
         Локальная переменная _current_session_id удалена - все через state_manager.
         
         Args:
-            session_id: Session ID для установки (может быть float или None)
+            session_id: Session ID для установки (uuid4 или None)
             reason: Причина установки (для логирования)
         """
         # Устанавливаем в state_manager (единый источник истины)
         if session_id is not None:
-            # Конвертируем в строку для state_manager (он хранит строки)
-            session_id_str = str(session_id)
             # Обновляем state_manager только если session_id изменился
             current_state_session = self.state_manager.get_current_session_id()
-            if current_state_session != session_id_str:
+            if current_state_session != session_id:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
-                self.state_manager.update_session_id(session_id_str)
-                logger.debug(f"🔄 Session ID синхронизирован с state_manager: {session_id_str} (reason: {reason})")
+                self.state_manager.update_session_id(session_id)
+                logger.debug(f"🔄 Session ID синхронизирован с state_manager: {session_id} (reason: {reason})")
         else:
             # Сбрасываем session_id в state_manager только если он был установлен
             if self.state_manager.get_current_session_id() is not None:
@@ -414,6 +422,10 @@ class InputProcessingIntegration:
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
                 self.state_manager.update_session_id(None)
                 logger.debug(f"🔄 Session ID сброшен в state_manager (reason: {reason})")
+
+    def _new_session_id(self) -> str:
+        """Создает новый session_id (uuid4)."""
+        return str(uuid.uuid4())
 
     async def _on_grpc_completed(self, event):
         """Сбрасывает сессию при штатном завершении gRPC."""
@@ -777,6 +789,16 @@ class InputProcessingIntegration:
             if not self.is_initialized:
                 logger.warning("⚠️ input_processing не инициализирован")
                 return False
+            
+            # GUARD: Проверка разрешений
+            # Если нет флага permissions_granted.flag и мы не в тест-режиме - не запускаем мониторинг
+            # Это предотвращает дублирование системных диалогов (Source of Truth: FirstRunPermissions)
+            flag_file = get_user_data_dir("Nexy") / "permissions_granted.flag"
+            test_mode = os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1"
+            
+            if not flag_file.exists() and not test_mode:
+                logger.warning("⛔ [INPUT] Permissions flag not found (degraded mode), skipping start_monitoring()")
+                return True
                 
             # Запуск мониторинга клавиатуры
             if self.keyboard_monitor:
@@ -1014,8 +1036,14 @@ class InputProcessingIntegration:
             # ЗАЩИТА 1: Отменяем pending session при SHORT_PRESS БЕЗ записи
             # КРИТИЧНО: interrupt.request и grpc.request_cancel публикуются внутри _handle_short_tap_cancel
             if self._pending_session_id is not None and not self._recording_started:
+                # КРИТИЧНО: Устанавливаем флаг отмены перед вызовом централизованной логики
+                self._cancelled_this_press = True
+                
                 # КРИТИЧНО: Используем централизованную логику отмены
                 await self._handle_short_tap_cancel(event, reason="short_press_reset")
+                
+                # КРИТИЧНО: Сбрасываем флаг отмены после завершения cancel-ветки
+                self._cancelled_this_press = False
                 
                 # Публикуем событие отмены для других модулей
                 await self.event_bus.publish(
@@ -1127,8 +1155,14 @@ class InputProcessingIntegration:
             # Если запись НЕ велась - это настоящий короткий tap для отмены
             await self._ensure_playback_idle(for_recording=False)
             
+            # КРИТИЧНО: Устанавливаем флаг отмены перед вызовом централизованной логики
+            self._cancelled_this_press = True
+            
             # КРИТИЧНО: Используем централизованную логику отмены
             await self._handle_short_tap_cancel(event, reason="user_cancel")
+            
+            # КРИТИЧНО: Сбрасываем флаг отмены после завершения cancel-ветки
+            self._cancelled_this_press = False
             
         except Exception as e:
             await self.error_handler.handle_error(
@@ -1149,15 +1183,19 @@ class InputProcessingIntegration:
             print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
             print(f"🔑 LONG_PRESS: event.key={event.key}, event.timestamp={event.timestamp}")  # Для отладки
             
-            # КРИТИЧНО: Всегда публикуем interrupt.request в начале обработки
-            active_session_id = self._get_active_session_id() or self._active_grpc_session_id
-            await self.event_bus.publish("interrupt.request", {
-                "type": "speech_stop",
-                "source": "keyboard",
-                "timestamp": event.timestamp,
-                "session_id": active_session_id  # может быть None
-            })
-            logger.info("🛑 LONG_PRESS: interrupt.request опубликовано")
+            # КРИТИЧНО: Инициализируем active_session_id перед использованием
+            active_session_id = None
+            
+            # КРИТИЧНО: Всегда публикуем interrupt.request в начале обработки (если playback активен или есть активная сессия)
+            if self._playback_active or self._get_active_session_id() or self._active_grpc_session_id:
+                active_session_id = self._get_active_session_id() or self._active_grpc_session_id
+                await self.event_bus.publish("interrupt.request", {
+                    "type": "speech_stop",
+                    "source": "keyboard",
+                    "timestamp": event.timestamp,
+                    "session_id": active_session_id  # может быть None
+                })
+                logger.info("🛑 LONG_PRESS: interrupt.request опубликовано (playback_active=%s)", self._playback_active)
             
             # Если есть session_id, отменяем gRPC запрос
             if active_session_id is not None:
@@ -1173,7 +1211,7 @@ class InputProcessingIntegration:
             # ЗАЩИТА 2: Если pending_session отсутствует, создаем новый (чтобы длинное нажатие не терялось)
             if self._pending_session_id is None:
                 logger.info("⚠️ LONG_PRESS пришел БЕЗ pending_session - создаем новый")
-                self._pending_session_id = event.timestamp or time.monotonic()
+                self._pending_session_id = self._new_session_id()
 
             # ЗАЩИТА 3: Проверяем, что клавиша ЕЩЕ нажата (дополнительная проверка)
             if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
@@ -1218,7 +1256,7 @@ class InputProcessingIntegration:
                     return
             
             # На LONG_PRESS стартуем запись и переходим в LISTENING (push-to-talk)
-            new_session_id = self._pending_session_id or event.timestamp or time.monotonic()
+            new_session_id = self._pending_session_id or self._new_session_id()
             # Полностью очищаем предыдущее состояние перед новой записью
             self._reset_session("long_press_start")
             # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
@@ -1290,6 +1328,13 @@ class InputProcessingIntegration:
             # НЕ публикуем keyboard.release - это создает бесконечный цикл!
             # Событие обрабатывается напрямую от QuartzKeyboardMonitor
 
+            # КРИТИЧНО: Если нажатие было отменено (short-tap cancel), не публикуем voice.recording_stop и mode.request(PROCESSING)
+            if self._cancelled_this_press:
+                logger.info("🛑 RELEASE: cancelled_this_press=true - пропускаем voice.recording_stop и mode.request(PROCESSING)")
+                # Сбрасываем флаг отмены после использования
+                self._cancelled_this_press = False
+                return  # Выходим, не публикуя события
+            
             # КРИТИЧНО: Гарантируем остановку микрофона при RELEASE, даже если _recording_started == False
             # Это защищает от залипания микрофона при race conditions
             was_recording = self._recording_started  # Сохраняем состояние ДО обработки
@@ -1368,12 +1413,20 @@ class InputProcessingIntegration:
             is_combo = event.key == "ctrl_n" if hasattr(event, 'key') else False
             long_press_threshold = self.config.keyboard.long_press_threshold if hasattr(self.config, 'keyboard') and self.config.keyboard else 0.6
             
+            # КРИТИЧНО: Cancel-ветка выполняется ТОЛЬКО для short-tap (не для long-press)
             # Если запись не началась и длительность меньше порога → это "short tap" (отмена)
             if is_combo and not was_recording and event.duration and event.duration < long_press_threshold:
                 logger.info(f"🔑 RELEASE: короткий tap (duration={event.duration:.3f}s < {long_press_threshold}s) → отмена и переход в SLEEPING")
                 
+                # КРИТИЧНО: Устанавливаем флаг отмены перед вызовом централизованной логики
+                self._cancelled_this_press = True
+                
                 # КРИТИЧНО: Используем централизованную логику отмены
                 await self._handle_short_tap_cancel(event, reason="short_tap_cancel")
+                
+                # КРИТИЧНО: Сбрасываем флаг отмены после завершения cancel-ветки
+                self._cancelled_this_press = False
+                
                 return  # Выходим, не переходя в PROCESSING
 
             # Переходим в PROCESSING только если запись велась; иначе остаёмся в текущем режиме (обычно SLEEPING)

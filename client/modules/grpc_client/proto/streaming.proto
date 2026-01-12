@@ -20,8 +20,8 @@ message StreamRequest {
   optional string screenshot = 2;       // Base64 WebP скриншот экрана (опционально)
   optional int32 screen_width = 3;     // Ширина экрана
   optional int32 screen_height = 4;    // Высота экрана
-  string hardware_id = 5;      // Уникальный Hardware ID оборудования (обязательно)
-  optional string session_id = 6;      // ID сессии для отслеживания (опционально)
+  string hardware_id = 5;      // REQUIRED: Уникальный Hardware ID оборудования (не может быть пустым или "unknown")
+  string session_id = 6;      // REQUIRED: ID сессии для отслеживания (обязателен с 2026-01-12, см. CHANGELOG.md)
 }
 
 // Ответ стриминга

@@ -1,7 +1,7 @@
 {
     "workspace": "client",
     "id_prefix": "CLI",
-    "next_id": 4,
+    "next_id": 5,
     "tasks": [
         {
             "id": "CLI-001",
@@ -40,6 +40,19 @@
             "modified_by": "Antigravity",
             "updated_at": "2026-01-11T10:50:00-05:00",
             "description": "## Цель\n\nПроверить полный цикл первого запуска.\n\n## Test Scenarios\n\n- [ ] Fresh install from PKG\n- [ ] Permission requests flow\n- [ ] Restart after permissions\n- [ ] TAL hold verification\n- [ ] First voice command\n\n## Definition of Done\n\nПриложение работает после первой установки."
+        },
+        {
+            "id": "CLI-004",
+            "epicId": "EPIC-MVP",
+            "title": "Harden session_id validation in client state/gRPC",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-12T12:29:44-05:00",
+            "description": "## Цель\n\nЦентрализовать валидацию session_id в клиентском Source of Truth и защитить gRPC отправку от невалидных значений.\n\n## Definition of Done\n\n- session_id валидируется в ApplicationStateManager\n- gRPC не падает на нестроковом session_id\n",
+            "file_path": "integration/core/state_manager.py"
         }
     ]
 }

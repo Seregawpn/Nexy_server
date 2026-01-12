@@ -1,7 +1,7 @@
 {
     "meta": {
         "version": "2.1.0",
-        "updated_at": "2026-01-11T21:12:37.708190",
+        "updated_at": "2026-01-12T13:01:22.513112",
         "revision": 1,
         "smoke_test": 2
     },
@@ -115,15 +115,16 @@
         {
             "id": "SRV-001",
             "epicId": "EPIC-MVP",
-            "title": "Example Server Task",
-            "status": "plan",
-            "priority": "P2",
-            "owner": "ServerAssistant",
-            "description": "Template task. Replace or delete.",
-            "updated_at": "2026-01-05T19:08:00-05:00",
+            "title": "Validate session_id on gRPC server boundary",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "server",
+            "description": "## Цель\n\nОтклонять невалидный session_id на входе StreamAudio с корректным логом.\n\n## Definition of Done\n\n- сервер валидирует uuid4 session_id\n- невалидный session_id возвращает INVALID_ARGUMENT\n",
+            "updated_at": "2026-01-12T12:29:44-05:00",
             "workspace": "server",
-            "created_by": "Antigravity",
-            "modified_by": "Antigravity"
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "file_path": "server/modules/grpc_service/core/grpc_server.py"
         },
         {
             "id": "NEXY-003",
@@ -301,6 +302,20 @@
             "updated_at": "2026-01-11T10:50:00-05:00",
             "description": "## Цель\n\nПроверить полный цикл первого запуска.\n\n## Test Scenarios\n\n- [ ] Fresh install from PKG\n- [ ] Permission requests flow\n- [ ] Restart after permissions\n- [ ] TAL hold verification\n- [ ] First voice command\n\n## Definition of Done\n\nПриложение работает после первой установки.",
             "workspace": "client"
+        },
+        {
+            "id": "CLI-004",
+            "epicId": "EPIC-MVP",
+            "title": "Harden session_id validation in client state/gRPC",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-12T12:29:44-05:00",
+            "description": "## Цель\n\nЦентрализовать валидацию session_id в клиентском Source of Truth и защитить gRPC отправку от невалидных значений.\n\n## Definition of Done\n\n- session_id валидируется в ApplicationStateManager\n- gRPC не падает на нестроковом session_id\n",
+            "file_path": "integration/core/state_manager.py",
+            "workspace": "client"
         }
     ],
     "releases": [],
@@ -344,14 +359,14 @@
                 "testing": 0
             },
             "client": {
-                "in_progress": 0,
+                "in_progress": 1,
                 "testing": 0
             },
             "server": {
-                "in_progress": 0,
+                "in_progress": 1,
                 "testing": 0
             }
         },
-        "last_sync_at": "2026-01-11T21:12:37.708153"
+        "last_sync_at": "2026-01-12T13:01:22.513073"
     }
 }

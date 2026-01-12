@@ -17,7 +17,7 @@ from typing import Optional, Dict, Any
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
-from integration.core.selectors import get_current_mode, get_current_session_id
+from integration.core.selectors import get_current_mode, get_current_session_id, is_valid_session_id
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -187,6 +187,12 @@ class ModeManagementIntegration:
             priority = int(data.get("priority", 0))
             source = str(data.get("source", "unknown"))
             session_id = data.get("session_id")
+            if session_id is not None and not is_valid_session_id(session_id):
+                logger.warning(f"MODE_REQUEST: invalid session_id ignored: {session_id} (type={type(session_id)})")
+                session_id = None
+            if session_id is not None and source != "input_processing":
+                logger.info(f"MODE_REQUEST: session_id ignored for non-writer source={source}")
+                session_id = None
 
             # Фильтрация по сессии (в PROCESSING принимаем только текущую либо interrupt)
             # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа

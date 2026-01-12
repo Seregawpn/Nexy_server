@@ -186,24 +186,16 @@ class VoiceRecognitionIntegration:
         session_id = self.state_manager.get_current_session_id()
         return session_id is not None
     
-    def _get_active_session_id(self) -> Optional[float]:
+    def _get_active_session_id(self) -> Optional[str]:
         """
         Получить активный session_id из state_manager (единый источник истины).
         
         Returns:
-            Активный session_id или None (конвертируется в float для совместимости)
+            Активный session_id или None.
         """
-        # Используем state_manager как единый источник истины
-        session_id = self.state_manager.get_current_session_id()
-        if session_id is not None:
-            # Конвертируем в float для совместимости (state_manager хранит строки)
-            try:
-                return float(session_id)
-            except (ValueError, TypeError):
-                return None
-        return None
+        return selectors.get_current_session_id(self.state_manager)
     
-    def _set_session_id(self, session_id: Optional[float], reason: str = "unknown"):
+    def _set_session_id(self, session_id: Optional[str], reason: str = "unknown"):
         """
         Установить session_id в state_manager (единый источник истины).
         
@@ -211,20 +203,18 @@ class VoiceRecognitionIntegration:
         Локальная переменная _current_session_id удалена - все через state_manager.
         
         Args:
-            session_id: Session ID для установки (может быть float или None)
+            session_id: Session ID для установки (uuid4 или None)
             reason: Причина установки (для логирования)
         """
         # Устанавливаем в state_manager (единый источник истины)
         if session_id is not None:
-            # Конвертируем в строку для state_manager (он хранит строки)
-            session_id_str = str(session_id)
             # Обновляем state_manager только если session_id изменился
             current_state_session = self.state_manager.get_current_session_id()
-            if current_state_session != session_id_str:
+            if current_state_session != session_id:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
-                self.state_manager.update_session_id(session_id_str)
-                logger.debug(f"🔄 [VOICE] Session ID синхронизирован с state_manager: {session_id_str} (reason: {reason})")
+                self.state_manager.update_session_id(session_id)
+                logger.debug(f"🔄 [VOICE] Session ID синхронизирован с state_manager: {session_id} (reason: {reason})")
         else:
             # Сбрасываем session_id в state_manager только если он был установлен
             if self.state_manager.get_current_session_id() is not None:
@@ -400,7 +390,7 @@ class VoiceRecognitionIntegration:
     # NOTE: _on_first_run_started and _on_first_run_completed removed
     # State is now checked via selectors.is_first_run_in_progress() directly
 
-    async def _start_recognition(self, session_id: float):
+    async def _start_recognition(self, session_id: str):
         # Публикуем старт распознавания
         await self.event_bus.publish("voice.recognition_started", {
             "session_id": session_id,

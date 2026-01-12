@@ -215,8 +215,22 @@ class GrpcClient:
         """Проверяет, подключен ли клиент"""
         return self.connection_manager.is_connected()
     
-    async def stream_audio(self, prompt: str, screenshot_base64: str, screen_info: dict, hardware_id: str) -> AsyncGenerator[Any, None]:
-        """Стриминг аудио и текста на сервер"""
+    async def stream_audio(self, prompt: str, screenshot_base64: str, screen_info: dict, hardware_id: str, session_id: str) -> AsyncGenerator[Any, None]:
+        """Стриминг аудио и текста на сервер
+        
+        Args:
+            prompt: Текстовая команда пользователя
+            screenshot_base64: Base64-кодированный скриншот
+            screen_info: Информация о размере экрана (dict с 'width' и 'height' или объект с атрибутами)
+            hardware_id: Уникальный Hardware ID оборудования
+            session_id: ID сессии (обязателен, единственный источник истины - ApplicationStateManager)
+        """
+        # КРИТИЧНО: Fail-fast проверка session_id
+        if not session_id or not session_id.strip():
+            error_msg = "session_id is required and must be provided (Source of Truth: ApplicationStateManager)"
+            logger.error(f"❌ [gRPC] {error_msg}")
+            raise ValueError(error_msg)
+        
         try:
             logger.info(f"🔍 screen_info type: {type(screen_info)}")
             logger.info(f"🔍 screen_info content: {screen_info}")
@@ -248,7 +262,7 @@ class GrpcClient:
                 screen_width=screen_width,
                 screen_height=screen_height,
                 hardware_id=hardware_id,
-                session_id=None
+                session_id=session_id  # КРИТИЧНО: передаем session_id из ApplicationStateManager
             )
             
             # Выполняем стриминг

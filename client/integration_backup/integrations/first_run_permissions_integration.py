@@ -98,6 +98,7 @@ class FirstRunPermissionsIntegration:
         self._initialized = False
         self._running = False
         self.detected_bundle_id: Optional[str] = None
+        self._are_all_granted = False
 
     def _load_configuration(self):
         """Загрузка конфигурации из unified_config.yaml"""
@@ -142,6 +143,11 @@ class FirstRunPermissionsIntegration:
                 completed=self.flag_file.exists(),
                 in_progress=False
             )
+            
+            # Инициализируем статус на основе флага
+            if self.flag_file.exists():
+                self._are_all_granted = True
+            
             
             self._initialized = True
             logger.info("✅ [PERMISSIONS] Initialized")
@@ -195,6 +201,7 @@ class FirstRunPermissionsIntegration:
             return True
 
         self._running = True
+        self._are_all_granted = False  # Сбрасываем статус, чтобы гарантировать актуальную проверку
         session_id = str(uuid.uuid4())[:8]
         start_time = time.time()
 
@@ -213,6 +220,7 @@ class FirstRunPermissionsIntegration:
             if self._all_granted(initial_statuses):
                 logger.info(f"✅ [PERMISSIONS] session={session_id} All permissions granted")
                 self._touch_flag()
+                self._are_all_granted = True
                 await self._publish_completed(session_id, all_granted=True)
                 return True
 
@@ -261,6 +269,7 @@ class FirstRunPermissionsIntegration:
             if all_granted:
                 logger.info(f"✅ [PERMISSIONS] session={session_id} All granted, no restart needed")
                 self._touch_flag()
+                self._are_all_granted = True
                 await self._publish_completed(session_id, all_granted=True)
                 return True
 
@@ -487,6 +496,18 @@ class FirstRunPermissionsIntegration:
             "all_granted": all_granted,
             "missing": missing or []
         })
+
+    @property
+    def are_all_granted(self) -> bool:
+        """
+        Возвращает True, если все обязательные разрешения получены.
+        Также возвращает True, если проверка отключена в конфиге или находимся в тестовом режиме.
+        """
+        if not self.enabled:
+            return True
+        if os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1":
+            return True
+        return self._are_all_granted
 
     # -------------------------------------------------------------------------
     # Deprecated методы (для обратной совместимости)

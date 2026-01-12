@@ -12,6 +12,7 @@ import base64
 import concurrent.futures
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Dict, Any, Optional, Set, Union
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core import selectors
 
 from config.unified_config_loader import UnifiedConfigLoader
 
@@ -63,18 +65,36 @@ class GrpcClientIntegration:
             try:
                 uc = UnifiedConfigLoader.get_instance()
                 cfg = (uc._load_config().get('integrations', {}) or {}).get('grpc_client', {})
+                server_name = str(cfg.get('server', 'production'))
+                
+                # Переопределение через переменную окружения (для отладки)
+                env_server = os.environ.get('NEXY_GRPC_SERVER')
+                if env_server:
+                    server_name = env_server
+                    logger.info(f"🔌 [CONFIG] Сервер переопределен через NEXY_GRPC_SERVER: '{server_name}'")
+                else:
+                    logger.info(f"🔌 [CONFIG] Загружен сервер из конфига: '{server_name}' (из unified_config.yaml)")
+                
                 config = GrpcClientIntegrationConfig(
                     aggregate_timeout_sec=float(cfg.get('aggregate_timeout_sec', 0.0)),  # Default 0
                     request_timeout_sec=float(cfg.get('request_timeout_sec', 30.0)),
                     max_retries=int(cfg.get('max_retries', 3)),
                     retry_delay_sec=float(cfg.get('retry_delay', 1.0)),
-                    server=str(cfg.get('server', 'production')),
+                    server=server_name,
                     use_network_gate=bool(cfg.get('use_network_gate', True)),
                 )
             except Exception as e:
                 logger.warning(f"⚠️ Ошибка загрузки конфигурации gRPC, используем defaults: {e}")
                 config = GrpcClientIntegrationConfig()
+                # Проверяем переменную окружения даже при ошибке загрузки конфига
+                env_server = os.environ.get('NEXY_GRPC_SERVER')
+                if env_server:
+                    config.server = env_server
+                    logger.info(f"🔌 [CONFIG] Сервер переопределен через NEXY_GRPC_SERVER: '{config.server}'")
+                else:
+                    logger.info(f"🔌 [CONFIG] Используется дефолтный сервер: '{config.server}'")
         self.config = config
+        logger.info(f"🔌 [CONFIG] Итоговый выбранный сервер для gRPC: '{self.config.server}' (local=127.0.0.1:50051, production=20.63.24.187:443)")
 
         # gRPC клиент
         self._client: Optional[GrpcClient] = None
@@ -484,6 +504,11 @@ class GrpcClientIntegration:
         text = sess.get('text')
         if not text:
             return
+
+        if not selectors.is_valid_session_id(session_id):
+            logger.error(f"Invalid session_id for gRPC request: {session_id!r}")
+            await self.event_bus.publish("grpc.request_failed", {"session_id": None, "error": "invalid_session_id"})
+            return
         
         # Получаем hardware_id
         hwid = await self._await_hardware_id(timeout_ms=3000)
@@ -543,16 +568,22 @@ class GrpcClientIntegration:
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "client_not_initialized"})
             return
         
+        # Инициализируем счетчики перед try для доступа в except блоках
+        got_terminal = False
+        chunk_count = 0
+        audio_chunk_count = 0
+        text_chunk_count = 0
+        exit_reason = None
+        first_chunk_ts = None
+        
         try:
             logger.info(f"Starting gRPC stream for session {session_id} with prompt: '{text[:50]}...'")
-            got_terminal = False
-            chunk_count = 0
-            first_chunk_ts = None
             async for resp in self._client.stream_audio(
                 prompt=text,
                 screenshot_base64=screenshot_b64 or "",
                 screen_info={"width": width, "height": height},
                 hardware_id=hwid,
+                session_id=session_id,
             ):
                 chunk_count += 1
                 
@@ -581,6 +612,7 @@ class GrpcClientIntegration:
                 # Обрабатываем СТРОГО по типу oneof
                 if which_oneof == 'text_chunk':
                     text = resp.text_chunk
+                    text_chunk_count += 1
                     logger.info(f"gRPC received text_chunk len={len(text)} for session {session_id}")
                     
                     # Проверяем префикс __MCP__ для MCP команд
@@ -667,6 +699,9 @@ class GrpcClientIntegration:
                         )
                         continue  # Drop chunk - жесткий контракт
                     
+                    # Инкрементируем счетчик только после всех проверок (валидный непустой чанк)
+                    audio_chunk_count += 1
+                    
                     # Используем значения из чанка
                     effective_sr = chunk_sr
                     effective_ch = chunk_ch
@@ -686,6 +721,7 @@ class GrpcClientIntegration:
 
                 elif which_oneof == 'end_message':
                     end_msg = resp.end_message
+                    exit_reason = "end_message"
                     logger.info(f"gRPC received end_message: '{end_msg}' for session {session_id}")
                     await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
                     got_terminal = True
@@ -693,6 +729,7 @@ class GrpcClientIntegration:
 
                 elif which_oneof == 'error_message':
                     err_msg = resp.error_message
+                    exit_reason = "error_message"
                     logger.error(f"gRPC received error_message: '{err_msg}' for session {session_id}")
                     await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": err_msg})
                     got_terminal = True
@@ -700,18 +737,51 @@ class GrpcClientIntegration:
 
                 else:
                     logger.warning(f"⚠️ Unknown response type: which_oneof={which_oneof}")
+            
+            # Логируем финальный summary для диагностики
+            had_audio = audio_chunk_count > 0
+            had_text = text_chunk_count > 0
+            
             # Если стрим завершился БЕЗ явного end_message/error — завершаем запрос сами,
             # чтобы UI не зависал в состоянии PROCESSING.
             if not got_terminal:
+                exit_reason = "stream_closed_no_terminal"
                 await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
+            
+            # Логируем exit-reason и summary
+            logger.info(
+                f"🔍 [GRPC_END] session={session_id} exit_reason={exit_reason} "
+                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
+                f"had_audio={had_audio}, had_text={had_text}}}"
+            )
         except asyncio.CancelledError:
             # Тихо выходим при отмене; событие могло быть опубликовано ранее
+            exit_reason = "cancelled"
             if session_id not in self._cancel_notified:
                 self._cancel_notified.add(session_id)
                 await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "cancelled"})
+            
+            # Логируем summary даже при отмене
+            had_audio = audio_chunk_count > 0
+            had_text = text_chunk_count > 0
+            logger.info(
+                f"🔍 [GRPC_END] session={session_id} exit_reason={exit_reason} "
+                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
+                f"had_audio={had_audio}, had_text={had_text}}}"
+            )
         except Exception as e:
+            exit_reason = "exception"
+            had_audio = audio_chunk_count > 0
+            had_text = text_chunk_count > 0
             await self._handle_error(e, where="grpc.stream_audio", severity="warning")
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": str(e)})
+            
+            # Логируем summary даже при исключении
+            logger.info(
+                f"🔍 [GRPC_END] session={session_id} exit_reason={exit_reason} error={str(e)} "
+                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
+                f"had_audio={had_audio}, had_text={had_text}}}"
+            )
 
     # ---------------- Utilities ----------------
     async def _ensure_connected(self) -> bool:

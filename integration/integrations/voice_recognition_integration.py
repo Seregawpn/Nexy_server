@@ -81,6 +81,22 @@ class VoiceRecognitionIntegration:
         # Если распознавание завершилось при активном PTT — публикацию откладываем до RELEASE
         self._defer_result_until_stop: bool = False
 
+        # КРИТИЧНО: Захватываем event loop для thread-safe публикации результатов GoogleSR
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        try:
+            self._event_loop = getattr(event_bus, '_loop', None)
+            if self._event_loop is None:
+                try:
+                    self._event_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+            if self._event_loop:
+                logger.debug(f"✅ [VOICE] Event loop captured for thread-safe publishing: {id(self._event_loop)}")
+            else:
+                logger.warning("⚠️ [VOICE] No event loop available - thread-safe publishing may fail")
+        except Exception as e:
+            logger.warning(f"⚠️ [VOICE] Failed to capture event loop: {e}")
+
     @classmethod
     def run_dependency_check(cls) -> bool:
         """
@@ -253,50 +269,28 @@ class VoiceRecognitionIntegration:
     
     def _set_session_id(self, session_id: Optional[str], reason: str = "unknown"):
         """
-        Установить session_id в state_manager (единый источник истины).
-        
-        КРИТИЧНО: Используем state_manager как единственный источник истины.
-        Локальная переменная _current_session_id удалена - все через state_manager.
+        КРИТИЧНО: voice_recognition НЕ является писателем session_id.
+        Единственный писатель - InputProcessingIntegration.
+        Этот метод оставлен только для обратной совместимости, но НЕ обновляет state_manager.
         
         Args:
-            session_id: Session ID для установки (строка uuid4 или None)
-            reason: Причина установки (для логирования)
+            session_id: Session ID (только для логирования)
+            reason: Причина (для логирования)
         """
-        # Устанавливаем в state_manager (единый источник истины)
+        # КРИТИЧНО: voice_recognition НЕ пишет session_id в state_manager
+        # Единственный писатель - InputProcessingIntegration
+        # Только логируем для отладки
         if session_id is not None:
-            # КРИТИЧНО: Нормализуем session_id к валидному uuid4 формату
-            # Если невалидно - используем текущий из state_manager для сохранения корреляции
             normalized_session_id = self._normalize_session_id(session_id)
             if normalized_session_id is None:
-                # Не генерируем новый - используем текущий из state_manager для сохранения корреляции
-                # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
-                current_session = get_current_session_id(self.state_manager)
-                if current_session is not None:
                     logger.warning(
-                        f"⚠️ [VOICE] Invalid session_id: {session_id}. "
-                        f"Using current session from state_manager: {current_session} to preserve correlation."
+                    f"⚠️ [VOICE] Invalid session_id: {session_id} (reason: {reason}). "
+                    f"Voice recognition is not a writer of session_id - ignoring."
                     )
-                    return  # Оставляем текущий session_id
-                else:
-                    logger.error(f"❌ [VOICE] Failed to normalize session_id: {session_id}. No current session to fallback.")
                     return
-            
-            # Обновляем state_manager только если session_id изменился
-            # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
-            current_state_session = get_current_session_id(self.state_manager)
-            if current_state_session != normalized_session_id:
-                # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
-                # Это предотвращает ложные прерывания в ProcessingWorkflow
-                self.state_manager.update_session_id(normalized_session_id)
-                logger.debug(f"🔄 [VOICE] Session ID синхронизирован с state_manager: {normalized_session_id} (reason: {reason})")
+            logger.debug(f"🔄 [VOICE] Session ID получен (не записываем): {normalized_session_id} (reason: {reason})")
         else:
-            # Сбрасываем session_id в state_manager только если он был установлен
-            # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
-            if get_current_session_id(self.state_manager) is not None:
-                # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
-                # Это предотвращает ложные прерывания в ProcessingWorkflow
-                self.state_manager.update_session_id(None)
-                logger.debug(f"🔄 [VOICE] Session ID сброшен в state_manager (reason: {reason})")
+            logger.debug(f"🔄 [VOICE] Session ID сброшен (не записываем) (reason: {reason})")
 
     # События записи
     async def _on_recording_start(self, event: Dict[str, Any]):
@@ -317,7 +311,8 @@ class VoiceRecognitionIntegration:
             else:
                 data = event
             session_id = data.get("session_id")
-            # Началась запись — фиксируем сессию
+            # Началась запись — фиксируем сессию (только для внутреннего состояния)
+            # КРИТИЧНО: НЕ записываем session_id в state_manager - единственный писатель InputProcessingIntegration
             self._set_session_id(session_id, reason="recording_start")
             self._recording_active = True
             
@@ -347,6 +342,7 @@ class VoiceRecognitionIntegration:
                         logger.error(f"❌ [AUDIO] GoogleSRController failed to start (returned False)")
                         # Fallback to simulation
                         self._recording_active = False
+                        # КРИТИЧНО: НЕ записываем session_id в state_manager - единственный писатель InputProcessingIntegration
                         self._set_session_id(None, reason="start_failed")
                         await self.event_bus.publish("voice.recognition_failed", {
                             "session_id": session_id,
@@ -359,6 +355,7 @@ class VoiceRecognitionIntegration:
                     logger.error(traceback.format_exc())
                     
                     self._recording_active = False
+                    # КРИТИЧНО: НЕ записываем session_id в state_manager - единственный писатель InputProcessingIntegration
                     self._set_session_id(None, reason="start_error")
                     await self.event_bus.publish("voice.recognition_failed", {
                         "session_id": session_id,
@@ -440,6 +437,7 @@ class VoiceRecognitionIntegration:
             if self._google_sr_controller:
                 self._google_sr_controller.cancel_listening()
                 
+            # КРИТИЧНО: НЕ записываем session_id в state_manager - единственный писатель InputProcessingIntegration
             self._set_session_id(None, reason="cancel_requested")
             self._recording_active = False
         except Exception as e:
@@ -628,21 +626,45 @@ class VoiceRecognitionIntegration:
     def _on_sr_v2_completed(self, result: "GoogleSRResult") -> None:
         """Callback when v2 controller completes recognition."""
         try:
+            import time
+            callback_start_ts = time.monotonic()
             session_id = getattr(self, '_v2_current_session_id', None)
-            logger.info(f"✅ [AUDIO_V2] Recognition completed: {result.text[:50] if result.text else '(empty)'}...")
+            logger.info(f"✅ [AUDIO_V2] Recognition completed: {result.text[:50] if result.text else '(empty)'}... (callback_start_ts={callback_start_ts:.3f})")
             
-            # Publish event via asyncio (we're in a thread)
+            # КРИТИЧНО: Thread-safe публикация через захваченный event loop
+            # НЕ блокируем поток распознавания - используем add_done_callback для отслеживания
             import asyncio
-            # Use the loop from EventBus if available, or try to get running loop
-            loop = getattr(self.event_bus, '_loop', None)
+            loop = self._event_loop or getattr(self.event_bus, '_loop', None)
             
             if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(
+                try:
+                    future = asyncio.run_coroutine_threadsafe(
                     self._publish_v2_completed(session_id, result),
                     loop
                 )
+                    # КРИТИЧНО: НЕ блокируем поток - используем callback для отслеживания результата
+                    def _on_publish_done(fut):
+                        try:
+                            callback_end_ts = time.monotonic()
+                            callback_duration_ms = (callback_end_ts - callback_start_ts) * 1000
+                            # Проверяем результат без блокировки
+                            if fut.exception() is not None:
+                                logger.warning(f"⚠️ [AUDIO_V2] Publish failed: {fut.exception()} (callback_duration={callback_duration_ms:.1f}ms)")
+                            else:
+                                logger.debug(f"✅ [AUDIO_V2] Publish completed successfully (callback_duration={callback_duration_ms:.1f}ms, non-blocking)")
+                        except Exception as e:
+                            logger.warning(f"⚠️ [AUDIO_V2] Error in publish done callback: {e}")
+                    future.add_done_callback(_on_publish_done)
+                    # Верификация: логируем, что callback не блокирует (публикация запланирована, но не ждем)
+                    logger.debug(f"✅ [AUDIO_V2] Publish scheduled (non-blocking), callback_duration_so_far={(time.monotonic() - callback_start_ts) * 1000:.1f}ms")
+                except Exception as e:
+                    logger.error(f"❌ [AUDIO_V2] Error scheduling publish: {e}")
+                    # Fallback: логируем и деградируем
+                    logger.warning(f"⚠️ [AUDIO_V2] Degrading: result not published (session_id={session_id})")
             else:
-                logger.error("❌ [AUDIO_V2] No running event loop found to publish result")
+                logger.error("❌ [AUDIO_V2] No running event loop found to publish result - degrading")
+                # Fallback: логируем и деградируем
+                logger.warning(f"⚠️ [AUDIO_V2] Degrading: result not published (session_id={session_id})")
         except Exception as e:
             # КРИТИЧНО: В callback'е нет доступа к async error_handler, используем logger
             logger.error(f"❌ [AUDIO_V2] Error in completed callback: {e}")
@@ -691,21 +713,45 @@ class VoiceRecognitionIntegration:
     def _on_sr_v2_failed(self, error: str) -> None:
         """Callback when v2 controller fails."""
         try:
+            import time
+            callback_start_ts = time.monotonic()
             session_id = getattr(self, '_v2_current_session_id', None)
-            logger.warning(f"⚠️ [AUDIO_V2] Recognition failed: {error}")
+            logger.warning(f"⚠️ [AUDIO_V2] Recognition failed: {error} (callback_start_ts={callback_start_ts:.3f})")
             
-            # Publish event via asyncio (we're in a thread)
+            # КРИТИЧНО: Thread-safe публикация через захваченный event loop
+            # НЕ блокируем поток распознавания - используем add_done_callback для отслеживания
             import asyncio
-            # Use the loop from EventBus if available
-            loop = getattr(self.event_bus, '_loop', None)
+            loop = self._event_loop or getattr(self.event_bus, '_loop', None)
             
             if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(
+                try:
+                    future = asyncio.run_coroutine_threadsafe(
                     self._publish_v2_failed(session_id, error),
                     loop
                 )
+                    # КРИТИЧНО: НЕ блокируем поток - используем callback для отслеживания результата
+                    def _on_publish_done(fut):
+                        try:
+                            callback_end_ts = time.monotonic()
+                            callback_duration_ms = (callback_end_ts - callback_start_ts) * 1000
+                            # Проверяем результат без блокировки
+                            if fut.exception() is not None:
+                                logger.warning(f"⚠️ [AUDIO_V2] Publish failed: {fut.exception()} (callback_duration={callback_duration_ms:.1f}ms)")
+                            else:
+                                logger.debug(f"✅ [AUDIO_V2] Publish completed successfully (callback_duration={callback_duration_ms:.1f}ms, non-blocking)")
+                        except Exception as e:
+                            logger.warning(f"⚠️ [AUDIO_V2] Error in publish done callback: {e}")
+                    future.add_done_callback(_on_publish_done)
+                    # Верификация: логируем, что callback не блокирует (публикация запланирована, но не ждем)
+                    logger.debug(f"✅ [AUDIO_V2] Publish scheduled (non-blocking), callback_duration_so_far={(time.monotonic() - callback_start_ts) * 1000:.1f}ms")
+                except Exception as e:
+                    logger.error(f"❌ [AUDIO_V2] Error scheduling publish: {e}")
+                    # Fallback: логируем и деградируем
+                    logger.warning(f"⚠️ [AUDIO_V2] Degrading: failure not published (session_id={session_id})")
             else:
-                logger.error("❌ [AUDIO_V2] No running event loop found to publish failure")
+                logger.error("❌ [AUDIO_V2] No running event loop found to publish failure - degrading")
+                # Fallback: логируем и деградируем
+                logger.warning(f"⚠️ [AUDIO_V2] Degrading: failure not published (session_id={session_id})")
         except Exception as e:
             # КРИТИЧНО: В callback'е нет доступа к async error_handler, используем logger
             logger.error(f"❌ [AUDIO_V2] Error in failed callback: {e}")

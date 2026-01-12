@@ -64,6 +64,11 @@ class InterruptManagementIntegration:
         self._initialized = False
         self._running = False
         
+        # КРИТИЧНО: Idempotency guard для подавления дубликатов cancel/interrupt
+        # Используем составной ключ (session_id, interrupt_type, source) для различения разных типов прерываний
+        self._processed_interrupts: Dict[str, float] = {}  # (session_id, interrupt_type, source) -> timestamp
+        self._idempotency_window_sec: float = 0.1  # 100ms окно для подавления дубликатов
+        
         logger.info("InterruptManagementIntegration created")
     
     async def initialize(self) -> bool:
@@ -315,6 +320,33 @@ class InterruptManagementIntegration:
             # Используем selector для чтения session_id вместо прямого доступа
             if session_id is None:
                 session_id = get_current_session_id(self.state_manager)
+            
+            # КРИТИЧНО: Idempotency guard - подавляем дубликаты в коротком окне
+            # Используем составной ключ (session_id, interrupt_type, source) для различения разных типов прерываний
+            if session_id is not None and interrupt_type is not None:
+                import time
+                current_time = time.monotonic()
+                # Составляем составной ключ для различения разных типов прерываний в одной сессии
+                idempotency_key = f"{session_id}:{interrupt_type}:{source}"
+                last_processed = self._processed_interrupts.get(idempotency_key)
+                if last_processed is not None:
+                    time_since_last = current_time - last_processed
+                    if time_since_last < self._idempotency_window_sec:
+                        logger.debug(
+                            f"🛑 InterruptManager: дубликат interrupt.request подавлен "
+                            f"(key={idempotency_key}, time_since_last={time_since_last*1000:.1f}ms < {self._idempotency_window_sec*1000:.1f}ms)"
+                        )
+                        return
+                # Обновляем timestamp для этого составного ключа
+                self._processed_interrupts[idempotency_key] = current_time
+                # Очищаем старые записи (старше 1 секунды)
+                cutoff_time = current_time - 1.0
+                self._processed_interrupts = {
+                    key: ts for key, ts in self._processed_interrupts.items()
+                    if ts > cutoff_time
+                }
+                # Верификация: логируем, что interrupt прошел idempotency guard
+                logger.debug(f"✅ [IDEMPOTENCY] Interrupt passed guard: key={idempotency_key}")
             
             # КРИТИЧНО: Используем selector для логирования вместо прямого доступа
             state_session_id = get_current_session_id(self.state_manager)

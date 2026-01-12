@@ -400,6 +400,14 @@ class SimpleModuleCoordinator:
             import time
             for name in startup_order:
                 if name in self.integrations:
+                    # GATE: Проверка разрешений для зависимых модулей
+                    if name in ["input", "screenshot_capture", "voiceover_ducking"]:
+                        first_run = self.integrations.get("first_run_permissions")
+                        if first_run and not first_run.are_all_granted:
+                            logger.warning(f"⛔ [PERMISSIONS] Skipping {name} start because permissions are not granted")
+                            print(f"⛔ [PERMISSIONS] Пропуск {name} - нет разрешений")
+                            continue
+
                     # GATE: Для tray устанавливаем время старта
                     if name == "tray":
                         self._tray_start_time = time.time()

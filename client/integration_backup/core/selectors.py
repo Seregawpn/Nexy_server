@@ -254,6 +254,18 @@ def is_restart_completed_fallback(state_manager: ApplicationStateManager) -> boo
 # All integrations should use these instead of direct state_manager.get_* calls.
 
 
+def is_valid_session_id(session_id: object) -> bool:
+    """Validate session_id is a uuid4 string."""
+    if not isinstance(session_id, str):
+        return False
+    try:
+        import uuid
+        parsed = uuid.UUID(session_id, version=4)
+        return str(parsed) == session_id
+    except Exception:
+        return False
+
+
 def get_current_session_id(state_manager: ApplicationStateManager) -> str | None:
     """Get current session ID.
     
@@ -261,7 +273,8 @@ def get_current_session_id(state_manager: ApplicationStateManager) -> str | None
     This is the single source of truth for session tracking.
     """
     try:
-        return state_manager.get_current_session_id()
+        session_id = state_manager.get_current_session_id()
+        return session_id if is_valid_session_id(session_id) else None
     except Exception:
         return None
 
@@ -378,4 +391,3 @@ def create_snapshot_from_state(
         restart_pending=restart_pending,
         update_in_progress=update_in_progress,
     )
-

@@ -9,6 +9,7 @@ GrpcClientIntegration — интеграция gRPC клиента с EventBus
 
 import asyncio
 import base64
+import inspect
 import json
 import logging
 import time
@@ -19,18 +20,33 @@ from typing import Dict, Any, Optional, Set
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core.selectors import get_current_session_id, is_valid_session_id
 
 from config.unified_config_loader import UnifiedConfigLoader
-
-# Модульный gRPC клиент
-from modules.grpc_client.core.grpc_client import GrpcClient
-
-FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
-MCP_PREFIX = "__MCP__"
 
 from integration.utils.logging_setup import get_logger
 
 logger = get_logger(__name__)
+
+# Модульный gRPC клиент
+# КРИТИЧНО: Используем ТОЛЬКО полную версию из client/modules/grpc_client (с зависимостями)
+# Неполная версия из modules/grpc_client НЕ используется (нет зависимостей и может иметь другую сигнатуру)
+try:
+    # Импортируем полную версию из client/modules/grpc_client (с зависимостями types.py, retry_manager.py, connection_manager.py)
+    from client.modules.grpc_client.core.grpc_client import GrpcClient
+    logger.info("✅ Используется GrpcClient из client/modules/grpc_client (полная версия с зависимостями)")
+except ImportError as e:
+    # КРИТИЧНО: Не используем fallback на неполную версию - это вызовет TypeError при вызове stream_audio
+    error_msg = (
+        f"❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось импортировать полную версию GrpcClient из client/modules/grpc_client. "
+        f"Fallback на неполную версию из modules/grpc_client НЕ используется, так как это вызовет TypeError. "
+        f"Ошибка импорта: {e}"
+    )
+    logger.error(error_msg)
+    raise ImportError(error_msg) from e
+
+FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
+MCP_PREFIX = "__MCP__"
 
 
 @dataclass
@@ -142,6 +158,34 @@ class GrpcClientIntegration:
                 client_cfg = None
 
             self._client = GrpcClient(config=client_cfg)
+            
+            # КРИТИЧНО: Диагностика - логируем информацию о загруженном классе для выявления проблем с кэшем/импортами
+            client_module = self._client.__class__.__module__
+            client_file = getattr(self._client.__class__, '__file__', 'unknown')
+            logger.info(f"🔍 [DIAG] GrpcClient загружен из модуля: {client_module}")
+            logger.info(f"🔍 [DIAG] GrpcClient файл: {client_file}")
+            
+            # КРИТИЧНО: Проверяем, что используется правильная версия GrpcClient с session_id в сигнатуре
+            try:
+                sig = inspect.signature(self._client.stream_audio)
+                params = list(sig.parameters.keys())
+                logger.info(f"🔍 [DIAG] stream_audio сигнатура: {params}")
+                logger.info(f"🔍 [DIAG] stream_audio имеет session_id: {'session_id' in params}")
+                
+                if 'session_id' not in params:
+                    error_msg = (
+                        f"❌ КРИТИЧЕСКАЯ ОШИБКА: GrpcClient.stream_audio не имеет параметра session_id "
+                        f"(параметры: {params}). Используется неполная версия класса. "
+                        f"Модуль: {client_module}, Файл: {client_file}. "
+                        f"Ожидается полная версия из client/modules/grpc_client/core/grpc_client"
+                    )
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+                logger.info(f"✅ GrpcClient инициализирован корректно: stream_audio имеет параметр session_id (сигнатура: {params})")
+            except Exception as e:
+                logger.error(f"❌ Ошибка проверки сигнатуры GrpcClient при инициализации: {e}")
+                logger.error(f"🔍 [DIAG] Модуль класса: {client_module}, Файл: {client_file}")
+                raise
 
             # Подписки
             await self.event_bus.subscribe("voice.recognition_completed", self._on_voice_completed, EventPriority.HIGH)
@@ -356,18 +400,36 @@ class GrpcClientIntegration:
         text = sess.get('text')
         if not text:
             return
+        
+        # КРИТИЧНО: Получаем session_id из state_manager (единственный источник истины)
+        # Используем переданный session_id, но проверяем его через state_manager для валидации
+        state_session_id = get_current_session_id(self.state_manager)
+        if not state_session_id:
+            # Если в state_manager нет session_id, используем переданный (может быть из события)
+            if not is_valid_session_id(session_id):
+                logger.error(f"❌ [gRPC] session_id отсутствует в state_manager и не передан - fail-fast")
+                await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "missing_session_id"})
+                return
+            # Используем переданный session_id
+            final_session_id = session_id
+        else:
+            # Используем session_id из state_manager (единственный источник истины)
+            final_session_id = state_session_id
+            if session_id and session_id != state_session_id:
+                logger.warning(f"⚠️ [gRPC] session_id из события ({session_id}) не совпадает с state_manager ({state_session_id}), используем state_manager")
+        
         # Получаем hardware_id
         hwid = await self._await_hardware_id(timeout_ms=3000)
         if not hwid:
-            logger.warning(f"Hardware ID not available for session {session_id} - requesting explicitly")
-            await self.event_bus.publish("hardware.id_request", {"request_id": f"grpc-{session_id}", "wait_ready": True})
-            hwid = await self._await_hardware_id(timeout_ms=3000, request_id=f"grpc-{session_id}")
+            logger.warning(f"Hardware ID not available for session {final_session_id} - requesting explicitly")
+            await self.event_bus.publish("hardware.id_request", {"request_id": f"grpc-{final_session_id}", "wait_ready": True})
+            hwid = await self._await_hardware_id(timeout_ms=3000, request_id=f"grpc-{final_session_id}")
         if not hwid:
-            logger.error(f"No Hardware ID available for gRPC request - session {session_id}")
-            await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "no_hardware_id"})
+            logger.error(f"No Hardware ID available for gRPC request - session {final_session_id}")
+            await self.event_bus.publish("grpc.request_failed", {"session_id": final_session_id, "error": "no_hardware_id"})
             return
         
-        logger.info(f"Using Hardware ID: {hwid[:8]}... for session {session_id}")
+        logger.info(f"Using Hardware ID: {hwid[:8]}... for session {final_session_id}")
 
         # Получаем Base64 скриншота напрямую из события (если есть)
         screenshot_b64 = sess.get('screenshot_base64')  # Приоритет: Base64 из события
@@ -391,40 +453,67 @@ class GrpcClientIntegration:
 
         # TRACE: начало gRPC запроса (до publish для максимальной точности)
         ts_ms = int(time.monotonic() * 1000)
-        logger.info(f"TRACE phase=grpc.start ts={ts_ms} session={session_id} extra={{has_screenshot={bool(screenshot_b64)}, text_len={len(text)}}}")
+        logger.info(f"TRACE phase=grpc.start ts={ts_ms} session={final_session_id} extra={{has_screenshot={bool(screenshot_b64)}, text_len={len(text)}}}")
         
         # Публикуем старт
-        await self.event_bus.publish("grpc.request_started", {"session_id": session_id, "has_screenshot": bool(screenshot_b64)})
+        await self.event_bus.publish("grpc.request_started", {"session_id": final_session_id, "has_screenshot": bool(screenshot_b64)})
 
         # Используем single-flight _ensure_connected
         connected = await self._ensure_connected()
         if not connected:
-            await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "connect_failed"})
+            await self.event_bus.publish("grpc.request_failed", {"session_id": final_session_id, "error": "connect_failed"})
             return
 
         # Стримим ответы
         if self._client is None:
             logger.error("gRPC client not initialized")
-            await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "client_not_initialized"})
+            await self.event_bus.publish("grpc.request_failed", {"session_id": final_session_id, "error": "client_not_initialized"})
             return
         
         try:
-            logger.info(f"Starting gRPC stream for session {session_id} with prompt: '{text[:50]}...'")
+            # КРИТИЧНО: Проверяем, что final_session_id определен и валиден
+            if not is_valid_session_id(final_session_id):
+                error_msg = f"❌ [gRPC] final_session_id не определен или пустой перед вызовом stream_audio"
+                logger.error(error_msg)
+                await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "missing_session_id"})
+                return
+            
+            logger.info(f"Starting gRPC stream for session {final_session_id} with prompt: '{text[:50]}...'")
             got_terminal = False
             chunk_count = 0
             first_chunk_ts = None
+            
+            # КРИТИЧНО: Проверяем сигнатуру метода перед вызовом (диагностика для выявления проблем с импортами)
+            try:
+                sig = inspect.signature(self._client.stream_audio)
+                params = list(sig.parameters.keys())
+                logger.debug(f"🔍 [gRPC] stream_audio сигнатура: {params}")
+                if 'session_id' not in params:
+                    error_msg = f"❌ [gRPC] stream_audio не имеет параметра session_id (параметры: {params}) - возможно используется старая версия класса"
+                    logger.error(error_msg)
+                    await self.event_bus.publish("grpc.request_failed", {"session_id": final_session_id, "error": "invalid_client_signature"})
+                    return
+            except Exception as e:
+                logger.warning(f"⚠️ [gRPC] Не удалось проверить сигнатуру stream_audio: {e}")
+            
+            # КРИТИЧНО: Диагностика перед вызовом - логируем параметры для выявления проблем
+            logger.debug(f"🔍 [DIAG] Вызов stream_audio: session_id={final_session_id}, hardware_id={hwid[:8] if hwid else 'None'}..., prompt_len={len(text)}")
+            logger.debug(f"🔍 [DIAG] GrpcClient класс: {self._client.__class__.__name__}, модуль: {self._client.__class__.__module__}")
+            logger.debug(f"🔍 [DIAG] GrpcClient файл: {getattr(self._client.__class__, '__file__', 'unknown')}")
+            
             async for resp in self._client.stream_audio(
                 prompt=text,
                 screenshot_base64=screenshot_b64 or "",
                 screen_info={"width": width, "height": height},
                 hardware_id=hwid,
+                session_id=final_session_id,  # КРИТИЧНО: передаем session_id из state_manager
             ):
                 chunk_count += 1
                 
                 # TRACE: первый ответ от gRPC
                 if chunk_count == 1:
                     first_chunk_ts = int(time.monotonic() * 1000)
-                    logger.info(f"TRACE phase=grpc.response ts={first_chunk_ts} session={session_id} extra={{chunk=1}}")
+                    logger.info(f"TRACE phase=grpc.response ts={first_chunk_ts} session={final_session_id} extra={{chunk=1}}")
 
                 # Проверяем, какой тип content установлен (oneof) - ВСЕГДА используем WhichOneof для protobuf!
                 which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None
@@ -436,7 +525,7 @@ class GrpcClientIntegration:
                 # Обрабатываем СТРОГО по типу oneof
                 if which_oneof == 'text_chunk':
                     text = resp.text_chunk
-                    logger.info(f"gRPC received text_chunk len={len(text)} for session {session_id}")
+                    logger.info(f"gRPC received text_chunk len={len(text)} for session {final_session_id}")
                     
                     # Проверяем префикс __MCP__ для MCP команд
                     if text.startswith(MCP_PREFIX):
@@ -454,13 +543,13 @@ class GrpcClientIntegration:
                                 "[%s] MCP command detected: command=%s, session_id=%s",
                                 FEATURE_ID,
                                 command_payload.get("command", "unknown"),
-                                session_id
+                                final_session_id
                             )
                             
                             # Публикуем событие grpc.response.action с action_json
                             # Формат события соответствует ожиданиям ActionExecutionIntegration
                             await self.event_bus.publish("grpc.response.action", {
-                                "session_id": session_id,
+                                "session_id": final_session_id,
                                 "action_json": json.dumps(command_payload, ensure_ascii=False),
                                 "feature_id": FEATURE_ID,
                             })
@@ -468,7 +557,7 @@ class GrpcClientIntegration:
                             logger.debug(
                                 "[%s] Published grpc.response.action for session=%s, command=%s",
                                 FEATURE_ID,
-                                session_id,
+                                final_session_id,
                                 command_payload.get("command", "unknown")
                             )
                         except json.JSONDecodeError as e:
@@ -480,7 +569,7 @@ class GrpcClientIntegration:
                             )
                             # Публикуем событие об ошибке парсинга
                             await self.event_bus.publish("grpc.response.action", {
-                                "session_id": session_id,
+                                "session_id": final_session_id,
                                 "action_json": None,
                                 "error": "invalid_json",
                                 "feature_id": FEATURE_ID,
@@ -494,7 +583,7 @@ class GrpcClientIntegration:
                             await self._handle_error(e, where="grpc.process_mcp_command", severity="warning")
                     else:
                         # Обычный текст - публикуем как обычно
-                        await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
+                        await self.event_bus.publish("grpc.response.text", {"session_id": final_session_id, "text": text})
 
                 elif which_oneof == 'audio_chunk':
                     ch = resp.audio_chunk
@@ -517,7 +606,7 @@ class GrpcClientIntegration:
                     if chunk_sr is None or chunk_ch is None:
                         logger.error(
                             f"❌ [GRPC_PROTOCOL_ERROR] audio_chunk без sample_rate или channels "
-                            f"(raw: sr={ch.sample_rate}, ch={ch.channels}) для сессии {session_id}. "
+                            f"(raw: sr={ch.sample_rate}, ch={ch.channels}) для сессии {final_session_id}. "
                             f"Чанк отброшен. Сервер должен заполнять эти поля согласно протоколу."
                         )
                         continue  # Drop chunk - жесткий контракт
@@ -527,11 +616,11 @@ class GrpcClientIntegration:
                     effective_ch = chunk_ch
                     logger.debug(
                         f"🔍 [GRPC_CHUNK_DIAG] audio_chunk: bytes={len(data)}, dtype={dtype}, "
-                        f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {session_id}"
+                        f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {final_session_id}"
                     )
 
                     await self.event_bus.publish("grpc.response.audio", {
-                        "session_id": session_id,
+                        "session_id": final_session_id,
                         "dtype": dtype,
                         "sample_rate": effective_sr,
                         "channels": effective_ch,
@@ -541,15 +630,15 @@ class GrpcClientIntegration:
 
                 elif which_oneof == 'end_message':
                     end_msg = resp.end_message
-                    logger.info(f"gRPC received end_message: '{end_msg}' for session {session_id}")
-                    await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
+                    logger.info(f"gRPC received end_message: '{end_msg}' for session {final_session_id}")
+                    await self.event_bus.publish("grpc.request_completed", {"session_id": final_session_id})
                     got_terminal = True
                     break
 
                 elif which_oneof == 'error_message':
                     err_msg = resp.error_message
-                    logger.error(f"gRPC received error_message: '{err_msg}' for session {session_id}")
-                    await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": err_msg})
+                    logger.error(f"gRPC received error_message: '{err_msg}' for session {final_session_id}")
+                    await self.event_bus.publish("grpc.request_failed", {"session_id": final_session_id, "error": err_msg})
                     got_terminal = True
                     break
 
@@ -558,15 +647,15 @@ class GrpcClientIntegration:
             # Если стрим завершился БЕЗ явного end_message/error — завершаем запрос сами,
             # чтобы UI не зависал в состоянии PROCESSING.
             if not got_terminal:
-                await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
+                await self.event_bus.publish("grpc.request_completed", {"session_id": final_session_id})
         except asyncio.CancelledError:
             # Тихо выходим при отмене; событие могло быть опубликовано ранее
-            if session_id not in self._cancel_notified:
-                self._cancel_notified.add(session_id)
-                await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "cancelled"})
+            if final_session_id not in self._cancel_notified:
+                self._cancel_notified.add(final_session_id)
+                await self.event_bus.publish("grpc.request_failed", {"session_id": final_session_id, "error": "cancelled"})
         except Exception as e:
             await self._handle_error(e, where="grpc.stream_audio", severity="warning")
-            await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": str(e)})
+            await self.event_bus.publish("grpc.request_failed", {"session_id": final_session_id, "error": str(e)})
 
     # ---------------- Utilities ----------------
     async def _ensure_connected(self) -> bool:

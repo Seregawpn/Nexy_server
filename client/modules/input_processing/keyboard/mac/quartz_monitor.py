@@ -497,7 +497,7 @@ class QuartzKeyboardMonitor:
                                         # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE
                                         if long_sent_snapshot:
                                             # LONG_PRESS уже был отправлен из hold_monitor - генерируем только RELEASE
-                                            logger.debug(f"🔑 keyUp: LONG_PRESS уже был отправлен из hold_monitor, генерируем только RELEASE")
+                                            logger.info(f"🔑 keyUp: short suppressed (long_sent=true) - генерируем только RELEASE")
                                             event_type_out = KeyEventType.RELEASE
                                         else:
                                             # Если LONG_PRESS не был отправлен из hold_monitor, значит это было короткое нажатие
@@ -599,6 +599,8 @@ class QuartzKeyboardMonitor:
                             # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE
                             # Если уже отправили LONG_PRESS из hold_monitor — это RELEASE
                             # Иначе (короткое нажатие) — это SHORT_PRESS
+                            if long_sent_snapshot:
+                                logger.info(f"🔑 keyUp: short suppressed (long_sent=true) - генерируем только RELEASE")
                             event_type_out = (
                                 KeyEventType.RELEASE if long_sent_snapshot
                                 else KeyEventType.SHORT_PRESS

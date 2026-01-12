@@ -433,6 +433,11 @@ class SpeechPlaybackIntegration:
             if self._silence_task and not self._silence_task.done():
                 self._silence_task.cancel()
             
+            # КРИТИЧНО: Сохраняем had_audio ДО очистки для корректного логирования
+            had_audio_before_cleanup = False
+            if sid is not None:
+                had_audio_before_cleanup = self._had_audio_for_session.get(sid, False)
+            
             # Сброс локальных флагов воспроизведения
             if sid:
                 self._had_audio_for_session.pop(sid, None)
@@ -443,6 +448,10 @@ class SpeechPlaybackIntegration:
                 # TRACE: завершение воспроизведения (отмена)
                 ts_ms = int(time.monotonic() * 1000)
                 logger.info(f"TRACE phase=playback.end ts={ts_ms} session={sid} extra={{cancelled=true}}")
+                logger.info(
+                    f"🔍 [PLAYBACK_END] session={sid} exit_reason=cancelled "
+                    f"summary={{had_audio={had_audio_before_cleanup}}}"
+                )
                 await self.event_bus.publish("playback.completed", {"session_id": sid})
                 logger.info(f"🛑 SpeechPlayback: playback.completed опубликовано (session_id={sid})")
             else:
@@ -500,6 +509,10 @@ class SpeechPlaybackIntegration:
                         # TRACE: завершение воспроизведения (без аудио)
                         ts_ms = int(time.monotonic() * 1000)
                         logger.info(f"TRACE phase=playback.end ts={ts_ms} session={sid} extra={{no_audio=true}}")
+                        logger.info(
+                            f"🔍 [PLAYBACK_END] session={sid} exit_reason=no_audio "
+                            f"summary={{had_audio=false, duration=0}}"
+                        )
                         await self.event_bus.publish("playback.completed", {"session_id": sid})
                         logger.info(f"SpeechPlayback: finalized session {sid} (no audio received)")
         except Exception as e:
@@ -570,7 +583,13 @@ class SpeechPlaybackIntegration:
             if session_id not in self._cancelled_sessions:
                 # TRACE: завершение воспроизведения
                 ts_ms = int(time.monotonic() * 1000)
+                wait_duration = time.time() - start_wait
                 logger.info(f"TRACE phase=playback.end ts={ts_ms} session={session_id} extra={{finalized=true}}")
+                logger.info(
+                    f"🔍 [PLAYBACK_END] session={session_id} exit_reason=queue_drained "
+                    f"summary={{had_audio={self._had_audio_for_session.get(session_id, False)}, "
+                    f"wait_duration_sec={wait_duration:.2f}}}"
+                )
                 await self.event_bus.publish("playback.completed", {"session_id": session_id})
                 logger.info(f"SpeechPlayback: finalized session {session_id}")
 

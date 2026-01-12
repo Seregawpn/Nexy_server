@@ -288,9 +288,18 @@ def get_current_session_id(state_manager: ApplicationStateManager) -> Optional[s
     Source of truth is ApplicationStateManager.
     """
     try:
-        return state_manager.get_current_session_id()
+        session_id = state_manager.get_current_session_id()
+        return session_id if is_valid_session_id(session_id) else None
     except Exception:
         return None
+
+
+def is_valid_session_id(value: Any) -> bool:
+    """Validate session_id as uuid4 string."""
+    try:
+        return ApplicationStateManager._is_valid_session_id(value)
+    except Exception:
+        return False
 
 
 def create_snapshot_from_state(
@@ -361,4 +370,3 @@ def create_snapshot_from_state(
         restart_pending=restart_pending,
         update_in_progress=update_in_progress,
     )
-

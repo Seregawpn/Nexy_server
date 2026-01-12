@@ -16,6 +16,9 @@ from datetime import datetime
 # Добавляем пути к модулям (централизованно)
 CLIENT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(CLIENT_ROOT))
+# КРИТИЧНО: client/modules должен быть ПЕРЕД modules, чтобы полная версия GrpcClient загружалась раньше неполной
+if (CLIENT_ROOT / "client" / "modules").exists():
+    sys.path.insert(0, str(CLIENT_ROOT / "client" / "modules"))
 sys.path.insert(0, str(CLIENT_ROOT / "modules"))
 sys.path.insert(0, str(CLIENT_ROOT / "integration"))
 

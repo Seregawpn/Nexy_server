@@ -173,8 +173,11 @@ class SpeechPlaybackIntegration:
                 logger.debug(f"Ignoring audio chunk for cancelled sid={sid}")
                 return
             
+            # КРИТИЧНО: speech_playback НЕ является писателем session_id
+            # Единственный писатель - InputProcessingIntegration
+            # Только читаем session_id для корреляции событий
             if sid is not None:
-                self.state_manager.update_session_id(str(sid))
+                logger.debug(f"🔍 [PLAYBACK] Received session_id: {sid} (not writing to state_manager)")
                 
             audio_bytes: bytes = data.get("bytes") or b""
             dtype: str = (data.get("dtype") or 'int16').lower()
@@ -324,7 +327,10 @@ class SpeechPlaybackIntegration:
                 session_id = f"raw:{pattern}:{int(time.time() * 1000)}"
                 raw_session = True
 
-            self.state_manager.update_session_id(str(session_id))
+            # КРИТИЧНО: speech_playback НЕ является писателем session_id
+            # Единственный писатель - InputProcessingIntegration
+            # Для raw_audio создаем временный session_id только для внутренней корреляции
+            logger.debug(f"🔍 [PLAYBACK] Raw audio session_id: {session_id} (not writing to state_manager)")
             self._had_audio_for_session[session_id] = True
             if raw_session:
                 self._grpc_done_sessions[session_id] = True

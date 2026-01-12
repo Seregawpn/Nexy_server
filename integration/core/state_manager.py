@@ -3,8 +3,9 @@ ApplicationStateManager - Управление состоянием прилож
 """
 
 import logging
-from typing import Dict, Any, Optional
 import threading
+import uuid
+from typing import Dict, Any, Optional
 
 """
 NOTE: AppMode is imported from the centralized mode_management module to avoid
@@ -90,16 +91,24 @@ class ApplicationStateManager:
                     
                     logger.info(f"🔄 Режим изменен: {self.previous_mode.value} → {mode.value}")
                 
-                # Обновляем session_id если передан
+                # Обновляем session_id если передан и валиден
+                session_id_for_event = None
                 if session_id is not None:
-                    self.current_session_id = session_id
+                    if self._is_valid_session_id(session_id):
+                        self.current_session_id = session_id
+                        session_id_for_event = session_id
+                    else:
+                        logger.warning(
+                            f"⚠️ StateManager: invalid session_id ignored: {session_id} "
+                            f"(type={type(session_id)})"
+                        )
                 
                 # Prepare snapshot for publishing OUTSIDE lock
                 if mode_changed:
                     should_publish = True
                     snapshot_mode = self.current_mode
                     snapshot_previous_mode = self.previous_mode
-                    snapshot_session_id = self.current_session_id if session_id is not None else None
+                    snapshot_session_id = session_id_for_event
                     event_bus = self._event_bus
             # === END CRITICAL SECTION ===
             
@@ -163,6 +172,12 @@ class ApplicationStateManager:
         """
         try:
             with self._lock:
+                if session_id is not None and not self._is_valid_session_id(session_id):
+                    logger.warning(
+                        f"⚠️ StateManager: invalid session_id ignored: {session_id} "
+                        f"(type={type(session_id)})"
+                    )
+                    return False
                 if session_id != self.current_session_id:
                     old_session_id = self.current_session_id
                     self.current_session_id = session_id
@@ -180,6 +195,17 @@ class ApplicationStateManager:
         """Получить текущий session_id"""
         with self._lock:
             return self.current_session_id
+
+    @staticmethod
+    def _is_valid_session_id(value: Any) -> bool:
+        """Validate session_id as uuid4 string."""
+        if not isinstance(value, str):
+            return False
+        try:
+            uuid_obj = uuid.UUID(value)
+            return uuid_obj.version == 4
+        except (ValueError, TypeError):
+            return False
     
     def get_current_mode(self) -> AppMode:
         """Получить текущий режим"""

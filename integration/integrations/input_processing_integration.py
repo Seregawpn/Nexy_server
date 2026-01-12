@@ -196,7 +196,8 @@ class InputProcessingIntegration:
                 {
                     "type": "keyboard.press",
                     "data": {
-                        "timestamp": self._pending_session_id,
+                        "timestamp": event.timestamp,  # КРИТИЧНО: timestamp - числовое значение
+                        "session_id": self._pending_session_id,  # КРИТИЧНО: session_id - отдельное поле
                         "key": event.key,
                         "source": "keyboard",
                     },
@@ -215,8 +216,8 @@ class InputProcessingIntegration:
             
     async def _setup_event_handlers(self):
         """Настройка обработчиков событий (только клавиатура)"""
-        # Подписка на события смены режима
-        await self.event_bus.subscribe("mode.switch", self._handle_mode_switch, EventPriority.HIGH)
+        # Подписка на события смены режима (унифицированный канал)
+        await self.event_bus.subscribe("app.mode_changed", self._handle_mode_switch, EventPriority.HIGH)
         # Подписка на завершение распознавания (для мгновенного решения)
         await self.event_bus.subscribe("voice.recognition_completed", self._on_recognition_completed, EventPriority.HIGH)
         # Возврат в SLEEPING при неудаче/таймауте распознавания
@@ -1428,13 +1429,11 @@ class InputProcessingIntegration:
             
     # Обработчики внешних событий
     async def _handle_mode_switch(self, event):
-        """Обработка смены режима"""
+        """Обработка смены режима (унифицированный канал app.mode_changed)"""
         try:
             # EventBus передает событие как dict
-            if isinstance(event, dict):
-                mode = event.get("data")
-            else:
-                mode = getattr(event, "data", None)
+            data = (event or {}).get("data", {})
+            mode = data.get("mode")
             logger.debug(f"🔄 Смена режима: {mode}")
             
             if mode == AppMode.LISTENING:
