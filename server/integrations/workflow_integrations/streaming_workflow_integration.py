@@ -223,8 +223,34 @@ class StreamingWorkflowIntegration:
             request_start_time = time.time()
             
             logger.info(f"🔄 Начало обработки запроса: {session_id}")
-            logger.info(f"→ Input text len={len(request_data.get('text','') or '')}, has_screenshot={bool(request_data.get('screenshot'))}")
-            logger.info(f"→ Input text content: '{request_data.get('text', '')[:100]}...'")
+            
+            # ВАЛИДАЦИЯ: Проверка промпта сразу после получения request_data
+            prompt_text = request_data.get('text', '') or ''
+            prompt_text_stripped = prompt_text.strip()
+            
+            logger.info(f"→ Input text len={len(prompt_text)}, stripped_len={len(prompt_text_stripped)}, has_screenshot={bool(request_data.get('screenshot'))}")
+            logger.info(f"→ Input text content: '{prompt_text[:100]}...'")
+            
+            # ВАЛИДАЦИЯ: Если промпт пустой, возвращаем ошибку
+            if not prompt_text_stripped:
+                logger.warning(
+                    f"⚠️ ПУСТОЙ ПРОМПТ для session_id={session_id}",
+                    extra={
+                        'scope': 'workflow',
+                        'method': 'process_request_streaming',
+                        'session_id': session_id,
+                        'decision': 'error',
+                        'ctx': {'reason': 'empty_prompt', 'prompt_len': len(prompt_text)}
+                    }
+                )
+                yield {
+                    'success': False,
+                    'error': 'Empty prompt: text field is required and cannot be empty',
+                    'error_code': 'INVALID_ARGUMENT',
+                    'error_type': 'empty_prompt',
+                    'text_response': '',
+                }
+                return
 
             logger.info("🔍 ДИАГНОСТИКА МОДУЛЕЙ:")
             logger.info(f"   → text_processor: {self.text_module is not None}")
@@ -264,12 +290,30 @@ class StreamingWorkflowIntegration:
             first_text_time = None
             first_audio_time = None
             llm_start_time = time.time()
+            
+            # ДИАГНОСТИКА: Логирование начала итерации по предложениям
+            logger.info(
+                f"🔄 Начало итерации по предложениям от LLM: prompt_len={len(prompt_text_stripped)}",
+                extra={
+                    'scope': 'workflow',
+                    'method': 'process_request_streaming',
+                    'session_id': session_id,
+                    'prompt_len': len(prompt_text_stripped)
+                }
+            )
+            
+            llm_iteration_started = False
+            llm_chunks_received = 0
 
             async for sentence in self._iter_processed_sentences(
-                request_data.get('text', ''),
+                prompt_text_stripped,
                 request_data.get('screenshot'),
                 memory_context
             ):
+                if not llm_iteration_started:
+                    llm_iteration_started = True
+                    logger.info(f"✅ Итерация LLM началась: получено первое предложение")
+                llm_chunks_received += 1
                 if first_text_time is None:
                     first_text_time = (time.time() - llm_start_time) * 1000
                     logger.info(f"⏱️  Первый текст от LLM получен через {first_text_time:.2f}ms")
@@ -647,9 +691,44 @@ class StreamingWorkflowIntegration:
                     logger.debug("Фича-флаг forward_assistant_actions выключен или kill-switch активен, пропускаем command_payload")
 
             total_time = (time.time() - request_start_time) * 1000
-            logger.info(
-                f"✅ Запрос обработан успешно: segments={emitted_segment_counter}, audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}"
-            )
+            
+            # ДИАГНОСТИКА: Логирование результата с причиной, если sent_any=false
+            sent_any = emitted_segment_counter > 0 or total_audio_chunks > 0
+            if not sent_any:
+                reason = 'unknown'
+                if not llm_iteration_started:
+                    reason = 'llm_iteration_not_started'
+                elif llm_chunks_received == 0:
+                    reason = 'llm_no_chunks'
+                elif emitted_segment_counter == 0:
+                    reason = 'no_segments_emitted'
+                elif total_audio_chunks == 0:
+                    reason = 'no_audio_chunks'
+                
+                logger.warning(
+                    f"⚠️ sent_any=false для session_id={session_id}: reason={reason}, "
+                    f"llm_iteration_started={llm_iteration_started}, llm_chunks_received={llm_chunks_received}, "
+                    f"emitted_segments={emitted_segment_counter}, audio_chunks={total_audio_chunks}",
+                    extra={
+                        'scope': 'workflow',
+                        'method': 'process_request_streaming',
+                        'session_id': session_id,
+                        'decision': 'warning',
+                        'ctx': {
+                            'reason': reason,
+                            'llm_iteration_started': llm_iteration_started,
+                            'llm_chunks_received': llm_chunks_received,
+                            'emitted_segments': emitted_segment_counter,
+                            'audio_chunks': total_audio_chunks,
+                            'sent_any': False
+                        }
+                    }
+                )
+            else:
+                logger.info(
+                    f"✅ Запрос обработан успешно: segments={emitted_segment_counter}, audio_chunks={total_audio_chunks}, total_bytes={total_audio_bytes}"
+                )
+            
             logger.info(f"⏱️  ИТОГОВЫЕ МЕТРИКИ ВРЕМЕНИ:")
             logger.info(f"   • Memory context: {memory_time:.2f}ms")
             if first_text_time:
@@ -746,6 +825,7 @@ class StreamingWorkflowIntegration:
             logger.info(f"⏱️  Начало LLM обработки через Text Module: '{enriched_text[:80]}...'")
             try:
                 chunk_count = 0
+                logger.info(f"🔄 Вызов _stream_text_module: text_len={len(enriched_text)}, has_screenshot={screenshot_data is not None}")
                 async for chunk in self._stream_text_module(enriched_text, screenshot_data):
                     chunk_count += 1
                     logger.debug(f"📦 Получен chunk #{chunk_count} от Text Module: type={type(chunk)}, value={str(chunk)[:100] if chunk else 'None'}...")
@@ -761,6 +841,22 @@ class StreamingWorkflowIntegration:
                         logger.warning(f"⚠️ Chunk #{chunk_count} не содержит текста после извлечения")
                 llm_total_time = (time.time() - llm_start) * 1000
                 logger.info(f"⏱️  LLM обработка завершена за {llm_total_time:.2f}ms: получено {chunk_count} chunks, yielded_any={yielded_any}")
+                
+                # ДИАГНОСТИКА: Предупреждение, если LLM не вернул текст
+                if not yielded_any:
+                    logger.warning(
+                        f"⚠️ LLM не вернул ни одного предложения: chunk_count={chunk_count}, enriched_text_len={len(enriched_text)}",
+                        extra={
+                            'scope': 'workflow',
+                            'method': '_iter_processed_sentences',
+                            'decision': 'warning',
+                            'ctx': {
+                                'reason': 'llm_empty',
+                                'chunk_count': chunk_count,
+                                'enriched_text_len': len(enriched_text)
+                            }
+                        }
+                    )
             except Exception as processing_error:
                 logger.error(f"⚠️ Ошибка Text Module: {processing_error}. Используем fallback")
                 import traceback
@@ -924,18 +1020,87 @@ class StreamingWorkflowIntegration:
 
     async def _stream_text_module(self, text: str, screenshot_data: Optional[str]):
         """Стриминг ответов из текстового модуля."""
+        logger.info(
+            f"🔄 _stream_text_module вызван: text_len={len(text)}, has_screenshot={screenshot_data is not None}",
+            extra={
+                'scope': 'workflow',
+                'method': '_stream_text_module',
+                'text_len': len(text),
+                'has_screenshot': screenshot_data is not None
+            }
+        )
+        
         payload: Dict[str, Any] = {"text": text}
         if screenshot_data:
             # Изображение уже в формате base64 (WebP)
             payload["image_data"] = screenshot_data
 
+        chunk_count = 0
         async for chunk in self._stream_module_results(self.text_module, payload):
+            chunk_count += 1
+            logger.debug(f"📦 _stream_text_module: получен chunk #{chunk_count}")
             yield chunk
+        
+        logger.info(
+            f"✅ _stream_text_module завершен: получено {chunk_count} chunks",
+            extra={
+                'scope': 'workflow',
+                'method': '_stream_text_module',
+                'chunk_count': chunk_count
+            }
+        )
+        
+        if chunk_count == 0:
+            logger.warning(
+                f"⚠️ _stream_text_module не вернул ни одного chunk",
+                extra={
+                    'scope': 'workflow',
+                    'method': '_stream_text_module',
+                    'decision': 'warning',
+                    'ctx': {'reason': 'no_chunks_from_module', 'text_len': len(text)}
+                }
+            )
 
     async def _stream_audio_module(self, text: str):
         """Стриминг аудио чанков из аудио модуля."""
+        logger.info(
+            f"🔄 _stream_audio_module вызван: text_len={len(text)}",
+            extra={
+                'scope': 'workflow',
+                'method': '_stream_audio_module',
+                'text_len': len(text)
+            }
+        )
+        
+        chunk_count = 0
+        total_bytes = 0
         async for chunk in self._stream_module_results(self.audio_module, {"text": text}):
+            chunk_count += 1
+            if isinstance(chunk, (bytes, bytearray)):
+                total_bytes += len(chunk)
+            logger.debug(f"🎵 _stream_audio_module: получен chunk #{chunk_count}, bytes={len(chunk) if isinstance(chunk, (bytes, bytearray)) else 0}")
             yield chunk
+        
+        logger.info(
+            f"✅ _stream_audio_module завершен: получено {chunk_count} chunks, total_bytes={total_bytes}",
+            extra={
+                'scope': 'workflow',
+                'method': '_stream_audio_module',
+                'chunk_count': chunk_count,
+                'total_bytes': total_bytes
+            }
+        )
+        
+        if chunk_count == 0:
+            logger.warning(
+                f"⚠️ _stream_audio_module не вернул ни одного chunk",
+                extra={
+                    'scope': 'workflow',
+                    'method': '_stream_audio_module',
+                    'decision': 'warning',
+                    'ctx': {'reason': 'no_audio_chunks_from_module', 'text_len': len(text)}
+                }
+            )
 
     async def _stream_module_results(self, module, payload: Dict[str, Any]):
         """Унифицированный вызов module.process с поддержкой async generator."""

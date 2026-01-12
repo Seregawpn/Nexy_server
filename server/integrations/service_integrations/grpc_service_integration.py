@@ -259,6 +259,39 @@ class GrpcServiceIntegration:
             has_emitted = False
             final_response_text = ''
             prompt_text = request_data.get('text', '')
+            
+            # ДИАГНОСТИКА: Логирование промпта для диагностики пустых ответов
+            logger.info(
+                f"📋 Prompt для обработки: len={len(prompt_text)}, content='{prompt_text[:100]}...'",
+                extra={
+                    'scope': 'grpc_service',
+                    'method': '_process_full_workflow_internal',
+                    'session_id': session_id,
+                    'prompt_len': len(prompt_text),
+                    'has_screenshot': bool(request_data.get('screenshot'))
+                }
+            )
+            
+            # ВАЛИДАЦИЯ: Проверка пустого промпта
+            if not prompt_text or not prompt_text.strip():
+                logger.warning(
+                    f"⚠️ ПУСТОЙ ПРОМПТ в request_data для session_id={session_id}",
+                    extra={
+                        'scope': 'grpc_service',
+                        'method': '_process_full_workflow_internal',
+                        'session_id': session_id,
+                        'decision': 'error',
+                        'ctx': {'reason': 'empty_prompt', 'prompt_len': len(prompt_text)}
+                    }
+                )
+                yield {
+                    'success': False,
+                    'error': 'Empty prompt: text field is required',
+                    'error_code': 'INVALID_ARGUMENT',
+                    'error_type': 'empty_prompt',
+                    'text_response': '',
+                }
+                return
 
             if self.streaming_workflow:
                 logger.info(
