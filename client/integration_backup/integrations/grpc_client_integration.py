@@ -9,12 +9,13 @@ GrpcClientIntegration — интеграция gRPC клиента с EventBus
 
 import asyncio
 import base64
+import concurrent.futures
 import json
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, Union
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
@@ -85,8 +86,8 @@ class GrpcClientIntegration:
 
         # Агрегатор данных по session_id
         self._sessions: Dict[Any, Dict[str, Any]] = {}
-        # Активные отправки: session_id -> asyncio.Task
-        self._inflight: Dict[Any, asyncio.Task] = {}
+        # Активные отправки: session_id -> asyncio.Task или concurrent.futures.Future (от run_coroutine_threadsafe)
+        self._inflight: Dict[Any, Union[asyncio.Task, concurrent.futures.Future]] = {}
         # Отметки о том, что отмена уже уведомлена (чтобы не дублировать события)
         self._cancel_notified: Set[Any] = set()
 
@@ -173,6 +174,7 @@ class GrpcClientIntegration:
             # Подписки
             await self.event_bus.subscribe("voice.recognition_completed", self._on_voice_completed, EventPriority.HIGH)
             await self.event_bus.subscribe("screenshot.captured", self._on_screenshot_captured, EventPriority.HIGH)
+            await self.event_bus.subscribe("voice.recording_stop", self._on_recording_stop, EventPriority.HIGH)
             await self.event_bus.subscribe("hardware.id_obtained", self._on_hardware_id, EventPriority.HIGH)
             await self.event_bus.subscribe("hardware.id_response", self._on_hardware_id_response, EventPriority.HIGH)
             await self.event_bus.subscribe("keyboard.short_press", self._on_interrupt, EventPriority.CRITICAL)
@@ -199,7 +201,7 @@ class GrpcClientIntegration:
         Этот метод должен выполняться в _grpc_loop.
         """
         current_loop = asyncio.get_running_loop()
-        if self._grpc_loop != current_loop:
+        if self._grpc_loop and self._grpc_loop != current_loop:
             # Проксируем в правильный loop
             await asyncio.wrap_future(
                 asyncio.run_coroutine_threadsafe(
@@ -299,6 +301,17 @@ class GrpcClientIntegration:
             await self._maybe_send(sid)
         except Exception as e:
             await self._handle_error(e, where="grpc.on_screenshot_captured", severity="warning")
+
+    async def _on_recording_stop(self, event):
+        try:
+            data = (event or {}).get("data", {})
+            sid = data.get("session_id")
+            if not sid:
+                return
+            sess = self._sessions.setdefault(sid, {})
+            sess["recording_stop_ts_ms"] = int(time.monotonic() * 1000)
+        except Exception as e:
+            await self._handle_error(e, where="grpc.on_recording_stop", severity="warning")
 
     async def _on_hardware_id(self, event):
         """Обработчик события hardware.id_obtained.
@@ -507,7 +520,13 @@ class GrpcClientIntegration:
 
         # TRACE: начало gRPC запроса (до publish для максимальной точности)
         ts_ms = int(time.monotonic() * 1000)
-        logger.info(f"TRACE phase=grpc.start ts={ts_ms} session={session_id} extra={{has_screenshot={bool(screenshot_b64)}, text_len={len(text)}}}")
+        sess["grpc_start_ts_ms"] = ts_ms
+        extra_parts = f"has_screenshot={bool(screenshot_b64)}, text_len={len(text)}"
+        recording_stop_ts = sess.get("recording_stop_ts_ms")
+        if recording_stop_ts is not None:
+            delta_ms = ts_ms - recording_stop_ts
+            extra_parts += f", delta_from_recording_stop_ms={delta_ms}"
+        logger.info(f"TRACE phase=grpc.start ts={ts_ms} session={session_id} extra={{{extra_parts}}}")
         
         # Публикуем старт
         await self.event_bus.publish("grpc.request_started", {"session_id": session_id, "has_screenshot": bool(screenshot_b64)})
@@ -540,7 +559,17 @@ class GrpcClientIntegration:
                 # TRACE: первый ответ от gRPC
                 if chunk_count == 1:
                     first_chunk_ts = int(time.monotonic() * 1000)
-                    logger.info(f"TRACE phase=grpc.response ts={first_chunk_ts} session={session_id} extra={{chunk=1}}")
+                    delta_from_start_ms = None
+                    grpc_start_ts = sess.get("grpc_start_ts_ms")
+                    if grpc_start_ts is not None:
+                        delta_from_start_ms = first_chunk_ts - grpc_start_ts
+                    if delta_from_start_ms is None:
+                        logger.info(f"TRACE phase=grpc.response ts={first_chunk_ts} session={session_id} extra={{chunk=1}}")
+                    else:
+                        logger.info(
+                            f"TRACE phase=grpc.response ts={first_chunk_ts} session={session_id} "
+                            f"extra={{chunk=1, delta_from_grpc_start_ms={delta_from_start_ms}}}"
+                        )
 
                 # Проверяем, какой тип content установлен (oneof) - ВСЕГДА используем WhichOneof для protobuf!
                 which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None

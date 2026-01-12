@@ -12,6 +12,8 @@
 """
 
 import logging
+import os
+from logging.handlers import RotatingFileHandler
 from typing import Optional
 
 # Singleton flag для однократной настройки
@@ -42,11 +44,58 @@ def setup_logging(force: bool = False) -> None:
         raw_config = config._load_config()
         logging_section = raw_config.get('logging', {})
         
-        # Устанавливаем уровень для root logger
-        # YAML использует console_level / file_level
-        console_level = logging_section.get('console_level', 'INFO')
-        root_level = getattr(logging, console_level.upper(), logging.INFO)
+        # Уровни логирования и формат
+        console_level_name = logging_section.get('console_level', 'INFO')
+        file_level_name = logging_section.get('file_level', console_level_name)
+        console_level = getattr(logging, console_level_name.upper(), logging.INFO)
+        file_level = getattr(logging, file_level_name.upper(), console_level)
+        log_format = logging_section.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+        # Root уровень должен пропускать самый детальный handler
+        root_level = min(console_level, file_level)
         logging.getLogger().setLevel(root_level)
+
+        # Настраиваем handlers (если еще не настроены)
+        root_logger = logging.getLogger()
+        formatter = logging.Formatter(log_format)
+
+        # Console handler
+        has_console = any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers)
+        if not has_console:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(console_level)
+            console_handler.setFormatter(formatter)
+            root_logger.addHandler(console_handler)
+
+        # File handler
+        file_path = logging_section.get('file_path')
+        if file_path:
+            abs_path = os.path.abspath(file_path)
+            log_dir = os.path.dirname(abs_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+
+            has_file = any(
+                isinstance(h, (logging.FileHandler, RotatingFileHandler))
+                and getattr(h, 'baseFilename', '') == abs_path
+                for h in root_logger.handlers
+            )
+            if not has_file:
+                use_rotation = bool(logging_section.get('rotation', True))
+                max_bytes = int(logging_section.get('max_file_size', 10 * 1024 * 1024))
+                backup_count = int(logging_section.get('max_files', 5))
+                if use_rotation:
+                    file_handler = RotatingFileHandler(
+                        abs_path,
+                        maxBytes=max_bytes,
+                        backupCount=backup_count,
+                        encoding='utf-8',
+                    )
+                else:
+                    file_handler = logging.FileHandler(abs_path, encoding='utf-8')
+                file_handler.setLevel(file_level)
+                file_handler.setFormatter(formatter)
+                root_logger.addHandler(file_handler)
         
         # Устанавливаем уровни для конкретных интеграций из конфига
         # Можно добавить в будущем integrations.*.log_level
@@ -61,7 +110,10 @@ def setup_logging(force: bool = False) -> None:
         # Логируем успешную инициализацию (только если уже есть handlers)
         if logging.getLogger().handlers:
             logging.getLogger(__name__).debug(
-                f"Logging configured from unified_config.yaml: root={console_level}"
+                "Logging configured from unified_config.yaml: root=%s console=%s file=%s",
+                logging.getLevelName(root_level),
+                logging.getLevelName(console_level),
+                logging.getLevelName(file_level),
             )
         
         _logging_configured = True

@@ -221,6 +221,16 @@ server/                         # 🖥️ СЕРВЕРНАЯ ЧАСТЬ (Python)
   - `update_session_id()` - для синхронизации session_id БЕЗ публикации событий (предотвращает ложные прерывания)
   - Не решает КАК переключать режимы — только фиксирует результат
 
+### 6. Extending the System (How to Add Features)
+> **🚀 FAST TRACK**: Check out the **[Cookbook: How to Add a New Feature](../Docs/guides/COOKBOOK_ADD_FEATURE.md)** for a 15-minute guide.
+
+To add a new feature:
+
+1.  **Create Module**: Use `client/modules/_module_template` as a base.
+2.  **Create Integration**: Use `integration/integrations/_template_integration.py`.
+3.  **Register**: Add to `ModuleCoordinator`.
+4.  **Config**: Add to `unified_config.yaml`.
+
 - ModeController (modules/mode_management/core/mode_controller.py)
   - Единая логика переходов между режимами (карта переходов, обработчики, метрики)
   - Асинхронно сериализует переходы, предотвращает гонки

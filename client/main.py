@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import signal
+import tempfile
 import traceback
 import platform
 from pathlib import Path
@@ -200,32 +201,44 @@ def activate_nsapplication_for_menu_bar():
         traceback.print_exc()
         return False
 
-# Настройка логирования
+# Настройка логирования (через unified_config.yaml)
 # ВАЖНО: Для .app bundle логи должны писаться в файл, т.к. stdout недоступен
-import tempfile
-log_file = os.path.join(tempfile.gettempdir(), 'nexy_debug.log')
-
-# Создаем два handler'а: один для файла, один для консоли
-file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
-console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-
-# Настраиваем root logger
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.DEBUG)
-root_logger.addHandler(file_handler)
-root_logger.addHandler(console_handler)
-
-# [ARCH] Phase 2: Применяем централизованные настройки уровней логирования
 from integration.utils.logging_setup import setup_logging
 setup_logging()
 
+log_file = None
+try:
+    from config.unified_config_loader import UnifiedConfigLoader
+
+    raw_config = UnifiedConfigLoader.get_instance()._load_config()
+    log_file = raw_config.get("logging", {}).get("file_path")
+except Exception:
+    log_file = None
+
+if not log_file:
+    log_file = os.path.join(tempfile.gettempdir(), "nexy_debug.log")
+
+log_file = os.path.abspath(log_file)
+
+try:
+    from logging.handlers import RotatingFileHandler
+    has_file_handler = any(
+        isinstance(h, (logging.FileHandler, RotatingFileHandler))
+        and getattr(h, "baseFilename", "") == log_file
+        for h in logging.getLogger().handlers
+    )
+    if not has_file_handler:
+        fallback_handler = logging.FileHandler(log_file, encoding="utf-8")
+        fallback_handler.setLevel(logging.INFO)
+        fallback_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        logging.getLogger().addHandler(fallback_handler)
+except Exception:
+    pass
+
 logger = logging.getLogger(__name__)
-logger.info(f"📝 Логи записываются в: {log_file}")
+logger.info("📝 Логи записываются в: %s", log_file)
 print(f"📝 Логи записываются в: {log_file}")
 logger.info("BOOT: logger initialized")
 logger.info(
