@@ -18,6 +18,32 @@ from integration.utils.logging_setup import get_logger
 logger = get_logger(__name__)
 
 
+def _get_system_preferences_url(permission_key: str) -> str:
+    try:
+        from config.unified_config_loader import UnifiedConfigLoader
+
+        permissions_config = UnifiedConfigLoader.get_instance().get_permission_config()
+        return permissions_config.get("system_preferences", {}).get(permission_key, "")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось получить System Settings URL для {permission_key}: {e}")
+        return ""
+
+
+def _open_permission_settings(permission_key: str, label: str) -> None:
+    url = _get_system_preferences_url(permission_key)
+    if not url:
+        logger.warning(f"⚠️ System Settings URL не найден для {label}")
+        return
+
+    logger.info(f"🔧 {label}: открываем System Settings...")
+    print(f"🔧 [ACTIVATOR] {label}: открываем System Settings...")
+    try:
+        subprocess.run(["open", url], check=True)
+        logger.info(f"✅ System Settings открыт для {label}")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось открыть System Settings для {label}: {e}")
+
+
 async def activate_microphone() -> bool:
     """
     Активировать запрос разрешения микрофона.
@@ -70,21 +96,27 @@ async def activate_microphone() -> bool:
 
             logger.info("✅ Микрофон активирован успешно")
             print(f"✅ [ACTIVATOR] Микрофон активирован успешно")  # DEBUG
-            return True
 
         except Exception as e:
             logger.warning(f"⚠️ Не удалось открыть микрофон: {e}")
             print(f"⚠️ [ACTIVATOR] Exception при открытии микрофона: {e}")  # DEBUG
             # Это OK - возможно разрешения нет, диалог показан
-            return True
+        
+        await asyncio.sleep(0.5)
+        new_status = check_microphone_status()
+        if new_status != PermissionStatus.GRANTED:
+            _open_permission_settings("microphone", "Microphone")
+        return True
 
     except ImportError:
         logger.warning("⚠️ sounddevice недоступен")
         print(f"⚠️ [ACTIVATOR] sounddevice недоступен")  # DEBUG
-        return False
+        _open_permission_settings("microphone", "Microphone")
+        return True
     except Exception as e:
         logger.error(f"❌ Ошибка активации микрофона: {e}")
         print(f"❌ [ACTIVATOR] Критическая ошибка: {e}")  # DEBUG
+        _open_permission_settings("microphone", "Microphone")
         return False
 
 
@@ -107,79 +139,94 @@ async def activate_accessibility() -> bool:
     try:
         # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
         from .status_checker import check_accessibility_status, PermissionStatus
-        
+
         current_status = check_accessibility_status()
         if current_status == PermissionStatus.GRANTED:
             logger.info("✅ Accessibility: Разрешение уже предоставлено, пропускаем активацию")
             print("✅ [ACTIVATOR] Accessibility: Разрешение уже есть")
             return True
-        
+
         logger.info("♿ Accessibility: разрешение не предоставлено, пробуем активировать...")
         print("♿ [ACTIVATOR] Accessibility: пробуем вызвать диалог...")
-        
-        # ШАГ 2: Пробуем AppleScript с System Events
-        # Это действие ТРЕБУЕТ Accessibility и может вызвать системный диалог
+
+        # ШАГ 2: Запускаем безопасный subprocess для prompt
+        helper_exit_code = None
+        helper_stdout = None
+        helper_stderr = None
         try:
-            logger.info("♿ Активация Accessibility через AppleScript + System Events...")
-            
-            # AppleScript который требует Accessibility для выполнения
-            applescript = '''
-            tell application "System Events"
-                -- Простое действие, требующее Accessibility
-                set frontApp to name of first application process whose frontmost is true
-            end tell
-            '''
-            
+            script_dir = os.path.dirname(__file__)
+            script_path = os.path.join(script_dir, "trigger_accessibility_prompt.py")
+            logger.info("♿ Accessibility: запуск prompt helper subprocess...")
+            print("♿ [ACTIVATOR] Accessibility: запуск prompt helper subprocess...")
             result = subprocess.run(
-                ["osascript", "-e", applescript],
+                [sys.executable, script_path],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
+            helper_exit_code = result.returncode
+            helper_stdout = result.stdout.strip() if result.stdout else None
+            helper_stderr = result.stderr.strip() if result.stderr else None
             
-            if result.returncode == 0:
-                # Успех! Значит разрешение уже было или только что дано
-                logger.info(f"✅ AppleScript выполнен успешно: {result.stdout.strip()}")
-                print(f"✅ [ACTIVATOR] AppleScript OK: {result.stdout.strip()}")
-            else:
-                # Ошибка - либо диалог показан, либо отказано
-                logger.info(f"♿ AppleScript вернул ошибку (диалог мог появиться): {result.stderr.strip()}")
-                print(f"♿ [ACTIVATOR] AppleScript error (это нормально): {result.stderr.strip()[:100]}")
-                
+            # Интерпретация exit code согласно документации trigger_accessibility_prompt.py
+            exit_code_meaning = {
+                0: "Разрешение уже есть (trusted=True) или диалог показан успешно",
+                1: "Разрешения нет (trusted=False) — диалог должен был появиться",
+                2: "Ошибка выполнения"
+            }.get(helper_exit_code, f"Неизвестный exit code: {helper_exit_code}")
+            
+            logger.info(
+                "♿ Accessibility: prompt helper завершён — exit_code=%s (%s) stdout=%s stderr=%s",
+                helper_exit_code,
+                exit_code_meaning,
+                helper_stdout[:100] if helper_stdout else "(пусто)",
+                helper_stderr[:100] if helper_stderr else "(пусто)",
+            )
+            print(f"♿ [ACTIVATOR] Accessibility prompt helper: exit={helper_exit_code} ({exit_code_meaning})")
+            if helper_stderr:
+                print(f"   stderr: {helper_stderr[:200]}")
         except subprocess.TimeoutExpired:
-            logger.warning("⚠️ AppleScript timeout - возможно ждёт ответа пользователя")
-            print("⚠️ [ACTIVATOR] AppleScript timeout")
+            logger.warning("⚠️ Accessibility prompt helper timeout (5s)")
+            print("⚠️ [ACTIVATOR] Accessibility prompt helper timeout (5s)")
+            helper_exit_code = -1  # Специальный код для timeout
         except Exception as e:
-            logger.warning(f"⚠️ Не удалось выполнить AppleScript: {e}")
-            print(f"⚠️ [ACTIVATOR] AppleScript exception: {e}")
-        
+            logger.warning(f"⚠️ Accessibility prompt helper error: {e}")
+            print(f"⚠️ [ACTIVATOR] Accessibility prompt helper error: {e}")
+            helper_exit_code = -2  # Специальный код для exception
+            import traceback
+            logger.debug(f"Traceback: {traceback.format_exc()}")
+
+        # Если helper упал/ошибся — сразу показываем fallback
+        if helper_exit_code in (-1, -2, 2):
+            _open_permission_settings("accessibility", "Accessibility")
+
         # ШАГ 3: Проверяем ещё раз после попытки
-        await asyncio.sleep(0.5)  # Даём системе время обновить статус
-        
+        await asyncio.sleep(0.5)
+
         new_status = check_accessibility_status()
+        status_before = current_status.value
+        status_after = new_status.value
+        
+        logger.info(
+            "♿ Accessibility: статус до/после prompt helper — %s → %s (helper exit=%s)",
+            status_before,
+            status_after,
+            helper_exit_code if helper_exit_code is not None else "N/A"
+        )
+        print(f"♿ [ACTIVATOR] Accessibility статус: {status_before} → {status_after} (helper exit={helper_exit_code if helper_exit_code is not None else 'N/A'})")
+        
         if new_status == PermissionStatus.GRANTED:
-            logger.info("✅ Accessibility: разрешение получено после AppleScript!")
+            logger.info("✅ Accessibility: разрешение получено после prompt helper!")
             print("✅ [ACTIVATOR] Accessibility: разрешение получено!")
             return True
-        
-        # ШАГ 4: AppleScript не сработал — открываем System Settings напрямую
-        # На macOS Sequoia AppleScript не всегда показывает диалог
-        logger.info("♿ Accessibility: открываем System Settings для предоставления разрешения...")
-        print("♿ [ACTIVATOR] Accessibility: открываем System Settings...")
-        
-        try:
-            subprocess.run([
-                "open", 
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-            ], check=True)
-            logger.info("✅ System Settings открыт для Accessibility")
-        except Exception as e:
-            logger.warning(f"⚠️ Не удалось открыть System Settings: {e}")
-        
+
+        # ШАГ 4: Fallback — открываем System Settings напрямую
+        _open_permission_settings("accessibility", "Accessibility")
+
         # Разрешение ещё не получено - polling отследит когда пользователь включит
         logger.info("♿ Accessibility: ожидаем предоставления разрешения...")
         print("♿ [ACTIVATOR] Accessibility: ожидаем (пользователь должен включить в System Settings)")
-        
+
         return True
 
     except Exception as e:
@@ -226,6 +273,7 @@ async def activate_input_monitoring() -> bool:
         iokit_path = util.find_library("IOKit")
         if not iokit_path:
             logger.warning("⚠️ IOKit недоступен")
+            _open_permission_settings("input_monitoring", "Input Monitoring")
             return False
 
         iokit = ctypes.CDLL(iokit_path)
@@ -234,6 +282,7 @@ async def activate_input_monitoring() -> bool:
             request_access = iokit.IOHIDRequestAccess
         except AttributeError:
             logger.warning("⚠️ IOHIDRequestAccess недоступен (старая macOS?)")
+            _open_permission_settings("input_monitoring", "Input Monitoring")
             return False
 
         # IOHIDRequestAccess(requestType) -> bool
@@ -253,13 +302,18 @@ async def activate_input_monitoring() -> bool:
         print(f"✅ [ACTIVATOR] IOHIDRequestAccess result={result}")
         
         # Даем системе время обработать запрос
-        await asyncio.sleep(0.1)
-        
+        await asyncio.sleep(0.2)
+
+        new_status = check_input_monitoring_status()
+        if new_status != PermissionStatus.GRANTED:
+            _open_permission_settings("input_monitoring", "Input Monitoring")
+
         return True
 
     except Exception as e:
         logger.error(f"❌ Ошибка активации Input Monitoring: {e}")
         print(f"❌ [ACTIVATOR] Input Monitoring error: {e}")
+        _open_permission_settings("input_monitoring", "Input Monitoring")
         return False
 
 
@@ -292,6 +346,7 @@ async def activate_screen_capture() -> bool:
 
         if not manager.is_available:
             logger.warning("⚠️ Screen Capture API недоступен")
+            _open_permission_settings("screen_capture", "Screen Capture")
             return False
 
         # request_permission() вызывает CGRequestScreenCaptureAccess
@@ -303,10 +358,16 @@ async def activate_screen_capture() -> bool:
         else:
             logger.info("✅ Screen Capture диалог показан")
 
+        await asyncio.sleep(0.2)
+        new_status = check_screen_capture_status()
+        if new_status != PermissionStatus.GRANTED:
+            _open_permission_settings("screen_capture", "Screen Capture")
+
         return True
 
     except Exception as e:
         logger.error(f"❌ Ошибка активации Screen Capture: {e}")
+        _open_permission_settings("screen_capture", "Screen Capture")
         return False
 
 

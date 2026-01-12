@@ -17,6 +17,7 @@ from typing import Optional, Dict, Any
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core.selectors import get_current_mode, get_current_session_id
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -188,7 +189,8 @@ class ModeManagementIntegration:
             session_id = data.get("session_id")
 
             # Фильтрация по сессии (в PROCESSING принимаем только текущую либо interrupt)
-            current_mode = self.state_manager.get_current_mode()
+            # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа
+            current_mode = get_current_mode(self.state_manager)
             logger.info(f"🔄 MODE_REQUEST: current_mode={current_mode}, target={target}, source={source}")
 
             # КРИТИЧНО: Для PROCESSING разрешаем повторные запросы с новым session_id
@@ -196,7 +198,8 @@ class ModeManagementIntegration:
             # еще обрабатывает предыдущий запрос
             if target == AppMode.PROCESSING and current_mode == AppMode.PROCESSING:
                 # Проверяем, это новый запрос с другим session_id?
-                current_session_id = self.state_manager.get_current_session_id()
+                # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+                current_session_id = get_current_session_id(self.state_manager)
                 if session_id is not None and current_session_id is not None:
                     if session_id != current_session_id:
                         # КРИТИЧНО: Просто вызываем set_mode() с новым session_id
@@ -224,7 +227,8 @@ class ModeManagementIntegration:
                 return
             
             if current_mode == AppMode.PROCESSING and source != 'interrupt':
-                current_session_id = self.state_manager.get_current_session_id()
+                # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+                current_session_id = get_current_session_id(self.state_manager)
                 logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={current_session_id}, request={session_id})")
                 if current_session_id is not None and session_id is not None:
                     if session_id != current_session_id:
@@ -365,7 +369,8 @@ class ModeManagementIntegration:
     async def _processing_timeout_guard(self):
         try:
             await asyncio.sleep(self._processing_timeout_sec)
-            if self.state_manager.get_current_mode() == AppMode.PROCESSING:
+            # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа
+            if get_current_mode(self.state_manager) == AppMode.PROCESSING:
                 logger.warning("PROCESSING timeout — forcing SLEEPING via controller")
                 try:
                     await self.controller.switch_mode(AppMode.SLEEPING)
@@ -384,7 +389,8 @@ class ModeManagementIntegration:
         """Автовозврат в SLEEPING, если LISTENING затянулся без RELEASE/STOP."""
         try:
             await asyncio.sleep(self._listening_timeout_sec)
-            if self.state_manager.get_current_mode() == AppMode.LISTENING:
+            # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа
+            if get_current_mode(self.state_manager) == AppMode.LISTENING:
                 await self._apply_mode(AppMode.SLEEPING, source="mode_management")
         except asyncio.CancelledError:
             return
@@ -397,5 +403,5 @@ class ModeManagementIntegration:
             "running": self._running,
             "processing_timeout_sec": self._processing_timeout_sec,
             "listening_timeout_sec": self._listening_timeout_sec,
-            "active_session_id": self.state_manager.get_current_session_id(),
+            "active_session_id": get_current_session_id(self.state_manager),
         }

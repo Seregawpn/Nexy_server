@@ -21,6 +21,7 @@ from config.unified_config_loader import UnifiedConfigLoader
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[reportAttributeAccessIssue]
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
+from integration.core.selectors import get_current_mode
 from PyObjCTools import AppHelper
 import rumps
 
@@ -327,7 +328,8 @@ class TrayControllerIntegration:
     async def _sync_with_app_mode(self):
         """Синхронизация с текущим режимом приложения"""
         try:
-            current_mode = self.state_manager.get_current_mode()
+            # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа
+            current_mode = get_current_mode(self.state_manager)
             if current_mode in self.mode_to_status:
                 target_status = self.mode_to_status[current_mode]
                 self._desired_status = target_status
@@ -437,7 +439,8 @@ class TrayControllerIntegration:
     async def _on_voice_mic_closed(self, event):
         """Не меняем цвет иконки напрямую: всё через app.mode_changed"""
         try:
-            mode = self.state_manager.get_current_mode()
+            # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа
+            mode = get_current_mode(self.state_manager)
             await self.event_bus.publish("tray.status_updated", {
                 "status": getattr(self._desired_status, 'value', None),
                 "mode": getattr(mode, 'value', str(mode)),
@@ -595,7 +598,8 @@ class TrayControllerIntegration:
             await self._sync_with_app_mode()
             # Применяем текущий режим на главном UI-потоке
             try:
-                mode = self.state_manager.get_current_mode()
+                # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа
+                mode = get_current_mode(self.state_manager)
                 status = self.mode_to_status.get(mode)
                 if status:
                     # Прямой вызов _apply_status_ui_sync (убрано двойное планирование)

@@ -6,6 +6,7 @@ VoiceRecognitionIntegration - координация распознавания 
 import asyncio
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import random
@@ -14,7 +15,8 @@ from shutil import which
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
+from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
+from integration.core.selectors import create_snapshot_from_state, is_first_run, is_first_run_in_progress, is_ptt_pressed, get_current_session_id
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -23,7 +25,6 @@ try:
 except Exception:
     # Fallback: explicit modules path if repository layout is used
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
-from config.unified_config_loader import UnifiedConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -177,28 +178,80 @@ class VoiceRecognitionIntegration:
         Returns:
             True если есть активная сессия (из state_manager - единый источник истины)
         """
-        # Используем state_manager как единый источник истины
-        session_id = self.state_manager.get_current_session_id()
+        # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+        session_id = get_current_session_id(self.state_manager)
         return session_id is not None
     
-    def _get_active_session_id(self) -> Optional[float]:
+    def _get_active_session_id(self) -> Optional[str]:
         """
         Получить активный session_id из state_manager (единый источник истины).
         
         Returns:
-            Активный session_id или None (конвертируется в float для совместимости)
+            Активный session_id (строка uuid4) или None
         """
-        # Используем state_manager как единый источник истины
-        session_id = self.state_manager.get_current_session_id()
-        if session_id is not None:
-            # Конвертируем в float для совместимости (state_manager хранит строки)
-            try:
-                return float(session_id)
-            except (ValueError, TypeError):
-                return None
-        return None
+        # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+        session_id = get_current_session_id(self.state_manager)
+        # КРИТИЧНО: session_id всегда строка uuid4, без конверсии в float
+        return session_id if session_id is not None else None
     
-    def _set_session_id(self, session_id: Optional[float], reason: str = "unknown"):
+    def _normalize_session_id(self, value: Any) -> Optional[str]:
+        """
+        Нормализовать session_id к валидному uuid4 строковому формату.
+        
+        КРИТИЧНО: voice_recognition не является источником session_id, поэтому
+        при невалидном значении не генерируем новый, а возвращаем None, чтобы
+        не разорвать корреляцию событий. Источником является input_processing.
+        
+        Args:
+            value: Значение session_id (может быть str, float, int, None)
+            
+        Returns:
+            Валидная строка uuid4 или None (если значение невалидно)
+        """
+        if value is None:
+            return None
+        
+        # Если уже строка - проверяем, что это валидный uuid4 (версия 4)
+        if isinstance(value, str):
+            try:
+                # Проверяем, что это валидный uuid4 (версия 4)
+                uuid_obj = uuid.UUID(value)
+                if uuid_obj.version != 4:
+                    logger.warning(
+                        f"⚠️ [VOICE] Invalid session_id version (not uuid4): {value} "
+                        f"(version={uuid_obj.version}). Rejecting to preserve correlation."
+                    )
+                    return None
+                return value
+            except (ValueError, TypeError):
+                # Не валидный uuid - логируем и отклоняем (не генерируем новый)
+                logger.warning(
+                    f"⚠️ [VOICE] Invalid session_id format (not uuid): {value}. "
+                    f"Rejecting to preserve correlation."
+                )
+                return None
+        
+        # Если не строка - пытаемся нормализовать
+        try:
+            # Пытаемся конвертировать в строку и проверить как uuid4
+            str_value = str(value)
+            uuid_obj = uuid.UUID(str_value)
+            if uuid_obj.version != 4:
+                logger.warning(
+                    f"⚠️ [VOICE] Invalid session_id version (not uuid4): {str_value} "
+                    f"(version={uuid_obj.version}). Rejecting to preserve correlation."
+                )
+                return None
+            return str_value
+        except Exception:
+            # Не удалось нормализовать - отклоняем (не генерируем новый)
+            logger.warning(
+                f"⚠️ [VOICE] Failed to normalize session_id: {value} (type: {type(value)}). "
+                f"Rejecting to preserve correlation."
+            )
+            return None
+    
+    def _set_session_id(self, session_id: Optional[str], reason: str = "unknown"):
         """
         Установить session_id в state_manager (единый источник истины).
         
@@ -206,23 +259,40 @@ class VoiceRecognitionIntegration:
         Локальная переменная _current_session_id удалена - все через state_manager.
         
         Args:
-            session_id: Session ID для установки (может быть float или None)
+            session_id: Session ID для установки (строка uuid4 или None)
             reason: Причина установки (для логирования)
         """
         # Устанавливаем в state_manager (единый источник истины)
         if session_id is not None:
-            # Конвертируем в строку для state_manager (он хранит строки)
-            session_id_str = str(session_id)
+            # КРИТИЧНО: Нормализуем session_id к валидному uuid4 формату
+            # Если невалидно - используем текущий из state_manager для сохранения корреляции
+            normalized_session_id = self._normalize_session_id(session_id)
+            if normalized_session_id is None:
+                # Не генерируем новый - используем текущий из state_manager для сохранения корреляции
+                # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+                current_session = get_current_session_id(self.state_manager)
+                if current_session is not None:
+                    logger.warning(
+                        f"⚠️ [VOICE] Invalid session_id: {session_id}. "
+                        f"Using current session from state_manager: {current_session} to preserve correlation."
+                    )
+                    return  # Оставляем текущий session_id
+                else:
+                    logger.error(f"❌ [VOICE] Failed to normalize session_id: {session_id}. No current session to fallback.")
+                    return
+            
             # Обновляем state_manager только если session_id изменился
-            current_state_session = self.state_manager.get_current_session_id()
-            if current_state_session != session_id_str:
+            # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+            current_state_session = get_current_session_id(self.state_manager)
+            if current_state_session != normalized_session_id:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
-                self.state_manager.update_session_id(session_id_str)
-                logger.debug(f"🔄 [VOICE] Session ID синхронизирован с state_manager: {session_id_str} (reason: {reason})")
+                self.state_manager.update_session_id(normalized_session_id)
+                logger.debug(f"🔄 [VOICE] Session ID синхронизирован с state_manager: {normalized_session_id} (reason: {reason})")
         else:
             # Сбрасываем session_id в state_manager только если он был установлен
-            if self.state_manager.get_current_session_id() is not None:
+            # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+            if get_current_session_id(self.state_manager) is not None:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
                 self.state_manager.update_session_id(None)
@@ -233,9 +303,10 @@ class VoiceRecognitionIntegration:
         try:
             logger.debug(f"🎤 [VOICE_DEBUG] _on_recording_start event received: {event}")
             
-            # КРИТИЧНО: Используем state_manager для проверки first_run
-            first_run_in_progress = self.state_manager.get_state_data("first_run_in_progress", False)
-            if first_run_in_progress or self._first_run_in_progress:
+            # КРИТИЧНО: Используем selectors для проверки first_run вместо прямого доступа к state_manager
+            snapshot = create_snapshot_from_state(self.state_manager)
+            first_run_active = is_first_run(snapshot) or is_first_run_in_progress(self.state_manager) or self._first_run_in_progress
+            if first_run_active:
                 logger.warning(
                     "⚠️ [VOICE] Блокировка активации - first_run в процессе."
                 )
@@ -302,9 +373,12 @@ class VoiceRecognitionIntegration:
                 else:
                     logger.warning("VOICE: session_id is None, cannot start recognition")
         except Exception as e:
-            logger.error(f"VOICE: error in recording_start handler: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.HIGH,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки recording_start: {e}",
+                context={"where": "voice_recognition_integration.on_recording_start", "session_id": event.get("data", {}).get("session_id")}
+            )
 
     async def _on_recording_stop(self, event: Dict[str, Any]):
         try:
@@ -350,7 +424,12 @@ class VoiceRecognitionIntegration:
                 pass
                 
         except Exception as e:
-            logger.error(f"VOICE: error in recording_stop handler: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки recording_stop: {e}",
+                context={"where": "voice_recognition_integration.on_recording_stop", "session_id": data.get("session_id")}
+            )
 
     async def _on_cancel_request(self, event: Dict[str, Any]):
         try:
@@ -364,7 +443,12 @@ class VoiceRecognitionIntegration:
             self._set_session_id(None, reason="cancel_requested")
             self._recording_active = False
         except Exception as e:
-            logger.error(f"VOICE: error in cancel handler: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки cancel: {e}",
+                context={"where": "voice_recognition_integration.on_cancel_request"}
+            )
 
     async def _on_app_mode_changed(self, event: Dict[str, Any]):
         """Страховка: при выходе из LISTENING закрываем любое активное прослушивание"""
@@ -384,7 +468,12 @@ class VoiceRecognitionIntegration:
                         except Exception as e:
                             logger.warning(f"Error cancelling listening: {e}")
         except Exception as e:
-            logger.debug(f"VOICE: mode_changed guard failed: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.LOW,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки mode_changed: {e}",
+                context={"where": "voice_recognition_integration.on_app_mode_changed", "new_mode": data.get("mode")}
+            )
 
     async def _on_first_run_started(self, event: Dict[str, Any]):
         """Обработчик начала процедуры first_run - блокируем активацию"""
@@ -399,7 +488,12 @@ class VoiceRecognitionIntegration:
                 self._recording_active = False
                 logger.info("   Остановлена активная запись (если была)")
         except Exception as e:
-            logger.error(f"❌ [VOICE_RECOGNITION] Ошибка обработки first_run_started: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки first_run_started: {e}",
+                context={"where": "voice_recognition_integration.on_first_run_started"}
+            )
 
     async def _on_first_run_completed(self, event: Dict[str, Any]):
         """Обработчик завершения/ошибки процедуры first_run - разблокируем активацию"""
@@ -409,9 +503,14 @@ class VoiceRecognitionIntegration:
                 "🔓 [VOICE_RECOGNITION] First run завершён - разблокировка активации микрофона"
             )
         except Exception as e:
-            logger.error(f"❌ [VOICE_RECOGNITION] Ошибка обработки first_run_completed: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки first_run_completed: {e}",
+                context={"where": "voice_recognition_integration.on_first_run_completed"}
+            )
 
-    async def _start_recognition(self, session_id: float):
+    async def _start_recognition(self, session_id: str):
         # Публикуем старт распознавания
         await self.event_bus.publish("voice.recognition_started", {
             "session_id": session_id,
@@ -545,13 +644,17 @@ class VoiceRecognitionIntegration:
             else:
                 logger.error("❌ [AUDIO_V2] No running event loop found to publish result")
         except Exception as e:
+            # КРИТИЧНО: В callback'е нет доступа к async error_handler, используем logger
             logger.error(f"❌ [AUDIO_V2] Error in completed callback: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def _publish_v2_completed(self, session_id, result: "GoogleSRResult") -> None:
         """Helper to publish v2 completion via EventBus."""
         try:
-            # Если PTT удерживается — не закрываем микрофон и не публикуем результат
-            if self.state_manager.get_state_data("ptt_pressed", False) and self._recording_active:
+            # КРИТИЧНО: Используем selector для проверки ptt_pressed вместо прямого доступа к state_manager
+            ptt_pressed = is_ptt_pressed(self.state_manager)
+            if ptt_pressed and self._recording_active:
                 self._defer_result_until_stop = True
                 if self._google_sr_controller:
                     self._v2_current_session_id = session_id
@@ -578,7 +681,12 @@ class VoiceRecognitionIntegration:
                 })
             self._recording_active = False
         except Exception as e:
-            logger.error(f"❌ [AUDIO_V2] Error publishing completed: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка публикации completed: {e}",
+                context={"where": "voice_recognition_integration.publish_v2_completed", "session_id": session_id}
+            )
     
     def _on_sr_v2_failed(self, error: str) -> None:
         """Callback when v2 controller fails."""
@@ -599,13 +707,17 @@ class VoiceRecognitionIntegration:
             else:
                 logger.error("❌ [AUDIO_V2] No running event loop found to publish failure")
         except Exception as e:
+            # КРИТИЧНО: В callback'е нет доступа к async error_handler, используем logger
             logger.error(f"❌ [AUDIO_V2] Error in failed callback: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def _publish_v2_failed(self, session_id, error: str) -> None:
         """Helper to publish v2 failure via EventBus."""
         try:
-            # Если PTT удерживается — не закрываем микрофон и не публикуем ошибку
-            if self.state_manager.get_state_data("ptt_pressed", False) and self._recording_active:
+            # КРИТИЧНО: Используем selector для проверки ptt_pressed вместо прямого доступа к state_manager
+            ptt_pressed = is_ptt_pressed(self.state_manager)
+            if ptt_pressed and self._recording_active:
                 self._defer_result_until_stop = True
                 if self._google_sr_controller:
                     self._v2_current_session_id = session_id
@@ -622,7 +734,12 @@ class VoiceRecognitionIntegration:
             })
             self._recording_active = False
         except Exception as e:
-            logger.error(f"❌ [AUDIO_V2] Error publishing failed: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка публикации failed: {e}",
+                context={"where": "voice_recognition_integration.publish_v2_failed", "session_id": session_id}
+            )
     
     async def _check_microphone_permissions(self):
         """Проверить разрешения микрофона (получаем от macOS)"""

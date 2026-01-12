@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core.selectors import get_current_session_id
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -311,10 +312,13 @@ class InterruptManagementIntegration:
             source = event.get("source", "unknown")
             
             # КРИТИЧНО: Восстанавливаем session_id из state_manager как единственный источник истины
+            # Используем selector для чтения session_id вместо прямого доступа
             if session_id is None:
-                session_id = self.state_manager.get_current_session_id()
+                session_id = get_current_session_id(self.state_manager)
             
-            logger.debug(f"🛑 InterruptManager: interrupt.request - type={interrupt_type}, data.session_id={data.get('session_id')}, event.session_id={event.get('session_id')}, state_manager.session_id={self.state_manager.get_current_session_id()}, final.session_id={session_id}")
+            # КРИТИЧНО: Используем selector для логирования вместо прямого доступа
+            state_session_id = get_current_session_id(self.state_manager)
+            logger.debug(f"🛑 InterruptManager: interrupt.request - type={interrupt_type}, data.session_id={data.get('session_id')}, event.session_id={event.get('session_id')}, state_manager.session_id={state_session_id}, final.session_id={session_id}")
             
             if not interrupt_type:
                 logger.warning("Interrupt request without type, event=%s", event)

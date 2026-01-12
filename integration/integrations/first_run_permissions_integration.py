@@ -22,6 +22,7 @@ import os
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core.selectors import is_restart_completed_fallback
 from integration.utils.resource_path import get_user_data_dir
 
 from config.unified_config_loader import UnifiedConfigLoader
@@ -268,7 +269,8 @@ class FirstRunPermissionsIntegration:
 
             # ⚡ Проверяем, это ли перезапуск после выдачи разрешений
             # Если да — НЕ требуем повторного запроса и НЕ перезапускаем снова
-            is_post_restart = self.flag_file.exists() and self.state_manager.get_restart_completed_fallback()
+            # КРИТИЧНО: Используем selector для чтения флага вместо прямого доступа
+            is_post_restart = self.flag_file.exists() and is_restart_completed_fallback(self.state_manager)
             
             if is_post_restart:
                 logger.info(

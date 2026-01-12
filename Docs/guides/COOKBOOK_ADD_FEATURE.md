@@ -1,6 +1,6 @@
 # 🍳 Cookbook: How to Add a New Feature (15 mins)
 
-> **Goal**: Add a new feature safely using the standardized `Module -> Integration -> EventBus` route.
+> **Goal**: Add a new feature safely using the standardized routes for Client, Server, and End-to-End flows.
 > **Time**: 10-15 minutes.
 > **Prerequisites**: VS Code, Terminal.
 
@@ -14,7 +14,7 @@
 
 ---
 
-## 📝 Step-by-Step Checklist
+## 📝 Step-by-Step Checklist (Client)
 
 ### Phase 1: Create the Module (5 mins)
 
@@ -62,6 +62,54 @@
     self.your_feature = YourFeatureIntegration(self.event_bus, self.error_handler)
     await self.your_feature.initialize()
     ```
+
+---
+
+## 🧩 Server Feature Route (Server)
+
+Use this section only when the feature requires server-side changes.
+
+### Phase 4: Create Server Module (5 mins)
+
+1.  [ ] **Add Module**
+    Create `server/server/modules/your_feature/` with pure business logic.
+    - No direct imports from other modules.
+    - Implement or adapt to `UniversalModuleInterface` (use adapter if needed).
+
+2.  [ ] **Register in ModuleFactory**
+    Update `server/server/integrations/core/module_factory.py`:
+    ```python
+    ModuleFactory.register("your_feature", "modules.your_feature.adapter:YourFeatureAdapter")
+    ```
+
+### Phase 5: Integrate & Configure (5 mins)
+
+3.  [ ] **Coordinator Registration**
+    Register capability in server coordinator flow (ModuleCoordinator):
+    - Ensure the capability is registered/initialized in the server startup path.
+
+4.  [ ] **Server Config**
+    Add config in `server/server/config/unified_config.yaml`.
+    - If feature flags are used, register in `server/server/Docs/FEATURE_FLAGS.md`.
+
+---
+
+## 🔗 End-to-End (Client ↔ Server)
+
+Use this when feature spans both sides.
+
+1.  [ ] **Contract**
+    Define the event ↔ gRPC contract and payload (include `session_id`).
+2.  [ ] **Client Integration**
+    Publish/subscribe via EventBus using the client template.
+3.  [ ] **Server Module**
+    Implement capability and register via ModuleFactory.
+4.  [ ] **Server Coordinator**
+    Ensure the capability is initialized and accessed via ModuleCoordinator.
+4.  [ ] **Config + Flags**
+    Add both client and server configs and flags (if needed).
+5.  [ ] **E2E Contract Check**
+    Confirm `session_id` is present in all client events and server responses.
 
 ---
 

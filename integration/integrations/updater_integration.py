@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode
-from integration.core.selectors import is_update_in_progress
+from integration.core.selectors import is_update_in_progress, get_current_mode
 from modules.updater import Updater
 from modules.updater.config import UpdaterConfig
 from config.updater_manager import get_updater_manager
@@ -74,10 +74,10 @@ class UpdaterIntegration:
             await self._setup_event_handlers()
             # Initialize current mode from state (one-time read allowed during init)
             # After init, mode is tracked via events only
+            # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа
             try:
-                initial_mode = self.state_manager.get_current_mode()
-                if isinstance(initial_mode, AppMode):
-                    self._current_mode = initial_mode
+                initial_mode = get_current_mode(self.state_manager)
+                self._current_mode = initial_mode
             except Exception:
                 self._current_mode = AppMode.SLEEPING
             # Attach event loop for async event publishing
@@ -170,21 +170,13 @@ class UpdaterIntegration:
         # Fallback: Если tracked mode == SLEEPING (initial state), проверяем актуальный режим
         # Это необходимо для тестов и edge cases, когда события не работают
         # TODO: Remove fallback after all consumers migrate to event-based mode tracking
+        # КРИТИЧНО: Используем selector для чтения режима вместо прямого доступа
         try:
-            actual_mode = self.state_manager.get_current_mode()
-            if isinstance(actual_mode, AppMode):
-                # Update tracked mode if different (fallback sync)
-                if actual_mode != current_mode:
-                    self._current_mode = actual_mode
-                    current_mode = actual_mode
-            elif not isinstance(actual_mode, AppMode):
-                # Normalize string/other types to AppMode
-                try:
-                    actual_mode = AppMode(actual_mode)
-                    self._current_mode = actual_mode
-                    current_mode = actual_mode
-                except Exception:
-                    pass
+            actual_mode = get_current_mode(self.state_manager)
+            # Update tracked mode if different (fallback sync)
+            if actual_mode != current_mode:
+                self._current_mode = actual_mode
+                current_mode = actual_mode
         except Exception:
             pass  # Use tracked mode if fallback fails
         

@@ -231,6 +231,68 @@ def is_restart_completed_fallback(state_manager: ApplicationStateManager) -> boo
         return False
 
 
+def is_ptt_pressed(state_manager: ApplicationStateManager) -> bool:
+    """Check if PTT (Push-To-Talk) button is currently pressed.
+    
+    This is an event flag (not a state axis), but we use a selector
+    to prevent direct state access in integrations per REQ-004.
+    
+    Source of truth is InputProcessingIntegration which sets this flag
+    on keyboard press/release events.
+    """
+    try:
+        return bool(state_manager.get_state_data("ptt_pressed", False))
+    except Exception:
+        return False
+
+
+def is_first_run_in_progress(state_manager: ApplicationStateManager) -> bool:
+    """Check if first_run procedure is currently in progress.
+    
+    This flag is set during the first_run permissions flow and blocks
+    certain integrations from activating.
+    
+    Source of truth is FirstRunPermissionsIntegration which sets this flag.
+    """
+    try:
+        return bool(state_manager.get_state_data("first_run_in_progress", False))
+    except Exception:
+        return False
+
+
+def get_current_mode(state_manager: ApplicationStateManager) -> AppMode:
+    """Get current application mode.
+    
+    This selector exists to prevent direct state access in integrations per REQ-004.
+    Even mode_management_integration should use this selector for reading mode.
+    
+    Source of truth is ApplicationStateManager.
+    """
+    try:
+        mode = state_manager.get_current_mode()
+        if not isinstance(mode, AppMode):
+            try:
+                mode = AppMode(mode)  # type: ignore[arg-type]
+            except Exception:
+                mode = AppMode.SLEEPING
+        return mode
+    except Exception:
+        return AppMode.SLEEPING
+
+
+def get_current_session_id(state_manager: ApplicationStateManager) -> Optional[str]:
+    """Get current session_id.
+    
+    This selector exists to prevent direct state access in integrations per REQ-004.
+    
+    Source of truth is ApplicationStateManager.
+    """
+    try:
+        return state_manager.get_current_session_id()
+    except Exception:
+        return None
+
+
 def create_snapshot_from_state(
     state_manager: ApplicationStateManager,
     *,

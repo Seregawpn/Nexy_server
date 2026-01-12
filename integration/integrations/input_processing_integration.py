@@ -4,19 +4,22 @@
 
 import asyncio
 import logging
+import uuid
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 import time
 
 # Импорты модулей input_processing
-from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
-from modules.input_processing.keyboard.types import KeyEvent, KeyEventType, KeyboardConfig
+# NOTE: Импорты modules.* и config.* разрешаются через PYTHONPATH, настроенный в main.py
+from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor  # type: ignore[reportMissingImports]
+from modules.input_processing.keyboard.types import KeyEvent, KeyEventType, KeyboardConfig  # type: ignore[reportMissingImports]
 
 # Импорты интеграции
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[attr-defined]
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
-from config.unified_config_loader import InputProcessingConfig
+from integration.core.selectors import create_snapshot_from_state, is_ptt_pressed, get_current_session_id
+from config.unified_config_loader import InputProcessingConfig  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +50,11 @@ class InputProcessingIntegration:
         self._last_short_ts: float = 0.0
         # Текущее состояние gRPC-потока
         self._session_waiting_grpc: bool = False
-        self._active_grpc_session_id: Optional[float] = None
+        self._active_grpc_session_id: Optional[str] = None
         # Подготовленная, но ещё не подтверждённая (LONG_PRESS) сессия
-        self._pending_session_id: Optional[float] = None
+        self._pending_session_id: Optional[str] = None
         # Последний валидный session_id для отмены текущего gRPC/плеера
-        self._cancel_session_id: Optional[float] = None
+        self._cancel_session_id: Optional[str] = None
         # Время начала записи для проверки минимальной длительности
         self._recording_start_time: float = 0.0
         # Минимальная длительность записи
@@ -151,10 +154,6 @@ class InputProcessingIntegration:
         """Начало удержания: готовим сессию, но не открываем микрофон (until LONG_PRESS)."""
         print(f"🎤🎤🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
-        # TRACE: начало ввода
-        ts_ms = int(time.monotonic() * 1000)
-        pending_session = event.timestamp or time.monotonic()
-        logger.info(f"TRACE phase=input.press ts={ts_ms} session={pending_session} extra={{key={event.key}}}")
         try:
             # КРИТИЧНО: Сбрасываем отмену предыдущей сессии при новом удержании
             # Это гарантирует, что отмена не "протекает" в следующую сессию
@@ -162,9 +161,18 @@ class InputProcessingIntegration:
                 self._pending_recording_cancelled = False
                 logger.debug("PRESS: pending_recording_cancelled сброшен (new session)")
             
+            # КРИТИЧНО: Генерируем новый uuid4 session_id ДО логирования TRACE
+            # Это гарантирует, что TRACE-лог содержит валидный uuid4
+            self._pending_session_id = str(uuid.uuid4())
+            
+            # TRACE: начало ввода (используем сгенерированный uuid4)
+            ts_ms = int(time.monotonic() * 1000)
+            logger.info(f"TRACE phase=input.press ts={ts_ms} session={self._pending_session_id} extra={{key={event.key}}}")
+            
             # Отмечаем активное удержание PTT для управления микрофоном
             self.state_manager.set_state_data("ptt_pressed", True)
-            ptt_pressed = self.state_manager.get_state_data("ptt_pressed", False)
+            # КРИТИЧНО: Используем selector для проверки ptt_pressed вместо прямого доступа к state_manager
+            ptt_pressed = is_ptt_pressed(self.state_manager)
             logger.info(f"🎤 PTT: keyDown({event.key}) → PRESS, timestamp={event.timestamp}, ptt_pressed={ptt_pressed}, recording_started={self._recording_started}")
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id
             active_session_id = self._get_active_session_id()
@@ -177,9 +185,6 @@ class InputProcessingIntegration:
             if previous_session is not None:
                 self._cancel_session_id = previous_session
                 logger.debug("PRESS: сохранён session_id для отмены: %s", previous_session)
-
-            # Подготавливаем потенциальный новый session_id, но не активируем его до LONG_PRESS
-            self._pending_session_id = event.timestamp or time.monotonic()
             self._session_recognized = False
             self._recording_started = False
             logger.debug("PRESS: pending_session_id=%s", self._pending_session_id)
@@ -352,8 +357,8 @@ class InputProcessingIntegration:
         Returns:
             True если есть активная сессия (из state_manager - единый источник истины)
         """
-        # Используем state_manager как единый источник истины
-        session_id = self.state_manager.get_current_session_id()
+        # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+        session_id = get_current_session_id(self.state_manager)
         return session_id is not None
     
     def _should_stop_recording(self) -> bool:
@@ -365,24 +370,75 @@ class InputProcessingIntegration:
         """
         return self._is_recording_active() or self._has_active_session()
     
-    def _get_active_session_id(self) -> Optional[float]:
+    def _get_active_session_id(self) -> Optional[str]:
         """
         Получить активный session_id из state_manager (единый источник истины).
         
         Returns:
-            Активный session_id или None (конвертируется в float для совместимости)
+            Активный session_id (строка uuid4) или None
         """
-        # Используем state_manager как единый источник истины
-        session_id = self.state_manager.get_current_session_id()
-        if session_id is not None:
-            # Конвертируем в float для совместимости (state_manager хранит строки)
-            try:
-                return float(session_id)
-            except (ValueError, TypeError):
-                return None
-        return None
+        # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+        session_id = get_current_session_id(self.state_manager)
+        # КРИТИЧНО: session_id всегда строка uuid4, без конверсии в float
+        return session_id if session_id is not None else None
     
-    def _set_session_id(self, session_id: Optional[float], reason: str = "unknown"):
+    def _normalize_session_id(self, value: Any) -> Optional[str]:
+        """
+        Нормализовать session_id к валидному uuid4 строковому формату.
+        
+        КРИТИЧНО: input_processing является источником session_id, поэтому
+        при невалидном значении генерируем новый uuid4.
+        
+        Args:
+            value: Значение session_id (может быть str, float, int, None)
+            
+        Returns:
+            Валидная строка uuid4 или None (если value is None)
+        """
+        if value is None:
+            return None
+        
+        # Если уже строка - проверяем, что это валидный uuid4 (версия 4)
+        if isinstance(value, str):
+            try:
+                # Проверяем, что это валидный uuid4 (версия 4)
+                uuid_obj = uuid.UUID(value)
+                if uuid_obj.version != 4:
+                    logger.warning(
+                        f"⚠️ [INPUT] Invalid session_id version (not uuid4): {value} "
+                        f"(version={uuid_obj.version}). Generating new uuid4."
+                    )
+                    return str(uuid.uuid4())
+                return value
+            except (ValueError, TypeError):
+                # Не валидный uuid - логируем и генерируем новый
+                logger.warning(
+                    f"⚠️ [INPUT] Invalid session_id format (not uuid): {value}. "
+                    f"Generating new uuid4."
+                )
+                return str(uuid.uuid4())
+        
+        # Если не строка - пытаемся нормализовать
+        try:
+            # Пытаемся конвертировать в строку и проверить как uuid4
+            str_value = str(value)
+            uuid_obj = uuid.UUID(str_value)
+            if uuid_obj.version != 4:
+                logger.warning(
+                    f"⚠️ [INPUT] Invalid session_id version (not uuid4): {str_value} "
+                    f"(version={uuid_obj.version}). Generating new uuid4."
+                )
+                return str(uuid.uuid4())
+            return str_value
+        except Exception:
+            # Не удалось нормализовать - генерируем новый
+            logger.warning(
+                f"⚠️ [INPUT] Failed to normalize session_id: {value} (type: {type(value)}). "
+                f"Generating new uuid4."
+            )
+            return str(uuid.uuid4())
+    
+    def _set_session_id(self, session_id: Optional[str], reason: str = "unknown"):
         """
         Установить session_id в state_manager (единый источник истины).
         
@@ -390,23 +446,29 @@ class InputProcessingIntegration:
         Локальная переменная _current_session_id удалена - все через state_manager.
         
         Args:
-            session_id: Session ID для установки (может быть float или None)
+            session_id: Session ID для установки (строка uuid4 или None)
             reason: Причина установки (для логирования)
         """
         # Устанавливаем в state_manager (единый источник истины)
         if session_id is not None:
-            # Конвертируем в строку для state_manager (он хранит строки)
-            session_id_str = str(session_id)
+            # КРИТИЧНО: Нормализуем session_id к валидному uuid4 формату
+            normalized_session_id = self._normalize_session_id(session_id)
+            if normalized_session_id is None:
+                logger.error(f"❌ [INPUT] Failed to normalize session_id: {session_id}. Dropping session_id.")
+                return
+            
             # Обновляем state_manager только если session_id изменился
-            current_state_session = self.state_manager.get_current_session_id()
-            if current_state_session != session_id_str:
+            # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+            current_state_session = get_current_session_id(self.state_manager)
+            if current_state_session != normalized_session_id:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
-                self.state_manager.update_session_id(session_id_str)
-                logger.debug(f"🔄 Session ID синхронизирован с state_manager: {session_id_str} (reason: {reason})")
+                self.state_manager.update_session_id(normalized_session_id)
+                logger.debug(f"🔄 Session ID синхронизирован с state_manager: {normalized_session_id} (reason: {reason})")
         else:
             # Сбрасываем session_id в state_manager только если он был установлен
-            if self.state_manager.get_current_session_id() is not None:
+            # КРИТИЧНО: Используем selector для чтения session_id вместо прямого доступа
+            if get_current_session_id(self.state_manager) is not None:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
                 self.state_manager.update_session_id(None)
@@ -473,7 +535,12 @@ class InputProcessingIntegration:
             self._playback_active = True
             logger.debug("PLAYBACK: started (session=%s)", (event or {}).get("data", {}).get("session_id"))
         except Exception as e:
-            logger.debug("PLAYBACK: error handling start event: %s", e)
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.LOW,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки playback.started: {e}",
+                context={"where": "input_processing_integration.on_playback_started"}
+            )
 
     async def _on_playback_finished(self, event):
         try:
@@ -482,7 +549,12 @@ class InputProcessingIntegration:
             logger.debug("PLAYBACK: finished (event=%s, session=%s)", (event or {}).get("type"), session_id)
             self._notify_playback_idle()
         except Exception as e:
-            logger.debug("PLAYBACK: error handling finish event: %s", e)
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.LOW,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки playback.finished: {e}",
+                context={"where": "input_processing_integration.on_playback_finished", "session_id": data.get("session_id")}
+            )
 
     async def _on_mic_opened(self, event):
         try:
@@ -493,7 +565,12 @@ class InputProcessingIntegration:
             if self._mic_reset_timeout > 0:
                 await self._start_mic_monitor()
         except Exception as e:
-            logger.debug("MIC: error handling open event: %s", e)
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.LOW,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки mic.opened: {e}",
+                context={"where": "input_processing_integration.on_mic_opened"}
+            )
 
     async def _on_mic_closed(self, event):
         try:
@@ -502,7 +579,12 @@ class InputProcessingIntegration:
             logger.debug("MIC: closed (session=%s)", session_id)
             self._notify_mic_closed()
         except Exception as e:
-            logger.debug("MIC: error handling close event: %s", e)
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.LOW,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки mic.closed: {e}",
+                context={"where": "input_processing_integration.on_mic_closed", "session_id": data.get("session_id")}
+            )
 
     def _notify_playback_idle(self):
         self._playback_active = False
@@ -545,7 +627,12 @@ class InputProcessingIntegration:
                     fut.set_result(True)
                     logger.debug("🔓 [INPUT_PROCESSING] Разрешён ожидающий Future при first_run_started")
         except Exception as e:
-            logger.error(f"❌ [INPUT_PROCESSING] Ошибка обработки first_run_started: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки first_run_started: {e}",
+                context={"where": "input_processing_integration.on_first_run_started"}
+            )
     
     async def _on_first_run_completed(self, event):
         """Обработчик завершения/ошибки процедуры first_run - гарантируем синхронизацию состояния"""
@@ -566,7 +653,12 @@ class InputProcessingIntegration:
                     fut.set_result(True)
                     logger.debug("🔓 [INPUT_PROCESSING] Разрешён ожидающий Future при first_run_completed")
         except Exception as e:
-            logger.error(f"❌ [INPUT_PROCESSING] Ошибка обработки first_run_completed: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка обработки first_run_completed: {e}",
+                context={"where": "input_processing_integration.on_first_run_completed"}
+            )
 
     async def _ensure_playback_idle(self, *, for_recording: bool = True):
         """Ждет завершения воспроизведения. Для запуска записи добавляет паузу."""
@@ -655,6 +747,7 @@ class InputProcessingIntegration:
                 "reason": reason,
             }))
         except Exception as e:
+            # КРИТИЧНО: В синхронном методе используем logger, так как error_handler async
             logger.error(f"❌ [INPUT_PROCESSING] Ошибка публикации voice.mic_closed при сбросе: {e}")
 
     async def _start_mic_monitor(self):
@@ -693,6 +786,7 @@ class InputProcessingIntegration:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
+                    # КРИТИЧНО: В async задаче используем logger, так как error_handler может быть недоступен
                     logger.error(f"❌ [INPUT_PROCESSING] Ошибка в цикле мониторинга микрофона: {e}")
                     break
         
@@ -701,7 +795,12 @@ class InputProcessingIntegration:
             self._mic_monitor_task = loop.create_task(_monitor_loop())
             logger.debug(f"🎤 [INPUT_PROCESSING] Мониторинг таймаута микрофона запущен (timeout={self._mic_reset_timeout}s)")
         except Exception as e:
-            logger.error(f"❌ [INPUT_PROCESSING] Ошибка запуска мониторинга микрофона: {e}")
+            await self.error_handler.handle_error(
+                severity=ErrorSeverity.MEDIUM,
+                category=ErrorCategory.RUNTIME,
+                message=f"Ошибка запуска мониторинга микрофона: {e}",
+                context={"where": "input_processing_integration.start_mic_monitor"}
+            )
 
     def _stop_mic_monitor(self):
         """Останавливает фоновую задачу мониторинга таймаута микрофона."""
@@ -744,7 +843,7 @@ class InputProcessingIntegration:
                     if not self.keyboard_monitor.start_monitoring():
                         logger.warning("⚠️ QuartzKeyboardMonitor не запустился (нет прав). Фоллбек на pynput")
                         # Переключаемся на pynput
-                        from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
+                        from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor  # type: ignore[reportMissingImports]
                         self.keyboard_monitor = KeyboardMonitor(self.config.keyboard)  # type: ignore[assignment]
                         self._using_quartz = False
                         
@@ -928,8 +1027,10 @@ class InputProcessingIntegration:
                 return
 
             # Debounce: подавляем повторные короткие нажатия в LISTENING в течение ~120 мс
+            # КРИТИЧНО: Используем snapshot для проверки режима вместо прямого доступа
             try:
-                current = self.state_manager.get_current_mode()
+                snapshot = create_snapshot_from_state(self.state_manager)
+                current = snapshot.app_mode
             except Exception:
                 current = None
             now = time.monotonic()
@@ -965,8 +1066,10 @@ class InputProcessingIntegration:
                     logger.info("🛑 SHORT_PRESS (с записью): grpc.request_cancel опубликовано")
                 # КРИТИЧНО: Проверяем минимальную длительность записи
                 duration = time.time() - self._recording_start_time
+                # КРИТИЧНО: Используем snapshot для проверки режима вместо прямого доступа
                 try:
-                    current_mode = self.state_manager.get_current_mode()
+                    snapshot = create_snapshot_from_state(self.state_manager)
+                    current_mode = snapshot.app_mode
                 except Exception:
                     current_mode = None
 
@@ -1044,7 +1147,8 @@ class InputProcessingIntegration:
         print(f"🎤🎤🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
         logger.info(f"🎤 _handle_long_press ВЫЗВАН! duration={event.duration:.3f}s")
         try:
-            ptt_pressed = self.state_manager.get_state_data("ptt_pressed", False)
+            # КРИТИЧНО: Используем selector для проверки ptt_pressed вместо прямого доступа к state_manager
+            ptt_pressed = is_ptt_pressed(self.state_manager)
             logger.info(f"🎤 PTT: LONG_PRESS triggered → RECORDING_START, duration={event.duration:.3f}s, ptt_pressed={ptt_pressed}, recording_started={self._recording_started}")
             logger.info(f"🔑 LONG_PRESS: {event.duration:.3f}с")
             print(f"🔑 LONG_PRESS: {event.duration:.3f}с")  # Для отладки
@@ -1074,7 +1178,8 @@ class InputProcessingIntegration:
             # ЗАЩИТА 2: Если pending_session отсутствует, создаем новый (чтобы длинное нажатие не терялось)
             if self._pending_session_id is None:
                 logger.info("⚠️ LONG_PRESS пришел БЕЗ pending_session - создаем новый")
-                self._pending_session_id = event.timestamp or time.monotonic()
+                # КРИТИЧНО: Генерируем uuid4 строку вместо float timestamp
+                self._pending_session_id = str(uuid.uuid4())
 
             # ЗАЩИТА 3: Проверяем, что клавиша ЕЩЕ нажата (дополнительная проверка)
             if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
@@ -1119,7 +1224,8 @@ class InputProcessingIntegration:
                     return
             
             # На LONG_PRESS стартуем запись и переходим в LISTENING (push-to-talk)
-            new_session_id = self._pending_session_id or event.timestamp or time.monotonic()
+            # КРИТИЧНО: Генерируем uuid4 строку вместо float timestamp
+            new_session_id = self._pending_session_id or str(uuid.uuid4())
             # Полностью очищаем предыдущее состояние перед новой записью
             self._reset_session("long_press_start")
             # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
@@ -1154,8 +1260,10 @@ class InputProcessingIntegration:
                     pass  # Игнорируем таймаут - запись уже запущена, не блокируем
 
                 # Запрашиваем переход в LISTENING централизованно, но только если не в PROCESSING
+                # КРИТИЧНО: Используем snapshot для проверки режима вместо прямого доступа
                 try:
-                    current_mode = self.state_manager.get_current_mode()
+                    snapshot = create_snapshot_from_state(self.state_manager)
+                    current_mode = snapshot.app_mode
                     if current_mode == AppMode.PROCESSING:
                         logger.info("LONG_PRESS: в PROCESSING режиме, пропускаем запрос на LISTENING")
                     else:
@@ -1187,9 +1295,10 @@ class InputProcessingIntegration:
         logger.info(f"🎤 _handle_key_release ВЫЗВАН! duration={event.duration:.3f}s")
         try:
             # Снимаем флаг удержания PTT
-            ptt_pressed_before = self.state_manager.get_state_data("ptt_pressed", False)
+            # КРИТИЧНО: Используем selector для проверки ptt_pressed вместо прямого доступа к state_manager
+            ptt_pressed_before = is_ptt_pressed(self.state_manager)
             self.state_manager.set_state_data("ptt_pressed", False)
-            ptt_pressed_after = self.state_manager.get_state_data("ptt_pressed", False)
+            ptt_pressed_after = is_ptt_pressed(self.state_manager)
             duration_ms = event.duration * 1000 if event.duration else 0
             logger.info(f"🛑 PTT: keyUp({event.key}) → RELEASE, duration={duration_ms:.0f}ms, ptt_pressed={ptt_pressed_before}→{ptt_pressed_after}, recording_started={self._recording_started}")
             # КРИТИЧНО: Используем _get_active_session_id для получения session_id

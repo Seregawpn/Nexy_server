@@ -220,6 +220,16 @@
 
 ## Workflow и процессы
 
+### 0. Добавление нового функционала (единый маршрут)
+
+**Единый источник истины**: `Docs/guides/COOKBOOK_ADD_FEATURE.md`  
+Другие документы содержат только краткие ссылки и не дублируют шаги.
+
+**Кратко**:
+- Client: Module → Integration → EventBus → Config
+- Server: Module → ModuleFactory → ModuleCoordinator → Config
+- End-to-End: единый контракт payload + `session_id`
+
 ### 1. Создание задачи
 
 **Процесс**:
