@@ -269,6 +269,8 @@ class GrpcClient:
             session_id: ID сессии (обязателен, единственный источник истины - ApplicationStateManager)
         """
         # КРИТИЧНО: Fail-fast проверка session_id
+        # Преобразуем session_id в строку (может быть float или другой тип)
+        session_id = str(session_id) if session_id is not None else ""
         if not session_id or not session_id.strip():
             error_msg = "session_id is required and must be provided (Source of Truth: ApplicationStateManager)"
             logger.error(f"❌ [gRPC] {error_msg}")
