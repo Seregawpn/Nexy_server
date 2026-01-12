@@ -62,12 +62,14 @@ def run_command(cmd: List[str], timeout: Optional[int] = None) -> Tuple[bool, st
         (success, stdout, stderr)
     """
     try:
+        # Исправляем путь: скрипт находится в server/scripts/, нужно подняться на 2 уровня
+        script_dir = Path(__file__).parent.parent.parent
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd=Path(__file__).parent.parent
+            cwd=str(script_dir)
         )
         return result.returncode == 0, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
