@@ -35,8 +35,11 @@
 | `screenshot` | `optional string` | 2 | ⚪ optional | Base64 WebP скриншот | ✅ Можно добавить новые optional поля |
 | `screen_width` | `optional int32` | 3 | ⚪ optional | Ширина экрана | ✅ Можно добавить новые optional поля |
 | `screen_height` | `optional int32` | 4 | ⚪ optional | Высота экрана | ✅ Можно добавить новые optional поля |
-| `hardware_id` | `string` | 5 | ✅ required | Hardware ID | ❌ Нельзя менять |
-| `session_id` | `optional string` | 6 | ⚪ optional | ID сессии | ✅ Можно добавить новые optional поля |
+| `hardware_id` | `string` | 5 | ✅ required | Hardware ID (не может быть пустым или "unknown") | ❌ Нельзя менять |
+| `session_id` | `string` | 6 | ✅ required* | ID сессии (обязателен с 2026-01-12, см. CHANGELOG.md) | ❌ Нельзя менять |
+
+**Примечания:**
+- `*` `session_id` технически не имеет `optional` в proto (убрано в 2026-01-12), но из-за ограничений proto3 все поля остаются optional на уровне wire format. Однако **обязателен на уровне сервера** — сервер возвращает `INVALID_ARGUMENT` при отсутствии. См. раздел "Breaking Changes" ниже.
 
 **Правила изменения:**
 - ✅ Можно добавлять новые `optional` поля (новые теги: 7, 8, 9...)
@@ -159,10 +162,34 @@
 
 ## Текущий статус изменений
 
+### Breaking Changes (2026-01-12)
+
+#### 1. Строгий контракт `session_id`
+- **Статус:** ✅ Реализовано
+- **Описание:** В proto `session_id` помечен как `string session_id = 6` с комментарием `REQUIRED` (из-за ограничений proto3 нельзя сделать поле действительно required, но сервер **требует его обязательно** для корректной работы системы).
+- **Причина:** Единый источник истины для `session_id` — `InputProcessingIntegration` на клиенте. Fallback-генерация на сервере нарушает архитектуру и создаёт риск рассинхрона.
+- **Поведение:** Сервер возвращает `INVALID_ARGUMENT` с `error_message: "session_id is required and must be provided by client"` при отсутствии `session_id`.
+- **Миграция:** Все клиенты должны обновляться до версии с поддержкой обязательного `session_id`.
+
+#### 2. Строгий контракт `hardware_id`
+- **Статус:** ✅ Реализовано
+- **Описание:** `hardware_id` не может быть пустым или "unknown".
+- **Поведение:** Сервер возвращает `INVALID_ARGUMENT` при пустом или "unknown" значении.
+- **Миграция:** Все клиенты должны передавать валидный `hardware_id`.
+
+#### 3. Исправление контракта `InterruptResponse`
+- **Статус:** ✅ Реализовано
+- **Описание:** Исправлено использование поля `message` вместо несуществующего `error_message` в `InterruptResponse`.
+- **Поведение:** Все ответы `InterruptResponse` используют поле `message` согласно proto-контракту.
+
 ### Запланированные изменения
-- **Нет breaking changes** в текущем состоянии
+- **Нет новых breaking changes** в планах
 - Все поля совместимы с proto3
 - Все optional поля поддерживают расширяемость
+
+### Документация миграции
+- См. `Docs/CHANGELOG.md` для деталей breaking changes
+- См. `Docs/assistant_exchange/cursor/2026-01-12__review__server-identifier-contract.md` для анализа и рекомендаций
 
 ### Рекомендации для будущих изменений
 

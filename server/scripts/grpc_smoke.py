@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 gRPC Smoke Test - PR-3
-Проверка базовой совместимости gRPC сервера
+Проверка базовой совместимости gRPC сервера и валидации идентификаторов
 
 Использование:
     python scripts/grpc_smoke.py [HOST] [PORT]
@@ -12,6 +12,12 @@ gRPC Smoke Test - PR-3
     
     # Локальный сервер
     python scripts/grpc_smoke.py localhost 50051
+
+Тесты:
+    - InterruptSession: базовый тест прерывания сессии
+    - StreamAudio: тест с валидными session_id и hardware_id
+    - StreamAudio (missing session_id): проверка валидации отсутствующего session_id
+    - StreamAudio (invalid hardware_id): проверка валидации hardware_id="unknown"
 """
 
 import sys
@@ -145,18 +151,20 @@ class GrpcSmokeTest:
     
     async def test_stream_audio(self) -> bool:
         """
-        Тест RPC метода StreamAudio (базовый вызов)
+        Тест RPC метода StreamAudio (базовый вызов с валидными идентификаторами)
         
         Returns:
             True если тест прошёл успешно, False иначе
         """
         try:
-            logger.info("🧪 Тестирование StreamAudio...")
+            logger.info("🧪 Тестирование StreamAudio с валидными идентификаторами...")
             
-            # Создаем запрос
+            # Создаем запрос с валидными session_id и hardware_id
+            import uuid
             request = streaming_pb2.StreamRequest(
                 prompt="test",
-                hardware_id="smoke_test_hardware_id"
+                hardware_id="smoke_test_hardware_id",
+                session_id=str(uuid.uuid4())
             )
             
             # Вызываем RPC (streaming)
@@ -189,6 +197,99 @@ class GrpcSmokeTest:
             logger.error(f"❌ Ошибка в StreamAudio: {e}")
             return False
     
+    async def test_stream_audio_missing_session_id(self) -> bool:
+        """
+        Тест валидации: запрос без session_id должен вернуть INVALID_ARGUMENT
+        
+        Returns:
+            True если тест прошёл (ошибка получена корректно), False иначе
+        """
+        try:
+            logger.info("🧪 Тестирование валидации: запрос без session_id...")
+            
+            # Создаем запрос БЕЗ session_id
+            request = streaming_pb2.StreamRequest(
+                prompt="test",
+                hardware_id="smoke_test_hardware_id"
+                # session_id отсутствует
+            )
+            
+            # Вызываем RPC (streaming)
+            error_received = False
+            error_message = None
+            async for response in self.stub.StreamAudio(request, timeout=10.0):
+                content_type = response.WhichOneof("content")
+                if content_type == "error_message":
+                    error_received = True
+                    error_message = response.error_message
+                    logger.info(f"   → Получена ошибка: {error_message}")
+                    break
+            
+            if error_received and "session_id is required" in error_message.lower():
+                logger.info("✅ Валидация session_id работает: получена ожидаемая ошибка")
+                return True
+            else:
+                logger.error(f"❌ Валидация session_id не работает: получено {error_message}")
+                return False
+                
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
+                logger.info(f"✅ Валидация session_id работает: получен INVALID_ARGUMENT - {e.details()}")
+                return True
+            else:
+                logger.error(f"❌ Неожиданная ошибка: {e.code()} - {e.details()}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка в тесте валидации session_id: {e}")
+            return False
+    
+    async def test_stream_audio_invalid_hardware_id(self) -> bool:
+        """
+        Тест валидации: запрос с hardware_id="unknown" должен вернуть ошибку
+        
+        Returns:
+            True если тест прошёл (ошибка получена корректно), False иначе
+        """
+        try:
+            logger.info("🧪 Тестирование валидации: запрос с hardware_id='unknown'...")
+            
+            # Создаем запрос с невалидным hardware_id
+            import uuid
+            request = streaming_pb2.StreamRequest(
+                prompt="test",
+                hardware_id="unknown",
+                session_id=str(uuid.uuid4())
+            )
+            
+            # Вызываем RPC (streaming)
+            error_received = False
+            error_message = None
+            async for response in self.stub.StreamAudio(request, timeout=10.0):
+                content_type = response.WhichOneof("content")
+                if content_type == "error_message":
+                    error_received = True
+                    error_message = response.error_message
+                    logger.info(f"   → Получена ошибка: {error_message}")
+                    break
+            
+            if error_received and ("hardware_id" in error_message.lower() or "unknown" in error_message.lower()):
+                logger.info("✅ Валидация hardware_id работает: получена ожидаемая ошибка")
+                return True
+            else:
+                logger.error(f"❌ Валидация hardware_id не работает: получено {error_message}")
+                return False
+                
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.INVALID_ARGUMENT:
+                logger.info(f"✅ Валидация hardware_id работает: получен INVALID_ARGUMENT - {e.details()}")
+                return True
+            else:
+                logger.error(f"❌ Неожиданная ошибка: {e.code()} - {e.details()}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка в тесте валидации hardware_id: {e}")
+            return False
+    
     async def run_all_tests(self) -> bool:
         """
         Запуск всех тестов
@@ -205,8 +306,12 @@ class GrpcSmokeTest:
         # Тест InterruptSession
         results.append(await self.test_interrupt_session())
         
-        # Тест StreamAudio
+        # Тест StreamAudio с валидными идентификаторами
         results.append(await self.test_stream_audio())
+        
+        # Тесты валидации идентификаторов
+        results.append(await self.test_stream_audio_missing_session_id())
+        results.append(await self.test_stream_audio_invalid_hardware_id())
         
         # Закрываем канал
         if self.channel:

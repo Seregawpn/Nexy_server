@@ -158,6 +158,36 @@ class InterruptManager(UniversalModuleInterface):
             
             logger.warning(f"🚨 Interrupt session requested for hardware_id: {hardware_id}")
             
+            # КРИТИЧНО: Диагностика - проверяем количество активных сессий для этого hardware_id
+            active_sessions_for_hw = [
+                (sid, data) for sid, data in self.active_sessions.items()
+                if data.get("hardware_id") == hardware_id
+            ]
+            if len(active_sessions_for_hw) > 1:
+                session_ids = [sid for sid, _ in active_sessions_for_hw]
+                logger.warning(
+                    f"⚠️ [INTERRUPT_DIAG] Прерывание hardware_id={hardware_id} с {len(active_sessions_for_hw)} активными сессиями: {session_ids}",
+                    extra={
+                        'scope': 'interrupt',
+                        'method': 'interrupt_session',
+                        'hardware_id': hardware_id,
+                        'active_sessions_count': len(active_sessions_for_hw),
+                        'session_ids': session_ids,
+                        'decision': 'warning',
+                        'ctx': {
+                            'reason': 'multiple_active_sessions',
+                            'hardware_id': hardware_id,
+                            'session_count': len(active_sessions_for_hw),
+                            'session_ids': session_ids
+                        }
+                    }
+                )
+            elif len(active_sessions_for_hw) == 1:
+                session_id = active_sessions_for_hw[0][0]
+                logger.debug(f"✅ [INTERRUPT_DIAG] Прерывание hardware_id={hardware_id} с 1 активной сессией: {session_id}")
+            else:
+                logger.debug(f"ℹ️ [INTERRUPT_DIAG] Прерывание hardware_id={hardware_id} без активных сессий")
+            
             # Устанавливаем глобальные флаги
             await self._set_global_interrupt_flags(hardware_id)
             
@@ -174,7 +204,7 @@ class InterruptManager(UniversalModuleInterface):
             interrupt_end_time = time.time()
             total_time = (interrupt_end_time - interrupt_start_time) * 1000
             
-            logger.warning(f"✅ Interrupt completed for {hardware_id} in {total_time:.1f}ms")
+            logger.warning(f"✅ Interrupt completed for {hardware_id} in {total_time:.1f}ms (cleaned {len(cleaned_sessions)} sessions)")
             
             return {
                 "success": True,

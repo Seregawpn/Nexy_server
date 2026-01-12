@@ -63,6 +63,19 @@ server/server/
 
 ---
 
+## 2.2 Как добавить новый функционал (Server Route)
+
+**Единый источник истины**: `Docs/guides/COOKBOOK_ADD_FEATURE.md` (серверный маршрут).  
+Здесь фиксируем только краткий путь:
+
+1. **Module** → `server/server/modules/<feature>/`
+2. **ModuleFactory** → регистрация capability
+3. **ModuleCoordinator** → инициализация/доступ
+4. **Config/Flags** → `server/server/config/unified_config.yaml` + `server/server/Docs/FEATURE_FLAGS.md`
+5. **gRPC Contract** → `Docs/GRPC_PROTOCOL_AUDIT.md` (если требуется)
+
+---
+
 ## 2.1 Принципы устойчивости стриминга
 
 - **Request-scoped state**: состояние стрима не хранится на уровне экземпляра workflow.

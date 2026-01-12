@@ -87,6 +87,13 @@ class StreamingWorkflowIntegration:
         self._inflight_sessions: set[str] = set()
         self._inflight_lock = asyncio.Lock()
         
+        # Guard по hardware_id (условный, управляется через конфиг)
+        # Если prevent_concurrent_hardware_id_sessions=True, блокирует параллельные сессии одного устройства
+        # Если False (по умолчанию), допускаются параллельные сессии одного hardware_id
+        self._prevent_concurrent_hardware_id_sessions: bool = bool(cfg.prevent_concurrent_hardware_id_sessions)
+        self._inflight_hardware_ids: set[str] = set()  # hardware_id -> активные session_id
+        self._hardware_id_to_sessions: Dict[str, set[str]] = {}  # hardware_id -> set of session_id
+        
         # ДИАГНОСТИКА: Логирование создания экземпляра
         logger.info(
             f"🔧 StreamingWorkflowIntegration создан: instance_id={id(self)}, inflight_set_id={id(self._inflight_sessions)}",
@@ -161,17 +168,39 @@ class StreamingWorkflowIntegration:
             }
             return
 
+        # КРИТИЧНО: Получаем hardware_id для guard проверки
+        hardware_id = request_data.get('hardware_id')
+        if not hardware_id or hardware_id.strip() == "" or hardware_id.lower() == "unknown":
+            logger.error(
+                f"❌ hardware_id отсутствует или равен 'unknown' - нарушение контракта",
+                extra={
+                    'scope': 'workflow',
+                    'method': 'process_request_streaming',
+                    'decision': 'error',
+                    'ctx': {'hardware_id': hardware_id, 'reason': 'invalid_hardware_id'}
+                }
+            )
+            yield {
+                'success': False,
+                'error': 'hardware_id must be provided and valid (not empty or "unknown")',
+                'error_code': 'INVALID_ARGUMENT',
+                'error_type': 'invalid_hardware_id',
+                'text_response': '',
+            }
+            return
+        
         # СОЗДАЕМ request-scoped контекст
         ctx = RequestContext(session_id=session_id)
         
         # ДИАГНОСТИКА: Логирование перед single-flight проверкой
         logger.info(
-            f"🔍 Single-flight check: session_id={session_id}, instance_id={id(self)}, "
+            f"🔍 Single-flight check: session_id={session_id}, hardware_id={hardware_id}, instance_id={id(self)}, "
             f"inflight_set_id={id(self._inflight_sessions)}, current_inflight={list(self._inflight_sessions)}",
             extra={
                 'scope': 'workflow',
                 'method': 'process_request_streaming',
                 'session_id': session_id,
+                'hardware_id': hardware_id,
                 'instance_id': id(self),
                 'inflight_set_id': id(self._inflight_sessions),
                 'current_inflight_count': len(self._inflight_sessions)
@@ -180,6 +209,7 @@ class StreamingWorkflowIntegration:
         
         # Atomic single-flight: проверка и добавление под одним lock
         async with self._inflight_lock:
+            # КРИТИЧНО: Guard по session_id (существующий)
             if session_id in self._inflight_sessions:
                 # Уже есть активный запрос с этим session_id
                 logger.warning(
@@ -203,15 +233,53 @@ class StreamingWorkflowIntegration:
                 }
                 return
             
+            # Guard по hardware_id (условный, управляется через конфиг)
+            # Если prevent_concurrent_hardware_id_sessions=True, блокирует параллельные сессии одного устройства
+            if self._prevent_concurrent_hardware_id_sessions and hardware_id in self._inflight_hardware_ids:
+                # Уже есть активная сессия с этим hardware_id
+                active_sessions = self._hardware_id_to_sessions.get(hardware_id, set())
+                logger.warning(
+                    f"⚠️ Параллельный запрос с hardware_id={hardware_id} отклонён (single-flight по hardware_id) - "
+                    f"активные сессии: {list(active_sessions)}",
+                    extra={
+                        'scope': 'workflow',
+                        'method': 'process_request_streaming',
+                        'decision': 'reject',
+                        'ctx': {
+                            'hardware_id': hardware_id,
+                            'session_id': session_id,
+                            'reason': 'concurrent_hardware_id',
+                            'active_sessions': list(active_sessions)
+                        }
+                    }
+                )
+                yield {
+                    'success': False,
+                    'error': f'Concurrent request for hardware_id={hardware_id} is not allowed (active sessions: {list(active_sessions)})',
+                    'error_code': 'RESOURCE_EXHAUSTED',
+                    'error_type': 'concurrent_hardware_id',
+                    'text_response': '',
+                }
+                return
+            
             # Добавляем session_id в in-flight set
             self._inflight_sessions.add(session_id)
+            # Регистрируем hardware_id и session_id (для диагностики и условного guard)
+            if self._prevent_concurrent_hardware_id_sessions:
+                self._inflight_hardware_ids.add(hardware_id)
+            # Регистрируем session_id для этого hardware_id (для диагностики)
+            if hardware_id not in self._hardware_id_to_sessions:
+                self._hardware_id_to_sessions[hardware_id] = set()
+            self._hardware_id_to_sessions[hardware_id].add(session_id)
+            
             logger.info(
-                f"✅ Session добавлен в inflight: session_id={session_id}, instance_id={id(self)}, "
+                f"✅ Session добавлен в inflight: session_id={session_id}, hardware_id={hardware_id}, instance_id={id(self)}, "
                 f"inflight_set_id={id(self._inflight_sessions)}, new_inflight={list(self._inflight_sessions)}",
                 extra={
                     'scope': 'workflow',
                     'method': 'process_request_streaming',
                     'session_id': session_id,
+                    'hardware_id': hardware_id,
                     'instance_id': id(self),
                     'inflight_set_id': id(self._inflight_sessions),
                     'action': 'added_to_inflight'
@@ -222,7 +290,7 @@ class StreamingWorkflowIntegration:
             import time
             request_start_time = time.time()
             
-            logger.info(f"🔄 Начало обработки запроса: {session_id}")
+            logger.info(f"🔄 Начало обработки запроса: session_id={session_id}, hardware_id={hardware_id}")
             
             # ВАЛИДАЦИЯ: Проверка промпта сразу после получения request_data
             prompt_text = request_data.get('text', '') or ''
@@ -260,7 +328,7 @@ class StreamingWorkflowIntegration:
             if self.audio_module:
                 logger.info(f"   → audio_processor.is_initialized: {getattr(self.audio_module, 'is_initialized', 'NO_ATTR')}")
 
-            hardware_id = request_data.get('hardware_id', 'unknown')
+            # КРИТИЧНО: hardware_id уже получен и валидирован выше (в guard проверке)
             
             # Оптимизация: предзагрузка памяти для нового hardware_id
             if hardware_id != 'unknown' and self.memory_workflow:
@@ -752,14 +820,26 @@ class StreamingWorkflowIntegration:
             async with self._inflight_lock:
                 was_present = session_id in self._inflight_sessions
                 self._inflight_sessions.discard(session_id)
+                
+                # Удаляем hardware_id из guard set, если это была последняя сессия (только если guard включен)
+                hardware_id = request_data.get('hardware_id')
+                if hardware_id and hardware_id in self._hardware_id_to_sessions:
+                    self._hardware_id_to_sessions[hardware_id].discard(session_id)
+                    # Если больше нет активных сессий для этого hardware_id, удаляем из guard set
+                    if not self._hardware_id_to_sessions[hardware_id]:
+                        if self._prevent_concurrent_hardware_id_sessions:
+                            self._inflight_hardware_ids.discard(hardware_id)
+                        del self._hardware_id_to_sessions[hardware_id]
+                
                 logger.info(
-                    f"🧹 Session удалён из inflight: session_id={session_id}, instance_id={id(self)}, "
+                    f"🧹 Session удалён из inflight: session_id={session_id}, hardware_id={hardware_id}, instance_id={id(self)}, "
                     f"inflight_set_id={id(self._inflight_sessions)}, was_present={was_present}, "
                     f"remaining_inflight={list(self._inflight_sessions)}",
                     extra={
                         'scope': 'workflow',
                         'method': 'process_request_streaming',
                         'session_id': session_id,
+                        'hardware_id': hardware_id,
                         'instance_id': id(self),
                         'inflight_set_id': id(self._inflight_sessions),
                         'action': 'removed_from_inflight',

@@ -64,6 +64,16 @@ def _get_dtype_string(dtype) -> str:
         return 'float64'
     return dtype_str
 
+def _is_valid_session_id(value: Any) -> bool:
+    """Validate session_id as uuid4 string."""
+    if not isinstance(value, str):
+        return False
+    try:
+        uuid_obj = uuid.UUID(value)
+        return uuid_obj.version == 4
+    except (ValueError, TypeError):
+        return False
+
 class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
     """Новый gRPC сервис с интеграцией всех модулей"""
     
@@ -120,10 +130,36 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
         """Обработка StreamRequest через новые модули с мониторингом"""
         start_time = time.time()
         
-        # КРИТИЧНО: Source of Truth для session_id - grpc_server.py (входная точка)
-        # Генерируем session_id здесь, если отсутствует
-        session_id = request.session_id or f"session_{datetime.now().timestamp()}_{uuid.uuid4().hex[:8]}"
-        hardware_id = request.hardware_id or "unknown"
+        # КРИТИЧНО: Строгий контракт идентификаторов - session_id обязателен от клиента
+        # Единственный писатель session_id - InputProcessingIntegration на клиенте
+        session_id = request.session_id
+        if not _is_valid_session_id(session_id):
+            error_msg = "session_id is required and must be provided by client"
+            log_rpc_error(
+                logger,
+                method="StreamAudio",
+                error_code="INVALID_ARGUMENT",
+                error_message=error_msg,
+                ctx={"reason": "invalid_session_id", "session_id": session_id}
+            )
+            log_decision(logger, decision="abort", method="StreamAudio", ctx={"reason": "invalid_session_id"})
+            yield streaming_pb2.StreamResponse(error_message=error_msg)  # type: ignore
+            return
+        
+        # КРИТИЧНО: hardware_id обязателен и валиден (не "unknown")
+        hardware_id = request.hardware_id
+        if not hardware_id or hardware_id.strip() == "" or hardware_id.lower() == "unknown":
+            error_msg = "hardware_id is required and must be valid (not empty or 'unknown')"
+            log_rpc_error(
+                logger,
+                method="StreamAudio",
+                error_code="INVALID_ARGUMENT",
+                error_message=error_msg,
+                ctx={"reason": "invalid_hardware_id", "hardware_id": hardware_id}
+            )
+            log_decision(logger, decision="abort", method="StreamAudio", ctx={"reason": "invalid_hardware_id", "hardware_id": hardware_id})
+            yield streaming_pb2.StreamResponse(error_message=error_msg)  # type: ignore
+            return
         
         # Получаем конфигурацию аудио для заполнения sample_rate, channels и dtype
         unified_config = get_config()
@@ -434,7 +470,25 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
     async def InterruptSession(self, request: streaming_pb2.InterruptRequest, context) -> streaming_pb2.InterruptResponse:  # type: ignore
         """Обработка InterruptRequest через Interrupt Manager"""
         start_time = time.time()
-        hardware_id = request.hardware_id or "unknown"
+        
+        # КРИТИЧНО: hardware_id обязателен и валиден (не "unknown")
+        hardware_id = request.hardware_id
+        if not hardware_id or hardware_id.strip() == "" or hardware_id.lower() == "unknown":
+            error_msg = "hardware_id is required and must be valid (not empty or 'unknown')"
+            log_rpc_error(
+                logger,
+                method="InterruptSession",
+                error_code="INVALID_ARGUMENT",
+                error_message=error_msg,
+                ctx={"reason": "invalid_hardware_id", "hardware_id": hardware_id}
+            )
+            log_decision(logger, decision="abort", method="InterruptSession", ctx={"reason": "invalid_hardware_id", "hardware_id": hardware_id})
+            return streaming_pb2.InterruptResponse(  # type: ignore
+                success=False,
+                message=error_msg,
+                interrupted_sessions=[]
+            )
+        
         # В InterruptRequest нет session_id, только hardware_id
         
         # Структурированное логирование начала обработки (PR-4)
