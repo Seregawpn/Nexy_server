@@ -21,7 +21,6 @@ from typing import Dict, Any, Optional, Set, Union
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
-from integration.core import selectors
 
 from config.unified_config_loader import UnifiedConfigLoader
 
@@ -504,11 +503,6 @@ class GrpcClientIntegration:
         text = sess.get('text')
         if not text:
             return
-
-        if not selectors.is_valid_session_id(session_id):
-            logger.error(f"Invalid session_id for gRPC request: {session_id!r}")
-            await self.event_bus.publish("grpc.request_failed", {"session_id": None, "error": "invalid_session_id"})
-            return
         
         # Получаем hardware_id
         hwid = await self._await_hardware_id(timeout_ms=3000)
@@ -577,13 +571,15 @@ class GrpcClientIntegration:
         first_chunk_ts = None
         
         try:
-            logger.info(f"Starting gRPC stream for session {session_id} with prompt: '{text[:50]}...'")
+            # КРИТИЧНО: Преобразуем session_id в строку (может быть float или другой тип)
+            session_id_str = str(session_id) if session_id is not None else ""
+            logger.info(f"Starting gRPC stream for session {session_id_str} with prompt: '{text[:50]}...'")
             async for resp in self._client.stream_audio(
                 prompt=text,
                 screenshot_base64=screenshot_b64 or "",
                 screen_info={"width": width, "height": height},
                 hardware_id=hwid,
-                session_id=session_id,
+                session_id=session_id_str,
             ):
                 chunk_count += 1
                 

@@ -247,8 +247,32 @@ class GrpcClientIntegration:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             text = data.get("text")
-            if not sid or not text:
+            
+            # КРИТИЧНО: Fallback на state_manager если session_id пустой/невалидный
+            if not sid or not is_valid_session_id(sid):
+                fallback_sid = get_current_session_id(self.state_manager)
+                if fallback_sid:
+                    logger.warning(
+                        f"⚠️ [gRPC] session_id отсутствует/невалидный в voice.recognition_completed, используем fallback из state_manager: "
+                        f"original={sid}, fallback={fallback_sid}"
+                    )
+                    sid = fallback_sid
+                elif sid is None:
+                    logger.warning(
+                        f"⚠️ [gRPC] session_id=None в voice.recognition_completed и отсутствует в state_manager - "
+                        f"публикуем grpc.request_failed с missing_session_id"
+                    )
+                    await self.event_bus.publish("grpc.request_failed", {
+                        "session_id": None,
+                        "error": "missing_session_id",
+                        "reason": "session_id отсутствует в событии и state_manager"
+                    })
+                    return
+            
+            if not text:
+                logger.warning(f"⚠️ [gRPC] voice.recognition_completed без text для session {sid} - игнорируем")
                 return
+            
             sess = self._sessions.setdefault(sid, {})
             sess['text'] = text
             await self._maybe_send(sid)

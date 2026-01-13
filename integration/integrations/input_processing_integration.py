@@ -190,6 +190,14 @@ class InputProcessingIntegration:
             logger.debug("PRESS: pending_session_id=%s", self._pending_session_id)
 
             # Публикуем событие press чтобы другие модули (например VoiceOver) могли отреагировать мгновенно
+            # КРИТИЧНО: Нормализуем session_id к uuid4 ПЕРЕД публикацией keyboard.press
+            normalized_press_session_id = self._normalize_session_id(self._pending_session_id) if self._pending_session_id is not None else None
+            if normalized_press_session_id is None and self._pending_session_id is not None:
+                logger.warning(
+                    f"⚠️ [INPUT] Failed to normalize session_id для keyboard.press: {self._pending_session_id}. "
+                    f"Публикуем keyboard.press без session_id."
+                )
+            
             logger.info(f"🔑 [INPUT] Публикую keyboard.press событие...")
             await self.event_bus.publish(
                 "keyboard.press",
@@ -197,7 +205,7 @@ class InputProcessingIntegration:
                     "type": "keyboard.press",
                     "data": {
                         "timestamp": event.timestamp,  # КРИТИЧНО: timestamp - числовое значение
-                        "session_id": self._pending_session_id,  # КРИТИЧНО: session_id - отдельное поле
+                        "session_id": normalized_press_session_id,  # КРИТИЧНО: session_id - нормализованный uuid4
                         "key": event.key,
                         "source": "keyboard",
                     },
@@ -1080,10 +1088,17 @@ class InputProcessingIntegration:
                     logger.warning(f"⚠️ Запись слишком короткая ({duration:.3f}s < {self._min_recording_duration}s), игнорируем SHORT_PRESS")
                     return
 
-                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
-                active_session_id = self._get_active_session_id()
+                # КРИТИЧНО: Используем _get_active_session_id для получения session_id и нормализуем к uuid4
+                candidate_active_session_id = self._get_active_session_id()
+                active_session_id = self._normalize_session_id(candidate_active_session_id) if candidate_active_session_id is not None else None
+                if active_session_id is None and candidate_active_session_id is not None:
+                    logger.warning(
+                        f"⚠️ [INPUT] Failed to normalize session_id для voice.recording_stop: {candidate_active_session_id}. "
+                        f"Публикуем voice.recording_stop без session_id."
+                    )
+                
                 logger.info(f"🛑 PTT: keyUp({event.key}) → RECORDING_STOP, session={active_session_id}, duration={duration*1000:.0f}ms, reason=short_press")
-                # TRACE: остановка записи (SHORT_PRESS)
+                # TRACE: остановка записи (SHORT_PRESS, используем нормализованный uuid4)
                 ts_ms = int(time.monotonic() * 1000)
                 logger.info(f"TRACE phase=recording.stop ts={ts_ms} session={active_session_id} extra={{duration={event.duration:.3f}, reason=short_press}}")
                 await self.event_bus.publish(
@@ -1106,9 +1121,22 @@ class InputProcessingIntegration:
 
                 # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Переходим в PROCESSING, а не в SLEEPING!
                 # Это позволяет завершить распознавание и обработку
+                # КРИТИЧНО: Нормализуем session_id к uuid4 ПЕРЕД публикацией mode.request
+                if active_session_id is not None:
+                    normalized_session_id = self._normalize_session_id(active_session_id)
+                    if normalized_session_id is None:
+                        logger.warning(
+                            f"⚠️ [INPUT] Failed to normalize session_id для mode.request: {active_session_id}. "
+                            f"Публикуем mode.request без session_id."
+                        )
+                        normalized_session_id = None
+                else:
+                    normalized_session_id = None
+                
                 await self.event_bus.publish("mode.request", {
                     "target": AppMode.PROCESSING,
-                    "source": "input_processing"
+                    "source": "input_processing",
+                    "session_id": normalized_session_id  # КРИТИЧНО: Передаем нормализованный uuid4 в mode.request
                 })
                 logger.info("SHORT_PRESS: запрос на PROCESSING отправлен (после записи)")
                 # КРИТИЧНО: Используем _get_active_session_id для получения session_id
@@ -1225,29 +1253,48 @@ class InputProcessingIntegration:
                     return
             
             # На LONG_PRESS стартуем запись и переходим в LISTENING (push-to-talk)
-            # КРИТИЧНО: Генерируем uuid4 строку вместо float timestamp
-            new_session_id = self._pending_session_id or str(uuid.uuid4())
+            # КРИТИЧНО: Нормализуем session_id к uuid4 ПЕРЕД установкой в state_manager
+            candidate_session_id = self._pending_session_id or str(uuid.uuid4())
+            normalized_session_id = self._normalize_session_id(candidate_session_id)
+            
+            # КРИТИЧНО: Проверяем, что нормализация прошла успешно
+            if normalized_session_id is None:
+                logger.error(
+                    f"❌ [INPUT] Failed to normalize session_id: {candidate_session_id} (type: {type(candidate_session_id)}). "
+                    f"Не публикуем voice.recording_start."
+                )
+                self._pending_session_id = None
+                return
+            
             # Полностью очищаем предыдущее состояние перед новой записью
             self._reset_session("long_press_start")
             # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager
-            self._set_session_id(new_session_id, reason="long_press_start")
+            self._set_session_id(normalized_session_id, reason="long_press_start")
             self._pending_session_id = None
             self._cancel_session_id = None
             self._pending_recording_cancelled = False  # Сбрасываем флаг отмены
+            
+            # КРИТИЧНО: Получаем валидный session_id из state_manager (единственный источник истины)
+            final_session_id = self._get_active_session_id()
+            if final_session_id is None:
+                logger.error(
+                    f"❌ [INPUT] session_id отсутствует в state_manager после _set_session_id. "
+                    f"Не публикуем voice.recording_start."
+                )
+                return
+            
             if not self._recording_started:
                 # Запоминаем время начала записи для проверки минимальной длительности
                 self._recording_start_time = time.time()
-                # КРИТИЧНО: Используем _get_active_session_id для получения session_id
-                active_session_id = self._get_active_session_id()
-                # TRACE: начало записи
+                # TRACE: начало записи (используем валидный uuid4)
                 ts_ms = int(time.monotonic() * 1000)
-                logger.info(f"TRACE phase=recording.start ts={ts_ms} session={active_session_id} extra={{duration={event.duration:.3f}}}")
+                logger.info(f"TRACE phase=recording.start ts={ts_ms} session={final_session_id} extra={{duration={event.duration:.3f}}}")
                 await self.event_bus.publish(
                     "voice.recording_start",
                     {
                         "source": "keyboard",
                         "timestamp": event.timestamp,
-                        "session_id": active_session_id,
+                        "session_id": final_session_id,
                     }
                 )
                 self._recording_started = True
@@ -1312,9 +1359,10 @@ class InputProcessingIntegration:
             # КРИТИЧНО: Гарантируем остановку микрофона при RELEASE, даже если _recording_started == False
             # Это защищает от залипания микрофона при race conditions
             was_recording = self._recording_started  # Сохраняем состояние ДО обработки
-            # КРИТИЧНО: Сохраняем session_id ДО обработки, чтобы он не был потерян при _on_recognition_failed
-            # Используем _get_active_session_id для получения session_id
-            saved_session_id = self._get_active_session_id()  # Сохраняем session_id ДО обработки
+            # КРИТИЧНО: Сохраняем и нормализуем session_id ДО обработки, чтобы он не был потерян при _on_recognition_failed
+            # Используем _get_active_session_id для получения session_id и нормализуем к uuid4
+            candidate_saved_session_id = self._get_active_session_id()
+            saved_session_id = self._normalize_session_id(candidate_saved_session_id) if candidate_saved_session_id is not None else None
             
             # КРИТИЧНО: Отменяем pending recording, если LONG_PRESS еще не завершился
             # Это предотвращает публикацию voice.recording_start после RELEASE
@@ -1334,17 +1382,26 @@ class InputProcessingIntegration:
                 
                 # Если есть активная сессия, останавливаем её
                 if active_session_id is not None:
-                    logger.debug(f"RELEASE: публикуем voice.recording_stop для session {active_session_id}")
-                    # TRACE: остановка записи
+                    # КРИТИЧНО: Нормализуем session_id к uuid4 ПЕРЕД публикацией voice.recording_stop
+                    normalized_stop_session_id = self._normalize_session_id(active_session_id)
+                    if normalized_stop_session_id is None:
+                        logger.warning(
+                            f"⚠️ [INPUT] Failed to normalize session_id для voice.recording_stop: {active_session_id}. "
+                            f"Публикуем voice.recording_stop без session_id."
+                        )
+                        normalized_stop_session_id = None
+                    
+                    logger.debug(f"RELEASE: публикуем voice.recording_stop для session {normalized_stop_session_id}")
+                    # TRACE: остановка записи (используем нормализованный uuid4)
                     ts_ms = int(time.monotonic() * 1000)
-                    logger.info(f"TRACE phase=recording.stop ts={ts_ms} session={active_session_id} extra={{duration={event.duration:.3f}}}")
+                    logger.info(f"TRACE phase=recording.stop ts={ts_ms} session={normalized_stop_session_id} extra={{duration={event.duration:.3f}}}")
                     await self.event_bus.publish(
                         "voice.recording_stop",
                         {
                             "source": "keyboard",
                             "timestamp": event.timestamp,
                             "duration": event.duration,
-                            "session_id": active_session_id,
+                            "session_id": normalized_stop_session_id,
                         }
                     )
                     logger.debug("RELEASE: voice.recording_stop опубликовано ✓")
@@ -1397,14 +1454,24 @@ class InputProcessingIntegration:
 
             # Переходим в PROCESSING только если запись велась; иначе остаёмся в текущем режиме (обычно SLEEPING)
             if was_recording:  # Используем сохраненное значение, а не текущее состояние
-                # КРИТИЧНО: Используем saved_session_id (уже получен через _get_active_session_id)
-                # так как _on_recognition_failed мог сбросить session_id
-                session_id_for_processing = saved_session_id or self._get_active_session_id()
-                logger.debug(f"RELEASE: публикуем mode.request(PROCESSING) для session {session_id_for_processing}")
+                # КРИТИЧНО: Нормализуем session_id к uuid4 ПЕРЕД публикацией mode.request
+                candidate_session_id = saved_session_id or self._get_active_session_id()
+                if candidate_session_id is not None:
+                    normalized_session_id = self._normalize_session_id(candidate_session_id)
+                    if normalized_session_id is None:
+                        logger.warning(
+                            f"⚠️ [INPUT] Failed to normalize session_id для mode.request: {candidate_session_id}. "
+                            f"Публикуем mode.request без session_id."
+                        )
+                        normalized_session_id = None
+                else:
+                    normalized_session_id = None
+                
+                logger.debug(f"RELEASE: публикуем mode.request(PROCESSING) для session {normalized_session_id}")
                 await self.event_bus.publish("mode.request", {
                     "target": AppMode.PROCESSING,
                     "source": "input_processing",
-                    "session_id": session_id_for_processing  # КРИТИЧНО: Передаем session_id в mode.request
+                    "session_id": normalized_session_id  # КРИТИЧНО: Передаем нормализованный uuid4 в mode.request
                 })
                 logger.info("RELEASE: запрос на PROCESSING отправлен ✓")
 

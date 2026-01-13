@@ -162,7 +162,7 @@ class InputProcessingIntegration:
         logger.info(f"🎤 _handle_press ВЫЗВАН! event={event.event_type.value}, timestamp={event.timestamp}")
         # TRACE: начало ввода
         ts_ms = int(time.monotonic() * 1000)
-        pending_session = self._new_session_id()
+        pending_session = str(uuid.uuid4())
         logger.info(f"TRACE phase=input.press ts={ts_ms} session={pending_session} extra={{key={event.key}}}")
         try:
             # КРИТИЧНО: Сбрасываем отмену предыдущей сессии при новом удержании
@@ -212,9 +212,10 @@ class InputProcessingIntegration:
                 {
                     "type": "keyboard.press",
                     "data": {
-                        "timestamp": self._pending_session_id,
+                        "timestamp": event.timestamp,
                         "key": event.key,
                         "source": "keyboard",
+                        "session_id": self._pending_session_id,
                     },
                     "timestamp": event.timestamp,
                 }
@@ -375,7 +376,8 @@ class InputProcessingIntegration:
             True если есть активная сессия (из state_manager - единый источник истины)
         """
         # Используем state_manager как единый источник истины
-        return selectors.get_current_session_id(self.state_manager) is not None
+        session_id = selectors.get_current_session_id(self.state_manager)
+        return session_id is not None
     
     def _should_stop_recording(self) -> bool:
         """
@@ -391,7 +393,7 @@ class InputProcessingIntegration:
         Получить активный session_id из state_manager (единый источник истины).
         
         Returns:
-            Активный session_id или None.
+            Активный session_id (uuid4) или None.
         """
         return selectors.get_current_session_id(self.state_manager)
     
@@ -422,10 +424,6 @@ class InputProcessingIntegration:
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
                 self.state_manager.update_session_id(None)
                 logger.debug(f"🔄 Session ID сброшен в state_manager (reason: {reason})")
-
-    def _new_session_id(self) -> str:
-        """Создает новый session_id (uuid4)."""
-        return str(uuid.uuid4())
 
     async def _on_grpc_completed(self, event):
         """Сбрасывает сессию при штатном завершении gRPC."""
@@ -1211,7 +1209,7 @@ class InputProcessingIntegration:
             # ЗАЩИТА 2: Если pending_session отсутствует, создаем новый (чтобы длинное нажатие не терялось)
             if self._pending_session_id is None:
                 logger.info("⚠️ LONG_PRESS пришел БЕЗ pending_session - создаем новый")
-                self._pending_session_id = self._new_session_id()
+                self._pending_session_id = str(uuid.uuid4())
 
             # ЗАЩИТА 3: Проверяем, что клавиша ЕЩЕ нажата (дополнительная проверка)
             if self.keyboard_monitor and hasattr(self.keyboard_monitor, 'key_pressed'):
@@ -1256,7 +1254,7 @@ class InputProcessingIntegration:
                     return
             
             # На LONG_PRESS стартуем запись и переходим в LISTENING (push-to-talk)
-            new_session_id = self._pending_session_id or self._new_session_id()
+            new_session_id = self._pending_session_id or str(uuid.uuid4())
             # Полностью очищаем предыдущее состояние перед новой записью
             self._reset_session("long_press_start")
             # КРИТИЧНО: Используем _set_session_id для синхронизации с state_manager

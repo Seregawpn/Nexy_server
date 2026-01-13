@@ -1,7 +1,7 @@
 {
     "workspace": "client",
     "id_prefix": "CLI",
-    "next_id": 5,
+    "next_id": 6,
     "tasks": [
         {
             "id": "CLI-001",
@@ -53,6 +53,19 @@
             "updated_at": "2026-01-12T12:29:44-05:00",
             "description": "## Цель\n\nЦентрализовать валидацию session_id в клиентском Source of Truth и защитить gRPC отправку от невалидных значений.\n\n## Definition of Done\n\n- session_id валидируется в ApplicationStateManager\n- gRPC не падает на нестроковом session_id\n",
             "file_path": "integration/core/state_manager.py"
+        },
+        {
+            "id": "CLI-005",
+            "epicId": "EPIC-MVP",
+            "title": "Diagnose missing gRPC responses (session_id propagation)",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-12T21:48:20-05:00",
+            "description": "## Цель\n\nНайти причину отсутствия ответов gRPC при наличии распознавания и подготовить минимальный архитектурный фикс.\n\n## Definition of Done\n\n- подтверждена цепочка событий voice.recognition_completed → grpc.request_started\n- отсутствует потеря session_id на пути к GrpcClientIntegration\n",
+            "file_path": "integration/integrations/voice_recognition_integration.py"
         }
     ]
 }

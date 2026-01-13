@@ -16,7 +16,7 @@ from shutil import which
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
-from integration.core.selectors import create_snapshot_from_state, is_first_run, is_first_run_in_progress, is_ptt_pressed, get_current_session_id
+from integration.core.selectors import create_snapshot_from_state, is_first_run, is_first_run_in_progress, is_ptt_pressed, get_current_session_id, is_valid_session_id
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -320,24 +320,40 @@ class VoiceRecognitionIntegration:
             await self._cancel_recognition(reason="new_recording_start")
             logger.debug(f"VOICE: recording_start, session={session_id}")
 
+            # КРИТИЧНО: Fallback на state_manager если session_id пустой/невалидный
+            final_session_id = session_id
+            if not session_id or not is_valid_session_id(session_id):
+                fallback_session_id = get_current_session_id(self.state_manager)
+                if fallback_session_id:
+                    logger.warning(
+                        f"⚠️ [VOICE] session_id отсутствует/невалидный в recording_start, используем fallback из state_manager: "
+                        f"original={session_id}, fallback={fallback_session_id}"
+                    )
+                    final_session_id = fallback_session_id
+                elif session_id is None:
+                    logger.warning(
+                        f"⚠️ [VOICE] session_id=None в recording_start и отсутствует в state_manager - "
+                        f"original=None, fallback=None"
+                    )
+            
             # Публикуем voice.mic_opened СРАЗУ
-            await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
-            logger.info(f"🎤 VOICE: microphone opened (pending) для session {session_id}")
+            await self.event_bus.publish("voice.mic_opened", {"session_id": final_session_id})
+            logger.info(f"🎤 VOICE: microphone opened (pending) для session {final_session_id}")
 
             # Start GoogleSRController
             # Note: We rely on _GOOGLE_SR_AVAILABLE check done in init
             if self._google_sr_controller and not self.config.simulate:
                 try:
-                    logger.info(f"🚀 [AUDIO] Starting GoogleSRController for session {session_id}")
+                    logger.info(f"🚀 [AUDIO] Starting GoogleSRController for session {final_session_id}")
                     # Store session_id for callbacks
-                    self._v2_current_session_id = session_id
+                    self._v2_current_session_id = final_session_id
                     success = self._google_sr_controller.start_listening()
                     if success:
                         await self.event_bus.publish("voice.recognition_started", {
-                            "session_id": session_id,
+                            "session_id": final_session_id,
                             "language": self.config.language
                         })
-                        logger.info(f"✅ [AUDIO] GoogleSRController started for session {session_id}")
+                        logger.info(f"✅ [AUDIO] GoogleSRController started for session {final_session_id}")
                     else:
                         logger.error(f"❌ [AUDIO] GoogleSRController failed to start (returned False)")
                         # Fallback to simulation
@@ -345,7 +361,7 @@ class VoiceRecognitionIntegration:
                         # КРИТИЧНО: НЕ записываем session_id в state_manager - единственный писатель InputProcessingIntegration
                         self._set_session_id(None, reason="start_failed")
                         await self.event_bus.publish("voice.recognition_failed", {
-                            "session_id": session_id,
+                            "session_id": final_session_id,
                             "error": "start_failed",
                             "reason": "GoogleSRController failed to start"
                         })
@@ -358,15 +374,15 @@ class VoiceRecognitionIntegration:
                     # КРИТИЧНО: НЕ записываем session_id в state_manager - единственный писатель InputProcessingIntegration
                     self._set_session_id(None, reason="start_error")
                     await self.event_bus.publish("voice.recognition_failed", {
-                        "session_id": session_id,
+                        "session_id": final_session_id,
                         "error": "start_error",
                         "reason": str(e)
                     })
             else:
                 # Simulation mode
                 logger.info(f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})")
-                if session_id is not None:
-                    await self._start_recognition(session_id)
+                if final_session_id is not None:
+                    await self._start_recognition(final_session_id)
                 else:
                     logger.warning("VOICE: session_id is None, cannot start recognition")
         except Exception as e:
@@ -386,31 +402,50 @@ class VoiceRecognitionIntegration:
             session_id = data.get("session_id")
             logger.debug(f"VOICE: recording_stop, session={session_id}")
 
-            # Проверяем, наша ли сессия
+            # КРИТИЧНО: Сначала нормализуем/восстанавливаем session_id через fallback
+            # Это гарантирует, что deferred-результаты будут опубликованы даже при потере session_id
+            final_session_id = session_id
+            if not session_id or not is_valid_session_id(session_id):
+                fallback_session_id = get_current_session_id(self.state_manager)
+                if fallback_session_id:
+                    logger.warning(
+                        f"⚠️ [VOICE] session_id отсутствует/невалидный в recording_stop, используем fallback из state_manager: "
+                        f"original={session_id}, fallback={fallback_session_id}"
+                    )
+                    final_session_id = fallback_session_id
+                elif session_id is None:
+                    logger.warning(
+                        f"⚠️ [VOICE] session_id=None в recording_stop и отсутствует в state_manager - "
+                        f"пропускаем обработку (deferred-результат не будет опубликован)"
+                    )
+                    return
+
+            # Проверяем, наша ли сессия (после нормализации)
             active_session_id = self._get_active_session_id()
-            if session_id is None or active_session_id != session_id:
-                logger.debug(f"VOICE: recording_stop ignored (session mismatch: event={session_id}, active={active_session_id})")
+            if final_session_id is None or active_session_id != final_session_id:
+                logger.debug(f"VOICE: recording_stop ignored (session mismatch: event={final_session_id}, active={active_session_id})")
                 return
 
             self._recording_active = False
             
             # Stop GoogleSRController
             if self._google_sr_controller and not self.config.simulate:
-                logger.debug(f"🎤 Calling stop_listening for session {session_id}")
+                logger.debug(f"🎤 Calling stop_listening for session {final_session_id}")
                 result = self._google_sr_controller.stop_listening()
                 # Если ранее мы откладывали публикацию (PTT удерживался) — публикуем результат сейчас
                 if self._defer_result_until_stop:
-                    await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+                    # КРИТИЧНО: final_session_id уже нормализован выше через fallback
+                    await self.event_bus.publish("voice.mic_closed", {"session_id": final_session_id})
                     if result and result.text:
                         await self.event_bus.publish("voice.recognition_completed", {
-                            "session_id": session_id,
+                            "session_id": final_session_id,
                             "text": result.text,
                             "confidence": result.confidence,
                             "language": result.language
                         })
                     else:
                         await self.event_bus.publish("voice.recognition_failed", {
-                            "session_id": session_id,
+                            "session_id": final_session_id,
                             "error": (result.error if result else "no_result"),
                             "reason": (result.error if result else "no_result")
                         })
@@ -674,6 +709,21 @@ class VoiceRecognitionIntegration:
     async def _publish_v2_completed(self, session_id, result: "GoogleSRResult") -> None:
         """Helper to publish v2 completion via EventBus."""
         try:
+            # КРИТИЧНО: Fallback на state_manager если session_id пустой/невалидный
+            if not session_id or not is_valid_session_id(session_id):
+                fallback_session_id = get_current_session_id(self.state_manager)
+                if fallback_session_id:
+                    logger.warning(
+                        f"⚠️ [VOICE] session_id отсутствует/невалидный в callback, используем fallback из state_manager: "
+                        f"original={session_id}, fallback={fallback_session_id}"
+                    )
+                    session_id = fallback_session_id
+                elif session_id is None:
+                    logger.warning(
+                        f"⚠️ [VOICE] session_id=None в callback и отсутствует в state_manager - "
+                        f"публикация событий может быть проигнорирована"
+                    )
+            
             # КРИТИЧНО: Используем selector для проверки ptt_pressed вместо прямого доступа к state_manager
             ptt_pressed = is_ptt_pressed(self.state_manager)
             if ptt_pressed and self._recording_active:
@@ -761,6 +811,21 @@ class VoiceRecognitionIntegration:
     async def _publish_v2_failed(self, session_id, error: str) -> None:
         """Helper to publish v2 failure via EventBus."""
         try:
+            # КРИТИЧНО: Fallback на state_manager если session_id пустой/невалидный
+            if not session_id or not is_valid_session_id(session_id):
+                fallback_session_id = get_current_session_id(self.state_manager)
+                if fallback_session_id:
+                    logger.warning(
+                        f"⚠️ [VOICE] session_id отсутствует/невалидный в failed callback, используем fallback из state_manager: "
+                        f"original={session_id}, fallback={fallback_session_id}"
+                    )
+                    session_id = fallback_session_id
+                elif session_id is None:
+                    logger.warning(
+                        f"⚠️ [VOICE] session_id=None в failed callback и отсутствует в state_manager - "
+                        f"публикация событий может быть проигнорирована"
+                    )
+            
             # КРИТИЧНО: Используем selector для проверки ptt_pressed вместо прямого доступа к state_manager
             ptt_pressed = is_ptt_pressed(self.state_manager)
             if ptt_pressed and self._recording_active:

@@ -14,34 +14,209 @@
 
 ---
 
-## 0. Правила изменения (Change Triggers)
+## 0. ОБЯЗАТЕЛЬНЫЙ ПРОЦЕСС ИЗМЕНЕНИЙ (Canonical Packaging Path)
 
-**Цель:** после любых изменений быстро привести упаковку и документы в корректное состояние.
+**Цель:** Единый канонический процесс для всех изменений, гарантирующий соответствие macOS требованиям без ручных исключений.
 
-### 0.1. Триггеры (обязательные действия)
-Любое изменение в следующих областях требует полного цикла упаковки и проверки:
-- `main.py`, `integration/`, `modules/`
-- `resources/`, `assets/`, `vendor_binaries/`
-- `packaging/`, `scripts/`
-- `requirements.txt`, `pyproject.toml`
+> **КРИТИЧНО:** Этот процесс является **ЕДИНСТВЕННЫМ** способом упаковки. Любые ручные/альтернативные инструкции вне `PACKAGING_FINAL_GUIDE.md` **ЗАПРЕЩЕНЫ** (REQ-015).
 
-**Действия после изменения:**
-1. Обновить упаковочные артефакты по этой инструкции (см. раздел 2).
-2. Пройти `Docs/PRE_PACKAGING_VERIFICATION.md` и зафиксировать результаты.
-3. Запустить `./packaging/build_final.sh` — финальная проверка выполняется автоматически.
+### 0.1. Триггеры изменений (Change Triggers)
 
-### 0.2. Требования соответствия macOS (минимум)
-- Подпись всех Mach-O (Developer ID Application).
-- Нотаризация `.app`/`.pkg` (если не включен `NEXY_SKIP_NOTARIZATION=1`).
-- Universal 2 бинарники для app и внешних ресурсов.
-- Корректные ресурсы в `Contents/Resources/`.
-- Минимальная версия macOS в `Info.plist` = 12.0.
+**Любое изменение в следующих областях требует полного packaging-контура:**
 
-### 0.3. Если добавлены новые модули/интеграции/ресурсы
+| Область | Файлы/Директории | Действие |
+|---------|------------------|----------|
+| **Код приложения** | `main.py`, `integration/`, `modules/` | Полный цикл упаковки |
+| **Ресурсы** | `resources/`, `assets/`, `vendor_binaries/` | Полный цикл упаковки |
+| **Конфигурация приложения** | `config/` | Полный цикл упаковки |
+| **Конфигурация упаковки** | `packaging/`, `scripts/` | Полный цикл упаковки |
+| **Зависимости** | `requirements.txt`, `pyproject.toml` | Полный цикл упаковки |
+
+**Проверка триггеров:**
+```bash
+# Проверить, какие файлы изменены (перед коммитом)
+git status --short | grep -E "(main\.py|integration/|modules/|resources/|assets/|vendor_binaries/|config/|packaging/|scripts/|requirements\.txt|pyproject\.toml)"
+```
+
+### 0.2. ОБЯЗАТЕЛЬНЫЙ ПРОЦЕСС (Canonical Packaging Path)
+
+**Все изменения проходят через один и тот же процесс без исключений:**
+
+#### Шаг 1: Обновление артефактов упаковки
+
+**Если добавлен новый ресурс/бинарник:**
+
+1. **Включить файлы в `packaging/Nexy.spec`:**
+   - Добавить в секцию `datas` для ресурсов (например: `(str(client_dir / "new_resource"), "new_resource")`)
+   - Добавить в секцию `binaries` для бинарников (если нужно)
+   - Проверить, что пути корректны (абсолютные пути через `client_dir`)
+
+2. **Обновить `scripts/stage_universal_binaries.py` (только для `vendor_binaries/`):**
+   - Добавить определение бинарника в `BINARY_DEFS`:
+     ```python
+     (
+         "BinaryName",
+         "vendor_binaries/binaryname/{arch}/binary",
+         "resources/path/to/binary",
+     ),
+     ```
+   - Убедиться, что бинарники из `vendor_binaries/{arch}/` будут объединены в Universal 2
+
+3. **Проверить, что файл попадает в `.app/Contents/Resources/`:**
+   - Запустить тестовую сборку и проверить содержимое `.app/Contents/Resources/`
+   - Убедиться, что пути в коде соответствуют структуре в `.app`
+
+#### Шаг 2: Прохождение PRE_PACKAGING_VERIFICATION.md
+
+**ОБЯЗАТЕЛЬНО:** Пройти чек-лист `Docs/PRE_PACKAGING_VERIFICATION.md` и зафиксировать результаты.
+
+**Минимальные проверки:**
+- [ ] Все зависимости установлены и актуальны
+- [ ] Сертификаты Developer ID Application/Installer доступны
+- [ ] Universal 2 бинарники готовы (если добавлены новые)
+- [ ] Конфигурация упаковки обновлена (Nexy.spec, stage_universal_binaries.py)
+- [ ] Тесты пройдены (если есть)
+
+**Фиксация результатов:**
+- Обновить `Docs/PACKAGING_READINESS_CHECKLIST.md` с фактическими результатами
+- Приложить логи проверок к PR/таске
+
+#### Шаг 3: Выполнение build_final.sh (ЕДИНСТВЕННЫЙ СПОСОБ)
+
+**КРИТИЧНО:** `./packaging/build_final.sh` — **ЕДИНСТВЕННЫЙ** способ сборки. Никаких ручных шагов вне этого скрипта.
+
+```bash
+# Релизный режим (с нотаризацией)
+cd client
+./packaging/build_final.sh
+
+# Dev-режим (без нотаризации)
+NEXY_SKIP_NOTARIZATION=1 ./packaging/build_final.sh
+```
+
+**Что делает `build_final.sh` автоматически:**
+1. ✅ Preflight проверки (verify_imports, verify_pyinstaller, verify_ctypes, verify_config, verify_resources)
+2. ✅ Проверка актуальности protobuf (`scripts/regenerate_proto.sh --check`)
+3. ✅ Стейджинг Universal 2 бинарников (`scripts/stage_universal_binaries.py`)
+4. ✅ Проверка зависимостей (`scripts/check_dependencies.py`)
+5. ✅ Обновление версий модулей (`scripts/update_module_versions.py`)
+6. ✅ Универсализация .so файлов (если нужно)
+7. ✅ Двойная сборка PyInstaller (arm64 + x86_64)
+8. ✅ Объединение в Universal 2 через `create_universal_app.py`
+9. ✅ Подготовка Python.framework к подписи
+10. ✅ Подпись через оптимизированный `sign_all_binaries.sh`
+11. ✅ Нотаризация .app (если не установлен `NEXY_SKIP_NOTARIZATION=1`)
+12. ✅ Создание и нотаризация DMG
+13. ✅ Создание, подпись и нотаризация PKG
+14. ✅ Финальная проверка всех артефактов (подпись, нотаризация, архитектура, целостность)
+
+#### Шаг 4: Проверка артефактов
+
+**ОБЯЗАТЕЛЬНО:** Проверить все артефакты после сборки:
+
+1. **Nexy.app:**
+   ```bash
+   # Подпись
+   codesign --verify --deep --strict dist/Nexy.app
+   
+   # Нотаризация (если не пропущена)
+   xcrun stapler validate dist/Nexy.app
+   
+   # Архитектура (Universal 2)
+   lipo -info dist/Nexy.app/Contents/MacOS/Nexy
+   # Ожидается: Architectures in the fat file: arm64 x86_64
+   ```
+
+2. **Nexy.pkg:**
+   ```bash
+   # Подпись
+   pkgutil --check-signature dist/Nexy.pkg
+   
+   # Нотаризация (если не пропущена)
+   xcrun stapler validate dist/Nexy.pkg
+   ```
+
+3. **Nexy.dmg:**
+   ```bash
+   # Подпись
+   codesign --verify dist/Nexy.dmg
+   
+   # Нотаризация (если не пропущена)
+   xcrun stapler validate dist/Nexy.dmg
+   ```
+
+4. **packaging_verification.log:**
+   - Проверить лог `dist/packaging_verification.log` на ошибки
+   - Убедиться, что все проверки пройдены
+
+5. **Новые файлы в .app:**
+   ```bash
+   # Проверить, что новые ресурсы/бинарники присутствуют
+   find dist/Nexy.app/Contents/Resources -name "new_resource" -o -name "new_binary"
+   ```
+
+#### Шаг 5: Валидация релизного бандла (опционально, но рекомендуется)
+
+```bash
+# Валидация .app
+python3 scripts/validate_release_bundle.py dist/Nexy.app
+
+# Валидация .app и .pkg
+python3 scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
+```
+
+### 0.3. Запреты и ограничения
+
+**ЗАПРЕЩЕНО:**
+- ❌ Использовать ручные/альтернативные инструкции упаковки вне `PACKAGING_FINAL_GUIDE.md`
+- ❌ Пропускать шаги процесса (PRE_PACKAGING_VERIFICATION.md, build_final.sh)
+- ❌ Использовать альтернативные скрипты сборки (например: `rebuild_from_scratch.sh` для релиза)
+- ❌ Модифицировать `.app` после сборки (открытие в Finder, `xattr -cr`, копирование через `cp -R`)
+- ❌ Пропускать проверку артефактов после сборки
+
+**РАЗРЕШЕНО:**
+- ✅ Использовать `build_final.sh --skip-build` для переиспользования существующего `.app` (только для dev-циклов)
+- ✅ Использовать `NEXY_SKIP_NOTARIZATION=1` для локальной сборки без нотаризации
+- ✅ Использовать `TIMESTAMP_MODE=none` для локальной сборки без timestamp сервиса
+
+### 0.4. Требования соответствия macOS (минимум)
+
+**Все артефакты должны соответствовать:**
+- ✅ Подпись всех Mach-O (Developer ID Application)
+- ✅ Нотаризация `.app`/`.pkg` (если не включен `NEXY_SKIP_NOTARIZATION=1`)
+- ✅ Universal 2 бинарники для app и внешних ресурсов
+- ✅ Корректные ресурсы в `Contents/Resources/`
+- ✅ Минимальная версия macOS в `Info.plist` = 12.0
+
+### 0.5. Если добавлены новые модули/интеграции/ресурсы
+
 **Минимальный список обновлений:**
-- `packaging/Nexy.spec` (включение новых файлов/ресурсов)
-- `scripts/stage_universal_binaries.py` (если добавлен бинарник в `vendor_binaries/`)
-- Документация в этом файле (если меняется процедура)
+
+1. **`packaging/Nexy.spec`:**
+   - Добавить в секцию `datas` для ресурсов
+   - Добавить в секцию `binaries` для бинарников (если нужно)
+   - Проверить, что пути корректны (абсолютные пути через `client_dir`)
+
+2. **`scripts/stage_universal_binaries.py` (только для `vendor_binaries/`):**
+   - Добавить определение бинарника в `BINARY_DEFS`
+   - Убедиться, что бинарники из `vendor_binaries/{arch}/` будут объединены в Universal 2
+
+3. **Документация:**
+   - Обновить этот файл (если меняется процедура)
+   - Обновить `Docs/PACKAGING_READINESS_CHECKLIST.md` с новыми проверками
+
+### 0.6. Чек-лист перед мерджем
+
+**Перед мерджем изменений, затрагивающих упаковку, ОБЯЗАТЕЛЬНО:**
+
+- [ ] Все триггеры изменений обработаны (см. раздел 0.1)
+- [ ] Артефакты упаковки обновлены (Nexy.spec, stage_universal_binaries.py)
+- [ ] PRE_PACKAGING_VERIFICATION.md пройден и результаты зафиксированы
+- [ ] `build_final.sh` выполнен успешно
+- [ ] Все артефакты проверены (подпись, нотаризация, архитектура, целостность)
+- [ ] `packaging_verification.log` не содержит ошибок
+- [ ] Новые файлы присутствуют в `.app/Contents/Resources/`
+- [ ] `validate_release_bundle.py` пройден (если применимо)
 
 ## 1. Требования окружения
 
