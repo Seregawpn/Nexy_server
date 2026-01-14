@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.40
+  version: 1.6.0.42
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -146,7 +146,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: production
+    server: local
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 30.0
     max_retries: 3
@@ -196,10 +196,10 @@ integrations:
     retry_delay: 5.0
     show_instructions: false
     required_permissions:
-    - accessibility
     - microphone
-    - screen_capture
+    - accessibility
     - input_monitoring
+    - screen_capture
   permission_restart:
     enabled: true
     critical_permissions:
@@ -287,7 +287,7 @@ network:
 permissions:
   first_run:
     enabled: true
-    request_timeout_sec: 15
+    request_timeout_sec: 13
     open_settings_after_sec: 10
   sequential: true
   request_timeout_sec: 120.0
@@ -494,6 +494,10 @@ features:
       enabled: true
     close_app:
       enabled: true
+browser_use:
+  enabled: true  # F-2025-015-browser-use enabled
+  log_steps: true
+  log_terminal: true
 actions:
   open_app:
     enabled: true
