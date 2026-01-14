@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.43
+  version: 1.6.0.42
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
