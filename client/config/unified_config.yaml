@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.42
+  version: 1.6.0.44
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -196,10 +196,12 @@ integrations:
     retry_delay: 5.0
     show_instructions: false
     required_permissions:
-    - microphone
-    - accessibility
+    # Порядок важен! Input Monitoring первым, Accessibility последним
+    # Это предотвращает конфликт диалогов (как в старой рабочей версии)
     - input_monitoring
+    - microphone
     - screen_capture
+    - accessibility
   permission_restart:
     enabled: true
     critical_permissions:
