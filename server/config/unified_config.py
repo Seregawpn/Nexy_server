@@ -44,7 +44,7 @@ def get_version_from_file() -> str:
             logger.warning(f"Не удалось прочитать VERSION файл: {e}")
     
     # Fallback: используем переменную окружения или дефолт
-    return os.getenv('SERVER_VERSION', '1.6.0.40')
+    return os.getenv('SERVER_VERSION', '1.6.0.42')
 
 @dataclass
 class DatabaseConfig:
@@ -203,12 +203,23 @@ class TextProcessingConfig:
         "  • If nothing found → say that and suggest refining the query\n"
         "- Do NOT output steps or instructions for WebSearch results\n\n"
         "──────────────────────\n\n"
-        "4. Ambiguous Intent\n\n"
+        "4. Browser Automation Intent (browser_use)\n\n"
+        "User wants to interact with **WEBSITES**. This includes \"Open YouTube\", \"Go to Google\", \"Search for...\", \"Order form...\".\n"
+        "- **Explicitly prefers browser_use** for: YouTube, Google, Wikipedia, Amazon, Reddit, etc.\n"
+        "- Use **Action JSON format** with:\n"
+        "  • \"command\": \"browser_use\"\n"
+        "  • \"args\": {\"task\": \"<detailed description of the task>\"}\n"
+        "  • \"session_id\": <MUST reuse from request, REQUIRED>\n"
+        "  • \"text\": short confirmation (e.g. \"Starting browser task...\")\n"
+        "- **CRITICAL**: Do NOT ask for confirmation. Do NOT say \"Would you like me to...?\". JUST DO IT.\n"
+        "- If the user says \"Open [Website]\", it is ALWAYS a browser_use command.\n\n"
+        "──────────────────────\n\n"
+        "5. Ambiguous Intent\n\n"
         "If unclear:\n"
         "- Use **Text-only JSON format**\n"
         "- Provide best short answer + ask 1 clarifying question: \"Would you like me to describe it or perform an action?\"\n\n"
         "──────────────────────\n\n"
-        "5. SmallTalk\n\n"
+        "6. SmallTalk\n\n"
         "Greetings, emotions, light conversation.\n"
         "- Use **Text-only JSON format**\n"
         "- 1–2 short friendly sentences\n"
@@ -227,10 +238,11 @@ class TextProcessingConfig:
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "[Processing Priority]\n\n"
         "If multiple intentions overlap, resolve in this order:\n"
-        "1) Describe\n"
-        "2) WebSearch\n"
-        "3) Action\n"
-        "4) SmallTalk\n\n"
+        "1) Browser Automation (browser_use) - HIGHEST PRIORITY for any \"Open [Website]\" or \"Search [Website]\"\n"
+        "2) Describe\n"
+        "3) WebSearch\n"
+        "4) Action (open_app / close_app)\n"
+        "5) SmallTalk\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "[Action Output Format — DO NOT OUTPUT]\n\n"
         "You MUST use **one of the two formats below**:\n\n"
@@ -253,6 +265,15 @@ class TextProcessingConfig:
         "    \"app_name\": \"Safari\"\n"
         "  },\n"
         "  \"text\": \"Closing Safari.\"\n"
+        "}\n\n"
+        "Example 3: Browser Automation\n"
+        "{\n"
+        "  \"session_id\": \"<MUST use session_id from request>\",\n"
+        "  \"command\": \"browser_use\",\n"
+        "  \"args\": {\n"
+        "    \"task\": \"Open YouTube\"\n"
+        "  },\n"
+        "  \"text\": \"Opening YouTube in browser.\"\n"
         "}\n\n"
         "Rules:\n"
         "- session_id: REQUIRED, must be the exact session_id from the request (never null)\n"
@@ -571,6 +592,25 @@ class KillSwitchesConfig:
         )
 
 @dataclass
+class BrowserUseConfig:
+    """Конфигурация browser-use автоматизации"""
+    enabled: bool = False
+    default_preset: str = 'ultra_fast'
+    timeout_sec: int = 120
+    max_steps: int = 50
+    gemini_model: str = 'gemini-2.5-flash'
+    
+    @classmethod
+    def from_env(cls) -> 'BrowserUseConfig':
+        return cls(
+            enabled=os.getenv('BROWSER_USE_ENABLED', 'false').lower() == 'true',
+            default_preset=os.getenv('BROWSER_USE_PRESET', 'ultra_fast'),
+            timeout_sec=int(os.getenv('BROWSER_USE_TIMEOUT', '120')),
+            max_steps=int(os.getenv('BROWSER_USE_MAX_STEPS', '50')),
+            gemini_model=os.getenv('BROWSER_USE_MODEL', 'gemini-2.5-flash')
+        )
+
+@dataclass
 class UnifiedServerConfig:
     """Централизованная конфигурация всего сервера"""
     database: DatabaseConfig = field(default_factory=DatabaseConfig.from_env)
@@ -588,6 +628,7 @@ class UnifiedServerConfig:
     features: FeaturesConfig = field(default_factory=FeaturesConfig.from_env)
     kill_switches: KillSwitchesConfig = field(default_factory=KillSwitchesConfig.from_env)
     backpressure: BackpressureConfig = field(default_factory=BackpressureConfig.from_env)
+    browser_use: BrowserUseConfig = field(default_factory=BrowserUseConfig.from_env)
     
     def __post_init__(self):
         """Пост-инициализация для валидации"""
@@ -650,7 +691,8 @@ class UnifiedServerConfig:
             'workflow': self.workflow.__dict__,
             'update': self.update.__dict__,
             'server': self.server.__dict__,
-            'logging': self.logging.__dict__
+            'logging': self.logging.__dict__,
+            'browser_use': self.browser_use.__dict__
         }
 
         return config_mapping.get(module_name, {})
@@ -805,7 +847,8 @@ class UnifiedServerConfig:
             'logging': self.logging.__dict__,
             'features': self.features.__dict__,
             'kill_switches': self.kill_switches.__dict__,
-            'backpressure': self.backpressure.__dict__
+            'backpressure': self.backpressure.__dict__,
+            'browser_use': self.browser_use.__dict__
         }
         
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -927,7 +970,8 @@ class UnifiedServerConfig:
             'logging': self.logging.__dict__,
             'features': self.features.__dict__,
             'kill_switches': self.kill_switches.__dict__,
-            'backpressure': self.backpressure.__dict__
+            'backpressure': self.backpressure.__dict__,
+            'browser_use': self.browser_use.__dict__
         }
 
 # Глобальный экземпляр конфигурации
