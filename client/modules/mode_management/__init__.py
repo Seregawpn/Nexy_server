@@ -23,5 +23,5 @@ __all__ = [
     'ListeningMode'
 ]
 
-__version__ = "1.6.0.42"
+__version__ = "1.6.0.43"
 __author__ = "Nexy Team"
