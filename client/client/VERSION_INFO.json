@@ -1,7 +1,7 @@
 {
-  "version": "1.6.0.42",
-  "build_date": "2026-01-14 10:35:37",
-  "git_sha": "aad188b",
+  "version": "1.6.0.44",
+  "build_date": "2026-01-14 12:37:09",
+  "git_sha": "70d1b71",
   "requirements": {
     "req_version": "2025.02",
     "req_date": "2025-01-30",
