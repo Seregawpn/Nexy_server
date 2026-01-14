@@ -44,7 +44,7 @@ def get_version_from_file() -> str:
             logger.warning(f"Не удалось прочитать VERSION файл: {e}")
     
     # Fallback: используем переменную окружения или дефолт
-    return os.getenv('SERVER_VERSION', '1.6.0.42')
+    return os.getenv('SERVER_VERSION', '1.6.0.44')
 
 @dataclass
 class DatabaseConfig:
@@ -116,6 +116,16 @@ class AudioConfig:
     edge_tts_volume: str = "+0%"
     edge_tts_pitch: str = "+0Hz"
     audio_format: str = "pcm"  # PCM для стриминга
+    
+    # Azure TTS (Legacy support for config loading)
+    azure_speech_key: str = ""
+    azure_speech_region: str = ""
+    azure_voice_name: str = "en-US-AriaNeural"
+    azure_voice_style: str = "friendly"
+    azure_speech_rate: float = 1.0
+    azure_speech_pitch: float = 1.0
+    azure_speech_volume: float = 1.0
+    azure_audio_format: str = "riff-48khz-16bit-mono-pcm"
     
     # Streaming настройки
     streaming_chunk_size: int = 4096
@@ -280,6 +290,8 @@ class TextProcessingConfig:
         "- text: 1–3 short sentences\n"
         "- For open_app: args must contain app_name\n"
         "- For close_app: args must contain app_name\n"
+        "- For browser_use: args must contain task\\n"
+        "- For close_browser: args can be empty (explicit close only)\\n"
         "- NEVER add any extra fields\n"
         "- If session_id is missing or null → action will be ignored, only text will be used\n\n"
         "──────────────\n\n"
@@ -596,6 +608,7 @@ class BrowserUseConfig:
     """Конфигурация browser-use автоматизации"""
     enabled: bool = False
     default_preset: str = 'ultra_fast'
+    keep_browser_open: bool = False
     timeout_sec: int = 120
     max_steps: int = 50
     gemini_model: str = 'gemini-2.5-flash'
@@ -605,6 +618,7 @@ class BrowserUseConfig:
         return cls(
             enabled=os.getenv('BROWSER_USE_ENABLED', 'false').lower() == 'true',
             default_preset=os.getenv('BROWSER_USE_PRESET', 'ultra_fast'),
+            keep_browser_open=os.getenv('BROWSER_USE_KEEP_OPEN', 'false').lower() == 'true',
             timeout_sec=int(os.getenv('BROWSER_USE_TIMEOUT', '120')),
             max_steps=int(os.getenv('BROWSER_USE_MAX_STEPS', '50')),
             gemini_model=os.getenv('BROWSER_USE_MODEL', 'gemini-2.5-flash')
@@ -894,6 +908,7 @@ class UnifiedServerConfig:
         logging_config = LoggingConfig(**config_dict.get('logging', {}))
         features = FeaturesConfig(**config_dict.get('features', {}))
         kill_switches = KillSwitchesConfig(**config_dict.get('kill_switches', {}))
+        browser_use = BrowserUseConfig(**config_dict.get('browser_use', {}))
         
         # Backpressure config с учетом окружения
         env = os.getenv('NEXY_ENV', 'prod').lower()
@@ -919,7 +934,8 @@ class UnifiedServerConfig:
             logging=logging_config,
             features=features,
             kill_switches=kill_switches,
-            backpressure=backpressure
+            backpressure=backpressure,
+            browser_use=browser_use
         )
     
     def get_status(self) -> Dict[str, Any]:
