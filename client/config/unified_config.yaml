@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.44
+  version: 1.6.0.45
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -196,8 +196,8 @@ integrations:
     retry_delay: 5.0
     show_instructions: false
     required_permissions:
-    # Порядок важен! Input Monitoring первым, Accessibility последним
-    # Это предотвращает конфликт диалогов (как в старой рабочей версии)
+    # ВАЖНО: input_monitoring ПЕРВЫМ, accessibility ПОСЛЕДНИМ!
+    # Accessibility вызывает TCC check который блокирует диалоги других разрешений
     - input_monitoring
     - microphone
     - screen_capture
@@ -289,9 +289,12 @@ network:
 permissions:
   first_run:
     enabled: true
-    request_timeout_sec: 13
+    request_timeout_sec: 15
     open_settings_after_sec: 10
-  sequential: true
+    pause_between_requests_sec: 1.0
+    activation_hold_duration_sec: 15.0
+    mode: smart
+  sequential: false
   request_timeout_sec: 120.0
   auto_open_settings: false
   microphone:
@@ -318,6 +321,11 @@ permissions:
     enabled: true
     required: true
     description: Nexy использует Accessibility для мониторинга клавиатуры и автоматизации.
+  settings_required_permissions:
+  # Какие разрешения требуют открытия System Settings при timeout
+  - accessibility
+  - input_monitoring
+  - screen_capture
   system_preferences:
     microphone: x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone
     screen_capture: x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture
