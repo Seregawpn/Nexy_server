@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.45
+  version: 1.6.0.46
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -294,6 +294,12 @@ permissions:
     pause_between_requests_sec: 1.0
     activation_hold_duration_sec: 15.0
     mode: smart
+    # TCC Rate Limiting Fix: Batch permissions to avoid macOS blocking dialogs
+    # When requesting 4+ permissions, macOS blocks the last ones
+    # Solution: Request 2 permissions per session, then restart
+    batch_size: 2                    # Permissions per batch (2 avoids TCC rate limit)
+    enable_batching: true            # Enable batched permission requests
+    batch_restart_delay_sec: 2.0     # Delay before restart after batch
   sequential: false
   request_timeout_sec: 120.0
   auto_open_settings: false
