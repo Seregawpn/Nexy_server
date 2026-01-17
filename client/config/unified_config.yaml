@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.46
+  version: 1.6.0.47
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -196,11 +196,13 @@ integrations:
     retry_delay: 5.0
     show_instructions: false
     required_permissions:
-    # ВАЖНО: input_monitoring ПЕРВЫМ, accessibility ПОСЛЕДНИМ!
-    # Accessibility вызывает TCC check который блокирует диалоги других разрешений
+    # Порядок: input_monitoring первый, accessibility последний
+    # Как в old версии, но с новыми permissions
     - input_monitoring
     - microphone
     - screen_capture
+    - contacts
+    - full_disk_access
     - accessibility
   permission_restart:
     enabled: true
@@ -297,9 +299,9 @@ permissions:
     # TCC Rate Limiting Fix: Batch permissions to avoid macOS blocking dialogs
     # When requesting 4+ permissions, macOS blocks the last ones
     # Solution: Request 2 permissions per session, then restart
-    batch_size: 2                    # Permissions per batch (2 avoids TCC rate limit)
-    enable_batching: true            # Enable batched permission requests
-    batch_restart_delay_sec: 2.0     # Delay before restart after batch
+    batch_size: 2                    # Permissions per batch (unused when batching disabled)
+    enable_batching: false           # DISABLED: sequential requests like old version
+    batch_restart_delay_sec: 2.0     # Delay before restart after batch (unused)
   sequential: false
   request_timeout_sec: 120.0
   auto_open_settings: false
@@ -514,6 +516,10 @@ browser_use:
   enabled: true  # F-2025-015-browser-use enabled
   log_steps: true
   log_terminal: true
+messages:
+  enabled: true  # F-2025-016-messages enabled
+  require_full_disk_access: true
+  require_contacts_permission: true
 actions:
   open_app:
     enabled: true
