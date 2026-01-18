@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.47
+  version: 1.6.0.48
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -196,21 +196,22 @@ integrations:
     retry_delay: 5.0
     show_instructions: false
     required_permissions:
-    # Порядок: input_monitoring первый, accessibility последний
-    # Как в old версии, но с новыми permissions
-    - input_monitoring
+    # Порядок: accessibility первый, input_monitoring последний
+    - accessibility
     - microphone
     - screen_capture
     - contacts
     - full_disk_access
-    - accessibility
+    - input_monitoring
   permission_restart:
     enabled: true
     critical_permissions:
     - accessibility
     - microphone
-    - input_monitoring
     - screen_capture
+    - contacts
+    - full_disk_access
+    - input_monitoring
     restart_delay_sec: 5.0
     max_restart_attempts: 3
     respect_active_sessions: true
@@ -291,9 +292,7 @@ network:
 permissions:
   first_run:
     enabled: true
-    request_timeout_sec: 15
-    open_settings_after_sec: 10
-    pause_between_requests_sec: 1.0
+    pause_between_requests_sec: 0.0
     activation_hold_duration_sec: 15.0
     mode: smart
     # TCC Rate Limiting Fix: Batch permissions to avoid macOS blocking dialogs
@@ -329,17 +328,24 @@ permissions:
     enabled: true
     required: true
     description: Nexy использует Accessibility для мониторинга клавиатуры и автоматизации.
+  contacts:
+    enabled: true
+    required: true
+    description: Nexy использует контакты для резолвинга отправителей и получателей сообщений.
+  full_disk_access:
+    enabled: true
+    required: true
+    description: Nexy требует Full Disk Access для доступа к локальным данным сообщений.
   settings_required_permissions:
-  # Какие разрешения требуют открытия System Settings при timeout
-  - accessibility
-  - input_monitoring
-  - screen_capture
+  # Отключено: подсказки про Settings не используются
   system_preferences:
     microphone: x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone
     screen_capture: x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture
     camera: x-apple.systempreferences:com.apple.preference.security?Privacy_Camera
     accessibility: x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility
     input_monitoring: x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent
+    contacts: x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts
+    full_disk_access: x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles
     notifications: x-apple.systempreferences:com.apple.preference.notifications
 screenshot_capture:
   auto_capture: false
@@ -516,6 +522,10 @@ browser_use:
   enabled: true  # F-2025-015-browser-use enabled
   log_steps: true
   log_terminal: true
+payment_use:
+  enabled: true  # F-2025-018-payment-use enabled
+  log_steps: true
+  log_transactions: true
 messages:
   enabled: true  # F-2025-016-messages enabled
   require_full_disk_access: true
