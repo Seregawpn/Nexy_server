@@ -44,7 +44,7 @@ def get_version_from_file() -> str:
             logger.warning(f"Не удалось прочитать VERSION файл: {e}")
     
     # Fallback: используем переменную окружения или дефолт
-    return os.getenv('SERVER_VERSION', '1.6.0.47')
+    return os.getenv('SERVER_VERSION', '1.6.0.48')
 
 @dataclass
 class DatabaseConfig:
@@ -668,6 +668,85 @@ class BrowserUseConfig:
         )
 
 @dataclass
+class PaymentUseConfig:
+    """Конфигурация payment-use автоматизации"""
+    enabled: bool = False
+    timeout_sec: int = 120
+    max_steps: int = 50
+    gemini_model: str = 'gemini-2.5-flash'
+    log_steps: bool = True
+    log_transactions: bool = True
+    
+    @classmethod
+    def from_env(cls) -> 'PaymentUseConfig':
+        return cls(
+            enabled=os.getenv('PAYMENT_USE_ENABLED', 'false').lower() == 'true',
+            timeout_sec=int(os.getenv('PAYMENT_USE_TIMEOUT', '120')),
+            max_steps=int(os.getenv('PAYMENT_USE_MAX_STEPS', '50')),
+            gemini_model=os.getenv('PAYMENT_USE_MODEL', 'gemini-2.5-flash'),
+            log_steps=os.getenv('PAYMENT_USE_LOG_STEPS', 'true').lower() == 'true',
+            log_transactions=os.getenv('PAYMENT_USE_LOG_TRANSACTIONS', 'true').lower() == 'true'
+        )
+
+@dataclass
+class SubscriptionConfig:
+    """
+    Конфигурация платёжной системы Stripe
+    
+    Feature ID: F-2025-017-stripe-payment
+    
+    По умолчанию ОТКЛЮЧЕНО - продукт работает без проверок подписок.
+    """
+    # Feature flags
+    enabled: bool = False  # Главный переключатель - по умолчанию ОТКЛЮЧЕНО
+    kill_switch: bool = False  # Аварийное отключение
+    
+    # Stripe API keys
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_publishable_key: str = ""
+    stripe_price_id: str = ""  # Monthly subscription price ID
+    
+    # Trial configuration
+    trial_days: int = 14
+    grace_period_hours: int = 24
+    
+    # Quota limits (for limited_free_trial)
+    quota_daily: int = 5
+    quota_weekly: int = 25
+    quota_monthly: int = 50
+    
+    # Cache configuration
+    cache_ttl_seconds: int = 30
+    
+    # Scheduler intervals (in hours)
+    trial_check_interval_hours: int = 6
+    grace_period_check_interval_hours: int = 6
+    
+    @classmethod
+    def from_env(cls) -> 'SubscriptionConfig':
+        return cls(
+            enabled=os.getenv('SUBSCRIPTION_ENABLED', 'false').lower() == 'true',
+            kill_switch=os.getenv('SUBSCRIPTION_KILL_SWITCH', 'false').lower() == 'true',
+            stripe_secret_key=os.getenv('STRIPE_SECRET_KEY', ''),
+            stripe_webhook_secret=os.getenv('STRIPE_WEBHOOK_SECRET', ''),
+            stripe_publishable_key=os.getenv('STRIPE_PUBLISHABLE_KEY', ''),
+            stripe_price_id=os.getenv('STRIPE_PRICE_ID', ''),
+            trial_days=int(os.getenv('SUBSCRIPTION_TRIAL_DAYS', '14')),
+            grace_period_hours=int(os.getenv('SUBSCRIPTION_GRACE_PERIOD_HOURS', '24')),
+            quota_daily=int(os.getenv('SUBSCRIPTION_QUOTA_DAILY', '5')),
+            quota_weekly=int(os.getenv('SUBSCRIPTION_QUOTA_WEEKLY', '25')),
+            quota_monthly=int(os.getenv('SUBSCRIPTION_QUOTA_MONTHLY', '50')),
+            cache_ttl_seconds=int(os.getenv('SUBSCRIPTION_CACHE_TTL', '30')),
+            trial_check_interval_hours=int(os.getenv('SUBSCRIPTION_TRIAL_CHECK_HOURS', '6')),
+            grace_period_check_interval_hours=int(os.getenv('SUBSCRIPTION_GRACE_CHECK_HOURS', '6'))
+        )
+    
+    def is_active(self) -> bool:
+        """Проверяет, активна ли платёжная система (enabled и не kill_switch)"""
+        return self.enabled and not self.kill_switch
+
+@dataclass
 class UnifiedServerConfig:
     """Централизованная конфигурация всего сервера"""
     database: DatabaseConfig = field(default_factory=DatabaseConfig.from_env)
@@ -686,6 +765,8 @@ class UnifiedServerConfig:
     kill_switches: KillSwitchesConfig = field(default_factory=KillSwitchesConfig.from_env)
     backpressure: BackpressureConfig = field(default_factory=BackpressureConfig.from_env)
     browser_use: BrowserUseConfig = field(default_factory=BrowserUseConfig.from_env)
+    payment_use: PaymentUseConfig = field(default_factory=PaymentUseConfig.from_env)
+    subscription: SubscriptionConfig = field(default_factory=SubscriptionConfig.from_env)
     
     def __post_init__(self):
         """Пост-инициализация для валидации"""
@@ -749,7 +830,9 @@ class UnifiedServerConfig:
             'update': self.update.__dict__,
             'server': self.server.__dict__,
             'logging': self.logging.__dict__,
-            'browser_use': self.browser_use.__dict__
+            'browser_use': self.browser_use.__dict__,
+            'payment_use': self.payment_use.__dict__,
+            'subscription': self.subscription.__dict__
         }
 
         return config_mapping.get(module_name, {})
@@ -905,7 +988,8 @@ class UnifiedServerConfig:
             'features': self.features.__dict__,
             'kill_switches': self.kill_switches.__dict__,
             'backpressure': self.backpressure.__dict__,
-            'browser_use': self.browser_use.__dict__
+            'browser_use': self.browser_use.__dict__,
+            'payment_use': self.payment_use.__dict__
         }
         
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -952,6 +1036,7 @@ class UnifiedServerConfig:
         features = FeaturesConfig(**config_dict.get('features', {}))
         kill_switches = KillSwitchesConfig(**config_dict.get('kill_switches', {}))
         browser_use = BrowserUseConfig(**config_dict.get('browser_use', {}))
+        payment_use = PaymentUseConfig(**config_dict.get('payment_use', {}))
         
         # Backpressure config с учетом окружения
         env = os.getenv('NEXY_ENV', 'prod').lower()
@@ -978,7 +1063,8 @@ class UnifiedServerConfig:
             features=features,
             kill_switches=kill_switches,
             backpressure=backpressure,
-            browser_use=browser_use
+            browser_use=browser_use,
+            payment_use=payment_use
         )
     
     def get_status(self) -> Dict[str, Any]:
@@ -1030,7 +1116,8 @@ class UnifiedServerConfig:
             'features': self.features.__dict__,
             'kill_switches': self.kill_switches.__dict__,
             'backpressure': self.backpressure.__dict__,
-            'browser_use': self.browser_use.__dict__
+            'browser_use': self.browser_use.__dict__,
+            'payment_use': self.payment_use.__dict__
         }
 
 # Глобальный экземпляр конфигурации

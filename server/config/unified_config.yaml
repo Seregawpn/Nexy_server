@@ -111,14 +111,14 @@ update:
   downloads_dir: server/updates/downloads
   keys_dir: server/updates/keys
   manifests_dir: server/updates/manifests
-  default_version: 1.6.0.47  # Единый источник истины: SERVER_VERSION из config.env
-  default_build: 1.6.0.47  # Единый источник истины: SERVER_BUILD из config.env
+  default_version: 1.6.0.48  # Единый источник истины: SERVER_VERSION из config.env
+  default_build: 1.6.0.48  # Единый источник истины: SERVER_BUILD из config.env
   default_arch: universal2
   default_min_os: 11.0
 
 server:
-  version: 1.6.0.47  # Единый источник истины: SERVER_VERSION из config.env
-  build: 1.6.0.47  # Единый источник истины: SERVER_BUILD из config.env
+  version: 1.6.0.48  # Единый источник истины: SERVER_VERSION из config.env
+  build: 1.6.0.48  # Единый источник истины: SERVER_BUILD из config.env
   channel: stable
 
 logging:
@@ -158,3 +158,13 @@ browser_use:
   timeout_sec: 120                 # Таймаут выполнения задачи (сек)
   max_steps: 50                    # Максимум шагов AI-агента на задачу
   gemini_model: gemini-2.5-flash   # LLM модель для browser-агента
+
+# Payment Automation (F-2025-018)
+# AI-управляемая автоматизация платежей через payment-use Agent
+payment_use:
+  enabled: true                    # Включить модуль payment automation
+  timeout_sec: 120                 # Таймаут выполнения задачи (сек)
+  max_steps: 50                    # Максимум шагов AI-агента на задачу
+  gemini_model: gemini-2.5-flash   # LLM модель для payment-агента
+  log_steps: true                  # Логировать шаги выполнения
+  log_transactions: true           # Логировать транзакции
