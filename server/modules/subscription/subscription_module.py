@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+"""
+Subscription Module - единственный владелец статусов и квот подписок
+
+Feature ID: F-2025-017-stripe-payment
+
+⚠️ КРИТИЧНО: Это Source of Truth для всех решений о доступе и квотах.
+Клиент НЕ выполняет никаких расчётов - только отображает статус.
+"""
+import logging
+import os
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
+from datetime import datetime
+
+from config.unified_config import get_config
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CanProcessResult:
+    """Результат проверки доступа"""
+    allowed: bool
+    reason: str
+    status: Optional[str] = None
+    message: Optional[str] = None
+    subscription_context: Optional[Dict[str, Any]] = None
+
+
+class SubscriptionModule:
+    """
+    Центральный модуль управления подписками.
+    
+    Владеет:
+    - Проверкой доступа (can_process)
+    - Инкрементом использования (increment_usage)
+    - Контекстом для LLM (get_context_for_prompt)
+    - Периодическими задачами (scheduler)
+    
+    ⚠️ КРИТИЧНО: Единственный способ проверить доступ пользователя.
+    """
+    
+    def __init__(self):
+        self.config = get_config().subscription
+        self._repository = None
+        self._quota_checker = None
+        self._state_machine = None
+        self._scheduler = None
+        self._initialized = False
+        self._cache = {}  # Simple TTL cache
+        self._cache_ttl = self.config.cache_ttl_seconds
+        
+    async def initialize(self) -> bool:
+        """
+        Инициализация модуля.
+        
+        Returns:
+            True если инициализация успешна
+        """
+        if not self.config.is_active():
+            logger.info("[F-2025-017] Subscription module disabled by config")
+            return False
+        
+        try:
+            # Lazy import to avoid circular dependencies
+            from .repository.subscription_repository import SubscriptionRepository
+            from .core.quota_checker import QuotaChecker
+            from .core.state_machine import SubscriptionStateMachine
+            
+            # Construct DB URL from unified_config
+            # This is critical because SubscriptionRepository relies on DATABASE_URL or passed url
+            # and unified_config stores connection details in separate fields.
+            db_cfg = get_config().get_module_config('database')
+            # Support both object and dict access just in case
+            if isinstance(db_cfg, dict):
+                user = db_cfg.get('user', os.getenv('DB_USER', 'postgres'))
+                password = db_cfg.get('password', os.getenv('DB_PASSWORD', ''))
+                host = db_cfg.get('host', os.getenv('DB_HOST', 'localhost'))
+                port = db_cfg.get('port', int(os.getenv('DB_PORT', '5432')))
+                name = db_cfg.get('name', os.getenv('DB_NAME', 'voice_assistant_db'))
+            else:
+                # Fallback or if it returns object
+                user = getattr(db_cfg, 'user', os.getenv('DB_USER', 'postgres'))
+                password = getattr(db_cfg, 'password', os.getenv('DB_PASSWORD', ''))
+                host = getattr(db_cfg, 'host', os.getenv('DB_HOST', 'localhost'))
+                port = getattr(db_cfg, 'port', int(os.getenv('DB_PORT', '5432')))
+                name = getattr(db_cfg, 'name', os.getenv('DB_NAME', 'voice_assistant_db'))
+
+            # Construct safe URL
+            db_url = f"postgresql://{user}:{password}@{host}:{port}/{name}"
+            
+            self._repository = SubscriptionRepository(db_url=db_url)
+            self._quota_checker = QuotaChecker(repository=self._repository)
+            self._state_machine = SubscriptionStateMachine
+            
+            self._initialized = True
+            logger.info("[F-2025-017] Subscription module initialized")
+            return True
+            
+        except Exception as e:
+            logger.error(f"[F-2025-017] Failed to initialize subscription module: {e}")
+            return False
+    
+    async def can_process(self, hardware_id: str) -> CanProcessResult:
+        """
+        Единственный gate для проверки доступа.
+        
+        ⚠️ КРИТИЧНО: Все проверки доступа ДОЛЖНЫ проходить через этот метод.
+        
+        Args:
+            hardware_id: ID устройства
+            
+        Returns:
+            CanProcessResult с решением allow/deny
+        """
+        # Если модуль отключен по конфигу - разрешаем всё (продукт работает без подписок)
+        if not self.config.is_active():
+            return CanProcessResult(
+                allowed=True,
+                reason='subscription_disabled',
+                subscription_context=None
+            )
+        
+        # ⚠️ КРИТИЧНО: Если enabled=True, но не initialized - это ошибка конфигурации
+        # Логируем ERROR и разрешаем (fail-open), но это НУЖНО ИСПРАВИТЬ
+        if not self._initialized:
+            logger.error(
+                "[F-2025-017] CONFIGURATION ERROR: Subscription enabled but not initialized! "
+                "Call await subscription_module.initialize() before use. Allowing request (fail-open)."
+            )
+            return CanProcessResult(
+                allowed=True,
+                reason='initialization_error',
+                message='Subscription module not initialized'
+            )
+        
+        try:
+            # Проверяем cache
+            cached = self._get_cached(hardware_id)
+            if cached is not None:
+                return cached
+            
+            # Проверяем квоты
+            quota_result = self._quota_checker.check_quota(hardware_id)
+            
+            result = CanProcessResult(
+                allowed=quota_result.get('allowed', False),
+                reason=quota_result.get('reason', 'unknown'),
+                status=quota_result.get('status'),
+                message=quota_result.get('message'),
+                subscription_context=self._build_context(quota_result)
+            )
+            
+            # Кэшируем результат (только для allowed=True, чтобы denied обновлялись сразу)
+            if result.allowed:
+                self._set_cached(hardware_id, result)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"[F-2025-017] Error checking subscription for {hardware_id[:8]}...: {e}")
+            # При ошибке - разрешаем (fail-open для не блокирующих сценариев)
+            return CanProcessResult(
+                allowed=True,
+                reason='error_failopen',
+                message=str(e)
+            )
+    
+    async def increment_usage(self, hardware_id: str) -> bool:
+        """
+        Инкремент использования ПОСЛЕ успешной генерации.
+        
+        ⚠️ КРИТИЧНО: Вызывать ТОЛЬКО после успешной обработки запроса.
+        
+        Args:
+            hardware_id: ID устройства
+            
+        Returns:
+            True если инкремент успешен
+        """
+        if not self._initialized or not self.config.is_active():
+            return True
+        
+        try:
+            result = self._quota_checker.increment_usage(hardware_id)
+            
+            if result.get('success'):
+                # Инвалидируем кэш
+                self._invalidate_cache(hardware_id)
+                logger.debug(f"[F-2025-017] Usage incremented for {hardware_id[:8]}...")
+                return True
+            else:
+                logger.warning(f"[F-2025-017] Failed to increment usage: {result.get('message')}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"[F-2025-017] Error incrementing usage: {e}")
+            return False
+    
+    async def get_context_for_prompt(self, hardware_id: str) -> str:
+        """
+        Получить контекст подписки для LLM prompt.
+        
+        Args:
+            hardware_id: ID устройства
+            
+        Returns:
+            Строка контекста для добавления в prompt
+        """
+        if not self._initialized or not self.config.is_active():
+            return ""
+        
+        try:
+            result = await self.can_process(hardware_id)
+            
+            if not result.subscription_context:
+                return ""
+            
+            ctx = result.subscription_context
+            status = ctx.get('status', 'unknown')
+            
+            if status == 'limited_free_trial':
+                limits = ctx.get('limits', {})
+                daily = limits.get('daily', {})
+                remaining = daily.get('limit', 5) - daily.get('used', 0)
+                return f"[User has {remaining} free requests remaining today. Suggest subscription if helpful.]"
+            
+            elif status == 'billing_problem':
+                return "[User has billing issues. Gently remind about payment if asked about subscription.]"
+            
+            return ""
+            
+        except Exception as e:
+            logger.error(f"[F-2025-017] Error getting context: {e}")
+            return ""
+    
+    def start_scheduler(self) -> None:
+        """
+        Запуск периодических задач.
+        
+        ⚠️ КРИТИЧНО: Вызывать из main.py при старте сервера.
+        Scheduler владеется этим модулем.
+        """
+        if not self._initialized or not self.config.is_active():
+            logger.info("[F-2025-017] Scheduler not started - module disabled")
+            return
+        
+        try:
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            
+            self._scheduler = AsyncIOScheduler()
+            
+            # Trial check
+            self._scheduler.add_job(
+                self._run_trial_check,
+                'interval',
+                hours=self.config.trial_check_interval_hours,
+                id='trial_check'
+            )
+            
+            # Grace period check
+            self._scheduler.add_job(
+                self._run_grace_period_check,
+                'interval',
+                hours=self.config.grace_period_check_interval_hours,
+                id='grace_period_check'
+            )
+            
+            # Daily quota reset (at midnight)
+            self._scheduler.add_job(
+                self._run_daily_quota_reset,
+                'cron',
+                hour=0,
+                minute=5,
+                id='daily_quota_reset'
+            )
+            
+            # Weekly quota reset (Monday at midnight)
+            self._scheduler.add_job(
+                self._run_weekly_quota_reset,
+                'cron',
+                day_of_week='mon',
+                hour=0,
+                minute=5,
+                id='weekly_quota_reset'
+            )
+            
+            # Monthly quota reset (1st of month at midnight)
+            self._scheduler.add_job(
+                self._run_monthly_quota_reset,
+                'cron',
+                day=1,
+                hour=0,
+                minute=5,
+                id='monthly_quota_reset'
+            )
+            
+            self._scheduler.start()
+            logger.info("[F-2025-017] Scheduler started with periodic tasks")
+            
+        except ImportError:
+            logger.warning("[F-2025-017] APScheduler not installed - periodic tasks disabled")
+        except Exception as e:
+            logger.error(f"[F-2025-017] Failed to start scheduler: {e}")
+    
+    def stop_scheduler(self) -> None:
+        """Остановка scheduler"""
+        if self._scheduler:
+            self._scheduler.shutdown(wait=False)
+            logger.info("[F-2025-017] Scheduler stopped")
+    
+    # --- Private methods ---
+    
+    def _build_context(self, quota_result: Dict) -> Optional[Dict[str, Any]]:
+        """Построить контекст из результата проверки квот"""
+        if not quota_result:
+            return None
+        
+        return {
+            'status': quota_result.get('status'),
+            'limits': quota_result.get('limits'),
+            'reason': quota_result.get('reason')
+        }
+    
+    def _get_cached(self, hardware_id: str) -> Optional[CanProcessResult]:
+        """Получить результат из кэша"""
+        entry = self._cache.get(hardware_id)
+        if entry:
+            if (datetime.now() - entry['time']).seconds < self._cache_ttl:
+                return entry['result']
+            else:
+                del self._cache[hardware_id]
+        return None
+    
+    def _set_cached(self, hardware_id: str, result: CanProcessResult) -> None:
+        """Сохранить результат в кэш"""
+        self._cache[hardware_id] = {
+            'result': result,
+            'time': datetime.now()
+        }
+    
+    def _invalidate_cache(self, hardware_id: str) -> None:
+        """Инвалидировать кэш для пользователя"""
+        if hardware_id in self._cache:
+            del self._cache[hardware_id]
+    
+    def invalidate_all_cache(self) -> None:
+        """Инвалидировать весь кэш (после webhook)"""
+        self._cache.clear()
+        logger.debug("[F-2025-017] Cache invalidated")
+    
+    async def _run_trial_check(self) -> None:
+        """Периодическая проверка истекших trial"""
+        try:
+            from .core.trial_handler import TrialHandler
+            handler = TrialHandler(self._repository)
+            result = handler.process_expired_trials()
+            logger.info(f"[F-2025-017] Trial check completed: {result}")
+        except Exception as e:
+            logger.error(f"[F-2025-017] Trial check failed: {e}")
+    
+    async def _run_grace_period_check(self) -> None:
+        """Периодическая проверка истекших grace period"""
+        try:
+            from .core.grace_period_handler import GracePeriodHandler
+            handler = GracePeriodHandler(self._repository)
+            result = handler.process_expired_grace_periods()
+            logger.info(f"[F-2025-017] Grace period check completed: {result}")
+        except Exception as e:
+            logger.error(f"[F-2025-017] Grace period check failed: {e}")
+    
+    async def _run_daily_quota_reset(self) -> None:
+        """Сброс ежедневных квот"""
+        try:
+            result = self._quota_checker.reset_daily_counters()
+            self.invalidate_all_cache()
+            logger.info(f"[F-2025-017] Daily quota reset completed: {result}")
+        except Exception as e:
+            logger.error(f"[F-2025-017] Daily quota reset failed: {e}")
+
+    async def _run_weekly_quota_reset(self) -> None:
+        """Сброс недельных квот"""
+        try:
+            result = self._quota_checker.reset_weekly_counters()
+            self.invalidate_all_cache()
+            logger.info(f"[F-2025-017] Weekly quota reset completed: {result}")
+        except Exception as e:
+            logger.error(f"[F-2025-017] Weekly quota reset failed: {e}")
+
+    async def _run_monthly_quota_reset(self) -> None:
+        """Сброс месячных квот"""
+        try:
+            result = self._quota_checker.reset_monthly_counters()
+            self.invalidate_all_cache()
+            logger.info(f"[F-2025-017] Monthly quota reset completed: {result}")
+        except Exception as e:
+            logger.error(f"[F-2025-017] Monthly quota reset failed: {e}")
+
+
+# Singleton instance
+_subscription_module: Optional[SubscriptionModule] = None
+_initialization_attempted: bool = False
+
+
+async def initialize_subscription_module() -> Optional[SubscriptionModule]:
+    """
+    Инициализировать и вернуть singleton SubscriptionModule.
+    
+    ⚠️ КРИТИЧНО: Вызывать при старте сервера, ДО первого использования.
+    
+    Returns:
+        SubscriptionModule если активен и инициализация успешна, иначе None
+    """
+    global _subscription_module, _initialization_attempted
+    
+    if _initialization_attempted:
+        return _subscription_module
+    
+    _initialization_attempted = True
+    
+    config = get_config().subscription
+    if not config.is_active():
+        logger.info("[F-2025-017] Subscription module disabled by config - skipping initialization")
+        return None
+    
+    _subscription_module = SubscriptionModule()
+    success = await _subscription_module.initialize()
+    
+    if not success:
+        logger.error("[F-2025-017] Failed to initialize subscription module")
+        _subscription_module = None
+        return None
+    
+    return _subscription_module
+
+
+def get_subscription_module() -> Optional[SubscriptionModule]:
+    """
+    Получить singleton экземпляр SubscriptionModule.
+    
+    ⚠️ ВАЖНО: Модуль должен быть предварительно инициализирован
+    через initialize_subscription_module(). Если не инициализирован,
+    возвращает None.
+    
+    Returns:
+        SubscriptionModule если инициализирован, иначе None
+    """
+    global _subscription_module
+    
+    # Проверяем, был ли модуль отключен по конфигу
+    config = get_config().subscription
+    if not config.is_active():
+        return None
+    
+    # Если попытка инициализации была, но модуль None - значит failed или disabled
+    if _initialization_attempted:
+        return _subscription_module
+    
+    # Если initialize_subscription_module не была вызвана, логируем предупреждение
+    logger.warning(
+        "[F-2025-017] get_subscription_module() called before initialization. "
+        "Call initialize_subscription_module() at server startup."
+    )
+    return None
