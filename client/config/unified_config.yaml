@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.49
+  version: 1.6.0.50
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -148,7 +148,7 @@ integrations:
     priority: 9
     server: local
     aggregate_timeout_sec: 1.5
-    request_timeout_sec: 30.0
+    request_timeout_sec: 0.0
     max_retries: 3
     retry_delay: 1.0
     use_network_gate: true
@@ -277,7 +277,7 @@ integrations:
 logging:
   console_level: DEBUG
   file_level: DEBUG
-  file_path: logs/nexy.log
+  file_path: ~/Library/Logs/Nexy/nexy.log
   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
   max_file_size: 10485760
   max_files: 5
@@ -292,7 +292,7 @@ network:
 permissions:
   first_run:
     enabled: true
-    pause_between_requests_sec: 0.0
+    pause_between_requests_sec: 15.0
     activation_hold_duration_sec: 15.0
     mode: smart
     # TCC Rate Limiting Fix: Batch permissions to avoid macOS blocking dialogs
@@ -518,10 +518,14 @@ features:
       enabled: true
     close_app:
       enabled: true
+  browser_use:
+    enabled: true
 browser_use:
   enabled: true  # F-2025-015-browser-use enabled
   log_steps: true
   log_terminal: true
+  keep_browser_open: true
+  gemini_api_key: "AIzaSyBB6iKD1oeW_GdidzhBgx68s-OsCRDpJiA"
 payment_use:
   enabled: true  # F-2025-018-payment-use enabled
   log_steps: true
@@ -550,5 +554,9 @@ mcp:
     timeout_sec: 10.0
   close_app:
     server_path: mcp_servers/close_app/server.py
+    enabled: true
+    timeout_sec: 10.0
+  messages:
+    server_path: mcp_servers/messages/server.py
     enabled: true
     timeout_sec: 10.0
