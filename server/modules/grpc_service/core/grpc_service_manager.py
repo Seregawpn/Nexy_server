@@ -118,6 +118,26 @@ class GrpcServiceManager(UniversalModuleInterface):
         # Инициализируем координатор
         await self.coordinator.initialize_all()
         
+        # Wiring: Inject DatabaseManager into MemoryManager
+        try:
+            if self.coordinator.has('memory_management') and self.coordinator.has('database'):
+                memory_module = self.coordinator.get('memory_management')
+                database_module = self.coordinator.get('database')
+                
+                # Check if database is ready (it's optional, so might have failed or be missing config)
+                if database_module.status().is_ready():
+                    logger.info("Wiring DatabaseManager to MemoryManager...")
+                    # Adapters should implementation these methods
+                    if hasattr(memory_module, 'set_database_manager') and hasattr(database_module, 'get_manager'):
+                        memory_module.set_database_manager(database_module.get_manager())
+                        logger.info("✅ DatabaseManager wired to MemoryManager")
+                    else:
+                        logger.warning("⚠️ MemoryManager or DatabaseManager missing required methods for wiring")
+                else:
+                    logger.warning(f"⚠️ Database module is not ready ({database_module.status().state}), skipping wiring")
+        except Exception as e:
+            logger.error(f"❌ Error wiring modules: {e}")
+        
         # Создаем workflow интеграции (используют модули из координатора)
         await self._create_workflow_integrations()
         
@@ -154,6 +174,7 @@ class GrpcServiceManager(UniversalModuleInterface):
             'session_management': self.unified_config.get_module_config('session'),
             'interrupt_handling': self.unified_config.get_module_config('interrupt'),
             'text_filtering': {},
+            'browser_use': self.unified_config.get_module_config('browser_use'),
         }
 
     def _module_capabilities(self) -> list:
@@ -165,6 +186,7 @@ class GrpcServiceManager(UniversalModuleInterface):
             'session_management',
             'interrupt_handling',
             'text_filtering',
+            'browser_use',
         ]
 
     async def _register_modules(self, registrar) -> None:
@@ -199,7 +221,8 @@ class GrpcServiceManager(UniversalModuleInterface):
                 audio_processor=audio_module,
                 memory_workflow=None,  # Будет установлен ниже
                 text_filter_manager=filter_module,
-                workflow_config=self.unified_config.get_workflow_thresholds()
+                workflow_config=self.unified_config.get_workflow_thresholds(),
+                coordinator=self.coordinator,  # Для доступа к browser_use модулю
             )
 
             self.memory_workflow = MemoryWorkflowIntegration(

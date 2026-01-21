@@ -31,6 +31,8 @@ message StreamResponse {
     AudioChunk audio_chunk = 2; // Аудио чанк
     string end_message = 3;    // Сообщение о завершении
     string error_message = 4;  // Сообщение об ошибке
+    ActionMessage action_message = 5; // MCP/Action payload (e.g. open_app)
+    BrowserProgressMessage browser_progress = 6; // browser-use automation progress
   }
 }
 
@@ -80,4 +82,40 @@ message WelcomeResponse {
     string end_message = 3;      // Сообщение о завершении
     string error_message = 4;    // Сообщение об ошибке
   }
+}
+
+// Action message for MCP/OpenApp
+message ActionMessage {
+  string action_json = 1;      // e.g. {"type":"open_app","app_name":"Safari"}
+  string session_id = 2;
+  optional string feature_id = 3;
+}
+
+// Browser-use automation progress
+enum BrowserEventType {
+  BROWSER_TASK_STARTED = 0;
+  BROWSER_STEP_STARTED = 1;
+  BROWSER_STEP_COMPLETED = 2;
+  BROWSER_ACTION_EXECUTED = 3;
+  BROWSER_TASK_COMPLETED = 4;
+  BROWSER_TASK_FAILED = 5;
+  BROWSER_TASK_CANCELLED = 6;
+}
+
+message BrowserProgressMessage {
+  BrowserEventType type = 1;
+  string task_id = 2;
+  optional int32 step_number = 3;
+  optional string description = 4;  // Human-readable description
+  optional string url = 5;          // Current URL
+  optional string action = 6;       // Action type: go_to_url, type, click
+  string timestamp = 7;             // ISO 8601 timestamp
+  optional string error = 8;        // Error message if BROWSER_TASK_FAILED
+  optional BrowserProgressDetails details = 9;
+}
+
+message BrowserProgressDetails {
+  optional double duration_sec = 1;  // Duration in seconds
+  repeated string actions = 2;       // List of actions
+  map<string, string> metadata = 3;  // Additional metadata
 }

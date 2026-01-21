@@ -33,6 +33,11 @@
 | `USE_WORKFLOW_INTEGRATIONS` | env_override | server-platform | true | server | - | Env переменная для переопределения features.use_workflow_integrations |
 | `USE_FALLBACK_MANAGER` | env_override | server-platform | true | server | - | Env переменная для переопределения features.use_fallback_manager |
 | `FORWARD_ASSISTANT_ACTIONS` | env_override | mcp-integration | false | server | - | Env переменная для переопределения features.forward_assistant_actions |
+| `BROWSER_USE_ENABLED` | env_config | browser | true | server | - | Включить модуль browser automation (F-2025-015) |
+| `BROWSER_USE_KEEP_OPEN` | env_config | browser | true | server | - | Сохранять браузер открытым между задачами |
+| `BROWSER_USE_TIMEOUT` | env_config | browser | 120 | server | - | Таймаут задачи браузера (секунды) |
+| `BROWSER_USE_MAX_STEPS` | env_config | browser | 50 | server | - | Максимум шагов агента на задачу |
+| `BROWSER_USE_MODEL` | env_config | browser | gemini-2.5-flash | server | - | LLM модель для browser-агента |
 
 ## Правила добавления
 

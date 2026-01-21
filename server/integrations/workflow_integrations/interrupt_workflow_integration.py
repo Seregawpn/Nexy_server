@@ -8,6 +8,8 @@ import logging
 from typing import Dict, Any, Callable, Optional, AsyncGenerator
 from datetime import datetime
 
+from modules.session_management.core.session_registry import SessionRegistry
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +32,7 @@ class InterruptWorkflowIntegration:
         """
         self.interrupt_module = interrupt_manager
         self.is_initialized = False
-        self.active_sessions = {}  # Отслеживание активных сессий
+        self.registry = SessionRegistry()  # Используем централизованный реестр
         
         logger.info("InterruptWorkflowIntegration создан")
     
@@ -160,19 +162,9 @@ class InterruptWorkflowIntegration:
             raise InterruptException("InterruptWorkflowIntegration not initialized")
         
         try:
-            # Регистрируем активную сессию
-            if session_id:
-                self.active_sessions[session_id] = {
-                    'hardware_id': hardware_id,
-                    'start_time': datetime.now(),
-                    'status': 'processing'
-                }
-                logger.debug(f"Зарегистрирована активная сессия: {session_id}")
-            
             # Проверяем прерывания в начале
             if await self.check_interrupts(hardware_id):
                 logger.info(f"🛑 Прерывание активно для {hardware_id}, отменяем выполнение")
-                await self._cleanup_session(session_id)
                 raise InterruptException(f"Global interrupt active for {hardware_id}")
             
             logger.debug(f"Выполнение workflow для {hardware_id}")
@@ -182,7 +174,6 @@ class InterruptWorkflowIntegration:
                 # Проверяем прерывания перед каждым yield
                 if await self.check_interrupts(hardware_id):
                     logger.info(f"🛑 Прерывание обнаружено во время выполнения для {hardware_id}")
-                    await self._cleanup_session(session_id)
                     raise InterruptException(f"Interrupted during processing for {hardware_id}")
                 
                 yield result
@@ -190,12 +181,7 @@ class InterruptWorkflowIntegration:
             # Проверяем прерывания после завершения
             if await self.check_interrupts(hardware_id):
                 logger.info(f"🛑 Прерывание обнаружено после выполнения для {hardware_id}")
-                await self._cleanup_session(session_id)
                 raise InterruptException(f"Interrupted after processing for {hardware_id}")
-            
-            # Отмечаем сессию как завершенную
-            if session_id:
-                await self._complete_session(session_id)
             
             logger.debug(f"✅ Workflow завершен успешно для {hardware_id}")
             
@@ -204,7 +190,6 @@ class InterruptWorkflowIntegration:
             raise
         except Exception as e:
             logger.error(f"❌ Ошибка выполнения workflow: {e}")
-            await self._cleanup_session(session_id)
             raise
 
     async def _call_interrupt_module(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -233,79 +218,20 @@ class InterruptWorkflowIntegration:
         try:
             logger.info(f"🧹 Очистка ресурсов при прерывании для {hardware_id}")
             
-            # Очищаем активную сессию
-            if session_id:
-                await self._cleanup_session(session_id)
-            
-            # Очищаем все сессии для данного hardware_id
-            sessions_to_cleanup = []
-            for sid, session_data in self.active_sessions.items():
-                if session_data.get('hardware_id') == hardware_id:
-                    sessions_to_cleanup.append(sid)
-            
-            for sid in sessions_to_cleanup:
-                await self._cleanup_session(sid)
+            # Прерываем сессии через реестр
+            sessions = self.registry.get_sessions_by_hardware_id(hardware_id)
+            for session in sessions:
+                if session.status == "active":
+                    self.registry.interrupt_session(session.session_id, "workflow_interrupt")
             
             logger.info(f"✅ Ресурсы очищены для {hardware_id}")
             
         except Exception as e:
             logger.error(f"❌ Ошибка очистки ресурсов: {e}")
     
-    async def _cleanup_session(self, session_id: Optional[str]):
-        """
-        Очистка конкретной сессии
-        
-        Args:
-            session_id: Идентификатор сессии
-        """
-        if not session_id:
-            return
-        
-        try:
-            if session_id in self.active_sessions:
-                session_data = self.active_sessions[session_id]
-                session_data['status'] = 'interrupted'
-                session_data['end_time'] = datetime.now()
-                
-                logger.debug(f"Сессия {session_id} отмечена как прерванная")
-                
-                # Удаляем из активных сессий
-                del self.active_sessions[session_id]
-                
-                logger.debug(f"Сессия {session_id} удалена из активных")
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка очистки сессии {session_id}: {e}")
-    
-    async def _complete_session(self, session_id: Optional[str]):
-        """
-        Завершение сессии
-        
-        Args:
-            session_id: Идентификатор сессии
-        """
-        if not session_id:
-            return
-        
-        try:
-            if session_id in self.active_sessions:
-                session_data = self.active_sessions[session_id]
-                session_data['status'] = 'completed'
-                session_data['end_time'] = datetime.now()
-                
-                logger.debug(f"Сессия {session_id} отмечена как завершенная")
-                
-                # Удаляем из активных сессий
-                del self.active_sessions[session_id]
-                
-                logger.debug(f"Сессия {session_id} удалена из активных")
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка завершения сессии {session_id}: {e}")
-    
     def get_active_sessions(self, hardware_id: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         """
-        Получение активных сессий
+        Получение активных сессий из централизованного реестра
         
         Args:
             hardware_id: Фильтр по hardware_id (опционально)
@@ -315,15 +241,19 @@ class InterruptWorkflowIntegration:
         """
         try:
             if hardware_id:
-                # Фильтруем по hardware_id
-                filtered_sessions = {}
-                for sid, session_data in self.active_sessions.items():
-                    if session_data.get('hardware_id') == hardware_id:
-                        filtered_sessions[sid] = session_data
-                return filtered_sessions
+                sessions = self.registry.get_sessions_by_hardware_id(hardware_id)
             else:
-                # Возвращаем все активные сессии
-                return self.active_sessions.copy()
+                sessions = self.registry.get_all_sessions()
+            
+            result = {}
+            for session in sessions:
+                if session.status == "active":
+                    result[session.session_id] = {
+                        'hardware_id': session.hardware_id,
+                        'start_time': session.created_at,
+                        'status': session.status
+                    }
+            return result
                 
         except Exception as e:
             logger.warning(f"⚠️ Ошибка получения активных сессий: {e}")
@@ -333,13 +263,9 @@ class InterruptWorkflowIntegration:
         """Очистка ресурсов"""
         try:
             logger.info("Очистка InterruptWorkflowIntegration...")
-            
-            # Очищаем все активные сессии
-            for session_id in list(self.active_sessions.keys()):
-                await self._cleanup_session(session_id)
-            
             self.is_initialized = False
             logger.info("✅ InterruptWorkflowIntegration очищен")
             
         except Exception as e:
             logger.error(f"❌ Ошибка очистки InterruptWorkflowIntegration: {e}")
+

@@ -1,9 +1,9 @@
 # 🚀 РУКОВОДСТВО ПО ДЕПЛОЮ СЕРВЕРА НА AZURE
 
 **Дата создания:** 1 октября 2025  
-**Версия:** 2.2  
+**Версия:** 2.3  
 **Статус:** ✅ Активно используется  
-**Последнее обновление:** 2 октября 2025 - Обновлен статус Azure VM, автоматического деплоя и системы мониторинга
+**Последнее обновление:** 11 января 2026 - Обновлена информация о текущей конфигурации сервера, backpressure настройках и структурированном логировании
 
 ---
 
@@ -152,8 +152,8 @@ rm -rf nexy_server_temp
 
 ### **📊 Мониторинг деплоя:**
 - **GitHub Actions:** `https://github.com/Seregawpn/Nexy_server/actions`
-- **Health check (PUBLIC):** `https://20.151.51.172/health` (через Nginx/443)
-- **Status API (PUBLIC):** `https://20.151.51.172/status` (через Nginx/443)
+- **Health check (PUBLIC):** `https://20.63.24.187/health` (через Nginx/443)
+- **Status API (PUBLIC):** `https://20.63.24.187/status` (через Nginx/443)
 - **Health check (INTERNAL):** `http://127.0.0.1:8080/health` (прямой доступ, только локально)
 
 ### 🔐 HTTPS/443 Ingress (Nginx) — обновление
@@ -169,7 +169,7 @@ rm -rf nexy_server_temp
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name 20.151.51.172; # либо домен
+    server_name 20.63.24.187; # либо домен
 
     ssl_certificate     /etc/nginx/ssl/server.crt;
     ssl_certificate_key /etc/nginx/ssl/server.key;
@@ -220,22 +220,22 @@ server {
 sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /etc/nginx/ssl/server.key \
   -out /etc/nginx/ssl/server.crt \
-  -subj "/CN=20.151.51.172" \
-  -addext "subjectAltName=IP:20.151.51.172"
+  -subj "/CN=20.63.24.187" \
+  -addext "subjectAltName=IP:20.63.24.187"
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 Проверка:
 
 ```bash
-curl -sk https://20.151.51.172/updates/health  # 200 OK
-echo | openssl s_client -connect 20.151.51.172:443 -servername 20.151.51.172 -showcerts 2>/dev/null | \
+curl -sk https://20.63.24.187/updates/health  # 200 OK
+echo | openssl s_client -connect 20.63.24.187:443 -servername 20.63.24.187 -showcerts 2>/dev/null | \
   openssl x509 -noout -subject -ext subjectAltName
 ```
 
 Клиентские настройки:
-- gRPC endpoint: `https://20.151.51.172` (HTTP/2, TLS)
-- Updates: `https://20.151.51.172/updates/...`
+- gRPC endpoint: `https://20.63.24.187` (HTTP/2, TLS)
+- Updates: `https://20.63.24.187/updates/...`
 - На время self‑signed: доверить сертификат или отключить strict verify.
 
 ---
@@ -245,20 +245,20 @@ echo | openssl s_client -connect 20.151.51.172:443 -servername 20.151.51.172 -sh
 ### **1. Health Check (PUBLIC - через Nginx/HTTPS):**
 ```bash
 # ПУБЛИЧНАЯ проверка (как её видит клиент)
-curl -sk https://20.151.51.172/health
+curl -sk https://20.63.24.187/health
 # Ожидаемый результат: JSON с полями: status, latest_version, latest_build
 ```
 
 ### **2. Status API (PUBLIC - через Nginx/HTTPS):**
 ```bash
 # ПУБЛИЧНАЯ проверка (как её видит клиент)
-curl -sk https://20.151.51.172/status
+curl -sk https://20.63.24.187/status
 # Ожидаемый результат: JSON с информацией о сервисе, включая latest_version и latest_build
 ```
 
 ### **3. Cache-Control на AppCast (PUBLIC - через Nginx/HTTPS):**
 ```bash
-curl -sI https://20.151.51.172/appcast.xml | grep -i "Cache-Control"  # ожидаем max-age=60
+curl -sI https://20.63.24.187/appcast.xml | grep -i "Cache-Control"  # ожидаем max-age=60
 ```
 
 ### **4. Internal Health Check (для локальной диагностики):**
@@ -478,7 +478,7 @@ az vm run-command invoke \
   --scripts "systemctl status voice-assistant.service"
 
 # Health check (PUBLIC)
-curl -sk https://20.151.51.172/health
+curl -sk https://20.63.24.187/health
 
 # Логи сервиса
 az vm run-command invoke \

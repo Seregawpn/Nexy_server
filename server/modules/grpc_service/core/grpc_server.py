@@ -330,19 +330,43 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 # КРИТИЧНО: Backpressure rate limit проверка теперь централизована в GrpcServiceIntegration
                 # Удалена дублирующая проверка check_message_rate
                 
-                # Фаза 3: MCP command_payload (отправляем как text_chunk с префиксом __MCP__)
+                # Фаза 3: MCP command_payload (отправляем как ActionMessage)
                 cmd_payload = item.get('command_payload')
                 if cmd_payload:
                     import json
                     try:
-                        # Формируем JSON строку с префиксом для идентификации клиентом
-                        mcp_json = json.dumps(cmd_payload, ensure_ascii=False)
-                        mcp_text_chunk = f"__MCP__{mcp_json}"
-                        logger.info(f"→ StreamAudio: sending MCP command_payload len={len(mcp_text_chunk)} for session={session_id}, command={cmd_payload.get('payload', {}).get('command', 'unknown')}")
-                        yield streaming_pb2.StreamResponse(text_chunk=mcp_text_chunk)  # type: ignore
+                        # NEW: Use ActionMessage protocol field
+                        # cmd_payload from parser might be nested: {'event': 'mcp.command_request', 'payload': {...}}
+                        # Client expects flat: {'command': '...', 'args': ...}
+                        
+                        final_payload = cmd_payload
+                        if 'payload' in cmd_payload and isinstance(cmd_payload['payload'], dict) and 'command' in cmd_payload['payload']:
+                            final_payload = cmd_payload['payload']
+                            # Add session_id if missing (client expects it in the payload too sometimes?)
+                            # Actually client uses event.session_id, but good to be safe if payload needs it contextually
+                            if 'session_id' not in final_payload and session_id:
+                                final_payload['session_id'] = str(session_id)
+                        
+                        action_json = json.dumps(final_payload, ensure_ascii=False)
+                        
+                        # Inspect payload to maybe set feature_id if available (optional)
+                        feature_id = final_payload.get('feature_id') # Usually not here, but maybe passed in future
+                        
+                        # Принудительно конвертируем session_id в строку
+                        sid_str = str(session_id) if session_id else ""
+                        
+                        action_msg = streaming_pb2.ActionMessage(
+                            action_json=action_json,
+                            session_id=sid_str
+                        )
+                        if feature_id:
+                            action_msg.feature_id = str(feature_id)
+                            
+                        logger.info(f"→ StreamAudio: sending ActionMessage session={session_id}, command={final_payload.get('command', 'unknown')}")
+                        yield streaming_pb2.StreamResponse(action_message=action_msg)  # type: ignore
                         sent_any = True
                     except Exception as mcp_error:
-                        logger.warning(f"⚠️ Ошибка сериализации MCP command_payload: {mcp_error}")
+                        logger.warning(f"⚠️ Ошибка создания ActionMessage: {mcp_error}")
                 
                 # Текст
                 txt = item.get('text_response')
@@ -379,6 +403,62 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                             )
                         )
                         sent_any = True
+                
+                # Browser progress (browser-use automation)
+                browser_progress = item.get('browser_progress')
+                if browser_progress:
+                    try:
+                        # Конвертируем словарь в BrowserProgressMessage
+                        progress_msg = streaming_pb2.BrowserProgressMessage()  # type: ignore
+                        
+                        # Тип события (enum)
+                        event_type_str = browser_progress.get('type', 'BROWSER_TASK_STARTED')
+                        if isinstance(event_type_str, str):
+                            # Конвертируем строку в enum
+                            event_type_map = {
+                                'BROWSER_TASK_STARTED': streaming_pb2.BrowserEventType.BROWSER_TASK_STARTED,  # type: ignore
+                                'BROWSER_STEP_STARTED': streaming_pb2.BrowserEventType.BROWSER_STEP_STARTED,  # type: ignore
+                                'BROWSER_STEP_COMPLETED': streaming_pb2.BrowserEventType.BROWSER_STEP_COMPLETED,  # type: ignore
+                                'BROWSER_ACTION_EXECUTED': streaming_pb2.BrowserEventType.BROWSER_ACTION_EXECUTED,  # type: ignore
+                                'BROWSER_TASK_COMPLETED': streaming_pb2.BrowserEventType.BROWSER_TASK_COMPLETED,  # type: ignore
+                                'BROWSER_TASK_FAILED': streaming_pb2.BrowserEventType.BROWSER_TASK_FAILED,  # type: ignore
+                                'BROWSER_TASK_CANCELLED': streaming_pb2.BrowserEventType.BROWSER_TASK_CANCELLED,  # type: ignore
+                            }
+                            progress_msg.type = event_type_map.get(event_type_str, streaming_pb2.BrowserEventType.BROWSER_TASK_STARTED)  # type: ignore
+                        else:
+                            progress_msg.type = event_type_str
+                        
+                        # Обязательные поля
+                        progress_msg.task_id = browser_progress.get('task_id', 'unknown')
+                        progress_msg.timestamp = browser_progress.get('timestamp', '')
+                        
+                        # Опциональные поля
+                        if 'step_number' in browser_progress and browser_progress['step_number'] is not None:
+                            progress_msg.step_number = browser_progress['step_number']
+                        if 'description' in browser_progress and browser_progress['description']:
+                            progress_msg.description = browser_progress['description']
+                        if 'url' in browser_progress and browser_progress['url']:
+                            progress_msg.url = browser_progress['url']
+                        if 'action' in browser_progress and browser_progress['action']:
+                            progress_msg.action = browser_progress['action']
+                        if 'error' in browser_progress and browser_progress['error']:
+                            progress_msg.error = browser_progress['error']
+                        
+                        # Details (опционально)
+                        if 'details' in browser_progress and browser_progress['details']:
+                            details = browser_progress['details']
+                            if 'duration_sec' in details:
+                                progress_msg.details.duration_sec = details['duration_sec']
+                            if 'actions' in details:
+                                progress_msg.details.actions.extend(details['actions'])
+                            if 'metadata' in details:
+                                progress_msg.details.metadata.update(details['metadata'])
+                        
+                        logger.info(f"→ StreamAudio: sending browser_progress type={progress_msg.type} task_id={progress_msg.task_id} for session={session_id}")
+                        yield streaming_pb2.StreamResponse(browser_progress=progress_msg)  # type: ignore
+                        sent_any = True
+                    except Exception as browser_error:
+                        logger.error(f"⚠️ Ошибка создания BrowserProgressMessage: {browser_error}", exc_info=True)
             
             # Завершение стрима
             # КРИТИЧНО: Не отправляем end_message при раннем завершении (terminated_early)

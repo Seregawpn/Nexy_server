@@ -124,7 +124,8 @@ Requirements:
 ### 3.2 InterruptSession Flow
 
 Coordinator: `interrupt_handling` + `session_management`  
-Source of Truth: активные session в `session_management`  
+Source of Truth: `SessionRegistry` (`modules/session_management/core/session_registry.py`)  
+Interrupt Flags: `GlobalFlagProvider` (`modules/interrupt_handling/providers/global_flag_provider.py`)  
 
 Sequence:
 1. `InterruptSession` получает `hardware_id`.

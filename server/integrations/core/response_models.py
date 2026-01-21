@@ -7,6 +7,7 @@ protecting against LLM "hallucinations" where field names are changed.
 """
 
 from typing import Optional, Dict, Any, Tuple, Union
+import re
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -62,6 +63,12 @@ class CloseAppArgs(BaseModel):
         return v
 
 
+class BrowserUseArgs(BaseModel):
+    """Arguments for browser_use command"""
+    task: str = Field(..., min_length=1, description="Browser automation task")
+    config_preset: Optional[str] = Field(None, description="Optional config preset")
+
+
 class ActionResponse(BaseModel):
     """
     Model for action responses (with command)
@@ -84,11 +91,15 @@ class ActionResponse(BaseModel):
     @field_validator('command')
     @classmethod
     def validate_command(cls, v: str) -> str:
-        """Validate command type"""
-        allowed_commands = ['open_app', 'close_app']
-        if v not in allowed_commands:
+        """Normalize and validate command type"""
+        if not isinstance(v, str):
+            raise ValueError(f"Unknown command: {v}. Allowed: ['open_app', 'close_app', 'browser_use', 'close_browser']")
+        normalized = re.sub(r'[\s\-.]+', '_', v.strip().lower())
+        normalized = re.sub(r'_+', '_', normalized)
+        allowed_commands = ['open_app', 'close_app', 'browser_use', 'close_browser', 'read_messages', 'send_message', 'find_contact']
+        if normalized not in allowed_commands:
             raise ValueError(f"Unknown command: {v}. Allowed: {allowed_commands}")
-        return v
+        return normalized
     
     @model_validator(mode='after')
     def validate_args_for_command(self):
@@ -105,6 +116,15 @@ class ActionResponse(BaseModel):
                 CloseAppArgs(**self.args)
             except Exception as e:
                 raise ValueError(f"Invalid args for close_app command: {e}")
+        elif self.command == 'browser_use':
+            try:
+                BrowserUseArgs(**self.args)
+            except Exception as e:
+                raise ValueError(f"Invalid args for browser_use command: {e}")
+        elif self.command == 'close_browser':
+            # No args required
+            if self.args:
+                raise ValueError(f"Invalid args for close_browser command: {self.args}")
         return self
 
 
@@ -156,4 +176,3 @@ class LLMResponseValidator:
         
         # No recognized structure
         return None, "Response does not match expected schemas (missing 'text' or 'command' field)"
-

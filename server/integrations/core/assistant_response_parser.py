@@ -51,6 +51,27 @@ class AssistantResponseParser:
     def __init__(self):
         """Инициализация парсера"""
         self.logger = logger
+
+    def _normalize_command(self, command: Any) -> Any:
+        """Нормализует имя команды к каноническому виду"""
+        if not isinstance(command, str):
+            return command
+        normalized = command.strip().lower()
+        normalized = normalized.replace("-", "_").replace(".", "_").replace(" ", "_")
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+        return normalized
+
+    def _normalize_action_payload(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Возвращает копию data с нормализованной командой (если есть)"""
+        if 'command' not in data or not isinstance(data.get('command'), str):
+            return data
+        normalized = self._normalize_command(data['command'])
+        if normalized == data['command']:
+            return data
+        normalized_data = data.copy()
+        normalized_data['command'] = normalized
+        return normalized_data
     
     def parse(self, response: Union[str, Dict[str, Any]], session_id: Optional[str] = None) -> ParsedResponse:
         """
@@ -210,11 +231,22 @@ class AssistantResponseParser:
         Returns:
             ParsedResponse
         """
+        normalized_data = self._normalize_action_payload(data)
+        # Always enforce request session_id for action commands.
+        if session_id and normalized_data.get("command"):
+            if normalized_data.get("session_id") and normalized_data.get("session_id") != session_id:
+                self.logger.warning(
+                    "⚠️ LLM session_id override: response=%s request=%s",
+                    normalized_data.get("session_id"),
+                    session_id,
+                )
+            normalized_data["session_id"] = session_id
+
         # Попытка валидации через Pydantic (если доступен)
         if PYDANTIC_AVAILABLE and LLMResponseValidator and ActionResponse is not None:
             # Используем session_id из данных, если есть, иначе из параметра
-            context_session_id = data.get('session_id') or session_id
-            validated_model, error_msg = LLMResponseValidator.validate_response(data, session_id=context_session_id)
+            context_session_id = normalized_data.get('session_id') or session_id
+            validated_model, error_msg = LLMResponseValidator.validate_response(normalized_data, session_id=context_session_id)
             
             if validated_model:
                 # Валидация успешна - используем валидированную модель
@@ -269,32 +301,32 @@ class AssistantResponseParser:
                 # Валидация не прошла - логируем и используем fallback
                 self.logger.warning(
                     f"⚠️ Pydantic валидация не прошла: {error_msg}. "
-                    f"Используем fallback парсинг. Данные: {data}"
+                    f"Используем fallback парсинг. Данные: {normalized_data}"
                 )
                 # Продолжаем с обычным парсингом ниже
         
         # Fallback: обычный парсинг без Pydantic (или если Pydantic недоступен)
         # Извлекаем text (обязательное поле, но может быть пустым)
-        text_response = data.get('text', '')
+        text_response = normalized_data.get('text', '')
         if not isinstance(text_response, str):
             self.logger.warning("Поле 'text' не является строкой, подставляем пустую строку")
             text_response = ''
         
         # Проверяем наличие команды
-        command = data.get('command')
+        command = normalized_data.get('command')
         if command is None or command == '':
             # Обычный текстовый ответ без команды
             return ParsedResponse(
                 text_response=text_response,
                 command_payload=None,
-                session_id=data.get('session_id'),
+                session_id=normalized_data.get('session_id'),
                 raw_args=None
             )
         
         # Action-ответ с командой
         # Используем session_id из данных, если есть, иначе из параметра
-        action_session_id = data.get('session_id') or session_id
-        args = data.get('args', {})
+        action_session_id = normalized_data.get('session_id') or session_id
+        args = normalized_data.get('args', {})
         
         # Валидация обязательных полей для action-ответа
         validation_errors = []
@@ -315,6 +347,16 @@ class AssistantResponseParser:
         if command == 'close_app':
             if 'app_name' not in args or not args.get('app_name'):
                 validation_errors.append("Для команды 'close_app' требуется поле 'args.app_name'")
+        
+        # Для команды browser_use проверяем наличие task
+        if command == 'browser_use':
+            if 'task' not in args or not args.get('task'):
+                validation_errors.append("Для команды 'browser_use' требуется поле 'args.task'")
+        
+        # Для команды close_browser аргументы не требуются
+        # if command == 'close_browser':
+        #     pass  # No required args
+
         
         # Логируем ошибки валидации
         if validation_errors:
@@ -351,4 +393,3 @@ class AssistantResponseParser:
             session_id=action_session_id,
             raw_args=args
         )
-

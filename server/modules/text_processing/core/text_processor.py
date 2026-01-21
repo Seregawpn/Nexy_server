@@ -62,7 +62,7 @@ class TextProcessor:
             return False
     
     
-    async def process_text_streaming(self, text: str, image_data: Optional[Union[str, bytes]] = None) -> AsyncGenerator[str, None]:
+    async def process_text_streaming(self, text: str, image_data: Optional[Union[str, bytes]] = None, session_id: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         Стриминговая обработка текста с изображением через LangChain провайдер
         Возвращает текст напрямую
@@ -70,6 +70,7 @@ class TextProcessor:
         Args:
             text: Текстовый запрос
             image_data: Base64 строка (str) или bytes изображения в формате WebP/JPEG (опционально)
+            session_id: ID сессии (опционально, для контекста LLM)
             
         Yields:
             Части текстового ответа
@@ -80,10 +81,10 @@ class TextProcessor:
             
             # Вызываем правильный метод в зависимости от наличия изображения
             if image_data:
-                async for chunk in self.live_provider.process_with_image(text, image_data):
+                async for chunk in self.live_provider.process_with_image(text, image_data, session_id=session_id):
                     yield chunk
             else:
-                async for chunk in self.live_provider.process(text):
+                async for chunk in self.live_provider.process(text, session_id=session_id):
                     yield chunk
                 
         except Exception as e:

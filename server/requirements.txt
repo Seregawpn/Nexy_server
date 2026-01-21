@@ -8,7 +8,7 @@ aiohttp>=3.13.3
 
 # 🚀 Google Gemini API (основной LLM)
 google-genai>=1.57.0
-google-generativeai>=0.10.0
+google-generativeai>=0.8.0
 
 # 🔄 LangChain интеграция
 langchain>=1.2.3
@@ -19,10 +19,11 @@ langchain-core>=1.2.7
 python-dotenv>=1.2.1
 
 # gRPC и Protocol Buffers
-# ВАЖНО: grpcio-tools 1.76.0 требует protobuf>=6.31.1,<7.0.0
-grpcio>=1.76.0
-grpcio-tools>=1.76.0
-protobuf>=6.33.3,<7.0.0
+# ВАЖНО: grpcio-tools 1.76.0 требует protobuf>=6.31.1,<7.0.0, но google-generativeai требует <6
+# Relaxing constraints for compatibility
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.25.3,<6.0.0
 
 # Edge TTS (бесплатный, без API ключей) - основной провайдер TTS
 # Версия 7.2.7+ обязательна (в более старых версиях была проблема с NoAudioReceived)
@@ -46,3 +47,5 @@ pydantic>=2.12.5
 
 # Криптография для подписи обновлений (Ed25519)
 PyNaCl>=1.5.0
+apscheduler>=3.10.0
+stripe>=5.0.0

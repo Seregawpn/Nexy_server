@@ -37,11 +37,37 @@ def extract_text_from_chunk(chunk):
         chunk: Chunk от LangChain (может быть словарем, списком или объектом)
         
     Returns:
-        Строка с текстом (только текст, без JSON обертки)
+        Строка с текстом (только текст, без JSON обертки).
+        НИКОГДА не возвращает строковое представление словаря.
     """
-    # Приоритет 1: Используем chunk.text напрямую
+    # Приоритет 1: Используем chunk.content напрямую (стандарт LangChain)
+    if hasattr(chunk, 'content') and chunk.content:
+        content = chunk.content
+        # Если content - это список (multimodal), извлекаем текст из элементов
+        if isinstance(content, list):
+            texts = []
+            for item in content:
+                if isinstance(item, dict):
+                    if 'text' in item:
+                        texts.append(str(item['text']))
+                    # Пропускаем dict без 'text'
+                elif isinstance(item, str):
+                    texts.append(item)
+                # Пропускаем другие типы
+            return "".join(texts)
+        if isinstance(content, str):
+            return content
+        # Неизвестный тип content — пропускаем
+        return ""
+
+    # Приоритет 2: Используем chunk.text (если есть)
     if hasattr(chunk, 'text') and chunk.text:
-        return chunk.text
+        val = chunk.text
+        if callable(val):
+            return str(val())
+        if isinstance(val, str):
+            return val
+        return ""
     
     # Если chunk - это список, обрабатываем каждый элемент
     if isinstance(chunk, list):
@@ -52,8 +78,9 @@ def extract_text_from_chunk(chunk):
                     texts.append(str(item['text']))
                 elif 'content' in item:
                     texts.append(str(item['content']))
-            else:
-                texts.append(str(item))
+                # Пропускаем dict без text/content
+            elif isinstance(item, str):
+                texts.append(item)
         return ''.join(texts)
     
     # Если chunk - это словарь
@@ -61,33 +88,29 @@ def extract_text_from_chunk(chunk):
         if 'text' in chunk:
             text_item = chunk['text']
             if isinstance(text_item, list):
-                # Список словарей с 'text'
                 return ''.join([item.get('text', '') if isinstance(item, dict) else str(item) for item in text_item])
-            else:
-                text_str = str(text_item)
-                # Если это JSON строка {"text": "..."}, извлекаем только текст
-                if text_str.strip().startswith('{') and '"text"' in text_str:
-                    try:
-                        import json
-                        parsed = json.loads(text_str.strip())
-                        if isinstance(parsed, dict) and 'text' in parsed:
-                            return str(parsed['text'])
-                    except (json.JSONDecodeError, ValueError):
-                        pass
-                return text_str
+            if isinstance(text_item, str):
+                # Если это JSON-ответ ассистента, возвращаем как есть для парсинга на уровне workflow
+                if text_item.strip().startswith('{'):
+                    return text_item
+                return text_item
+            return ""
         elif 'content' in chunk:
             content = chunk['content']
             if isinstance(content, list):
-                return ''.join([str(item) for item in content])
-            return str(content)
+                return ''.join([str(item) for item in content if isinstance(item, str)])
+            if isinstance(content, str):
+                return content
+            return ""
         else:
-            return str(chunk)
+            # Dict без text/content — НЕ конвертируем в строку
+            logger.debug(f"⚠️ LangChain chunk без text/content: {list(chunk.keys())}")
+            return ""
     
     # Если chunk - это объект с атрибутом content
     if hasattr(chunk, 'content'):
         content = chunk.content
         if isinstance(content, list):
-            # Обрабатываем список словарей с 'text'
             texts = []
             for item in content:
                 if isinstance(item, dict):
@@ -95,13 +118,20 @@ def extract_text_from_chunk(chunk):
                         texts.append(str(item['text']))
                     elif 'type' in item and item.get('type') == 'text':
                         texts.append(str(item.get('text', '')))
-                else:
-                    texts.append(str(item))
+                elif isinstance(item, str):
+                    texts.append(item)
             return ''.join(texts)
-        return str(content)
+        if isinstance(content, str):
+            return content
+        return ""
     
-    # Остальные случаи
-    return str(chunk)
+    # Если chunk — строка, возвращаем как есть
+    if isinstance(chunk, str):
+        return chunk
+    
+    # Неизвестный тип — НЕ конвертируем, возвращаем пустую строку
+    logger.debug(f"⚠️ Неизвестный тип LangChain chunk: {type(chunk)}")
+    return ""
 
 
 class LangChainGeminiProvider(UniversalProviderInterface):
@@ -228,7 +258,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             traceback.print_exc()
             return False
     
-    async def process(self, input_data: str) -> AsyncGenerator[str, None]:
+    async def process(self, input_data: str, session_id: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         ЭТАП 1: Обработка текста через LangChain
         Возвращаем текст напрямую
@@ -249,14 +279,19 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             if self.system_prompt and SystemMessage:
                 messages.append(SystemMessage(content=self.system_prompt))
             if HumanMessage:
-                messages.append(HumanMessage(content=input_data))
+                content = input_data
+                if session_id:
+                     content = f"{input_data}\n\n[System Context: session_id={session_id}]"
+                messages.append(HumanMessage(content=content))
             
             # Стриминг через LangChain
             # НЕ разбиваем на предложения здесь - это делает StreamingWorkflowIntegration
             for chunk in self.llm.stream(messages):
                 # Используем chunk.text напрямую
-                if hasattr(chunk, 'text') and chunk.text:
-                    yield chunk.text
+                # Используем extract_text_from_chunk для надежности
+                text = extract_text_from_chunk(chunk)
+                if text:
+                    yield text
                 else:
                     # Fallback: используем extract_text_from_chunk если text недоступен
                     text = extract_text_from_chunk(chunk)
@@ -269,7 +304,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             logger.error(f"LangChain text processing error: {e}")
             raise e
     
-    async def process_with_image(self, input_data: str, image_data: Union[str, bytes]) -> AsyncGenerator[str, None]:
+    async def process_with_image(self, input_data: str, image_data: Union[str, bytes], session_id: Optional[str] = None) -> AsyncGenerator[str, None]:
         """
         ЭТАП 2: Обработка текста с WebP изображением
         
@@ -315,7 +350,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             content = [
                 {
                     "type": "text",
-                    "text": input_data
+                    "text": f"{input_data}\n\n[System Context: session_id={session_id}]" if session_id else input_data
                 },
                 {
                     "type": "image_url",
@@ -338,8 +373,10 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             # НЕ разбиваем на предложения здесь - это делает StreamingWorkflowIntegration
             for chunk in self.llm.stream(messages):
                 # Используем chunk.text напрямую
-                if hasattr(chunk, 'text') and chunk.text:
-                    yield chunk.text
+                # Используем extract_text_from_chunk для надежности
+                text = extract_text_from_chunk(chunk)
+                if text:
+                    yield text
                 else:
                     # Fallback: используем extract_text_from_chunk если text недоступен
                     text = extract_text_from_chunk(chunk)
@@ -402,4 +439,3 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             "max_tokens": self.max_tokens
         })
         return base_metrics
-

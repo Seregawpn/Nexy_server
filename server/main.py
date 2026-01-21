@@ -248,6 +248,17 @@ async def graceful_shutdown():
     backpressure_manager = get_backpressure_manager()
     await backpressure_manager.stop()
     
+    # Останавливаем subscription scheduler (F-2025-017)
+    try:
+        from modules.subscription import get_subscription_module
+        subscription_module = get_subscription_module()
+        if subscription_module:
+            subscription_module.stop_scheduler()
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"[F-2025-017] Error stopping subscription scheduler: {e}")
+    
     # Логируем итоговые метрики
     collector = get_metrics_collector()
     collector.log_metrics()
@@ -287,6 +298,44 @@ async def main():
     app.router.add_get('/', root_handler)
     app.router.add_get('/status', status_handler)
     
+    # ⭐ SUBSCRIPTION MODULE: инициализация и webhook routes
+    # Feature ID: F-2025-017-stripe-payment
+    subscription_module = None
+    try:
+        from modules.subscription import initialize_subscription_module, get_subscription_module
+        
+        # Инициализируем subscription модуль (если enabled)
+        subscription_module = await initialize_subscription_module()
+        
+        if subscription_module:
+            # Добавляем webhook routes
+            from api.webhooks import get_webhook_routes
+            for route in get_webhook_routes():
+                app.router.add_route(route.method, route.path, route.handler)
+            
+            logger.info("[F-2025-017] Subscription module initialized, webhook routes added", extra={
+                'scope': 'subscription',
+                'decision': 'init',
+                'ctx': {'routes': ['/webhook/stripe']}
+            })
+            
+            # Запускаем scheduler
+            subscription_module.start_scheduler()
+        else:
+            logger.info("[F-2025-017] Subscription module disabled by config", extra={
+                'scope': 'subscription',
+                'decision': 'skip'
+            })
+    except ImportError as e:
+        logger.debug(f"[F-2025-017] Subscription module not available: {e}")
+    except Exception as e:
+        logger.warning(f"[F-2025-017] Failed to initialize subscription module: {e}", extra={
+            'scope': 'subscription',
+            'decision': 'degrade',
+            'ctx': {'error': str(e)}
+        })
+    
+
     # Проверяем доступность порта перед запуском
     if not is_port_available(http_config.host, http_config.port):
         port_info = get_port_process_info(http_config.port)

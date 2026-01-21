@@ -173,8 +173,9 @@ class SentenceProcessingProvider(UniversalProviderInterface):
             # Восстанавливаем остаток
             tail = current.replace('__DOT__', '.').replace('__COLON__', ':').strip()
             return sentences, tail
-        except Exception:
+        except Exception as e:
             # Fallback к простому разбиению
+            logger.debug(f"Smart sentence splitting failed, using fallback: {e}")
             parts = re.split(r'([.!?]+)', remainder)
             sentences = []
             current = ""
@@ -228,8 +229,9 @@ class SentenceProcessingProvider(UniversalProviderInterface):
             
             return meaningful_count
             
-        except Exception:
+        except Exception as e:
             # Fallback к простому подсчёту
+            logger.debug(f"Smart word counting failed, using fallback: {e}")
             return len([w for w in text.split() if w.strip()])
     
     async def is_sentence_complete(self, text: str) -> Dict[str, Any]:

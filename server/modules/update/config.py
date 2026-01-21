@@ -10,7 +10,11 @@ from pathlib import Path
 # Импортируем функцию для получения версии из единого источника истины
 # Используем относительный импорт через sys.path для избежания циклических зависимостей
 import sys
+import logging
 from pathlib import Path as PathLib
+
+logger = logging.getLogger(__name__)
+
 _config_path = PathLib(__file__).parent.parent.parent / "config"
 if str(_config_path) not in sys.path:
     sys.path.insert(0, str(_config_path))
@@ -24,8 +28,8 @@ except ImportError:
         if version_file.exists():
             try:
                 return version_file.read_text().strip()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to read VERSION file: {e}")
         return os.getenv('SERVER_VERSION', '1.6.0.35')
 
 
@@ -143,7 +147,8 @@ class UpdateConfig:
                 return False
             
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Config validation failed: {e}")
             return False
 
 

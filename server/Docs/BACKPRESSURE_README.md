@@ -90,11 +90,20 @@ grep -c 'decision=stream_idle_timeout' server.log
 
 - Повышайте `max_concurrent_streams` при росте параллельных запросов.
 - Увеличивайте `idle_timeout_seconds` для длинных TTS ответов.
-- Уменьшайте `max_message_rate_per_second`, если нужна защита от “шторма” чанков.
+- Уменьшайте `max_message_rate_per_second`, если нужна защита от "шторма" чанков.
+- Установите `max_message_rate_per_second: 0` для полного отключения rate limit (рекомендуется для аудио стримов).
 
 ### Длинные TTS ответы (рекомендуется для production)
 
-Для длинных TTS ответов увеличьте `idle_timeout_seconds` и `text_processing.request_timeout`, а rate limit при необходимости отключите через `max_message_rate_per_second: 0`.
+**Текущие настройки (prod):**
+- `idle_timeout_seconds`: 900 (15 минут) — увеличено для поддержки длинных TTS ответов
+- `max_message_rate_per_second`: 0 (отключено) — для плавной передачи аудио стримов
+- `text_processing.request_timeout`: 300 (5 минут) — синхронизировано с idle timeout
+
+**Обоснование:**
+- Длинные TTS ответы могут занимать несколько минут
+- Аудио стримы требуют высокой частоты сообщений без ограничений
+- Увеличенный idle timeout предотвращает преждевременное закрытие стримов
 
 ## Troubleshooting
 

@@ -737,17 +737,48 @@ class PostgreSQLProvider(UniversalProviderInterface):
             return {'short': '', 'long': ''}
     
     async def update_user_memory(self, hardware_id_hash: str, short_memory: str, long_memory: str) -> bool:
-        """Обновление памяти пользователя"""
-        data = {
-            'short_term_memory': short_memory,
-            'long_term_memory': long_memory,
-            'memory_updated_at': datetime.now(timezone.utc)
-        }
-        filters = {'hardware_id_hash': hardware_id_hash}
-        
-        result = await self._execute_operation('update', 'users', data, filters)
-        
-        return result['success']
+        """Обновление память пользователя (UPSERT)"""
+        try:
+            if self.connection_pool is None:
+                raise Exception("Connection pool is not initialized")
+            
+            # Получаем соединение из пула
+            conn = self.connection_pool.getconn()
+            
+            try:
+                with conn.cursor() as cursor:
+                    # Используем UPSERT (INSERT ... ON CONFLICT DO UPDATE)
+                    sql = """
+                        INSERT INTO users (hardware_id_hash, short_term_memory, long_term_memory, memory_updated_at)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (hardware_id_hash) 
+                        DO UPDATE SET 
+                            short_term_memory = EXCLUDED.short_term_memory,
+                            long_term_memory = EXCLUDED.long_term_memory,
+                            memory_updated_at = EXCLUDED.memory_updated_at
+                        RETURNING id
+                    """
+                    
+                    cursor.execute(sql, (
+                        hardware_id_hash, 
+                        short_memory, 
+                        long_memory, 
+                        datetime.now(timezone.utc)
+                    ))
+                    
+                    result = cursor.fetchone()
+                    conn.commit()
+                    
+                    return bool(result)
+                    
+            finally:
+                # Возвращаем соединение в пул
+                if self.connection_pool is not None:
+                    self.connection_pool.putconn(conn)
+                
+        except Exception as e:
+            logger.error(f"Error updating user memory (upsert): {e}")
+            return False
     
     async def cleanup_expired_short_term_memory(self, hours: int = 24) -> int:
         """Очистка устаревшей краткосрочной памяти"""

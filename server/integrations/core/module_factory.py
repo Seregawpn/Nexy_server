@@ -29,6 +29,7 @@ class ModuleFactory:
         'interrupt_handling': 'modules.interrupt_handling.adapter:InterruptHandlingAdapter',
         'text_filtering': 'modules.text_filtering.adapter:TextFilteringAdapter',
         'update': 'modules.update.adapter:UpdateAdapter',
+        'browser_use': 'modules.browser_use.adapter:BrowserUseModuleAdapter',
     }
 
     @classmethod

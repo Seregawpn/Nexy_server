@@ -24,29 +24,41 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0fstreaming.proto\x12\tstreaming\"\xca\x01\n\rStreamRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\x12\x17\n\nscreenshot\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x19\n\x0cscreen_width\x18\x03 \x01(\x05H\x01\x88\x01\x01\x12\x1a\n\rscreen_height\x18\x04 \x01(\x05H\x02\x88\x01\x01\x12\x13\n\x0bhardware_id\x18\x05 \x01(\t\x12\x12\n\nsession_id\x18\x06 \x01(\tB\r\n\x0b_screenshotB\x0f\n\r_screen_widthB\x10\n\x0e_screen_height\"\x8f\x01\n\x0eStreamResponse\x12\x14\n\ntext_chunk\x18\x01 \x01(\tH\x00\x12,\n\x0b\x61udio_chunk\x18\x02 \x01(\x0b\x32\x15.streaming.AudioChunkH\x00\x12\x15\n\x0b\x65nd_message\x18\x03 \x01(\tH\x00\x12\x17\n\rerror_message\x18\x04 \x01(\tH\x00\x42\t\n\x07\x63ontent\"e\n\nAudioChunk\x12\x12\n\naudio_data\x18\x01 \x01(\x0c\x12\r\n\x05\x64type\x18\x02 \x01(\t\x12\r\n\x05shape\x18\x03 \x03(\x05\x12\x13\n\x0bsample_rate\x18\x04 \x01(\x05\x12\x10\n\x08\x63hannels\x18\x05 \x01(\x05\"\'\n\x10InterruptRequest\x12\x13\n\x0bhardware_id\x18\x01 \x01(\t\"S\n\x11InterruptResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x1c\n\x14interrupted_sessions\x18\x02 \x03(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"S\n\x0eWelcomeRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\r\n\x05voice\x18\x03 \x01(\t\x12\x10\n\x08language\x18\x04 \x01(\t\"m\n\x0fWelcomeMetadata\x12\x0e\n\x06method\x18\x01 \x01(\t\x12\x14\n\x0c\x64uration_sec\x18\x02 \x01(\x01\x12\x13\n\x0bsample_rate\x18\x03 \x01(\x05\x12\x10\n\x08\x63hannels\x18\x04 \x01(\x05\x12\r\n\x05\x64type\x18\x05 \x01(\t\"\xaa\x01\n\x0fWelcomeResponse\x12,\n\x0b\x61udio_chunk\x18\x01 \x01(\x0b\x32\x15.streaming.AudioChunkH\x00\x12.\n\x08metadata\x18\x02 \x01(\x0b\x32\x1a.streaming.WelcomeMetadataH\x00\x12\x15\n\x0b\x65nd_message\x18\x03 \x01(\tH\x00\x12\x17\n\rerror_message\x18\x04 \x01(\tH\x00\x42\t\n\x07\x63ontent2\xf8\x01\n\x10StreamingService\x12\x44\n\x0bStreamAudio\x12\x18.streaming.StreamRequest\x1a\x19.streaming.StreamResponse0\x01\x12M\n\x10InterruptSession\x12\x1b.streaming.InterruptRequest\x1a\x1c.streaming.InterruptResponse\x12O\n\x14GenerateWelcomeAudio\x12\x19.streaming.WelcomeRequest\x1a\x1a.streaming.WelcomeResponse0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0fstreaming.proto\x12\tstreaming\"\xca\x01\n\rStreamRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\x12\x17\n\nscreenshot\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x19\n\x0cscreen_width\x18\x03 \x01(\x05H\x01\x88\x01\x01\x12\x1a\n\rscreen_height\x18\x04 \x01(\x05H\x02\x88\x01\x01\x12\x13\n\x0bhardware_id\x18\x05 \x01(\t\x12\x12\n\nsession_id\x18\x06 \x01(\tB\r\n\x0b_screenshotB\x0f\n\r_screen_widthB\x10\n\x0e_screen_height\"\x82\x02\n\x0eStreamResponse\x12\x14\n\ntext_chunk\x18\x01 \x01(\tH\x00\x12,\n\x0b\x61udio_chunk\x18\x02 \x01(\x0b\x32\x15.streaming.AudioChunkH\x00\x12\x15\n\x0b\x65nd_message\x18\x03 \x01(\tH\x00\x12\x17\n\rerror_message\x18\x04 \x01(\tH\x00\x12\x32\n\x0e\x61\x63tion_message\x18\x05 \x01(\x0b\x32\x18.streaming.ActionMessageH\x00\x12=\n\x10\x62rowser_progress\x18\x06 \x01(\x0b\x32!.streaming.BrowserProgressMessageH\x00\x42\t\n\x07\x63ontent\"e\n\nAudioChunk\x12\x12\n\naudio_data\x18\x01 \x01(\x0c\x12\r\n\x05\x64type\x18\x02 \x01(\t\x12\r\n\x05shape\x18\x03 \x03(\x05\x12\x13\n\x0bsample_rate\x18\x04 \x01(\x05\x12\x10\n\x08\x63hannels\x18\x05 \x01(\x05\"\'\n\x10InterruptRequest\x12\x13\n\x0bhardware_id\x18\x01 \x01(\t\"S\n\x11InterruptResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x1c\n\x14interrupted_sessions\x18\x02 \x03(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"S\n\x0eWelcomeRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\r\n\x05voice\x18\x03 \x01(\t\x12\x10\n\x08language\x18\x04 \x01(\t\"m\n\x0fWelcomeMetadata\x12\x0e\n\x06method\x18\x01 \x01(\t\x12\x14\n\x0c\x64uration_sec\x18\x02 \x01(\x01\x12\x13\n\x0bsample_rate\x18\x03 \x01(\x05\x12\x10\n\x08\x63hannels\x18\x04 \x01(\x05\x12\r\n\x05\x64type\x18\x05 \x01(\t\"\xaa\x01\n\x0fWelcomeResponse\x12,\n\x0b\x61udio_chunk\x18\x01 \x01(\x0b\x32\x15.streaming.AudioChunkH\x00\x12.\n\x08metadata\x18\x02 \x01(\x0b\x32\x1a.streaming.WelcomeMetadataH\x00\x12\x15\n\x0b\x65nd_message\x18\x03 \x01(\tH\x00\x12\x17\n\rerror_message\x18\x04 \x01(\tH\x00\x42\t\n\x07\x63ontent\"`\n\rActionMessage\x12\x13\n\x0b\x61\x63tion_json\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x17\n\nfeature_id\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\r\n\x0b_feature_id\"\xd8\x02\n\x16\x42rowserProgressMessage\x12)\n\x04type\x18\x01 \x01(\x0e\x32\x1b.streaming.BrowserEventType\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x18\n\x0bstep_number\x18\x03 \x01(\x05H\x00\x88\x01\x01\x12\x18\n\x0b\x64\x65scription\x18\x04 \x01(\tH\x01\x88\x01\x01\x12\x10\n\x03url\x18\x05 \x01(\tH\x02\x88\x01\x01\x12\x13\n\x06\x61\x63tion\x18\x06 \x01(\tH\x03\x88\x01\x01\x12\x11\n\ttimestamp\x18\x07 \x01(\t\x12\x12\n\x05\x65rror\x18\x08 \x01(\tH\x04\x88\x01\x01\x12\x37\n\x07\x64\x65tails\x18\t \x01(\x0b\x32!.streaming.BrowserProgressDetailsH\x05\x88\x01\x01\x42\x0e\n\x0c_step_numberB\x0e\n\x0c_descriptionB\x06\n\x04_urlB\t\n\x07_actionB\x08\n\x06_errorB\n\n\x08_details\"\xc9\x01\n\x16\x42rowserProgressDetails\x12\x19\n\x0c\x64uration_sec\x18\x01 \x01(\x01H\x00\x88\x01\x01\x12\x0f\n\x07\x61\x63tions\x18\x02 \x03(\t\x12\x41\n\x08metadata\x18\x03 \x03(\x0b\x32/.streaming.BrowserProgressDetails.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x0f\n\r_duration_sec*\xd0\x01\n\x10\x42rowserEventType\x12\x18\n\x14\x42ROWSER_TASK_STARTED\x10\x00\x12\x18\n\x14\x42ROWSER_STEP_STARTED\x10\x01\x12\x1a\n\x16\x42ROWSER_STEP_COMPLETED\x10\x02\x12\x1b\n\x17\x42ROWSER_ACTION_EXECUTED\x10\x03\x12\x1a\n\x16\x42ROWSER_TASK_COMPLETED\x10\x04\x12\x17\n\x13\x42ROWSER_TASK_FAILED\x10\x05\x12\x1a\n\x16\x42ROWSER_TASK_CANCELLED\x10\x06\x32\xf8\x01\n\x10StreamingService\x12\x44\n\x0bStreamAudio\x12\x18.streaming.StreamRequest\x1a\x19.streaming.StreamResponse0\x01\x12M\n\x10InterruptSession\x12\x1b.streaming.InterruptRequest\x1a\x1c.streaming.InterruptResponse\x12O\n\x14GenerateWelcomeAudio\x12\x19.streaming.WelcomeRequest\x1a\x1a.streaming.WelcomeResponse0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'streaming_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
+  _globals['_BROWSERPROGRESSDETAILS_METADATAENTRY']._loaded_options = None
+  _globals['_BROWSERPROGRESSDETAILS_METADATAENTRY']._serialized_options = b'8\001'
+  _globals['_BROWSEREVENTTYPE']._serialized_start=1744
+  _globals['_BROWSEREVENTTYPE']._serialized_end=1952
   _globals['_STREAMREQUEST']._serialized_start=31
   _globals['_STREAMREQUEST']._serialized_end=233
   _globals['_STREAMRESPONSE']._serialized_start=236
-  _globals['_STREAMRESPONSE']._serialized_end=379
-  _globals['_AUDIOCHUNK']._serialized_start=381
-  _globals['_AUDIOCHUNK']._serialized_end=482
-  _globals['_INTERRUPTREQUEST']._serialized_start=484
-  _globals['_INTERRUPTREQUEST']._serialized_end=523
-  _globals['_INTERRUPTRESPONSE']._serialized_start=525
-  _globals['_INTERRUPTRESPONSE']._serialized_end=608
-  _globals['_WELCOMEREQUEST']._serialized_start=610
-  _globals['_WELCOMEREQUEST']._serialized_end=693
-  _globals['_WELCOMEMETADATA']._serialized_start=695
-  _globals['_WELCOMEMETADATA']._serialized_end=804
-  _globals['_WELCOMERESPONSE']._serialized_start=807
-  _globals['_WELCOMERESPONSE']._serialized_end=977
-  _globals['_STREAMINGSERVICE']._serialized_start=980
-  _globals['_STREAMINGSERVICE']._serialized_end=1228
+  _globals['_STREAMRESPONSE']._serialized_end=494
+  _globals['_AUDIOCHUNK']._serialized_start=496
+  _globals['_AUDIOCHUNK']._serialized_end=597
+  _globals['_INTERRUPTREQUEST']._serialized_start=599
+  _globals['_INTERRUPTREQUEST']._serialized_end=638
+  _globals['_INTERRUPTRESPONSE']._serialized_start=640
+  _globals['_INTERRUPTRESPONSE']._serialized_end=723
+  _globals['_WELCOMEREQUEST']._serialized_start=725
+  _globals['_WELCOMEREQUEST']._serialized_end=808
+  _globals['_WELCOMEMETADATA']._serialized_start=810
+  _globals['_WELCOMEMETADATA']._serialized_end=919
+  _globals['_WELCOMERESPONSE']._serialized_start=922
+  _globals['_WELCOMERESPONSE']._serialized_end=1092
+  _globals['_ACTIONMESSAGE']._serialized_start=1094
+  _globals['_ACTIONMESSAGE']._serialized_end=1190
+  _globals['_BROWSERPROGRESSMESSAGE']._serialized_start=1193
+  _globals['_BROWSERPROGRESSMESSAGE']._serialized_end=1537
+  _globals['_BROWSERPROGRESSDETAILS']._serialized_start=1540
+  _globals['_BROWSERPROGRESSDETAILS']._serialized_end=1741
+  _globals['_BROWSERPROGRESSDETAILS_METADATAENTRY']._serialized_start=1677
+  _globals['_BROWSERPROGRESSDETAILS_METADATAENTRY']._serialized_end=1724
+  _globals['_STREAMINGSERVICE']._serialized_start=1955
+  _globals['_STREAMINGSERVICE']._serialized_end=2203
 # @@protoc_insertion_point(module_scope)

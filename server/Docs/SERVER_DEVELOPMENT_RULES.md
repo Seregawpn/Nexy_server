@@ -1,6 +1,6 @@
-# Правила разработки серверной части Nexy (v2.0)
+# Правила разработки серверной части Nexy (v2.1)
 
-**Обновлено:** 3 октября 2025  
+**Обновлено:** 11 января 2026  
 **Назначение:** единый набор правил разработки и релизов серверной части Nexy. Документ закрепляет обязательные гейты, формат версий, контракты с клиентом и проверки, на которые уже опираются живые процессы (Sparkle, health, состояние разрешений, gRPC).
 
 ---
@@ -25,7 +25,10 @@
 
 - `server/modules/*` — только бизнес-логика. Оркестрация и сценарии располагаются в `server/integrations/{core,service_integrations,workflow_integrations}`.
 - Прямых импортов между модулями нет; все обращения идут через `ModuleCoordinator` (`server/integrations/service_integrations/module_coordinator.py`).
-- Каждый модуль реализует `UniversalModuleInterface`; если модуль оборачивает существующий процессор, создаётся адаптер (`modules/*/adapter.py`), предоставляющий `initialize/process/cleanup/status`.
+- Каждый модуль реализует `UniversalModuleInterface`:
+  - **Прямая реализация:** `text_processing` использует `module.py` (напрямую реализует интерфейс)
+  - **Адаптеры:** Остальные модули используют `adapter.py` (обёртка над существующими процессорами), предоставляющие `initialize/process/cleanup/status`
+- **Опциональные модули:** `database`, `audio_generation`, `text_filtering`, `interrupt_handling` — сервер может работать без них при ошибке инициализации (graceful degradation).
 - `GrpcServiceManager` создаёт capability через `ModuleFactory`, а не прямыми импортами.
 - LoggingInterceptor (`modules/grpc_service/core/grpc_interceptor.py`) подключается всегда. Он переупаковывает `RpcMethodHandler` через `_replace` и фиксирует `decision=start|abort|complete`.
 - Единственный proto-файл — `server/modules/grpc_service/streaming.proto`. Изменения обновляют его и `Docs/GRPC_PROTOCOL_AUDIT.md`.
@@ -116,8 +119,8 @@ python scripts/verify_feature_flags.py --module <path>
 # Используйте готовый скрипт
 bash scripts/validate_updates.sh [HOST] [PORT]
 
-# Или вручную
-APPCAST_SIZE=$(curl -s https://20.151.51.172/appcast.xml | grep -o 'length="[^"]*"' | cut -d'"' -f2)
+# Или вручную (актуальный IP: 20.63.24.187)
+APPCAST_SIZE=$(curl -s https://20.63.24.187/appcast.xml | grep -o 'length="[^"]*"' | cut -d'"' -f2)
 GITHUB_SIZE=$(curl -s -L -I https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg | grep -i "content-length:" | tail -1 | awk '{print $2}' | tr -d '\r\n')
 echo "AppCast: $APPCAST_SIZE байт"
 echo "GitHub:  $GITHUB_SIZE байт"
@@ -317,19 +320,19 @@ UPDATE_PORT=8081
 2. **Verify /health и /status**
    ```bash
    # Проверка health endpoint
-   curl https://20.151.51.172/health
+   curl https://20.63.24.187/health
    
    # Проверка status endpoint
-   curl https://20.151.51.172/status | jq
+   curl https://20.63.24.187/status | jq
    ```
 
 3. **Re-run smoke tests**
    ```bash
    # Проверка базовой функциональности
-   python scripts/grpc_smoke.py 20.151.51.172 443
+   python scripts/grpc_smoke.py 20.63.24.187 443
    
    # Проверка health/status
-   python scripts/check_grpc_health.py 20.151.51.172 443
+   python scripts/check_grpc_health.py 20.63.24.187 443
    
    # Проверка гвардрайлов
    ./scripts/check_ramp_guardrails.sh server.log 100

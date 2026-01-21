@@ -26,11 +26,13 @@ class MemoryWorkflowIntegration:
         self.memory_module = memory_manager
         self.is_initialized = False
         self.memory_cache = {}  # Кэш для быстрого доступа
+        self._cache_lock = asyncio.Lock()  # Защита кэша
         self.cache_ttl = 600  # 10 минут TTL для кэша (увеличено с 5 минут)
         self.cache_refresh_before_expiry = 30  # Обновлять кэш за 30 сек до истечения
         self.memory_fetch_timeout = 0.1  # Максимальное время ожидания памяти (уменьшено с 0.3)
         self.memory_update_timeout = 1.0  # Таймаут записи памяти
         self._memory_tasks = {}
+        self._tasks_lock = asyncio.Lock()  # Защита задач
         self._refresh_tasks = {}  # Задачи предобновления кэша
         
         logger.info("MemoryWorkflowIntegration создан")

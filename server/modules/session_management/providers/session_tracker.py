@@ -9,22 +9,9 @@ import uuid
 from typing import AsyncGenerator, Dict, Any, Optional, Set
 from dataclasses import dataclass, field
 from integrations.core.universal_provider_interface import UniversalProviderInterface
+from ..core.session_registry import SessionRegistry, SessionData
 
 logger = logging.getLogger(__name__)
-
-@dataclass
-class SessionData:
-    """Данные сессии"""
-    session_id: str
-    hardware_id: str
-    created_at: float
-    last_activity: float
-    status: str = "active"  # active, interrupted, completed, expired
-    user_agent: Optional[str] = None
-    ip_address: Optional[str] = None
-    context: Dict[str, Any] = field(default_factory=dict)
-    interrupt_flag: bool = False
-    interrupt_reason: Optional[str] = None
 
 class SessionTracker(UniversalProviderInterface):
     """
@@ -68,13 +55,9 @@ class SessionTracker(UniversalProviderInterface):
         self.validate_session_ownership = config.get('validate_session_ownership', True)
         self.encrypt_session_data = config.get('encrypt_session_data', False)
         
-        # Активные сессии
-        self.active_sessions: Dict[str, SessionData] = {}
+        # Реестр сессий
+        self.registry = SessionRegistry()
         self.session_history: list = []
-        
-        # Флаги прерывания
-        self.global_interrupt_flag = False
-        self.interrupted_sessions: Set[str] = set()
         
         # Фоновые задачи
         self.cleanup_task: Optional[asyncio.Task] = None
@@ -170,9 +153,8 @@ class SessionTracker(UniversalProviderInterface):
             await self._stop_background_tasks()
             
             # Очищаем сессии
-            self.active_sessions.clear()
+            self.registry.clear()
             self.session_history.clear()
-            self.interrupted_sessions.clear()
             
             self.is_initialized = False
             logger.info("Session Tracker cleaned up successfully")
@@ -199,27 +181,32 @@ class SessionTracker(UniversalProviderInterface):
         current_time = time.time()
         
         # Ищем существующую активную сессию для данного hardware_id
+        sessions = self.registry.get_sessions_by_hardware_id(hardware_id)
         existing_session = None
-        for session in self.active_sessions.values():
-            if (session.hardware_id == hardware_id and 
-                session.status == "active" and 
+        
+        for session in sessions:
+            if (session.status == "active" and 
                 current_time - session.last_activity < self.session_timeout):
                 existing_session = session
                 break
         
         if existing_session:
             # Обновляем существующую сессию
-            existing_session.last_activity = current_time
-            existing_session.context.update(context or {})
+            self.registry.update_last_activity(existing_session.session_id)
+            if context:
+                existing_session.context.update(context)
             logger.debug(f"Updated existing session: {existing_session.session_id[:8]}...")
             return existing_session
         else:
             # Создаем новую сессию
-            if len(self.active_sessions) >= self.max_concurrent_sessions:
-                # Очищаем старые сессии
+            all_sessions = self.registry.get_all_sessions()
+            if len(all_sessions) >= self.max_concurrent_sessions:
+                # Очищаем старые сессии (публичный метод, так как registry thread-safe)
                 await self._cleanup_expired_sessions()
                 
-                if len(self.active_sessions) >= self.max_concurrent_sessions:
+                # Проверяем снова
+                all_sessions = self.registry.get_all_sessions()
+                if len(all_sessions) >= self.max_concurrent_sessions:
                     raise Exception("Maximum concurrent sessions reached")
             
             session_id = str(uuid.uuid4())
@@ -233,7 +220,7 @@ class SessionTracker(UniversalProviderInterface):
                 context=context or {}
             )
             
-            self.active_sessions[session_id] = session_data
+            self.registry.register_session(session_data)
             logger.info(f"Created new session: {session_id[:8]}... for hardware_id: {hardware_id[:8]}...")
             
             return session_data
@@ -250,19 +237,12 @@ class SessionTracker(UniversalProviderInterface):
             True если прерывание успешно, False иначе
         """
         try:
-            if session_id not in self.active_sessions:
+            if self.registry.interrupt_session(session_id, reason):
+                logger.info(f"Session interrupted: {session_id[:8]}... reason: {reason}")
+                return True
+            else:
                 logger.warning(f"Session not found for interrupt: {session_id}")
                 return False
-            
-            session = self.active_sessions[session_id]
-            session.interrupt_flag = True
-            session.interrupt_reason = reason
-            session.status = "interrupted"
-            
-            self.interrupted_sessions.add(session_id)
-            
-            logger.info(f"Session interrupted: {session_id[:8]}... reason: {reason}")
-            return True
             
         except Exception as e:
             logger.error(f"Error interrupting session {session_id}: {e}")
@@ -279,16 +259,13 @@ class SessionTracker(UniversalProviderInterface):
             Количество прерванных сессий
         """
         try:
-            self.global_interrupt_flag = True
             interrupted_count = 0
             
-            for session_id, session in self.active_sessions.items():
+            all_sessions = self.registry.get_all_sessions()
+            for session in all_sessions:
                 if session.status == "active":
-                    session.interrupt_flag = True
-                    session.interrupt_reason = reason
-                    session.status = "interrupted"
-                    self.interrupted_sessions.add(session_id)
-                    interrupted_count += 1
+                    if self.registry.interrupt_session(session.session_id, reason):
+                        interrupted_count += 1
             
             logger.info(f"Interrupted {interrupted_count} sessions, reason: {reason}")
             return interrupted_count
@@ -307,10 +284,10 @@ class SessionTracker(UniversalProviderInterface):
         Returns:
             Статус сессии или None если не найдена
         """
-        if session_id not in self.active_sessions:
+        session = self.registry.get_session(session_id)
+        if not session:
             return None
         
-        session = self.active_sessions[session_id]
         return {
             'session_id': session.session_id,
             'hardware_id': session.hardware_id,
@@ -385,17 +362,18 @@ class SessionTracker(UniversalProviderInterface):
         """Очистка устаревших сессий"""
         try:
             current_time = time.time()
+            all_sessions = self.registry.get_all_sessions()
             expired_sessions = []
             
-            for session_id, session in self.active_sessions.items():
+            for session in all_sessions:
                 if current_time - session.last_activity > self.session_timeout:
-                    session.status = "expired"
-                    expired_sessions.append(session_id)
+                    expired_sessions.append(session.session_id)
             
             # Удаляем устаревшие сессии
             for session_id in expired_sessions:
-                session = self.active_sessions.pop(session_id, None)
+                session = self.registry.unregister_session(session_id)
                 if session:
+                    session.status = "expired"
                     self.session_history.append(session)
                     logger.debug(f"Session expired and archived: {session_id[:8]}...")
             
@@ -415,12 +393,13 @@ class SessionTracker(UniversalProviderInterface):
             current_time = time.time()
             active_count = 0
             
-            for session in self.active_sessions.values():
+            all_sessions = self.registry.get_all_sessions()
+            for session in all_sessions:
                 if session.status == "active":
                     active_count += 1
                     # Обновляем last_activity если сессия недавно использовалась
                     if current_time - session.last_activity < self.session_heartbeat_interval * 2:
-                        session.last_activity = current_time
+                        self.registry.update_last_activity(session.session_id)
             
             if active_count > 0:
                 logger.debug(f"Heartbeat updated for {active_count} active sessions")
@@ -444,7 +423,8 @@ class SessionTracker(UniversalProviderInterface):
                 return False
             
             # Проверяем, что не превышено максимальное количество сессий
-            if len(self.active_sessions) > self.max_concurrent_sessions:
+            active_sessions_count = len(self.registry.get_all_sessions())
+            if active_sessions_count > self.max_concurrent_sessions:
                 return False
             
             return True
@@ -455,11 +435,13 @@ class SessionTracker(UniversalProviderInterface):
     
     def get_active_sessions_count(self) -> int:
         """Получение количества активных сессий"""
-        return len([s for s in self.active_sessions.values() if s.status == "active"])
+        sessions = self.registry.get_all_sessions()
+        return len([s for s in sessions if s.status == "active"])
     
     def get_interrupted_sessions_count(self) -> int:
-        """Получение количества прерванных сессий"""
-        return len(self.interrupted_sessions)
+        """Получение количества прерванных сессий из реестра"""
+        sessions = self.registry.get_all_sessions()
+        return len([s for s in sessions if s.status == "interrupted"])
     
     def get_session_statistics(self) -> Dict[str, Any]:
         """Получение статистики сессий"""
@@ -468,7 +450,9 @@ class SessionTracker(UniversalProviderInterface):
         expired_count = 0
         interrupted_count = 0
         
-        for session in self.active_sessions.values():
+        all_sessions = self.registry.get_all_sessions()
+        
+        for session in all_sessions:
             if session.status == "active":
                 active_count += 1
             elif session.status == "expired":
@@ -480,9 +464,8 @@ class SessionTracker(UniversalProviderInterface):
             'active_sessions': active_count,
             'expired_sessions': expired_count,
             'interrupted_sessions': interrupted_count,
-            'total_sessions': len(self.active_sessions),
+            'total_sessions': len(all_sessions),
             'session_history_count': len(self.session_history),
-            'global_interrupt_flag': self.global_interrupt_flag,
             'max_concurrent_sessions': self.max_concurrent_sessions,
             'session_timeout': self.session_timeout
         }
@@ -502,7 +485,6 @@ class SessionTracker(UniversalProviderInterface):
             "session_timeout": self.session_timeout,
             "max_concurrent_sessions": self.max_concurrent_sessions,
             "tracking_enabled": self.tracking_enabled,
-            "global_interrupt_flag": self.global_interrupt_flag,
             "statistics": self.get_session_statistics()
         })
         

@@ -13,6 +13,7 @@ from datetime import datetime
 from integrations.core.universal_module_interface import UniversalModuleInterface
 from integrations.core.module_status import ModuleStatus, ModuleState
 from modules.interrupt_handling.config import InterruptHandlingConfig
+from modules.session_management.core.session_registry import SessionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +35,11 @@ class InterruptManager(UniversalModuleInterface):
         
         self.config = config or InterruptHandlingConfig()
         
-        # Глобальные флаги прерывания
-        self.global_interrupt_flag = False
-        self.interrupt_hardware_id: Optional[str] = None
-        self.interrupt_timestamp: Optional[float] = None
+        # GlobalFlagProvider будет инициализирован в _initialize_components
+        self.global_flag_provider = None
         
-        # Активные сессии
-        self.active_sessions: Dict[str, Dict[str, Any]] = {}
-        self.session_counter = 0
+        # Реестр сессий
+        self.registry = SessionRegistry()
         
         # Зарегистрированные модули для прерывания
         self.registered_modules: Dict[str, Any] = {}
@@ -91,16 +89,12 @@ class InterruptManager(UniversalModuleInterface):
         try:
             # Инициализируем провайдеры прерывания
             from modules.interrupt_handling.providers.global_flag_provider import GlobalFlagProvider
-            from modules.interrupt_handling.providers.session_tracker_provider import SessionTrackerProvider
             
             # Преобразуем конфигурацию в словарь
             config_dict = self.config.config if hasattr(self.config, 'config') else {}
             
             self.global_flag_provider = GlobalFlagProvider(config_dict)
-            self.session_tracker_provider = SessionTrackerProvider(config_dict)
-            
             await self.global_flag_provider.initialize()
-            await self.session_tracker_provider.initialize()
             
             logger.info("Interrupt providers initialized")
             
@@ -158,13 +152,12 @@ class InterruptManager(UniversalModuleInterface):
             
             logger.warning(f"🚨 Interrupt session requested for hardware_id: {hardware_id}")
             
-            # КРИТИЧНО: Диагностика - проверяем количество активных сессий для этого hardware_id
-            active_sessions_for_hw = [
-                (sid, data) for sid, data in self.active_sessions.items()
-                if data.get("hardware_id") == hardware_id
-            ]
+            # Получаем активные сессии из реестра
+            sessions = self.registry.get_sessions_by_hardware_id(hardware_id)
+            active_sessions_for_hw = [s for s in sessions if s.status == "active"]
+            
             if len(active_sessions_for_hw) > 1:
-                session_ids = [sid for sid, _ in active_sessions_for_hw]
+                session_ids = [s.session_id for s in active_sessions_for_hw]
                 logger.warning(
                     f"⚠️ [INTERRUPT_DIAG] Прерывание hardware_id={hardware_id} с {len(active_sessions_for_hw)} активными сессиями: {session_ids}",
                     extra={
@@ -183,7 +176,7 @@ class InterruptManager(UniversalModuleInterface):
                     }
                 )
             elif len(active_sessions_for_hw) == 1:
-                session_id = active_sessions_for_hw[0][0]
+                session_id = active_sessions_for_hw[0].session_id
                 logger.debug(f"✅ [INTERRUPT_DIAG] Прерывание hardware_id={hardware_id} с 1 активной сессией: {session_id}")
             else:
                 logger.debug(f"ℹ️ [INTERRUPT_DIAG] Прерывание hardware_id={hardware_id} без активных сессий")
@@ -194,8 +187,11 @@ class InterruptManager(UniversalModuleInterface):
             # Прерываем все зарегистрированные модули
             interrupted_modules = await self._interrupt_all_modules(hardware_id)
             
-            # Очищаем активные сессии
-            cleaned_sessions = await self._cleanup_sessions(hardware_id)
+            # Прерываем активные сессии
+            cleaned_sessions = []
+            for session in active_sessions_for_hw:
+                if self.registry.interrupt_session(session.session_id, "interrupt_manager_request"):
+                    cleaned_sessions.append(session.session_id)
             
             # Обновляем статистику
             self.total_interrupts += 1
@@ -204,7 +200,7 @@ class InterruptManager(UniversalModuleInterface):
             interrupt_end_time = time.time()
             total_time = (interrupt_end_time - interrupt_start_time) * 1000
             
-            logger.warning(f"✅ Interrupt completed for {hardware_id} in {total_time:.1f}ms (cleaned {len(cleaned_sessions)} sessions)")
+            logger.warning(f"✅ Interrupt completed for {hardware_id} in {total_time:.1f}ms (interrupted {len(cleaned_sessions)} sessions)")
             
             return {
                 "success": True,
@@ -227,14 +223,9 @@ class InterruptManager(UniversalModuleInterface):
             }
     
     async def _set_global_interrupt_flags(self, hardware_id: str):
-        """Установка глобальных флагов прерывания"""
+        """Установка глобальных флагов прерывания через GlobalFlagProvider"""
         try:
-            self.global_interrupt_flag = True
-            self.interrupt_hardware_id = hardware_id
-            self.interrupt_timestamp = time.time()
-            
-            # Обновляем провайдер глобальных флагов
-            if hasattr(self, 'global_flag_provider'):
+            if self.global_flag_provider:
                 await self.global_flag_provider.set_interrupt_flag(hardware_id)
             
             logger.warning(f"🚨 Global interrupt flags set for {hardware_id}")
@@ -299,29 +290,25 @@ class InterruptManager(UniversalModuleInterface):
         
         return interrupted_modules
     
-    async def _cleanup_sessions(self, hardware_id: str) -> list:
-        """Очистка активных сессий для hardware_id"""
-        cleaned_sessions = []
-        
-        try:
-            sessions_to_remove = []
-            
-            for session_id, session_data in self.active_sessions.items():
-                if session_data.get("hardware_id") == hardware_id:
-                    sessions_to_remove.append(session_id)
-                    cleaned_sessions.append(session_id)
-            
-            # Удаляем сессии
-            for session_id in sessions_to_remove:
-                del self.active_sessions[session_id]
-            
-            logger.info(f"Cleaned {len(cleaned_sessions)} sessions for {hardware_id}")
-            
-        except Exception as e:
-            logger.error(f"Error cleaning up sessions: {e}")
-        
-        return cleaned_sessions
+    # Методы register_session и unregister_session оставлены для обратной совместимости,
+    # но используют SessionRegistry, который уже обновляется через SessionTracker.
+    # Фактически они становятся no-op или логгирующими заглушками, так как регистрация
+    # происходит через SessionTracker.
     
+    async def register_session(self, session_id: str, hardware_id: str, session_data: Dict[str, Any]) -> bool:
+        """
+        Регистрация активной сессии (Deprecated: используется SessionRegistry)
+        """
+        logger.debug(f"register_session called for {session_id}. Using centralized SessionRegistry.")
+        return True
+    
+    async def unregister_session(self, session_id: str) -> bool:
+        """
+        Отмена регистрации сессии (Deprecated: используется SessionRegistry)
+        """
+        logger.debug(f"unregister_session called for {session_id}. Using centralized SessionRegistry.")
+        return True
+
     async def register_module(self, module_name: str, module_instance: Any) -> bool:
         """
         Регистрация модуля для прерывания
@@ -364,6 +351,7 @@ class InterruptManager(UniversalModuleInterface):
     def should_interrupt(self, hardware_id: str) -> bool:
         """
         Проверка, нужно ли прерывать операцию для указанного hardware_id
+        Делегирует проверку в GlobalFlagProvider.
         
         Args:
             hardware_id: ID оборудования
@@ -371,80 +359,26 @@ class InterruptManager(UniversalModuleInterface):
         Returns:
             True если нужно прерывать, False иначе
         """
-        if not self.global_interrupt_flag:
+        if not self.global_flag_provider:
             return False
         
-        if self.interrupt_hardware_id != hardware_id:
-            return False
+        result = self.global_flag_provider.check_interrupt_flag(hardware_id)
+        should_int = result.get("should_interrupt", False)
         
-        # Проверяем таймаут прерывания
-        if self.interrupt_timestamp:
-            current_time = time.time()
-            interrupt_timeout = self.config.get("interrupt_timeout", 5.0)
-            
-            if current_time - self.interrupt_timestamp > interrupt_timeout:
-                logger.warning(f"Interrupt timeout for {hardware_id}, resetting flags")
-                self._reset_interrupt_flags()
-                return False
+        # Автоматический сброс при таймауте
+        if result.get("timeout_expired", False):
+            logger.warning(f"Interrupt timeout for {hardware_id}, resetting flags")
+            asyncio.create_task(self.global_flag_provider.reset_flags())
         
-        return True
+        return should_int
     
-    def _reset_interrupt_flags(self):
-        """Сброс глобальных флагов прерывания"""
-        self.global_interrupt_flag = False
-        self.interrupt_hardware_id = None
-        self.interrupt_timestamp = None
-        
+    async def _reset_interrupt_flags(self):
+        """
+        Сброс глобальных флагов прерывания через GlobalFlagProvider
+        """
+        if self.global_flag_provider:
+            await self.global_flag_provider.reset_flags()
         logger.info("Global interrupt flags reset")
-    
-    def register_session(self, session_id: str, hardware_id: str, session_data: Dict[str, Any]) -> bool:
-        """
-        Регистрация активной сессии
-        
-        Args:
-            session_id: ID сессии
-            hardware_id: ID оборудования
-            session_data: Данные сессии
-            
-        Returns:
-            True если регистрация успешна, False иначе
-        """
-        try:
-            self.active_sessions[session_id] = {
-                "hardware_id": hardware_id,
-                "start_time": time.time(),
-                "data": session_data
-            }
-            
-            self.session_counter += 1
-            
-            logger.debug(f"Session {session_id} registered for hardware_id: {hardware_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error registering session {session_id}: {e}")
-            return False
-    
-    def unregister_session(self, session_id: str) -> bool:
-        """
-        Отмена регистрации сессии
-        
-        Args:
-            session_id: ID сессии
-            
-        Returns:
-            True если отмена успешна, False иначе
-        """
-        try:
-            if session_id in self.active_sessions:
-                del self.active_sessions[session_id]
-                logger.debug(f"Session {session_id} unregistered")
-                return True
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error unregistering session {session_id}: {e}")
-            return False
     
     def status(self) -> ModuleStatus:
         """
@@ -468,9 +402,6 @@ class InterruptManager(UniversalModuleInterface):
             # Сбрасываем флаги
             self._reset_interrupt_flags()
             
-            # Очищаем сессии
-            self.active_sessions.clear()
-            
             # Очищаем зарегистрированные модули
             self.registered_modules.clear()
             
@@ -480,8 +411,6 @@ class InterruptManager(UniversalModuleInterface):
             # Очищаем провайдеры
             if hasattr(self, 'global_flag_provider'):
                 await self.global_flag_provider.cleanup()
-            if hasattr(self, 'session_tracker_provider'):
-                await self.session_tracker_provider.cleanup()
             
             self._status = ModuleStatus(state=ModuleState.STOPPED, health="ok")
             self.is_initialized = False
@@ -495,6 +424,10 @@ class InterruptManager(UniversalModuleInterface):
     
     def get_statistics(self) -> Dict[str, Any]:
         """Получение статистики прерываний"""
+        flag_status = {}
+        if self.global_flag_provider:
+            flag_status = self.global_flag_provider.get_flag_status()
+        
         return {
             "total_interrupts": self.total_interrupts,
             "successful_interrupts": self.successful_interrupts,
@@ -503,9 +436,8 @@ class InterruptManager(UniversalModuleInterface):
                 self.successful_interrupts / self.total_interrupts 
                 if self.total_interrupts > 0 else 0
             ),
-            "active_sessions": len(self.active_sessions),
             "registered_modules": len(self.registered_modules),
             "registered_callbacks": len(self.interrupt_callbacks),
-            "global_interrupt_flag": self.global_interrupt_flag,
-            "interrupt_hardware_id": self.interrupt_hardware_id
+            "global_interrupt_flag": flag_status.get("global_interrupt_flag", False),
+            "interrupt_hardware_id": flag_status.get("interrupt_hardware_id")
         }

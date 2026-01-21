@@ -3,6 +3,5 @@
 """
 
 from .global_flag_provider import GlobalFlagProvider
-from .session_tracker_provider import SessionTrackerProvider
 
-__all__ = ['GlobalFlagProvider', 'SessionTrackerProvider']
+__all__ = ['GlobalFlagProvider']

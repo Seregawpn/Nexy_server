@@ -3,6 +3,7 @@ Hardware ID Provider для получения и управления Hardware 
 """
 
 import os
+import asyncio
 import logging
 from typing import AsyncGenerator, Dict, Any, Optional
 from integrations.core.universal_provider_interface import UniversalProviderInterface
@@ -36,6 +37,9 @@ class HardwareIDProvider(UniversalProviderInterface):
         
         # Хранилище полученных ID
         self.received_ids: Dict[str, Dict[str, Any]] = {}
+        
+        # Lock для синхронизации доступа к received_ids
+        self._ids_lock = asyncio.Lock()
         
         logger.info("HardwareID Provider initialized for client ID processing")
     
@@ -84,29 +88,30 @@ class HardwareIDProvider(UniversalProviderInterface):
             if self.validate_id_format and not self._validate_id_format(hardware_id):
                 raise Exception(f"Invalid hardware_id format: {hardware_id}")
             
-            # Проверяем, существует ли уже этот ID
-            if hardware_id in self.received_ids:
-                logger.info(f"Hardware ID already exists: {hardware_id[:8]}...")
-                result = {
-                    "hardware_id": hardware_id,
-                    "status": "exists",
-                    "action": "none",
-                    "message": "Hardware ID already registered"
-                }
-            else:
-                # Сохраняем новый ID
-                self.received_ids[hardware_id] = {
-                    "first_seen": self._get_timestamp(),
-                    "last_seen": self._get_timestamp(),
-                    "source": "client"
-                }
-                logger.info(f"New Hardware ID registered: {hardware_id[:8]}...")
-                result = {
-                    "hardware_id": hardware_id,
-                    "status": "new",
-                    "action": "saved",
-                    "message": "Hardware ID registered successfully"
-                }
+            async with self._ids_lock:
+                # Проверяем, существует ли уже этот ID
+                if hardware_id in self.received_ids:
+                    logger.info(f"Hardware ID already exists: {hardware_id[:8]}...")
+                    result = {
+                        "hardware_id": hardware_id,
+                        "status": "exists",
+                        "action": "none",
+                        "message": "Hardware ID already registered"
+                    }
+                else:
+                    # Сохраняем новый ID
+                    self.received_ids[hardware_id] = {
+                        "first_seen": self._get_timestamp(),
+                        "last_seen": self._get_timestamp(),
+                        "source": "client"
+                    }
+                    logger.info(f"New Hardware ID registered: {hardware_id[:8]}...")
+                    result = {
+                        "hardware_id": hardware_id,
+                        "status": "new",
+                        "action": "saved",
+                        "message": "Hardware ID registered successfully"
+                    }
             
             # Обновляем метрики
             self.total_requests += 1
@@ -128,7 +133,8 @@ class HardwareIDProvider(UniversalProviderInterface):
             True если очистка успешна, False иначе
         """
         try:
-            self.received_ids.clear()
+            async with self._ids_lock:
+                self.received_ids.clear()
             self.is_initialized = False
             logger.info("HardwareID Provider cleaned up")
             return True
@@ -192,7 +198,7 @@ class HardwareIDProvider(UniversalProviderInterface):
         """
         return self.received_ids.copy()
     
-    def is_id_registered(self, hardware_id: str) -> bool:
+    async def is_id_registered(self, hardware_id: str) -> bool:
         """
         Проверка, зарегистрирован ли Hardware ID
         
@@ -202,7 +208,8 @@ class HardwareIDProvider(UniversalProviderInterface):
         Returns:
             True если ID зарегистрирован, False иначе
         """
-        return hardware_id in self.received_ids
+        async with self._ids_lock:
+            return hardware_id in self.received_ids
     
     async def _custom_health_check(self) -> bool:
         """

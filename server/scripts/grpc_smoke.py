@@ -34,6 +34,7 @@ sys.path.insert(0, str(project_root))
 try:
     import grpc
     from grpc import aio
+    import subprocess
     
     # Импорт protobuf файлов
     sys.path.insert(0, str(project_root / "modules" / "grpc_service"))
@@ -79,14 +80,31 @@ class GrpcSmokeTest:
             # Формируем адрес
             address = f"{self.host}:{self.port}"
             
-            # Для HTTPS (порт 443) используем SSL, для обычного порта - insecure
+            # Для HTTPS (порт 443) используем secure_channel с TLS
+            # ВАЖНО: insecure_channel НЕ работает с TLS портом 443
             if self.port == 443:
-                # Для HTTPS нужно настроить SSL credentials
-                # В production используется Nginx reverse proxy с TLS
-                # Для self-signed сертификатов используем insecure channel
-                # (в production это должно быть secure_channel с правильными credentials)
-                logger.warning("⚠️ Используется insecure channel для порта 443 (self-signed cert)")
-                self.channel = aio.insecure_channel(address)
+                # Для self-signed сертификата скачиваем сертификат сервера
+                import subprocess
+                try:
+                    result = subprocess.run(
+                        ['openssl', 's_client', '-connect', address, '-showcerts'],
+                        input=b'', capture_output=True, timeout=5
+                    )
+                    cert_start = result.stdout.find(b'-----BEGIN CERTIFICATE-----')
+                    cert_end = result.stdout.find(b'-----END CERTIFICATE-----', cert_start)
+                    if cert_start != -1 and cert_end != -1:
+                        cert_pem = result.stdout[cert_start:cert_end + len(b'-----END CERTIFICATE-----')]
+                        credentials = grpc.ssl_channel_credentials(root_certificates=cert_pem)
+                        self.channel = aio.secure_channel(address, credentials)
+                        logger.info("✅ Используется secure_channel с сертификатом сервера")
+                    else:
+                        credentials = grpc.ssl_channel_credentials()
+                        self.channel = aio.secure_channel(address, credentials)
+                        logger.warning("⚠️ Используется secure_channel без сертификата (может не работать)")
+                except Exception as e:
+                    logger.error(f"Ошибка получения сертификата: {e}, используем стандартные credentials")
+                    credentials = grpc.ssl_channel_credentials()
+                    self.channel = aio.secure_channel(address, credentials)
             else:
                 # Для локального тестирования используем insecure channel
                 self.channel = aio.insecure_channel(address)
@@ -125,7 +143,7 @@ class GrpcSmokeTest:
             
             # Создаем запрос
             request = streaming_pb2.InterruptRequest(
-                hardware_id="smoke_test_hardware_id"
+                hardware_id="smoke_test_hardware_id_interrupt"
             )
             
             # Вызываем RPC
@@ -178,6 +196,8 @@ class GrpcSmokeTest:
                 else:
                     content_type = response.WhichOneof("content")
                     logger.info(f"   → Получен ответ: {content_type}")
+                    if content_type == "error_message":
+                        logger.error(f"   → Сообщение об ошибке: {response.error_message}")
                 
                 # Ограничиваем количество ответов для smoke-теста
                 if response_count >= 3:

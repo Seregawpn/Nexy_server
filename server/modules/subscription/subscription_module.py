@@ -9,6 +9,7 @@ Feature ID: F-2025-017-stripe-payment
 """
 import logging
 import os
+import threading
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -49,6 +50,7 @@ class SubscriptionModule:
         self._scheduler = None
         self._initialized = False
         self._cache = {}  # Simple TTL cache
+        self._cache_lock = threading.Lock()  # Защита кэша
         self._cache_ttl = self.config.cache_ttl_seconds
         
     async def initialize(self) -> bool:
@@ -325,29 +327,33 @@ class SubscriptionModule:
     
     def _get_cached(self, hardware_id: str) -> Optional[CanProcessResult]:
         """Получить результат из кэша"""
-        entry = self._cache.get(hardware_id)
-        if entry:
-            if (datetime.now() - entry['time']).seconds < self._cache_ttl:
-                return entry['result']
-            else:
-                del self._cache[hardware_id]
-        return None
+        with self._cache_lock:
+            entry = self._cache.get(hardware_id)
+            if entry:
+                if (datetime.now() - entry['time']).seconds < self._cache_ttl:
+                    return entry['result']
+                else:
+                    del self._cache[hardware_id]
+            return None
     
     def _set_cached(self, hardware_id: str, result: CanProcessResult) -> None:
         """Сохранить результат в кэш"""
-        self._cache[hardware_id] = {
-            'result': result,
-            'time': datetime.now()
-        }
+        with self._cache_lock:
+            self._cache[hardware_id] = {
+                'result': result,
+                'time': datetime.now()
+            }
     
     def _invalidate_cache(self, hardware_id: str) -> None:
         """Инвалидировать кэш для пользователя"""
-        if hardware_id in self._cache:
-            del self._cache[hardware_id]
+        with self._cache_lock:
+            if hardware_id in self._cache:
+                del self._cache[hardware_id]
     
     def invalidate_all_cache(self) -> None:
         """Инвалидировать весь кэш (после webhook)"""
-        self._cache.clear()
+        with self._cache_lock:
+            self._cache.clear()
         logger.debug("[F-2025-017] Cache invalidated")
     
     async def _run_trial_check(self) -> None:

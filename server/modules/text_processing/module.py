@@ -97,6 +97,7 @@ class TextProcessingModule(UniversalModuleInterface):
             text = request.get("text", "")
             image_data = request.get("image_data")
             use_search = request.get("use_search", False)
+            session_id = request.get("session_id")
             
             if not text:
                 raise ValueError("Текст для обработки не указан")
@@ -106,7 +107,7 @@ class TextProcessingModule(UniversalModuleInterface):
             if image_data:
                 async def stream_with_image():
                     async for chunk in processor.process_text_streaming(
-                        text, image_data
+                        text, image_data, session_id=session_id
                     ):
                         # Возвращаем текст напрямую
                         yield {"text": chunk, "type": "text_chunk"}
@@ -115,7 +116,7 @@ class TextProcessingModule(UniversalModuleInterface):
                 # Обычная обработка текста
                 # Возвращаем текст напрямую
                 async def stream_text():
-                    async for chunk in processor.process_text_streaming(text):
+                    async for chunk in processor.process_text_streaming(text, session_id=session_id):
                         # Возвращаем текст напрямую
                         yield {"text": chunk, "type": "text_chunk"}
                 return stream_text()

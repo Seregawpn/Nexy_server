@@ -10,7 +10,7 @@ Memory Manager - координатор всех операций с памят�
 
 import asyncio
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 from ..config import MemoryConfig
 from ..providers.memory_analyzer import MemoryAnalyzer
@@ -70,7 +70,7 @@ class MemoryManager:
         self.db_manager = db_manager
         logger.info("✅ DatabaseManager set in MemoryManager")
     
-    async def get_memory_context(self, hardware_id: str) -> str:
+    async def get_memory_context(self, hardware_id: str) -> Union[Dict[str, Any], str]:
         """
         Получает контекст памяти для LLM.
         
@@ -78,22 +78,27 @@ class MemoryManager:
             hardware_id: Аппаратный ID пользователя
             
         Returns:
-            Строка с контекстом памяти или пустая строка
+            Словарь с контекстом памяти или пустая строка
             
         Этот метод заменяет логику из text_processor.py (строки 254-282)
         """
         if not hardware_id or not self.db_manager:
-            return ""
+            return {}
         
         try:
             # Таймаут 2 секунды на получение памяти (как в оригинале)
+            # Таймаут 2 секунды на получение памяти (как в оригинале)
             memory_data = await asyncio.wait_for(
-                asyncio.to_thread(self.db_manager.get_user_memory, hardware_id),
+                self.db_manager.get_user_memory(hardware_id),
                 timeout=self.config.memory_timeout
             )
             
             if memory_data.get('short') or memory_data.get('long'):
-                memory_context = f"""
+                # Возвращаем словарь, как ожидает StreamingWorkflowIntegration
+                return {
+                    "recent_context": memory_data.get('short', ''),
+                    "long_term_context": memory_data.get('long', ''),
+                    "formatted_prompt": f"""
 🧠 MEMORY CONTEXT (for response context):
 
 📋 SHORT-TERM MEMORY (current session):
@@ -104,14 +109,10 @@ class MemoryManager:
 
 💡 MEMORY USAGE INSTRUCTIONS:
 - Use short-term memory to understand current conversation context
-- Use long-term memory for response personalization (name, preferences, important details)
-- If memory is not relevant to current request - ignore it
+- Use long-term memory for response personalization
 - Memory should complement the answer, not replace it
-- Priority: current request > short-term memory > long-term memory
-                """
-                
-                logger.info(f"🧠 Memory obtained for {hardware_id}: short-term ({len(memory_data.get('short', ''))} chars), long-term ({len(memory_data.get('long', ''))} chars)")
-                return memory_context
+"""
+                }
             else:
                 logger.info(f"🧠 No memory found for {hardware_id}")
                 return ""
@@ -210,10 +211,7 @@ class MemoryManager:
             return 0
         
         try:
-            return await asyncio.to_thread(
-                self.db_manager.cleanup_expired_short_term_memory,
-                hours
-            )
+            return await self.db_manager.cleanup_expired_short_term_memory(hours)
         except Exception as e:
             logger.error(f"❌ Error cleaning up expired memory: {e}")
             return 0
