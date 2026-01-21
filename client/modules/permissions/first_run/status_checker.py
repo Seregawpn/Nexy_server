@@ -26,7 +26,7 @@ class PermissionStatus(Enum):
 def get_bundle_id() -> str:
     """Определить bundle_id текущего процесса."""
     try:
-        from Foundation import NSBundle
+        from Foundation import NSBundle  # type: ignore
         bundle_id = NSBundle.mainBundle().bundleIdentifier()
         if bundle_id:
             return bundle_id
@@ -49,11 +49,11 @@ def check_microphone_status() -> PermissionStatus:
     try:
         # Пытаемся использовать AVFoundation через PyObjC
         try:
-            import AVFoundation
+            import AVFoundation  # type: ignore
 
             # Получаем статус через AVCaptureDevice
-            auth_status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
-                AVFoundation.AVMediaTypeAudio
+            auth_status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(  # type: ignore
+                AVFoundation.AVMediaTypeAudio  # type: ignore
             )
 
             logger.debug(f"🎙️ Microphone: AVFoundation auth_status raw = {auth_status}")
@@ -98,6 +98,37 @@ def check_microphone_status() -> PermissionStatus:
         return PermissionStatus.ERROR
 
 
+def check_microphone_status_no_prompt() -> PermissionStatus:
+    """
+    Неинвазивная проверка статуса микрофона без sounddevice fallback.
+    Используется для старта first_run и readiness, чтобы не вызвать prompt раньше времени.
+    """
+    if _force_granted():
+        logger.debug("🎙️ Microphone: forced GRANTED via NEXY_DEV_FORCE_PERMISSIONS")
+        return PermissionStatus.GRANTED
+
+    try:
+        try:
+            import AVFoundation  # type: ignore
+            capture_device = getattr(AVFoundation, "AVCaptureDevice", None)
+            media_type = getattr(AVFoundation, "AVMediaTypeAudio", None)
+            if not capture_device or media_type is None:
+                return PermissionStatus.NOT_DETERMINED
+
+            auth_status = capture_device.authorizationStatusForMediaType_(media_type)
+            if auth_status == 3:
+                return PermissionStatus.GRANTED
+            if auth_status in (1, 2):
+                return PermissionStatus.DENIED
+            return PermissionStatus.NOT_DETERMINED
+        except ImportError:
+            logger.warning("⚠️ AVFoundation недоступен (no_prompt), returning NOT_DETERMINED")
+            return PermissionStatus.NOT_DETERMINED
+    except Exception as e:
+        logger.debug(f"🎙️ Microphone: no_prompt check error: {e}")
+        return PermissionStatus.NOT_DETERMINED
+
+
 def _check_microphone_via_sounddevice() -> PermissionStatus:
     """
     Проверяет доступ к микрофону путём реальной попытки записи.
@@ -125,23 +156,30 @@ def _check_microphone_via_sounddevice() -> PermissionStatus:
         logger.debug("🎙️ Microphone: GRANTED (sounddevice test)")
         return PermissionStatus.GRANTED
         
-    except sd.PortAudioError as e:
-        error_str = str(e).lower()
-        # Explicit permission denial keywords
-        if "permission" in error_str or "denied" in error_str or "not allowed" in error_str:
-            logger.debug(f"🎙️ Microphone: DENIED (sounddevice error: {e})")
-            return PermissionStatus.DENIED
-        # Device busy/host errors usually mean permission IS granted but device is in use
-        # These errors indicate the system CAN access the device (permission granted)
-        if any(kw in error_str for kw in ["device", "busy", "host", "invalid", "timeout", "unavailable"]):
-            logger.info(f"🎙️ Microphone: GRANTED (device accessible but busy/error: {e})")
-            return PermissionStatus.GRANTED
-        # Unknown PortAudio errors - assume NOT_DETERMINED
-        logger.debug(f"🎙️ Microphone: PortAudio unknown error, assuming NOT_DETERMINED: {e}")
+    except ImportError:
+        logger.debug("🎙️ Microphone: sounddevice not available")
         return PermissionStatus.NOT_DETERMINED
     except Exception as e:
+        # Check if it's a PortAudioError by checking the exception type name
+        # We can't use sd.PortAudioError directly because sd might not be imported
+        error_type_name = type(e).__name__
+        if error_type_name == "PortAudioError":
+            error_str = str(e).lower()
+            # Explicit permission denial keywords
+            if "permission" in error_str or "denied" in error_str or "not allowed" in error_str:
+                logger.debug(f"🎙️ Microphone: DENIED (sounddevice error: {e})")
+                return PermissionStatus.DENIED
+            # Device busy/host errors usually mean permission IS granted but device is in use
+            # These errors indicate the system CAN access the device (permission granted)
+            if any(kw in error_str for kw in ["device", "busy", "host", "invalid", "timeout", "unavailable"]):
+                logger.info(f"🎙️ Microphone: GRANTED (device accessible but busy/error: {e})")
+                return PermissionStatus.GRANTED
+            # Unknown PortAudio errors - assume NOT_DETERMINED
+            logger.debug(f"🎙️ Microphone: PortAudio unknown error, assuming NOT_DETERMINED: {e}")
+            return PermissionStatus.NOT_DETERMINED
+        
+        # For other exceptions, check if they suggest device access
         error_str = str(e).lower()
-        # If we get any error that suggests device access, treat as GRANTED
         if any(kw in error_str for kw in ["device", "busy", "stream", "audio"]):
             logger.info(f"🎙️ Microphone: GRANTED (device error suggests access: {e})")
             return PermissionStatus.GRANTED
@@ -202,15 +240,23 @@ def check_accessibility_status() -> PermissionStatus:
                 logger.debug("♿ Accessibility: GRANTED (AXIsProcessTrusted)")
                 return PermissionStatus.GRANTED
                 
-            # Fallback: Functional check via AppleScript
-            # AXIsProcessTrusted can return stale/false results on Sequoia
-            # We try to actually PERFORM an action that requires permissions.
-            logger.debug("♿ Accessibility: AXIsProcessTrusted=False, trying functional fallback")
-            return _check_accessibility_via_script()
+            # НЕ используем функциональный fallback для проверки статуса
+            # Функциональные проверки могут давать ложные GRANTED если разрешение
+            # не предоставлено через TCC, но доступно через другие механизмы.
+            # 
+            # Если AXIsProcessTrusted возвращает False, это означает:
+            # - NOT_DETERMINED: разрешение ещё не запрошено
+            # - DENIED: разрешение отклонено пользователем
+            # 
+            # В обоих случаях возвращаем NOT_DETERMINED для запуска flow запроса разрешения.
+            # После DENIED prompt может не появляться, но это обрабатывается в activator.
+            logger.debug("♿ Accessibility: AXIsProcessTrusted=False, returning NOT_DETERMINED")
+            return PermissionStatus.NOT_DETERMINED
             
         except Exception as e:
             logger.warning(f"⚠️ AXIsProcessTrusted failed: {e}")
-            return _check_accessibility_via_script()
+            # При ошибке возвращаем NOT_DETERMINED для запуска flow запроса разрешения
+            return PermissionStatus.NOT_DETERMINED
             
     except Exception as e:
         logger.warning(f"♿ Accessibility check failed: {e}")
@@ -298,15 +344,20 @@ def check_input_monitoring_status() -> PermissionStatus:
         
         access_type = check_access(kIOHIDRequestTypeListenEvent)
         logger.debug(f"⌨️ Input Monitoring: IOHIDCheckAccess(ListenEvent) = {access_type}")
+        # FORCE PRINT for debugging
+        print(f"⌨️ [STATUS_CHECKER] Input Monitoring: IOHIDCheckAccess = {access_type} (0=Granted, 1=Denied, 2=Unknown)")
 
         if access_type == kIOHIDAccessTypeGranted:
             logger.debug("⌨️ Input Monitoring: GRANTED")
+            print("⌨️ [STATUS_CHECKER] Input Monitoring: GRANTED")
             return PermissionStatus.GRANTED
         elif access_type == kIOHIDAccessTypeDenied:
             logger.debug("⌨️ Input Monitoring: DENIED")
+            print("⌨️ [STATUS_CHECKER] Input Monitoring: DENIED")
             return PermissionStatus.DENIED
         else:  # kIOHIDAccessTypeUnknown
             logger.debug("⌨️ Input Monitoring: NOT_DETERMINED")
+            print("⌨️ [STATUS_CHECKER] Input Monitoring: NOT_DETERMINED")
             return PermissionStatus.NOT_DETERMINED
 
     except Exception as e:
@@ -399,6 +450,104 @@ def _force_granted() -> bool:
     return False
 
 
+def check_contacts_status() -> PermissionStatus:
+    """
+    Проверить статус разрешения Contacts.
+    
+    Использует CNContactStore.authorizationStatus для проверки.
+    
+    Returns:
+        PermissionStatus: текущий статус разрешения
+    """
+    if _force_granted():
+        logger.debug("📇 Contacts: forced GRANTED via NEXY_DEV_FORCE_PERMISSIONS")
+        return PermissionStatus.GRANTED
+
+    try:
+        from Contacts import CNContactStore, CNEntityTypeContacts  # type: ignore
+        
+        # CNAuthorizationStatus enum:
+        # 0 = NotDetermined
+        # 1 = Restricted
+        # 2 = Denied
+        # 3 = Authorized
+        auth_status = CNContactStore.authorizationStatusForEntityType_(CNEntityTypeContacts)
+        
+        logger.debug(f"📇 Contacts: CNContactStore auth_status = {auth_status}")
+        print(f"📇 [STATUS_CHECKER] Contacts: auth_status = {auth_status} (0=NotDet, 1=Restricted, 2=Denied, 3=Authorized)")
+
+        if auth_status == 3:  # Authorized
+            logger.debug("📇 Contacts: GRANTED")
+            return PermissionStatus.GRANTED
+        elif auth_status == 2:  # Denied
+            logger.debug("📇 Contacts: DENIED")
+            return PermissionStatus.DENIED
+        elif auth_status == 1:  # Restricted
+            logger.debug("📇 Contacts: DENIED (Restricted)")
+            return PermissionStatus.DENIED
+        else:  # 0 = NotDetermined
+            logger.debug("📇 Contacts: NOT_DETERMINED")
+            return PermissionStatus.NOT_DETERMINED
+
+    except ImportError:
+        logger.warning("⚠️ Contacts framework not available")
+        return PermissionStatus.NOT_DETERMINED
+    except Exception as e:
+        logger.error(f"❌ Error checking Contacts status: {e}")
+        return PermissionStatus.ERROR
+
+
+def check_full_disk_access_status() -> PermissionStatus:
+    """
+    Проверить статус разрешения Full Disk Access.
+    
+    Full Disk Access нельзя проверить через API напрямую.
+    Проверяем пытаясь прочитать защищённый файл ~/Library/Messages/chat.db
+    
+    Returns:
+        PermissionStatus: текущий статус разрешения
+    """
+    if _force_granted():
+        logger.debug("💾 Full Disk Access: forced GRANTED via NEXY_DEV_FORCE_PERMISSIONS")
+        return PermissionStatus.GRANTED
+
+    try:
+        import os
+        from pathlib import Path
+        
+        # Путь к защищённому файлу (требует Full Disk Access)
+        protected_file = Path.home() / "Library" / "Messages" / "chat.db"
+        
+        if not protected_file.exists():
+            # Файл не существует (например, Messages никогда не использовался)
+            logger.debug("💾 Full Disk Access: chat.db не существует, предполагаем NOT_DETERMINED")
+            return PermissionStatus.NOT_DETERMINED
+        
+        # Пытаемся прочитать файл
+        try:
+            with open(protected_file, 'rb') as f:
+                f.read(1)  # Читаем 1 байт
+            
+            logger.debug("💾 Full Disk Access: GRANTED (удалось прочитать chat.db)")
+            print("💾 [STATUS_CHECKER] Full Disk Access: GRANTED")
+            return PermissionStatus.GRANTED
+            
+        except PermissionError:
+            logger.debug("💾 Full Disk Access: DENIED (PermissionError)")
+            print("💾 [STATUS_CHECKER] Full Disk Access: DENIED")
+            return PermissionStatus.DENIED
+        except OSError as e:
+            if e.errno == 1:  # Operation not permitted
+                logger.debug("💾 Full Disk Access: DENIED (Operation not permitted)")
+                print("💾 [STATUS_CHECKER] Full Disk Access: DENIED")
+                return PermissionStatus.DENIED
+            raise
+
+    except Exception as e:
+        logger.error(f"❌ Error checking Full Disk Access status: {e}")
+        return PermissionStatus.ERROR
+
+
 def check_all_permissions() -> dict:
     """
     Проверить статусы всех разрешений.
@@ -411,4 +560,6 @@ def check_all_permissions() -> dict:
         "accessibility": check_accessibility_status(),
         "input_monitoring": check_input_monitoring_status(),
         "screen_capture": check_screen_capture_status(),
+        "contacts": check_contacts_status(),
+        "full_disk_access": check_full_disk_access_status(),
     }

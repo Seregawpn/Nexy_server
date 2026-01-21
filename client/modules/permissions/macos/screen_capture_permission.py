@@ -16,7 +16,7 @@ class ScreenCapturePermissionManager:
         self._available = False
         
         try:
-            from Quartz import CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess
+            from Quartz import CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess  # type: ignore
             self._preflight = CGPreflightScreenCaptureAccess
             self._request = CGRequestScreenCaptureAccess
             self._available = True

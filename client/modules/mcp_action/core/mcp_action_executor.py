@@ -7,11 +7,15 @@ Feature ID: F-2025-014-close-app
 
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.types import TextContent
+
+from integration.utils.resource_path import get_resource_path
 
 from .types import McpActionConfig, McpActionResult
 
@@ -100,11 +104,28 @@ class McpActionExecutor:
                     error="missing_parameter",
                 )
 
+        # Resolve MCP server path before execution
+        resolved_server_path = self._resolve_server_path(server_path, action_type)
+        if not resolved_server_path:
+            error_msg = f"MCP server not found for {action_type}: {server_path}"
+            logger.error(
+                "[%s] %s, session=%s",
+                FEATURE_ID,
+                error_msg,
+                session_id or "unknown",
+            )
+            return McpActionResult(
+                success=False,
+                message=error_msg,
+                error="server_not_found",
+                app_name=action_data.get("app_name"),
+            )
+
         # Выполнение через MCP
         try:
             server_params = StdioServerParameters(
-                command="python3",
-                args=[str(Path(server_path).absolute())],
+                command=sys.executable,
+                args=[str(resolved_server_path)],
             )
 
             async with stdio_client(server_params) as (read, write):
@@ -128,7 +149,7 @@ class McpActionExecutor:
                     if result.content and len(result.content) > 0:
                         # Проверяем тип контента - только TextContent имеет атрибут text
                         first_content = result.content[0]
-                        if hasattr(first_content, 'text'):
+                        if isinstance(first_content, TextContent):
                             result_text = first_content.text
                         else:
                             # Для других типов контента (ImageContent, AudioContent и т.д.)
@@ -203,7 +224,7 @@ class McpActionExecutor:
             )
 
         except Exception as exc:
-            error_msg = f"MCP action error: {str(exc)}"
+            error_msg = f"MCP action error: {self._format_exception(exc)}"
             logger.error(
                 "[%s] %s, session=%s",
                 FEATURE_ID,
@@ -218,3 +239,45 @@ class McpActionExecutor:
                 app_name=action_data.get("app_name"),
             )
 
+    @staticmethod
+    def _resolve_server_path(server_path: str, action_type: str) -> Optional[Path]:
+        if not server_path:
+            logger.error(
+                "[%s] Empty MCP server path for action=%s",
+                FEATURE_ID,
+                action_type,
+            )
+            return None
+
+        direct_path = Path(server_path)
+        if direct_path.exists():
+            return direct_path.resolve()
+
+        resolved = get_resource_path(server_path)
+        if resolved.exists():
+            logger.info(
+                "[%s] Resolved MCP server path for %s: %s -> %s",
+                FEATURE_ID,
+                action_type,
+                server_path,
+                resolved,
+            )
+            return resolved.resolve()
+
+        logger.error(
+            "[%s] MCP server path does not exist for %s: %s (resolved: %s)",
+            FEATURE_ID,
+            action_type,
+            server_path,
+            resolved,
+        )
+        return None
+
+    @staticmethod
+    def _format_exception(exc: Exception) -> str:
+        if isinstance(exc, BaseExceptionGroup) and getattr(exc, "exceptions", None):
+            parts = []
+            for sub_exc in exc.exceptions:
+                parts.append(f"{type(sub_exc).__name__}: {sub_exc}")
+            return f"{type(exc).__name__}({len(parts)}): " + "; ".join(parts)
+        return f"{type(exc).__name__}: {exc}"

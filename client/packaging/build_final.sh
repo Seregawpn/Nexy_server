@@ -104,6 +104,13 @@ fi
 # --- Сброс TCC разрешений (по умолчанию при каждой сборке) ---
 echo -e "${YELLOW}🔐 Сброс TCC разрешений...${NC}"
 sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
+# Явный сброс каждого сервиса (reset All иногда пропускает некоторые)
+tccutil reset Microphone "com.nexy.assistant" 2>/dev/null || true
+tccutil reset Accessibility "com.nexy.assistant" 2>/dev/null || true
+tccutil reset ScreenCapture "com.nexy.assistant" 2>/dev/null || true
+tccutil reset ListenEvent "com.nexy.assistant" 2>/dev/null || true
+tccutil reset AddressBook "com.nexy.assistant" 2>/dev/null || true
+tccutil reset SystemPolicyAllFiles "com.nexy.assistant" 2>/dev/null || true
 killall tccd 2>/dev/null || true
 echo "     ✓ TCC разрешения сброшены"
 
@@ -145,6 +152,12 @@ if [ "$CLEAN_INSTALL" -eq 1 ]; then
     # 4. Сбрасываем TCC разрешения
     echo "  4. Сбрасываем TCC разрешения..."
     sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset Microphone "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset Accessibility "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset ScreenCapture "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset ListenEvent "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset AddressBook "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset SystemPolicyAllFiles "com.nexy.assistant" 2>/dev/null || true
     killall tccd 2>/dev/null || true
     echo "     ✓ Разрешения сброшены"
     

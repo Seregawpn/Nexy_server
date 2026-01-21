@@ -128,20 +128,33 @@ def _is_terminal_launch() -> bool:
 
 
 def _should_enable_terminal_permissions_bypass() -> bool:
-    """Включает bypass только при явном opt-in через env."""
+    """Включает bypass автоматически при запуске из терминала (dev-режим).
+    
+    По умолчанию разрешения считаются предоставленными при запуске через python main.py.
+    Можно отключить через NEXY_DISABLE_TERMINAL_PERMISSIONS_BYPASS=1.
+    Можно явно включить через NEXY_ENABLE_TERMINAL_PERMISSIONS_BYPASS=1 (для совместимости).
+    """
     if not _is_terminal_launch():
         return False
-    value = os.environ.get("NEXY_ENABLE_TERMINAL_PERMISSIONS_BYPASS")
-    if value is None:
+    
+    # Явное отключение имеет приоритет
+    if os.environ.get("NEXY_DISABLE_TERMINAL_PERMISSIONS_BYPASS") in {"1", "true", "yes"}:
         return False
-    return value.strip().lower() in {"1", "true", "yes"}
+    
+    # Явное включение (для совместимости)
+    value = os.environ.get("NEXY_ENABLE_TERMINAL_PERMISSIONS_BYPASS")
+    if value is not None:
+        return value.strip().lower() in {"1", "true", "yes"}
+    
+    # По умолчанию: автоматически включаем для dev-режима
+    return True
 
 
 if _should_enable_terminal_permissions_bypass():
     os.environ.setdefault("NEXY_TEST_SKIP_PERMISSIONS", "1")
     os.environ.setdefault("NEXY_DEV_FORCE_PERMISSIONS", "1")
-    BOOT_NOTES.append("terminal_launch: permissions bypass enabled (NEXY_TEST_SKIP_PERMISSIONS=1, NEXY_DEV_FORCE_PERMISSIONS=1)")
-    print("ℹ️ Terminal launch detected: permissions bypass enabled (test/dev mode)")
+    BOOT_NOTES.append("terminal_launch: permissions bypass enabled automatically (NEXY_TEST_SKIP_PERMISSIONS=1, NEXY_DEV_FORCE_PERMISSIONS=1)")
+    print("ℹ️ Terminal launch detected: permissions bypass enabled automatically (dev mode)")
 
 # Фикс уже применен выше (в _apply_pyobjc_fix_early)
 # Добавляем результат в BOOT_NOTES для логирования

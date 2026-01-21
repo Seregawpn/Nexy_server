@@ -51,3 +51,6 @@ standard-chunk==3.13.0
 typing_extensions==4.15.0
 urllib3==2.5.0
 yarl==1.20.1
+browser-use
+playwright
+langchain-google-genai

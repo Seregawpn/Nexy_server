@@ -1,0 +1,229 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  schedule:
+    # Nightly build: каждый день в 2:00 UTC (5:00 MSK)
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Ручной запуск
+
+jobs:
+  pre-build-gate:
+    name: Pre-build Gate (all checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install ruff pytest jsonschema pyyaml
+      - name: Run pre-build gate
+        run: |
+          ./scripts/pre_build_gate.sh --verbose
+        continue-on-error: false
+
+  release-suite-smoke:
+    name: Release Suite (Smoke - PR only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'  # Только на PR
+    needs: [pre-build-gate]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install ruff pytest jsonschema pyyaml
+      - name: Run Release Suite (smoke)
+        run: |
+          python scripts/run_release_suite.py --smoke --output release_suite_report.json
+        continue-on-error: false
+      - name: Upload Release Suite Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-suite-report-smoke
+          path: release_suite_report.json
+          retention-days: 7
+
+  release-suite-full:
+    name: Release Suite (Full - Nightly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'  # Nightly или ручной запуск
+    needs: [pre-build-gate]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install ruff pytest jsonschema pyyaml
+      - name: Run Release Suite (full)
+        run: |
+          python scripts/run_release_suite.py --output release_suite_report.json
+        continue-on-error: false
+      - name: Upload Release Suite Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-suite-report-full
+          path: release_suite_report.json
+          retention-days: 30
+      - name: Generate Requirements Coverage Report
+        if: always()
+        run: |
+          python scripts/generate_requirements_coverage.py --output requirements_coverage_report.json
+      - name: Upload Requirements Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: requirements-coverage-report
+          path: requirements_coverage_report.json
+          retention-days: 30
+      - name: Monitor Metrics and SLO
+        if: always()
+        run: |
+          # Пробуем найти лог-файлы для анализа (если есть)
+          if [ -f "log.md" ]; then
+            python scripts/monitor_metrics.py --log-file log.md --output metrics_report.json || true
+          else
+            echo "Лог-файл не найден, пропускаем мониторинг метрик"
+          fi
+      - name: Upload Metrics Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: metrics-report
+          path: metrics_report.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # Отдельные джобы для детального отчёта (опционально, можно отключить если pre-build-gate достаточно)
+  lint:
+    name: Lint (including state access checks)
+    runs-on: ubuntu-latest
+    if: false  # Отключено, используется pre-build-gate
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install ruff
+      - name: Run ruff
+        run: ruff check .
+      - name: Check state access
+        run: |
+          python scripts/verify_no_direct_state_access.py
+
+  schema-validate:
+    name: Validate config schemas
+    runs-on: ubuntu-latest
+    if: false  # Отключено, используется pre-build-gate
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install pytest jsonschema pyyaml
+      - name: Validate schemas
+        run: |
+          pytest tests/test_schemas.py -v
+
+  contracts-test:
+    name: Test contracts (gateways + decision logs)
+    runs-on: ubuntu-latest
+    if: false  # Отключено, используется pre-build-gate
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install pytest
+      - name: Run gateway tests
+        run: |
+          pytest tests/test_gateways.py -v
+          pytest tests/test_gateways.py::TestGatewayDecisionLogs -v
+          pytest tests/test_gateways.py::TestPermissionRestartGateway -v
+          pytest tests/test_gateways.py::TestPermissionRestartWithUpdates -v
+      - name: Test initialization order
+        run: |
+          pytest tests/test_init_order.py -v
+
+  impact-gate:
+    name: Impact-gate check (4-artifacts invariant)
+    runs-on: ubuntu-latest
+    if: false  # Отключено, используется pre-build-gate
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install pyyaml
+      - name: Check 4-artifacts invariant
+        run: |
+          python scripts/verify_4_artifacts_invariant.py update_in_progress restart_pending
+      - name: Check rule coverage
+        run: |
+          python scripts/verify_rule_coverage.py
+      - name: Check predicate coverage
+        run: |
+          python scripts/verify_predicate_coverage.py
+      - name: Check feature flags registration
+        run: |
+          python scripts/verify_feature_flags.py
+      - name: Check change_impact.yaml
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }} | grep -E "(interaction_matrix.yaml|gateways.py)" > /dev/null; then
+            if [ ! -f ".impact/change_impact.yaml" ]; then
+              echo "ERROR: change_impact.yaml required when modifying interaction_matrix.yaml or gateways.py"
+              exit 1
+            fi
+          fi
+
+  golden-tests:
+    name: Golden tests (first-run logs)
+    runs-on: ubuntu-latest
+    if: false  # Отключено, используется pre-build-gate
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install pytest pyyaml
+      - name: Run golden tests
+        run: |
+          pytest tests/test_golden_first_run_logs.py::TestGoldenFirstRunLogs -v
+
+  perf-slo:
+    name: Performance SLO checks
+    runs-on: ubuntu-latest
+    if: false  # Отключено, используется pre-build-gate
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install pytest
+      - name: Run SLO tests
+        run: |
+          pytest tests/perf/test_slo_smoke.py::TestSLOSmoke::test_slo_thresholds_defined -v
+

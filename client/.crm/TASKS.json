@@ -1,7 +1,7 @@
 {
     "workspace": "client",
     "id_prefix": "CLI",
-    "next_id": 6,
+    "next_id": 13,
     "tasks": [
         {
             "id": "CLI-001",
@@ -66,6 +66,97 @@
             "updated_at": "2026-01-12T21:48:20-05:00",
             "description": "## Цель\n\nНайти причину отсутствия ответов gRPC при наличии распознавания и подготовить минимальный архитектурный фикс.\n\n## Definition of Done\n\n- подтверждена цепочка событий voice.recognition_completed → grpc.request_started\n- отсутствует потеря session_id на пути к GrpcClientIntegration\n",
             "file_path": "integration/integrations/voice_recognition_integration.py"
+        },
+        {
+            "id": "CLI-006",
+            "epicId": "EPIC-MVP",
+            "title": "Fix missing first-run restart pending handling",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Cursor",
+            "modified_by": "Cursor",
+            "updated_at": "2026-01-14T13:36:53-05:00",
+            "description": "## Цель\n\nВосстановить обработку permissions.first_run_restart_pending и обеспечить перезапуск после выдачи критических разрешений, чтобы PTT и приветствие работали после first-run.\n\n## Definition of Done\n\n- permissions.first_run_restart_pending сохраняется в state_manager\n- PermissionRestartIntegration восстанавливает pending restart при старте\n- события system.ready_to_greet после рестарта публикуются\n",
+            "file_path": "integration/core/simple_module_coordinator.py"
+        },
+        {
+            "id": "CLI-007",
+            "epicId": "EPIC-MVP",
+            "title": "Centralize first-run permission order",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Cursor",
+            "modified_by": "Cursor",
+            "updated_at": "2026-01-14T20:16:46-05:00",
+            "description": "## Цель\n\nСделать порядок запросов разрешений единственным и конфигурируемым источником через integrations.permissions.required_permissions, устранить дублирование порядка в коде и документации.\n\n## Definition of Done\n\n- activate_all_permissions использует порядок из unified_config.yaml\n- Docs/first_run_flow_spec.md отражает config-driven порядок\n- REQ-010 обновлён на config-driven порядок\n",
+            "file_path": "modules/permissions/first_run/activator.py"
+        },
+        {
+            "id": "CLI-008",
+            "epicId": "EPIC-MVP",
+            "title": "Guard Accessibility prompt to GUI app context",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Cursor",
+            "modified_by": "Cursor",
+            "updated_at": "2026-01-14T21:43:35-05:00",
+            "description": "## Цель\n\nОтключить все prompt-активации Accessibility и сразу открывать System Settings при отсутствии доступа.\n\n## Definition of Done\n\n- Accessibility prompt-активации не вызываются\n- При отсутствии доступа открываются System Settings\n- Документация обновлена (first_run_flow_spec + REQ-010)\n",
+            "file_path": "integration/integrations/first_run_permissions_integration.py"
+        },
+        {
+            "id": "CLI-009",
+            "epicId": "EPIC-MVP",
+            "title": "Accessibility settings-only + first-run flag gating",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-15T01:02:57-05:00",
+            "description": "## Цель\n\nУбрать все prompt-способы для Accessibility и использовать только открытие System Settings. Исправить установку permissions_first_run_completed.flag, чтобы она писалась только при всех GRANTED и не запускала keyboard monitoring при missing.\n\n## Definition of Done\n\n- activate_accessibility не вызывает prompt-API\n- first_run не ставит permissions_first_run_completed.flag при needs_restart\n- first_run_flow_spec и PROJECT_REQUIREMENTS обновлены\n",
+            "file_path": "integration/integrations/first_run_permissions_integration.py"
+        },
+        {
+            "id": "CLI-010",
+            "epicId": "EPIC-MVP",
+            "title": "Centralize permissions lists to config",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-15T01:21:48-05:00",
+            "description": "## Цель\n\nЦентрализовать списки разрешений (order, restart-critical, settings-required) в unified_config.yaml и убрать дубли в коде.\n\n## Definition of Done\n\n- restart-critical берётся из integrations.permission_restart.critical_permissions\n- settings-required берётся из permissions.settings_required_permissions\n- списки в коде не дублируются\n",
+            "file_path": "integration/integrations/first_run_permissions_integration.py"
+        },
+        {
+            "id": "CLI-011",
+            "epicId": "EPIC-MVP",
+            "title": "Keep browser session open after browser_use tasks",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-18T00:00:00-05:00",
+            "description": "## Цель\n\nНе закрывать браузер по завершении browser_use задач и использовать persistent session.\n\n## Definition of Done\n\n- keep_browser_open включен в unified_config\n- браузер не закрывается по завершении задачи\n",
+            "file_path": "client/config/unified_config.yaml"
+        },
+        {
+            "id": "CLI-012",
+            "epicId": "EPIC-MVP",
+            "title": "Execute browser_use from MCP and block sleep until completion",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-19T00:00:00-05:00",
+            "description": "## Цель\n\nПолучать browser_use как MCP command и удерживать PROCESSING до завершения автоматизации.\n\n## Definition of Done\n\n- ActionExecutionIntegration выполняет browser_use\n- ProcessingWorkflow не уходит в SLEEPING до browser_task_completed\n",
+            "file_path": "integration/integrations/action_execution_integration.py"
         }
     ]
 }

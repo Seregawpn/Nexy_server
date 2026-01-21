@@ -40,15 +40,15 @@ class StreamingServiceStub(object):
                 request_serializer=streaming__pb2.StreamRequest.SerializeToString,
                 response_deserializer=streaming__pb2.StreamResponse.FromString,
                 _registered_method=True)
-        self.GenerateWelcomeAudio = channel.unary_stream(
-                '/streaming.StreamingService/GenerateWelcomeAudio',
-                request_serializer=streaming__pb2.WelcomeRequest.SerializeToString,
-                response_deserializer=streaming__pb2.WelcomeResponse.FromString,
-                _registered_method=True)
         self.InterruptSession = channel.unary_unary(
                 '/streaming.StreamingService/InterruptSession',
                 request_serializer=streaming__pb2.InterruptRequest.SerializeToString,
                 response_deserializer=streaming__pb2.InterruptResponse.FromString,
+                _registered_method=True)
+        self.GenerateWelcomeAudio = channel.unary_stream(
+                '/streaming.StreamingService/GenerateWelcomeAudio',
+                request_serializer=streaming__pb2.WelcomeRequest.SerializeToString,
+                response_deserializer=streaming__pb2.WelcomeResponse.FromString,
                 _registered_method=True)
 
 
@@ -63,15 +63,15 @@ class StreamingServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GenerateWelcomeAudio(self, request, context):
-        """Генерация приветственного аудио на сервере
+    def InterruptSession(self, request, context):
+        """ПРИНУДИТЕЛЬНОЕ прерывание активной сессии на сервере
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def InterruptSession(self, request, context):
-        """ПРИНУДИТЕЛЬНОЕ прерывание активной сессии на сервере
+    def GenerateWelcomeAudio(self, request, context):
+        """Генерация приветственного аудио сообщения
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -85,15 +85,15 @@ def add_StreamingServiceServicer_to_server(servicer, server):
                     request_deserializer=streaming__pb2.StreamRequest.FromString,
                     response_serializer=streaming__pb2.StreamResponse.SerializeToString,
             ),
-            'GenerateWelcomeAudio': grpc.unary_stream_rpc_method_handler(
-                    servicer.GenerateWelcomeAudio,
-                    request_deserializer=streaming__pb2.WelcomeRequest.FromString,
-                    response_serializer=streaming__pb2.WelcomeResponse.SerializeToString,
-            ),
             'InterruptSession': grpc.unary_unary_rpc_method_handler(
                     servicer.InterruptSession,
                     request_deserializer=streaming__pb2.InterruptRequest.FromString,
                     response_serializer=streaming__pb2.InterruptResponse.SerializeToString,
+            ),
+            'GenerateWelcomeAudio': grpc.unary_stream_rpc_method_handler(
+                    servicer.GenerateWelcomeAudio,
+                    request_deserializer=streaming__pb2.WelcomeRequest.FromString,
+                    response_serializer=streaming__pb2.WelcomeResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -135,33 +135,6 @@ class StreamingService(object):
             _registered_method=True)
 
     @staticmethod
-    def GenerateWelcomeAudio(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
-            target,
-            '/streaming.StreamingService/GenerateWelcomeAudio',
-            streaming__pb2.WelcomeRequest.SerializeToString,
-            streaming__pb2.WelcomeResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
     def InterruptSession(request,
             target,
             options=(),
@@ -178,6 +151,33 @@ class StreamingService(object):
             '/streaming.StreamingService/InterruptSession',
             streaming__pb2.InterruptRequest.SerializeToString,
             streaming__pb2.InterruptResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GenerateWelcomeAudio(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/streaming.StreamingService/GenerateWelcomeAudio',
+            streaming__pb2.WelcomeRequest.SerializeToString,
+            streaming__pb2.WelcomeResponse.FromString,
             options,
             channel_credentials,
             insecure,

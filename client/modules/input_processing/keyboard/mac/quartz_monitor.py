@@ -163,21 +163,60 @@ class QuartzKeyboardMonitor:
             # Grace window для N: не синхронизируем если последнее событие было недавно
             # Это защищает от ложных сбросов во время активного удержания, когда
             # CGEventSourceKeyState может вернуть False из-за подавления системных событий
-            GRACE_WINDOW_SEC = 0.3  # 300ms grace window для защиты активного удержания
+            # КРИТИЧНО: Увеличен до 1.5s т.к. автоповторы могут приходить с интервалом до ~100ms,
+            # и между последним автоповтором и проверкой watchdog может пройти значительное время
+            GRACE_WINDOW_SEC = 1.5  # 1.5s grace window для защиты активного удержания
             
             with self.state_lock:
-                # Проверяем рассинхронизацию Control
+                # Проверяем рассинхронизацию Control с grace window
+                # Grace window защищает от ложных сбросов когда Control только что был нажат/отпущен
+                # и системное событие ещё не было обработано (race condition с watchdog)
                 if self._control_pressed != actual_control_pressed:
-                    logger.warning(
-                        f"⚠️ РАССИНХРОНИЗАЦИЯ Control: local={self._control_pressed}, actual={actual_control_pressed}. "
-                        f"Синхронизируем с системным состоянием."
-                    )
-                    self._control_pressed = actual_control_pressed
-                    self._control_last_event_time = now if actual_control_pressed else None
-                    state_changed = True
+                    # Grace window: не синхронизируем Control если последнее событие было недавно
+                    # Это защищает от ложных сбросов во время активного удержания
+                    if self._control_last_event_time is not None:
+                        time_since_event = now - self._control_last_event_time
+                        if time_since_event < GRACE_WINDOW_SEC:
+                            logger.debug(
+                                f"🔒 Grace window для Control: пропускаем синхронизацию "
+                                f"(time_since_event={time_since_event:.3f}s < {GRACE_WINDOW_SEC}s, "
+                                f"local={self._control_pressed}, actual={actual_control_pressed})"
+                            )
+                            # Не синхронизируем Control, продолжаем проверку N
+                        else:
+                            # Grace window истек, синхронизируем
+                            logger.warning(
+                                f"⚠️ РАССИНХРОНИЗАЦИЯ Control: local={self._control_pressed}, actual={actual_control_pressed}. "
+                                f"Синхронизируем с системным состоянием (grace window истек: {time_since_event:.3f}s)."
+                            )
+                            self._control_pressed = actual_control_pressed
+                            self._control_last_event_time = now if actual_control_pressed else None
+                            state_changed = True
+                    else:
+                        # Нет последнего события, синхронизируем сразу
+                        logger.warning(
+                            f"⚠️ РАССИНХРОНИЗАЦИЯ Control: local={self._control_pressed}, actual={actual_control_pressed}. "
+                            f"Синхронизируем с системным состоянием (нет последнего события)."
+                        )
+                        self._control_pressed = actual_control_pressed
+                        self._control_last_event_time = now if actual_control_pressed else None
+                        state_changed = True
                 
                 # Проверяем рассинхронизацию N с grace window
-                if self._n_pressed != actual_n_pressed:
+                # КРИТИЧНО: Если комбинация активна, ПОЛНОСТЬЮ пропускаем синхронизацию N
+                # через CGEventSourceKeyState, т.к. мы подавляем события N (return None),
+                # и CGEventSourceKeyState возвращает ненадежный результат.
+                # Вместо этого доверяем автоповторам keyDown N, которые обновляют _n_last_event_time.
+                if self._combo_active and self._n_pressed:
+                    # Комбинация активна и N считается зажатой - НЕ синхронизируем с системой
+                    # Доверяем только таймаутам (combo_timeout_sec, key_state_timeout_sec)
+                    if self._n_pressed != actual_n_pressed:
+                        logger.debug(
+                            f"🔒 Комбинация активна: пропускаем синхронизацию N "
+                            f"(local={self._n_pressed}, actual={actual_n_pressed}, "
+                            f"CGEventSourceKeyState ненадежен из-за подавления событий)"
+                        )
+                elif self._n_pressed != actual_n_pressed:
                     # Grace window: не синхронизируем N если последнее событие было недавно
                     # Это защищает от ложных сбросов во время активного удержания
                     if self._n_last_event_time is not None:
@@ -237,9 +276,16 @@ class QuartzKeyboardMonitor:
                         was_combo_active = self._combo_active
                         was_n_pressed = self._n_pressed
                         
+                        # КРИТИЧНО: Если комбинация активна и событие говорит "Control отпущен",
+                        # NOTE: Логика игнорирования "ложных" Control release УДАЛЕНА.
+                        # CGEventSourceFlagsState возвращает некорректные данные из-за
+                        # подавления событий, что вызывало залипание клавиш.
+                        
                         self._control_pressed = control_pressed
                         # Обновляем время последнего события для защиты от залипания
-                        self._control_last_event_time = now if control_pressed else None
+                        # КРИТИЧНО: Устанавливаем время при ЛЮБОМ событии (нажатие или отпускание)
+                        # чтобы grace window в _reconcile_combo_state() работал корректно
+                        self._control_last_event_time = now
                         
                         # Обновляем состояние комбинации
                         self._update_combo_state()
@@ -314,9 +360,16 @@ class QuartzKeyboardMonitor:
                         was_combo_active = self._combo_active
                         was_control_pressed = self._control_pressed
                         
+                        # NOTE: Логика игнорирования "ложных" keyUp УДАЛЕНА.
+                        # Она вызывала залипание клавиш: когда реальный keyUp
+                        # приходил близко к автоповтору, он игнорировался,
+                        # и система бесконечно ждала следующего keyUp который никогда не придёт.
+                        
                         self._n_pressed = False
                         # Обновляем время последнего события для защиты от залипания
-                        self._n_last_event_time = None
+                        # КРИТИЧНО: Устанавливаем время при ЛЮБОМ событии (keyDown или keyUp)
+                        # чтобы grace window в _reconcile_combo_state() работал корректно
+                        self._n_last_event_time = now
                         
                         # Обновляем состояние комбинации
                         self._update_combo_state()
@@ -364,6 +417,17 @@ class QuartzKeyboardMonitor:
             # Деактивация комбинации: одна из клавиш отпущена
             # КРИТИЧНО: Для комбинации ctrl_n всегда генерируем только RELEASE
             # "Short tap" вычисляется в input_processing_integration по длительности PRESS→RELEASE
+            
+            # 🔍 ДИАГНОСТИКА: Откуда вызвали деактивацию?
+            import traceback
+            caller_info = ''.join(traceback.format_stack()[-5:-1])
+            logger.warning(
+                f"⚠️ DEACTIVATION TRIGGERED!\n"
+                f"   control_pressed={self._control_pressed}, n_pressed={self._n_pressed}\n"
+                f"   n_last_event_time={self._n_last_event_time}, control_last_event_time={self._control_last_event_time}\n"
+                f"   Caller stack:\n{caller_info}"
+            )
+            
             self._combo_active = False
             duration = now - (self._combo_start_time or now)
             self._combo_start_time = None

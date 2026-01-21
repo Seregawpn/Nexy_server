@@ -1,0 +1,90 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+config.env
+
+# Backup files
+*.backup
+*.backup2
+
+# Debug files
+debug_*.py
+*_debug_patch.py
+*_patch.py
+
+# Build artifacts
+client/build/
+*.spec
+*.dmg
+*.pkg
+
+# Temporary files
+*.tmp
+*.temp
+
+# Client directories (should not be in server repository)
+client/
+ai-assistant-system/
+update-server/
+
+# Игнорировать всё в корне, кроме server/ и необходимых файлов
+# Это нужно для экспорта только server/ в GitHub
+# Локальная структура остается с папкой server/
+
+# Игнорировать все файлы в корне (кроме server/)
+/*
+!.gitignore
+!.github/
+!LICENSE
+!README.md
+!server/

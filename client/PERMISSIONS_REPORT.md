@@ -1,6 +1,6 @@
 # Nexy Client — Permissions & TCC Report
 
-**Последнее обновление:** 2025-01-15  
+**Последнее обновление:** 2026-01-18  
 **Владелец:** Permissions SWAT (FirstRun + PermissionRestart)
 
 ---
@@ -16,12 +16,13 @@
 
 ## 2. Текущее состояние по разрешениям
 
-| Permission | Интеграция / модуль | Статус (2025‑01‑15) | Проверено | Источник |
+| Permission | Интеграция / модуль | Статус (2026‑01‑18) | Проверено | Источник |
 |------------|--------------------|---------------------|-----------|----------|
 | Microphone (TCC) | `FirstRunPermissionsIntegration`, `modules/voice_recognition` | ✅ granted (beta devices) | `scripts/test_first_run_integration.sh` (см. воспроизведение) | `Docs/first_run_flow_spec.md` |
 | Screen Capture | `modules/screenshot_capture`, first-run flow | ✅ granted | Manual checklist (PRE_PACKAGING_VERIFICATION) | `Docs/PRE_PACKAGING_VERIFICATION.md` |
-| Accessibility | `modules/permissions/first_run/status_checker.py` | ✅ granted, используется публичный API `AXIsProcessTrustedWithOptions` | `modules/permissions/first_run/status_checker.py:152-210` | ✅ Исправлено (2025-01-15) |
-| Input Monitoring | `FirstRunPermissionsIntegration` | ✅ not required post v2 (read-only) | First-run spec | `Docs/first_run_flow_spec.md` |
+| Accessibility | `modules/permissions/first_run/activator.py` | ✅ dialog-based activation | First-run spec | `Docs/first_run_flow_spec.md` |
+| Input Monitoring | `FirstRunPermissionsIntegration` | ✅ dialog-based activation | First-run spec | `Docs/first_run_flow_spec.md` |
+| Full Disk Access | `modules/permissions/first_run/activator.py` | ✅ settings-only | First-run spec | `Docs/first_run_flow_spec.md` |
 | Automation / Screen Recording restart | `PermissionRestartIntegration`, `SimpleModuleCoordinator` | ✅ restart flow в green, TAL hold активен 120 с | `Docs/TAL_TESTING_CHECKLIST.md` | TAL logs |
 
 ---
@@ -32,7 +33,7 @@
   - `permissions_first_run_completed.flag` — создаётся сразу после цикла запросов.  
   - `restart_completed.flag` — подтверждает успешный post-permission старт.  
   - Reset выполняем скриптом `python3 scripts/clear_first_run_flags.py`.
-- **EventBus события:** `permissions.first_run_started`, `permissions.status_checked`, `permissions.changed`, `permissions.first_run_restart_pending`, `permissions.first_run_completed`.
+- **EventBus события:** `permissions.first_run_started`, `permissions.first_run_restart_pending`, `permissions.first_run_completed`.
 - **Перезапуск:** `PermissionRestartIntegration` вызывает `PermissionsRestartHandler.trigger_restart()`; `SimpleModuleCoordinator` держит TAL (`disableAutomaticTermination_`) до `tray.ready`.
 
 См. `Docs/first_run_flow_spec.md` и `Docs/TAL_TESTING_CHECKLIST.md` для детальных последовательностей.
@@ -43,6 +44,7 @@
 
 | Проверка | Дата | Результат | Логи / артефакты |
 |----------|------|-----------|------------------|
+| First-run permissions flow (Hardened) | 2026-01-18 | ✅ pass | `scripts/test_first_run_integration.sh`, `nexy.log` (Strict sequence, No status checks, Zombie fix, Script aligned to expect `restart_pending`) |
 | First-run + restart (permissions) | 2025-01-08 | ✅ pass | `scripts/test_first_run_integration.sh`, `log.md` |
 | TAL hold / restart after permissions | 2025-01-12 | ✅ pass | `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py` |
 | Tray termination (post permissions) | 2025-01-12 | ✅ pass | `Docs/PRE_PACKAGING_VERIFICATION.md`, `scripts/test_tray_termination.py` |

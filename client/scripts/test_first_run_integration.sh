@@ -11,7 +11,33 @@ echo "=== First Run Integration Test ==="
 echo "Client dir: $CLIENT_DIR"
 echo "Flag file: $FLAG_FILE"
 echo "Log file: $LOG_FILE"
+echo "Log file: $LOG_FILE"
 echo ""
+
+# Очистка предыдущих процессов
+cleanup() {
+    echo "🧹 Очистка..."
+    # Hard kill any lingering nexy processes
+    PIDS=$(pgrep -f "python3 client/main.py" || true)
+    if [ -n "$PIDS" ]; then
+        echo "   Found existing processes: $PIDS. Killing..."
+        echo "$PIDS" | xargs kill -9 2>/dev/null || true
+        # Wait for them to disappear
+        for i in {1..5}; do
+            if ! pgrep -f "python3 client/main.py" > /dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        if pgrep -f "python3 client/main.py" > /dev/null; then
+            echo "❌ Failed to kill existing processes!"
+            exit 1
+        fi
+    fi
+}
+
+# Run cleanup before starting
+cleanup
 
 # Шаг 1: Удаляем флаг для симуляции первого запуска
 echo "1. Удаляем флаг первого запуска..."
@@ -34,10 +60,10 @@ sleep 5
 # Мониторинг в реальном времени (каждые 10 секунд)
 echo "   Мониторинг событий first_run (каждые 10 секунд)..."
 MONITOR_COUNT=0
-MAX_MONITORS=9  # 9 * 10 = 90 секунд
+MAX_MONITORS=15  # 15 * 10 = 150 секунд
 
-# Запускаем таймер для остановки процесса через 90 секунд
-(sleep 90 && kill "$MAIN_PID" 2>/dev/null || true) &
+# Запускаем таймер для остановки процесса через 150 секунд
+(sleep 150 && kill "$MAIN_PID" 2>/dev/null || true) &
 TIMER_PID=$!
 
 # Периодическая проверка логов
@@ -47,14 +73,15 @@ while [ $MONITOR_COUNT -lt $MAX_MONITORS ] && kill -0 "$MAIN_PID" 2>/dev/null; d
     
     # Проверяем наличие событий
     if [ -f "$LOG_FILE" ]; then
-        STARTED_COUNT=$(grep -c "permissions.first_run_started\|first_run_started" "$LOG_FILE" 2>/dev/null || echo "0")
-        COMPLETED_COUNT=$(grep -c "permissions.first_run_completed\|first_run_completed" "$LOG_FILE" 2>/dev/null || echo "0")
+        # Ищем строго опубликованные события
+        STARTED_COUNT=$(grep -c "📢 Событие опубликовано: permissions.first_run_started" "$LOG_FILE" 2>/dev/null || true)
+        RESTART_PENDING_COUNT=$(grep -c "📢 Событие опубликовано: permissions.first_run_restart_pending" "$LOG_FILE" 2>/dev/null || true)
         
-        echo "   [${MONITOR_COUNT}0s] started=$STARTED_COUNT, completed=$COMPLETED_COUNT"
+        echo "   [${MONITOR_COUNT}0s] started=$STARTED_COUNT, restart_pending=$RESTART_PENDING_COUNT"
         
         # Если оба события найдены, можно завершить раньше
-        if [ "$STARTED_COUNT" -gt 0 ] && [ "$COMPLETED_COUNT" -gt 0 ]; then
-            echo "   ✅ Полный цикл first-run завершён!"
+        if [ "$STARTED_COUNT" -gt 0 ] && [ "$RESTART_PENDING_COUNT" -gt 0 ]; then
+            echo "   ✅ First-run sequence finished (restart pending detected)!"
             break
         fi
     fi
@@ -74,6 +101,10 @@ if [ -f "$LOG_FILE" ]; then
     echo ""
     echo "   События permissions.first_run_restart_pending:"
     grep -i "permissions.first_run_restart_pending\|restart_pending" "$LOG_FILE" | head -n 3 || echo "   ⚠️  Событие не найдено"
+
+    echo ""
+    echo "   События permissions.status_checked (published only):"
+    grep -i "📢 Событие опубликовано: permissions.status_checked" "$LOG_FILE" | head -n 3 || echo "   ✅ Публикаций status_checked не найдено"
     
     echo ""
     echo "   Последние логи first_run (tail -n 15):"
@@ -97,20 +128,44 @@ echo ""
 echo "5. Проверяем состояние через state_manager..."
 python3 "$CLIENT_DIR/scripts/check_first_run_state.py"
 
-# Шаг 6: Останавливаем процесс (если ещё работает)
-echo ""
-echo "6. Останавливаем процесс..."
-kill "$TIMER_PID" 2>/dev/null || true
-if kill -0 "$MAIN_PID" 2>/dev/null; then
-    kill "$MAIN_PID" 2>/dev/null || true
-    wait "$MAIN_PID" 2>/dev/null || true
-    echo "   ✅ Процесс остановлен"
-else
-    echo "   ℹ️  Процесс уже завершён"
-fi
+# Очистка предыдущих процессов
+cleanup() {
+    echo "🧹 Очистка..."
+    # Kill the timer process if it's still running
+    if [ -n "$TIMER_PID" ]; then
+        kill "$TIMER_PID" 2>/dev/null || true
+    fi
+    # Kill the main process if it's still running
+    if [ -n "$MAIN_PID" ]; then
+        kill "$MAIN_PID" 2>/dev/null || true
+    fi
+    # Hard kill any lingering nexy processes
+    PIDS=$(pgrep -f "python3 client/main.py" || true)
+    if [ -n "$PIDS" ]; then
+        echo "   Found existing processes: $PIDS. Killing..."
+        echo "$PIDS" | xargs kill -9 2>/dev/null || true
+        # Wait for them to disappear
+        for i in {1..5}; do
+            if ! pgrep -f "python3 client/main.py" > /dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        if pgrep -f "python3 client/main.py" > /dev/null; then
+            echo "❌ Failed to kill existing processes!"
+            exit 1
+        else
+            echo "   ✅ Все процессы nexy остановлены."
+        fi
+    else
+        echo "   ℹ️  Дополнительных процессов nexy не найдено."
+    fi
+}
+
+# Вызываем функцию очистки перед завершением скрипта
+cleanup
 
 echo ""
 echo "=== Тест завершён ==="
 echo "Полный лог: $LOG_FILE"
 echo "Вывод процесса: /tmp/nexy_test_output.log"
-

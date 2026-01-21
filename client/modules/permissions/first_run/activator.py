@@ -9,13 +9,16 @@ import asyncio
 import ctypes
 import os
 import subprocess
-import sys
+import threading
 from ctypes import util
+from typing import List, Optional
 
 
 from integration.utils.logging_setup import get_logger
+from config.unified_config_loader import UnifiedConfigLoader
 
 logger = get_logger(__name__)
+_PENDING_ALERTS: list[object] = []
 
 
 def _get_system_preferences_url(permission_key: str) -> str:
@@ -29,7 +32,7 @@ def _get_system_preferences_url(permission_key: str) -> str:
         return ""
 
 
-def _open_permission_settings(permission_key: str, label: str) -> None:
+def _open_permission_settings(permission_key: str, label: str, *, background: bool = True) -> None:
     url = _get_system_preferences_url(permission_key)
     if not url:
         logger.warning(f"⚠️ System Settings URL не найден для {label}")
@@ -38,13 +41,23 @@ def _open_permission_settings(permission_key: str, label: str) -> None:
     logger.info(f"🔧 {label}: открываем System Settings...")
     print(f"🔧 [ACTIVATOR] {label}: открываем System Settings...")
     try:
-        subprocess.run(["open", url], check=True)
+        command = ["open"]
+        if background:
+            command.append("-g")
+        command.append(url)
+        # Не блокируем поток на открытии System Settings.
+        subprocess.Popen(command)
         logger.info(f"✅ System Settings открыт для {label}")
     except Exception as e:
         logger.warning(f"⚠️ Не удалось открыть System Settings для {label}: {e}")
 
 
-async def activate_microphone() -> bool:
+def _open_permission_settings_no_focus(permission_key: str, label: str) -> None:
+    """Open System Settings in background to avoid stealing app focus."""
+    _open_permission_settings(permission_key, label, background=True)
+
+
+async def activate_microphone(hold_duration: float = 0.2) -> bool:
     """
     Активировать запрос разрешения микрофона.
 
@@ -55,16 +68,9 @@ async def activate_microphone() -> bool:
         False если произошла ошибка
     """
     try:
-        # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
-        from .status_checker import check_microphone_status, PermissionStatus
-        
-        current_status = check_microphone_status()
-        if current_status == PermissionStatus.GRANTED:
-            logger.info("✅ Microphone: Разрешение уже предоставлено, пропускаем активацию")
-            print("✅ [ACTIVATOR] Microphone: Разрешение уже есть")
-            return True
-        
-        # ШАГ 2: Разрешение не предоставлено - активируем
+        # ВАЖНО: НЕ проверяем статус здесь!
+        # Интеграция решает когда вызывать, активатор просто делает своё дело.
+        # Если разрешение уже выдано, sounddevice просто откроет поток без диалога.
         logger.info("🎙️ Активация микрофона...")
         print(f"🎙️ [ACTIVATOR] Начало активации микрофона")  # DEBUG: Для console.app
 
@@ -81,8 +87,7 @@ async def activate_microphone() -> bool:
             logger.debug(f"   Default input device: {device_name}")
             print(f"🎙️ [ACTIVATOR] Default device: {device_name}")  # DEBUG
 
-            # Открываем stream и держим открытым на протяжении всей паузы
-            # Это гарантирует что диалог успеет появиться до следующего запроса
+            # Открываем stream для триггера системного диалога
             print(f"🎙️ [ACTIVATOR] Открываем InputStream...")  # DEBUG
             with sd.InputStream(
                 samplerate=16000,
@@ -90,9 +95,16 @@ async def activate_microphone() -> bool:
                 dtype='int16',
                 blocksize=8000,
             ):
-                # Yield to event loop to allow system dialog to appear
-                await asyncio.sleep(0)
                 print("🎙️ [ACTIVATOR] Поток открыт")  # DEBUG
+                # Держим поток открытым кратко, чтобы инициировать prompt
+                stream_hold = min(max(0.0, hold_duration), 0.5)
+                if stream_hold:
+                    await asyncio.sleep(stream_hold)
+
+            remaining_hold = max(0.0, hold_duration) - stream_hold
+            if remaining_hold:
+                logger.info("   ⏸️ Holding %.2fs after stream close...", remaining_hold)
+                await asyncio.sleep(remaining_hold)
 
             logger.info("✅ Микрофон активирован успешно")
             print(f"✅ [ACTIVATOR] Микрофон активирован успешно")  # DEBUG
@@ -101,151 +113,73 @@ async def activate_microphone() -> bool:
             logger.warning(f"⚠️ Не удалось открыть микрофон: {e}")
             print(f"⚠️ [ACTIVATOR] Exception при открытии микрофона: {e}")  # DEBUG
             # Это OK - возможно разрешения нет, диалог показан
+            await asyncio.sleep(max(0.0, hold_duration))
         
-        await asyncio.sleep(0.5)
-        new_status = check_microphone_status()
-        if new_status != PermissionStatus.GRANTED:
-            _open_permission_settings("microphone", "Microphone")
+        # Dialog-only: не открываем Settings автоматически
+        # Fallback будет вызван из интеграции если нужно
+        await asyncio.sleep(0)
         return True
 
     except ImportError:
         logger.warning("⚠️ sounddevice недоступен")
         print(f"⚠️ [ACTIVATOR] sounddevice недоступен")  # DEBUG
-        _open_permission_settings("microphone", "Microphone")
+        # Dialog-only: не открываем Settings автоматически
+        # Fallback будет вызван из интеграции если нужно
         return True
     except Exception as e:
         logger.error(f"❌ Ошибка активации микрофона: {e}")
         print(f"❌ [ACTIVATOR] Критическая ошибка: {e}")  # DEBUG
-        _open_permission_settings("microphone", "Microphone")
+        # Dialog-only: не открываем Settings автоматически
+        # Fallback будет вызван из интеграции если нужно
         return False
 
 
-async def activate_accessibility() -> bool:
+async def activate_accessibility(hold_duration: float = 7.0) -> bool:
     """
     Активировать запрос разрешения Accessibility.
 
-    КРИТИЧНО (macOS Sequoia 15+):
-    AXIsProcessTrustedWithOptions КРАШИТ ПРОЦЕСС независимо от опций!
-    
-    БЕЗОПАСНЫЙ ПОДХОД: 
-    1. Сначала проверяем статус
-    2. Если не предоставлено - пробуем AppleScript с System Events (может вызвать диалог)
-    3. Если AppleScript не сработал - пользователь должен включить вручную в Settings
+    Args:
+        hold_duration: сколько секунд ждать после активации (по умолчанию 7.0)
 
     Returns:
-        True если разрешение уже предоставлено или попытка активации выполнена
+        True если активация прошла успешно
         False если произошла ошибка
     """
     try:
-        # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
-        from .status_checker import check_accessibility_status, PermissionStatus
+        logger.info("♿ Активация Accessibility (CGRequestPostEventAccess)...")
+        print("♿ [ACTIVATOR] Начало активации Accessibility")  # DEBUG
 
-        current_status = check_accessibility_status()
-        if current_status == PermissionStatus.GRANTED:
-            logger.info("✅ Accessibility: Разрешение уже предоставлено, пропускаем активацию")
-            print("✅ [ACTIVATOR] Accessibility: Разрешение уже есть")
-            return True
-
-        logger.info("♿ Accessibility: разрешение не предоставлено, пробуем активировать...")
-        print("♿ [ACTIVATOR] Accessibility: пробуем вызвать диалог...")
-
-        # ШАГ 2: Запускаем безопасный subprocess для prompt
-        helper_exit_code = None
-        helper_stdout = None
-        helper_stderr = None
         try:
-            script_dir = os.path.dirname(__file__)
-            script_path = os.path.join(script_dir, "trigger_accessibility_prompt.py")
-            logger.info("♿ Accessibility: запуск prompt helper subprocess...")
-            print("♿ [ACTIVATOR] Accessibility: запуск prompt helper subprocess...")
-            result = subprocess.run(
-                [sys.executable, script_path],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            helper_exit_code = result.returncode
-            helper_stdout = result.stdout.strip() if result.stdout else None
-            helper_stderr = result.stderr.strip() if result.stderr else None
-            
-            # Интерпретация exit code согласно документации trigger_accessibility_prompt.py
-            exit_code_meaning = {
-                0: "Разрешение уже есть (trusted=True) или диалог показан успешно",
-                1: "Разрешения нет (trusted=False) — диалог должен был появиться",
-                2: "Ошибка выполнения"
-            }.get(helper_exit_code, f"Неизвестный exit code: {helper_exit_code}")
-            
-            logger.info(
-                "♿ Accessibility: prompt helper завершён — exit_code=%s (%s) stdout=%s stderr=%s",
-                helper_exit_code,
-                exit_code_meaning,
-                helper_stdout[:100] if helper_stdout else "(пусто)",
-                helper_stderr[:100] if helper_stderr else "(пусто)",
-            )
-            print(f"♿ [ACTIVATOR] Accessibility prompt helper: exit={helper_exit_code} ({exit_code_meaning})")
-            if helper_stderr:
-                print(f"   stderr: {helper_stderr[:200]}")
-        except subprocess.TimeoutExpired:
-            logger.warning("⚠️ Accessibility prompt helper timeout (5s)")
-            print("⚠️ [ACTIVATOR] Accessibility prompt helper timeout (5s)")
-            helper_exit_code = -1  # Специальный код для timeout
+            from Quartz import CGRequestPostEventAccess  # type: ignore
+            logger.info("♿ [ACTIVATOR] Вызываем CGRequestPostEventAccess()...")
+            print("♿ [ACTIVATOR] Вызываем CGRequestPostEventAccess()...")  # DEBUG
+            CGRequestPostEventAccess()
+            logger.info("✅ Accessibility: CGRequestPostEventAccess() вызван")
+        except ImportError:
+            logger.warning("⚠️ CGRequestPostEventAccess недоступен")
+            return False
         except Exception as e:
-            logger.warning(f"⚠️ Accessibility prompt helper error: {e}")
-            print(f"⚠️ [ACTIVATOR] Accessibility prompt helper error: {e}")
-            helper_exit_code = -2  # Специальный код для exception
-            import traceback
-            logger.debug(f"Traceback: {traceback.format_exc()}")
+            logger.warning("⚠️ CGRequestPostEventAccess error: %s", e)
+            return False
 
-        # Если helper упал/ошибся — сразу показываем fallback
-        if helper_exit_code in (-1, -2, 2):
-            _open_permission_settings("accessibility", "Accessibility")
-
-        # ШАГ 3: Проверяем ещё раз после попытки
-        await asyncio.sleep(0.5)
-
-        new_status = check_accessibility_status()
-        status_before = current_status.value
-        status_after = new_status.value
-        
-        logger.info(
-            "♿ Accessibility: статус до/после prompt helper — %s → %s (helper exit=%s)",
-            status_before,
-            status_after,
-            helper_exit_code if helper_exit_code is not None else "N/A"
-        )
-        print(f"♿ [ACTIVATOR] Accessibility статус: {status_before} → {status_after} (helper exit={helper_exit_code if helper_exit_code is not None else 'N/A'})")
-        
-        if new_status == PermissionStatus.GRANTED:
-            logger.info("✅ Accessibility: разрешение получено после prompt helper!")
-            print("✅ [ACTIVATOR] Accessibility: разрешение получено!")
-            return True
-
-        # ШАГ 4: Fallback — открываем System Settings напрямую
-        _open_permission_settings("accessibility", "Accessibility")
-
-        # Разрешение ещё не получено - polling отследит когда пользователь включит
-        logger.info("♿ Accessibility: ожидаем предоставления разрешения...")
-        print("♿ [ACTIVATOR] Accessibility: ожидаем (пользователь должен включить в System Settings)")
-
+        logger.debug("   ⏸️ Пауза %.2f сек...", hold_duration)
+        await asyncio.sleep(max(0.0, hold_duration))
         return True
 
     except Exception as e:
         logger.error(f"❌ Ошибка активации Accessibility: {e}")
-        print(f"❌ [ACTIVATOR] Accessibility error: {e}")
-        import traceback
-        traceback.print_exc()
         return False
 
 
-async def activate_input_monitoring() -> bool:
+async def activate_input_monitoring(hold_duration: float = 1.0) -> bool:
     """
     Активировать запрос разрешения Input Monitoring.
 
     ВАЖНО: НЕ используем pynput для активации!
     pynput внутренне вызывает AXIsProcessTrustedWithOptions, который триггерит
     TCC error для Accessibility при первом запуске:
-    "attempted to call TCCAccessRequest for kTCCServiceAccessibility 
-    without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement"
+    attempted to call TCCAccessRequest for kTCCServiceAccessibility 
+    without the recommended com.apple.private.tcc.manager.check-by-audit-token entitlement
     
     Вместо этого используем IOHIDRequestAccess - нативный API который:
     - Добавляет приложение в список Input Monitoring
@@ -256,24 +190,16 @@ async def activate_input_monitoring() -> bool:
         True если активация прошла успешно
     """
     try:
-        # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
-        from .status_checker import check_input_monitoring_status, PermissionStatus
-        
-        current_status = check_input_monitoring_status()
-        if current_status == PermissionStatus.GRANTED:
-            logger.info("✅ Input Monitoring: Разрешение уже предоставлено, пропускаем активацию")
-            print("✅ [ACTIVATOR] Input Monitoring: Разрешение уже есть")
-            return True
-        
-        # ШАГ 2: Разрешение не предоставлено - активируем
+        # Всегда активируем - НЕ проверяем статус!
         logger.info("⌨️ Активация Input Monitoring через IOHIDRequestAccess...")
-        print(f"⌨️ [ACTIVATOR] Начало активации Input Monitoring (IOHIDRequestAccess)")
+        print("⌨️ [ACTIVATOR] Начало активации Input Monitoring (IOHIDRequestAccess)")
 
         # Используем IOHIDRequestAccess - безопасный нативный API
         iokit_path = util.find_library("IOKit")
         if not iokit_path:
             logger.warning("⚠️ IOKit недоступен")
-            _open_permission_settings("input_monitoring", "Input Monitoring")
+            # Dialog-only: не открываем Settings автоматически
+            # Fallback будет вызван из интеграции если нужно
             return False
 
         iokit = ctypes.CDLL(iokit_path)
@@ -282,7 +208,8 @@ async def activate_input_monitoring() -> bool:
             request_access = iokit.IOHIDRequestAccess
         except AttributeError:
             logger.warning("⚠️ IOHIDRequestAccess недоступен (старая macOS?)")
-            _open_permission_settings("input_monitoring", "Input Monitoring")
+            # Dialog-only: не открываем Settings автоматически
+            # Fallback будет вызван из интеграции если нужно
             return False
 
         # IOHIDRequestAccess(requestType) -> bool
@@ -298,26 +225,29 @@ async def activate_input_monitoring() -> bool:
         # - Если разрешение GRANTED: возвращает True без диалога
         result = request_access(kIOHIDRequestTypeListenEvent)
         
-        logger.info(f"✅ IOHIDRequestAccess(ListenEvent) вызван, result={result}")
-        print(f"✅ [ACTIVATOR] IOHIDRequestAccess result={result}")
+        if result:
+            logger.info(f"✅ IOHIDRequestAccess(ListenEvent) вернул True (Granted)")
+            print(f"✅ [ACTIVATOR] IOHIDRequestAccess=True (Granted)")
+        else:
+            logger.info(f"ℹ️ IOHIDRequestAccess(ListenEvent) вернул False (Prompt shown or Denied)")
+            print(f"ℹ️ [ACTIVATOR] IOHIDRequestAccess=False (Prompt shown or Denied)")
         
-        # Даем системе время обработать запрос
-        await asyncio.sleep(0.2)
-
-        new_status = check_input_monitoring_status()
-        if new_status != PermissionStatus.GRANTED:
-            _open_permission_settings("input_monitoring", "Input Monitoring")
-
+        hold_duration = max(0.0, hold_duration)
+        logger.info("   ⏸️ Holding %.2fs after IOHIDRequestAccess...", hold_duration)
+        # Dialog-only: не открываем Settings автоматически
+        # Fallback будет вызван из интеграции если нужно
+        await asyncio.sleep(hold_duration)
         return True
 
     except Exception as e:
         logger.error(f"❌ Ошибка активации Input Monitoring: {e}")
         print(f"❌ [ACTIVATOR] Input Monitoring error: {e}")
-        _open_permission_settings("input_monitoring", "Input Monitoring")
+        # Dialog-only: не открываем Settings автоматически
+        # Fallback будет вызван из интеграции если нужно
         return False
 
 
-async def activate_screen_capture() -> bool:
+async def activate_screen_capture(hold_duration: float = 0.2) -> bool:
     """
     Активировать запрос разрешения Screen Capture.
 
@@ -327,16 +257,9 @@ async def activate_screen_capture() -> bool:
         False если произошла ошибка
     """
     try:
-        # ШАГ 1: Проверяем - если разрешение уже есть, не делаем ничего
-        from .status_checker import check_screen_capture_status, PermissionStatus
-        
-        current_status = check_screen_capture_status()
-        if current_status == PermissionStatus.GRANTED:
-            logger.info("✅ Screen Capture: Разрешение уже предоставлено, пропускаем активацию")
-            print("✅ [ACTIVATOR] Screen Capture: Разрешение уже есть")
-            return True
-        
-        # ШАГ 2: Разрешение не предоставлено - активируем
+        # ВАЖНО: НЕ проверяем статус здесь!
+        # Интеграция решает когда вызывать, активатор просто делает своё дело.
+        # CGRequestScreenCaptureAccess() безопасен при повторных вызовах.
         logger.info("📺 Активация Screen Capture...")
 
         # Используем существующий ScreenCapturePermissionManager
@@ -346,7 +269,8 @@ async def activate_screen_capture() -> bool:
 
         if not manager.is_available:
             logger.warning("⚠️ Screen Capture API недоступен")
-            _open_permission_settings("screen_capture", "Screen Capture")
+            # Dialog-only: не открываем Settings автоматически
+            # Fallback будет вызван из интеграции если нужно
             return False
 
         # request_permission() вызывает CGRequestScreenCaptureAccess
@@ -358,39 +282,194 @@ async def activate_screen_capture() -> bool:
         else:
             logger.info("✅ Screen Capture диалог показан")
 
-        await asyncio.sleep(0.2)
-        new_status = check_screen_capture_status()
-        if new_status != PermissionStatus.GRANTED:
-            _open_permission_settings("screen_capture", "Screen Capture")
-
+        # Dialog-only: не открываем Settings автоматически
+        # Fallback будет вызван из интеграции если нужно
+        await asyncio.sleep(max(0.0, hold_duration))
         return True
 
     except Exception as e:
         logger.error(f"❌ Ошибка активации Screen Capture: {e}")
-        _open_permission_settings("screen_capture", "Screen Capture")
+        # Dialog-only: не открываем Settings автоматически
+        # Fallback будет вызван из интеграции если нужно
         return False
 
 
-async def activate_all_permissions() -> dict:
+async def activate_contacts(hold_duration: float = 1.0) -> bool:
+    """
+    Активировать запрос разрешения Contacts.
+    
+    Использует CNContactStore.requestAccessForEntityType для показа диалога.
+    
+    Returns:
+        True если активация прошла успешно
+    """
+    try:
+        logger.info("📇 Активация Contacts...")
+        print("📇 [ACTIVATOR] Активация Contacts...")
+        
+        from Contacts import CNContactStore, CNEntityTypeContacts  # type: ignore
+        
+        store = CNContactStore.alloc().init()
+        
+        # requestAccessForEntityType показывает системный диалог
+        logger.info("📇 Contacts: запрашиваем доступ...")
+        print("📇 [ACTIVATOR] Contacts: запрашиваем доступ...")
+        
+        granted = [None]
+        error = [None]
+        done = asyncio.Event()
+        
+        def completion_handler(success, err):
+            granted[0] = success
+            error[0] = err
+            logger.info(f"📇 Contacts completion_handler: success={success}, err={err}")
+            print(f"📇 [ACTIVATOR] Contacts callback: success={success}")
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(done.set)
+            except RuntimeError:
+                pass
+            except Exception as e:
+                logger.error(f"Error in contacts completion handler: {e}")
+        
+        store.requestAccessForEntityType_completionHandler_(
+            CNEntityTypeContacts,
+            completion_handler
+        )
+        
+        # Ждём завершения или timeout
+        try:
+            await asyncio.wait_for(done.wait(), timeout=hold_duration)
+        except asyncio.TimeoutError:
+            logger.info(f"📇 Contacts: hold_duration {hold_duration}s elapsed (user didn't respond yet)")
+            # Это нормально - диалог может висеть дольше
+        
+        if granted[0] is True:
+            logger.info("✅ Contacts: разрешение получено (Granted)")
+            print("✅ [ACTIVATOR] Contacts: GRANTED")
+        elif granted[0] is False:
+            logger.info(f"🚫 Contacts: доступ запрещен (Denied) или ошибка: {error[0]}")
+            print(f"🚫 [ACTIVATOR] Contacts: DENIED/ERROR: {error[0]}")
+        else:
+            logger.info("📇 Contacts: нет ответа (Not Determined / Ignored)")
+            print("📇 [ACTIVATOR] Contacts: No response yet")
+
+        # Дополнительная попытка доступа, чтобы TCC добавил приложение в список
+        try:
+            _ = store.defaultContainerIdentifier()
+        except Exception:
+            pass
+        
+        return True
+
+    except ImportError:
+        logger.warning("⚠️ Contacts framework not available; no dialog can be shown")
+        print("⚠️ [ACTIVATOR] Contacts framework not available")
+        await asyncio.sleep(max(0.0, hold_duration))
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка активации Contacts: {e}")
+        return False
+
+
+async def activate_full_disk_access(hold_duration: float = 1.0) -> bool:
+    """
+    Активировать запрос разрешения Full Disk Access.
+    
+    ВАЖНО: Full Disk Access НЕЛЬЗЯ запросить программно!
+    Открываем System Settings сразу (без диалога).
+    
+    Returns:
+        True если Settings открыт успешно
+    """
+    try:
+        logger.info("💾 Активация Full Disk Access (settings-only)...")
+        print("💾 [ACTIVATOR] Full Disk Access: settings-only")
+
+        try:
+            # ВАЖНО: Открываем С фокусом (background=False) чтобы пользователь заметил окно!
+            _open_permission_settings("full_disk_access", "Full Disk Access", background=False)
+        except Exception as exc:
+            logger.warning("⚠️ Full Disk Access settings open failed: %s", exc)
+
+        def _fda_access_attempt():
+            try:
+                from pathlib import Path
+                protected_file = Path.home() / "Library" / "Messages" / "chat.db"
+                if protected_file.exists():
+                    with open(protected_file, "rb") as handle:
+                        handle.read(1)
+                    logger.info("💾 Full Disk Access: access attempt succeeded (async)")
+                else:
+                    logger.info("💾 Full Disk Access: chat.db not found; access attempt skipped (async)")
+            except PermissionError:
+                logger.info("💾 Full Disk Access: access attempt denied (async)")
+            except Exception as exc:
+                logger.debug("💾 Full Disk Access: access attempt failed (async): %s", exc)
+
+        threading.Thread(
+            target=_fda_access_attempt,
+            name="FDAAccessAttempt",
+            daemon=True,
+        ).start()
+
+        # Не блокируем first-run: настройки открыты, попытка доступа запущена.
+        await asyncio.sleep(max(0.0, hold_duration))
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка активации Full Disk Access: {e}")
+        return False
+
+
+def _load_permission_order() -> List[str]:
+    """Load permission order from unified_config.yaml (no fallback)."""
+    try:
+        config_loader = UnifiedConfigLoader.get_instance()
+        config_data = config_loader._load_config()
+        permissions_config = config_data.get("integrations", {}).get("permissions", {})
+        order = permissions_config.get("required_permissions", [])
+        if isinstance(order, list) and order:
+            return [str(item) for item in order]
+    except Exception as e:
+        logger.error("❌ Permission order config error: %s", e)
+    return []
+
+
+async def activate_all_permissions(permission_order: Optional[List[str]] = None) -> dict:
     """
     Активировать все разрешения ПОСЛЕДОВАТЕЛЬНО.
     
     ВАЖНО: Запускаем разрешения по одному, чтобы диалоги не появлялись одновременно.
     Это улучшает UX и предотвращает путаницу пользователя.
     """
+    if os.environ.get("NEXY_ALLOW_ACTIVATE_ALL_PERMISSIONS") not in {"1", "true", "yes"}:
+        logger.warning("⚠️ activate_all_permissions disabled by default; set NEXY_ALLOW_ACTIVATE_ALL_PERMISSIONS=1 to allow")
+        return {}
     logger.info("🚀 Активация всех разрешений в последовательном режиме...")
     
     results = {}
     
-    # Порядок важен: сначала микрофон (самый простой), потом остальные
-    permission_order = [
-        ('microphone', activate_microphone),
-        ('accessibility', activate_accessibility),
-        ('input_monitoring', activate_input_monitoring),
-        ('screen_capture', activate_screen_capture),
-    ]
-    
-    for perm_name, activate_func in permission_order:
+    # Порядок берём из unified_config.yaml (integrations.permissions.required_permissions)
+    order = permission_order or _load_permission_order()
+    if not order:
+        logger.error("❌ Permission order is empty; aborting activation")
+        return results
+    activators = {
+        "input_monitoring": activate_input_monitoring,
+        "microphone": activate_microphone,
+        "screen_capture": activate_screen_capture,
+        "accessibility": activate_accessibility,
+        "contacts": activate_contacts,
+        "full_disk_access": activate_full_disk_access,
+    }
+
+    for perm_name in order:
+        activate_func = activators.get(perm_name)
+        if not activate_func:
+            logger.warning("⚠️ Unknown permission in order: %s", perm_name)
+            results[perm_name] = False
+            continue
         logger.info(f"📝 Активация {perm_name}...")
         try:
             result = await activate_func()

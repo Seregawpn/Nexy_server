@@ -12,6 +12,9 @@ Exit codes:
   2 - Ошибка выполнения
 """
 
+# pyright: reportAttributeAccessIssue=false, reportMissingImports=false
+# PyObjC imports are dynamically loaded and cannot be statically analyzed
+
 import sys
 
 
@@ -19,16 +22,16 @@ def main():
     try:
         # Попытка 1: Используем PyObjC (если доступен)
         try:
-            import ApplicationServices as AS
+            import ApplicationServices as AS  # type: ignore
             
             # Создаём опции с prompt=True
-            options = {AS.kAXTrustedCheckOptionPrompt: True}
+            options = {AS.kAXTrustedCheckOptionPrompt: True}  # type: ignore[attr-defined]
             
             # Этот вызов либо:
             # - Покажет диалог (если NOT_DETERMINED)
             # - Вернёт True/False (если уже resolved)
             # - Крашнет этот процесс (на Sequoia без entitlement)
-            is_trusted = AS.AXIsProcessTrustedWithOptions(options)
+            is_trusted = AS.AXIsProcessTrustedWithOptions(options)  # type: ignore[attr-defined]
             
             # Если дошли сюда — не крашнулось
             sys.exit(0 if is_trusted else 1)
@@ -40,7 +43,7 @@ def main():
         # Попытка 2: Используем ctypes напрямую
         import ctypes
         import ctypes.util
-        from CoreFoundation import (
+        from CoreFoundation import (  # type: ignore
             CFDictionaryCreate,
             CFStringCreateWithCString,
             kCFStringEncodingUTF8,

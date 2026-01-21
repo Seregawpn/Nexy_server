@@ -52,6 +52,8 @@ from integration.core.gateways import decide_continue_integration_startup, Decis
 
 # Импорты core компонентов
 from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_keys import StateKeys
+from integration.core.event_types import EventTypes
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
 from integration.core.integration_factory import IntegrationFactory
@@ -313,6 +315,16 @@ class SimpleModuleCoordinator:
                 EventPriority.HIGH
             )
             await self._ensure_event_bus().subscribe(
+                "permissions.first_run_restart_pending",
+                self._on_permissions_restart_pending,
+                EventPriority.CRITICAL
+            )
+            await self._ensure_event_bus().subscribe(
+                "permissions.first_run_failed",
+                self._on_permissions_failed,
+                EventPriority.HIGH
+            )
+            await self._ensure_event_bus().subscribe(
                 "permissions.changed",
                 self._on_permissions_changed,
                 EventPriority.HIGH
@@ -328,25 +340,25 @@ class SimpleModuleCoordinator:
         """Настройка координации между модулями"""
         try:
             # Подписываемся на события приложения
-            await self._ensure_event_bus().subscribe("app.startup", self._on_app_startup, EventPriority.HIGH)
-            await self._ensure_event_bus().subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
-            await self._ensure_event_bus().subscribe("app.mode_changed", self._on_mode_changed, EventPriority.MEDIUM)
+            await self._ensure_event_bus().subscribe(EventTypes.APP_STARTUP, self._on_app_startup, EventPriority.HIGH)
+            await self._ensure_event_bus().subscribe(EventTypes.APP_SHUTDOWN, self._on_app_shutdown, EventPriority.HIGH)
+            await self._ensure_event_bus().subscribe(EventTypes.APP_MODE_CHANGED, self._on_mode_changed, EventPriority.MEDIUM)
             
             # Подписываемся на события пользовательского завершения
-            await self._ensure_event_bus().subscribe("tray.quit_clicked", self._on_user_quit, EventPriority.HIGH)
+            await self._ensure_event_bus().subscribe(EventTypes.TRAY_QUIT_CLICKED, self._on_user_quit, EventPriority.HIGH)
 
             # Подписываемся на готовность tray (gate-механизм)
-            await self._ensure_event_bus().subscribe("tray.integration_ready", self._on_tray_ready, EventPriority.CRITICAL)
+            await self._ensure_event_bus().subscribe(EventTypes.TRAY_INTEGRATION_READY, self._on_tray_ready, EventPriority.CRITICAL)
 
             # НЕ подписываемся на keyboard.* события - они обрабатываются напрямую
             # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus)
 
             # Подписываемся на события скриншота для логирования
             try:
-                await self._ensure_event_bus().subscribe("screenshot.captured", self._on_screenshot_captured, EventPriority.MEDIUM)
-                await self._ensure_event_bus().subscribe("screenshot.error", self._on_screenshot_error, EventPriority.MEDIUM)
-            except Exception:
-                pass
+                await self._ensure_event_bus().subscribe(EventTypes.SCREENSHOT_CAPTURED, self._on_screenshot_captured, EventPriority.MEDIUM)
+                await self._ensure_event_bus().subscribe(EventTypes.SCREENSHOT_ERROR, self._on_screenshot_error, EventPriority.MEDIUM)
+            except Exception as e:
+                logger.debug(f"Failed to subscribe to screenshot events (optional): {e}")
 
             # NOTE: Подписки на события разрешений перенесены в _setup_critical_subscriptions()
             # (вызывается ДО инициализации интеграций для предотвращения потери событий)
@@ -386,14 +398,18 @@ class SimpleModuleCoordinator:
                 'interrupt',               # 10. Управление прерываниями
                 'screenshot_capture',      # 11. Захват экрана (использует screen_capture)
                 'grpc',                    # 12. gRPC клиент (зависит от hardware_id)
-                'action_execution',         # 13. Выполнение MCP команд (зависит от grpc)
-                'speech_playback',         # 14. Воспроизведение речи (зависит от grpc)
-                'signals',                 # 15. Аудио сигналы (должны быть до update_notification)
-                'update_notification',     # 16. Голосовые уведомления об обновлениях (ПЕРЕД updater!)
-                'updater',                 # 17. Система обновлений (после update_notification)
-                'welcome_message',         # 18. Приветственное сообщение (зависит от speech_playback)
-                'voiceover_ducking',       # 19. VoiceOver Ducking
-                'autostart_manager',       # 20. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
+                'action_execution',        # 13. Выполнение MCP команд (зависит от grpc)
+                'browser_use',             # 14. Browser automation (F-2025-015)
+                'browser_progress',        # 15. Browser progress events (F-2025-015)
+                'tts',                     # 16. Локальный TTS (fallback если сервер недоступен)
+                'speech_playback',         # 17. Воспроизведение речи (зависит от grpc)
+                'signals',                 # 18. Аудио сигналы (должны быть до update_notification)
+                'update_notification',     # 19. Голосовые уведомления об обновлениях (ПЕРЕД updater!)
+                'updater',                 # 20. Система обновлений (после update_notification)
+                'welcome_message',         # 21. Приветственное сообщение (зависит от speech_playback)
+                'voiceover_ducking',       # 22. VoiceOver Ducking
+                'payment',                 # 23. Payment System (client side)
+                'autostart_manager',       # 24. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
             ]
             
             # Запускаем в правильном порядке
@@ -406,6 +422,24 @@ class SimpleModuleCoordinator:
                         if first_run and not first_run.are_all_granted:
                             logger.warning(f"⛔ [PERMISSIONS] Skipping {name} start because permissions are not granted")
                             print(f"⛔ [PERMISSIONS] Пропуск {name} - нет разрешений")
+                            continue
+
+                    # GATE: Не запускаем зависимые модули во время first-run или pending restart
+                    if name in ["input", "voice_recognition", "screenshot_capture"]:
+                        state_manager = self._ensure_state_manager()
+                        first_run_in_progress = state_manager.get_state_data(StateKeys.FIRST_RUN_IN_PROGRESS, False)
+                        restart_pending = state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False)
+                        if first_run_in_progress or restart_pending:
+                            logger.warning(
+                                "⛔ [PERMISSIONS] Skipping %s start (first_run_in_progress=%s, restart_pending=%s)",
+                                name,
+                                first_run_in_progress,
+                                restart_pending,
+                            )
+                            print(
+                                f"⛔ [PERMISSIONS] Пропуск {name} - first_run_in_progress={first_run_in_progress}, "
+                                f"restart_pending={restart_pending}"
+                            )
                             continue
 
                     # GATE: Для tray устанавливаем время старта
@@ -597,18 +631,12 @@ class SimpleModuleCoordinator:
             # CRITICAL: Активируем NSApplication непосредственно ПЕРЕД app.run()
             # Это необходимо для корректного отображения иконки в menu bar,
             # особенно при первом запуске после перезагрузки системы
-            print("="*80)
-            print("CRITICAL CHECKPOINT: About to activate NSApplication")
-            print("="*80)
             if self.nsapp_activator:
-                print("🔧 Активация NSApplication перед запуском menu bar...")
                 logger.info("🔧 CRITICAL: Activating NSApplication before app.run()")
                 try:
                     self.nsapp_activator()
-                    print("✅ NSApplication активирован успешно")
                     logger.info("✅ CRITICAL: NSApplication activated successfully")
                 except Exception as e:
-                    print(f"⚠️ Ошибка активации NSApplication: {e}")
                     logger.warning(f"Failed to activate NSApplication: {e}")
 
             # Запускаем UI-таймер ПОСЛЕ того как rumps приложение готово
@@ -630,13 +658,9 @@ class SimpleModuleCoordinator:
 
             # КРИТИЧНО: Анти-TAL удержание до tray.ready
             # Предотвращаем автоматическую терминацию приложения до готовности tray
-            print("="*80)
-            print("🛡️ [ANTI_TAL] Вызов _hold_tal_until_tray_ready()...")
-            print("="*80)
             logger.info("🛡️ [ANTI_TAL] Вызов _hold_tal_until_tray_ready()")
             try:
                 self._hold_tal_until_tray_ready()
-                print("✅ [ANTI_TAL] _hold_tal_until_tray_ready() завершён успешно")
                 logger.info("✅ [ANTI_TAL] _hold_tal_until_tray_ready() завершён успешно")
             except Exception as e:
                 print(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
@@ -649,34 +673,23 @@ class SimpleModuleCoordinator:
             # инициализироваться и создание NSStatusItem внутри app.run() провалится
             # NOTE: Теперь tray имеет собственную retry-логику с косвенным признаком готовности
             # поэтому задержка здесь минимальна (только для совместимости)
-            print("="*80)
-            print("⏳ CRITICAL: Waiting for ControlCenter to be ready...")
-            print("="*80)
             logger.info("⏳ CRITICAL: Ожидание готовности ControlCenter (tray имеет собственную retry-логику)")
             await asyncio.sleep(1.0)  # Минимальная задержка для совместимости
-            print("="*80)
-            print("✅ CRITICAL: Delay completed, starting app.run()...")
-            print("="*80)
             logger.info("✅ CRITICAL: Задержка завершена, запуск app.run()")
 
             # Запускаем приложение rumps (блокирующий вызов)
             # ВАЖНО: Используем tray_controller.run_app() который настраивает
             # отложенную установку иконки ПОСЛЕ создания StatusItem
             tray_controller = tray_integration.get_tray_controller()
-            logger.info(f"🔍 CRITICAL DEBUG: tray_controller={tray_controller}, type={type(tray_controller)}")
-            print(f"🔍 CRITICAL DEBUG: tray_controller={tray_controller}, type={type(tray_controller)}")
+            tray_controller = tray_integration.get_tray_controller()
             if tray_controller:
                 logger.info("✅ CRITICAL: Вызываем tray_controller.run_app()")
-                print("✅ CRITICAL: Вызываем tray_controller.run_app()")
                 tray_controller.run_app()
                 logger.info("🔍 CRITICAL: tray_controller.run_app() завершился")
-                print("🔍 CRITICAL: tray_controller.run_app() завершился")
             else:
                 logger.error("❌ Не удалось получить tray_controller - используем fallback app.run()")
-                print("❌ Не удалось получить tray_controller - используем fallback app.run()")
                 app.run()  # Fallback на прямой запуск
                 logger.info("🔍 CRITICAL: app.run() (fallback) завершился")
-                print("🔍 CRITICAL: app.run() (fallback) завершился")
             
         except KeyboardInterrupt:
             print("\n⏹️ Приложение прервано пользователем")
@@ -687,7 +700,6 @@ class SimpleModuleCoordinator:
             import traceback
             traceback.print_exc()
         finally:
-            print("🔍 CRITICAL: Entering finally block in coordinator.run()")
             logger.info("🔍 CRITICAL: Entering finally block in coordinator.run()")
             
             # КРИТИЧНО: Если TAL hold активен (фатальная ошибка до tray.ready), явно снимаем его
@@ -701,10 +713,8 @@ class SimpleModuleCoordinator:
                     logger.error(f"❌ [FATAL] Failed to release TAL hold in finally: {release_exc}")
             self._end_launch_activity(reason="run.finally")
             _app_running = False
-            print("🔍 CRITICAL: Calling coordinator.stop()")
             logger.info("🔍 CRITICAL: Calling coordinator.stop()")
             await self.stop()
-            print("🔍 CRITICAL: coordinator.stop() completed")
             logger.info("🔍 CRITICAL: coordinator.stop() completed")
             
             # КРИТИЧНО: Если обнаружен дубликат экземпляра, завершаем с кодом 1 после cleanup
@@ -720,8 +730,15 @@ class SimpleModuleCoordinator:
         """Обработка запуска приложения"""
         try:
             print("🚀 Обработка запуска приложения в координаторе")
-            # Делегируем обработку интеграциям через EventBus
-            # Координатор не делает работу модулей!
+            
+            # УБРАНА БЛОКИРОВКА: Публикуем ready_to_greet сразу при старте
+            # Приветствие должно воспроизводиться независимо от статуса разрешений
+            logger.info("🎵 [COORDINATOR] Publishing system.ready_to_greet (no permission check)")
+            print("🎵 [COORDINATOR] Публикуем system.ready_to_greet (без проверки разрешений)")
+            await self._ensure_event_bus().publish("system.ready_to_greet", {
+                "source": "coordinator.app_startup",
+                "bypass_permissions": True
+            })
             
         except Exception as e:
             print(f"❌ Ошибка обработки запуска приложения: {e}")
@@ -733,7 +750,8 @@ class SimpleModuleCoordinator:
             # Делегируем обработку интеграциям через EventBus
             
         except Exception as e:
-            print(f"❌ Ошибка обработки завершения приложения: {e}")
+
+            logger.error(f"❌ Ошибка обработки завершения приложения: {e}")
     
     async def _on_user_quit(self, event):
         """Обработка пользовательского завершения через Quit в меню"""
@@ -752,7 +770,7 @@ class SimpleModuleCoordinator:
             await self.stop()
             
         except Exception as e:
-            print(f"❌ Ошибка обработки пользовательского завершения: {e}")
+            logger.error(f"❌ Ошибка обработки пользовательского завершения: {e}")
     
     async def _on_mode_changed(self, event):
         """Обработка смены режима приложения"""
@@ -767,7 +785,7 @@ class SimpleModuleCoordinator:
             # Координатор только координирует, не обрабатывает!
             
         except Exception as e:
-            print(f"❌ Ошибка обработки смены режима: {e}")
+            logger.error(f"❌ Ошибка обработки смены режима: {e}")
     
     # Метод _on_keyboard_event удален - события клавиатуры обрабатываются напрямую
     # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus)
@@ -781,7 +799,6 @@ class SimpleModuleCoordinator:
             height = data.get("height")
             size_bytes = data.get("size_bytes")
             session_id = data.get("session_id")
-            print(f"🖼️ Screenshot captured: {path} ({width}x{height}, {size_bytes} bytes), session={session_id}")
             logger.info(f"Screenshot captured: path={path}, size={size_bytes}, dims={width}x{height}, session={session_id}")
         except Exception as e:
             logger.debug(f"Failed to log screenshot.captured: {e}")
@@ -792,7 +809,6 @@ class SimpleModuleCoordinator:
             data = (event or {}).get("data", {})
             err = data.get("error")
             session_id = data.get("session_id")
-            print(f"🖼️ Screenshot error: {err}, session={session_id}")
             logger.warning(f"Screenshot error: {err}, session={session_id}")
         except Exception as e:
             logger.debug(f"Failed to log screenshot.error: {e}")
@@ -827,10 +843,10 @@ class SimpleModuleCoordinator:
             
             if all_granted:
                 logger.info(f"✅ [PERMISSIONS] All permissions granted (session={session_id})")
-                print(f"✅ [PERMISSIONS] Все разрешения получены (session={session_id})")
+            if all_granted:
+                logger.info(f"✅ [PERMISSIONS] All permissions granted (session={session_id})")
             else:
                 logger.warning(f"⚠️ [PERMISSIONS] Some permissions missing: {missing} (session={session_id})")
-                print(f"⚠️ [PERMISSIONS] Некоторые разрешения не получены: {missing}")
             
             # Обновляем StateManager
             try:
@@ -879,7 +895,13 @@ class SimpleModuleCoordinator:
             # Логируем UX-сигнал для timeout разрешений, требующих Settings
             # ВАЖНО: Проверяем is_timeout явно, чтобы не путать с реальным отказом
             if is_timeout and new_status == "denied":
-                settings_required_permissions = ["accessibility", "input_monitoring", "screen_capture"]
+                permission_config = self.config.get_permission_config()
+                settings_required_permissions = permission_config.get("settings_required_permissions", [])
+                if not isinstance(settings_required_permissions, list):
+                    logger.warning(
+                        "⚠️ [COORDINATOR] settings_required_permissions misconfigured, skipping Settings hint"
+                    )
+                    settings_required_permissions = []
                 if permission in settings_required_permissions:
                     perm_display_name = permission.replace("_", " ").title()
                     logger.warning(
@@ -1326,10 +1348,45 @@ class SimpleModuleCoordinator:
                 self._xpc_transaction_active = False
 
     async def _on_permissions_restart_pending(self, event):
-        """DEPRECATED: Событие больше не используется. Перезапуск происходит автоматически в интеграции."""
-        import warnings
-        warnings.warn("_on_permissions_restart_pending is deprecated", DeprecationWarning)
-        logger.warning("[PERMISSIONS] Received deprecated permissions.first_run_restart_pending event")
+        """Обработка события перезапуска после первого запуска."""
+        try:
+            data = (event or {}).get("data") or {}
+            session_id = data.get("session_id", "unknown")
+            permissions = data.get("permissions", [])
+            source = data.get("source", "permissions.first_run_restart_pending")
+
+            logger.info(
+                "[PERMISSIONS] Restart pending received (session_id=%s, permissions=%s, source=%s)",
+                session_id,
+                permissions,
+                source,
+            )
+
+            # Persist restart_pending state for integrations that start later
+            try:
+                self._ensure_state_manager().set_restart_pending(True)
+                self._ensure_state_manager().set_state_data(
+                    "permissions_restart_pending_permissions",
+                    list(permissions) if isinstance(permissions, list) else [permissions],
+                )
+                self._ensure_state_manager().set_state_data(
+                    "permissions_restart_pending_session_id",
+                    session_id,
+                )
+            except Exception as e:
+                logger.debug("[PERMISSIONS] Failed to update restart_pending state: %s", e)
+
+            # Legacy notification for consumers still listening to restart_pending events
+            try:
+                await self._ensure_event_bus().publish(
+                    "permissions.restart_pending.changed",
+                    {"active": True, "session_id": session_id, "source": source},
+                )
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.error(f"❌ [PERMISSIONS] Error handling permissions.first_run_restart_pending: {e}")
 
     def get_status(self) -> Dict[str, Any]:
         """Получить статус всех компонентов"""

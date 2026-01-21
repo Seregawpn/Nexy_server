@@ -43,6 +43,9 @@
 | `ks_first_run_normalization` | kill_switch | permissions | false | client | - | Отключает gateway-проверку first_run/restart_pending для PermissionRestartIntegration |
 | `actions.open_app` | feature | mcp | true | client | - | Включить функциональность открытия приложений через MCP (Feature ID: F-2025-013) |
 | `actions.close_app` | feature | mcp | true | client | - | Включить функциональность закрытия приложений через MCP (Feature ID: F-2025-014) |
+| `actions.browser_use` | feature | mcp | true | both | - | Включить веб-автоматизацию через голосовые команды (Feature ID: F-2025-015) |
+| `actions.close_browser` | feature | mcp | true | both | - | Включить явное закрытие браузера через голосовые команды |
+| `actions.messages` | feature | mcp | true | client | - | Работа с iMessage/SMS (F-2025-016) |
 ## Использование
 
 ### Feature Flag (постепенный роллаут)

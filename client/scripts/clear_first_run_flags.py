@@ -27,10 +27,10 @@ def clear_flags():
     # Стандартный путь
     data_dir = get_user_data_dir("Nexy")
     
-    # 1. Очистка permissions_granted.flag (новый флаг)
-    print("\n📋 Проверка permissions_granted.flag:")
+    # 1. Очистка permissions_first_run_completed.flag (канонический флаг)
+    print("\n📋 Проверка permissions_first_run_completed.flag:")
     
-    flag_file = data_dir / "permissions_granted.flag"
+    flag_file = data_dir / "permissions_first_run_completed.flag"
     checked_paths.append(flag_file)
     
     if flag_file.exists():
@@ -44,9 +44,9 @@ def clear_flags():
         print(f"  ℹ️  Не найден: {flag_file}")
     
     # 2. Очистка старого флага (для миграции)
-    print("\n📋 Проверка permissions_first_run_completed.flag (legacy):")
+    print("\n📋 Проверка permissions_granted.flag (legacy, для миграции):")
     
-    old_flag_file = data_dir / "permissions_first_run_completed.flag"
+    old_flag_file = data_dir / "permissions_granted.flag"
     checked_paths.append(old_flag_file)
     
     if old_flag_file.exists():
@@ -79,7 +79,7 @@ def clear_flags():
     bundle_id = os.environ.get("APP_BUNDLE_ID", "com.nexy.assistant")
     sandbox_data_dir = Path.home() / "Library" / "Containers" / bundle_id / "Data" / "Library" / "Application Support" / "Nexy"
     
-    for flag_name in ["permissions_granted.flag", "permissions_first_run_completed.flag", "restart_completed.flag"]:
+    for flag_name in ["permissions_first_run_completed.flag", "permissions_granted.flag", "restart_completed.flag"]:
         sandbox_flag = sandbox_data_dir / flag_name
         if sandbox_flag.exists() and sandbox_flag not in checked_paths:
             checked_paths.append(sandbox_flag)
@@ -91,7 +91,7 @@ def clear_flags():
                 print(f"  ❌ Ошибка удаления {sandbox_flag}: {e}")
     
     # 5. /tmp fallback
-    for flag_name in ["permissions_granted.flag", "permissions_first_run_completed.flag", "restart_completed.flag"]:
+    for flag_name in ["permissions_first_run_completed.flag", "permissions_granted.flag", "restart_completed.flag"]:
         tmp_flag = Path("/tmp") / "Nexy" / flag_name
         if tmp_flag.exists() and tmp_flag not in checked_paths:
             checked_paths.append(tmp_flag)

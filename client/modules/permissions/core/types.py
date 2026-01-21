@@ -17,6 +17,8 @@ class PermissionType(Enum):
     NOTIFICATIONS = "notifications"
     ACCESSIBILITY = "accessibility"
     INPUT_MONITORING = "input_monitoring"
+    CONTACTS = "contacts"
+    FULL_DISK_ACCESS = "full_disk_access"
 
 
 class PermissionStatus(Enum):

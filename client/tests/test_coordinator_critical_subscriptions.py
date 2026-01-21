@@ -168,11 +168,7 @@ class TestCoordinatorCriticalSubscriptions:
         # Создаём реальный EventBus для проверки доставки событий
         coordinator.event_bus = EventBus()
         coordinator.state_manager = Mock()
-        coordinator.state_manager.set_state_data = Mock()
-        
-        # Устанавливаем начальное состояние
-        coordinator._permissions_in_progress = True
-        coordinator._restart_pending = False
+        coordinator.state_manager.set_first_run_state = Mock()
         
         # Настраиваем критичные подписки
         await coordinator._setup_critical_subscriptions()
@@ -194,9 +190,12 @@ class TestCoordinatorCriticalSubscriptions:
         # Даём время на обработку события
         await asyncio.sleep(0.2)
         
-        # КРИТИЧНО: Флаг должен быть сброшен после получения события
-        assert coordinator._permissions_in_progress == False, \
-            "Flag _permissions_in_progress should be reset after receiving permissions.first_run_completed"
+        # КРИТИЧНО: StateManager должен быть обновлен после получения события
+        coordinator.state_manager.set_first_run_state.assert_called_with(
+            in_progress=False,
+            required=False,
+            completed=True,
+        )
 
     @pytest.mark.asyncio
     async def test_restart_pending_flag_set(self, coordinator):
@@ -211,12 +210,10 @@ class TestCoordinatorCriticalSubscriptions:
         coordinator.event_bus = EventBus()
         coordinator.state_manager = Mock()
         coordinator.state_manager.set_state_data = Mock()
+        coordinator.state_manager.set_restart_pending = Mock()
         coordinator.state_manager.get_state_data = Mock(return_value=False)
         coordinator.config = Mock()
         coordinator.config._load_config = Mock(return_value={"features": {}})
-        
-        # Устанавливаем начальное состояние
-        coordinator._restart_pending = False
         
         # Настраиваем критичные подписки
         await coordinator._setup_critical_subscriptions()
@@ -228,16 +225,13 @@ class TestCoordinatorCriticalSubscriptions:
             {
                 "session_id": "test-restart-session",
                 "source": "first_run_permissions_integration",
+                "permissions": ["accessibility", "input_monitoring"],
                 "priority": EventPriority.CRITICAL
             }
         )
         
         # Даём время на обработку
         await asyncio.sleep(0.2)
-        
-        # Проверяем что флаг установлен
-        assert coordinator._restart_pending == True, \
-            "Flag _restart_pending should be set to True after receiving permissions.first_run_restart_pending"
         
         # Проверяем что state_data обновлён (legacy support)
         coordinator.state_manager.set_restart_pending.assert_called_with(True)

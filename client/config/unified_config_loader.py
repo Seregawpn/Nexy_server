@@ -643,6 +643,16 @@ class UnifiedConfigLoader:
         
         return result
 
+    def get_messages_config(self) -> Dict[str, Any]:
+        """
+        Получает конфигурацию сообщений.
+        
+        Returns:
+            Dict с конфигурацией messages
+        """
+        config = self._load_config()
+        return config.get('messages', {})
+
     def get_tray_config(self) -> Dict[str, Any]:
         """Получает конфигурацию трея"""
         config = self._load_config()

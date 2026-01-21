@@ -19,6 +19,9 @@ axes:
   permissions.restart_pending: [true, false]  # NEW - Phase 2
   process.lifecycle: [running, restarting, terminated]  # NEW - Phase 2
   update_in_progress: [true, false]  # NEW - Phase 2
+  permissions.full_disk_access: [granted, denied, prompt_blocked] # NEW - Messages
+  subscription.status: [active, inactive, trial, expired, payment_failed] # NEW - Payment
+  browser.active_task: [idle, running, waiting_user] # NEW - Browser
 
 rules:
   # ============================================================================
@@ -238,3 +241,36 @@ rules:
     priority: graceful
     description: Network offline - degrade but allow listening
     gateway: decide_route_manager_reconcile
+
+  # ============================================================================
+  # MESSAGES / FULL DISK ACCESS RULES
+  # ============================================================================
+
+  # Hard stop: Full Disk Access denied blocks messages
+  - when: {perm.full_disk_access: denied}
+    decision: abort_messages
+    priority: hard_stop
+    description: Full Disk Access denied - cannot access messages database
+    gateway: decide_messages_access
+
+  # ============================================================================
+  # SUBSCRIPTION RULES
+  # ============================================================================
+
+  # Graceful: Subscription inactive degrades features
+  - when: {subscription.status: [inactive, expired, payment_failed]}
+    decision: limit_features
+    priority: graceful
+    description: Subscription not active - degrade to limited feature set
+    gateway: decide_feature_access
+
+  # ============================================================================
+  # BROWSER RULES
+  # ============================================================================
+
+  # Hard stop: Browser busy blocks new voice commands
+  - when: {browser.active_task: running, app.mode: listening}
+    decision: queue_or_abort
+    priority: hard_stop
+    description: Browser task running - cannot accept new voice commands
+    gateway: decide_start_listening

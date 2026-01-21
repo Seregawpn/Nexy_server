@@ -258,7 +258,16 @@ class GrpcClient:
         """Проверяет, подключен ли клиент"""
         return self.connection_manager.is_connected()
     
-    async def stream_audio(self, prompt: str, screenshot_base64: str, screen_info: dict, hardware_id: str, session_id: str) -> AsyncGenerator[Any, None]:
+    async def stream_audio(
+        self,
+        prompt: str,
+        screenshot_base64: str,
+        screen_info: dict,
+        hardware_id: str,
+        session_id: str,
+        *,
+        timeout: Optional[float] = None,
+    ) -> AsyncGenerator[Any, None]:
         """Стриминг аудио и текста на сервер
         
         Args:
@@ -311,9 +320,10 @@ class GrpcClient:
             )
             
             # Выполняем стриминг
+            rpc_timeout = timeout if timeout and timeout > 0 else None
             async for response in streaming_pb2_grpc.StreamingServiceStub(
                 self.connection_manager.channel
-            ).StreamAudio(request, timeout=30):
+            ).StreamAudio(request, timeout=rpc_timeout):
                 yield response
                 
         except Exception as e:
@@ -472,6 +482,77 @@ class GrpcClient:
         }
 
         return result
+
+    async def stream_tts_audio(
+        self,
+        text: str,
+        *,
+        voice: Optional[str] = None,
+        language: Optional[str] = None,
+        session_id: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Streams TTS audio chunks via GenerateWelcomeAudio.
+        
+        Unlike generate_welcome_audio which buffers all audio, this yields each chunk
+        immediately for real-time playback.
+        
+        Yields:
+            Dict with 'audio_chunk' data: dtype, sample_rate, channels, bytes
+        """
+        if not text or not text.strip():
+            logger.warning("stream_tts_audio called with empty text")
+            return
+
+        if not self.is_connected():
+            await self.connect()
+
+        streaming_pb2, streaming_pb2_grpc = self._import_proto_modules()
+
+        request = streaming_pb2.WelcomeRequest(
+            text=text,
+            session_id=session_id or f"tts_{datetime.now().timestamp()}",
+        )
+        if voice:
+            request.voice = voice
+        if language:
+            request.language = language
+
+        stub = streaming_pb2_grpc.StreamingServiceStub(self.connection_manager.channel)
+        rpc_timeout = timeout or self.config.get('welcome_timeout_sec', 30.0)
+
+        try:
+            async for response in stub.GenerateWelcomeAudio(request, timeout=rpc_timeout):
+                content = response.WhichOneof('content')
+                if content == 'audio_chunk':
+                    ch = response.audio_chunk
+                    if ch.audio_data and len(ch.audio_data) > 0:
+                        yield {
+                            'type': 'audio_chunk',
+                            'bytes': bytes(ch.audio_data),
+                            'dtype': ch.dtype or 'int16',
+                            'sample_rate': ch.sample_rate or 48000,
+                            'channels': ch.channels or 1,
+                            'shape': list(ch.shape) if ch.shape else [],
+                        }
+                elif content == 'metadata':
+                    yield {
+                        'type': 'metadata',
+                        'method': response.metadata.method,
+                        'duration_sec': response.metadata.duration_sec,
+                        'sample_rate': response.metadata.sample_rate,
+                        'channels': response.metadata.channels,
+                    }
+                elif content == 'error_message':
+                    logger.error(f"TTS error: {response.error_message}")
+                    yield {'type': 'error', 'message': response.error_message}
+                    break
+                elif content == 'end_message':
+                    yield {'type': 'end', 'message': response.end_message}
+                    break
+        except Exception as e:
+            logger.error(f"❌ stream_tts_audio error: {e}")
+            yield {'type': 'error', 'message': str(e)}
 
     async def cleanup(self):
         """Очистка ресурсов"""

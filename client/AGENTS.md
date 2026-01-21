@@ -4,8 +4,8 @@
 
 ## Контекст клиента
 - Базовые правила проекта: `AGENTS.md` (в корне).
-- Архитектура и текущие принципы: `_Docs_ARCHIVED/ARCHITECTURE_OVERVIEW.md`.
-- Требования: `_Docs_ARCHIVED/PROJECT_REQUIREMENTS.md`.
+- Архитектура и текущие принципы: `Docs/ARCHITECTURE_OVERVIEW.md`.
+- Требования: `Docs/PROJECT_REQUIREMENTS.md`.
 - Клиентские правила и упаковка: см. `.cursorrules` (раздел 1.0.1).
 - Документация: см. `Docs/README.md` для актуального индекса документов.
 

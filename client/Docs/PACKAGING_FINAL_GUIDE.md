@@ -246,6 +246,21 @@ lipo -info resources/ffmpeg/ffmpeg
 # Ожидается: Architectures in the fat file: arm64 x86_64
 ```
 
+### Новые функции (F-2025-015, F-2025-016):
+
+**Messages (F-2025-016):**
+- **Swift бинарники:** `modules/messages/contacts_helper`, `modules/messages/find_contacts_by_name_swift`
+- **Требуемые разрешения:**
+  - ✅ Contacts (`NSContactsUsageDescription` в Info.plist)
+  - ✅ Contacts entitlement (`com.apple.security.personal-information.addressbook` в entitlements.plist)
+  - ⚠️ Full Disk Access (пользователь должен дать вручную для `~/Library/Messages/chat.db`)
+- **Включено в `Nexy.spec`:** `(str(client_dir / "modules" / "messages"), "modules/messages")`
+
+**Browser Progress (F-2025-015):**
+- **Тип:** Серверный функционал с клиентскими событиями прогресса
+- **Не требует дополнительных разрешений на клиенте**
+- **Включено в `Nexy.spec`:** hidden imports для `modules.browser_progress`
+
 ---
 
 ## 2. Автоматическая Universal 2 сборка

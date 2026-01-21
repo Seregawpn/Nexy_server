@@ -126,15 +126,14 @@ class GoogleSRController:
     def stop_listening(self) -> Optional[GoogleSRResult]:
         """
         Stop listening and return result.
-        Note: This signals to stop, but recognition continues until phrase ends.
+        Мгновенно возвращает управление — поток завершится асинхронно.
         """
-        self._listening.clear()
         logger.info("🛑 Stop listening requested")
+        self._listening.clear()
+        self._stop.set()  # Немедленно сигнализируем потоку остановиться
         
-        # Wait for thread to finish
-        if self._thread:
-            join_timeout = (self._phrase_limit if self._phrase_limit is not None else 10.0) + 5.0
-            self._thread.join(timeout=join_timeout)
+        # НЕ ждём поток — возвращаем управление мгновенно
+        # Поток завершится асинхронно когда текущий listen() закончится
         
         if self.last_text:
             return GoogleSRResult(
@@ -163,94 +162,84 @@ class GoogleSRController:
         logger.info("🎧 Device changed to: %s", new_device_name)
 
     def _capture_and_recognize(self) -> None:
-        """Capture audio via sr.Microphone and recognize with Google."""
+        """
+        Capture audio via sr.Microphone and recognize with Google.
+        
+        БЕСШОВНЫЙ РЕЖИМ: микрофон остаётся открытым на протяжении всего
+        удержания PTT. Аудио-чанки отправляются на распознавание в фоновых
+        потоках, в то время как запись продолжается без перерывов.
+        """
         self.utterances += 1
         self.last_text = ""
         self.last_error = None
         
         try:
-            # Note: PyAudio is reinitialized by AudioRouteMonitor when device changes
             mic = sr.Microphone(device_index=self._device_index)
             
             with mic as source:
                 logger.info("🔊 Adjusting for ambient noise...")
                 self._recognizer.adjust_for_ambient_noise(source, duration=0.3)
                 
-                if self._phrase_limit is not None:
-                    logger.info("🎙️ Listening... (phrase_limit=%.1fs)", self._phrase_limit)
-                else:
-                    logger.info("🎙️ Listening... (no phrase limit, will stop on silence)")
-                
-                try:
-                    # Dynamically adjust limit if stopping
-                    if self._stop.is_set():
-                        current_limit = 1.0
+                # БЕСШОВНЫЙ ЦИКЛ: слушаем пока _listening активен
+                while self._listening.is_set() and not self._stop.is_set():
+                    if self._phrase_limit is not None:
+                        logger.info("🎙️ Listening... (phrase_limit=%.1fs)", self._phrase_limit)
                     else:
-                        current_limit = self._phrase_limit  # None is allowed
-                    # Если phrase_limit=None, то и timeout=None (вообще без лимита)
-                    # Иначе timeout=5.0 (ожидание начала речи)
-                    timeout = None if self._phrase_limit is None else 5.0
-                    audio = self._recognizer.listen(
-                        source,
-                        timeout=timeout,
-                        phrase_time_limit=current_limit
-                    )
-                except sr.WaitTimeoutError:
-                    if self._stop.is_set():
-                        logger.info("🛑 Stop requested while waiting for speech")
-                        return
-                    logger.warning("⚠️ No speech detected (timeout)")
-                    self.last_error = "no_speech"
-                    self.failed += 1
-                    if self._on_failed:
-                        self._listening.clear()
-                        self._on_failed("no_speech")
-                    return
-                
-                logger.info("📊 Audio captured: %d bytes", len(audio.frame_data))
-            
-            # Recognize with Google
-            logger.info("🌐 Recognizing with Google...")
-            try:
-                text = self._recognizer.recognize_google(audio, language=self._lang)
-                text = text.strip()
-                
-                if text:
-                    self.last_text = text
-                    self.successful += 1
-                    logger.info("✅ STT: %s", text)
+                        logger.info("🎙️ Listening... (no phrase limit, will stop on silence)")
                     
-                    result = GoogleSRResult(
-                        text=text,
-                        confidence=0.9,
-                        language=self._lang
-                    )
-                    
-                    if self._on_completed:
-                        self._listening.clear()
-                        self._on_completed(result)
-                else:
-                    self.last_error = "empty_result"
-                    self.failed += 1
-                    if self._on_failed:
-                        self._listening.clear()
-                        self._on_failed("empty_result")
+                    try:
+                        # Проверяем _stop перед блокирующим вызовом
+                        if self._stop.is_set():
+                            logger.info("🛑 Stop flag detected, breaking loop")
+                            break
                         
-            except sr.UnknownValueError:
-                logger.warning("⚠️ Google could not understand audio")
-                self.last_error = "unknown_value"
-                self.failed += 1
-                if self._on_failed:
-                    self._listening.clear()
-                    self._on_failed("unknown_value")
-            except sr.RequestError as e:
-                logger.error("❌ Google SR request error: %s", e)
-                self.last_error = f"request_error: {e}"
-                self.failed += 1
-                if self._on_failed:
-                    self._listening.clear()
-                    self._on_failed(f"request_error: {e}")
-                    
+                        current_limit = self._phrase_limit  # None is allowed
+                        
+                        # КРИТИЧНО: Используем ОЧЕНЬ короткий timeout для мгновенного реагирования на _stop
+                        # 0.3с — минимум для захвата аудио, но позволяет проверять _stop ~3 раза/сек
+                        timeout = 0.3
+                        
+                        audio = self._recognizer.listen(
+                            source,
+                            timeout=timeout,
+                            phrase_time_limit=current_limit
+                        )
+                        
+                        # КРИТИЧНО: Если _stop установлен, всё равно обрабатываем захваченный аудио!
+                        # Это последний фрагмент речи пользователя — нельзя его терять.
+                        if self._stop.is_set():
+                            logger.info("🛑 Stop requested, processing FINAL audio chunk before exit")
+                            if len(audio.frame_data) > 0:
+                                threading.Thread(
+                                    target=self._recognize_audio_chunk,
+                                    args=(audio,),
+                                    daemon=True,
+                                    name="GoogleSR-FinalRecognize"
+                                ).start()
+                            break
+                        
+                        logger.info("📊 Audio captured: %d bytes", len(audio.frame_data))
+                        
+                        # КРИТИЧНО: Отправляем на распознавание В ФОНЕ
+                        # Это позволяет продолжить слушание без ожидания результата
+                        threading.Thread(
+                            target=self._recognize_audio_chunk,
+                            args=(audio,),
+                            daemon=True,
+                            name="GoogleSR-Recognize"
+                        ).start()
+                        
+                    except sr.WaitTimeoutError:
+                        if self._stop.is_set():
+                            logger.info("🛑 Stop requested while waiting for speech")
+                            break
+                        # Timeout ожидания речи — продолжаем слушать
+                        logger.debug("⏳ No speech detected, continuing...")
+                        continue
+                        
+                logger.info("🎙️ Listening loop ended (listening=%s, stop=%s)", 
+                           self._listening.is_set(), self._stop.is_set())
+                           
         except OSError as e:
             error_str = str(e).lower()
             if "busy" in error_str or "in use" in error_str:
@@ -273,6 +262,50 @@ class GoogleSRController:
         finally:
             # Разрешаем последующий start_listening после завершения сессии
             self._listening.clear()
+    
+    def _recognize_audio_chunk(self, audio) -> None:
+        """
+        Распознать аудио-чанк в фоновом потоке.
+        
+        Этот метод вызывается в отдельном потоке для каждого захваченного
+        аудио-фрагмента, чтобы не блокировать основной цикл слушания.
+        """
+        try:
+            logger.info("🌐 Recognizing with Google...")
+            text = self._recognizer.recognize_google(audio, language=self._lang)
+            text = text.strip()
+            
+            if text:
+                self.last_text = text
+                self.successful += 1
+                logger.info("✅ STT: %s", text)
+                
+                result = GoogleSRResult(
+                    text=text,
+                    confidence=0.9,
+                    language=self._lang
+                )
+                
+                if self._on_completed:
+                    self._on_completed(result)
+            else:
+                self.last_error = "empty_result"
+                self.failed += 1
+                if self._on_failed:
+                    self._on_failed("empty_result")
+                    
+        except sr.UnknownValueError:
+            logger.warning("⚠️ Google could not understand audio")
+            self.last_error = "unknown_value"
+            self.failed += 1
+            if self._on_failed:
+                self._on_failed("unknown_value")
+        except sr.RequestError as e:
+            logger.error("❌ Google SR request error: %s", e)
+            self.last_error = f"request_error: {e}"
+            self.failed += 1
+            if self._on_failed:
+                self._on_failed(f"request_error: {e}")
 
     def get_current_device(self) -> Optional[str]:
         """Get current input device name."""

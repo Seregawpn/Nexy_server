@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package streaming;
+
+// Canonical contract for Nexy voice streaming flows.
+// Compatibility:
+// - New server + old client: action_message field is optional and skipped silently.
+// - New client + old server: client must fall back to legacy <ACTION> parsing and surface "action unavailable".
+// - Mixed versions MUST keep using feature flags (actions.open_app.enabled) to gate functionality.
+
+service StreamingService {
+  rpc StreamAudio(StreamRequest) returns (stream StreamResponse);
+  rpc GenerateWelcomeAudio(WelcomeRequest) returns (stream WelcomeResponse);
+  rpc InterruptSession(InterruptRequest) returns (InterruptResponse);
+  rpc SendMcpActionResult(McpActionResultRequest) returns (McpActionResultResponse);
+}
+
+message StreamRequest {
+  string prompt = 1;
+  optional string screenshot = 2;
+  optional int32 screen_width = 3;
+  optional int32 screen_height = 4;
+  string hardware_id = 5;
+  optional string session_id = 6;
+  optional string feature_id = 7; // e.g. "F-2025-013-open-app"
+}
+
+message StreamResponse {
+  oneof content {
+    string text_chunk = 1;
+    AudioChunk audio_chunk = 2;
+    string end_message = 3;
+    string error_message = 4;
+    ActionMessage action_message = 5; // optional MCP/OpenApp payload
+    BrowserProgressMessage browser_progress = 6; // browser-use automation progress
+  }
+}
+
+// Error semantics for action_message:
+// - INVALID_ARGUMENT: malformed JSON or unsupported action type.
+// - RESOURCE_EXHAUSTED: rate limit / disabled feature flag.
+// - FAILED_PRECONDITION: server-side whitelist rejected the request.
+
+message ActionMessage {
+  string action_json = 1;      // e.g. {"type":"open_app","app_name":"Safari"}
+  string session_id = 2;
+  optional string feature_id = 3;
+}
+
+message AudioChunk {
+  bytes audio_data = 1;
+  string dtype = 2;
+  repeated int32 shape = 3;
+  optional int32 sample_rate = 4;
+  optional int32 channels = 5;
+}
+
+message WelcomeRequest {
+  string text = 1;
+  optional string session_id = 2;
+  optional string voice = 3;
+  optional string language = 4;
+}
+
+message WelcomeResponse {
+  oneof content {
+    AudioChunk audio_chunk = 1;
+    WelcomeMetadata metadata = 2;
+    string end_message = 3;
+    string error_message = 4;
+  }
+}
+
+message WelcomeMetadata {
+  string method = 1;
+  double duration_sec = 2;
+  int32 sample_rate = 3;
+  int32 channels = 4;
+}
+
+message InterruptRequest {
+  string hardware_id = 1;
+}
+
+message InterruptResponse {
+  bool success = 1;
+  repeated string interrupted_sessions = 2;
+  string message = 3;
+}
+
+// MCP Action Result messages for client-to-server result transmission
+message McpActionResultRequest {
+  string session_id = 1;
+  string command = 2;  // e.g. "read_messages", "send_message", "open_app", "close_app"
+  string result_text = 3;  // Result text from MCP server
+  optional string error = 4;  // Error message if action failed
+  optional string feature_id = 5;  // Feature ID for logging (e.g. "F-2025-016-messages-integration")
+}
+
+message McpActionResultResponse {
+  bool success = 1;
+  string message = 2;  // Response message from server
+}
+
+// Browser automation progress events
+enum BrowserEventType {
+  BROWSER_TASK_STARTED = 0;
+  BROWSER_STEP_STARTED = 1;
+  BROWSER_STEP_COMPLETED = 2;
+  BROWSER_ACTION_EXECUTED = 3;
+  BROWSER_PAGE_NAVIGATED = 4;
+  BROWSER_TASK_COMPLETED = 5;
+  BROWSER_TASK_FAILED = 6;
+  BROWSER_TASK_CANCELLED = 7;
+}
+
+message BrowserProgressMessage {
+  BrowserEventType type = 1;           // Event type (REQUIRED)
+  string task_id = 2;                  // Task identifier (REQUIRED)
+  int64 timestamp = 3;                 // Event timestamp in milliseconds (REQUIRED)
+  optional int32 step_number = 4;      // Step number (if applicable)
+  optional string description = 5;     // Human-readable description
+  optional string url = 6;             // Current URL (if applicable)
+  optional string action = 7;          // Action performed (if applicable)
+  optional string error = 8;           // Error message (if failed)
+  optional BrowserProgressDetails details = 9;  // Additional details
+}
+
+message BrowserProgressDetails {
+  optional double duration_sec = 1;     // Duration in seconds
+  repeated string actions = 2;          // List of actions performed
+  map<string, string> metadata = 3;    // Additional metadata
+}
+  string status = 1;  // e.g. "in_progress", "completed", "error"
+  string message = 2;  // Progress description
+  optional string step = 3;  // Current step description
+  optional int32 progress_percent = 4;  // Progress percentage (0-100)

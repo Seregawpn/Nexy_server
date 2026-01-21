@@ -1,1 +1,0 @@
-../../integration_backup/core/base_integration.py

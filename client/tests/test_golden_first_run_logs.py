@@ -140,13 +140,23 @@ def validate_log_sequence(log_content: str) -> Tuple[bool, List[str]]:
     return len(errors) == 0, errors
 
 
-@pytest.mark.skip(reason="Requires actual log file - implement when golden logs are available")
 def test_actual_log_file_validation():
     """Test actual log file against expected sequence."""
-    log_file = Path.home() / "nexy_first_run.log"
+    # Проверяем несколько возможных путей к лог-файлу
+    log_paths = [
+        Path("logs/nexy.log"),
+        Path.home() / "nexy_first_run.log",
+        Path("/var/folders") / "nexy_debug.log",
+    ]
     
-    if not log_file.exists():
-        pytest.skip(f"Log file not found: {log_file}")
+    log_file = None
+    for path in log_paths:
+        if path.exists():
+            log_file = path
+            break
+    
+    if log_file is None:
+        pytest.skip(f"Log file not found in any of: {log_paths}")
     
     with open(log_file, "r", encoding="utf-8") as f:
         log_content = f.read()
@@ -154,7 +164,7 @@ def test_actual_log_file_validation():
     is_valid, errors = validate_log_sequence(log_content)
     
     if not is_valid:
-        pytest.fail(f"Log validation failed:\n" + "\n".join(f"  • {e}" for e in errors))
+        pytest.fail(f"Log validation failed for {log_file}:\n" + "\n".join(f"  • {e}" for e in errors))
 
 
 

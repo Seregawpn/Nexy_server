@@ -1,0 +1,28 @@
+# MVP Tests Requirements
+
+# Stripe
+stripe>=7.0.0
+
+# Database
+psycopg2-binary>=2.9.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# Web server (for MVP 1)
+flask>=3.0.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
