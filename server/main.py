@@ -112,11 +112,28 @@ async def health_handler(request):
         - latest_version: string (must match SERVER_VERSION)
         - latest_build: string (must equal latest_version per Section 11)
     """
-    return web.json_response({
-        "status": "OK",
-        "latest_version": SERVER_VERSION,
-        "latest_build": SERVER_BUILD
-    })
+    try:
+        return web.json_response({
+            "status": "OK",
+            "latest_version": SERVER_VERSION,
+            "latest_build": SERVER_BUILD
+        }, headers={
+            'Cache-Control': 'public, max-age=30',  # 30 секунд для health (PR-7)
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        })
+    except Exception as e:
+        logger.error(f"❌ Ошибка health check: {e}", extra={
+            'scope': 'server',
+            'decision': 'error',
+            'ctx': {'error': str(e)}
+        })
+        return web.json_response({
+            "status": "unhealthy",
+            "error": str(e)
+        }, status=500, headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+        })
 
 async def root_handler(request):
     """Корневой endpoint"""
