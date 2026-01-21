@@ -23,5 +23,5 @@ __all__ = [
     'PermissionConfigManager'
 ]
 
-__version__ = "1.6.0.52"
+__version__ = "1.6.0.53"
 __author__ = "Nexy Team"
