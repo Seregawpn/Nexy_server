@@ -26,5 +26,5 @@ __all__ = [
     'DEFAULT_INTERRUPT_CONFIG'
 ]
 
-__version__ = "1.6.0.56"
+__version__ = "1.6.0.57"
 __author__ = "Nexy Team"
