@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.57
+  version: 1.6.0.58
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -196,15 +196,15 @@ integrations:
     retry_delay: 5.0
     show_instructions: false
     required_permissions:
-    # Порядок: accessibility первый, input_monitoring последний
-    - accessibility
+    # Порядок унифицирован с permissions_v2.order
     - microphone
     - screen_capture
     - contacts
-    - full_disk_access
     - input_monitoring
+    - accessibility
+    - full_disk_access
   permission_restart:
-    enabled: true
+    enabled: false
     critical_permissions:
     - accessibility
     - microphone
@@ -212,12 +212,89 @@ integrations:
     - contacts
     - full_disk_access
     - input_monitoring
-    restart_delay_sec: 5.0
+    restart_delay_sec: 1.0
     max_restart_attempts: 3
     respect_active_sessions: true
     respect_updates: true
     polling_enabled: false
     poll_interval_sec: 3.0
+  
+  # Permission System V2 - Pipeline Mode
+  permissions_v2:
+    enabled: true
+    
+    # No batching - single pipeline
+    batching:
+      enabled: false
+    
+    # Restart only if: all HARD pass + any needs_restart
+    restart:
+      delay_sec: 1.0
+      require_all_hard_pass: true
+      require_needs_restart: false
+      settings_safety_window_sec: 30.0
+    
+    # Order: dialogs first, input_monitoring before settings
+    order:
+      - microphone
+      - screen_capture
+      - contacts
+      - input_monitoring
+      - accessibility
+      - full_disk_access
+    
+    # Per-step configuration
+    steps:
+      microphone:
+        mode: auto_dialog
+        grace_s: 7.0
+        poll_s: 1.0
+        supports_needs_restart: false
+        criticality: hard
+        
+      screen_capture:
+        mode: auto_dialog
+        grace_s: 7.0
+        poll_s: 2.0
+        supports_needs_restart: false
+        criticality: soft
+        
+      contacts:
+        mode: auto_dialog
+        grace_s: 7.0
+        poll_s: 2.0
+        supports_needs_restart: false
+        criticality: feature
+        
+      input_monitoring:
+        mode: auto_dialog
+        grace_s: 7.0
+        poll_s: 2.0
+        supports_needs_restart: true
+        post_restart_verify_window_s: 20.0
+        post_restart_verify_tick_s: 2.0
+        criticality: hard
+        
+      accessibility:
+        mode: open_settings
+        settings_target: accessibility
+        grace_s: 7.0
+        poll_s: 2.0
+        waiting_long_after_s: 300.0
+        waiting_long_poll_s: 15.0
+        supports_needs_restart: false
+        criticality: hard
+        
+      full_disk_access:
+        mode: open_settings
+        settings_target: full_disk_access
+        grace_s: 7.0
+        poll_s: 10.0
+        waiting_long_after_s: 600.0
+        waiting_long_poll_s: 30.0
+        supports_needs_restart: false
+        criticality: feature
+  
   update_notification:
     enabled: true
     priority: 15
@@ -298,8 +375,8 @@ permissions:
     # TCC Rate Limiting Fix: Batch permissions to avoid macOS blocking dialogs
     # When requesting 4+ permissions, macOS blocks the last ones
     # Solution: Request 2 permissions per session, then restart
-    batch_size: 2                    # Permissions per batch (unused when batching disabled)
-    enable_batching: false           # DISABLED: sequential requests like old version
+    batch_size: 3                    # Permissions per batch (3 = fewer restarts)
+    enable_batching: true            # ENABLED: batch permissions to avoid macOS blocking
     batch_restart_delay_sec: 2.0     # Delay before restart after batch (unused)
   sequential: false
   request_timeout_sec: 120.0
