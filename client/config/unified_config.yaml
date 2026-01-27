@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.58
+  version: 1.6.0.59
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -204,7 +204,7 @@ integrations:
     - accessibility
     - full_disk_access
   permission_restart:
-    enabled: false
+    enabled: true
     critical_permissions:
     - accessibility
     - microphone
@@ -242,6 +242,9 @@ integrations:
       - input_monitoring
       - accessibility
       - full_disk_access
+
+    # Pause between steps to avoid TCC prompt overlap
+    inter_step_pause_s: 3.0
     
     # Per-step configuration
     steps:
@@ -257,14 +260,14 @@ integrations:
         grace_s: 7.0
         poll_s: 2.0
         supports_needs_restart: false
-        criticality: soft
+        criticality: hard
         
       contacts:
         mode: auto_dialog
         grace_s: 7.0
         poll_s: 2.0
         supports_needs_restart: false
-        criticality: feature
+        criticality: hard
         
       input_monitoring:
         mode: auto_dialog
@@ -293,7 +296,7 @@ integrations:
         waiting_long_after_s: 600.0
         waiting_long_poll_s: 30.0
         supports_needs_restart: false
-        criticality: feature
+        criticality: hard
   
   update_notification:
     enabled: true
