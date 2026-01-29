@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.59
+  version: 1.6.0.60
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -222,6 +222,8 @@ integrations:
   # Permission System V2 - Pipeline Mode
   permissions_v2:
     enabled: true
+    advance_on_timeout: false
+    default_step_timeout_s: 20.0
     
     # No batching - single pipeline
     batching:
@@ -250,28 +252,28 @@ integrations:
     steps:
       microphone:
         mode: auto_dialog
-        grace_s: 7.0
+        grace_s: 13.0
         poll_s: 1.0
         supports_needs_restart: false
         criticality: hard
         
       screen_capture:
         mode: auto_dialog
-        grace_s: 7.0
+        grace_s: 13.0
         poll_s: 2.0
         supports_needs_restart: false
         criticality: hard
         
       contacts:
         mode: auto_dialog
-        grace_s: 7.0
+        grace_s: 13.0
         poll_s: 2.0
         supports_needs_restart: false
         criticality: hard
         
       input_monitoring:
         mode: auto_dialog
-        grace_s: 7.0
+        grace_s: 13.0
         poll_s: 2.0
         supports_needs_restart: true
         post_restart_verify_window_s: 20.0
@@ -281,7 +283,7 @@ integrations:
       accessibility:
         mode: open_settings
         settings_target: accessibility
-        grace_s: 7.0
+        grace_s: 13.0
         poll_s: 2.0
         waiting_long_after_s: 300.0
         waiting_long_poll_s: 15.0
@@ -291,7 +293,7 @@ integrations:
       full_disk_access:
         mode: open_settings
         settings_target: full_disk_access
-        grace_s: 7.0
+        grace_s: 13.0
         poll_s: 10.0
         waiting_long_after_s: 600.0
         waiting_long_poll_s: 30.0
@@ -614,6 +616,11 @@ messages:
   enabled: true  # F-2025-016-messages enabled
   require_full_disk_access: true
   require_contacts_permission: true
+whatsapp:
+  enabled: true  # F-2025-019-whatsapp enabled
+  keep_alive: true
+  node_path: /usr/local/bin/node
+  auto_start: true
 actions:
   open_app:
     enabled: true
