@@ -44,7 +44,7 @@ def get_version_from_file() -> str:
             logger.warning(f"Не удалось прочитать VERSION файл: {e}")
     
     # Fallback: используем переменную окружения или дефолт
-    return os.getenv('SERVER_VERSION', '1.6.0.59')
+    return os.getenv('SERVER_VERSION', '1.6.0.60')
 
 @dataclass
 class DatabaseConfig:
@@ -794,6 +794,22 @@ class SubscriptionConfig:
         """Проверяет, активна ли платёжная система (enabled и не kill_switch)"""
         return self.enabled and not self.kill_switch
 
+
+@dataclass
+class WhatsappConfig:
+    """
+    Конфигурация интеграции WhatsApp
+    
+    Feature ID: F-2025-WHATSAPP
+    """
+    enabled: bool = False
+    
+    @classmethod
+    def from_env(cls) -> 'WhatsappConfig':
+        return cls(
+            enabled=os.getenv('WHATSAPP_ENABLED', 'false').lower() == 'true'
+        )
+
 @dataclass
 class UnifiedServerConfig:
     """Централизованная конфигурация всего сервера"""
@@ -815,6 +831,7 @@ class UnifiedServerConfig:
     browser_use: BrowserUseConfig = field(default_factory=BrowserUseConfig.from_env)
     payment_use: PaymentUseConfig = field(default_factory=PaymentUseConfig.from_env)
     subscription: SubscriptionConfig = field(default_factory=SubscriptionConfig.from_env)
+    whatsapp: WhatsappConfig = field(default_factory=WhatsappConfig.from_env)
     
     def __post_init__(self):
         """Пост-инициализация для валидации"""
@@ -880,7 +897,9 @@ class UnifiedServerConfig:
             'logging': self.logging.__dict__,
             'browser_use': self.browser_use.__dict__,
             'payment_use': self.payment_use.__dict__,
-            'subscription': self.subscription.__dict__
+            'payment_use': self.payment_use.__dict__,
+            'subscription': self.subscription.__dict__,
+            'whatsapp': self.whatsapp.__dict__
         }
 
         return config_mapping.get(module_name, {})
@@ -1085,6 +1104,7 @@ class UnifiedServerConfig:
         kill_switches = KillSwitchesConfig(**config_dict.get('kill_switches', {}))
         browser_use = BrowserUseConfig(**config_dict.get('browser_use', {}))
         payment_use = PaymentUseConfig(**config_dict.get('payment_use', {}))
+        whatsapp = WhatsappConfig(**config_dict.get('whatsapp', {}))
         
         # Backpressure config с учетом окружения
         env = os.getenv('NEXY_ENV', 'prod').lower()
@@ -1112,7 +1132,8 @@ class UnifiedServerConfig:
             kill_switches=kill_switches,
             backpressure=backpressure,
             browser_use=browser_use,
-            payment_use=payment_use
+            payment_use=payment_use,
+            whatsapp=whatsapp
         )
     
     def get_status(self) -> Dict[str, Any]:
