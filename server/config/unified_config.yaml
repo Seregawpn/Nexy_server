@@ -111,14 +111,14 @@ update:
   downloads_dir: server/updates/downloads
   keys_dir: server/updates/keys
   manifests_dir: server/updates/manifests
-  default_version: 1.6.0.64  # Единый источник истины: SERVER_VERSION из config.env
-  default_build: 1.6.0.64  # Единый источник истины: SERVER_BUILD из config.env
+  default_version: 1.6.0.66  # Единый источник истины: SERVER_VERSION из config.env
+  default_build: 1.6.0.66  # Единый источник истины: SERVER_BUILD из config.env
   default_arch: universal2
   default_min_os: 11.0
 
 server:
-  version: 1.6.0.64  # Единый источник истины: SERVER_VERSION из config.env
-  build: 1.6.0.64  # Единый источник истины: SERVER_BUILD из config.env
+  version: 1.6.0.66  # Единый источник истины: SERVER_VERSION из config.env
+  build: 1.6.0.66  # Единый источник истины: SERVER_BUILD из config.env
   channel: stable
 
 logging:
