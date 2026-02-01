@@ -3,5 +3,5 @@ Permissions Module для macOS
 Управление разрешениями системы (V2)
 """
 
-__version__ = "1.6.0.68"
+__version__ = "1.6.0.69"
 __author__ = "Nexy Team"

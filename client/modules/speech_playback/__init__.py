@@ -8,7 +8,7 @@ ARCHITECUTRE:
 
 from .core.avf_player import AVFoundationPlayer, AVFPlayerConfig
 
-__version__ = "1.6.0.68"
+__version__ = "1.6.0.69"
 __author__ = "Nexy AI Voice Assistant Team"
 
 # Export main classes
