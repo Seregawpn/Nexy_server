@@ -4,12 +4,11 @@
 """
 import asyncio
 import logging
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from integration.core.base_integration import BaseIntegration
+from integration.core import selectors
 from modules.voiceover_control.core.controller import VoiceOverController, VoiceOverControlSettings
-from integration.utils.resource_path import get_user_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +30,9 @@ class VoiceOverDuckingIntegration(BaseIntegration):
         try:
             logger.info("🔧 Инициализация VoiceOverDuckingIntegration...")
 
-            # Если это первый запуск (флаг ещё не создан) — не поднимаем VoiceOver до завершения first-run
-            flag_dir = get_user_data_dir("Nexy")
-            first_run_flag = Path(flag_dir) / "permissions_first_run_completed.flag"
-            if not first_run_flag.exists():
+            # Если это первый запуск — не поднимаем VoiceOver до завершения first-run
+            snapshot = selectors.create_snapshot_from_state(self.state_manager)
+            if snapshot.first_run:
                 self._awaiting_first_run = True
                 await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed)
                 logger.info("ℹ️ VoiceOverDuckingIntegration: first-run not completed, postponing init until permissions.first_run_completed")

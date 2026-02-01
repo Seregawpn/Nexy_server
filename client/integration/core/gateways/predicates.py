@@ -164,3 +164,11 @@ def permission_restart_predicate(_s: Snapshot, expected: Any, extra: Optional[Di
                 return False
 
     return True
+
+@_register("whatsapp.status")
+def whatsapp_status(s: Snapshot, expected: str, extra: Optional[Dict[str, Any]]) -> bool:
+    """Check if WhatsApp status matches expected value."""
+    # Ensure selectors has is_whatsapp_qr_required or we check status directly
+    if not hasattr(s, "whatsapp_status"):
+        return False
+    return s.whatsapp_status.value.lower() == str(expected).lower()

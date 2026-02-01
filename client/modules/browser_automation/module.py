@@ -317,6 +317,11 @@ class BrowserUseModule:
                                 if os.path.exists(driver_path):
                                     logger.info(f"[{FEATURE_ID}] Found bundled driver at: {driver_path}")
                                     cmd = [driver_path, "install", "chromium"]
+                                else:
+                                    logger.warning(f"[{FEATURE_ID}] Driver NOT found at _MEIPASS path: {driver_path}")
+                            else:
+                                logger.warning(f"[{FEATURE_ID}] sys._MEIPASS not present (not a standard single-file bundle?)")
+
                     except Exception as e:
                         logger.warning(f"[{FEATURE_ID}] Failed to resolve driver path in frozen mode: {e}")
                         # Fallback to sys.executable as a hail mary, or maybe just proceed
@@ -652,24 +657,33 @@ class BrowserUseModule:
         
         # Try environment variables first
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        model_name = os.environ.get("GEMINI_MODEL") or os.environ.get("BROWSER_USE_MODEL")
         
         # Then check self._config
         if not api_key:
             api_key = self._config.get("gemini_api_key")
+        if not model_name:
+            model_name = self._config.get("gemini_model")
         
         # Finally check global_config root 'browser_use' section directly
-        if not api_key:
+        if not api_key or not model_name:
             # global_config._load_config() returns the raw dict
             if hasattr(global_config, '_load_config'):
                 raw_config = global_config._load_config()
                 browser_use_section = raw_config.get('browser_use', {})
-                api_key = browser_use_section.get("gemini_api_key")
+                if not api_key:
+                    api_key = browser_use_section.get("gemini_api_key")
+                if not model_name:
+                    model_name = browser_use_section.get("gemini_model")
         
         if not api_key:
             raise ValueError("GEMINI_API_KEY not configured in environment variables or config")
+            
+        if not model_name:
+            model_name = "gemini-2.5-flash" # Fallback default 
         
         # Use adapter to make ChatGoogleGenerativeAI compatible with browser-use
-        return GeminiLLMAdapter(api_key=api_key, model="gemini-2.5-flash")
+        return GeminiLLMAdapter(api_key=api_key, model=model_name)
 
     def _get_agent_config(self, config_preset: str) -> Dict[str, Any]:
         base_config = {
@@ -699,7 +713,10 @@ class BrowserUseModule:
                  if hasattr(agent.browser_session, 'close'):
                      await agent.browser_session.close()
         except Exception as e:
-            logger.error(f"[{FEATURE_ID}] Cleanup error: {e}")
+            logger.error(f"[{FEATURE_ID}] Cleanup error: {e}") 
+        finally:
+            if force and self._persistent_session:
+                 self._persistent_session = None
 
     async def close_browser(self):
         """Explicitly close persistent browser."""

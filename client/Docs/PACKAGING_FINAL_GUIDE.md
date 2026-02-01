@@ -3,7 +3,7 @@
 **Версия:** 2.0 (обновлено 2025-11-17)  
 **Целевая платформа:** Universal 2 (arm64 + x86_64)
 
-> Это базовый и единственный источник инструкций по сборке Universal 2 `.app` + `.pkg`, подписи и нотарификации. Все чек-листы (`Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md`, `.cursorrules §11.2`) обязаны ссылаться на этот файл и фиксировать фактические результаты.
+> Это базовый и единственный источник инструкций по сборке Universal 2 `.app` + `.pkg`, подписи и нотарификации. Все проверки следуют процессу, описанному в `.cursorrules`.
 
 **Связанные документы:**
 - `client/metrics/registry.md` — метрики и SLO пороги (включая power/battery метрики)
@@ -66,9 +66,9 @@ git status --short | grep -E "(main\.py|integration/|modules/|resources/|assets/
    - Запустить тестовую сборку и проверить содержимое `.app/Contents/Resources/`
    - Убедиться, что пути в коде соответствуют структуре в `.app`
 
-#### Шаг 2: Прохождение PRE_PACKAGING_VERIFICATION.md
+#### Шаг 2: Предварительная верификация
 
-**ОБЯЗАТЕЛЬНО:** Пройти чек-лист `Docs/PRE_PACKAGING_VERIFICATION.md` и зафиксировать результаты.
+**ОБЯЗАТЕЛЬНО:** Выполнить автоматические проверки через `scripts/pre_build_gate.sh`.
 
 **Минимальные проверки:**
 - [ ] Все зависимости установлены и актуальны
@@ -93,6 +93,8 @@ cd client
 # Dev-режим (без нотаризации)
 NEXY_SKIP_NOTARIZATION=1 ./packaging/build_final.sh
 ```
+
+**Важно про окружение:** если существует `.venv`, `build_final.sh` использует `./.venv/bin/python` для всех стадий (preflight + PyInstaller). Для x86_64 этапа можно создать отдельный `./.venv_x86` — скрипт использует его автоматически, если найден. Убедитесь, что зависимости (включая `playwright`) установлены в этих окружениях.
 
 **Что делает `build_final.sh` автоматически:**
 1. ✅ Preflight проверки (verify_imports, verify_pyinstaller, verify_ctypes, verify_config, verify_resources)
@@ -169,7 +171,7 @@ python3 scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
 
 **ЗАПРЕЩЕНО:**
 - ❌ Использовать ручные/альтернативные инструкции упаковки вне `PACKAGING_FINAL_GUIDE.md`
-- ❌ Пропускать шаги процесса (PRE_PACKAGING_VERIFICATION.md, build_final.sh)
+- ❌ Пропускать шаги процесса (pre_build_gate.sh, build_final.sh)
 - ❌ Использовать альтернативные скрипты сборки (например: `rebuild_from_scratch.sh` для релиза)
 - ❌ Модифицировать `.app` после сборки (открытие в Finder, `xattr -cr`, копирование через `cp -R`)
 - ❌ Пропускать проверку артефактов после сборки
@@ -195,6 +197,7 @@ python3 scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
 1. **`packaging/Nexy.spec`:**
    - Добавить в секцию `datas` для ресурсов
    - Добавить в секцию `binaries` для бинарников (если нужно)
+   - Добавить в `hiddenimports` для динамически загружаемых модулей (как `payment_integration`)
    - Проверить, что пути корректны (абсолютные пути через `client_dir`)
 
 2. **`scripts/stage_universal_binaries.py` (только для `vendor_binaries/`):**
@@ -211,7 +214,7 @@ python3 scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
 
 - [ ] Все триггеры изменений обработаны (см. раздел 0.1)
 - [ ] Артефакты упаковки обновлены (Nexy.spec, stage_universal_binaries.py)
-- [ ] PRE_PACKAGING_VERIFICATION.md пройден и результаты зафиксированы
+- [ ] Автоматические проверки (pre_build_gate.sh) пройдены успешно
 - [ ] `build_final.sh` выполнен успешно
 - [ ] Все артефакты проверены (подпись, нотаризация, архитектура, целостность)
 - [ ] `packaging_verification.log` не содержит ошибок
@@ -377,6 +380,21 @@ python3 scripts/update_module_versions.py
 python3 -c "import platform; print(platform.machine())"  # Должно быть arm64
 arch -x86_64 python3 -c "import platform; print(platform.machine())"  # Должно быть x86_64
 ```
+
+### 3.1.1. Contacts для x86_64 (при использовании .venv)
+
+**Минимум:** установить pyobjc-framework-Contacts для x86_64 в тот же venv через Rosetta:
+
+```bash
+arch -x86_64 ./.venv/bin/python -m pip install pyobjc-framework-Contacts
+```
+
+Если после этого preflight или x86_64 сборка всё равно падает — значит `.venv` не универсальная и не может исполняться под x86_64. Тогда:
+
+- **Либо** сделать universal venv на universal Python (установить Universal2 Python и создать в нём venv, установить зависимости для обеих архитектур).
+- **Либо** завести отдельный x86_64 venv и указывать его как `BUILD_PYTHON` только для x86_64 этапа (требует доработки скрипта под два интерпретатора).
+
+При запуске через `build_final.sh` при падении проверки Contacts (x86_64) скрипт выведет эту же подсказку.
 
 ### 3.2. Универсализация .so файлов (если нужно)
 
@@ -835,10 +853,8 @@ rm -rf dist/Nexy.app/Nexy.app
 
 ---
 
-## 14. Чек-листы и отчёты
+## 14. Отчёты и правила
 
-- **Перед упаковкой:** `Docs/PRE_PACKAGING_VERIFICATION.md`
-- **Резюме статуса:** `Docs/PACKAGING_READINESS_CHECKLIST.md`
 - **Требования:** этот документ (разделы 1–5)
 - **Process rules:** `.cursorrules §11.2 Packaging Regression Checklist`
 

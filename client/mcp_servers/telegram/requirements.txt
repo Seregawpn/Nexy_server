@@ -1,0 +1,3 @@
+mcp
+telethon
+python-dotenv

@@ -129,7 +129,7 @@
 ### REQ-010: First-run permissions flow
 - **Домен**: Permissions/TCC
 - **Критичность**: MUST
-- **Описание**: При первом запуске приложение последовательно активирует разрешения в порядке, заданном `integrations.permissions.required_permissions` (config-driven, fallback‑списка нет), с паузами между запросами и фиксированным удержанием `activation_hold_duration_sec`. Проверка статусов в first-run не выполняется — activators вызываются по списку. Full Disk Access открывается через System Settings (settings-only). Остальные разрешения запрашиваются через системные диалоги. Список разрешений для рестарта берётся из `integrations.permission_restart.critical_permissions`.
+- **Описание**: При первом запуске приложение последовательно активирует разрешения в порядке, заданном `integrations.permissions.required_permissions` (config-driven, fallback‑списка нет), с паузами между запросами и фиксированным удержанием `activation_hold_duration_sec`. Проверка статусов в first-run не выполняется — activators вызываются по списку. Full Disk Access открывается через System Settings (settings-only). Остальные разрешения запрашиваются через системные диалоги. Список разрешений для рестарта берётся из `integrations.permission_restart.critical_permissions`. Пропуск first-run по dev‑флагам не допускается. Флаг `permissions_first_run_completed.flag` является кешем и не используется для принятия решения о запуске wizard — решение принимает V2 orchestrator по `permission_ledger.json`.
 - **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`
 - **Owner**: Permissions SWAT
 - **Ожидаемый результат**: Все разрешения запрашиваются последовательно, флаг `permissions_first_run_completed.flag` создаётся после завершения

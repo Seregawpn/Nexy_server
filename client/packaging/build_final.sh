@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # 📦 Nexy AI Assistant - Финальная упаковка и подпись Universal 2 (ОБНОВЛЕНО 17.11.2025)
-# Использование: ./packaging/build_final.sh [--skip-build] [--clean-install]
+# Использование: ./packaging/build_final.sh [--skip-build] [--clean-install] [--permissions-smoke]
 #   --skip-build     Пропустить PyInstaller сборку (использовать существующий .app)
 #   --clean-install  Удалить старый /Applications/Nexy.app, сбросить TCC разрешения,
 #                    и автоматически установить новый .pkg после сборки
+#   --permissions-smoke  Запустить приложение и проверить first-run логи (smoke-check)
 # Автоматически выполняет Universal 2 сборку (arm64 + x86_64)
 
 # ГЛОБАЛЬНАЯ ЗАЩИТА ОТ EXTENDED ATTRIBUTES
@@ -16,6 +17,20 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Базовые функции вывода (должны быть доступны до первых проверок)
+log() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+warn() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+error() {
+    echo -e "${RED}❌ $1${NC}"
+    exit 1
+}
 
 # Пути
 CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,6 +90,7 @@ echo -e "${BLUE}📝 Лог сборки: $BUILD_LOG${NC}"
 # --- CLI flags ---
 SKIP_BUILD=0
 CLEAN_INSTALL=0
+PERMISSIONS_SMOKE=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-build)
@@ -83,6 +99,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clean-install)
             CLEAN_INSTALL=1
+            shift
+            ;;
+        --permissions-smoke)
+            PERMISSIONS_SMOKE=1
             shift
             ;;
         *)
@@ -96,6 +116,7 @@ echo -e "${YELLOW}🧹 Удаление флагов first-run...${NC}"
 NEXY_SUPPORT_DIR="$HOME/Library/Application Support/Nexy"
 if [ -d "$NEXY_SUPPORT_DIR" ]; then
     find "$NEXY_SUPPORT_DIR" -name "*.flag" -type f -delete 2>/dev/null || true
+    rm -f "$NEXY_SUPPORT_DIR/permission_ledger.json" 2>/dev/null || true
     echo "     ✓ Флаги first-run удалены"
 else
     echo "     ✓ Директория Nexy не найдена (первый запуск)"
@@ -166,6 +187,7 @@ if [ "$CLEAN_INSTALL" -eq 1 ]; then
     NEXY_SUPPORT_DIR="$HOME/Library/Application Support/Nexy"
     if [ -d "$NEXY_SUPPORT_DIR" ]; then
         find "$NEXY_SUPPORT_DIR" -name "*.flag" -type f -delete 2>/dev/null || true
+        rm -f "$NEXY_SUPPORT_DIR/permission_ledger.json" 2>/dev/null || true
         echo "     ✓ Флаги first-run удалены"
     else
         echo "     ✓ Директория Nexy не найдена (первый запуск)"
@@ -189,8 +211,31 @@ elif [ -d "$HOME/.pyenv" ]; then
     fi
 fi
 
+# Канонический Python для всех стадий сборки (preflight + PyInstaller)
+if [ -x "$CLIENT_DIR/.venv/bin/python" ]; then
+    BUILD_PYTHON="$CLIENT_DIR/.venv/bin/python"
+    echo "✓ BUILD_PYTHON (.venv): $BUILD_PYTHON"
+elif [ -x "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3" ]; then
+    BUILD_PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+    echo "✓ BUILD_PYTHON: $BUILD_PYTHON"
+elif command -v python3 >/dev/null 2>&1; then
+    BUILD_PYTHON="$(command -v python3)"
+    echo "⚠️  BUILD_PYTHON fallback: $BUILD_PYTHON"
+else
+    echo "❌ Python3 не найден. Установите Python 3.13 (Universal 2)"
+    exit 1
+fi
+
+# Отдельный Python для x86_64 (если есть)
+if [ -x "$CLIENT_DIR/.venv_x86/bin/python" ]; then
+    BUILD_PYTHON_X86="$CLIENT_DIR/.venv_x86/bin/python"
+    echo "✓ BUILD_PYTHON_X86 (.venv_x86): $BUILD_PYTHON_X86"
+else
+    BUILD_PYTHON_X86=""
+fi
+
 # Read version from unified_config.yaml (single source of truth)
-VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('$CLIENT_DIR/config/unified_config.yaml'))['app']['version'])")
+VERSION=$("$BUILD_PYTHON" -c "import yaml; print(yaml.safe_load(open('$CLIENT_DIR/config/unified_config.yaml'))['app']['version'])")
 
 # ============================================================================
 # PREFLIGHT ПРОВЕРКИ (обязательные перед сборкой)
@@ -205,10 +250,46 @@ PREFLIGHT_FAILED=false
 echo "Лог preflight: $PREFLIGHT_LOG"
 echo ""
 
+# --- Permissions preflight (no bypass + config sanity) ---
+echo -e "${YELLOW}Проверка permissions preflight...${NC}"
+if [ -n "${NEXY_TEST_SKIP_PERMISSIONS:-}" ] || [ -n "${NEXY_DEV_FORCE_PERMISSIONS:-}" ]; then
+    echo -e "${RED}❌ Обнаружены dev-bypass env переменные (NEXY_TEST_SKIP_PERMISSIONS/NEXY_DEV_FORCE_PERMISSIONS). Уберите перед упаковкой.${NC}"
+    PREFLIGHT_FAILED=true
+fi
+
+if "$BUILD_PYTHON" - <<PY >/dev/null 2>&1
+import yaml, sys
+cfg = yaml.safe_load(open("$CLIENT_DIR/config/unified_config.yaml"))
+errors = []
+perms_v2 = (cfg or {}).get("integrations", {}).get("permissions_v2", {})
+if not perms_v2.get("enabled", False):
+    errors.append("integrations.permissions_v2.enabled=false")
+if perms_v2.get("advance_on_timeout", None) is True:
+    errors.append("integrations.permissions_v2.advance_on_timeout=true")
+order = perms_v2.get("order", [])
+if not isinstance(order, list) or not order:
+    errors.append("integrations.permissions_v2.order empty")
+critical = (cfg or {}).get("integrations", {}).get("permission_restart", {}).get("critical_permissions", [])
+if not isinstance(critical, list) or not critical:
+    errors.append("integrations.permission_restart.critical_permissions empty")
+if errors:
+    sys.stderr.write("\\n".join(errors))
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+    echo -e "${GREEN}✅ permissions preflight OK${NC}"
+else
+    echo -e "${RED}❌ permissions preflight failed (check unified_config.yaml)${NC}"
+    PREFLIGHT_FAILED=true
+fi
+
+echo ""
+
 # Запускаем verify_imports.py
 if [ -f "$CLIENT_DIR/scripts/verify_imports.py" ]; then
     echo -e "${YELLOW}Запуск verify_imports.py...${NC}"
-    if python3 "$CLIENT_DIR/scripts/verify_imports.py" 2>&1 | tee "$PREFLIGHT_LOG"; then
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_imports.py" 2>&1 | tee "$PREFLIGHT_LOG"; then
         echo -e "${GREEN}✅ verify_imports.py - все проверки пройдены${NC}"
     else
         echo -e "${RED}❌ verify_imports.py - есть ошибки!${NC}"
@@ -223,7 +304,7 @@ echo ""
 # Запускаем verify_pyinstaller.py
 if [ -f "$CLIENT_DIR/scripts/verify_pyinstaller.py" ]; then
     echo -e "${YELLOW}Запуск verify_pyinstaller.py...${NC}"
-    if python3 "$CLIENT_DIR/scripts/verify_pyinstaller.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_pyinstaller.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
         echo -e "${GREEN}✅ verify_pyinstaller.py - все проверки пройдены${NC}"
     else
         echo -e "${RED}❌ verify_pyinstaller.py - есть ошибки!${NC}"
@@ -233,12 +314,40 @@ else
     echo -e "${YELLOW}⚠️  scripts/verify_pyinstaller.py не найден, пропускаем${NC}"
 fi
 
+echo -e "${YELLOW}Проверка pyobjc Contacts...${NC}"
+if "$BUILD_PYTHON" - <<'PY' >/dev/null 2>&1
+import Contacts  # pyobjc framework
+PY
+then
+    echo -e "${GREEN}✅ Contacts модуль доступен${NC}"
+else
+    error "❌ Contacts модуль недоступен (pyobjc-framework-Contacts отсутствует)"
+fi
+if [ -n "$BUILD_PYTHON_X86" ]; then
+    CONTACTS_CHECK_PY="$BUILD_PYTHON_X86"
+else
+    CONTACTS_CHECK_PY="$BUILD_PYTHON"
+fi
+if arch -x86_64 "$CONTACTS_CHECK_PY" - <<'PY' >/dev/null 2>&1
+import Contacts  # pyobjc framework
+PY
+then
+    echo -e "${GREEN}✅ Contacts модуль доступен (x86_64)${NC}"
+else
+    echo -e "${YELLOW}Минимум: установить Contacts для x86_64 через Rosetta:${NC}"
+    echo "  arch -x86_64 $CONTACTS_CHECK_PY -m pip install pyobjc-framework-Contacts"
+    echo -e "${YELLOW}Если после этого всё равно падает — .venv не универсальная. Тогда:${NC}"
+    echo "  • либо сделать universal venv на universal Python, либо"
+    echo "  • отдельный x86_64 venv и указать BUILD_PYTHON на него для x86_64 этапа"
+    error "❌ Contacts модуль недоступен для x86_64 (pyobjc-framework-Contacts отсутствует)"
+fi
+
 echo ""
 
 # Запускаем verify_ctypes.py (проверки ctypes/нативного кода)
 if [ -f "$CLIENT_DIR/scripts/verify_ctypes.py" ]; then
     echo -e "${YELLOW}Запуск verify_ctypes.py (проверка ctypes/нативного кода)...${NC}"
-    if python3 "$CLIENT_DIR/scripts/verify_ctypes.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_ctypes.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
         echo -e "${GREEN}✅ verify_ctypes.py - все проверки пройдены${NC}"
     else
         echo -e "${RED}❌ verify_ctypes.py - есть ошибки!${NC}"
@@ -253,7 +362,7 @@ echo ""
 # Запускаем verify_config.py (проверки конфигурации)
 if [ -f "$CLIENT_DIR/scripts/verify_config.py" ]; then
     echo -e "${YELLOW}Запуск verify_config.py (проверка конфигурации)...${NC}"
-    if python3 "$CLIENT_DIR/scripts/verify_config.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_config.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
         echo -e "${GREEN}✅ verify_config.py - все проверки пройдены${NC}"
     else
         echo -e "${RED}❌ verify_config.py - есть ошибки!${NC}"
@@ -268,7 +377,7 @@ echo ""
 # Запускаем verify_resources.py (проверки ресурсов)
 if [ -f "$CLIENT_DIR/scripts/verify_resources.py" ]; then
     echo -e "${YELLOW}Запуск verify_resources.py (проверка ресурсов)...${NC}"
-    if python3 "$CLIENT_DIR/scripts/verify_resources.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_resources.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
         echo -e "${GREEN}✅ verify_resources.py - все проверки пройдены${NC}"
     else
         echo -e "${RED}❌ verify_resources.py - есть ошибки!${NC}"
@@ -322,20 +431,15 @@ echo -e "${GREEN}✅ pb2 файлы актуальны${NC}"
 
 # Стейджинг Universal 2 бинарников из vendor_binaries
 echo -e "${YELLOW}🔨 Стейджинг Universal 2 бинарников...${NC}"
-python3 "$CLIENT_DIR/scripts/stage_universal_binaries.py" || error "Стейджинг бинарников не удался"
+"$BUILD_PYTHON" "$CLIENT_DIR/scripts/stage_universal_binaries.py" || error "Стейджинг бинарников не удался"
 
 # Проверяем зависимости и бинарники до сборки
 echo -e "${YELLOW}🔍 Проверяем окружение и универсальные бинарники...${NC}"
-python3 "$CLIENT_DIR/scripts/check_dependencies.py"
+"$BUILD_PYTHON" "$CLIENT_DIR/scripts/check_dependencies.py"
 
 # Обновляем версии в Info.plist модулей
 echo -e "${YELLOW}📝 Обновляем версии в модулях...${NC}"
-python3 "$CLIENT_DIR/scripts/update_module_versions.py"
-
-# Функция для логирования
-log() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
+"$BUILD_PYTHON" "$CLIENT_DIR/scripts/update_module_versions.py"
 
 SIGNING_STAGE="pre" # pre -> signed -> post_staple
 
@@ -450,10 +554,6 @@ clean_xattrs() {
     fi
 }
 
-warn() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
 # Функция контрольной точки для проверки подписи
 # Проверяет подпись, записывает mtime и хеш для диагностики
 checkpoint() {
@@ -541,11 +641,6 @@ update_app_version() {
     else
         warn "Info.plist не найден в $app_path"
     fi
-}
-
-error() {
-    echo -e "${RED}❌ $1${NC}"
-    exit 1
 }
 
 # Функция для безопасного удаления защищённых файлов (например, из подписанных .app bundles)
@@ -670,7 +765,9 @@ check_command() {
 
 # Проверяем необходимые команды
 echo -e "${BLUE}🔍 Проверяем необходимые инструменты...${NC}"
-check_command "python3"
+if [ ! -x "$BUILD_PYTHON" ]; then
+    error "BUILD_PYTHON не найден или не исполняемый: $BUILD_PYTHON"
+fi
 check_command "codesign"
 check_command "pkgbuild"
 check_command "productbuild"
@@ -678,9 +775,9 @@ check_command "productsign"
 check_command "ditto"
 check_command "xattr"
 
-# Проверяем PyInstaller
-if ! command -v pyinstaller &> /dev/null; then
-    error "PyInstaller не найден. Установите: brew install pyinstaller"
+# Проверяем PyInstaller в BUILD_PYTHON
+if ! "$BUILD_PYTHON" -m PyInstaller --version >/dev/null 2>&1; then
+    error "PyInstaller не найден в BUILD_PYTHON. Установите: $BUILD_PYTHON -m pip install pyinstaller"
 fi
 
 # Проверяем сертификаты
@@ -747,21 +844,25 @@ else
     else
         log "Выполняем Universal 2 сборку (arm64 + x86_64)..."
     
-        # Активируем .venv для использования правильных версий пакетов
-        if [ -f "$CLIENT_DIR/.venv/bin/activate" ]; then
-            source "$CLIENT_DIR/.venv/bin/activate"
-        fi
-    
         # Проверяем, что Python универсальный
         log "Проверяем архитектуру Python..."
-        PYTHON_ARCH=$(python3 -c "import platform; print(platform.machine())" 2>/dev/null || echo "unknown")
+        PYTHON_ARCH=$("$BUILD_PYTHON" -c "import platform; print(platform.machine())" 2>/dev/null || echo "unknown")
         log "Текущая архитектура Python: $PYTHON_ARCH"
+        if [ -n "$BUILD_PYTHON_X86" ]; then
+            if ! "$BUILD_PYTHON_X86" -c "import platform; print(platform.machine())" >/dev/null 2>&1; then
+                error "BUILD_PYTHON_X86 не работает. Проверьте .venv_x86."
+            fi
+        else
+            if ! arch -x86_64 "$BUILD_PYTHON" -c "import platform; print(platform.machine())" >/dev/null 2>&1; then
+                error "BUILD_PYTHON не поддерживает x86_64. Нужен universal python/venv или отдельный x86_64 env."
+            fi
+        fi
     
         # Шаг 1.1: Универсализация .so файлов (если нужно)
         log "Проверяем необходимость универсализации .so файлов..."
         if [ -d "/tmp/x86_64_site_packages" ]; then
             log "Найдена временная x86_64 установка, универсализируем .so файлы..."
-            python3 "$CLIENT_DIR/scripts/merge_so_from_x86_64.py" || warn "Универсализация .so файлов завершилась с предупреждениями"
+            "$BUILD_PYTHON" "$CLIENT_DIR/scripts/merge_so_from_x86_64.py" || warn "Универсализация .so файлов завершилась с предупреждениями"
         else
             log "Временная x86_64 установка не найдена, пропускаем универсализацию .so"
             log "Примечание: если x86_64 сборка упадет, установите пакеты через: arch -x86_64 python3 -m pip install -r requirements.txt"
@@ -769,7 +870,7 @@ else
     
         # Шаг 1.2: Сборка arm64
         log "Собираем arm64 версию..."
-        PYI_TARGET_ARCH=arm64 python3 -m PyInstaller packaging/Nexy.spec \
+        PYI_TARGET_ARCH=arm64 "$BUILD_PYTHON" -m PyInstaller packaging/Nexy.spec \
             --distpath dist-arm64 \
             --workpath build-arm64 \
             --noconfirm \
@@ -782,16 +883,14 @@ else
     
         # Шаг 1.3: Сборка x86_64 (через Rosetta)
         log "Собираем x86_64 версию (через Rosetta)..."
-        # Используем Universal Python из /Library/Frameworks для x86_64 сборки
-        UNIVERSAL_PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
-        if [ -f "$UNIVERSAL_PYTHON" ]; then
-            PYI_TARGET_ARCH=x86_64 arch -x86_64 "$UNIVERSAL_PYTHON" -m PyInstaller packaging/Nexy.spec \
+        if [ -n "$BUILD_PYTHON_X86" ]; then
+            PYI_TARGET_ARCH=x86_64 "$BUILD_PYTHON_X86" -m PyInstaller packaging/Nexy.spec \
                 --distpath dist-x86_64 \
                 --workpath build-x86_64 \
                 --noconfirm \
                 --clean
         else
-            PYI_TARGET_ARCH=x86_64 arch -x86_64 python3 -m PyInstaller packaging/Nexy.spec \
+            PYI_TARGET_ARCH=x86_64 arch -x86_64 "$BUILD_PYTHON" -m PyInstaller packaging/Nexy.spec \
                 --distpath dist-x86_64 \
                 --workpath build-x86_64 \
                 --noconfirm \
@@ -805,7 +904,7 @@ else
     
         # Шаг 1.4: Объединение в Universal 2
         log "Объединяем arm64 и x86_64 в Universal 2 .app..."
-        python3 "$CLIENT_DIR/scripts/create_universal_app.py" \
+        "$BUILD_PYTHON" "$CLIENT_DIR/scripts/create_universal_app.py" \
             --arm64 "dist-arm64/$APP_NAME.app" \
             --x86 "dist-x86_64/$APP_NAME.app" \
             --output "dist/$APP_NAME.app" \
@@ -977,6 +1076,12 @@ codesign --force $TIMESTAMP_FLAG --options=runtime \
 
 SIGNING_STAGE="signed"
 
+log "Проверяем entitlements главного executable..."
+ENTITLEMENTS_CHECK_OUTPUT="$(codesign -d --entitlements :- "$CLEAN_APP/Contents/MacOS/$APP_NAME" 2>&1 || true)"
+if echo "$ENTITLEMENTS_CHECK_OUTPUT" | grep -qi "invalid entitlements blob"; then
+    error "❌ Некорректные entitlements (invalid entitlements blob) — сборка остановлена"
+fi
+
 # CHECKPOINT 2: После подписи CLEAN_APP
 checkpoint "02_after_signing_clean_app" "$CLEAN_APP" || error "CHECKPOINT 02: Подпись CLEAN_APP не прошла проверку!"
 
@@ -1005,29 +1110,24 @@ CURRENT_STEP="Шаг 5: Нотаризация приложения"
 log_to_file ">>> ЭТАП: $CURRENT_STEP"
 echo -e "${BLUE}📤 Шаг 5: Нотаризация приложения${NC}"
 
-SKIP_NOTARIZATION="${NEXY_SKIP_NOTARIZATION:-0}"
-if [[ "$TIMESTAMP_MODE" == "none" && "$SKIP_NOTARIZATION" != "1" ]]; then
-    warn "TIMESTAMP_MODE=none несовместим с нотаризацией; принудительно пропускаем нотаризацию"
-    SKIP_NOTARIZATION="1"
+if [[ "$TIMESTAMP_MODE" == "none" ]]; then
+    error "TIMESTAMP_MODE=none несовместим с нотаризацией; отменяем сборку"
 fi
-if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем нотаризацию приложения (NEXY_SKIP_NOTARIZATION=1)"
-else
-    log "Создаем ZIP для нотаризации..."
-    ditto -c -k --noextattr --noqtn "$CLEAN_APP" "$DIST_DIR/$APP_NAME-app-for-notarization.zip"
 
-    log "Отправляем приложение на нотаризацию..."
-    xcrun notarytool submit "$DIST_DIR/$APP_NAME-app-for-notarization.zip" \
-        --keychain-profile "nexy-notary" \
-        --apple-id "seregawpn@gmail.com" \
-        --wait
+log "Создаем ZIP для нотаризации..."
+ditto -c -k --noextattr --noqtn "$CLEAN_APP" "$DIST_DIR/$APP_NAME-app-for-notarization.zip"
 
-    log "Прикрепляем нотаризационную печать..."
-    xcrun stapler staple "$CLEAN_APP"
-    
-    # CHECKPOINT 3: После stapler на CLEAN_APP
-    checkpoint "03_after_stapler_clean_app" "$CLEAN_APP" || error "CHECKPOINT 03: Подпись CLEAN_APP не прошла проверку после stapler!"
-fi
+log "Отправляем приложение на нотаризацию..."
+xcrun notarytool submit "$DIST_DIR/$APP_NAME-app-for-notarization.zip" \
+    --keychain-profile "nexy-notary" \
+    --apple-id "seregawpn@gmail.com" \
+    --wait
+
+log "Прикрепляем нотаризационную печать..."
+xcrun stapler staple "$CLEAN_APP"
+
+# CHECKPOINT 3: После stapler на CLEAN_APP
+checkpoint "03_after_stapler_clean_app" "$CLEAN_APP" || error "CHECKPOINT 03: Подпись CLEAN_APP не прошла проверку после stapler!"
 
 SIGNING_STAGE="post_staple"
 record_bundle_state "CLEAN_APP_POST_STAPLE" "$CLEAN_APP"
@@ -1083,18 +1183,14 @@ CURRENT_STEP="Шаг 7: Нотаризация DMG"
 log_to_file ">>> ЭТАП: $CURRENT_STEP"
 echo -e "${BLUE}📤 Шаг 7: Нотаризация DMG${NC}"
 
-if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем нотаризацию DMG (NEXY_SKIP_NOTARIZATION=1)"
-else
-    log "Отправляем DMG на нотаризацию..."
-    xcrun notarytool submit "$DMG_PATH" \
-        --keychain-profile "nexy-notary" \
-        --apple-id "seregawpn@gmail.com" \
-        --wait
+log "Отправляем DMG на нотаризацию..."
+xcrun notarytool submit "$DMG_PATH" \
+    --keychain-profile "nexy-notary" \
+    --apple-id "seregawpn@gmail.com" \
+    --wait
 
-    log "Прикрепляем нотаризационную печать к DMG..."
-    xcrun stapler staple "$DMG_PATH"
-fi
+log "Прикрепляем нотаризационную печать к DMG..."
+xcrun stapler staple "$DMG_PATH"
 
 # Шаг 8: Создание PKG (только если есть Installer сертификат)
 if [ -z "$INSTALLER_IDENTITY" ]; then
@@ -1134,6 +1230,12 @@ log "Создаем component PKG..."
 INSTALL_LOCATION="/"
 log "Устанавливаем в: $INSTALL_LOCATION (приложение уже в Applications/)"
 
+# Скрипты установки (postinstall)
+PKG_SCRIPTS_DIR="$CLIENT_DIR/packaging/pkg_scripts"
+if [ ! -d "$PKG_SCRIPTS_DIR" ]; then
+    error "Не найдена директория скриптов PKG: $PKG_SCRIPTS_DIR"
+fi
+
 # КРИТИЧНО: COPYFILE_DISABLE=1 установлен глобально (строка 10)
 # Это гарантирует, что pkgbuild не создаст AppleDouble файлы в PKG
 # .app в /tmp/nexy_pkg_clean_final НЕ модифицируется после копирования
@@ -1141,6 +1243,7 @@ pkgbuild --root /tmp/nexy_pkg_clean_final \
     --identifier "${BUNDLE_ID}.pkg" \
     --version "$VERSION" \
     --install-location "$INSTALL_LOCATION" \
+    --scripts "$PKG_SCRIPTS_DIR" \
     "$DIST_DIR/$APP_NAME-raw.pkg"
 
 # КРИТИЧНО: Удаляем AppleDouble файлы из PKG Payload
@@ -1153,7 +1256,7 @@ cat > packaging/distribution.xml <<EOF
 <?xml version='1.0' encoding='utf-8'?>
 <installer-gui-script minSpecVersion="1">
     <title>Nexy</title>
-    <options customize="never" require-scripts="false" />
+    <options customize="never" require-scripts="true" />
 
     <domains enable_localSystem="true" enable_currentUserHome="false" />
     <choices-outline>
@@ -1191,18 +1294,14 @@ CURRENT_STEP="Шаг 9: Нотаризация PKG"
 log_to_file ">>> ЭТАП: $CURRENT_STEP"
 echo -e "${BLUE}📤 Шаг 9: Нотаризация PKG${NC}"
 
-if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем нотаризацию PKG (NEXY_SKIP_NOTARIZATION=1)"
-else
-    log "Отправляем PKG на нотаризацию..."
-    xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" \
-        --keychain-profile "nexy-notary" \
-        --apple-id "seregawpn@gmail.com" \
-        --wait
+log "Отправляем PKG на нотаризацию..."
+xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" \
+    --keychain-profile "nexy-notary" \
+    --apple-id "seregawpn@gmail.com" \
+    --wait
 
-    log "Прикрепляем нотаризационную печать к PKG..."
-    xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
-fi
+log "Прикрепляем нотаризационную печать к PKG..."
+xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
 fi  # Конец блока создания PKG (если INSTALLER_IDENTITY установлен)
 
 # Шаг 10: Финальная проверка
@@ -1253,20 +1352,22 @@ checkpoint "05_final_check_clean_app" "$CLEAN_APP" || error "CHECKPOINT 05: Фи
 # CHECKPOINT 6: Финальная проверка dist/$APP_NAME.app
 checkpoint "06_final_check_dist_app" "$DIST_DIR/$APP_NAME.app" || error "CHECKPOINT 06: Финальная проверка dist/$APP_NAME.app не прошла!"
 
+log "Проверяем entitlements финального приложения в dist/..."
+FINAL_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements :- "$DIST_DIR/$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>&1 || true)"
+if echo "$FINAL_ENTITLEMENTS_OUTPUT" | grep -qi "invalid entitlements blob"; then
+    error "❌ Некорректные entitlements в dist/$APP_NAME.app (invalid entitlements blob)"
+fi
+
 if codesign --verify --deep --strict --verbose=2 "$CLEAN_APP"; then
     log "Подпись приложения корректна"
 else
     error "Подпись приложения не прошла проверку"
 fi
 
-if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-    warn "Пропускаем проверку нотаризации приложения (NEXY_SKIP_NOTARIZATION=1)"
+if xcrun stapler validate "$CLEAN_APP"; then
+    log "Нотаризация приложения корректна"
 else
-    if xcrun stapler validate "$CLEAN_APP"; then
-        log "Нотаризация приложения корректна"
-    else
-        error "Нотаризация приложения не прошла проверку"
-    fi
+    error "Нотаризация приложения не прошла проверку"
 fi
 
 # Проверка архитектуры (Universal 2)
@@ -1298,14 +1399,10 @@ if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
         error "Подпись PKG не прошла проверку"
     fi
 
-    if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-        warn "Пропускаем проверку нотаризации PKG (NEXY_SKIP_NOTARIZATION=1)"
+    if xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"; then
+        log "Нотаризация PKG корректна"
     else
-        if xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"; then
-            log "Нотаризация PKG корректна"
-        else
-            error "Нотаризация PKG не прошла проверку"
-        fi
+        error "Нотаризация PKG не прошла проверку"
     fi
 else
     warn "PKG не создан (пропускаем проверку PKG)"
@@ -1322,15 +1419,11 @@ if [ -f "$DMG_PATH" ]; then
     fi
 
     DMG_NOTARIZED=0
-    if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-        warn "Пропускаем проверку нотаризации DMG (NEXY_SKIP_NOTARIZATION=1)"
+    if xcrun stapler validate "$DMG_PATH"; then
+        log "Нотаризация DMG корректна"
+        DMG_NOTARIZED=1
     else
-        if xcrun stapler validate "$DMG_PATH"; then
-            log "Нотаризация DMG корректна"
-            DMG_NOTARIZED=1
-        else
-            error "Нотаризация DMG не прошла проверку"
-        fi
+        error "Нотаризация DMG не прошла проверку"
     fi
 
     log "Проверяем DMG через spctl..."
@@ -1425,6 +1518,12 @@ fi
     else
         error "Приложение из PKG не прошло проверку подписи"
     fi
+
+    log "Проверяем entitlements приложения из PKG..."
+    PKG_ENTITLEMENTS_OUTPUT="$(codesign -d --entitlements :- /tmp/nexy_final_extracted/Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME 2>&1 || true)"
+    if echo "$PKG_ENTITLEMENTS_OUTPUT" | grep -qi "invalid entitlements blob"; then
+        error "❌ Некорректные entitlements в PKG payload (invalid entitlements blob)"
+    fi
 else
     warn "PKG не создан (пропускаем проверку содержимого PKG)"
 fi
@@ -1453,22 +1552,14 @@ VERIFY_LOG="$DIST_DIR/packaging_verification.log"
     codesign --verify --deep --strict --verbose=2 "$DIST_DIR/$APP_NAME.app"
     echo ""
     echo "stapler app:"
-    if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-        echo "SKIPPED (NEXY_SKIP_NOTARIZATION=1)"
-    else
-        xcrun stapler validate "$DIST_DIR/$APP_NAME.app"
-    fi
+    xcrun stapler validate "$DIST_DIR/$APP_NAME.app"
     echo ""
     if [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
         echo "pkg signature:"
         pkgutil --check-signature "$DIST_DIR/$APP_NAME.pkg"
         echo ""
         echo "stapler pkg:"
-        if [[ "$SKIP_NOTARIZATION" == "1" ]]; then
-            echo "SKIPPED (NEXY_SKIP_NOTARIZATION=1)"
-        else
-            xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"
-        fi
+        xcrun stapler validate "$DIST_DIR/$APP_NAME.pkg"
         echo ""
     else
         echo "pkg signature: SKIPPED (pkg not created)"
@@ -1478,11 +1569,11 @@ VERIFY_LOG="$DIST_DIR/packaging_verification.log"
     spctl --assess --type execute --verbose "$DIST_DIR/$APP_NAME.app"
     echo ""
     if [ -f "$DMG_PATH" ]; then
-    echo "spctl dmg:"
-    spctl --assess --type open --verbose "$DMG_PATH"
-else
-    echo "spctl dmg: SKIPPED (dmg not created)"
-fi
+        echo "spctl dmg:"
+        spctl --assess --type open --verbose "$DMG_PATH"
+    else
+        echo "spctl dmg: SKIPPED (dmg not created)"
+    fi
 } | tee "$VERIFY_LOG"
 log "Verification log saved: $VERIFY_LOG"
 
@@ -1568,6 +1659,65 @@ if [ "$CLEAN_INSTALL" -eq 1 ] && [ -f "$DIST_DIR/$APP_NAME.pkg" ]; then
         open "/Applications/$APP_NAME.app"
     else
         echo -e "${RED}❌ Ошибка установки: /Applications/$APP_NAME.app не найден${NC}"
+    fi
+fi
+
+# --- Optional permissions smoke-check ---
+if [ "$PERMISSIONS_SMOKE" -eq 1 ]; then
+    APP_PATH="/Applications/$APP_NAME.app"
+    LOG_PATH="$HOME/Library/Logs/Nexy/nexy.log"
+    echo -e "${BLUE}🧪 PERMISSIONS SMOKE: проверка first-run логов...${NC}"
+    if [ -d "$APP_PATH" ]; then
+        echo "  • Запуск приложения для smoke-check..."
+        open -n "$APP_PATH"
+        START_TS="$(date '+%Y-%m-%d %H:%M:%S')"
+        sleep 6
+        if [ -f "$LOG_PATH" ]; then
+            if NEXY_LOG_PATH="$LOG_PATH" NEXY_START_TS="$START_TS" "$BUILD_PYTHON" - <<'PY'
+import os
+import sys
+import datetime as dt
+
+log_path = os.path.expanduser(os.environ.get("NEXY_LOG_PATH", ""))
+start_ts = os.environ.get("NEXY_START_TS", "")
+if not log_path or not start_ts:
+    sys.exit(2)
+
+try:
+    start_dt = dt.datetime.strptime(start_ts, "%Y-%m-%d %H:%M:%S")
+except Exception:
+    sys.exit(2)
+
+found = False
+
+with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+    for line in f.readlines()[-400:]:
+        m = re.match(r"^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})", line)
+        if not m:
+            continue
+        try:
+            line_dt = dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        if line_dt >= start_dt and ("FIRST_RUN_PERMISSIONS" in line or "permissions.first_run_started" in line):
+            found = True
+            break
+
+sys.exit(0 if found else 3)
+PY
+            then
+                echo -e "${GREEN}✅ PERMISSIONS SMOKE: first-run события найдены в логе${NC}"
+            else
+                echo -e "${RED}❌ PERMISSIONS SMOKE: first-run события не найдены в логе${NC}"
+                exit 1
+            fi
+        else
+            echo -e "${RED}❌ PERMISSIONS SMOKE: лог не найден ($LOG_PATH)${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${RED}❌ PERMISSIONS SMOKE: /Applications/$APP_NAME.app не найден${NC}"
+        exit 1
     fi
 fi
 

@@ -102,6 +102,9 @@ REQUIRED_INFO_PLIST_KEYS = [
     "NSScreenCaptureUsageDescription",
     "NSAppleEventsUsageDescription",
     "NSAccessibilityUsageDescription",
+    "NSContactsUsageDescription",
+    "NSInputMonitoringUsageDescription",
+    "NSFullDiskAccessUsageDescription",
     "LSUIElement",
 ]
 
@@ -197,6 +200,7 @@ def parse_spec_file() -> dict:
         "datas": datas,
         "runtime_hooks": runtime_hooks,
         "info_plist": info_plist,
+        "content": content,
     }
 
 
@@ -291,6 +295,7 @@ def main() -> int:
         return 1
     
     all_errors = []
+    all_warnings = []
     
     # 1. Проверка hiddenimports
     print("1. Проверка hiddenimports...")
@@ -335,6 +340,16 @@ def main() -> int:
     else:
         print(f"   ✅ Все обязательные ключи присутствуют в info_plist ({len(config['info_plist'])} ключей)")
     print()
+
+    # 5. Playwright driver hints (warning-only)
+    print("5. Проверка Playwright driver (warning-only)...")
+    content = config.get("content", "")
+    if "playwright/driver" not in content:
+        all_warnings.append("Playwright driver не упомянут в Nexy.spec (playwright/driver)")
+        print("   ⚠ Playwright driver не упомянут в Nexy.spec (playwright/driver)")
+    else:
+        print("   ✅ Nexy.spec содержит упоминание playwright/driver")
+    print()
     
     # Итоги
     if all_errors:
@@ -343,7 +358,13 @@ def main() -> int:
         for err in all_errors:
             print(f"   - {err}")
         return 1
-    
+
+    if all_warnings:
+        print("⚠ Валидация завершена с предупреждениями:")
+        for warn_msg in all_warnings:
+            print(f"   - {warn_msg}")
+        print()
+
     print("✅ Все проверки пройдены успешно!")
     return 0
 

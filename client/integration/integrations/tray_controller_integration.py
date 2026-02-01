@@ -304,7 +304,7 @@ class TrayControllerIntegration:
             await self.event_bus.subscribe("voice.mic_closed", self._on_voice_mic_closed, EventPriority.HIGH)
 
             # Generic System Notifications (for background tasks like downloads)
-            await self.event_bus.subscribe("system.notification", self._on_system_notification, EventPriority.NORMAL)
+            await self.event_bus.subscribe("system.notification", self._on_system_notification, EventPriority.MEDIUM)
             
             logger.info("✅ Обработчики событий TrayControllerIntegration настроены")
             

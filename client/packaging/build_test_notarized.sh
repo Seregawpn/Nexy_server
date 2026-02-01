@@ -27,23 +27,27 @@ ENTITLEMENTS="packaging/entitlements.plist"
 APP_NAME="Nexy"
 BUNDLE_ID="com.nexy.assistant"
 
+# Select Python for build (prefer .venv)
+if [ -x "$CLIENT_DIR/.venv/bin/python" ]; then
+    BUILD_PYTHON="$CLIENT_DIR/.venv/bin/python"
+elif [ -x "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3" ]; then
+    BUILD_PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+else
+    BUILD_PYTHON="python3"
+fi
+
 # Read version from unified_config.yaml
-VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('$CLIENT_DIR/config/unified_config.yaml'))['app']['version'])")
+VERSION=$("$BUILD_PYTHON" -c "import yaml; print(yaml.safe_load(open('$CLIENT_DIR/config/unified_config.yaml'))['app']['version'])")
 
 echo -e "${BLUE}🧪 Быстрая тестовая сборка С нотаризацией (v$VERSION)${NC}"
 echo ""
 
 cd "$CLIENT_DIR"
 
-# Активируем venv
-if [ -f ".venv/bin/activate" ]; then
-    source .venv/bin/activate
-fi
-
 # Шаг 1: Сборка
 echo -e "${BLUE}📦 Шаг 1: Сборка с PyInstaller...${NC}"
 rm -rf dist/* build/* 2>/dev/null || true
-pyinstaller packaging/Nexy.spec --noconfirm --clean
+"$BUILD_PYTHON" -m PyInstaller packaging/Nexy.spec --noconfirm --clean
 
 if [ ! -d "dist/$APP_NAME.app" ]; then
     echo -e "${RED}❌ Сборка не удалась${NC}"

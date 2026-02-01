@@ -653,6 +653,19 @@ class UnifiedConfigLoader:
         config = self._load_config()
         return config.get('messages', {})
 
+    def get_whatsapp_config(self) -> Dict[str, Any]:
+        """
+        Получает конфигурацию WhatsApp из корня unified_config.yaml.
+        
+        Returns:
+            Dict с конфигурацией whatsapp
+        """
+        config = self._load_config()
+        whatsapp_cfg = config.get('whatsapp', {})
+        if not isinstance(whatsapp_cfg, dict):
+            return {}
+        return whatsapp_cfg.copy()
+
     def get_tray_config(self) -> Dict[str, Any]:
         """Получает конфигурацию трея"""
         config = self._load_config()

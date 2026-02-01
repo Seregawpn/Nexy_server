@@ -22,6 +22,7 @@ axes:
   permissions.full_disk_access: [granted, denied, prompt_blocked] # NEW - Messages
   subscription.status: [active, inactive, trial, expired, payment_failed] # NEW - Payment
   browser.active_task: [idle, running, waiting_user] # NEW - Browser
+  whatsapp.status: [disconnected, connecting, connected, qr_required] # NEW - Whatsapp
 
 rules:
   # ============================================================================
@@ -274,3 +275,14 @@ rules:
     priority: hard_stop
     description: Browser task running - cannot accept new voice commands
     gateway: decide_start_listening
+
+  # ============================================================================
+  # WHATSAPP RULES
+  # ============================================================================
+
+  # Graceful: QR required needs user attention
+  - when: {whatsapp.status: qr_required}
+    decision: notify_user
+    priority: graceful
+    description: Whatsapp QR code required - notify user to scan
+    gateway: decide_whatsapp_action

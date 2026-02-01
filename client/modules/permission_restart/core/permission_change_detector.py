@@ -7,9 +7,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
-from modules.permissions.core.types import PermissionStatus, PermissionType
 
-from .types import PermissionTransition
+from .types import PermissionTransition, PermissionStatus, PermissionType
 
 logger = logging.getLogger(__name__)
 

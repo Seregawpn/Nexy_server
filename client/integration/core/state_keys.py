@@ -32,3 +32,6 @@ class StateKeys:
     
     # Update keys
     UPDATE_IN_PROGRESS = "update_in_progress"
+    
+    # Whatsapp keys
+    WHATSAPP_STATUS = "whatsapp.status"

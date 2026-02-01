@@ -169,6 +169,14 @@
 - **источник истины**: `ApplicationStateManager`
 - **состояния**: `idle | running | waiting_user`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `running` → блокирует новые голосовые команды (или ставит в очередь)
+    
+#### 15) whatsapp.status **[НОВАЯ ОСЬ - Whatsapp]**
+- **владелец**: Whatsapp module owner
+- **пишет**: `whatsapp_integration`
+- **читает**: `ui` (tray/notifications), `processing_workflow`
+- **источник истины**: `ApplicationStateManager` (синхронизируется по событиям модуля)
+- **состояния**: `disconnected | connecting | connected | qr_required`
+- **правила в interaction_matrix.yaml**: `qr_required` → `notify_user` | `ui_alert`
 
 ### Связь с interaction_matrix.yaml
 

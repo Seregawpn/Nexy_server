@@ -567,6 +567,12 @@ class InputProcessingIntegration:
             logger.info(
                 "🔓 [INPUT_PROCESSING] First run завершён - гарантируем синхронизацию состояния микрофона"
             )
+
+            # КРИТИЧНО: Если startup был пропущен из-за first_run флажков,
+            # запускаем сервис сейчас, когда права получены.
+            if not self.is_running:
+                logger.info("🚀 [INPUT_PROCESSING] Auto-starting service after first_run completion...")
+                await self.start()
             # Гарантируем, что состояние микрофона синхронизировано
             # После first_run микрофон должен быть закрыт
             if self._mic_active:
@@ -791,8 +797,7 @@ class InputProcessingIntegration:
             
             # GUARD: Не запускаем мониторинг во время first-run,
             # чтобы не спровоцировать параллельные TCC диалоги.
-            test_mode = os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1"
-            if self.state_manager.get_state_data(StateKeys.FIRST_RUN_IN_PROGRESS, False) and not test_mode:
+            if self.state_manager.get_state_data(StateKeys.FIRST_RUN_IN_PROGRESS, False):
                 logger.warning("⛔ [INPUT] First-run in progress, skipping start_monitoring()")
                 return True
             

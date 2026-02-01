@@ -2,9 +2,9 @@
 
 ## Overview
 The "first run" experience prepares the Nexy client for normal operation by:
-- requesting all required macOS privacy permissions sequentially (no status pre-checks);
-- enforcing a permission order defined by `integrations.permissions.required_permissions` (config-driven);
-- activating each permission with a fixed hold window (`permissions.first_run.activation_hold_duration_sec`) and a pause between requests (`pause_between_requests_sec`);
+- requesting all required macOS privacy permissions sequentially (no pre-checks, no polling loops);
+- enforcing a permission order defined by `integrations.permissions_v2.order` (config-driven);
+- activating each permission with a fixed grace window (`integrations.permissions_v2.steps.*.grace_s`) and a single post-trigger check;
 - using dialog-only activators for promptable permissions; Full Disk Access uses Settings-only;
 - persisting flags as a cache (not a hard stop) for completed permission attempts;
 - restarting the app after newly granted critical permissions so subsystems observe the new state.
@@ -39,7 +39,7 @@ The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionResta
 
 ```mermaid
 flowchart TD
-    A[App start] --> B[First-run flag exists?]
+    A[App start] --> B[Ledger indicates all required granted?]
     B -- Yes --> C[Skip first-run flow]
     B -- No --> D[Publish permissions.first_run_started]
     D --> E[Iterate required_permissions in order]
@@ -47,12 +47,13 @@ flowchart TD
     F --> G[Optional Settings-only for Full Disk Access]
     G --> H[Pause between requests]
     H --> E
-    E --> I[Publish permissions.first_run_restart_pending if needed]
-    I --> J[PermissionRestartIntegration schedules restart]
+    E --> I[Emit restart_scheduled if needed]
+    I --> J[V2 restart handler triggers restart]
 ```
 
 Notes:
 - No status pre-checks are performed during first-run.
+- Each permission is probed once after the grace window (no polling loop).
 - Restart is blocked during first-run until `restart_pending` is set.
 
 ---
@@ -64,17 +65,18 @@ Notes:
    - `FirstRunPermissionsIntegration.start()` runs early, before voice-recognition/audio chains.
 
 2. **Eligibility Check**  
-   - The "first run" flag is treated as a cache and controls whether the flow runs.
+   - The "first run" flag is treated as a cache only; the V2 ledger drives whether the flow runs.
 
 3. **Permission Requests (Order + Dialog-Only)**  
-   - Order source: `config/unified_config.yaml` → `integrations.permissions.required_permissions`.
+   - Order source: `config/unified_config.yaml` → `integrations.permissions_v2.order`.
    - Если список отсутствует/пустой — first-run flow прерывается (нет fallback-списка).
    - For each permission in order, the integration:
      1. Calls the activation helper to trigger the **system dialog** (dialog-only).  
-     2. Holds for `activation_hold_duration_sec`.  
-     3. Applies a pause (`pause_between_requests_sec`) before the next permission.
+     2. Holds for `steps.*.grace_s`.  
+     3. Performs a single post-trigger probe (no polling).  
+     4. Proceeds to the next permission.
    - **Full Disk Access**: opens System Settings only (no dialog available).
-   - The integration requests **all** permissions in the list (no status checks).
+   - The integration requests **all** permissions in the list (no pre-checks).
 
 4. **Flow Completion**  
    - After all permissions are processed, the integration:
@@ -83,10 +85,10 @@ Notes:
      - publishes `permissions.first_run_restart_pending` (eventBus) if any critical permission was newly granted (`integrations.permission_restart.critical_permissions`).
 
 5. **Restart Initiation**  
-   - `SimpleModuleCoordinator` catches the restart-pending signal and invokes `PermissionRestartIntegration`.  
+   - V2 orchestrator triggers restart via `PermissionsRestartHandler`.  
    - Handler strategy:  
-     1. If running from a PyInstaller bundle (`sys.frozen`), call `os.execv` to replace the current process.  
-     2. Otherwise run `open -n -a /Applications/Nexy.app`.  
+     1. If running from a PyInstaller bundle (`sys.frozen`), call `open -n -a /Applications/Nexy.app`.  
+     2. Otherwise run dev fallback (python command).  
      3. Persist `restart_completed.flag` in the user data directory when the new instance comes up.
 
 6. **Post-Restart Launch**  
@@ -98,10 +100,10 @@ Notes:
 
 | File | Purpose |
 |------|---------|
-| `modules/permissions/first_run/activator.py` | Triggers permission dialogs via macOS APIs |
-| `modules/permissions/first_run/status_checker.py` | Checks permission status (no prompt) |
 | `integration/integrations/first_run_permissions_integration.py` | Orchestrates permission flow |
-| `config/unified_config.yaml` | Defines `required_permissions` list |
+| `modules/permissions/v2/orchestrator.py` | Runs sequential pipeline |
+| `modules/permissions/v2/probers/*` | Post-trigger probes |
+| `config/unified_config.yaml` | Defines `permissions_v2.order` list |
 
 ---
 

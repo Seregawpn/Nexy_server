@@ -1,3 +1,0 @@
-[2025-12-23 10:27:12] [INFO] [payment_system] [logging_config.py:80] Payment system logging configured
-[2025-12-23 10:27:12] [INFO] [payment_system] [logging_config.py:81] Log directory: /Users/sergiyzasorin/Development/Nexy/v1.0.6 Payment/mvp_tests/logs
-[2025-12-23 10:27:12] [INFO] [payment_system] [logging_config.py:82] Log level: INFO

@@ -104,6 +104,13 @@ log_info "🚀 Запуск Pre-build gate для Nexy Client"
 log_info "Рабочая директория: $PROJECT_ROOT"
 echo ""
 
+# Python для проверок (prefer .venv)
+if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"
+else
+    PYTHON_BIN="python3"
+fi
+
 # ============================================================================
 # 0. КРИТИЧЕСКИЕ ПРОВЕРКИ (должны быть первыми)
 # ============================================================================
@@ -113,7 +120,7 @@ log_info "0. КРИТИЧЕСКИЕ ПРОВЕРКИ"
 log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # 0.1 Проверка синтаксиса и импортов
-if run_check "Проверка синтаксиса и импортов" python3 scripts/verify_imports.py; then
+if run_check "Проверка синтаксиса и импортов" "$PYTHON_BIN" scripts/verify_imports.py; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -123,7 +130,7 @@ else
 fi
 
 # 0.2 Проверка зависимостей
-if run_check "Проверка зависимостей" python3 scripts/check_dependencies.py; then
+if run_check "Проверка зависимостей" "$PYTHON_BIN" scripts/check_dependencies.py; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -154,7 +161,7 @@ if [ "$SKIP_LINT" = false ]; then
     fi
     
     # 1.2 Проверка прямого доступа к состоянию
-    if run_check "Проверка прямого доступа к состоянию" python3 scripts/verify_no_direct_state_access.py; then
+    if run_check "Проверка прямого доступа к состоянию" "$PYTHON_BIN" scripts/verify_no_direct_state_access.py; then
         ((PASSED++))
     else
         ((FAILED++))
@@ -267,7 +274,7 @@ else
 fi
 
 # 3.2 Валидация схем
-if run_check "Валидация схем конфигурации" python3 scripts/validate_schemas.py; then
+if run_check "Валидация схем конфигурации" "$PYTHON_BIN" scripts/validate_schemas.py; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -275,7 +282,7 @@ fi
 
 # 3.3 Проверка 4-артефактного инварианта
 if run_check "4-артефактный инвариант (STATE_CATALOG ↔ interaction_matrix ↔ gateways ↔ tests)" \
-    python3 scripts/verify_4_artifacts_invariant.py update_in_progress restart_pending; then
+    "$PYTHON_BIN" scripts/verify_4_artifacts_invariant.py update_in_progress restart_pending; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -283,7 +290,7 @@ fi
 
 # 3.4 Проверка покрытия правил
 if run_check "Покрытие правил (interaction_matrix.yaml → tests)" \
-    python3 scripts/verify_rule_coverage.py; then
+    "$PYTHON_BIN" scripts/verify_rule_coverage.py; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -291,7 +298,7 @@ fi
 
 # 3.5 Проверка покрытия предикатов
 if run_check "Покрытие предикатов (interaction_matrix.yaml → predicates.py)" \
-    python3 scripts/verify_predicate_coverage.py; then
+    "$PYTHON_BIN" scripts/verify_predicate_coverage.py; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -299,7 +306,7 @@ fi
 
 # 3.6 Проверка регистрации feature flags
 if run_check "Регистрация feature flags (FEATURE_FLAGS.md)" \
-    python3 scripts/verify_feature_flags.py; then
+    "$PYTHON_BIN" scripts/verify_feature_flags.py; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -308,7 +315,7 @@ fi
 # 3.7 Проверка требований (если есть PROJECT_REQUIREMENTS.md)
 if [ -f "Docs/PROJECT_REQUIREMENTS.md" ]; then
     if run_check "Валидация snapshot требований" \
-        python3 scripts/update_requirements_snapshot.py --check; then
+        "$PYTHON_BIN" scripts/update_requirements_snapshot.py --check; then
         ((PASSED++))
     else
         ((FAILED++))
@@ -316,7 +323,7 @@ if [ -f "Docs/PROJECT_REQUIREMENTS.md" ]; then
 fi
 
 # 3.8 Валидация Nexy.spec
-if run_check "Валидация Nexy.spec" python3 scripts/verify_pyinstaller.py; then
+if run_check "Валидация Nexy.spec" "$PYTHON_BIN" scripts/verify_pyinstaller.py; then
     ((PASSED++))
 else
     ((FAILED++))
@@ -334,7 +341,7 @@ log_info "━━━━━━━━━━━━━━━━━━━━━━━�
 
 # 4.1 TAL проверки (если скрипт существует)
 if [ -f "scripts/test_tal_assertion.py" ]; then
-    if run_check "TAL assertion проверки" python3 scripts/test_tal_assertion.py; then
+    if run_check "TAL assertion проверки" "$PYTHON_BIN" scripts/test_tal_assertion.py; then
         ((PASSED++))
     else
         ((FAILED++))
@@ -358,7 +365,7 @@ if [ -f "scripts/test_critical_paths.py" ]; then
         log_warn "Пропуск критических путей (GUI/Tests skip включен)"
         ((SKIPPED++))
     else
-        if run_check "Критические пути" python3 scripts/test_critical_paths.py; then
+        if run_check "Критические пути" "$PYTHON_BIN" scripts/test_critical_paths.py; then
             ((PASSED++))
         else
             ((FAILED++))
@@ -372,7 +379,7 @@ if [ -f "scripts/test_tray_termination.py" ]; then
         log_warn "Пропуск tray termination (GUI/Tests skip включен)"
         ((SKIPPED++))
     else
-        if run_check "Tray termination проверки" python3 scripts/test_tray_termination.py; then
+        if run_check "Tray termination проверки" "$PYTHON_BIN" scripts/test_tray_termination.py; then
             ((PASSED++))
         else
             ((FAILED++))

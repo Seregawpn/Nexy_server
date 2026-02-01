@@ -184,36 +184,7 @@ def test_accessibility_api(result: TestResult):
         result.fail("ApplicationServices", str(e))
 
 
-def test_activator_module(result: TestResult):
-    """Тест импорта и синтаксиса модуля activator.py."""
-    try:
-        # Добавляем путь к модулям
-        import os
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        client_dir = os.path.dirname(script_dir)
-        sys.path.insert(0, client_dir)
-        
-        # Импортируем модуль (проверка синтаксиса и базовых импортов)
-        from modules.permissions.first_run import activator
-        result.ok("activator.py импортирован без ошибок")
-        
-        # Проверяем наличие ключевых функций
-        if hasattr(activator, 'activate_accessibility'):
-            result.ok("activate_accessibility() определена")
-        else:
-            result.fail("activator", "activate_accessibility() не найдена")
-            
-        if hasattr(activator, 'activate_microphone'):
-            result.ok("activate_microphone() определена")
-        else:
-            result.fail("activator", "activate_microphone() не найдена")
-            
-    except SyntaxError as e:
-        result.fail("activator.py", f"Синтаксическая ошибка: {e}")
-    except ImportError as e:
-        result.fail("activator.py", f"Ошибка импорта: {e}")
-    except Exception as e:
-        result.fail("activator.py", f"Неожиданная ошибка: {e}")
+
 
 
 def main():
@@ -234,8 +205,7 @@ def main():
     print(f"\n{YELLOW}4. Accessibility API{NC}")
     test_accessibility_api(result)
     
-    print(f"\n{YELLOW}5. Модуль activator.py{NC}")
-    test_activator_module(result)
+
     
     print("=" * 50)
     success = result.summary()

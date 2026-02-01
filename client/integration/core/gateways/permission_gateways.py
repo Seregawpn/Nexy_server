@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover
         PROCESSING = "processing"
 
 from modules.permission_restart.core.config import PermissionRestartConfig
-from modules.permissions.core.types import PermissionType
+from modules.permission_restart.core.types import PermissionType
 
 logger = logging.getLogger(__name__)
 

@@ -162,7 +162,7 @@ class ActionExecutionIntegration(BaseIntegration):
         session_id = data.get("session_id")
         action_json = data.get("action_json")
         feature_id = data.get("feature_id") or FEATURE_ID
-
+        
         if not self._mcp_executor.config.enabled:
             logger.info("[%s] MCP actions disabled, ignoring payload", feature_id)
             await self._publish_failure(
@@ -192,12 +192,28 @@ class ActionExecutionIntegration(BaseIntegration):
             )
             return
 
+        logger.info(
+            "🔍 [F-2025-016] Action received: session_id=%s, command=%s",
+            session_id,
+            action_data.get("command"),
+        )
+
         # Определяем тип команды и feature_id
         command = action_data.get("command")
         action_type = command  # "open_app" или "close_app"
         
-        # Расширяем валидацию типов для поддержки close_app и messages
-        valid_commands = ["open_app", "close_app", "read_messages", "send_message", "find_contact", "browser_use", "close_browser"]
+        # Строим список допустимых команд динамически на основе feature flags
+        loader = UnifiedConfigLoader.get_instance()
+        valid_commands = ["open_app", "close_app"]  # Всегда доступны
+        
+        if loader.get_feature_config('messages').get('enabled', True):
+            valid_commands.extend(["read_messages", "send_message", "find_contact"])
+        if loader.get_feature_config('browser').get('enabled', True):
+            valid_commands.extend(["browser_use", "close_browser"])
+        if loader.get_feature_config('payment').get('enabled', True):
+            valid_commands.extend(["buy_subscription", "manage_subscription"])
+        if loader.get_whatsapp_config().get('enabled', True):
+            valid_commands.extend(["send_whatsapp_message", "read_whatsapp_messages"])
         if command not in valid_commands:
             logger.warning(
                 "[%s] Unsupported command: %s",
@@ -224,8 +240,60 @@ class ActionExecutionIntegration(BaseIntegration):
             action_feature_id = "F-2025-015-browser-use"
         elif command == "close_browser":
             action_feature_id = "F-2025-015-browser-use"
+        elif command in ["buy_subscription", "manage_subscription"]:
+            action_feature_id = "F-2025-017-stripe-payment"
+        elif command in ["send_whatsapp_message", "read_whatsapp_messages"]:
+            action_feature_id = "F-2025-019-whatsapp"
         else:
             action_feature_id = feature_id
+
+        # [Feature Flags] Check if feature is enabled
+        loader = UnifiedConfigLoader.get_instance()
+        feature_check_map = {
+            "read_messages": "messages",
+            "send_message": "messages",
+            "find_contact": "messages",
+            "browser_use": "browser",
+            "close_browser": "browser",
+            "buy_subscription": "payment",
+            "manage_subscription": "payment",
+            "send_whatsapp_message": "whatsapp",
+            "read_whatsapp_messages": "whatsapp"
+        }
+        
+        feature_name = feature_check_map.get(command)
+        if feature_name:
+            if feature_name == "whatsapp":
+                feature_config = loader.get_whatsapp_config()
+            else:
+                feature_config = loader.get_feature_config(feature_name)
+            if not feature_config.get("enabled", True):
+                msg = f"Feature '{feature_name}' is disabled in configuration."
+                logger.warning("[%s] %s Ignoring command: %s", action_feature_id, msg, command)
+                
+                # Для payment просто игнорируем (так как PaymentIntegration не запущена)
+                if feature_name == "payment":
+                    return
+
+                # Strict check: if feature is disabled, return failure
+                # This ensures "silent" commands are avoided as requested in diagnosis
+                await self._publish_failure(
+                    session_id=session_id,
+                    feature_id=action_feature_id,
+                    error_code="feature_disabled",
+                    message=f"Feature '{feature_name}' is currently disabled.",
+                    app_name=None,
+                )
+                
+                # Speak the error for WhatsApp specifically (as per diagnosis)
+                if feature_name == "whatsapp":
+                     await self.event_bus.publish("grpc.tts_request", {
+                         "session_id": session_id,
+                         "text": "WhatsApp integration is currently disabled.",
+                         "source": "whatsapp"
+                     })
+                
+                return
         
         # Валидация параметров в зависимости от типа действия
         args = action_data.get("args", {})
@@ -311,6 +379,36 @@ class ActionExecutionIntegration(BaseIntegration):
         if command == "close_browser":
             await self.event_bus.publish("browser.close.request", {
                 "session_id": session_id
+            })
+            return
+
+        # Специальная обработка для Payment commands
+        if command == "buy_subscription":
+            logger.info("[%s] Dispatching buy_subscription to PaymentIntegration", action_feature_id)
+            await self.event_bus.publish("ui.action.buy_subscription", {
+                "session_id": session_id,
+                "source": "llm_command",
+                "feature_id": action_feature_id
+            })
+            return
+
+        if command == "manage_subscription":
+            logger.info("[%s] Dispatching manage_subscription to PaymentIntegration", action_feature_id)
+            await self.event_bus.publish("ui.action.manage_subscription", {
+                "session_id": session_id,
+                "source": "llm_command",
+                "feature_id": action_feature_id
+            })
+            return
+
+        # Специальная обработка для Whatsapp commands
+        if command in ["send_whatsapp_message", "read_whatsapp_messages"]:
+            logger.info("[%s] Dispatching %s to WhatsappIntegration", action_feature_id, command)
+            await self.event_bus.publish("whatsapp.request", {
+                "session_id": session_id,
+                "command": command,
+                "args": args,
+                "feature_id": action_feature_id
             })
             return
 
@@ -429,11 +527,39 @@ class ActionExecutionIntegration(BaseIntegration):
                         session_id=session_id
                     )
             elif action_type == "close_app":
-                # Используем McpActionExecutor для close_app (через MCP)
-                result = await self._mcp_executor.execute_action(
-                    action_data,
-                    session_id=session_id
-                )
+                # Check server existence first
+                server_path = Path(self._mcp_executor.config.close_app_server_path)
+                use_fallback = not server_path.exists()
+                
+                result = None
+                if not use_fallback:
+                    # Try MCP first
+                    try:
+                        result = await self._mcp_executor.execute_action(
+                            action_data,
+                            session_id=session_id
+                        )
+                        if not result.success:
+                            logger.warning(
+                                "[%s] MCP close_app failed, trying fallback. Error: %s", 
+                                feature_id, 
+                                result.error
+                            )
+                            use_fallback = True
+                    except Exception as e:
+                        logger.warning(
+                            "[%s] MCP close_app exception: %s, trying fallback", 
+                            feature_id, 
+                            e
+                        )
+                        use_fallback = True
+
+                if use_fallback:
+                     logger.info("[%s] Using fallback for close_app", feature_id)
+                     result = await self._execute_close_app_fallback(
+                        action_data=action_data,
+                        session_id=session_id
+                     )
             else:
                 # Неизвестный тип действия
                 from modules.mcp_action import McpActionResult
@@ -547,12 +673,6 @@ class ActionExecutionIntegration(BaseIntegration):
             # Удаляем задачу из активных
             async with self._actions_lock:
                 if session_id:
-                    task = self._active_actions.pop(session_id, None)
-                    if task and not task.done():
-                        task.cancel()
-                
-                # Удаляем приложение из активных (для идемпотентности close_app)
-                if session_id:
                     action_type = action_data.get("type")
                     app_name = action_data.get("app_name")
                     if action_type == "close_app" and app_name:
@@ -566,6 +686,92 @@ class ActionExecutionIntegration(BaseIntegration):
                                 app_name,
                                 session_id
                             )
+
+    async def _execute_close_app_fallback(
+        self,
+        *,
+        action_data: Dict[str, Any],
+        session_id: Optional[str],
+    ):
+        """Fallback: close app via system `osascript` when MCP server is missing or fails."""
+        from modules.mcp_action import McpActionResult
+
+        app_name = action_data.get("app_name")
+        if not app_name:
+            return McpActionResult(
+                success=False,
+                message="Missing app_name for close_app",
+                error="missing_parameter",
+            )
+
+        try:
+            # Special handling for closing "Nexy" (self)
+            if app_name.lower().strip() in ["nexy", "nexy app", "nexy.app"]:
+                logger.info("[%s] Self-close requested (fallback)", FEATURE_ID)
+                # Publish shutdown event first
+                await self.event_bus.publish("app.shutdown", {"reason": "user_command"})
+                
+                # Use osascript to quit gently
+                script = 'tell application "Nexy" to quit'
+                subprocess.run(["/usr/bin/osascript", "-e", script], check=False)
+                
+                return McpActionResult(
+                    success=True,
+                    message="Nexy is shutting down...",
+                    app_name=app_name,
+                )
+
+            # Normal app closing via AppleScript
+            script = f'tell application "{app_name}" to quit'
+            subprocess.run(["/usr/bin/osascript", "-e", script], check=True, capture_output=True)
+            
+            return McpActionResult(
+                success=True,
+                message=f"Closed {app_name}",
+                app_name=app_name,
+            )
+
+        except subprocess.CalledProcessError as e:
+            # Try force kill if quit fails? No, keep it simple for now as per constraints.
+            error_msg = e.stderr.decode().strip() if e.stderr else str(e)
+            logger.error(
+                "[%s] close_app fallback failed: %s, session=%s",
+                FEATURE_ID,
+                error_msg,
+                session_id or "unknown",
+            )
+            return McpActionResult(
+                success=False,
+                message=f"Failed to close {app_name}: {error_msg}",
+                error="close_app_fallback_failed",
+                app_name=app_name,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] close_app fallback unexpected error: %s, session=%s",
+                FEATURE_ID,
+                exc,
+                session_id or "unknown",
+            )
+            return McpActionResult(
+                success=False,
+                message=str(exc),
+                error="close_app_fallback_failed",
+                app_name=app_name,
+            )
+        finally:
+            # Cleanup active actions
+            async with self._actions_lock:
+                if session_id:
+                     # Remove task
+                     task = self._active_actions.pop(session_id, None)
+                     if task and not task.done():
+                         task.cancel()
+                     
+                     # Remove from active apps
+                     app_name_normalized = app_name.strip().lower()
+                     if self._active_apps.get(app_name_normalized) == session_id:
+                         self._active_apps.pop(app_name_normalized, None)
 
     async def _on_interrupt(self, event: Dict[str, Any]):
         """Обработка прерывания - отмена всех действий."""
@@ -770,11 +976,26 @@ class ActionExecutionIntegration(BaseIntegration):
                 # 4. Озвучиваем результат пользователю
                 await self._handle_messages_success_feedback(session_id, command, result)
             else:
+                error_code_res = result.get("error_code")
                 error_msg = result.get("message", "Unknown error")
+                
+                if error_code_res == "ambiguous_contact":
+                     choices = result.get("choices", [])
+                     choices_str = ", ".join(choices[:3])
+                     text_to_speak = f"I found multiple contacts: {choices_str}. Please say the full name."
+                     
+                     # Speak specific feedback
+                     await self.event_bus.publish("grpc.tts_request", {
+                         "session_id": session_id,
+                         "text": text_to_speak,
+                         "source": f"actions.{command}"
+                     })
+                     self._spoken_error_sessions.add(session_id) # Prevent generic error speech
+                
                 await self._publish_failure(
                     session_id=session_id,
                     feature_id=feature_id,
-                    error_code="execution_failed",
+                    error_code=error_code_res or "execution_failed",
                     message=error_msg,
                     app_name="Messages",
                 )

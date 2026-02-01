@@ -793,7 +793,40 @@ _macOS автоматически управляет активными ауди
 
 ---
 
-## 14) Диаграммы (Mermaid)
+## 14) Feature Flags System (Архитектура отключения функционала)
+
+Система Feature Flags позволяет полностью отключать крупные подсистемы (Messages, Browser, Payment) на уровне конфигурации, обеспечивая экономию ресурсов и защиту от галлюцинаций.
+
+### Архитектурные уровни защиты:
+
+1.  **Server Prompt Engineering (L1)**:
+    - Системный промпт собирается динамически (`build_system_prompt` в `unified_config.py`).
+    - Если фича отключена (`MESSAGES_ENABLED=false`), инструкции и примеры для этой фичи **полностью исключаются** из промпта.
+    - LLM физически "забывает", что умеет читать сообщения или управлять браузером.
+
+2.  **Server Validator (L2)**:
+    - Валидатор `ActionResponse` использует динамический список `allowed_commands`.
+    - Любая попытка LLM (галлюцинация) вызвать `read_messages` при отключенном флаге вызывает ошибку валидации.
+    - Команда не доходит до клиента.
+
+3.  **Client Factory (L3)**:
+    - Интеграции для тяжелых фич (напр. `BrowserUseIntegration`) создаются условно (`integration_factory.py`).
+    - При `features.browser.enabled=false` процесс Chrome и Playwright даже не инициализируются (экономия памяти).
+
+4.  **Client Execution Guards (L4)**:
+    - `ActionExecutionIntegration` содержит guards перед выполнением команд.
+    - Если сервер по ошибке прислал запрещенную команду, клиент её отклонит с ошибкой `feature_disabled`.
+
+5.  **UI / Tray (L5)**:
+    - Пункты меню (напр. "Manage Subscription") скрываются, если фича отключена.
+
+### Конфигурация:
+- **Server**: `server/server/config.env` (`MESSAGES_ENABLED`, `BROWSER_USE_ENABLED`, `SUBSCRIPTION_ENABLED`)
+- **Client**: `config/unified_config.yaml` (секция `features:`)
+
+---
+
+## 15) Диаграммы (Mermaid)
 
 Быстрые схемы для понимания потоков и централизации. GitHub рендерит диаграммы Mermaid, в IDE можно открыть Markdown Preview.
 

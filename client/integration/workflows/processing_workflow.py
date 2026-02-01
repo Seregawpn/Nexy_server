@@ -56,6 +56,7 @@ class ProcessingWorkflow(BaseWorkflow):
         # Флаги завершения
         self.screenshot_captured = False
         self.grpc_completed = False
+        self.recognition_failed = False  # New flag for recognition failure
         self.playback_completed = False
         self.interrupted = False
         self.browser_active = False  # Browser automation in progress
@@ -83,6 +84,13 @@ class ProcessingWorkflow(BaseWorkflow):
         await self.event_bus.subscribe(
             "screenshot.error", 
             self._on_screenshot_error, 
+            EventPriority.HIGH
+        )
+
+        # === ЭТАП: РАСПОЗНАВАНИЕ ===
+        await self.event_bus.subscribe(
+            "voice.recognition_failed",
+            self._on_recognition_failed,
             EventPriority.HIGH
         )
         
@@ -229,8 +237,10 @@ class ProcessingWorkflow(BaseWorkflow):
             
             # Сброс флагов
             self.completed_stages.clear()
+            self.completed_stages.clear()
             self.screenshot_captured = False
             self.grpc_completed = False
+            self.recognition_failed = False
             self.playback_completed = False
             self.interrupted = False
             self.browser_active = False
@@ -326,6 +336,30 @@ class ProcessingWorkflow(BaseWorkflow):
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки screenshot.error - {e}")
     
+    async def _on_recognition_failed(self, event):
+        """Ошибка распознавания речи (например, тишина или неясность)"""
+        if not self._is_relevant_event(event):
+            return
+            
+        try:
+            data = event.get("data", {})
+            error = data.get("error", "unknown")
+            logger.warning(f"🎤 ProcessingWorkflow: распознавание не удалось ({error}) - помечаем как failed")
+            
+            self.recognition_failed = True
+            
+            # Мы не ожидаем gRPC, если распознавание не удалось. 
+            # Однако, нужно дождаться окончания воспроизведения звука ошибки (bloop), 
+            # который запускает audio_feedback_integration или speech_playback_integration.
+            # Поэтому мы не завершаем цепочку здесь, а ждем playback.completed.
+            
+            if self.playback_completed:
+                 # Если звук уже проиграл (редко, но возможно), завершаем сразу
+                 await self._complete_processing_chain()
+            
+        except Exception as e:
+            logger.error(f"❌ ProcessingWorkflow: ошибка обработки recognition_failed - {e}")
+
     # === ОБРАБОТЧИКИ ЭТАПА 2: GRPC ===
     
     async def _on_grpc_started(self, event):
@@ -423,8 +457,8 @@ class ProcessingWorkflow(BaseWorkflow):
             
             self.playback_completed = True
             
-            # Если gRPC тоже завершен - завершаем всю цепочку
-            if self.grpc_completed:
+            # Если gRPC тоже завершен ИЛИ распознавание не удалось - завершаем всю цепочку
+            if self.grpc_completed or self.recognition_failed:
                 await self._complete_processing_chain()
             else:
                 logger.info("🔊 ProcessingWorkflow: ждем завершения gRPC...")
@@ -657,6 +691,7 @@ class ProcessingWorkflow(BaseWorkflow):
             # Сбрасываем флаги
             self.screenshot_captured = False
             self.grpc_completed = False
+            self.recognition_failed = False
             self.playback_completed = False
             self.interrupted = False
             self.browser_active = False
@@ -747,6 +782,7 @@ class ProcessingWorkflow(BaseWorkflow):
             "completed_stages": [stage.value for stage in self.completed_stages],
             "screenshot_captured": self.screenshot_captured,
             "grpc_completed": self.grpc_completed,
+            "recognition_failed": self.recognition_failed,
             "playback_completed": self.playback_completed,
             "interrupted": self.interrupted
         })

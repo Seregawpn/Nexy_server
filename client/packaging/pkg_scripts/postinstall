@@ -1,0 +1,57 @@
+#!/bin/bash
+# Postinstall: ensure LaunchAgent points to the installed app binary
+set -e
+
+LAUNCH_AGENT_PATH="/Library/LaunchAgents/com.sergiyzasorin.nexy.voiceassistant.plist"
+APP_BINARY="/Applications/Nexy.app/Contents/MacOS/Nexy"
+STDOUT_PATH="/tmp/nexy.log"
+STDERR_PATH="/tmp/nexy.error.log"
+
+cat > "$LAUNCH_AGENT_PATH" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sergiyzasorin.nexy.voiceassistant</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>${APP_BINARY}</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>StandardOutPath</key>
+    <string>${STDOUT_PATH}</string>
+
+    <key>StandardErrorPath</key>
+    <string>${STDERR_PATH}</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
+EOF
+
+chmod 644 "$LAUNCH_AGENT_PATH"
+chown root:wheel "$LAUNCH_AGENT_PATH"
+
+# Best-effort reload for current console user (if available)
+CONSOLE_UID=$(/usr/bin/stat -f %u /dev/console 2>/dev/null || echo "")
+if [ -n "$CONSOLE_UID" ] && [ "$CONSOLE_UID" -ge 500 ]; then
+    /bin/launchctl bootout "gui/${CONSOLE_UID}/com.sergiyzasorin.nexy.voiceassistant" 2>/dev/null || true
+    /bin/launchctl bootstrap "gui/${CONSOLE_UID}" "$LAUNCH_AGENT_PATH" 2>/dev/null || true
+fi
+
+exit 0

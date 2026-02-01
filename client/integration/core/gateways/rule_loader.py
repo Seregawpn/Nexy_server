@@ -61,6 +61,7 @@ def _to_decision(raw: str) -> Decision:
         "delay_restart": Decision.RETRY,
         "degrade_offline": Decision.DEGRADE,
         "skip_restart": Decision.ABORT,
+        "notify_user": Decision.NOTIFY_USER,
     }
     return decision_map.get(raw, Decision.DEGRADE)
 

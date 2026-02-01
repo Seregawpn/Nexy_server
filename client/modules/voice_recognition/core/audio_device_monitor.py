@@ -7,9 +7,20 @@ import logging
 import threading
 import time
 from typing import Optional, Callable, Any
-import sounddevice as sd
 
 logger = logging.getLogger(__name__)
+
+# Lazy sounddevice import to prevent TCC trigger on module load
+_sd_module = None
+
+def _get_sd():
+    """Lazy import sounddevice only when first needed."""
+    global _sd_module
+    if _sd_module is None:
+        import sounddevice as sd
+        _sd_module = sd
+        logger.debug("🔧 sounddevice imported lazily in AudioDeviceMonitor")
+    return _sd_module
 
 class AudioDeviceMonitor:
     """Простой монитор для отслеживания текущего input устройства"""
@@ -39,7 +50,7 @@ class AudioDeviceMonitor:
         """Инициализация текущего устройства"""
         try:
             # Получаем текущий default input
-            default_setting = sd.default.device
+            default_setting = _get_sd().default.device
             if hasattr(default_setting, '__getitem__'):
                 self.current_input_device = default_setting[0]
             else:
@@ -119,7 +130,7 @@ class AudioDeviceMonitor:
     def _get_current_input_device(self) -> Optional[Any]:
         """Получение текущего input устройства"""
         try:
-            default_setting = sd.default.device
+            default_setting = _get_sd().default.device
             if hasattr(default_setting, '__getitem__'):
                 return default_setting[0]
             return None

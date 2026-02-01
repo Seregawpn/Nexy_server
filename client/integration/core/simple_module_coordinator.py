@@ -66,21 +66,6 @@ except Exception:
     # Fallback: explicit modules path if repository layout is used
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
-# Вспомогательные функции для разрешений
-from modules.permissions.first_run.status_checker import (
-    check_microphone_status,
-    check_accessibility_status,
-    check_screen_capture_status,
-    PermissionStatus as FirstRunPermissionStatus
-)
-
-def _map_perm_status(status: FirstRunPermissionStatus) -> PermissionStatus:
-    """Маппинг системного статуса на статус для Snapshot."""
-    if status == FirstRunPermissionStatus.GRANTED:
-        return PermissionStatus.GRANTED
-    return PermissionStatus.DENIED
-
-
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
 
@@ -88,6 +73,7 @@ from config.unified_config_loader import UnifiedConfigLoader
 from integration.workflows import ListeningWorkflow, ProcessingWorkflow
 
 from integration.utils.logging_setup import get_logger
+from integration.utils.resource_path import get_user_data_dir
 
 logger = get_logger(__name__)
 
@@ -181,6 +167,33 @@ class SimpleModuleCoordinator:
             self.state_manager = ApplicationStateManager()
             self.error_handler = ErrorHandler(self.event_bus)
             print("✅ Core компоненты созданы")
+
+            # Sync StateManager from V2 ledger (SoT)
+            try:
+                from modules.permissions.v2.ledger import LedgerStore
+                from modules.permissions.v2.types import Phase
+
+                ledger_path = get_user_data_dir() / "permission_ledger.json"
+                ledger = LedgerStore(str(ledger_path)).load()
+                if ledger:
+                    in_progress = ledger.phase in (Phase.FIRST_RUN, Phase.RESTART_PENDING, Phase.POST_RESTART_VERIFY)
+                    completed = ledger.phase in (Phase.COMPLETED, Phase.LIMITED_MODE)
+                else:
+                    in_progress = False
+                    completed = False
+                self.state_manager.set_first_run_state(
+                    in_progress=in_progress,
+                    required=not completed,
+                    completed=completed,
+                )
+                logger.info(
+                    "[PERMISSIONS] Synced first_run state from ledger (in_progress=%s, completed=%s, path=%s)",
+                    in_progress,
+                    completed,
+                    ledger_path,
+                )
+            except Exception as e:
+                logger.warning("[PERMISSIONS] Failed to sync first_run state from ledger: %s", e)
             
             # 1.1 Запускаем фоновый asyncio loop (для EventBus/интеграций)
             self._start_background_loop()
@@ -381,7 +394,19 @@ class SimpleModuleCoordinator:
                 return True
             
             print("🚀 Запуск всех интеграций...")
-            
+
+            full_config = self.config._load_config()
+            integrations_config = full_config.get("integrations", {}) if isinstance(full_config, dict) else {}
+            permissions_v2_config = integrations_config.get("permissions_v2", {})
+            advance_on_timeout = bool(permissions_v2_config.get("advance_on_timeout", False))
+
+            first_run = self.integrations.get("first_run_permissions")
+            restrict_to_permissions = bool(first_run and not first_run.are_all_granted)
+            if restrict_to_permissions:
+                logger.info("[PERMISSIONS_GATE] First-run not completed, limiting startup to permissions flow only")
+                print("⛔ [PERMISSIONS] First-run не завершён — запускаем только permissions flow")
+
+
             # Запускаем интеграции в правильном порядке (с учетом зависимостей)
             # КРИТИЧНО: tray должен быть ВТОРЫМ (сразу после instance_manager)
             # чтобы иконка появилась ДО блокирующих операций (first_run_permissions)
@@ -399,25 +424,35 @@ class SimpleModuleCoordinator:
                 'screenshot_capture',      # 11. Захват экрана (использует screen_capture)
                 'grpc',                    # 12. gRPC клиент (зависит от hardware_id)
                 'action_execution',        # 13. Выполнение MCP команд (зависит от grpc)
-                'browser_use',             # 14. Browser automation (F-2025-015)
-                'browser_progress',        # 15. Browser progress events (F-2025-015)
-                'tts',                     # 16. Локальный TTS (fallback если сервер недоступен)
-                'speech_playback',         # 17. Воспроизведение речи (зависит от grpc)
-                'signals',                 # 18. Аудио сигналы (должны быть до update_notification)
-                'update_notification',     # 19. Голосовые уведомления об обновлениях (ПЕРЕД updater!)
-                'updater',                 # 20. Система обновлений (после update_notification)
-                'welcome_message',         # 21. Приветственное сообщение (зависит от speech_playback)
-                'voiceover_ducking',       # 22. VoiceOver Ducking
-                'payment',                 # 23. Payment System (client side)
-                'autostart_manager',       # 24. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
+                'whatsapp',                # 14. WhatsApp (F-2025-019)
+                'browser_use',             # 15. Browser automation (F-2025-015)
+                'browser_progress',        # 16. Browser progress events (F-2025-015)
+                'tts',                     # 17. Локальный TTS (fallback если сервер недоступен)
+                'speech_playback',         # 18. Воспроизведение речи (зависит от grpc)
+                'signals',                 # 19. Аудио сигналы (должны быть до update_notification)
+                'update_notification',     # 20. Голосовые уведомления об обновлениях (ПЕРЕД updater!)
+                'updater',                 # 21. Система обновлений (после update_notification)
+                'welcome_message',         # 22. Приветственное сообщение (зависит от speech_playback)
+                'voiceover_ducking',       # 23. VoiceOver Ducking
+                'payment',                 # 24. Payment System (client side)
+                'autostart_manager',       # 25. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
             ]
+            if restrict_to_permissions:
+                startup_order = [
+                    'instance_manager',
+                    'tray',
+                    'hardware_id',
+                    'first_run_permissions',
+                    'permission_restart',
+                ]
             
             # Запускаем в правильном порядке
             import time
             for name in startup_order:
                 if name in self.integrations:
                     # GATE: Проверка разрешений для зависимых модулей
-                    if name in ["input", "screenshot_capture", "voiceover_ducking"]:
+                    # Модули, которые открывают ресурсы (mic, screen, keyboard, audio) должны ждать разрешений
+                    if name in ["input", "voice_recognition", "screenshot_capture", "voiceover_ducking", "speech_playback"]:
                         first_run = self.integrations.get("first_run_permissions")
                         if first_run and not first_run.are_all_granted:
                             logger.warning(f"⛔ [PERMISSIONS] Skipping {name} start because permissions are not granted")
@@ -425,7 +460,7 @@ class SimpleModuleCoordinator:
                             continue
 
                     # GATE: Не запускаем зависимые модули во время first-run или pending restart
-                    if name in ["input", "voice_recognition", "screenshot_capture"]:
+                    if name in ["input", "voice_recognition", "screenshot_capture", "speech_playback", "signals", "voiceover_ducking"]:
                         state_manager = self._ensure_state_manager()
                         first_run_in_progress = state_manager.get_state_data(StateKeys.FIRST_RUN_IN_PROGRESS, False)
                         restart_pending = state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False)
@@ -484,12 +519,48 @@ class SimpleModuleCoordinator:
                         logger.info("✅ [PERMISSIONS] Permissions check completed, continuing startup...")
                         print("✅ [PERMISSIONS] Проверка разрешений завершена, продолжаем запуск...")
                     
+                    # КРИТИЧНО: first_run_permissions возвращает False при недостающих разрешениях
+                    # Если есть pending restart - запускаем permission_restart, иначе просто блокируем startup.
+                    if name == "first_run_permissions" and not success:
+                        state_manager = self._ensure_state_manager()
+                        restart_pending = state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False)
+                        if restart_pending:
+                            logger.warning("⚠️ [PERMISSIONS] Restart required - starting permission_restart before stopping...")
+                            print("⚠️ [PERMISSIONS] Требуется рестарт - запускаем permission_restart...")
+                            
+                            # Запускаем permission_restart чтобы он мог обработать restart_pending
+                            if "permission_restart" in self.integrations:
+                                try:
+                                    pr_success = await self.integrations["permission_restart"].start()
+                                    if pr_success:
+                                        logger.info("✅ [PERMISSIONS] permission_restart started successfully")
+                                        print("✅ [PERMISSIONS] permission_restart запущен успешно")
+                                    else:
+                                        logger.error("❌ [PERMISSIONS] permission_restart failed to start")
+                                        print("❌ [PERMISSIONS] permission_restart не удалось запустить")
+                                except Exception as e:
+                                    logger.error(f"❌ [PERMISSIONS] Error starting permission_restart: {e}")
+                                    print(f"❌ [PERMISSIONS] Ошибка запуска permission_restart: {e}")
+                        else:
+                            logger.warning("⛔ [PERMISSIONS] Missing permissions - blocking startup until granted")
+                            print("⛔ [PERMISSIONS] Нет всех разрешений - блокируем запуск")
+                        
+                        # Останавливаем загрузку модулей, пока разрешения не получены или не выполнен рестарт
+                        logger.info("🛑 [PERMISSIONS] Stopping further module loading until permissions are granted")
+                        print("🛑 [PERMISSIONS] Остановка загрузки модулей до получения разрешений")
+                        return True
+                    
                     if not success:
                         print(f"❌ Ошибка запуска {name}")
                         return False
                     print(f"✅ {name} запущен")
             
             # Запускаем оставшиеся интеграции (если есть)
+            if restrict_to_permissions:
+                logger.info("[PERMISSIONS_GATE] First-run mode: skipping remaining integrations")
+                print("🛑 [PERMISSIONS] First-run режим — остальные модули не запускаются")
+                return True
+
             for name, integration in self.integrations.items():
                 if name not in startup_order:
                     print(f"🚀 Запуск {name}...")
@@ -731,14 +802,12 @@ class SimpleModuleCoordinator:
         try:
             print("🚀 Обработка запуска приложения в координаторе")
             
-            # УБРАНА БЛОКИРОВКА: Публикуем ready_to_greet сразу при старте
-            # Приветствие должно воспроизводиться независимо от статуса разрешений
-            logger.info("🎵 [COORDINATOR] Publishing system.ready_to_greet (no permission check)")
-            print("🎵 [COORDINATOR] Публикуем system.ready_to_greet (без проверки разрешений)")
-            await self._ensure_event_bus().publish("system.ready_to_greet", {
-                "source": "coordinator.app_startup",
-                "bypass_permissions": True
-            })
+            # V2 FIX: НЕ публикуем ready_to_greet здесь!
+            # Событие system.ready_to_greet теперь публикуется V2 Orchestrator
+            # после того как все разрешения будут получены (или pipeline завершится).
+            # Это гарантирует что приветствие не воспроизведется до готовности.
+            logger.info("🔒 [COORDINATOR] Waiting for V2 Orchestrator to publish system.ready_to_greet")
+            print("🔒 [COORDINATOR] Ждём V2 Orchestrator для публикации system.ready_to_greet")
             
         except Exception as e:
             print(f"❌ Ошибка обработки запуска приложения: {e}")
@@ -841,8 +910,6 @@ class SimpleModuleCoordinator:
             all_granted = data.get("all_granted", True)
             missing = data.get("missing", [])
             
-            if all_granted:
-                logger.info(f"✅ [PERMISSIONS] All permissions granted (session={session_id})")
             if all_granted:
                 logger.info(f"✅ [PERMISSIONS] All permissions granted (session={session_id})")
             else:

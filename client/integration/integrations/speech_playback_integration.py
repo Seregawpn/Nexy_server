@@ -79,26 +79,9 @@ class SpeechPlaybackIntegration:
 
     async def initialize(self) -> bool:
         try:
-            # Initialize AVFoundationPlayer
-            if _AVF_PLAYER_AVAILABLE and AVFPlayerConfig is not None and AVFoundationPlayer is not None:
-                try:
-                    logger.info("🚀 [AUDIO] Initializing AVFoundationPlayer...")
-                    # Используем sample_rate из config (синхронизирован с server_audio_format - источник истины)
-                    # Не используем fallback, т.к. config должен содержать правильное значение из unified_config_loader
-                    avf_config = AVFPlayerConfig(
-                        sample_rate=self.config.get('sample_rate', 48000),  # Источник истины: server_audio_format через unified_config_loader
-                        channels=self.config.get('channels', 1),
-                        volume=self.config.get('volume', 0.8)
-                    )
-                    self._avf_player = AVFoundationPlayer(avf_config)
-                    if self._avf_player is not None and self._avf_player.initialize():
-                        logger.info("✅ [AUDIO] AVFoundationPlayer initialized successfully")
-                    else:
-                        logger.error("❌ [AUDIO] AVFoundationPlayer init failed")
-                        self._avf_player = None
-                except Exception as e:
-                    logger.error(f"❌ [AUDIO] AVFoundationPlayer error: {e}")
-                    self._avf_player = None
+            # AVFoundationPlayer initialization deferred to start() to prevent early TCC triggers
+            if _AVF_PLAYER_AVAILABLE:
+                logger.info("ℹ️ [AUDIO] AVFoundationPlayer initialization deferred to start()")
             else:
                  logger.error("❌ [AUDIO] AVFoundationPlayer module not available")
 
@@ -131,6 +114,29 @@ class SpeechPlaybackIntegration:
         if not self._initialized:
             logger.error("SpeechPlaybackIntegration not initialized")
             return False
+            
+        if self._running:
+            return True
+
+        # Initialize AVFoundationPlayer (Deferred)
+        if _AVF_PLAYER_AVAILABLE and AVFPlayerConfig is not None and AVFoundationPlayer is not None and self._avf_player is None:
+            try:
+                logger.info("🚀 [AUDIO] Initializing AVFoundationPlayer (Deferred)...")
+                avf_config = AVFPlayerConfig(
+                    sample_rate=self.config.get('sample_rate', 48000),
+                    channels=self.config.get('channels', 1),
+                    volume=self.config.get('volume', 0.8)
+                )
+                self._avf_player = AVFoundationPlayer(avf_config)
+                if self._avf_player is not None and self._avf_player.initialize():
+                    logger.info("✅ [AUDIO] AVFoundationPlayer initialized successfully")
+                else:
+                    logger.error("❌ [AUDIO] AVFoundationPlayer init failed")
+                    self._avf_player = None
+            except Exception as e:
+                logger.error(f"❌ [AUDIO] AVFoundationPlayer error: {e}")
+                self._avf_player = None
+                
         self._running = True
         return True
 

@@ -104,12 +104,6 @@ def clear_flags():
     
     # 6. Очистка env переменной (если установлена)
     print("\n📋 Проверка environment переменных:")
-    if os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1":
-        print("  ⚠️  NEXY_TEST_SKIP_PERMISSIONS=1 установлена (тестовый режим)")
-        print("     Для очистки выполните: unset NEXY_TEST_SKIP_PERMISSIONS")
-    else:
-        print("  ℹ️  NEXY_TEST_SKIP_PERMISSIONS не установлена")
-    
     # Итоги
     print("\n" + "=" * 60)
     print(f"✅ Очищено флагов: {cleared_count}")

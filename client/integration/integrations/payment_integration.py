@@ -12,7 +12,9 @@ Feature ID: F-2025-017-stripe-payment
 Только отображение того, что прислал сервер.
 """
 import logging
+import asyncio
 from typing import Dict, Any, Optional
+import aiohttp
 
 from integration.core.base_integration import BaseIntegration
 from integration.core.event_bus import EventBus
@@ -47,6 +49,7 @@ class PaymentIntegration(BaseIntegration):
             'active': False,
             'limits': None
         }
+        self._hardware_id: Optional[str] = None
         
     async def _do_initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -61,11 +64,21 @@ class PaymentIntegration(BaseIntegration):
         # Подписка на событие успешного подключения к серверу
         await self.event_bus.subscribe("grpc.connected", self._on_server_connected)
         
+        # Подписка на действия UI
+        await self.event_bus.subscribe("ui.action.manage_subscription", self._on_manage_subscription)
+        await self.event_bus.subscribe("ui.action.buy_subscription", self._on_buy_subscription)
+        
+        # Подписка на Hardware ID
+        await self.event_bus.subscribe("hardware.id_obtained", self._on_hardware_id_received)
+        await self.event_bus.subscribe("hardware.id_response", self._on_hardware_id_received)
+        
         return True
 
     async def _do_start(self) -> bool:
         """Запуск интеграции"""
         logger.info(f"[{self.feature_id}] Starting PaymentIntegration")
+        # Запрашиваем Hardware ID (если он уже доступен)
+        await self.event_bus.publish("hardware.id_request", {'wait_ready': False})
         return True
 
     async def _do_stop(self) -> bool:
@@ -73,6 +86,22 @@ class PaymentIntegration(BaseIntegration):
         return True
         
     # --- Event Handlers ---
+    
+    async def _on_buy_subscription(self, payload: Dict[str, Any]):
+        """
+        Обработка запроса на покупку подписки.
+        EventBus: ui.action.buy_subscription
+        """
+        logger.info(f"[{self.feature_id}] Buy subscription requested via UI")
+        await self.open_buy_subscription()
+
+    async def _on_manage_subscription(self, payload: Dict[str, Any]):
+        """
+        Обработка запроса на открытие управления подпиской (из UI/Tray).
+        EventBus: ui.action.manage_subscription
+        """
+        logger.info(f"[{self.feature_id}] Manage subscription requested via UI")
+        await self.open_manage_subscription()
 
     async def _on_status_updated(self, payload: Dict[str, Any]):
         """
@@ -125,7 +154,7 @@ class PaymentIntegration(BaseIntegration):
             })
             
             # Показываем уведомление пользователю
-            await self.event_bus.publish("ui.notification.show", {
+            await self.event_bus.publish("system.notification", {
                 'type': 'success',
                 'title': 'Payment Successful',
                 'message': 'Thank you for your subscription! Updating status...'
@@ -133,7 +162,7 @@ class PaymentIntegration(BaseIntegration):
 
         elif action == 'cancel':
             logger.info(f"[{self.feature_id}] Payment cancelled deep link received.")
-            await self.event_bus.publish("ui.notification.show", {
+            await self.event_bus.publish("system.notification", {
                 'type': 'info',
                 'title': 'Payment Cancelled',
                 'message': 'The payment process was cancelled.'
@@ -141,10 +170,16 @@ class PaymentIntegration(BaseIntegration):
             
         elif action == 'billing_problem':
             logger.warning(f"[{self.feature_id}] Billing problem deep link received.")
-            await self.event_bus.publish("ui.notification.show", {
+            await self.event_bus.publish("system.notification", {
                 'type': 'error',
                 'title': 'Payment Issue',
                 'message': 'There was an issue with your payment. Please check your billing details.'
+            })
+        
+        elif 'portal_return' in action:
+            logger.info(f"[{self.feature_id}] Returned from Customer Portal.")
+            await self.event_bus.publish("payment.sync_requested", {
+                'reason': 'portal_return'
             })
 
     async def _on_server_connected(self, payload: Dict[str, Any]):
@@ -155,9 +190,264 @@ class PaymentIntegration(BaseIntegration):
         await self.event_bus.publish("payment.sync_requested", {
             'reason': 'reconnect'
         })
+        
+    async def _on_hardware_id_received(self, payload: Dict[str, Any]):
+        """Получен Hardware ID"""
+        # UUID is nested inside 'data' key in the event payload
+        data = payload.get('data', {})
+        uuid = data.get('uuid') if isinstance(data, dict) else payload.get('uuid')
+        logger.info(f"[{self.feature_id}] _on_hardware_id_received: uuid={uuid[:8] if uuid else 'None'}...")
+        if uuid:
+            self._hardware_id = uuid
+            logger.info(f"[{self.feature_id}] Hardware ID SET: {uuid[:8]}...")
+        else:
+            logger.warning(f"[{self.feature_id}] Hardware ID NOT SET - uuid missing. payload keys: {list(payload.keys())}")
     
     # --- Public API (for other client modules) ---
     
+    async def _open_url_safely(self, url: str):
+        """
+        Safely opens a URL using system-native commands (non-blocking).
+        """
+        import sys
+        
+        logger.info(f"[{self.feature_id}] Opening URL safely: {url}")
+        try:
+            if sys.platform == 'darwin':
+                # Use asyncio to avoid blocking the event loop
+                # 'open' command usually returns immediately, but best to be safe
+                proc = await asyncio.create_subprocess_exec(
+                    'open', url,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                rc = await proc.wait()
+                if rc != 0:
+                    logger.error(f"[{self.feature_id}] 'open' command failed with code {rc} for {url}")
+                else:
+                    logger.info(f"[{self.feature_id}] 'open' command succeeded for {url}")
+            else:
+                import webbrowser
+                # Run blocking webbrowser.open in executor
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, lambda: webbrowser.open(url))
+        except Exception as e:
+            logger.error(f"[{self.feature_id}] Error opening URL safely: {e}")
+            # Fallback (blocking, but should be rare)
+            try:
+                import webbrowser
+                webbrowser.open(url)
+            except Exception as we:
+                logger.error(f"[{self.feature_id}] Fallback failed: {we}")
+
+    async def open_buy_subscription(self):
+        """
+        Открыть страницу покупки подписки (Stripe Checkout).
+        """
+        try:
+            # If hardware ID not ready, request and wait for it
+            if not self._hardware_id:
+                logger.info(f"[{self.feature_id}] Hardware ID not ready, requesting...")
+                await self.event_bus.publish("hardware.id_request", {'wait_ready': True})
+                
+                # Wait up to 5 seconds for the ID to arrive (50 * 0.1s)
+                for i in range(50):
+                    await asyncio.sleep(0.1)
+                    if self._hardware_id:
+                        logger.info(f"[{self.feature_id}] Hardware ID received after {i*0.1:.1f}s")
+                        break
+                
+                if not self._hardware_id:
+                    logger.error(f"[{self.feature_id}] Timeout: Hardware ID still not ready after 5s waiting")
+                    # Try one last fetch request before giving up
+                    await self.event_bus.publish("hardware.id_request", {'wait_ready': False})
+                    
+                    await self.event_bus.publish("system.notification", {
+                        'type': 'error',
+                        'title': 'Payment Error',
+                        'message': 'System not ready (ID missing). Please try again.'
+                    })
+                    return
+                    
+            logger.info(f"[{self.feature_id}] Hardware ID ready: {self._hardware_id[:8]}...")
+
+            # Определяем URL API
+            from config.unified_config_loader import get_grpc_host
+            host = get_grpc_host()
+            logger.info(f"[{self.feature_id}] Resolved gRPC host: '{host}' (from unified_config)")
+            api_url = f"http://{host}:8080/api/subscription/checkout"
+            
+            logger.info(f"[{self.feature_id}] Requesting checkout session from {api_url}")
+            
+            # Set explicit timeout for connection
+            timeout = aiohttp.ClientTimeout(total=15)
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(api_url, json={'hardware_id': self._hardware_id}) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # StripeService returns 'checkout_url'
+                        checkout_url = data.get('checkout_url') or data.get('url') 
+                        if checkout_url:
+                            await self._open_url_safely(checkout_url)
+                            # Start polling for status update
+                            asyncio.create_task(self.start_polling_status())
+                        else:
+                            logger.error(f"[{self.feature_id}] No url in checkout response")
+                            await self.event_bus.publish("system.notification", {
+                                'type': 'error',
+                                'title': 'Payment Error',
+                                'message': 'Invalid response from payment server. Please try again.'
+                            })
+                    else:
+                        text = await resp.text()
+                        logger.error(f"[{self.feature_id}] Failed to get checkout URL: {resp.status} {text}")
+                        await self.event_bus.publish("system.notification", {
+                            'type': 'error',
+                            'title': 'Connection Error',
+                            'message': 'Failed to connect to payment service.'
+                        })
+
+        except asyncio.TimeoutError:
+            logger.error(f"[{self.feature_id}] Timeout connecting to payment service")
+            await self.event_bus.publish("system.notification", {
+                'type': 'error',
+                'title': 'Connection Timeout',
+                'message': 'Server is taking too long to respond. Please check your internet connection.'
+            })
+        except Exception as e:
+            logger.error(f"[{self.feature_id}] Error opening checkout: {e}")
+            await self.event_bus.publish("system.notification", {
+                'type': 'error',
+                'title': 'Error',
+                'message': f'Failed to open checkout: {e}'
+            })
+
+    async def open_manage_subscription(self):
+        """
+        Открыть портал управления подпиской.
+        1. Запрашиваем URL у сервера.
+        2. Открываем в браузере.
+        """
+        try:
+            if not self._hardware_id:
+                logger.warning(f"[{self.feature_id}] Hardware ID not ready, cannot open portal")
+                # Запрашиваем ID и пробуем снова через паузу? Нет, просто уведомляем
+                await self.event_bus.publish("system.notification", {
+                    'type': 'error',
+                    'title': 'Payment Error',
+                    'message': 'System not ready (ID missing). Please try again in 5 seconds.'
+                })
+                # Trigger refresh
+                await self.event_bus.publish("hardware.id_request", {'wait_ready': False})
+                return
+
+            # Определяем URL API
+            from config.unified_config_loader import get_grpc_host
+            host = get_grpc_host()
+            # Предполагаем порт 8080 по умолчанию
+            api_url = f"http://{host}:8080/api/subscription/portal"
+            
+            logger.info(f"[{self.feature_id}] Requesting portal session from {api_url} for {self._hardware_id}")
+            
+            # Set explicit timeout for connection
+            timeout = aiohttp.ClientTimeout(total=15)
+
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(api_url, json={'hardware_id': self._hardware_id}) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        portal_url = data.get('portal_url')
+                        if portal_url:
+                            await self._open_url_safely(portal_url)
+                        else:
+                            logger.error(f"[{self.feature_id}] No portal_url in response")
+                            await self.event_bus.publish("system.notification", {
+                                'type': 'error',
+                                'title': 'Payment Error',
+                                'message': 'Invalid response from payment server. Please try again.'
+                            })
+                    elif resp.status == 404:
+                         logger.warning(f"[{self.feature_id}] No subscription found. Redirecting to buy flow.")
+                         await self.event_bus.publish("system.notification", {
+                            'type': 'info',
+                            'title': 'No Subscription Found',
+                            'message': 'Redirecting to subscription plan selection...'
+                        })
+                         # Fallback to buy flow
+                         await self.open_buy_subscription()
+                    else:
+                        text = await resp.text()
+                        logger.error(f"[{self.feature_id}] Failed to get portal URL: {resp.status} {text}")
+                        await self.event_bus.publish("system.notification", {
+                            'type': 'error',
+                            'title': 'Connection Error',
+                            'message': 'Failed to connect to subscription service.'
+                        })
+
+        except asyncio.TimeoutError:
+            logger.error(f"[{self.feature_id}] Timeout connecting to portal service")
+            await self.event_bus.publish("system.notification", {
+                'type': 'error',
+                'title': 'Connection Timeout',
+                'message': 'Server is taking too long to respond. Please check your internet connection.'
+            })
+        except Exception as e:
+            logger.error(f"[{self.feature_id}] Error opening portal: {e}")
+            await self.event_bus.publish("system.notification", {
+                'type': 'error',
+                'title': 'Error',
+                'message': f'Failed to open portal: {e}'
+            })
+
+    async def start_polling_status(self):
+        """
+        Start polling server for subscription status update.
+        Runs every 5 seconds for 5 minutes (60 attempts).
+        """
+        logger.info(f"[{self.feature_id}] Starting subscription status polling...")
+        
+        from config.unified_config_loader import get_grpc_host
+        host = get_grpc_host()
+        api_url = f"http://{host}:8080/api/subscription/status"
+        
+        attempts = 60 # 5 minutes
+        
+        for i in range(attempts):
+            try:
+                if not self._hardware_id:
+                    break
+                    
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(api_url, params={'hardware_id': self._hardware_id}) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            status = data.get('status')
+                            
+                            # If status is paid, update UI and stop polling
+                            if status in ['paid', 'paid_trial'] and self._subscription_status.get('status') != status:
+                                logger.info(f"[{self.feature_id}] Polling success! Status is now {status}")
+                                
+                                # Broadcast update
+                                await self.event_bus.publish("subscription.status_updated", data)
+                                
+                                # Show notification
+                                await self.event_bus.publish("system.notification", {
+                                    'type': 'success',
+                                    'title': 'Payment Successful!',
+                                    'message': 'Your subscription is now active. Thank you!'
+                                })
+                                return
+                        else:
+                            logger.warning(f"[{self.feature_id}] Status poll failed: {resp.status}")
+                            
+            except Exception as e:
+                logger.error(f"[{self.feature_id}] Polling error: {e}")
+            
+            await asyncio.sleep(5)
+            
+        logger.info(f"[{self.feature_id}] Polling stopped after timeout")
+
     def get_local_status(self) -> Dict[str, Any]:
         """
         Получить ТЕКУЩИЙ известный статус (из кэша).

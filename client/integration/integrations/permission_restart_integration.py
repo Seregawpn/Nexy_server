@@ -33,13 +33,21 @@ from modules.permission_restart import (
 from modules.permission_restart.macos.permissions_restart_handler import (
     PermissionsRestartHandler,
 )
-from modules.permission_restart.core.types import PermissionTransition
-from modules.permissions.core.types import PermissionStatus, PermissionType
-from modules.permissions.first_run.status_checker import get_bundle_id
+from modules.permission_restart.core.types import PermissionTransition, PermissionStatus, PermissionType
+# from modules.permissions.first_run.status_checker import get_bundle_id
+from Foundation import NSBundle
 
 from integration.utils.logging_setup import get_logger
 
 logger = get_logger(__name__)
+
+
+def get_bundle_id() -> Optional[str]:
+    """Get the current application bundle identifier."""
+    try:
+        return NSBundle.mainBundle().bundleIdentifier()
+    except Exception:
+        return None
 
 
 class PermissionRestartIntegration(BaseIntegration):
@@ -171,8 +179,8 @@ class PermissionRestartIntegration(BaseIntegration):
         """
         Обработчик события ожидания рестарта после first-run.
         
-        Это событие публикуется FirstRunPermissionsIntegration когда получены
-        критичные разрешения, требующие рестарта (accessibility, input_monitoring, screen_capture).
+        Это событие публикуется FirstRunPermissionsIntegration когда завершён батч
+        и требуется рестарт для продолжения с следующим батчем.
         """
         if not self._config.enabled:
             return
@@ -180,28 +188,59 @@ class PermissionRestartIntegration(BaseIntegration):
         data = (event or {}).get("data") or {}
         session_id = data.get("session_id")
         permissions = data.get("permissions", [])
+        is_last_batch = data.get("is_last_batch", True)
+        batch_index = data.get("batch_index", 0)
+        total_batches = data.get("total_batches", 1)
 
         logger.info(
-            "[PERMISSION_RESTART] First run restart pending (session_id=%s, permissions=%s), scheduling restart",
+            "[PERMISSION_RESTART] First run restart pending (session_id=%s, permissions=%s, batch=%d/%d, is_last=%s)",
             session_id,
             permissions,
+            batch_index + 1,
+            total_batches,
+            is_last_batch,
         )
 
         # Обновляем состояние first_run через state_manager
         try:
-            # Устанавливаем состояние first_run как завершённое, но с ожиданием рестарта
             self.state_manager.set_first_run_state(
                 in_progress=False,
                 required=False,
                 completed=False
             )
-            # Устанавливаем флаг ожидания рестарта
             self.state_manager.set_restart_pending(True)
         except Exception as e:
             logger.debug("[PERMISSION_RESTART] Failed to update first_run state: %s", e)
 
-        # Планируем перезапуск для критических разрешений
-        # Преобразуем строковые имена в PermissionType
+        # КРИТИЧНО: Для продолжения батчей напрямую вызываем restart
+        # Не используем детектор/переходы, т.к. они имеют guards которые блокируют restart
+        if not is_last_batch:
+            logger.info(
+                "[PERMISSION_RESTART] Batch %d/%d completed, scheduling restart for next batch",
+                batch_index + 1,
+                total_batches,
+            )
+            
+            reason = f"first_run_batch:{batch_index + 1}/{total_batches}"
+            critical_perms = permissions if permissions else ["batch_restart"]
+            
+            if self._restart_task and not self._restart_task.done():
+                logger.info("[PERMISSION_RESTART] Restart already scheduled, ignoring new request")
+                return
+            
+            logger.info(
+                "[PERMISSION_RESTART] Scheduling restart in %.1fs (reason=%s, permissions=%s)",
+                self._config.restart_delay_sec,
+                reason,
+                critical_perms
+            )
+
+            self._restart_task = asyncio.create_task(
+                self._execute_scheduled_restart(reason, critical_perms)
+            )
+            return
+
+        # Для последнего батча - стандартная логика через детектор (если нужно)
         perm_type_map = {
             "accessibility": PermissionType.ACCESSIBILITY,
             "input_monitoring": PermissionType.INPUT_MONITORING,
@@ -225,6 +264,7 @@ class PermissionRestartIntegration(BaseIntegration):
             transitions = self._detector.process_event("permissions.synthetic", payload)
             for transition in transitions:
                 await self._handle_transition(transition)
+
 
     async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
         """
@@ -278,7 +318,28 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception:
             stored_permissions = []
 
-        if not stored_permissions:
+        # КРИТИЧНО: Читаем информацию о батчах из state
+        try:
+            batch_index = self.state_manager.get_state_data(
+                "permissions_restart_pending_batch_index",
+                0,
+            )
+            total_batches = self.state_manager.get_state_data(
+                "permissions_restart_pending_total_batches",
+                1,
+            )
+            is_last_batch = self.state_manager.get_state_data(
+                "permissions_restart_pending_is_last_batch",
+                True,  # Default to True only if not saved
+            )
+        except Exception:
+            batch_index = 0
+            total_batches = 1
+            is_last_batch = True
+
+        # Если permissions пустые, но у нас есть batch info - НЕ используем дефолт
+        # Дефолт используется только если нет никакой информации о батчах
+        if not stored_permissions and total_batches == 1:
             stored_permissions = [perm.value for perm in self._config.critical_permissions]
 
         if not isinstance(stored_permissions, list):
@@ -295,9 +356,12 @@ class PermissionRestartIntegration(BaseIntegration):
             session_id = "pending_state"
 
         logger.info(
-            "[PERMISSION_RESTART] Resuming pending first-run restart (session_id=%s, permissions=%s)",
+            "[PERMISSION_RESTART] Resuming pending first-run restart (session_id=%s, permissions=%s, batch=%d/%d, is_last=%s)",
             session_id,
             permissions,
+            batch_index + 1,
+            total_batches,
+            is_last_batch,
         )
 
         await self._on_first_run_restart_pending(
@@ -307,17 +371,14 @@ class PermissionRestartIntegration(BaseIntegration):
                     "session_id": session_id,
                     "source": "permission_restart_resume",
                     "permissions": permissions,
+                    "batch_index": batch_index,
+                    "total_batches": total_batches,
+                    "is_last_batch": is_last_batch,
                 },
             }
         )
 
     async def _handle_transition(self, transition: PermissionTransition) -> None:
-        # 🧪 ТЕСТОВЫЙ РЕЖИМ: пропускаем обработку изменений разрешений
-        import os
-        if os.environ.get("NEXY_TEST_SKIP_PERMISSIONS") == "1":
-            logger.debug("[PERMISSION_RESTART] Тестовый режим: пропускаем обработку изменений разрешений")
-            return
-
         # GUARD: Блокируем перезапуск во время first_run
         # Если first_run активен и restart_pending еще не true (т.е. first_run_restart_pending не публиковался),
         # значит flow разрешений еще не завершён — не планируем рестарт, чтобы не прервать flow
@@ -467,6 +528,18 @@ class PermissionRestartIntegration(BaseIntegration):
     async def _publish_ready_if_applicable(self, *, source: str) -> None:
         if self._ready_emitted:
             return
+
+        # V2 FIX: Если V2 включён, НЕ публикуем ready_to_greet здесь!
+        # V2 Orchestrator отвечает за публикацию после завершения pipeline
+        try:
+            from config.unified_config_loader import UnifiedConfigLoader
+            config = UnifiedConfigLoader.get_instance()
+            v2_config = config.get("permissions_v2", {})
+            if v2_config.get("enabled", False):
+                logger.info("[PERMISSION_RESTART] V2 enabled, deferring ready_to_greet to V2 Orchestrator")
+                return
+        except Exception as e:
+            logger.debug("[PERMISSION_RESTART] Could not check V2 config: %s", e)
 
         # Для запусков не из основного bundle считаем готовым, без TCC-запросов
         bundle_id = get_bundle_id()

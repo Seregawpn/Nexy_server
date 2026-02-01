@@ -52,6 +52,14 @@ class NetworkStatus(Enum):
     OFFLINE = "offline"
 
 
+class WhatsappStatus(Enum):
+    """Whatsapp status values."""
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    QR_REQUIRED = "qr_required"
+
+
 # NOTE: AppMode is imported from state_manager to ensure a single source of truth.
 
 
@@ -82,6 +90,9 @@ class Snapshot:
     # Restart state axis (Phase 2 - ADR-001)
     restart_pending: bool = False  # Default False for backward compatibility
     update_in_progress: bool = False  # Default False for backward compatibility
+    
+    # Whatsapp status axis
+    whatsapp_status: WhatsappStatus = WhatsappStatus.DISCONNECTED
 
 
 # Permission selectors
@@ -159,6 +170,13 @@ def is_listening_mode(s: Snapshot) -> bool:
 def is_processing_mode(s: Snapshot) -> bool:
     """Check if application is in PROCESSING mode."""
     return s.app_mode == AppMode.PROCESSING
+
+
+# Whatsapp selectors
+
+def is_whatsapp_qr_required(s: Snapshot) -> bool:
+    """Check if WhatsApp requires QR scan."""
+    return s.whatsapp_status == WhatsappStatus.QR_REQUIRED
 
 
 # Restart state selectors (DEPRECATED - Phase 2 cleanup)
@@ -369,17 +387,13 @@ def create_snapshot_from_state(
         logger.debug(f"Snapshot creation: failed to get app mode: {e}")
         current_mode = AppMode.SLEEPING
     
-    # Get first_run status (prefer explicit state, fallback to completion flag)
+    # Get first_run status (explicit state only; SoT synced from ledger)
     try:
         first_run_required = state_manager.get_state_data(StateKeys.FIRST_RUN_REQUIRED, None)
     except Exception as e:
         logger.debug(f"Snapshot creation: failed to get first_run_required: {e}")
         first_run_required = None
-    if first_run_required is None:
-        completed = bool(state_manager.get_state_data(StateKeys.FIRST_RUN_COMPLETED, False))
-        first_run = not completed
-    else:
-        first_run = bool(first_run_required)
+    first_run = bool(first_run_required) if first_run_required is not None else False
 
     # Get restart_pending status
     restart_pending = bool(state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False))
@@ -394,6 +408,13 @@ def create_snapshot_from_state(
     # Get update_in_progress status
     update_in_progress = is_update_in_progress(state_manager)
     
+    # Get whatsapp status
+    try:
+        ws_val = state_manager.get_state_data(StateKeys.WHATSAPP_STATUS, "disconnected")
+        whatsapp_status = WhatsappStatus(ws_val)
+    except Exception:
+        whatsapp_status = WhatsappStatus.DISCONNECTED
+    
     return Snapshot(
         perm_mic=perm_mic,
         perm_screen=perm_screen,
@@ -404,4 +425,5 @@ def create_snapshot_from_state(
         app_mode=current_mode,
         restart_pending=restart_pending,
         update_in_progress=update_in_progress,
+        whatsapp_status=whatsapp_status,
     )

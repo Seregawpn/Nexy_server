@@ -17,6 +17,7 @@ import numpy as np
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core import selectors
 
 # Импорт модуля приветствия
 from modules.welcome_message.core.welcome_player import WelcomePlayer
@@ -25,8 +26,6 @@ from modules.welcome_message.config.welcome_config import WelcomeConfigLoader
 
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
-from modules.permissions.core.permissions_queue import PermissionsQueue
-from modules.permissions.core.types import PermissionType
 
 from integration.utils.logging_setup import get_logger
 
@@ -41,12 +40,10 @@ class WelcomeMessageIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        permissions_queue: Optional[PermissionsQueue] = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
-        self.permissions_queue = permissions_queue
         
         # Загружаем конфигурацию
         try:
@@ -76,6 +73,7 @@ class WelcomeMessageIntegration:
         self._permission_recheck_task: Optional[asyncio.Task] = None
         self._welcome_played = False
         self._welcome_lock = asyncio.Lock()
+        self._deferred_until_first_run = False
 
         # Блокировки по разрешениям отключены по умолчанию
         self._enforce_permissions = bool(
@@ -95,6 +93,7 @@ class WelcomeMessageIntegration:
             await self.event_bus.subscribe("permissions.changed", self._on_permission_event, EventPriority.HIGH)
             await self.event_bus.subscribe("permissions.requested", self._on_permission_event, EventPriority.MEDIUM)
             await self.event_bus.subscribe("permissions.integration_ready", self._on_permissions_ready, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.MEDIUM)
             
             self._initialized = True
             logger.info("✅ [WELCOME_INTEGRATION] Инициализирован")
@@ -134,6 +133,13 @@ class WelcomeMessageIntegration:
             if not self.config.enabled:
                 logger.info("🔇 [WELCOME_INTEGRATION] Приветствие отключено в конфигурации")
                 return
+
+            # Ждём завершения first-run, чтобы приветствие воспроизводилось после разрешений
+            snapshot = selectors.create_snapshot_from_state(self.state_manager)
+            if snapshot.first_run:
+                self._deferred_until_first_run = True
+                logger.info("⏳ [WELCOME_INTEGRATION] First-run in progress — откладываем приветствие до permissions.first_run_completed")
+                return
             
             async with self._welcome_lock:
                 if self._welcome_played or self._pending_welcome:
@@ -162,6 +168,16 @@ class WelcomeMessageIntegration:
             
         except Exception as e:
             await self._handle_error(e, where="welcome.on_ready_to_greet", severity="warning")
+
+    async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
+        """Запускаем приветствие после завершения first-run."""
+        if not self._deferred_until_first_run:
+            return
+        self._deferred_until_first_run = False
+        try:
+            await self._on_ready_to_greet({"data": {"source": "permissions.first_run_completed"}})
+        except Exception as e:
+            await self._handle_error(e, where="welcome.on_first_run_completed", severity="warning")
     
     async def _play_welcome_message(self, trigger: str = "app_startup"):
         """Воспроизводит приветственное сообщение"""

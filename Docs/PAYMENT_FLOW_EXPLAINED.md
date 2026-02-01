@@ -167,8 +167,96 @@ sequenceDiagram
 
 ### Customer Portal (Managing Payment Methods)
 To allow users to update their credit card or view billing history:
-1.  **Service Layer:** `StripeService.create_portal_session(customer_id)` exists. It generates a temporary link to the Stripe-hosted portal.
-2.  **API Gap:** Currently, **there is no API endpoint** (e.g., `POST /api/subscription/portal`) exposed in `main.py` to trigger this.
-3.  **Implementation Required:**
-    *   **Server:** Add `POST /api/subscription/portal` -> calls `subscription_module.create_portal_session`.
-    *   **Client:** Button "Manage Subscription" -> calls API -> opens returned URL in browser.
+
+#### Implementation Status (Done)
+- **Server:** API `POST /api/subscription/portal` is active.
+- **Client:** "Manage Subscription" menu item calls this API.
+
+#### Manage Subscription Flow (Simplified)
+```mermaid
+sequenceDiagram
+    participant User
+    participant App
+    participant Server
+    participant Stripe
+
+    User->>App: Click "Manage Subscription"
+    App->>Server: Get Portal Link
+    Server->>Stripe: Request Session
+    Stripe-->>Server: Return https://billing.stripe.com/...
+    Server-->>App: Return Link
+    App->>User: Open Browser (Stripe Portal)
+    
+    Note over User, Stripe: User changes plan / cancels
+    
+    User->>Stripe: Click "Return to Nexy"
+    Stripe->>App: Redirect back (Deep Link)
+    App->>Server: Sync new status
+```
+
+## 8. AI Logic & Command Flow (User -> AI -> Action)
+
+This diagram illustrates how the system processes natural language requests (e.g., "I want to change my card") into actionable links.
+
+**The Logic:**
+1.  **Context Injection:** The Server injects the user's subscription status into the LLM Prompt.
+2.  **LLM Decision:** The AI decides which JSON command to output based on that status.
+    *   **Paid User** -> `manage_subscription` (Portal)
+    *   **Free User** -> `buy_subscription` (Checkout)
+3.  **Client Execution:** The Client receives the JSON, dispatches an event, and opens the link returned by the server.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant LLM (Server)
+    participant Client (ActionIntegration)
+    participant Server (API)
+    participant Browser
+
+    User->>LLM: "I want to change my card"
+    
+    Note over LLM: **System Prompt Check:**
+    Note over LLM: If Status == PAID:
+    Note over LLM: Output `manage_subscription`
+    
+    LLM-->>Client: Stream Response + JSON
+    Note right of LLM: { "command": "manage_subscription" }
+    
+    Client->>Client: Event: ui.action.manage_subscription
+    
+    Note over Client: PaymentIntegration handles event
+    Client->>Server: POST /api/subscription/portal
+    Server-->>Client: { "url": "https://billing.stripe.com/..." }
+    
+    Client->>Browser: Open URL
+    Browser->>User: Show Generic Stripe Portal
+```
+
+## 9. Simplified Scheme: "How AI Knows You Paid"
+
+This diagram shows exactly how the Server "whispers" your status to the AI before it answers.
+
+```mermaid
+graph TD
+    User[👤 User] -->|1. Says: 'Change my card'| Client[📱 App]
+    Client -->|2. Sends Audio + HardwareID| Server[🖥️ Server]
+    
+    subgraph Server Logic
+        Server -->|3. Checks Database| DB[(🗄️ Database)]
+        DB -->|4. Returns: 'Status = PAID'| Server
+        
+        Server -->|5. Creates Secret Note| Note[📝 System Prompt]
+        Note -.->|"Hidden Text: User is PAID"| AI[🤖 Gemini AI]
+        
+        Server -->|6. Sends User Request| AI
+    end
+    
+    subgraph AI Thinking
+        AI -->|7. Reads Note + Request| Decision{🧠 Decision}
+        Decision -->|'User is PAID'| PlanA[✅ Output: manage_subscription]
+        Decision -.->|'User is FREE'| PlanB[❌ Output: buy_subscription]
+    end
+    
+    PlanA -->|8. JSON Command| Client
+    Client -->|9. Opens Portal| Stripe[💳 Stripe]
+```

@@ -296,6 +296,26 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
   - Зарегистрировать новые `ModeTransition` в ModeManagementIntegration (или в конфиге)
   - Для специальных переходов — указать `action`, `priority`, `timeout`
 
+  - Для специальных переходов — указать `action`, `priority`, `timeout`
+
+---
+
+## 7.1) Feature Flags & Conditional Loading (Оптимизация)
+
+Клиент использует Factory-pattern для условной загрузки тяжелых интеграций (`integration_factory.py`).
+
+**1. Память и производительность:**
+- `browser.enabled=false` → `BrowserUseIntegration` не создаётся. Процесс Playwright/Chrome не запускается (экономия ~200MB RAM).
+- `payment.enabled=false` → `PaymentIntegration` не создаётся.
+
+**2. UI & Tray:**
+- Меню трея строится динамически.
+- `payment.enabled=false` → Пункт "Manage Subscription" скрыт.
+
+**3. Execution Guards:**
+- `ActionExecutionIntegration` проверяет флаги перед выполнением.
+- Даже если сервер пришлет `open_browser`, клиент отклонит команду с ошибкой `feature_disabled`.
+
 ---
 
 ## 8) Запуск и жизненный цикл

@@ -14,6 +14,22 @@ from typing import Optional
 _USER_DATA_DIR_CACHE = None
 
 
+def _resolve_app_name(app_name: str) -> str:
+    """
+    Resolve app data name with optional overrides for dev/test isolation.
+    Env priority:
+    - NEXY_APP_NAME (explicit full name)
+    - NEXY_APP_DATA_SUFFIX (appended with dash)
+    """
+    explicit = os.environ.get("NEXY_APP_NAME")
+    if explicit:
+        return explicit
+    suffix = os.environ.get("NEXY_APP_DATA_SUFFIX")
+    if suffix:
+        return f"{app_name}-{suffix}"
+    return app_name
+
+
 def get_resource_path(relative_path: str) -> Path:
     """
     Получить абсолютный путь к ресурсу для любого режима запуска.
@@ -81,6 +97,8 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
         logger.debug(f"Using cached user data dir: {_USER_DATA_DIR_CACHE}")
         return _USER_DATA_DIR_CACHE
 
+    app_name = _resolve_app_name(app_name)
+
     # Попытка 1: Стандартный путь
     data_dir = Path.home() / "Library" / "Application Support" / app_name
     try:
@@ -138,6 +156,8 @@ def get_user_cache_dir(app_name: str = "Nexy") -> Path:
     import logging
     logger = logging.getLogger(__name__)
 
+    app_name = _resolve_app_name(app_name)
+
     # Попытка 1: Стандартный путь
     cache_dir = Path.home() / "Library" / "Caches" / app_name
     try:
@@ -175,6 +195,8 @@ def get_user_logs_dir(app_name: str = "Nexy") -> Path:
     """
     import logging
     logger = logging.getLogger(__name__)
+
+    app_name = _resolve_app_name(app_name)
 
     # Попытка 1: Стандартный путь
     logs_dir = Path.home() / "Library" / "Logs" / app_name

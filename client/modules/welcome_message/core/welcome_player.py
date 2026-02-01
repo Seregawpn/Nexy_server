@@ -109,7 +109,21 @@ class WelcomePlayer:
                     self._on_completed(server_result)
                 return server_result
 
-            error_msg = server_result.error or "Серверное воспроизведение приветствия не удалось"
+            # FALLBACK: Если серверное воспроизведение не удалось, используем локальный синтез
+            logger.warning(f"⚠️ [WELCOME_PLAYER] Серверное воспроизведение не удалось: {server_result.error}")
+            logger.info("🔄 [WELCOME_PLAYER] Переключаюсь на локальный fallback (macOS say)...")
+            
+            fallback_result = await self._play_local_fallback()
+            
+            if fallback_result.success:
+                logger.info("✅ [WELCOME_PLAYER] Локальное приветствие (fallback) воспроизведено успешно")
+                self.state = WelcomeState.COMPLETED
+                if self._on_completed:
+                    self._on_completed(fallback_result)
+                return fallback_result
+
+            # Если и fallback не удался
+            error_msg = fallback_result.error or "Воспроизведение приветствия (сервер + fallback) не удалось"
             logger.error(f"❌ [WELCOME_PLAYER] {error_msg}")
             self.state = WelcomeState.ERROR
 
@@ -194,6 +208,11 @@ class WelcomePlayer:
 
             logger.info("✅ [WELCOME_PLAYER] Серверное аудио успешно подготовлено")
 
+            # ВАЖНО: WelcomePlayer только подготавливает данные.
+            # Реальное воспроизведение происходит в интеграции через speech_playback_integration.
+            # Но для архитектурной целостности мы возвращаем успех тут, 
+            # подразумевая что данные готовы к передаче в общий плеер.
+            
             return WelcomeResult(
                 success=True,
                 method="server",
@@ -210,6 +229,53 @@ class WelcomePlayer:
                 duration_sec=0.0,
                 error=f"Ошибка серверной генерации: {e}"
             )
+
+    async def _play_local_fallback(self) -> WelcomeResult:
+        """
+        Запасной вариант: воспроизведение через macOS 'say'
+        """
+        import subprocess
+        import asyncio
+
+        try:
+            text = self.config.text
+            if not text:
+                return WelcomeResult(False, "local", 0.0, "Empty text for fallback")
+
+            logger.info(f"🗣️ [WELCOME_PLAYER] Запуск локального синтеза: '{text}'")
+            
+            # Запускаем 'say' в отдельном процессе, чтобы не блокировать loop
+            # Используем asyncio.create_subprocess_exec для асинхронности
+            process = await asyncio.create_subprocess_exec(
+                "say", text,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # Ждем завершения (это блокирует текущую задачу, но не loop, пока 'say' говорит)
+            # 'say' завершается только когда договорит.
+            await process.wait()
+            
+            if process.returncode != 0:
+                stderr = await process.stderr.read()
+                error_msg = f"Local 'say' command failed: {stderr.decode().strip()}"
+                logger.error(f"❌ [WELCOME_PLAYER] {error_msg}")
+                return WelcomeResult(False, "local", 0.0, error_msg)
+
+            # Оценка длительности очень приблизительная, но для fallback не критично
+            approx_duration = len(text) * 0.06  # ~16 chars per sec
+            
+            return WelcomeResult(
+                success=True,
+                method="local_fallback",
+                duration_sec=approx_duration,
+                metadata={"cmd": "say", "text": text}
+            )
+
+        except Exception as e:
+            logger.error(f"❌ [WELCOME_PLAYER] Ошибка локального fallback: {e}")
+            return WelcomeResult(False, "local", 0.0, str(e))
+
 
     
     def get_audio_data(self) -> Optional[np.ndarray]:

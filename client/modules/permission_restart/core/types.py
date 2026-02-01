@@ -6,8 +6,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
+from enum import Enum
 
-from modules.permissions.core.types import PermissionStatus, PermissionType
+
+class PermissionType(Enum):
+    """Типы разрешений"""
+    MICROPHONE = "microphone"
+    SCREEN_CAPTURE = "screen_capture"
+    CAMERA = "camera"
+    NETWORK = "network"
+    NOTIFICATIONS = "notifications"
+    ACCESSIBILITY = "accessibility"
+    INPUT_MONITORING = "input_monitoring"
+    CONTACTS = "contacts"
+    FULL_DISK_ACCESS = "full_disk_access"
+
+
+class PermissionStatus(Enum):
+    """Статусы разрешений"""
+    GRANTED = "granted"
+    DENIED = "denied"
+    NOT_DETERMINED = "not_determined"
+    ERROR = "error"
 
 
 @dataclass(frozen=True)

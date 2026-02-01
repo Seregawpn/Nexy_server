@@ -14,6 +14,7 @@ class Decision(Enum):
     RETRY = "retry"
     ABORT = "abort"
     DEGRADE = "degrade"
+    NOTIFY_USER = "notify_user"
 
 
 __all__ = ["Decision"]

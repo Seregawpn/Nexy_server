@@ -27,6 +27,7 @@ from config.unified_config_loader import UnifiedConfigLoader
 
 # Модульный gRPC клиент
 from modules.grpc_client.core.grpc_client import GrpcClient
+import grpc
 
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
 MCP_PREFIX = "__MCP__"
@@ -432,9 +433,10 @@ class GrpcClientIntegration:
         original_session_id = data.get("session_id", "tts")
         source = data.get("source", "unknown")
         
-        # Use a unique TTS session_id to avoid collision with cancelled main sessions
-        # This prevents audio from being ignored when main session completes
-        tts_session_id = f"tts_{original_session_id}"
+        # Use the ORIGINAL session_id so that SpeechPlaybackIntegration attributes this audio 
+        # to the current active session. This ensures that grpc.request_completed waits for 
+        # this audio to finish playing before closing the session.
+        tts_session_id = original_session_id
         
         if not text or not text.strip():
             logger.warning(f"[TTS] Empty text received from {source}, ignoring")
@@ -446,8 +448,9 @@ class GrpcClientIntegration:
         server_success = False
         
         try:
-            if self._client is None:
-                logger.warning("[TTS] gRPC client not initialized, falling back to local TTS")
+            # Skip server TTS if network is down or we are offline
+            if self._client is None or (self.config.use_network_gate and self._network_connected is False):
+                 logger.warning("[TTS] Server unavailable/offline, falling back to local TTS")
             else:
                 # Ensure connected
                 connected = await self._ensure_connected()
@@ -466,15 +469,8 @@ class GrpcClientIntegration:
                             chunk_count += 1
                             audio_bytes = chunk_data.get('bytes', b'')
                             
-                            # DEBUG: Check audio content
-                            import numpy as np
-                            if audio_bytes and len(audio_bytes) >= 4:
-                                arr = np.frombuffer(audio_bytes[:min(100, len(audio_bytes))], dtype=np.int16)
-                                peak = float(np.max(np.abs(arr))) if arr.size else 0.0
-                                logger.debug(f"[TTS] Chunk #{chunk_count}: bytes={len(audio_bytes)}, first_4={audio_bytes[:4].hex()}, peak={peak:.1f}")
-                            
                             # Forward to SpeechPlaybackIntegration via grpc.response.audio event
-                            logger.info(f"🔊 [AUDIO_DIAG] Publishing grpc.response.audio: TTS chunk #{chunk_count}, bytes={len(audio_bytes)}, session={tts_session_id}")
+                            # logger.debug(f"[TTS] Chunk #{chunk_count}, bytes={len(audio_bytes)}")
                             await self.event_bus.publish("grpc.response.audio", {
                                 "session_id": tts_session_id,
                                 "dtype": chunk_data.get('dtype', 'int16'),
@@ -502,9 +498,18 @@ class GrpcClientIntegration:
         except Exception as e:
             logger.warning(f"[TTS] Server TTS failed: {e}, falling back to local TTS")
         
-        # No local TTS fallback: enforce server-only voice
+        # Local TTS fallback (say command)
         if not server_success:
-            logger.warning(f"[TTS] Server TTS failed; local fallback disabled (session={tts_session_id})")
+            logger.info(f"[TTS] Executing local fallback for session {tts_session_id}")
+            await self._play_local_tts(text, tts_session_id)
+            
+            # Since _play_local_tts handles playback.started/completed, we just need to notify tts_completed
+            await self.event_bus.publish("grpc.tts_completed", {
+                "session_id": tts_session_id,
+                "source": "local_fallback",
+                "chunk_count": 0,
+            })
+            logger.info(f"[TTS] Local fallback completed for session {tts_session_id}")
 
     async def _on_app_shutdown(self, event):
         await self.stop()
@@ -654,6 +659,7 @@ class GrpcClientIntegration:
         text_chunk_count = 0
         exit_reason = None
         first_chunk_ts = None
+        full_response_text = []
         
         try:
             # КРИТИЧНО: Преобразуем session_id в строку (может быть float или другой тип)
@@ -698,6 +704,9 @@ class GrpcClientIntegration:
                     text = resp.text_chunk
                     text_chunk_count += 1
                     logger.info(f"gRPC received text_chunk len={len(text)} for session {session_id}")
+                    
+                    # Accumulate text for potential fallback
+                    full_response_text.append(text)
                     
                     # Проверяем префикс __MCP__ для MCP команд (Legacy Fallback)
                     if text.startswith(MCP_PREFIX):
@@ -854,6 +863,52 @@ class GrpcClientIntegration:
                     err_msg = resp.error_message
                     exit_reason = "error_message"
                     logger.error(f"gRPC received error_message: '{err_msg}' for session {session_id}")
+                    
+                    # === GRACEFUL LIMIT HANDLING ===
+                    # Если ошибка связана с лимитами или подпиской - озвучиваем её
+                    err_lower = err_msg.lower()
+                    if any(x in err_lower for x in ["limit", "quota", "subscribe", "subscription"]):
+                        logger.warning(f"⚠️ Limit/Subscription error detected for session {session_id} - activating TTS fallback")
+                        
+                        # 1. Публикуем текст ошибки (для UI/логов)
+                        await self.event_bus.publish("grpc.response.text", {
+                            "session_id": session_id, 
+                            "text": f"{err_msg}"
+                        })
+                        
+                        # 2. Озвучиваем вежливое сообщение
+                        # Добавляем небольшую паузу (1 сек), чтобы аудио не "съедалось" при переключении микрофона
+                        await asyncio.sleep(1.0)
+                        
+                        tts_message = "You have reached your daily limit. I am opening the subscription page where you can upgrade for unlimited access."
+                        await self.event_bus.publish("grpc.tts_request", {
+                            "text": tts_message,
+                            "session_id": session_id,
+                            "source": "limit_handler"
+                        })
+                        
+                        # 3. OFFER PAYMENT/SUBSCRIPTION
+                        payload = {
+                            "command": "buy_subscription",
+                            "args": {}
+                        }
+                        
+                        logger.info(f"💰 Triggering payment offer for session {session_id}")
+                        await self.event_bus.publish("grpc.response.action", {
+                            "session_id": session_id,
+                            "action_json": json.dumps(payload),
+                            "feature_id": FEATURE_ID,
+                        })
+                        
+                        # 4. Маркируем запрос как ЗАВЕРШЕННЫЙ
+                        # Даем время (1.5 сек) на инициализацию TTS (получение первых чанков),
+                        # чтобы _had_audio_for_session успел выставиться в True.
+                        await asyncio.sleep(1.5)
+                        await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
+                        got_terminal = True
+                        break
+                    
+                    # Обычная ошибка - продолжаем как раньше
                     await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": err_msg})
                     got_terminal = True
                     break
@@ -864,6 +919,15 @@ class GrpcClientIntegration:
             # Логируем финальный summary для диагностики
             had_audio = audio_chunk_count > 0
             had_text = text_chunk_count > 0
+            
+            # GLOBAL FALLBACK: Если есть текст, но НЕТ аудио (и это не отмена) - читаем текст локально
+            # Это покрывает случай, когда сервер вернул текст, но генерация аудио упала или формат не поддерживается,
+            # или если стрим разорвался после передачи текста но до аудио.
+            if had_text and not had_audio and exit_reason != "cancelled":
+                logger.warning(f"⚠️ [GLOBAL_FALLBACK] Session {session_id} has text but NO AUDIO. Activating local fallback.")
+                final_text = "".join(full_response_text)
+                if final_text.strip():
+                     await self._play_local_tts(final_text, session_id)
             
             # Если стрим завершился БЕЗ явного end_message/error — завершаем запрос сами,
             # чтобы UI не зависал в состоянии PROCESSING.
@@ -892,6 +956,84 @@ class GrpcClientIntegration:
                 f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
                 f"had_audio={had_audio}, had_text={had_text}}}"
             )
+        except grpc.aio.AioRpcError as e:
+            exit_reason = "grpc_error"
+            code = e.code()
+            details = e.details() or ""
+            
+            logger.error(f"❌ gRPC RPC Error: code={code}, details={details}")
+            
+            # Check for subscription limits
+            is_limit_error = (
+                code == grpc.StatusCode.PERMISSION_DENIED and 
+                any(x in details.lower() for x in ["limit", "quota", "subscribe", "subscription", "tomorrow"])
+            )
+            
+            if is_limit_error:
+                logger.warning(f"⚠️ Limit/Subscription RPC error detected - activating Fallback & Payment Offer")
+                
+                # 1. Publish error text
+                await self.event_bus.publish("grpc.response.text", {
+                    "session_id": session_id, 
+                    "text": f"{details}" 
+                })
+                
+                # 2. Озвучиваем вежливое сообщение
+                # Увеличиваем паузу до 2 сек, чтобы дать микрофону полностью отключиться
+                await asyncio.sleep(2.0)
+                
+                tts_message = "You have reached your daily limit. I am opening the subscription page where you can upgrade for unlimited access."
+                await self.event_bus.publish("grpc.tts_request", {
+                    "text": tts_message,
+                    "session_id": session_id,
+                    "source": "limit_handler"
+                })
+                
+                # 3. OFFER PAYMENT/SUBSCRIPTION
+                payload = {
+                     "command": "buy_subscription",
+                     "args": {}
+                }
+                
+                # Try to determine if it's 'manage' or 'buy'
+                # If 'subscription_gate_denied' (generic), default to buy
+                # We publish the action so ClientActionIntegration picks it up
+                
+                logger.info(f"💰 Triggering payment offer for session {session_id}")
+                await self.event_bus.publish("grpc.response.action", {
+                    "session_id": session_id,
+                    "action_json": json.dumps(payload),
+                    "feature_id": FEATURE_ID,
+                })
+                
+                # 4. Mark request COMPLETED (triggers playback or sleep)
+                # Даем время (3.0 сек) на буферизацию аудио в плеере,
+                # чтобы _had_audio_for_session гарантированно выставился и плеер начал работу.
+                await asyncio.sleep(3.0)
+                await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
+            
+            else:
+                # Normal error handling
+                await self._handle_error(e, where="grpc.stream_audio", severity="warning")
+                await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": details})
+
+            # Log summary
+            had_audio = audio_chunk_count > 0
+            had_text = text_chunk_count > 0
+            
+            # GLOBAL FALLBACK ON ERROR: Если получили текст до ошибки, но не аудио
+            if had_text and not had_audio and not is_limit_error:
+                 logger.warning(f"⚠️ [GLOBAL_FALLBACK] Session {session_id} failed with error but has text. Activating local fallback.")
+                 final_text = "".join(full_response_text)
+                 if final_text.strip():
+                     await self._play_local_tts(final_text, session_id)
+            
+            logger.info(
+                f"🔍 [GRPC_END] session={session_id} exit_reason={exit_reason} error={details} "
+                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
+                f"had_audio={had_audio}, had_text={had_text}}}"
+            )
+
         except Exception as e:
             exit_reason = "exception"
             had_audio = audio_chunk_count > 0
@@ -907,6 +1049,33 @@ class GrpcClientIntegration:
             )
 
     # ---------------- Utilities ----------------
+    async def _play_local_tts(self, text: str, session_id: str):
+        """Executes local macOS 'say' fallback for a session."""
+        try:
+             logger.info(f"🗣️ [LOCAL_TTS] Fallback for session {session_id}: '{text[:50]}...'")
+             
+             # Signal playback started
+             await self.event_bus.publish("playback.started", {
+                 "session_id": session_id,
+                 "pattern": "local_fallback"
+             })
+             
+             # Execute 'say'
+             proc = await asyncio.create_subprocess_exec(
+                 "say", text,
+                 stdout=asyncio.subprocess.DEVNULL,
+                 stderr=asyncio.subprocess.DEVNULL
+             )
+             await proc.wait()
+             
+             # Signal completed
+             await self.event_bus.publish("playback.completed", {
+                 "session_id": session_id,
+                 "pattern": "local_fallback"
+             })
+             
+        except Exception as e:
+             logger.error(f"❌ [LOCAL_TTS] Failed: {e}") 
     async def _ensure_connected(self) -> bool:
         """Single-flight connection: ensures only one connect attempt runs at a time.
         КРИТИЧНО: выполняется в _grpc_loop для создания канала в правильном loop.

@@ -1,0 +1,12 @@
+{"level":30,"time":"2026-01-30T16:16:03.880Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"Starting WhatsApp MCP Server..."}
+{"level":30,"time":"2026-01-30T16:16:03.880Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"Initializing database..."}
+{"level":30,"time":"2026-01-30T16:16:03.885Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"Database initialized successfully."}
+{"level":30,"time":"2026-01-30T16:16:03.885Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"Attempting to connect to WhatsApp..."}
+{"level":30,"time":"2026-01-30T16:16:04.179Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"WhatsApp connection process initiated."}
+{"level":30,"time":"2026-01-30T16:16:04.179Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"Starting MCP server..."}
+{"level":30,"time":"2026-01-30T16:16:04.180Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"Initializing MCP server..."}
+{"level":30,"time":"2026-01-30T16:16:04.187Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"MCP server configured. Connecting stdio transport..."}
+{"level":30,"time":"2026-01-30T16:16:04.187Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"MCP transport connected. Server is ready and listening via stdio."}
+{"level":30,"time":"2026-01-30T16:16:04.187Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"MCP Server setup complete. Waiting for requests from client..."}
+{"level":30,"time":"2026-01-30T16:16:04.187Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"MCP Server started and listening."}
+{"level":30,"time":"2026-01-30T16:16:04.187Z","pid":65351,"hostname":"Sergiys-MacBook-Air.local","msg":"Application setup complete. Running..."}

@@ -39,6 +39,8 @@ from integration.integrations.update_notification_integration import UpdateNotif
 from integration.integrations.action_execution_integration import ActionExecutionIntegration
 from integration.integrations.browser_use_integration import BrowserUseIntegration
 from integration.integrations.browser_progress_integration import BrowserProgressIntegration
+from integration.integrations.payment_integration import PaymentIntegration
+from integration.integrations.whatsapp_integration import WhatsappIntegration
 from modules.signals.config.types import PatternConfig
 
 # Workflows
@@ -183,7 +185,6 @@ class IntegrationFactory:
             event_bus=self.event_bus,
             state_manager=self.state_manager,
             error_handler=self.error_handler,
-            permissions_queue=None,
         )
         
         # Voice Recognition
@@ -240,17 +241,20 @@ class IntegrationFactory:
 
         # === Browser Automation (F-2025-015) ===
         
-        integrations['browser_use'] = BrowserUseIntegration(
-            event_bus=self.event_bus,
-        )
-        logger.info("[F-2025-015] BrowserUseIntegration registered")
-        
-        integrations['browser_progress'] = BrowserProgressIntegration(
-            event_bus=self.event_bus,
-            state_manager=self.state_manager,
-            error_handler=self.error_handler,
-        )
-        logger.info("[F-2025-015] BrowserProgressIntegration registered")
+        browser_config = self.config.get_feature_config('browser')
+        if browser_config.get('enabled', True):
+            integrations['browser_use'] = BrowserUseIntegration(
+                event_bus=self.event_bus,
+            )
+            
+            integrations['browser_progress'] = BrowserProgressIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler,
+            )
+            logger.info("✅ [F-2025-015] Browser integrations registered namespace=browser")
+        else:
+            logger.info("⚠️ [F-2025-015] Browser integrations disabled by config")
 
         # === Audio/Speech ===
         
@@ -303,7 +307,6 @@ class IntegrationFactory:
             event_bus=self.event_bus,
             state_manager=self.state_manager,
             error_handler=self.error_handler,
-            permissions_queue=None,
         )
 
         voiceover_config = config_data.get("accessibility", {}).get("voiceover_control", {})
@@ -313,6 +316,31 @@ class IntegrationFactory:
             error_handler=self.error_handler,
             config=voiceover_config
         )
+
+        # Payment System
+        payment_config = self.config.get_feature_config('payment')
+        if payment_config.get('enabled', True):  # [F-2025-017] Default to True for payment
+            integrations['payment'] = PaymentIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler
+            )
+            logger.info(f"✅ [F-2025-017] PaymentIntegration registered (enabled=True)")
+        else:
+            logger.info(f"⚠️ [F-2025-017] PaymentIntegration disabled by config")
+
+        # Whatsapp System
+        whatsapp_config = self.config.get_whatsapp_config()
+        if whatsapp_config.get('enabled', True):
+            integrations['whatsapp'] = WhatsappIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler
+            )
+            logger.info(f"✅ [F-2025-019] WhatsappIntegration registered (enabled=True)")
+        else:
+            logger.info(f"⚠️ [F-2025-019] WhatsappIntegration disabled by config")        
+
 
         # First Run Permissions
         permissions_first_run_config = config_data.get("permissions", {}).get("first_run", {})

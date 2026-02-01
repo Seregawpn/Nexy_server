@@ -3,7 +3,7 @@
 **Версия:** 2.0 (обновлено 2025-11-17)  
 **Целевая платформа:** Universal 2 (arm64 + x86_64)
 
-> Это базовый и единственный источник инструкций по сборке Universal 2 `.app` + `.pkg`, подписи и нотарификации. Все чек-листы (`Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md`, `.cursorrules §11.2`) обязаны ссылаться на этот файл и фиксировать фактические результаты.
+> Это базовый и единственный источник инструкций по сборке Universal 2 `.app` + `.pkg`, подписи и нотарификации. Все проверки следуют процессу, описанному в `.cursorrules`.
 
 **Связанные документы:**
 - `MACOS_PACKAGING_REQUIREMENTS.md` — полные требования к Universal 2 сборке
@@ -358,8 +358,6 @@ rm -rf dist/Nexy.app/Nexy.app
 
 ## 11. Чек-листы и отчёты
 
-- **Перед упаковкой:** `Docs/PRE_PACKAGING_VERIFICATION.md`
-- **Резюме статуса:** `Docs/PACKAGING_READINESS_CHECKLIST.md`
 - **Требования:** `MACOS_PACKAGING_REQUIREMENTS.md`
 - **Process rules:** `.cursorrules §11.2 Packaging Regression Checklist`
 

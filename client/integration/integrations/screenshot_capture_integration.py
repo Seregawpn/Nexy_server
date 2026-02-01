@@ -38,8 +38,6 @@ from modules.screenshot_capture.core.types import (
 
 # Конфиг
 from config.unified_config_loader import UnifiedConfigLoader
-from modules.permissions.core.permissions_queue import PermissionsQueue
-from modules.permissions.core.types import PermissionType
 
 from integration.utils.logging_setup import get_logger
 
@@ -64,12 +62,10 @@ class ScreenshotCaptureIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        permissions_queue: Optional[PermissionsQueue] = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
-        self.permissions_queue = permissions_queue
         self._initialized = False
         self._running = False
 
@@ -81,6 +77,8 @@ class ScreenshotCaptureIntegration:
         self._screen_permission_task: Optional[asyncio.Task] = None
         # Ранний захват: отслеживаем активные задачи захвата по session_id
         self._early_capture_tasks: Dict[float, asyncio.Task] = {}
+        # Кэш данных последнего захваченного скриншота для переопубликации
+        self._captured_screenshot_data: Optional[Dict[str, Any]] = None
 
         # Компоненты
         self._capture: Optional[ScreenshotCapture] = None
@@ -310,8 +308,11 @@ class ScreenshotCaptureIntegration:
                 return
 
             sid = self._last_session_id
-            if sid is not None and self._captured_for_session == sid:
-                logger.debug("ScreenshotCaptureIntegration: already captured for session")
+            # КРИТИЧНО: Если скриншот уже захвачен (ранний захват), переопубликуем событие
+            # чтобы ProcessingWorkflow (теперь активный) его получил
+            if sid is not None and self._captured_for_session == sid and self._captured_screenshot_data is not None:
+                logger.info(f"📸 ScreenshotCapture: переопубликуем screenshot.captured для session {sid} (ранний захват)")
+                await self.event_bus.publish("screenshot.captured", self._captured_screenshot_data)
                 return
             logger.info(f"📸 ScreenshotCaptureIntegration: app entered PROCESSING, session_id={sid}")
             if self._enforce_permissions and not self._is_screen_permission_granted():
@@ -384,7 +385,8 @@ class ScreenshotCaptureIntegration:
                     f"extra={{format={format_value}, early={is_early}}}"
                 )
                 
-                await self.event_bus.publish("screenshot.captured", {
+                # Кэшируем данные для переопубликации
+                screenshot_data = {
                     "session_id": session_id,
                     "image_path": str(out_path),
                     "format": format_value,
@@ -393,7 +395,9 @@ class ScreenshotCaptureIntegration:
                     "size_bytes": meta.get("size_bytes"),
                     "mime_type": meta.get("mime_type", "image/jpeg"),
                     "capture_time": 0.0,
-                })
+                }
+                self._captured_screenshot_data = screenshot_data
+                await self.event_bus.publish("screenshot.captured", screenshot_data)
                 self._captured_for_session = session_id
                 logger.info(f"Screenshot (CLI) captured: {out_path}")
             else:
@@ -640,17 +644,20 @@ class ScreenshotCaptureIntegration:
         except Exception:
             pass
 
-        await self.event_bus.publish("screenshot.captured", {
+        # Кэшируем данные для переопубликации
+        screenshot_data = {
             "session_id": session_id,
-            "image_path": str(out_path),  # Для отладки/логирования
-            "base64_data": result.data.base64_data,  # Base64 напрямую (WebP)
+            "image_path": str(out_path),
+            "base64_data": result.data.base64_data,
             "format": format_ext,
             "width": result.data.width,
             "height": result.data.height,
             "size_bytes": size_bytes,
             "mime_type": result.data.mime_type,
             "capture_time": result.capture_time,
-        })
+        }
+        self._captured_screenshot_data = screenshot_data
+        await self.event_bus.publish("screenshot.captured", screenshot_data)
         self._captured_for_session = session_id
         logger.info(f"Screenshot captured: {out_path}")
         try:

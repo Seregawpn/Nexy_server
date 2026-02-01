@@ -13,10 +13,21 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
 
-import sounddevice as sd
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Lazy sounddevice import to prevent TCC trigger on module load
+_sd_module = None
+
+def _get_sd():
+    """Lazy import sounddevice only when first needed."""
+    global _sd_module
+    if _sd_module is None:
+        import sounddevice as sd
+        _sd_module = sd
+        logger.debug("🔧 sounddevice imported lazily in AudioRecoveryManager")
+    return _sd_module
 
 
 class RecoveryStep(Enum):
@@ -96,7 +107,7 @@ class AudioRecoveryManager:
     def _setup_fallback_devices(self):
         """Настройка резервных устройств."""
         try:
-            devices = sd.query_devices()
+            devices = _get_sd().query_devices()
             for i, device in enumerate(devices):
                 if device['max_input_channels'] > 0 and i != self.device_id:
                     self.fallback_devices.append(i)
@@ -342,8 +353,8 @@ async def preflight_check(device_id: int, device_name: str, duration_ms: int = 1
     try:
         # Записываем короткий буфер
         frames = int(48000 * duration_ms / 1000)  # Примерно duration_ms
-        audio_data = sd.rec(frames, device=device_id, samplerate=48000, channels=1, dtype='float32')
-        sd.wait()  # Ждем завершения
+        audio_data = _get_sd().rec(frames, device=device_id, samplerate=48000, channels=1, dtype='float32')
+        _get_sd().wait()  # Ждем завершения
         
         # Анализируем результат
         peak = float(np.abs(audio_data).max())

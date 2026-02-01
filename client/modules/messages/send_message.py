@@ -193,26 +193,36 @@ def send_message_to_contact(contact_name: str, message_text: str) -> Dict[str, A
             "contact_name": contact_name
         }
     
-    # Шаг 2: Получить номера телефонов
-    phone_numbers = []
-    for contact in contacts:
-        phones = contact.get("phones", [])
-        phone_numbers.extend(phones)
+    # Шаг 3: Проверка на неоднозначность
+    if len(contacts) > 1:
+        names = [c.get('display_label', c.get('first_name', 'Unknown')) for c in contacts]
+        return {
+            "success": False,
+            "error_code": "ambiguous_contact",
+            "message": f"Multiple contacts found: {', '.join(names)}",
+            "choices": names,
+            "contact_name": contact_name
+        }
+
+    # Шаг 4: Если один контакт, но несколько номеров — используем первый (или все?)
+    # Текущая логика: берем все номера первого контакта
+    # Но если мы нашли UNIQUE contacts > 1, мы уже вышли выше.
+    # Значит здесь contacts[0] единственный.
+    phone_numbers = contacts[0].get("phones", [])
     
     if not phone_numbers:
-        return {
+         return {
             "success": False,
             "message": f"No phone numbers found for contact '{contact_name}'",
             "contact_name": contact_name
         }
-    
-    # Шаг 3: Если несколько номеров, используем первый
+        
     if len(phone_numbers) > 1:
         logger.warning(f"Multiple phone numbers found for '{contact_name}': {phone_numbers}. Using first: {phone_numbers[0]}")
     
     phone_number = phone_numbers[0]
     
-    # Шаг 4: Отправить сообщение
+    # Шаг 5: Отправить сообщение
     result = send_message_alternative(phone_number, message_text)
     result["contact_name"] = contact_name
     result["phone_numbers_found"] = phone_numbers

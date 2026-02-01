@@ -29,6 +29,7 @@ class DecisionCtx:
     appMode: str
     restart_pending: Optional[bool] = None
     update_in_progress: Optional[bool] = None
+    whatsapp: Optional[str] = None
     extra: Optional[Dict[str, Any]] = None
 
     def to_log_string(self) -> str:
@@ -48,6 +49,9 @@ class DecisionCtx:
         
         if self.update_in_progress is not None:
             parts.append(f"update_in_progress={self.update_in_progress}")
+
+        if self.whatsapp is not None:
+            parts.append(f"whatsapp={self.whatsapp}")
         
         return f"ctx={{{','.join(parts)}}}"
 
@@ -64,6 +68,7 @@ def create_ctx_from_snapshot(s: Snapshot) -> DecisionCtx:
         appMode=s.app_mode.value,
         restart_pending=getattr(s, "restart_pending", None),
         update_in_progress=getattr(s, "update_in_progress", None),
+        whatsapp= getattr(s.whatsapp_status, "value", "disconnected") if hasattr(s, "whatsapp_status") else None,
     )
 
 

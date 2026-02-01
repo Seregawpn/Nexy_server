@@ -7,7 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional
 
-from modules.permissions.core.types import PermissionType
+
+from .types import PermissionType
 
 DEFAULT_CRITICAL_PERMISSIONS: List[PermissionType] = [
     PermissionType.MICROPHONE,

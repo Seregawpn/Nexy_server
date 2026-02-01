@@ -10,6 +10,7 @@ from .tray_types import TrayStatus, TrayConfig, TrayMenu, TrayMenuItem, TrayEven
 from .config import TrayConfigManager
 from ..macos.tray_icon import MacOSTrayIcon
 from ..macos.menu_handler import MacOSTrayMenu
+from config.unified_config_loader import UnifiedConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,18 @@ class TrayController:
                     enabled=False
                 ),
                 TrayMenuItem(title="", separator=True),
+            ]
+            
+            # Add Manage Subscription only if payment feature is enabled
+            loader = UnifiedConfigLoader.get_instance()
+            payment_config = loader.get_feature_config('payment')
+            if payment_config.get('enabled', True):
+                menu_items.append(TrayMenuItem(
+                    title="Manage Subscription...",
+                    action=self._on_manage_subscription_clicked
+                ))
+            
+            menu_items.extend([
                 TrayMenuItem(
                     title="Check for Updates...",
                     action=self._on_check_updates_clicked
@@ -213,7 +226,7 @@ class TrayController:
                     title="Quit",
                     action=self._on_quit_clicked
                 )
-            ]
+            ])
             
             menu = TrayMenu(items=menu_items)
             
@@ -244,6 +257,10 @@ class TrayController:
     def _on_check_updates_clicked(self, sender):
         """Обработчик клика по проверке обновлений"""
         asyncio.create_task(self._publish_event("updater.check_manual", {}))
+        
+    def _on_manage_subscription_clicked(self, sender):
+        """Обработчик клика по управлению подпиской"""
+        asyncio.create_task(self._publish_event("ui.action.manage_subscription", {}))
     
     def _on_about_clicked(self, sender):
         """Обработчик клика по 'О программе'"""

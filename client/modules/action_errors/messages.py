@@ -95,9 +95,18 @@ class ActionErrorMessageResolver:
             elif "not allowed" in message_lower or "blocked" in message_lower:
                 code = "not_allowed"
         
+        # FIX: Handle specific execution failures with their valid messages
+        if code == "execution_failed" and message:
+             # Just return the message directly if it's readable
+             return message
+
         template = self._templates.get(code)
         if template is None:
+            # If we have a specific message, rely on it primarily rather than generic fallback
+            if message:
+                return f"I couldn't open {app_name or 'the app'}: {message}"
             template = self._templates["fallback"]
+
         return template.format(app_name)
 
 
