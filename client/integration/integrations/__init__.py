@@ -46,5 +46,5 @@ __all__ = [
     'BrowserProgressIntegration',
 ]
 
-__version__ = "1.6.0.69"
+__version__ = "1.6.0.70"
 __author__ = "Nexy Team"
