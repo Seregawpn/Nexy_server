@@ -12,14 +12,19 @@
 
 from .core.grpc_client import GrpcClient
 from .core.types import (
-    ConnectionState, RetryStrategy, ServerConfig, 
-    ConnectionMetrics, RetryConfig, HealthCheckConfig
+    ConnectionMetrics,
+    ConnectionState,
+    HealthCheckConfig,
+    RetryConfig,
+    RetryStrategy,
+    ServerConfig,
 )
+
 # Конфигурация теперь централизована в unified_config.yaml
 # Функции конфигурации удалены в пользу централизованной системы
 
 # Версия модуля
-__version__ = "1.6.1.8"
+__version__ = "1.6.1.9"
 
 # Экспортируемые классы и функции
 __all__ = [

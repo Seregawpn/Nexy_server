@@ -6,10 +6,10 @@ ARCHITECTURE:
 - core/audio_route_monitor.py - Audio device monitoring
 """
 
-from .core.google_sr_controller import GoogleSRController, GoogleSRResult
 from .core.audio_route_monitor import AudioRouteMonitor
+from .core.google_sr_controller import GoogleSRController, GoogleSRResult
 
-__version__ = "1.6.1.8"
+__version__ = "1.6.1.9"
 __author__ = "Nexy AI Voice Assistant Team"
 
 # Export main classes

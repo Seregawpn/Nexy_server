@@ -3,9 +3,9 @@ Tray Controller Module для macOS
 Управление иконкой в меню-баре и отображение статуса приложения
 """
 
-from .core.tray_controller import TrayController
-from .core.tray_types import TrayIcon, TrayMenu, TrayStatus, TrayConfig
 from .core.config import TrayConfigManager
+from .core.tray_controller import TrayController
+from .core.tray_types import TrayConfig, TrayIcon, TrayMenu, TrayStatus
 
 __all__ = [
     'TrayController',
@@ -16,7 +16,7 @@ __all__ = [
     'TrayConfigManager'
 ]
 
-__version__ = "1.6.1.8"
+__version__ = "1.6.1.9"
 __author__ = "Nexy Team"
 
 

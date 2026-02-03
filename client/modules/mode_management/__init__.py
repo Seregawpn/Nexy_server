@@ -4,11 +4,16 @@ Mode Management - Модуль управления режимами
 
 from .core.mode_controller import ModeController
 from .core.types import (
-    AppMode, ModeTransition, ModeTransitionType, ModeStatus, ModeEvent,
-    ModeConfig, ModeMetrics
+    AppMode,
+    ModeConfig,
+    ModeEvent,
+    ModeMetrics,
+    ModeStatus,
+    ModeTransition,
+    ModeTransitionType,
 )
-from .modes.sleeping_mode import SleepingMode
 from .modes.listening_mode import ListeningMode
+from .modes.sleeping_mode import SleepingMode
 
 __all__ = [
     'ModeController',
@@ -23,5 +28,5 @@ __all__ = [
     'ListeningMode'
 ]
 
-__version__ = "1.6.1.8"
+__version__ = "1.6.1.9"
 __author__ = "Nexy Team"

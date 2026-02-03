@@ -2,8 +2,8 @@
 Welcome Message Module — серверная генерация приветственного сообщения при запуске приложения.
 """
 
+from .core.types import WelcomeConfig, WelcomeResult, WelcomeState
 from .core.welcome_player import WelcomePlayer
-from .core.types import WelcomeConfig, WelcomeState, WelcomeResult
 
-__version__ = "1.6.1.8"
+__version__ = "1.6.1.9"
 __all__ = ["WelcomePlayer", "WelcomeConfig", "WelcomeState", "WelcomeResult"]

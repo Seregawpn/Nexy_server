@@ -15,7 +15,7 @@ Workflows - Координаторы режимов приложения
 
 from .base_workflow import BaseWorkflow, WorkflowState
 from .listening_workflow import ListeningWorkflow
-from .processing_workflow import ProcessingWorkflow, ProcessingStage
+from .processing_workflow import ProcessingStage, ProcessingWorkflow
 
 __all__ = [
     'BaseWorkflow',
@@ -25,5 +25,5 @@ __all__ = [
     'ProcessingStage'
 ]
 
-__version__ = '1.6.1.8'
+__version__ = '1.6.1.9'
 __author__ = 'Nexy Team'

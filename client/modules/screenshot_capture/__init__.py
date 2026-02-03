@@ -2,22 +2,22 @@
 Модуль захвата скриншотов для macOS
 """
 
+from .core.config import get_screenshot_config
 from .core.screenshot_capture import ScreenshotCapture
 from .core.types import (
+    ScreenInfo,
+    ScreenshotCaptureError,
     ScreenshotConfig,
     ScreenshotData,
-    ScreenshotResult,
+    ScreenshotError,
     ScreenshotFormat,
+    ScreenshotFormatError,
+    ScreenshotPermissionError,
     ScreenshotQuality,
     ScreenshotRegion,
-    ScreenInfo,
-    ScreenshotError,
-    ScreenshotPermissionError,
-    ScreenshotCaptureError,
-    ScreenshotFormatError,
-    ScreenshotTimeoutError
+    ScreenshotResult,
+    ScreenshotTimeoutError,
 )
-from .core.config import get_screenshot_config
 
 __all__ = [
     # Основные классы
@@ -45,6 +45,6 @@ __all__ = [
 ]
 
 # Версия модуля
-__version__ = "1.6.1.8"
+__version__ = "1.6.1.9"
 __author__ = "Nexy Development Team"
 __description__ = "Модуль захвата скриншотов для macOS с поддержкой JPEG"

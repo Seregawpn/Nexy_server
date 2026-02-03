@@ -2,14 +2,18 @@
 Interrupt Management - Модуль управления прерываниями
 """
 
+from .config.interrupt_config import DEFAULT_INTERRUPT_CONFIG, InterruptModuleConfig
 from .core.interrupt_coordinator import InterruptCoordinator, InterruptDependencies
 from .core.types import (
-    InterruptEvent, InterruptType, InterruptPriority, InterruptStatus,
-    InterruptConfig, InterruptMetrics
+    InterruptConfig,
+    InterruptEvent,
+    InterruptMetrics,
+    InterruptPriority,
+    InterruptStatus,
+    InterruptType,
 )
-from .handlers.speech_interrupt import SpeechInterruptHandler
 from .handlers.recording_interrupt import RecordingInterruptHandler
-from .config.interrupt_config import InterruptModuleConfig, DEFAULT_INTERRUPT_CONFIG
+from .handlers.speech_interrupt import SpeechInterruptHandler
 
 __all__ = [
     'InterruptCoordinator',
@@ -26,5 +30,5 @@ __all__ = [
     'DEFAULT_INTERRUPT_CONFIG'
 ]
 
-__version__ = "1.6.1.8"
+__version__ = "1.6.1.9"
 __author__ = "Nexy Team"
