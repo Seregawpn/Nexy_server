@@ -25,5 +25,5 @@ __all__ = [
     'ProcessingStage'
 ]
 
-__version__ = '1.6.1.13'
+__version__ = '1.6.1.14'
 __author__ = 'Nexy Team'
