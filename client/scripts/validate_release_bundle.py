@@ -16,11 +16,10 @@
 
 import argparse
 import json
+from pathlib import Path
 import plistlib
 import subprocess
 import sys
-from pathlib import Path
-from typing import Optional, Dict, Any, List
 
 # Цвета для вывода
 GREEN = '\033[0;32m'
@@ -33,12 +32,12 @@ NC = '\033[0m'  # No Color
 class BundleValidator:
     """Валидатор релизного бандла"""
     
-    def __init__(self, app_path: Path, pkg_path: Optional[Path] = None):
+    def __init__(self, app_path: Path, pkg_path: Path | None = None):
         self.app_path = app_path
         self.pkg_path = pkg_path
-        self.errors: List[str] = []
-        self.warnings: List[str] = []
-        self.info: List[str] = []
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
+        self.info: list[str] = []
         
     def log_info(self, message: str):
         """Логирует информационное сообщение"""

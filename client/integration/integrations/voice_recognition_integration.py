@@ -4,23 +4,17 @@ VoiceRecognitionIntegration - координация распознавания 
 """
 
 import asyncio
+from dataclasses import dataclass
 import logging
+import random
 import threading
 import time
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, TYPE_CHECKING
-import random
-import importlib.util
-from shutil import which
+from typing import Any
 
-if TYPE_CHECKING:
-    from modules.voice_recognition import GoogleSRController, GoogleSRResult
-
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.event_types import EventTypes
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
 from integration.core import selectors
+from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_manager import ApplicationStateManager
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -29,7 +23,6 @@ try:
 except Exception:
     # Fallback: explicit modules path if repository layout is used
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
-from config.unified_config_loader import UnifiedConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +35,7 @@ _GOOGLE_SR_AVAILABLE = True  # optimistically assume available until checked
 @dataclass
 class VoiceRecognitionConfig:
     """Конфигурация распознавания речи"""
-    timeout_sec: Optional[float] = None  # None = без лимита (завершится при тишине)
+    timeout_sec: float | None = None  # None = без лимита (завершится при тишине)
     simulate: bool = False
     simulate_success_rate: float = 0.7  # 70% успеха по умолчанию
     simulate_min_delay_sec: float = 1.0
@@ -58,7 +51,7 @@ class VoiceRecognitionIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        config: Optional[VoiceRecognitionConfig] = None,
+        config: VoiceRecognitionConfig | None = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
@@ -67,12 +60,12 @@ class VoiceRecognitionIntegration:
 
         # Текущее состояние распознавания
         self._recording_active: bool = False
-        self._recognition_task: Optional[asyncio.Task] = None
+        self._recognition_task: asyncio.Task[Any] | None = None
         self._initialized: bool = False
         self._running: bool = False
         
         # GoogleSRController (Input)
-        self._google_sr_controller: Optional[Any] = None  # type: ignore[assignment]
+        self._google_sr_controller: Any | None = None  # type: ignore[assignment]
 
         # Thread-safe lock для защиты shared state от concurrent callbacks GoogleSRController
         self._state_lock = threading.Lock()
@@ -129,8 +122,9 @@ class VoiceRecognitionIntegration:
         if not self.config.simulate:
             try:
                 # Lazy import to prevent early TCC triggers
-                from modules.voice_recognition import GoogleSRController, GoogleSRResult  # type: ignore[reportMissingImports]
-                global GoogleSRController, GoogleSRResult
+                from modules.voice_recognition import (  # type: ignore[reportMissingImports]
+                    GoogleSRController,
+                )
                 
                 logger.info("🚀 [AUDIO] Initializing GoogleSRController (deferred)...")
                 self._google_sr_controller = GoogleSRController(  # type: ignore[misc]
@@ -191,10 +185,10 @@ class VoiceRecognitionIntegration:
             True если есть активная сессия (из state_manager - единый источник истины)
         """
         # Используем state_manager как единый источник истины
-        session_id = self.state_manager.get_current_session_id()
+        session_id = selectors.get_current_session_id(self.state_manager)
         return session_id is not None
     
-    def _get_active_session_id(self) -> Optional[str]:
+    def _get_active_session_id(self) -> str | None:
         """
         Получить активный session_id из state_manager (единый источник истины).
         
@@ -203,7 +197,7 @@ class VoiceRecognitionIntegration:
         """
         return selectors.get_current_session_id(self.state_manager)
     
-    def _set_session_id(self, session_id: Optional[str], reason: str = "unknown"):
+    def _set_session_id(self, session_id: str | None, reason: str = "unknown"):
         """
         Установить session_id в state_manager (единый источник истины).
         
@@ -217,7 +211,7 @@ class VoiceRecognitionIntegration:
         # Устанавливаем в state_manager (единый источник истины)
         if session_id is not None:
             # Обновляем state_manager только если session_id изменился
-            current_state_session = self.state_manager.get_current_session_id()
+            current_state_session = selectors.get_current_session_id(self.state_manager)
             if current_state_session != session_id:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
@@ -225,14 +219,14 @@ class VoiceRecognitionIntegration:
                 logger.debug(f"🔄 [VOICE] Session ID синхронизирован с state_manager: {session_id} (reason: {reason})")
         else:
             # Сбрасываем session_id в state_manager только если он был установлен
-            if self.state_manager.get_current_session_id() is not None:
+            if selectors.get_current_session_id(self.state_manager) is not None:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
                 self.state_manager.update_session_id(None)
                 logger.debug(f"🔄 [VOICE] Session ID сброшен в state_manager (reason: {reason})")
 
     # События записи
-    async def _on_recording_start(self, event: Dict[str, Any]):
+    async def _on_recording_start(self, event: dict[str, Any]):
         try:
             logger.debug(f"🎤 [VOICE_DEBUG] _on_recording_start event received: {event}")
             
@@ -309,7 +303,7 @@ class VoiceRecognitionIntegration:
             import traceback
             logger.error(traceback.format_exc())
 
-    async def _on_recording_stop(self, event: Dict[str, Any]):
+    async def _on_recording_stop(self, event: dict[str, Any]):
         try:
             if "data" in event:
                 data = event.get("data", {})
@@ -345,7 +339,7 @@ class VoiceRecognitionIntegration:
         except Exception as e:
             logger.error(f"VOICE: error in recording_stop handler: {e}")
 
-    async def _on_cancel_request(self, event: Dict[str, Any]):
+    async def _on_cancel_request(self, event: dict[str, Any]):
         try:
             logger.debug("VOICE: cancel requested")
             await self._cancel_recognition(reason="cancel_requested")
@@ -359,11 +353,22 @@ class VoiceRecognitionIntegration:
         except Exception as e:
             logger.error(f"VOICE: error in cancel handler: {e}")
 
-    async def _on_app_mode_changed(self, event: Dict[str, Any]):
+    async def _on_app_mode_changed(self, event: dict[str, Any]):
         """Страховка: при выходе из LISTENING закрываем любое активное прослушивание"""
         try:
             data = (event or {}).get("data", {})
             new_mode = data.get("mode")
+            event_session_id = data.get("session_id")
+            active_session_id = self._get_active_session_id()
+
+            # КРИТИЧНО: игнорируем смену режима для другой сессии, чтобы не убить новое прослушивание
+            if event_session_id is not None and active_session_id is not None and event_session_id != active_session_id:
+                logger.debug(
+                    "VOICE: mode_changed ignored due to session mismatch (event=%s, active=%s)",
+                    event_session_id,
+                    active_session_id,
+                )
+                return
             if new_mode in (AppMode.SLEEPING, AppMode.PROCESSING):
                 # Закрываем распознавание/прослушивание, если вдруг активно
                 if self._recording_active or (not self.config.simulate and self._google_sr_controller):
@@ -473,7 +478,7 @@ class VoiceRecognitionIntegration:
                 logger.debug(f"VOICE: recognition cancelled ({reason})")
         self._recognition_task = None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         # КРИТИЧНО: Используем _get_active_session_id для получения session_id (единый источник истины)
         active_session_id = self._get_active_session_id()
         return {
@@ -519,7 +524,7 @@ class VoiceRecognitionIntegration:
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error in completed callback: {e}")
     
-    async def _publish_v2_completed(self, session_id: Optional[str], result: Any) -> None:  # type: ignore[type-arg]
+    async def _publish_v2_completed(self, session_id: str | None, result: Any) -> None:  # type: ignore[type-arg]
         """
         Helper to publish v2 completion via EventBus.
         

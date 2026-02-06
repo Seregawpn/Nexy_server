@@ -2,9 +2,10 @@
 Типы данных для обработки клавиатуры
 """
 
-from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from enum import Enum
+from typing import Any
+
 
 class KeyEventType(Enum):
     """Типы событий клавиатуры"""
@@ -29,8 +30,8 @@ class KeyEvent:
     key: str
     event_type: KeyEventType
     timestamp: float
-    duration: Optional[float] = None
-    data: Optional[Dict[str, Any]] = None
+    duration: float | None = None
+    data: dict[str, Any] | None = None
 
 @dataclass
 class KeyboardConfig:

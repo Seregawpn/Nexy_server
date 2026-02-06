@@ -31,6 +31,13 @@
   <!-- БЕЗОПАСНЫЕ флаги для PyInstaller (минимальный набор) -->
   <!-- Отключаем Library Validation ТОЛЬКО для PyInstaller onefile -->
   <key>com.apple.security.cs.disable-library-validation</key><true/>
+  
+  <!-- КРИТИЧНО для PyInstaller: разрешаем JIT-компиляцию Python -->
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  
+  <!-- КРИТИЧНО для PyInstaller: разрешаем запись executable-памяти -->
+  <!-- Без этого TCC выдаёт "spooky magic" ошибку -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
 
   <!-- UI/Menu Bar Access (КРИТИЧНО для NSStatusItem в Sequoia/Sonoma) -->
   <!-- Разрешаем доступ к UI-элементам и Status Bar -->

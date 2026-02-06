@@ -5,7 +5,6 @@ Utility helpers for mapping action executor error codes to user-facing speech te
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional
 
 DEFAULT_APP_PLACEHOLDER = "the requested application"
 
@@ -16,7 +15,7 @@ class ActionErrorMessageTemplate:
 
     template: str
 
-    def format(self, app_name: Optional[str]) -> str:
+    def format(self, app_name: str | None) -> str:
         name = (app_name or "").strip()
         return self.template.format(app=name or DEFAULT_APP_PLACEHOLDER)
 
@@ -25,7 +24,7 @@ class ActionErrorMessageResolver:
     """Maps executor error codes to consistent speech-friendly text."""
 
     def __init__(self) -> None:
-        self._templates: Dict[str, ActionErrorMessageTemplate] = {
+        self._templates: dict[str, ActionErrorMessageTemplate] = {
             "app_not_found": ActionErrorMessageTemplate(
                 "The app {app} isn't installed on this Mac."
             ),
@@ -72,9 +71,19 @@ class ActionErrorMessageResolver:
             "fallback": ActionErrorMessageTemplate(
                 "I couldn't open {app}. Please try again."
             ),
+            # Messages / Contact errors
+            "contact_not_found": ActionErrorMessageTemplate(
+                "Contact not found. Please check the name and try again."
+            ),
+            "no_phone_number": ActionErrorMessageTemplate(
+                "No phone number found for this contact."
+            ),
+            "similar_contacts_found": ActionErrorMessageTemplate(
+                "Contact not found. Did you mean one of the similar names?"
+            ),
         }
 
-    def resolve(self, error_code: Optional[str], app_name: Optional[str], message: Optional[str] = None) -> str:
+    def resolve(self, error_code: str | None, app_name: str | None, message: str | None = None) -> str:
         """
         Разрешает код ошибки в пользовательский текст.
         

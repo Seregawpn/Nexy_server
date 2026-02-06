@@ -2,8 +2,8 @@
 import asyncio
 import json
 import logging
+from typing import Any
 import uuid
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +15,10 @@ class WhatsappMCPClient:
     
     def __init__(self, service_manager):
         self.service_manager = service_manager
-        self.pending_requests: Dict[str, asyncio.Future] = {}
-        self._listener_task: Optional[asyncio.Task] = None
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
+        self.pending_requests: dict[str, asyncio.Future[Any]] = {}
+        self._listener_task: asyncio.Task[Any] | None = None
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
         
     async def start(self):
         """Start the client, hooking into the service manager's process streams"""
@@ -70,7 +70,7 @@ class WhatsappMCPClient:
         except Exception as e:
             logger.error(f"Error in MCP listener: {e}")
             
-    async def _handle_message(self, message: Dict[str, Any]):
+    async def _handle_message(self, message: dict[str, Any]):
         """Handle incoming JSON-RPC message"""
         # Handle Response
         if 'id' in message and ('result' in message or 'error' in message):
@@ -83,7 +83,7 @@ class WhatsappMCPClient:
                     future.set_result(message['result'])
         # Handle Notifications (optional)
         
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Call an MCP tool"""
         if not self._writer:
             raise RuntimeError("MCP Client not connected")
@@ -110,10 +110,10 @@ class WhatsappMCPClient:
         # Wait for response with timeout
         try:
             return await asyncio.wait_for(future, timeout=30.0)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as e:
             if req_id in self.pending_requests:
                 del self.pending_requests[req_id]
-            raise TimeoutError(f"Tool call '{name}' timed out")
+            raise TimeoutError(f"Tool call '{name}' timed out") from e
 
     async def list_tools(self) -> Any:
         """List available tools"""
@@ -137,15 +137,15 @@ class WhatsappMCPClient:
         
         try:
             return await asyncio.wait_for(future, timeout=10.0)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as e:
             if req_id in self.pending_requests:
                 del self.pending_requests[req_id]
-            raise TimeoutError("tools/list timed out")
+            raise TimeoutError("tools/list timed out") from e
 
 
     # High-Level Commands
     
-    async def resolve_contact(self, contact_name: str) -> Optional[str]:
+    async def resolve_contact(self, contact_name: str) -> str | None:
         """
         Resolve contact name to JID.
         Priority:
@@ -215,8 +215,18 @@ class WhatsappMCPClient:
                 logger.info(f"Input looks like a phone number. Using direct JID: {jid}")
                 return jid
             
+            # 4. Try fuzzy search for similar contacts
+            similar_contacts = await self._find_similar_contacts(contact_name)
+            if similar_contacts:
+                suggestions = [c.get('display_label', c.get('first_name', c.get('name', 'Unknown'))) for c in similar_contacts[:5]]
+                raise SimilarContactsFoundError(
+                    f"Contact '{contact_name}' not found. Did you mean: {', '.join(suggestions)}?",
+                    contact_name=contact_name,
+                    suggestions=suggestions
+                )
+            
             raise ContactNotFoundError(f"Contact '{contact_name}' not found", contact_name=contact_name)
-        except AmbiguousContactError:
+        except (AmbiguousContactError, SimilarContactsFoundError):
             raise # Propagate up
         except Exception as e:
             logger.error(f"Contact resolution failed: {e}")
@@ -232,7 +242,7 @@ class WhatsappMCPClient:
         except Exception as e:
             return f"Failed to send message: {e}"
 
-    async def read_whatsapp_messages(self, contact: Optional[str] = None) -> str:
+    async def read_whatsapp_messages(self, contact: str | None = None) -> str:
         """Read messages"""
         if contact:
             jid = await self.resolve_contact(contact)
@@ -244,12 +254,78 @@ class WhatsappMCPClient:
             res = await self.call_tool("list_chats", {"limit": 5})
             return str(res)
 
+    async def _find_similar_contacts(self, query: str) -> list[dict]:
+        """
+        Поиск похожих контактов по частичному совпадению имени.
+        
+        Args:
+            query: Искомое имя (частичное)
+            
+        Returns:
+            Список похожих контактов
+        """
+        from modules.messages.contact_resolver import find_contacts_by_name
+        
+        query_lower = query.lower().strip()
+        if len(query_lower) < 2:
+            return []
+        
+        similar = []
+        loop = asyncio.get_running_loop()
+        
+        # Стратегия 1: Поиск по первым 2-3 буквам
+        for prefix_len in [3, 2]:
+            if len(query_lower) >= prefix_len:
+                prefix = query_lower[:prefix_len]
+                matches = await loop.run_in_executor(None, find_contacts_by_name, prefix)
+                for m in matches:
+                    label = (m.get('display_label') or m.get('first_name') or m.get('name') or '').lower()
+                    if label.startswith(prefix) or query_lower in label or prefix in label:
+                        if m not in similar:
+                            similar.append(m)
+                if similar:
+                    break
+        
+        # Стратегия 2: Убираем последнюю букву
+        if not similar and len(query_lower) >= 3:
+            alt_query = query_lower[:-1]
+            matches = await loop.run_in_executor(None, find_contacts_by_name, alt_query)
+            for m in matches:
+                if m not in similar:
+                    similar.append(m)
+        
+        return similar[:5]
+
 class AmbiguousContactError(Exception):
     def __init__(self, message, choices):
         super().__init__(message)
         self.choices = choices
 
 class ContactNotFoundError(Exception):
+    """Contact was not found in WhatsApp or system contacts"""
     def __init__(self, message, contact_name):
         super().__init__(message)
         self.contact_name = contact_name
+
+
+class SimilarContactsFoundError(Exception):
+    """Contact not found, but similar contacts were found"""
+    def __init__(self, message, contact_name, suggestions):
+        super().__init__(message)
+        self.contact_name = contact_name
+        self.suggestions = suggestions
+
+
+class WhatsAppConnectionError(Exception):
+    """WhatsApp service is not running or connection failed"""
+    pass
+
+
+class WhatsAppNotAuthenticatedError(Exception):
+    """Session expired or not established, QR code required"""
+    pass
+
+
+class WhatsAppTimeoutError(Exception):
+    """WhatsApp operation timed out"""
+    pass

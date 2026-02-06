@@ -7,10 +7,10 @@ Probes Screen Capture permission by attempting to capture a frame.
 from __future__ import annotations
 
 import logging
-from typing import Literal, Optional, Tuple
+from typing import Literal
 
-from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from ..error_matrix import apply_normalization_to_evidence
+from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from .base import BaseProber
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class ScreenCaptureProber(BaseProber):
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.SCREEN_CAPTURE
-        self._last_result: Optional[bool] = None
+        self._last_result: bool | None = None
     
     async def trigger(self) -> None:
         """
@@ -30,7 +30,9 @@ class ScreenCaptureProber(BaseProber):
         Uses CGRequestScreenCaptureAccess() if available.
         """
         try:
-            from Quartz import CGRequestScreenCaptureAccess
+            from Quartz import (
+                CGRequestScreenCaptureAccess,  # type: ignore[reportMissingImports, reportAttributeAccessIssue]
+            )
             result = CGRequestScreenCaptureAccess()
             logger.debug("[SC_PROBER] CGRequestScreenCaptureAccess() = %s", result)
         except ImportError:
@@ -65,31 +67,34 @@ class ScreenCaptureProber(BaseProber):
             evidence=ev
         )
     
-    async def _capability_screen_frame(self, probe_kind: str) -> Tuple[Optional[bool], Optional[str], Optional[str], Optional[str]]:
+    async def _capability_screen_frame(self, probe_kind: str) -> tuple[bool | None, str | None, str | None, str | None]:
         """
         Test screen capture capability.
         Returns (frames_received, domain, code, message).
         """
         try:
-            from Quartz import (
-                CGWindowListCreateImage,
-                CGRectNull,
-                kCGWindowListOptionAll,
-                kCGNullWindowID,
+            from Quartz import (  # type: ignore[reportMissingImports]
+                CGRectNull,  # type: ignore[reportAttributeAccessIssue]
+                CGWindowListCreateImage,  # type: ignore[reportAttributeAccessIssue]
+                kCGNullWindowID,  # type: ignore[reportAttributeAccessIssue]
+                kCGWindowListOptionAll,  # type: ignore[reportAttributeAccessIssue]
             )
             
             # Try to capture a screenshot
-            image = CGWindowListCreateImage(
-                CGRectNull,
-                kCGWindowListOptionAll,
-                kCGNullWindowID,
+            image = CGWindowListCreateImage(  # type: ignore[reportAttributeAccessIssue]
+                CGRectNull,  # type: ignore[reportAttributeAccessIssue]
+                kCGWindowListOptionAll,  # type: ignore[reportAttributeAccessIssue]
+                kCGNullWindowID,  # type: ignore[reportAttributeAccessIssue]
                 0  # kCGWindowImageDefault
             )
             
             if image is not None:
                 # Check if image has actual content (not just a blank/denied frame)
                 try:
-                    from Quartz import CGImageGetWidth, CGImageGetHeight
+                    from Quartz import (  # type: ignore[reportMissingImports, reportAttributeAccessIssue]
+                        CGImageGetHeight,  # type: ignore[reportAttributeAccessIssue]
+                        CGImageGetWidth,  # type: ignore[reportAttributeAccessIssue]
+                    )
                     width = CGImageGetWidth(image)
                     height = CGImageGetHeight(image)
                     if width > 0 and height > 0:

@@ -7,11 +7,10 @@ Designed for integration with EventBus via callbacks.
 
 from __future__ import annotations
 
-import threading
-import time
-import logging
-from typing import Optional, Callable, Any
 from dataclasses import dataclass
+import logging
+import threading
+from typing import Any, Callable
 
 import speech_recognition as sr
 
@@ -26,7 +25,7 @@ class GoogleSRResult:
     text: str
     confidence: float
     language: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class GoogleSRController:
@@ -42,11 +41,11 @@ class GoogleSRController:
     def __init__(
         self,
         language_code: str = "ru-RU",
-        phrase_time_limit: Optional[float] = None,
-        device_index: Optional[int] = None,
-        on_started: Optional[Callable[[], None]] = None,
-        on_completed: Optional[Callable[[GoogleSRResult], None]] = None,
-        on_failed: Optional[Callable[[str], None]] = None,
+        phrase_time_limit: float | None = None,
+        device_index: int | None = None,
+        on_started: Callable[[], None] | None = None,
+        on_completed: Callable[[GoogleSRResult], None] | None = None,
+        on_failed: Callable[[str], None] | None = None,
     ):
         self._lang = language_code
         self._phrase_limit = phrase_time_limit
@@ -60,7 +59,7 @@ class GoogleSRController:
         self._recognizer = sr.Recognizer()
         self._stop = threading.Event()
         self._listening = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         
         # Device monitoring
         self._route_monitor = AudioRouteMonitor(
@@ -72,7 +71,7 @@ class GoogleSRController:
         self.successful = 0
         self.failed = 0
         self.last_text: str = ""
-        self.last_error: Optional[str] = None
+        self.last_error: str | None = None
         
         self._initialized = False
 
@@ -123,7 +122,7 @@ class GoogleSRController:
         logger.info("🎙️ Started listening")
         return True
 
-    def stop_listening(self) -> Optional[GoogleSRResult]:
+    def stop_listening(self) -> GoogleSRResult | None:
         """
         Stop listening and return result.
         Мгновенно возвращает управление — поток завершится асинхронно.
@@ -272,7 +271,7 @@ class GoogleSRController:
         """
         try:
             logger.info("🌐 Recognizing with Google...")
-            text = self._recognizer.recognize_google(audio, language=self._lang)
+            text = self._recognizer.recognize_google(audio, language=self._lang)  # type: ignore[reportAttributeAccessIssue]
             text = text.strip()
             
             if text:
@@ -307,11 +306,11 @@ class GoogleSRController:
             if self._on_failed:
                 self._on_failed(f"request_error: {e}")
 
-    def get_current_device(self) -> Optional[str]:
+    def get_current_device(self) -> str | None:
         """Get current input device name."""
         return self._route_monitor.get_current_input()
 
-    def get_metrics(self) -> dict:
+    def get_metrics(self) -> dict[str, Any]:
         """Get recognition metrics."""
         return {
             "utterances": self.utterances,

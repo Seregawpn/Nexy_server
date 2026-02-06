@@ -7,15 +7,16 @@ hard_stop → graceful → preference.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Any, Iterable, Optional
 from enum import Enum
 import logging
 import time
+from typing import Any, Callable, Iterable
 
-from .types import Decision
-from .base import DecisionCtx, log_decision
 from integration.core.selectors import Snapshot
+
 from . import predicates as pred
+from .base import DecisionCtx, log_decision
+from .types import Decision
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class Priority(str, Enum):
 @dataclass(frozen=True)
 class Rule:
     """A decision rule with conditions and outcome."""
-    when: Dict[str, Any]  # Conditions keyed by predicate names
+    when: dict[str, Any]  # Conditions keyed by predicate names
     decision: Decision  # Outcome decision
     priority: Priority  # Rule priority
     gateway: str  # Gateway name (for filtering)
@@ -50,9 +51,9 @@ class DecisionEngine:
         self.gateway_name = gateway_name
         # Order rules by priority: hard_stop → graceful → preference
         prio_order = {Priority.HARD_STOP: 0, Priority.GRACEFUL: 1, Priority.PREFERENCE: 2}
-        self.rules: List[Rule] = sorted(list(rules), key=lambda r: prio_order[r.priority])
+        self.rules: list[Rule] = sorted(list(rules), key=lambda r: prio_order[r.priority])
     
-    def _match(self, s: Snapshot, when: Dict[str, Any], extra: Optional[Dict[str, Any]]) -> bool:
+    def _match(self, s: Snapshot, when: dict[str, Any], extra: dict[str, Any] | None) -> bool:
         """
         Check if snapshot matches rule conditions.
         
@@ -60,7 +61,7 @@ class DecisionEngine:
         Predicate names are looked up in pred.REGISTRY.
         """
         for name, expected in when.items():
-            fn: Optional[Callable[[Snapshot, Any, Optional[Dict[str, Any]]], bool]] = pred.REGISTRY.get(name)
+            fn: Callable[[Snapshot, Any, dict[str, Any] | None], bool] | None = pred.REGISTRY.get(name)
             if fn is None:
                 # Unknown condition is treated as not matched (safe default)
                 return False
@@ -74,7 +75,7 @@ class DecisionEngine:
         *,
         source: str,
         ctx: DecisionCtx,
-        extra: Optional[Dict[str, Any]] = None,
+        extra: dict[str, Any] | None = None,
     ) -> Decision:
         """
         Make decision based on rules and snapshot.

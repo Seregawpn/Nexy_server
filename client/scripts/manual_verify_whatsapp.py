@@ -8,10 +8,10 @@ Usage:
 Example:
     python3 manual_verify_whatsapp.py "Mom" "Hello from Nexy"
 """
-import sys
-import os
 import asyncio
 import logging
+import os
+import sys
 
 # Setup path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,8 +22,15 @@ sys.path.insert(0, client_dir)
 logging.basicConfig(level=logging.INFO, format='%(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("VerifyWhatsApp")
 
-from modules.whatsapp import WhatsappServiceManager, WhatsappMCPClient, WhatsappConfig, ContactNotFoundError, AmbiguousContactError
 from config.unified_config_loader import UnifiedConfigLoader
+from modules.whatsapp import (
+    AmbiguousContactError,
+    ContactNotFoundError,
+    WhatsappConfig,
+    WhatsappMCPClient,
+    WhatsappServiceManager,
+)
+
 
 async def main():
     if len(sys.argv) < 3:

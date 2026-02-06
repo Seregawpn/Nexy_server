@@ -2,10 +2,9 @@
 Основной класс для управления автозапуском приложения.
 """
 
-import os
-from typing import Optional
-from .types import AutostartStatus, AutostartConfig
 from ..macos.launch_agent import LaunchAgentManager
+from .types import AutostartConfig, AutostartStatus
+
 
 class AutostartManager:
     """Менеджер автозапуска приложения."""
@@ -64,3 +63,16 @@ class AutostartManager:
         except Exception as e:
             print(f"❌ Ошибка получения статуса автозапуска: {e}")
             return AutostartStatus.ERROR
+
+    async def cleanup_legacy_launch_agent(self, legacy_path: str, legacy_label: str) -> bool:
+        """Удаление legacy LaunchAgent (если включено в конфиге)."""
+        try:
+            if self.config.method != "launch_agent":
+                return False
+            return await self.launch_agent_manager.remove_legacy_launch_agent(
+                legacy_path=legacy_path,
+                legacy_label=legacy_label,
+            )
+        except Exception as e:
+            print(f"❌ Ошибка удаления legacy LaunchAgent: {e}")
+            return False

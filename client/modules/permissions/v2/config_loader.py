@@ -7,21 +7,21 @@ Loads V2 configuration from unified_config.yaml and creates StepConfig instances
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .types import (
-    PermissionId,
     PermissionCriticality,
-    StepMode,
-    StepConfig,
-    StepTiming,
+    PermissionId,
     RestartConfig,
+    StepConfig,
+    StepMode,
+    StepTiming,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def load_v2_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def load_v2_config(config: dict[str, Any]) -> dict[str, Any] | None:
     """
     Load V2 permission config from unified config.
     
@@ -55,8 +55,8 @@ def load_v2_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     # Parse steps
     steps_raw = v2_config.get("steps", {})
     default_step_timeout_s = v2_config.get("default_step_timeout_s")
-    step_configs: Dict[PermissionId, StepConfig] = {}
-    hard_permissions: List[PermissionId] = []
+    step_configs: dict[PermissionId, StepConfig] = {}
+    hard_permissions: list[PermissionId] = []
     
     for perm in order:
         step_raw = steps_raw.get(perm.value, {})

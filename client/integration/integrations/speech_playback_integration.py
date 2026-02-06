@@ -9,15 +9,15 @@ SpeechPlaybackIntegration — интеграция модуля последов
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, TYPE_CHECKING, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.event_types import EventTypes
-from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[attr-defined]
 from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_manager import (  # type: ignore[attr-defined]
+    ApplicationStateManager,
+)
 
 # NEW: AVFoundationPlayer (Standard)
 if TYPE_CHECKING:
@@ -27,16 +27,19 @@ else:
     AVFPlayerConfig = None
 
 try:
-    from modules.speech_playback.core.avf_player import AVFoundationPlayer, AVFPlayerConfig  # type: ignore[assignment]
+    from modules.speech_playback.core.avf_player import (  # type: ignore[assignment]
+        AVFoundationPlayer,
+        AVFPlayerConfig,
+    )
     _AVF_PLAYER_AVAILABLE = True
 except ImportError as e:
     logging.getLogger(__name__).error(f"❌ [AUDIO] AVFoundationPlayer import failed: {e}")
-    _AVF_PLAYER_AVAILABLE = False
+    _AVF_PLAYER_AVAILABLE = False  # type: ignore[reportConstantRedefinition]
     AVFoundationPlayer = None  # type: ignore[assignment, misc]
     AVFPlayerConfig = None  # type: ignore[assignment, misc]
 except Exception as e:
     logging.getLogger(__name__).error(f"❌ [AUDIO] AVFoundationPlayer unexpected error: {e}")
-    _AVF_PLAYER_AVAILABLE = False
+    _AVF_PLAYER_AVAILABLE = False  # type: ignore[reportConstantRedefinition]
     AVFoundationPlayer = None  # type: ignore[assignment, misc]
     AVFPlayerConfig = None  # type: ignore[assignment, misc]
 
@@ -62,20 +65,28 @@ class SpeechPlaybackIntegration:
         # ЦЕНТРАЛИЗОВАННАЯ КОНФИГУРАЦИЯ
         self.config = unified_config.get_speech_playback_config()
 
-        self._avf_player: Optional[Any] = None  # type: ignore[type-arg]
+        self._avf_player: Any | None = None  # type: ignore[type-arg]
         
         self._initialized = False
         self._running = False
-        self._had_audio_for_session: Dict[Any, bool] = {}
-        self._finalized_sessions: Dict[Any, bool] = {}
+        self._had_audio_for_session: dict[Any, bool] = {}
+        self._finalized_sessions: dict[Any, bool] = {}
         self._last_audio_ts: float = 0.0
-        self._silence_task: Optional[asyncio.Task] = None
-        self._grpc_done_sessions: Dict[Any, bool] = {}
-        self._cancelled_sessions: set = set()
-        self._wav_header_skipped: Dict[Any, bool] = {}
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._silence_task: asyncio.Task[Any] | None = None
+        self._grpc_done_sessions: dict[Any, bool] = {}
+        self._cancelled_sessions: set[Any] = set()
+        self._wav_header_skipped: dict[Any, bool] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._needs_output_resync: bool = False
-        self._pending_resync_task: Optional[asyncio.Task] = None
+        self._pending_resync_task: asyncio.Task[Any] | None = None
+        self._playback_ready = False
+        # Guard: дедупликация cancel-циклов и блокировка сигналов в окне отмены
+        self._cancel_in_flight: bool = False
+        self._last_cancel_sid: str | None = None
+        self._last_cancel_ts: float = 0.0
+        self._cancel_guard_window_sec: float = 0.5
+        self._signal_block_until_ts: float = 0.0
+        self._cancel_guard_task: asyncio.Task[Any] | None = None
 
     async def initialize(self) -> bool:
         try:
@@ -130,6 +141,7 @@ class SpeechPlaybackIntegration:
                 self._avf_player = AVFoundationPlayer(avf_config)
                 if self._avf_player is not None and self._avf_player.initialize():
                     logger.info("✅ [AUDIO] AVFoundationPlayer initialized successfully")
+                    await self._publish_playback_ready(reason="startup")
                 else:
                     logger.error("❌ [AUDIO] AVFoundationPlayer init failed")
                     self._avf_player = None
@@ -160,6 +172,13 @@ class SpeechPlaybackIntegration:
         """
         if self._avf_player:
             try:
+                if not self._is_player_initialized():
+                    if self._avf_player.initialize():
+                        logger.info("✅ [AUDIO] AVFoundationPlayer initialized on-demand")
+                        await self._publish_playback_ready(reason="on_demand")
+                    else:
+                        logger.error("❌ [AUDIO] AVFoundationPlayer on-demand init failed")
+                        return False
                 if not self._avf_player.is_playing():
                      if not self._avf_player.start_playback():
                          logger.error("❌ [AUDIO] Failed to start AVFoundationPlayer playback")
@@ -169,6 +188,17 @@ class SpeechPlaybackIntegration:
                 logger.error(f"❌ [AUDIO] Ensure player ready failed: {e}")
                 return False
         return False
+
+    def _is_player_initialized(self) -> bool:
+        if not self._avf_player:
+            return False
+        return bool(getattr(self._avf_player, "_initialized", False))
+
+    async def _publish_playback_ready(self, reason: str) -> None:
+        if self._playback_ready:
+            return
+        self._playback_ready = True
+        await self.event_bus.publish("playback.ready", {"reason": reason})
 
     # -------- Event Handlers --------
     async def _on_audio_chunk(self, event):
@@ -189,8 +219,8 @@ class SpeechPlaybackIntegration:
             audio_bytes: bytes = data.get("bytes") or b""
             dtype: str = (data.get("dtype") or 'int16').lower()
             shape = data.get("shape") or []
-            src_sample_rate: Optional[int] = data.get("sample_rate")
-            src_channels: Optional[int] = data.get("channels")
+            src_sample_rate: int | None = data.get("sample_rate")
+            src_channels: int | None = data.get("channels")
             
             if not audio_bytes:
                 return
@@ -313,7 +343,7 @@ class SpeechPlaybackIntegration:
         # No manual resync needed
         pass
 
-    async def _on_raw_audio(self, event: Dict[str, Any]):
+    async def _on_raw_audio(self, event: dict[str, Any]):
         try:
             if not self._avf_player:
                 return
@@ -380,8 +410,12 @@ class SpeechPlaybackIntegration:
     async def _on_app_shutdown(self, event):
         await self.stop()
 
-    async def _on_playback_signal(self, event: Dict[str, Any]):
+    async def _on_playback_signal(self, event: dict[str, Any]):
         try:
+            now = time.monotonic()
+            if self._cancel_in_flight and now < self._signal_block_until_ts:
+                logger.debug("PLAYBACK_SIGNAL: skipped due to cancel_in_flight")
+                return
             if not self._avf_player:
                 return
             data = (event or {}).get("data", {})
@@ -418,7 +452,7 @@ class SpeechPlaybackIntegration:
         except Exception as e:
             await self._handle_error(e, where="speech.on_playback_signal", severity="warning")
 
-    async def _on_unified_interrupt(self, event: Dict[str, Any]):
+    async def _on_unified_interrupt(self, event: dict[str, Any]):
         """
         Unified handler for playback interruption (user cancellation, stop, mode switch).
         Немедленная остановка плеера при cancel.
@@ -426,6 +460,7 @@ class SpeechPlaybackIntegration:
         try:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
+            now = time.monotonic()
             
             # Немедленная остановка плеера
             if self._avf_player:
@@ -435,6 +470,20 @@ class SpeechPlaybackIntegration:
                     logger.info("🛑 SpeechPlayback: плеер остановлен синхронно")
                 except Exception as e:
                     logger.error(f"❌ SpeechPlayback: ошибка остановки плеера: {e}")
+
+            # Guard: дедуп отмены для одного sid в коротком окне
+            if sid is not None and self._last_cancel_sid == sid and (now - self._last_cancel_ts) < self._cancel_guard_window_sec:
+                logger.debug("🛑 SpeechPlayback: cancel dedup (sid=%s)", sid)
+                return
+
+            # Обновляем cancel guard
+            self._cancel_in_flight = True
+            self._last_cancel_sid = sid
+            self._last_cancel_ts = now
+            self._signal_block_until_ts = now + self._cancel_guard_window_sec
+            if self._cancel_guard_task and not self._cancel_guard_task.done():
+                self._cancel_guard_task.cancel()
+            self._cancel_guard_task = asyncio.create_task(self._reset_cancel_guard())
             
             if sid:
                 self._cancelled_sessions.add(sid)
@@ -470,7 +519,15 @@ class SpeechPlaybackIntegration:
         except Exception as e:
             await self._handle_error(e, where="speech.unified_interrupt", severity="warning")
     
-    async def _on_grpc_cancel(self, event: Dict[str, Any]):
+    async def _reset_cancel_guard(self):
+        try:
+            await asyncio.sleep(self._cancel_guard_window_sec)
+        except asyncio.CancelledError:
+            return
+        finally:
+            self._cancel_in_flight = False
+    
+    async def _on_grpc_cancel(self, event: dict[str, Any]):
         """Отмена активного воспроизведения по запросу gRPC."""
         try:
             if self._avf_player:
@@ -482,18 +539,24 @@ class SpeechPlaybackIntegration:
 
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
+            now = time.monotonic()
             if sid:
                 self._cancelled_sessions.add(sid)
-                
+
+            # Guard: не публикуем повторный playback.cancelled для того же sid в коротком окне
+            if sid is not None and self._last_cancel_sid == sid and (now - self._last_cancel_ts) < self._cancel_guard_window_sec:
+                logger.debug("🛑 SpeechPlayback: grpc_cancel dedup (sid=%s)", sid)
+                return
+
             await self.event_bus.publish("playback.cancelled", {
-                "session_id": sid, 
+                "session_id": sid,
                 "source": "grpc_cancel",
                 "reason": "server_request"
             })
         except Exception as e:
             await self._handle_error(e, where="speech.grpc_cancel", severity="warning")
 
-    async def _on_grpc_completed(self, event: Dict[str, Any]):
+    async def _on_grpc_completed(self, event: dict[str, Any]):
         """
         Handle grpc.request_completed event.
         Mark session as done from gRPC perspective.
@@ -528,7 +591,7 @@ class SpeechPlaybackIntegration:
         except Exception as e:
             await self._handle_error(e, where="speech.grpc_completed", severity="warning")
 
-    async def _on_grpc_failed(self, event: Dict[str, Any]):
+    async def _on_grpc_failed(self, event: dict[str, Any]):
         """
         Handle grpc.request_failed event.
         """
@@ -619,10 +682,9 @@ class SpeechPlaybackIntegration:
         else:
             logger.error(f"Speech playback error at {where}: {e}")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "initialized": self._initialized,
             "running": self._running,
             "avf_player": (self._avf_player.is_playing() if self._avf_player else False),
         }
-

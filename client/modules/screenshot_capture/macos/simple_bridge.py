@@ -3,35 +3,48 @@
 Использует CoreGraphics API напрямую если доступен, иначе fallback на screencapture CLI
 """
 
-import logging
-import tempfile
-import subprocess
-import shlex
-import time
 import base64
 import io
+import logging
 from pathlib import Path
-from typing import Tuple, Optional, Dict, Any
+import shlex
+import subprocess
+import tempfile
+import time
+from typing import Any
 
-from ..core.types import ScreenshotResult, ScreenshotConfig, ScreenshotData, ScreenshotFormat
-from ..core.quality_utils import get_webp_quality, get_jpeg_quality
+from ..core.quality_utils import get_jpeg_quality, get_webp_quality
+from ..core.types import ScreenshotConfig, ScreenshotData, ScreenshotFormat, ScreenshotResult
 
 logger = logging.getLogger(__name__)
 
 # Пытаемся импортировать CoreGraphics API
 try:
-    from AppKit import NSBitmapImageRep
-    from Quartz import (
-        CGMainDisplayID,
-        CGDisplayCreateImage,
-        CGWindowListCreateImage,
-        kCGWindowListOptionOnScreenOnly,
-        kCGNullWindowID,
-        kCGWindowImageDefault,
-    )
-    _COREGRAPHICS_AVAILABLE = True
+    import AppKit as _AppKit
+    import Quartz as _Quartz
+    _coregraphics_available = True
 except ImportError:
-    _COREGRAPHICS_AVAILABLE = False
+    _AppKit = None
+    _Quartz = None
+    _coregraphics_available = False
+
+NSBitmapImageRep = getattr(_AppKit, "NSBitmapImageRep", None)
+NSBitmapImageFileTypePNG = getattr(_AppKit, "NSBitmapImageFileTypePNG", None)
+NSBitmapImageFileTypeJPEG = getattr(_AppKit, "NSBitmapImageFileTypeJPEG", None)
+NSImageCompressionFactor = getattr(_AppKit, "NSImageCompressionFactor", None)
+CGDisplayCreateImage = getattr(_Quartz, "CGDisplayCreateImage", None)
+CGMainDisplayID = getattr(_Quartz, "CGMainDisplayID", None)
+CGWindowListCreateImage = getattr(_Quartz, "CGWindowListCreateImage", None)
+kCGNullWindowID = getattr(_Quartz, "kCGNullWindowID", 0)
+kCGWindowImageDefault = getattr(_Quartz, "kCGWindowImageDefault", 0)
+kCGWindowListOptionOnScreenOnly = getattr(_Quartz, "kCGWindowListOptionOnScreenOnly", 0)
+CGBitmapContextCreate = getattr(_Quartz, "CGBitmapContextCreate", None)
+CGBitmapContextCreateImage = getattr(_Quartz, "CGBitmapContextCreateImage", None)
+CGColorSpaceCreateDeviceRGB = getattr(_Quartz, "CGColorSpaceCreateDeviceRGB", None)
+CGContextDrawImage = getattr(_Quartz, "CGContextDrawImage", None)
+CGImageGetHeight = getattr(_Quartz, "CGImageGetHeight", None)
+CGImageGetWidth = getattr(_Quartz, "CGImageGetWidth", None)
+kCGImageAlphaPremultipliedLast = getattr(_Quartz, "kCGImageAlphaPremultipliedLast", 0)
 
 
 class SimpleCoreGraphicsBridge:
@@ -40,7 +53,7 @@ class SimpleCoreGraphicsBridge:
     def __init__(self):
         """Инициализация bridge"""
         self.initialized = True
-        self._use_coregraphics = _COREGRAPHICS_AVAILABLE
+        self._use_coregraphics = _coregraphics_available
         
         if self._use_coregraphics:
             logger.info("✅ SimpleCoreGraphicsBridge инициализирован (CoreGraphics API)")
@@ -64,10 +77,17 @@ class SimpleCoreGraphicsBridge:
             # Fallback на screencapture CLI (использует PNG как промежуточный формат)
             return self._capture_via_screencapture(config, None)
     
-    def _capture_via_coregraphics(self, config: ScreenshotConfig, region: Optional[Tuple[int, int, int, int]]) -> ScreenshotResult:
+    def _capture_via_coregraphics(self, config: ScreenshotConfig, region: tuple[int, int, int, int] | None) -> ScreenshotResult:
         """Захват через CoreGraphics API напрямую в WebP (без PNG промежуточного формата)"""
         try:
             start_time = time.time()
+            if not (
+                CGDisplayCreateImage
+                and CGMainDisplayID
+                and CGWindowListCreateImage
+                and NSBitmapImageRep
+            ):
+                return self._capture_via_screencapture(config, region)
             
             # Захватываем CGImage
             if region:
@@ -112,7 +132,7 @@ class SimpleCoreGraphicsBridge:
                 capture_time=time.time() - start_time if 'start_time' in locals() else 0.0
             )
     
-    def _capture_via_screencapture(self, config: ScreenshotConfig, region: Optional[Tuple[int, int, int, int]]) -> ScreenshotResult:
+    def _capture_via_screencapture(self, config: ScreenshotConfig, region: tuple[int, int, int, int] | None) -> ScreenshotResult:
         """Fallback захват через screencapture CLI (использует PNG как промежуточный формат)"""
         try:
             start_time = time.time()
@@ -257,18 +277,17 @@ class SimpleCoreGraphicsBridge:
             return cg_image
         
         try:
-            from Quartz import (
-                CGImageGetWidth,
-                CGImageGetHeight,
-                CGBitmapContextCreate,
-                CGBitmapContextCreateImage,
-                CGColorSpaceCreateDeviceRGB,
-                CGContextDrawImage,
-                kCGImageAlphaPremultipliedLast,
-            )
-            
             max_w = config.max_width or 0
             max_h = config.max_height or 0
+            if not (
+                CGBitmapContextCreate
+                and CGBitmapContextCreateImage
+                and CGColorSpaceCreateDeviceRGB
+                and CGContextDrawImage
+                and CGImageGetHeight
+                and CGImageGetWidth
+            ):
+                return cg_image
             
             if max_w <= 0 and max_h <= 0:
                 return cg_image
@@ -304,12 +323,13 @@ class SimpleCoreGraphicsBridge:
             logger.debug(f"Failed to resize CGImage: {e}")
             return cg_image
     
-    def _encode_cgimage_to_webp(self, cg_image, config: ScreenshotConfig, start_ts: float, meta: Dict[str, Any]) -> ScreenshotResult:
+    def _encode_cgimage_to_webp(self, cg_image, config: ScreenshotConfig, start_ts: float, meta: dict[str, Any]) -> ScreenshotResult:
         """Кодирует CGImage напрямую в WebP через Pillow БЕЗ промежуточного PNG"""
         try:
             from PIL import Image
             
-            rep = NSBitmapImageRep.alloc().initWithCGImage_(cg_image)
+            bitmap_rep_cls = self._require_nsbitmap_rep()
+            rep = bitmap_rep_cls.alloc().initWithCGImage_(cg_image)
             width = rep.pixelsWide()
             height = rep.pixelsHigh()
             
@@ -345,7 +365,8 @@ class SimpleCoreGraphicsBridge:
             else:
                 # Fallback на PNG только для нестандартных форматов
                 logger.debug(f"Нестандартный формат пикселей ({bits_per_pixel}bpp, {samples_per_pixel}spp), используем PNG fallback")
-                from AppKit import NSBitmapImageFileTypePNG
+                if NSBitmapImageFileTypePNG is None:
+                    raise RuntimeError("NSBitmapImageFileTypePNG unavailable")
                 nsdata = rep.representationUsingType_properties_(
                     NSBitmapImageFileTypePNG, {}
                 )
@@ -387,12 +408,14 @@ class SimpleCoreGraphicsBridge:
             logger.warning(f"⚠️ WebP кодирование не удалось: {e}, fallback на JPEG")
             return self._encode_cgimage_to_jpeg(cg_image, config, start_ts, meta)
     
-    def _encode_cgimage_to_jpeg(self, cg_image, config: ScreenshotConfig, start_ts: float, meta: Dict[str, Any]) -> ScreenshotResult:
+    def _encode_cgimage_to_jpeg(self, cg_image, config: ScreenshotConfig, start_ts: float, meta: dict[str, Any]) -> ScreenshotResult:
         """Кодирует CGImage в JPEG через нативный NSBitmapImageRep"""
         try:
-            from AppKit import NSImageCompressionFactor, NSBitmapImageFileTypeJPEG
+            if NSBitmapImageFileTypeJPEG is None or NSImageCompressionFactor is None:
+                raise RuntimeError("Native JPEG symbols unavailable")
             
-            rep = NSBitmapImageRep.alloc().initWithCGImage_(cg_image)
+            bitmap_rep_cls = self._require_nsbitmap_rep()
+            rep = bitmap_rep_cls.alloc().initWithCGImage_(cg_image)
             width = rep.pixelsWide()
             height = rep.pixelsHigh()
             
@@ -434,7 +457,7 @@ class SimpleCoreGraphicsBridge:
                 capture_time=time.time() - start_ts,
             )
     
-    def capture_region(self, region: Tuple[int, int, int, int], config: ScreenshotConfig) -> ScreenshotResult:
+    def capture_region(self, region: tuple[int, int, int, int], config: ScreenshotConfig) -> ScreenshotResult:
         """
         Захват области экрана через CoreGraphics API (без PNG) или screencapture CLI
         
@@ -503,7 +526,7 @@ class SimpleCoreGraphicsBridge:
             logger.error(f"❌ Screenshot test error: {e}")
             return False
     
-    def get_screen_info(self) -> Dict[str, Any]:
+    def get_screen_info(self) -> dict[str, Any]:
         """
         Получает информацию об экране
         
@@ -556,7 +579,9 @@ class SimpleCoreGraphicsBridge:
     def _resize_if_needed(self, image_path: Path, config: ScreenshotConfig):
         """Изменяет размер изображения если нужно с пропорциональным масштабированием"""
         try:
-            if config.max_width <= 0 and config.max_height <= 0:
+            max_width = int(config.max_width or 0)
+            max_height = int(config.max_height or 0)
+            if max_width <= 0 and max_height <= 0:
                 return
             
             # Получаем текущие размеры изображения
@@ -565,8 +590,8 @@ class SimpleCoreGraphicsBridge:
                 return
             
             # Вычисляем коэффициент масштабирования для пропорционального изменения
-            scale_width = config.max_width / current_width if config.max_width > 0 else 1.0
-            scale_height = config.max_height / current_height if config.max_height > 0 else 1.0
+            scale_width = max_width / current_width if max_width > 0 else 1.0
+            scale_height = max_height / current_height if max_height > 0 else 1.0
             scale_factor = min(scale_width, scale_height, 1.0)  # Не увеличиваем, только уменьшаем
             
             if scale_factor >= 1.0:
@@ -600,8 +625,9 @@ class SimpleCoreGraphicsBridge:
     def _convert_to_webp_bytes(self, image_path: Path, config: ScreenshotConfig) -> bytes:
         """Конвертирует изображение (PNG/JPEG) в WebP через Pillow и возвращает bytes напрямую"""
         try:
-            from PIL import Image
             import io
+
+            from PIL import Image
             
             # Получаем качество WebP из общей утилиты
             webp_quality = get_webp_quality(config.quality, default=80)
@@ -647,7 +673,7 @@ class SimpleCoreGraphicsBridge:
         except Exception as e:
             logger.debug(f"Failed to optimize JPEG quality: {e}")
     
-    def _get_image_dimensions(self, image_path: Path) -> Tuple[int, int]:
+    def _get_image_dimensions(self, image_path: Path) -> tuple[int, int]:
         """Получает размеры изображения"""
         try:
             # Используем sips для получения размеров
@@ -683,3 +709,9 @@ class SimpleCoreGraphicsBridge:
         except Exception as e:
             logger.debug(f"Failed to get image dimensions: {e}")
             return 1920, 1080
+
+    def _require_nsbitmap_rep(self) -> Any:
+        """Возвращает NSBitmapImageRep класс или поднимает исключение."""
+        if NSBitmapImageRep is None:
+            raise RuntimeError("NSBitmapImageRep unavailable")
+        return NSBitmapImageRep

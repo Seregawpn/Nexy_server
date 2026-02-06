@@ -10,17 +10,17 @@ from __future__ import annotations
 import glob
 import logging
 import os
-from typing import Literal, List, Optional, Tuple
+from typing import Literal
 
-from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from ..error_matrix import apply_normalization_to_evidence
+from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from .base import BaseProber
 
 logger = logging.getLogger(__name__)
 
 
 # Protected paths that require FDA to access
-FDA_TEST_PATTERNS: List[str] = [
+FDA_TEST_PATTERNS: list[str] = [
     "~/Library/Messages/chat.db",  # iMessage database
     "~/Library/Safari/History.db",
     "~/Library/Mail/V*/MailData/Envelope Index",
@@ -33,7 +33,7 @@ class FullDiskAccessProber(BaseProber):
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.FULL_DISK_ACCESS
-        self._last_result: Optional[bool] = None
+        self._last_result: bool | None = None
     
     async def trigger(self) -> None:
         """
@@ -70,7 +70,7 @@ class FullDiskAccessProber(BaseProber):
             evidence=ev
         )
     
-    def _stat_probe(self) -> Tuple[Optional[bool], Optional[str], Optional[str], Optional[str]]:
+    def _stat_probe(self) -> tuple[bool | None, str | None, str | None, str | None]:
         """
         Test FDA by attempting to stat protected files.
         Safe operation - doesn't read any actual data.

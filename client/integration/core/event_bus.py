@@ -3,9 +3,9 @@ EventBus - Система событий для интеграции модул�
 """
 
 import asyncio
-import logging
-from typing import Dict, List, Callable, Any, Optional
 from enum import Enum
+import logging
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,10 @@ class EventBus:
     """Система событий для интеграции модулей"""
     
     def __init__(self):
-        self.subscribers: Dict[str, List[Dict[str, Any]]] = {}
-        self.event_history: List[Dict[str, Any]] = []
+        self.subscribers: dict[str, list[dict[str, Any]]] = {}
+        self.event_history: list[dict[str, Any]] = []
         self.max_history = 1000
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         # События, обработка которых должна быть быстрой (не блокирующей):
         # публикуем обработчики как задачи и не await'им их последовательно
         self._fast_events = {"app.mode_changed", "app.state_changed"}
@@ -40,7 +40,7 @@ class EventBus:
         except Exception:
             pass
     
-    def attach_loop(self, loop: Optional[asyncio.AbstractEventLoop] = None):
+    def attach_loop(self, loop: asyncio.AbstractEventLoop | None = None):
         """Зафиксировать основной event loop для безопасной доставки событий из любых потоков."""
         try:
             self._loop = loop or asyncio.get_running_loop()
@@ -49,15 +49,20 @@ class EventBus:
             logger.debug(f"EventBus: failed to attach loop: {e}")
             self._loop = None
     
-    def get_loop(self) -> Optional[asyncio.AbstractEventLoop]:
+    def get_loop(self) -> asyncio.AbstractEventLoop | None:
         """Получить прикрепленный event loop."""
         return self._loop
         
-    async def subscribe(self, event_type: str, callback: Callable, priority: EventPriority = EventPriority.MEDIUM):
+    async def subscribe(self, event_type: str, callback: Callable[..., Any], priority: EventPriority = EventPriority.MEDIUM):
         """Подписка на событие"""
         try:
             if event_type not in self.subscribers:
                 self.subscribers[event_type] = []
+            else:
+                for sub in self.subscribers[event_type]:
+                    if sub.get("callback") is callback:
+                        logger.warning(f"⚠️ Duplicate subscription ignored: event_type={event_type}, callback={callback}")
+                        return
             
             subscriber = {
                 "callback": callback,
@@ -75,7 +80,7 @@ class EventBus:
         except Exception as e:
             logger.error(f"❌ Ошибка подписки на событие {event_type}: {e}")
     
-    async def unsubscribe(self, event_type: str, callback: Callable):
+    async def unsubscribe(self, event_type: str, callback: Callable[..., Any]):
         """Отписка от события"""
         try:
             if event_type in self.subscribers:
@@ -92,7 +97,7 @@ class EventBus:
         except Exception as e:
             logger.error(f"❌ Ошибка отписки от события {event_type}: {e}")
     
-    async def publish(self, event_type: str, data: Dict[str, Any] = None):
+    async def publish(self, event_type: str, data: dict[str, Any] | None = None):
         """Публикация события"""
         try:
             if data is None:
@@ -160,7 +165,7 @@ class EventBus:
         except Exception as e:
             logger.error(f"❌ Ошибка публикации события {event_type}: {e}")
     
-    def get_event_history(self, event_type: str = None, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_event_history(self, event_type: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         """Получить историю событий"""
         try:
             if event_type:
@@ -177,7 +182,7 @@ class EventBus:
             logger.error(f"❌ Ошибка получения истории событий: {e}")
             return []
     
-    def get_subscribers_count(self, event_type: str = None) -> int:
+    def get_subscribers_count(self, event_type: str | None = None) -> int:
         """Получить количество подписчиков"""
         try:
             if event_type:
@@ -189,7 +194,7 @@ class EventBus:
             logger.error(f"❌ Ошибка подсчета подписчиков: {e}")
             return 0
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус EventBus"""
         return {
             "subscribers_count": self.get_subscribers_count(),

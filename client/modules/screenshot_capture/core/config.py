@@ -2,9 +2,10 @@
 Конфигурация для модуля захвата скриншотов
 """
 
-import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
+
+import yaml
 
 from integration.utils.resource_path import get_resource_path
 
@@ -14,7 +15,7 @@ from .types import ScreenshotConfig, ScreenshotFormat, ScreenshotQuality, Screen
 class ScreenshotConfigManager:
     """Менеджер конфигурации для скриншотов"""
     
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: str | None = None):
         """
         Инициализирует менеджер конфигурации
         
@@ -27,7 +28,7 @@ class ScreenshotConfigManager:
             self.config_path = Path(get_resource_path("config/unified_config.yaml"))
         self._config_cache = None
     
-    def load_config(self) -> Dict[str, Any]:
+    def load_config(self) -> dict[str, Any]:
         """Загружает конфигурацию из файла"""
         if self._config_cache is not None:
             return self._config_cache
@@ -44,7 +45,7 @@ class ScreenshotConfigManager:
             print(f"⚠️ Ошибка загрузки конфигурации: {e}")
             return self._get_default_config()
     
-    def _get_default_config(self) -> Dict[str, Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """Возвращает конфигурацию по умолчанию"""
         return {
             "screen_capture": {

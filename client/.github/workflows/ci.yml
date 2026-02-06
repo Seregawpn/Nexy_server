@@ -21,11 +21,34 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          pip install ruff pytest jsonschema pyyaml
+          pip install -r requirements-dev.txt
       - name: Run pre-build gate
         run: |
-          ./scripts/pre_build_gate.sh --verbose
+          ./scripts/quality_strict.sh --verbose
         continue-on-error: false
+      - name: Run consolidated problem scan gate
+        if: always()
+        env:
+          REQUIRE_BASEDPYRIGHT_IN_SCAN: "true"
+        run: |
+          ./scripts/problem_scan_gate.sh
+      - name: Upload problem scan report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: problem-scan-report
+          path: |
+            build_logs/problem_scan_latest.json
+            build_logs/problem_scan_latest.md
+          retention-days: 14
+      - name: Publish problem scan summary
+        if: always()
+        run: |
+          if [ -f "build_logs/problem_scan_latest.md" ]; then
+            cat build_logs/problem_scan_latest.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Problem scan report is missing" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   release-suite-smoke:
     name: Release Suite (Smoke - PR only)
@@ -39,7 +62,7 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          pip install ruff pytest jsonschema pyyaml
+          pip install -r requirements-dev.txt
       - name: Run Release Suite (smoke)
         run: |
           python scripts/run_release_suite.py --smoke --output release_suite_report.json
@@ -64,7 +87,7 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          pip install ruff pytest jsonschema pyyaml
+          pip install -r requirements-dev.txt
       - name: Run Release Suite (full)
         run: |
           python scripts/run_release_suite.py --output release_suite_report.json
@@ -226,4 +249,3 @@ jobs:
       - name: Run SLO tests
         run: |
           pytest tests/perf/test_slo_smoke.py::TestSLOSmoke::test_slo_thresholds_defined -v
-

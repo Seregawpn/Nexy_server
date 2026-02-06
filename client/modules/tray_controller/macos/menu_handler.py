@@ -629,6 +629,10 @@ class MacOSTrayMenu:
         if not self.app:
             return
         
+        # КРИТИЧНО: Инициализируем флаг явного разрешения выхода (если еще не создан)
+        if not hasattr(self, '_quit_allowed'):
+            self._quit_allowed = False
+
         # КРИТИЧНО: Сначала устанавливаем fallback, если его нет
         if not hasattr(self.app, 'applicationShouldTerminate'):
             def applicationShouldTerminate(sender):
@@ -641,6 +645,12 @@ class MacOSTrayMenu:
         
         def custom_should_terminate(sender):
             """Кастомный обработчик завершения приложения"""
+            # Проверяем, разрешен ли выход явно (через меню Quit)
+            if getattr(self, '_quit_allowed', False):
+                logger.info("✅ custom_should_terminate: выход разрешен явно (flag=True)")
+                print("✅ custom_should_terminate: выход разрешен явно (flag=True)")
+                return True
+
             try:
                 logger.info("🔍 applicationShouldTerminate вызван - проверяем callback")
                 # Если есть callback, вызываем его
@@ -664,6 +674,10 @@ class MacOSTrayMenu:
     def quit(self):
         """Завершить приложение"""
         if self.app:
+            # КРИТИЧНО: Разрешаем выход перед вызовом rumps.quit_application()
+            logger.info("🛑 quit() called - enabling quit_allowed flag")
+            print("🛑 quit() called - enabling quit_allowed flag")
+            self._quit_allowed = True
             rumps.quit_application()
 
     

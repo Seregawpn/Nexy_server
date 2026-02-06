@@ -7,14 +7,13 @@ Feature ID: F-2025-015-browser-use
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Set
+import logging
+from typing import Any
 
+from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-
 from modules.browser_progress.core.types import BrowserProgressEvent, BrowserProgressType
 
 logger = logging.getLogger(__name__)
@@ -45,7 +44,7 @@ class BrowserProgressIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        config: Optional[BrowserProgressIntegrationConfig] = None,
+        config: BrowserProgressIntegrationConfig | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.state_manager = state_manager
@@ -56,8 +55,8 @@ class BrowserProgressIntegration:
         self._running = False
         
         # Track active browser tasks by session_id to ensure idempotency
-        self._active_tasks: Dict[str, str] = {}  # session_id -> task_id
-        self._completed_tasks: Set[str] = set()  # task_ids that are terminal
+        self._active_tasks: dict[str, str] = {}  # session_id -> task_id
+        self._completed_tasks: set[str] = set()  # task_ids that are terminal
     
     async def initialize(self) -> bool:
         """Initialize integration and subscribe to events"""
@@ -94,7 +93,7 @@ class BrowserProgressIntegration:
         logger.info(f"[{FEATURE_ID}] BrowserProgressIntegration stopped")
         return True
     
-    async def _on_browser_progress(self, event: Dict[str, Any]) -> None:
+    async def _on_browser_progress(self, event: dict[str, Any]) -> None:
         """Handle browser.progress event from gRPC layer"""
         if not self._running or not self.config.enabled:
             return
@@ -141,7 +140,7 @@ class BrowserProgressIntegration:
         except Exception as e:
             logger.error(f"[{FEATURE_ID}] Error handling browser.progress: {e}")
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get integration status"""
         return {
             "initialized": self._initialized,

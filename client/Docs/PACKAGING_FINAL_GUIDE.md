@@ -68,7 +68,15 @@ git status --short | grep -E "(main\.py|integration/|modules/|resources/|assets/
 
 #### Шаг 2: Предварительная верификация
 
-**ОБЯЗАТЕЛЬНО:** Выполнить автоматические проверки через `scripts/pre_build_gate.sh`.
+**ОБЯЗАТЕЛЬНО:** Выполнить автоматические проверки через `scripts/pre_build_gate.sh` и `scripts/problem_scan_gate.sh`.
+
+```bash
+# Быстрый pre-build gate (локальный)
+./scripts/pre_build_gate.sh --skip-tests
+
+# Релизный quality gate (блокирует только blocking issues)
+REQUIRE_BASEDPYRIGHT_IN_SCAN=true ./scripts/problem_scan_gate.sh
+```
 
 **Минимальные проверки:**
 - [ ] Все зависимости установлены и актуальны
@@ -92,25 +100,30 @@ cd client
 
 # Dev-режим (без нотаризации)
 NEXY_SKIP_NOTARIZATION=1 ./packaging/build_final.sh
+
+# Быстрый режим проверки соответствия (без сборки/подписи/нотарификации)
+./packaging/build_final.sh --speed-check
 ```
 
-**Важно про окружение:** если существует `.venv`, `build_final.sh` использует `./.venv/bin/python` для всех стадий (preflight + PyInstaller). Для x86_64 этапа можно создать отдельный `./.venv_x86` — скрипт использует его автоматически, если найден. Убедитесь, что зависимости (включая `playwright`) установлены в этих окружениях.
+**Важно про окружение:** если существует `.venv`, `build_final.sh` использует `./.venv/bin/python` для всех стадий (preflight + PyInstaller). Для x86_64 этапа можно создать отдельный `./.venv_x86` — скрипт использует его автоматически, если найден. Убедитесь, что зависимости (включая `playwright`) установлены в этих окружениях, а `playwright` имеет driver.
 
 **Что делает `build_final.sh` автоматически:**
-1. ✅ Preflight проверки (verify_imports, verify_pyinstaller, verify_ctypes, verify_config, verify_resources)
-2. ✅ Проверка актуальности protobuf (`scripts/regenerate_proto.sh --check`)
-3. ✅ Стейджинг Universal 2 бинарников (`scripts/stage_universal_binaries.py`)
-4. ✅ Проверка зависимостей (`scripts/check_dependencies.py`)
-5. ✅ Обновление версий модулей (`scripts/update_module_versions.py`)
-6. ✅ Универсализация .so файлов (если нужно)
-7. ✅ Двойная сборка PyInstaller (arm64 + x86_64)
-8. ✅ Объединение в Universal 2 через `create_universal_app.py`
-9. ✅ Подготовка Python.framework к подписи
-10. ✅ Подпись через оптимизированный `sign_all_binaries.sh`
-11. ✅ Нотаризация .app (если не установлен `NEXY_SKIP_NOTARIZATION=1`)
-12. ✅ Создание и нотаризация DMG
-13. ✅ Создание, подпись и нотаризация PKG
-14. ✅ Финальная проверка всех артефактов (подпись, нотаризация, архитектура, целостность)
+1. ✅ Packaging readiness gate (`scripts/verify_packaging_readiness.py`)
+2. ✅ Consolidated quality gate (`REQUIRE_BASEDPYRIGHT_IN_SCAN=true scripts/problem_scan_gate.sh`)
+3. ✅ Preflight проверки (verify_imports, verify_pyinstaller, verify_ctypes, verify_config, verify_resources, playwright)
+4. ✅ Проверка актуальности protobuf (`scripts/regenerate_proto.sh --check`)
+5. ✅ Стейджинг Universal 2 бинарников (`scripts/stage_universal_binaries.py`)
+6. ✅ Проверка зависимостей (`scripts/check_dependencies.py`)
+7. ✅ Обновление версий модулей (`scripts/update_module_versions.py`)
+8. ✅ Универсализация .so файлов (если нужно)
+9. ✅ Двойная сборка PyInstaller (arm64 + x86_64)
+10. ✅ Объединение в Universal 2 через `create_universal_app.py`
+11. ✅ Подготовка Python.framework к подписи
+12. ✅ Подпись через оптимизированный `sign_all_binaries.sh`
+13. ✅ Нотаризация .app (если не установлен `NEXY_SKIP_NOTARIZATION=1`)
+14. ✅ Создание и нотаризация DMG
+15. ✅ Создание, подпись и нотаризация PKG
+16. ✅ Финальная проверка всех артефактов (подпись, нотаризация, архитектура, целостность)
 
 #### Шаг 4: Проверка артефактов
 
@@ -171,7 +184,7 @@ python3 scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
 
 **ЗАПРЕЩЕНО:**
 - ❌ Использовать ручные/альтернативные инструкции упаковки вне `PACKAGING_FINAL_GUIDE.md`
-- ❌ Пропускать шаги процесса (pre_build_gate.sh, build_final.sh)
+- ❌ Пропускать шаги процесса (pre_build_gate.sh, problem_scan_gate.sh, build_final.sh)
 - ❌ Использовать альтернативные скрипты сборки (например: `rebuild_from_scratch.sh` для релиза)
 - ❌ Модифицировать `.app` после сборки (открытие в Finder, `xattr -cr`, копирование через `cp -R`)
 - ❌ Пропускать проверку артефактов после сборки
@@ -215,6 +228,7 @@ python3 scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
 - [ ] Все триггеры изменений обработаны (см. раздел 0.1)
 - [ ] Артефакты упаковки обновлены (Nexy.spec, stage_universal_binaries.py)
 - [ ] Автоматические проверки (pre_build_gate.sh) пройдены успешно
+- [ ] Consolidated quality gate (problem_scan_gate.sh, blocking=0) пройден успешно
 - [ ] `build_final.sh` выполнен успешно
 - [ ] Все артефакты проверены (подпись, нотаризация, архитектура, целостность)
 - [ ] `packaging_verification.log` не содержит ошибок
@@ -263,6 +277,23 @@ lipo -info resources/ffmpeg/ffmpeg
 - **Тип:** Серверный функционал с клиентскими событиями прогресса
 - **Не требует дополнительных разрешений на клиенте**
 - **Включено в `Nexy.spec`:** hidden imports для `modules.browser_progress`
+
+### Исключённые модули (не упакованы):
+
+> [!NOTE]
+> Следующие модули **НЕ включены** в сборку приложения и отключены по умолчанию.
+
+**WhatsApp (F-2025-019):**
+- **Статус:** ❌ Не упакован
+- **Причина:** Временно отключён для уменьшения размера сборки
+- **Как включить:** Установить `whatsapp.enabled: true` в `unified_config.yaml`
+- **Файлы:** `integration/integrations/whatsapp_integration.py`, `modules/whatsapp/`
+
+**Payment (F-2025-017):**
+- **Статус:** ❌ Не упакован
+- **Причина:** Временно отключён для уменьшения размера сборки
+- **Как включить:** Установить `features.payment.enabled: true` в `unified_config.yaml`
+- **Файлы:** `integration/integrations/payment_integration.py`
 
 ---
 
@@ -871,3 +902,20 @@ rm -rf dist/Nexy.app/Nexy.app
 - ✅ Обновлены инструкции для Universal 2 процесса
 - ✅ Добавлен раздел с частыми проблемами и решениями
 - ✅ Добавлен раздел "Диагностика и логи" с указанием путей к логам для packaged-запуска
+
+---
+
+## 0.6. Readiness Gate (без сборки)
+
+Если нужен быстрый сигнал готовности без запуска полной упаковки, используйте:
+
+```bash
+./scripts/verify_packaging_readiness.py
+```
+
+Этот чек:
+- подтверждает наличие критичных packaging‑файлов,
+- запускает минимальный набор проверок,
+- предупреждает о наличии изменений в упаковочных триггерах.
+
+**Важно:** Readiness Gate не заменяет `build_final.sh` при реальном релизе.

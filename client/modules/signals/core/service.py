@@ -8,12 +8,11 @@ basic priority hinting. No external dependencies.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
-from .interfaces import SignalService, SignalChannel, SignalRequest, SignalPattern
+from .interfaces import SignalChannel, SignalPattern, SignalRequest, SignalService
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +34,23 @@ class SimpleSignalService(SignalService):
 
     def __init__(
         self,
-        channels: List[SignalChannel],
-        cooldowns: Optional[Dict[SignalPattern, CooldownPolicy]] = None,
+        channels: list[SignalChannel],
+        cooldowns: dict[SignalPattern, CooldownPolicy] | None = None,
         enabled: bool = True,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
+        loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
         self._channels = channels
         self._enabled = enabled
         self._cooldowns = cooldowns or {}
-        self._last_emitted_at_ms: Dict[SignalPattern, int] = {}
-        self._metrics: Dict[SignalPattern, SignalMetrics] = {}
+        self._last_emitted_at_ms: dict[SignalPattern, int] = {}
+        self._metrics: dict[SignalPattern, SignalMetrics] = {}
         self._lock = asyncio.Lock()
         self._loop = loop or asyncio.get_event_loop()
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
 
-    def get_metrics(self) -> Dict[SignalPattern, SignalMetrics]:
+    def get_metrics(self) -> dict[SignalPattern, SignalMetrics]:
         return self._metrics
 
     def _cooldown_ok(self, pattern: SignalPattern) -> bool:

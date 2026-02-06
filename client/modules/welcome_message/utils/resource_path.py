@@ -7,9 +7,8 @@
 - PyInstaller bundle (.app/Contents/Resources/)
 """
 
-import sys
 from pathlib import Path
-from typing import Optional
+import sys
 
 
 def get_resource_base_path() -> Path:
@@ -50,7 +49,7 @@ def get_resource_base_path() -> Path:
     return Path.cwd()
 
 
-def get_resource_path(relative_path: str, base_path: Optional[Path] = None) -> Path:
+def get_resource_path(relative_path: str, base_path: Path | None = None) -> Path:
     """
     Получить полный путь к ресурсу.
     
@@ -67,7 +66,7 @@ def get_resource_path(relative_path: str, base_path: Optional[Path] = None) -> P
     return base_path / relative_path
 
 
-def resource_exists(relative_path: str, base_path: Optional[Path] = None) -> bool:
+def resource_exists(relative_path: str, base_path: Path | None = None) -> bool:
     """
     Проверить существование ресурса.
     

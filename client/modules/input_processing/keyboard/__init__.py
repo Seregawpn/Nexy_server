@@ -3,7 +3,7 @@ Keyboard module - обработка клавиатуры
 """
 
 from .keyboard_monitor import KeyboardMonitor
-from .types import KeyEvent, KeyEventType, KeyType, KeyboardConfig
+from .types import KeyboardConfig, KeyEvent, KeyEventType, KeyType
 
 __all__ = [
     'KeyboardMonitor',

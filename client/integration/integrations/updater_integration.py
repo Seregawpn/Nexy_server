@@ -1,37 +1,38 @@
+# ruff: noqa: I001
 """
 Интеграция системы обновлений с EventBus
 """
 
 import asyncio
-import logging
-import os
-import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+import sys
+from typing import Any
 
+from config.unified_config_loader import UnifiedConfigLoader
+from config.updater_manager import get_updater_manager
 from integration.core.event_bus import EventBus, EventPriority
+from integration.core.selectors import (
+    get_current_mode,
+    is_first_run_in_progress,
+    is_update_in_progress as selector_is_update_in_progress,
+)
 from integration.core.state_manager import ApplicationStateManager
+from integration.utils.logging_setup import get_logger
 
-# Import AppMode with fallback mechanism (same as other integrations)
-try:
+try: # ruff: noqa: I001
     from mode_management import AppMode  # type: ignore[reportMissingImports]
-except Exception:
+except ImportError:
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
-from integration.core.selectors import is_first_run_in_progress, is_update_in_progress  # type: ignore[attr-defined]
 from modules.updater import Updater
 from modules.updater.config import UpdaterConfig
-from config.updater_manager import get_updater_manager
-from config.unified_config_loader import UnifiedConfigLoader
-
-from integration.utils.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
 class UpdaterIntegration:
     """Интеграция системы обновлений с архитектурой приложения"""
     
-    def __init__(self, event_bus: EventBus, state_manager: ApplicationStateManager, config: Dict[str, Any]):
+    def __init__(self, event_bus: EventBus, state_manager: ApplicationStateManager, config: dict[str, Any]):
         self.event_bus = event_bus
         self.state_manager = state_manager
         
@@ -58,7 +59,7 @@ class UpdaterIntegration:
         self.check_task = None
         self.is_running = False
         self._update_in_progress: bool = False
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._last_download_percent: int = 0
         self._last_install_percent: int = 0
         # Поведение миграции регулируется конфигом/ENV
@@ -82,7 +83,7 @@ class UpdaterIntegration:
             # Initialize current mode from state (one-time read allowed during init)
             # After init, mode is tracked via events only
             try:
-                initial_mode = self.state_manager.get_current_mode()
+                initial_mode = get_current_mode(self.state_manager)
                 if isinstance(initial_mode, AppMode):
                     self._current_mode = initial_mode
             except Exception:
@@ -186,7 +187,7 @@ class UpdaterIntegration:
         # Это необходимо для тестов и edge cases, когда события не работают
         # TODO: Remove fallback after all consumers migrate to event-based mode tracking
         try:
-            actual_mode = self.state_manager.get_current_mode()
+            actual_mode = get_current_mode(self.state_manager)
             if isinstance(actual_mode, AppMode):
                 # Update tracked mode if different (fallback sync)
                 if actual_mode != current_mode:
@@ -248,7 +249,7 @@ class UpdaterIntegration:
     async def _on_mode_changed_via_gateway(self, event_data):
         """Обработка изменения режима через gateway (mode.changed event).
         
-        Используется вместо прямого чтения state_manager.get_current_mode().
+        Используется вместо прямого чтения state_manager.get_current_mode(), через selectors.
         Это соответствует правилу 21.3: запрет прямого доступа к состоянию.
         """
         data = (event_data or {}).get("data", event_data or {})
@@ -472,7 +473,7 @@ class UpdaterIntegration:
             feature_config = self._config_loader._load_config().get("features", {}).get("use_events_for_update_status", {})
             if feature_config.get("enabled", False):
                 # Compare accessor vs state_data
-                state_data_value = is_update_in_progress(self.state_manager)
+                state_data_value = selector_is_update_in_progress(self.state_manager)
                 accessor_value = self._update_in_progress
                 if state_data_value != accessor_value:
                     logger.warning(
@@ -488,8 +489,8 @@ class UpdaterIntegration:
                         state_data_value,
                         trigger,
                     )
-        except Exception:
-            pass  # Don't fail if feature flag check fails
+        except Exception as e:
+            logger.debug(f"[UPDATER] Shadow-mode error: {e}")
         
         logger.debug("UpdaterIntegration: update_in_progress=%s (trigger=%s)", active, trigger)
         # Публикуем событие изменения состояния
@@ -523,7 +524,7 @@ class UpdaterIntegration:
     async def _handle_download_progress(
         self,
         downloaded: int,
-        expected_size: Optional[int],
+        expected_size: int | None,
         trigger: str,
     ) -> None:
         if not expected_size or expected_size <= 0:
@@ -555,7 +556,7 @@ class UpdaterIntegration:
             },
         )
 
-    async def _safe_publish(self, event_type: str, payload: Dict[str, Any]) -> None:
+    async def _safe_publish(self, event_type: str, payload: dict[str, Any]) -> None:
         """
         Safely publish event to EventBus.
         

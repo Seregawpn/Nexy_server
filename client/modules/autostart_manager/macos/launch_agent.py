@@ -4,7 +4,7 @@
 
 import os
 import subprocess
-from typing import Optional
+
 
 class LaunchAgentManager:
     """Менеджер LaunchAgent для автозапуска."""
@@ -64,6 +64,37 @@ class LaunchAgentManager:
             
         except Exception as e:
             print(f"❌ Ошибка удаления LaunchAgent: {e}")
+            return False
+
+    async def remove_legacy_launch_agent(self, legacy_path: str, legacy_label: str) -> bool:
+        """Удаление legacy LaunchAgent (дубликат автозапуска)."""
+        try:
+            legacy_path = os.path.expanduser(legacy_path)
+            removed_any = False
+
+            if legacy_label:
+                # Пробуем выгрузить по label (надежнее, чем по пути)
+                result = subprocess.run([
+                    'launchctl', 'bootout', f'gui/{os.getuid()}/{legacy_label}'
+                ], capture_output=True, text=True)
+                if result.returncode == 0:
+                    removed_any = True
+
+            if os.path.exists(legacy_path):
+                # Пробуем выгрузить по пути
+                subprocess.run([
+                    'launchctl', 'bootout', f'gui/{os.getuid()}', legacy_path
+                ], capture_output=True)
+                try:
+                    os.remove(legacy_path)
+                    removed_any = True
+                except Exception:
+                    # Нет прав на удаление /Library/LaunchAgents
+                    return False
+
+            return removed_any
+
+        except Exception:
             return False
     
     async def is_installed(self) -> bool:

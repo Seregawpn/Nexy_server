@@ -2,12 +2,11 @@
 Интеграция для управления VoiceOver Ducking
 Тонкая обертка над VoiceOverController для интеграции с EventBus
 """
-import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
-from integration.core.base_integration import BaseIntegration
 from integration.core import selectors
+from integration.core.base_integration import BaseIntegration
 from modules.voiceover_control.core.controller import VoiceOverController, VoiceOverControlSettings
 
 logger = logging.getLogger(__name__)
@@ -94,7 +93,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             logger.error("Failed to stop VoiceOverDuckingIntegration: %s", exc)
             return False
 
-    async def handle_mode_change(self, event: Dict[str, Any]) -> None:
+    async def handle_mode_change(self, event: dict[str, Any]) -> None:
         """Обработка изменения режима приложения."""
         try:
             if not self.controller or not self._controller_ready:
@@ -117,7 +116,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
         except Exception as exc:
             await self.error_handler.handle(exc, category="runtime", severity="warning", context={"where": "handle_mode_change"})
 
-    async def handle_keyboard_press(self, event: Dict[str, Any]) -> None:
+    async def handle_keyboard_press(self, event: dict[str, Any]) -> None:
         """Обработка нажатия клавиши для ducking."""
         try:
             if not self.controller or not self._controller_ready:
@@ -133,7 +132,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
         except Exception as exc:
             await self.error_handler.handle(exc, category="runtime", severity="warning", context={"where": "handle_keyboard_press"})
 
-    async def handle_shutdown(self, event: Dict[str, Any]) -> None:
+    async def handle_shutdown(self, event: dict[str, Any]) -> None:
         """Обработка завершения работы приложения."""
         try:
             if self.controller:
@@ -170,7 +169,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             await self.error_handler.handle(exc, category="runtime", severity="warning", context={"where": "manual_release"})
             return False
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус интеграции."""
         return {
             "initialized": self._initialized,
@@ -180,7 +179,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             "enabled": self.config.get("enabled", True)
         }
 
-    async def _on_permissions_ready(self, event: Dict[str, Any]) -> None:
+    async def _on_permissions_ready(self, event: dict[str, Any]) -> None:
         """Когда получены критические разрешения, пробуем инициализировать VoiceOver."""
         if self._controller_ready:
             return
@@ -205,7 +204,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             self._controller_ready = False
             return False
 
-    async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
+    async def _on_first_run_completed(self, event: dict[str, Any]) -> None:
         """После завершения первого запуска пробуем инициализировать контроллер."""
         if self._controller_ready:
             return

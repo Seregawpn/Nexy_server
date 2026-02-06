@@ -6,12 +6,12 @@
 
 import logging
 import subprocess
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def send_message_via_applescript(phone_number: str, message_text: str, service: str = "iMessage") -> Dict[str, Any]:
+def send_message_via_applescript(phone_number: str, message_text: str, service: str = "iMessage") -> dict[str, Any]:
     """
     Отправляет сообщение через AppleScript.
     
@@ -78,7 +78,7 @@ def send_message_via_applescript(phone_number: str, message_text: str, service: 
         }
 
 
-def send_message_alternative(phone_number: str, message_text: str) -> Dict[str, Any]:
+def send_message_alternative(phone_number: str, message_text: str) -> dict[str, Any]:
     """
     Альтернативный способ отправки через AppleScript (более простой).
     
@@ -168,7 +168,7 @@ def send_message_alternative(phone_number: str, message_text: str) -> Dict[str, 
         }
 
 
-def send_message_to_contact(contact_name: str, message_text: str) -> Dict[str, Any]:
+def send_message_to_contact(contact_name: str, message_text: str) -> dict[str, Any]:
     """
     Отправляет сообщение контакту по имени.
     Находит контакт, получает номер, отправляет сообщение.

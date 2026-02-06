@@ -8,21 +8,20 @@ Uses error_matrix for normalization and counter logic.
 from __future__ import annotations
 
 import logging
-from typing import Literal
 
+from .error_matrix import (
+    DENY_CONFIRM_COUNT,
+    RESTART_SUSPECT_COUNT,
+    NormCategory,
+    normalize_error,
+)
+from .ledger import StepLedgerEntry
 from .types import (
-    PermissionId,
     OutcomeKind,
+    PermissionId,
     ProbeResult,
     StepOutcome,
 )
-from .error_matrix import (
-    NormCategory,
-    normalize_error,
-    DENY_CONFIRM_COUNT,
-    RESTART_SUSPECT_COUNT,
-)
-from .ledger import StepLedgerEntry
 
 logger = logging.getLogger(__name__)
 

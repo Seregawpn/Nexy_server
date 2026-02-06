@@ -1,17 +1,20 @@
+# ruff: noqa: I001
 """
 Основной класс для управления экземплярами приложения.
 """
 
-import os
 import fcntl
-import time
 import json
-import psutil
-import tempfile
-from typing import Optional
+import os
 from pathlib import Path
+import tempfile
+import time
 
-from .types import InstanceStatus, LockInfo, InstanceManagerConfig
+import psutil
+from typing import Any
+
+from .types import InstanceManagerConfig, InstanceStatus
+
 
 class InstanceManager:
     """Менеджер экземпляров приложения с защитой от дублирования."""
@@ -20,6 +23,7 @@ class InstanceManager:
         self.config = config
         self.lock_file = os.path.expanduser(config.lock_file)
         self.timeout_seconds = config.timeout_seconds
+        self.lock_grace_ms = config.lock_grace_ms
         self.pid_check = config.pid_check
         self.lock_fd = None
         
@@ -35,11 +39,11 @@ class InstanceManager:
             # Проверяем существующий lock
             if os.path.exists(self.lock_file):
                 # УСИЛЕННАЯ ПРОВЕРКА: PID + имя процесса
-                if await self._is_lock_valid():
+                if self._is_lock_valid():
                     return InstanceStatus.DUPLICATE
                 else:
                     # Lock невалиден - очищаем
-                    cleaned = await self._cleanup_invalid_lock()
+                    cleaned = self._cleanup_invalid_lock()
                     if not cleaned:
                         if retry_count < MAX_RETRIES and self._switch_to_fallback_lock():
                             return await self.check_single_instance(retry_count + 1)
@@ -75,11 +79,11 @@ class InstanceManager:
             
         except FileExistsError:
             # Файл уже существует - проверяем валидность
-            if await self._is_lock_valid():
+            if self._is_lock_valid():
                 return False  # Дублирование обнаружено
             else:
                 # Очищаем невалидный lock и пробуем снова
-                cleaned = await self._cleanup_invalid_lock()
+                cleaned = self._cleanup_invalid_lock()
                 if cleaned and retry_count < MAX_RETRIES:
                     return await self.acquire_lock(retry_count + 1)
                 if retry_count < MAX_RETRIES and self._switch_to_fallback_lock():
@@ -98,13 +102,30 @@ class InstanceManager:
     async def release_lock(self) -> bool:
         """Освобождение блокировки."""
         try:
+            current_pid = os.getpid()
             if self.lock_fd:
                 fcntl.flock(self.lock_fd, fcntl.LOCK_UN)
                 os.close(self.lock_fd)
                 self.lock_fd = None
-            
-            if os.path.exists(self.lock_file):
-                os.remove(self.lock_file)
+                if os.path.exists(self.lock_file):
+                    os.remove(self.lock_file)
+            else:
+                # Если блокировка не была захвачена этим процессом, не удаляем чужой lock.
+                if os.path.exists(self.lock_file):
+                    try:
+                        with open(self.lock_file, 'r') as f:
+                            lock_info = json.load(f)
+                        lock_pid = lock_info.get("pid")
+                        if lock_pid == current_pid:
+                            os.remove(self.lock_file)
+                        else:
+                            print(
+                                f"⚠️ Lock принадлежит другому процессу (pid={lock_pid}), "
+                                "удаление пропущено"
+                            )
+                    except Exception:
+                        # На ошибке чтения не удаляем lock, чтобы не снести чужой.
+                        print("⚠️ Не удалось прочитать lock-файл — удаление пропущено")
             
             print("✅ Блокировка освобождена")
             return True
@@ -113,25 +134,27 @@ class InstanceManager:
             print(f"❌ Ошибка освобождения блокировки: {e}")
             return False
     
-    async def _is_lock_valid(self) -> bool:
+    def _is_lock_valid(self) -> bool:
         """УСИЛЕННАЯ проверка валидности блокировки."""
         try:
             if not os.path.exists(self.lock_file):
                 return False
                 
-            # Проверяем время модификации файла
-            mod_time = os.path.getmtime(self.lock_file)
-            current_time = time.time()
-            
-            if (current_time - mod_time) > self.timeout_seconds:
-                return False  # Устарел по времени
-            
             # Проверяем содержимое файла
             try:
                 with open(self.lock_file, 'r') as f:
                     lock_info = json.load(f)
             except (json.JSONDecodeError, IOError):
-                return False  # Невалидный JSON
+                # Возможен race: файл создан, но еще не записан полностью.
+                # Если файл очень свежий — считаем lock валидным, чтобы не запускать второй экземпляр.
+                try:
+                    mod_time = os.path.getmtime(self.lock_file)
+                    current_time = time.time()
+                    if (current_time - mod_time) <= (self.lock_grace_ms / 1000.0):
+                        return True
+                except Exception:
+                    pass
+                return False  # Невалидный JSON после grace-паузы
             
             # Проверяем PID процесса
             if self.pid_check and 'pid' in lock_info:
@@ -153,8 +176,18 @@ class InstanceManager:
                     print(f"🔍 DEBUG: Checking lock PID {pid}: name={process_name}, cmdline={cmdline[:100]}")
                     
                     # Проверяем что это наш процесс
-                    # Варианты: Nexy.app, python3 main.py, Python debug_script.py, Python test_script.py
-                    is_nexy_app = process_name == "Nexy"
+                    # Варианты: Nexy.app (prod), python main.py (dev), debug/test scripts
+                    exe_path = ""
+                    try:
+                        exe_path = process.exe()
+                    except Exception:
+                        exe_path = ""
+
+                    is_nexy_app = (
+                        process_name == "Nexy"
+                        or "/Applications/Nexy.app/Contents/MacOS/Nexy" in cmdline
+                        or exe_path.endswith("/Nexy.app/Contents/MacOS/Nexy")
+                    )
                     is_python_main = process_name in ["python3", "Python"] and "main.py" in cmdline
                     is_debug_script = process_name in ["python3", "Python"] and "debug_lock_validation.py" in cmdline
                     is_test_script = process_name in ["python3", "Python"] and "test_duplicate_detection.py" in cmdline
@@ -164,23 +197,21 @@ class InstanceManager:
                     if not (is_nexy_app or is_python_main or is_debug_script or is_test_script):
                         print(f"⚠️ DEBUG: Process {pid} is not Nexy - lock invalid")
                         return False  # Не наш процесс
-                        
-                    # Дополнительная проверка через bundle_id или скрипты
-                    cmdline_check = ('com.nexy.assistant' in cmdline or 'main.py' in cmdline or 
-                                   'debug_lock_validation.py' in cmdline or 'test_duplicate_detection.py' in cmdline)
-                    
-                    print(f"🔍 DEBUG: cmdline_check={cmdline_check}")
-                    
-                    if not cmdline_check:
-                        print(f"⚠️ DEBUG: cmdline_check failed - lock invalid")
-                        return False  # Не наш процесс
-                    
+
                     print(f"✅ DEBUG: Lock valid - duplicate instance detected (PID {pid})")
                     return True  # Дублирование обнаружено
                         
                 except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
                     print(f"⚠️ DEBUG: Process {pid} not found or access denied: {e}")
-                    return False  # Процесс не существует
+                    # Процесс не существует. Оцениваем stale по времени.
+                    try:
+                        mod_time = os.path.getmtime(self.lock_file)
+                        current_time = time.time()
+                        if (current_time - mod_time) > self.timeout_seconds:
+                            return False  # Устарел по времени
+                    except Exception:
+                        return False
+                    return False
             
             return True
             
@@ -188,7 +219,7 @@ class InstanceManager:
             print(f"⚠️ Ошибка проверки валидности lock: {e}")
             return False
     
-    async def _cleanup_invalid_lock(self) -> bool:
+    def _cleanup_invalid_lock(self) -> bool:
         """Очистка невалидной блокировки."""
         try:
             if os.path.exists(self.lock_file):
@@ -205,6 +236,16 @@ class InstanceManager:
             return False
         except Exception as e:
             print(f"❌ Ошибка очистки невалидной блокировки: {e}")
+            return False
+
+    def is_other_instance_running(self) -> bool:
+        """Проверка, что активен другой экземпляр (не текущий PID)."""
+        try:
+            if not os.path.exists(self.lock_file):
+                return False
+            return self._is_lock_valid()
+        except Exception as e:
+            print(f"⚠️ Ошибка проверки другого экземпляра: {e}")
             return False
 
     def _switch_to_fallback_lock(self) -> bool:
@@ -226,7 +267,7 @@ class InstanceManager:
             print(f"❌ Не удалось переключить lock-файл на резервный путь: {e}")
             return False
     
-    async def get_lock_info(self) -> Optional[dict]:
+    async def get_lock_info(self) -> dict[str, Any] | None:
         """Получение информации о текущей блокировке."""
         try:
             if os.path.exists(self.lock_file):

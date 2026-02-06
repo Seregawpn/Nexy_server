@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 class SignalPattern(str, Enum):
@@ -42,7 +42,7 @@ class SignalRequest:
 
     pattern: SignalPattern
     kind: SignalKind
-    session_id: Optional[str] = None
+    session_id: str | None = None
     volume: float = 0.2  # 0.0..1.0 (service clamps)
     tone_hz: int = 880
     duration_ms: int = 120
@@ -83,6 +83,6 @@ class AudioSink(Protocol):
         channels: int = 1,
         gain: float = 1.0,
         priority: int = 10,
-        pattern: Optional[str] = None,
+        pattern: str | None = None,
     ) -> None:
         ...

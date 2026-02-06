@@ -3,8 +3,8 @@
 """
 
 import logging
-from typing import Optional, Dict, Any
-from ..core.types import InterruptEvent, InterruptType
+
+from ..core.types import InterruptEvent
 
 logger = logging.getLogger(__name__)
 

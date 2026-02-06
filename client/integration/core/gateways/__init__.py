@@ -8,7 +8,6 @@ from .common import (
     decide_update_launch,
     decide_with_backoff,
 )
-from .types import Decision
 from .permission_gateways import (
     PermissionRestartDecision,
     PermissionRestartGateway,
@@ -16,6 +15,8 @@ from .permission_gateways import (
     decide_permission_restart_schedule,
     decide_permission_restart_wait,
 )
+from .types import Decision
+from .whatsapp_gateways import decide_whatsapp_action
 
 __all__ = [
     "Decision",
@@ -30,4 +31,5 @@ __all__ = [
     "decide_permission_restart_wait",
     "PermissionRestartGateway",
     "PermissionRestartDecision",
+    "decide_whatsapp_action",
 ]

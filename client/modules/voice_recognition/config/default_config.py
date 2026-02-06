@@ -5,12 +5,14 @@
 Используйте get_config() для получения актуальной конфигурации.
 """
 
-from typing import Dict, Any
+from typing import Any
 
-from ..core.types import RecognitionConfig
 from config.unified_config_loader import unified_config
 
-def _get_base_config() -> Dict[str, Any]:
+from ..core.types import RecognitionConfig
+
+
+def _get_base_config() -> dict[str, Any]:
     """Получить базовые параметры из централизованной конфигурации"""
     try:
         raw_config = unified_config.get_stt_config()
@@ -24,7 +26,7 @@ def _get_base_config() -> Dict[str, Any]:
         'language': raw_config.get('language') or "en-US",
     }
 
-def _create_default_config(base: Dict[str, Any]) -> RecognitionConfig:
+def _create_default_config(base: dict[str, Any]) -> RecognitionConfig:
     return RecognitionConfig(
         language=base['language'],
         sample_rate=base['sample_rate'],
@@ -50,7 +52,7 @@ def _create_default_config(base: Dict[str, Any]) -> RecognitionConfig:
         enable_audio_recovery=False
     )
 
-def _create_high_quality_config(base: Dict[str, Any]) -> RecognitionConfig:
+def _create_high_quality_config(base: dict[str, Any]) -> RecognitionConfig:
     return RecognitionConfig(
         language=base['language'],
         sample_rate=base['sample_rate'],
@@ -76,7 +78,7 @@ def _create_high_quality_config(base: Dict[str, Any]) -> RecognitionConfig:
         enable_audio_recovery=False
     )
 
-def _create_fast_config(base: Dict[str, Any]) -> RecognitionConfig:
+def _create_fast_config(base: dict[str, Any]) -> RecognitionConfig:
     return RecognitionConfig(
         language=base['language'],
         sample_rate=base['sample_rate'],

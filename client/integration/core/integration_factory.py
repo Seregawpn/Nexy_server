@@ -6,45 +6,52 @@ This factory encapsulates the creation of all 22+ integrations with their depend
 """
 
 import logging
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Any
 
+from config.unified_config_loader import UnifiedConfigLoader
+from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-from config.unified_config_loader import UnifiedConfigLoader
+from integration.integrations.action_execution_integration import ActionExecutionIntegration
+from integration.integrations.autostart_manager_integration import AutostartManagerIntegration
+from integration.integrations.browser_progress_integration import BrowserProgressIntegration
+from integration.integrations.browser_use_integration import BrowserUseIntegration
+from integration.integrations.first_run_permissions_integration import (
+    FirstRunPermissionsIntegration,
+)
+from integration.integrations.grpc_client_integration import GrpcClientIntegration
+from integration.integrations.hardware_id_integration import HardwareIdIntegration
+from integration.integrations.input_processing_integration import (
+    InputProcessingIntegration,
+)
 
 # Import all integrations
 from integration.integrations.instance_manager_integration import InstanceManagerIntegration
-from integration.integrations.hardware_id_integration import HardwareIdIntegration
-from integration.integrations.tray_controller_integration import TrayControllerIntegration
-from integration.integrations.input_processing_integration import InputProcessingIntegration, InputProcessingConfig
-from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration, VoiceRecognitionConfig
-from integration.integrations.grpc_client_integration import GrpcClientIntegration
-from integration.integrations.speech_playback_integration import SpeechPlaybackIntegration
-from integration.integrations.network_manager_integration import NetworkManagerIntegration
-from integration.integrations.screenshot_capture_integration import ScreenshotCaptureIntegration
 from integration.integrations.interrupt_management_integration import (
     InterruptManagementIntegration,
-    InterruptManagementIntegrationConfig
+    InterruptManagementIntegrationConfig,
 )
 from integration.integrations.mode_management_integration import ModeManagementIntegration
-from integration.integrations.signal_integration import SignalIntegration, SignalsIntegrationConfig
-from integration.integrations.autostart_manager_integration import AutostartManagerIntegration
-from integration.integrations.welcome_message_integration import WelcomeMessageIntegration
-from integration.integrations.voiceover_ducking_integration import VoiceOverDuckingIntegration
-from integration.integrations.first_run_permissions_integration import FirstRunPermissionsIntegration
-from integration.integrations.updater_integration import UpdaterIntegration
-from integration.integrations.permission_restart_integration import PermissionRestartIntegration
-from integration.integrations.update_notification_integration import UpdateNotificationIntegration
-from integration.integrations.action_execution_integration import ActionExecutionIntegration
-from integration.integrations.browser_use_integration import BrowserUseIntegration
-from integration.integrations.browser_progress_integration import BrowserProgressIntegration
+from integration.integrations.network_manager_integration import NetworkManagerIntegration
 from integration.integrations.payment_integration import PaymentIntegration
+from integration.integrations.permission_restart_integration import PermissionRestartIntegration
+from integration.integrations.screenshot_capture_integration import ScreenshotCaptureIntegration
+from integration.integrations.signal_integration import SignalIntegration, SignalsIntegrationConfig
+from integration.integrations.speech_playback_integration import SpeechPlaybackIntegration
+from integration.integrations.tray_controller_integration import TrayControllerIntegration
+from integration.integrations.update_notification_integration import UpdateNotificationIntegration
+from integration.integrations.updater_integration import UpdaterIntegration
+from integration.integrations.voice_recognition_integration import (
+    VoiceRecognitionConfig,
+    VoiceRecognitionIntegration,
+)
+from integration.integrations.voiceover_ducking_integration import VoiceOverDuckingIntegration
+from integration.integrations.welcome_message_integration import WelcomeMessageIntegration
 from integration.integrations.whatsapp_integration import WhatsappIntegration
-from modules.signals.config.types import PatternConfig
 
 # Workflows
 from integration.workflows import ListeningWorkflow, ProcessingWorkflow
+from modules.signals.config.types import PatternConfig
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +63,52 @@ class IntegrationFactory:
     This separates integration creation (fabrication) from coordination (orchestration),
     making both easier to test and maintain.
     """
+    STARTUP_ORDER = [
+        # REQ-006: fixed order (core lifecycle)
+        "instance_manager",
+        "hardware_id",
+        "first_run_permissions",
+        "permission_restart",
+        "tray",
+        "mode_management",
+        "input",
+        "voice_recognition",
+        "network",
+        "interrupt",
+        "screenshot_capture",
+        "grpc",
+        "speech_playback",
+        "signals",
+        "updater",
+        "autostart_manager",
+        "welcome_message",
+        "voiceover_ducking",
+        # Extended integrations (non-REQ-006, keep after core order)
+        "action_execution",
+        "whatsapp",
+        "browser_use",
+        "browser_progress",
+        "update_notification",
+        "payment",
+    ]
+
+    PERMISSIONS_ONLY_ORDER = [
+        "instance_manager",
+        "hardware_id",
+        "first_run_permissions",
+        "permission_restart",
+        "tray",
+    ]
+
+    @classmethod
+    def get_startup_order(
+        cls,
+        *,
+        restrict_to_permissions: bool,
+        available: set[str],
+    ) -> list[str]:
+        order = cls.PERMISSIONS_ONLY_ORDER if restrict_to_permissions else cls.STARTUP_ORDER
+        return [name for name in order if name in available]
     
     def __init__(
         self,
@@ -69,15 +122,15 @@ class IntegrationFactory:
         self.error_handler = error_handler
         self.config = config
         
-    async def create_all(self) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    async def create_all(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """
         Create all integrations and workflows.
         
         Returns:
             tuple of (integrations dict, workflows dict)
         """
-        integrations: Dict[str, Any] = {}
-        workflows: Dict[str, Any] = {}
+        integrations: dict[str, Any] = {}
+        workflows: dict[str, Any] = {}
         
         config_data = self.config._load_config()
         
@@ -241,7 +294,7 @@ class IntegrationFactory:
 
         # === Browser Automation (F-2025-015) ===
         
-        browser_config = self.config.get_feature_config('browser')
+        browser_config = self.config.get_feature_config('browser_use')
         if browser_config.get('enabled', True):
             integrations['browser_use'] = BrowserUseIntegration(
                 event_bus=self.event_bus,
@@ -307,6 +360,7 @@ class IntegrationFactory:
             event_bus=self.event_bus,
             state_manager=self.state_manager,
             error_handler=self.error_handler,
+            grpc_integration=integrations.get('grpc'),
         )
 
         voiceover_config = config_data.get("accessibility", {}).get("voiceover_control", {})
@@ -317,9 +371,9 @@ class IntegrationFactory:
             config=voiceover_config
         )
 
-        # Payment System
+        # Payment system - config-driven feature (typically disabled in packaged builds)
         payment_config = self.config.get_feature_config('payment')
-        if payment_config.get('enabled', True):  # [F-2025-017] Default to True for payment
+        if payment_config.get('enabled', False):
             integrations['payment'] = PaymentIntegration(
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
@@ -327,11 +381,11 @@ class IntegrationFactory:
             )
             logger.info(f"✅ [F-2025-017] PaymentIntegration registered (enabled=True)")
         else:
-            logger.info(f"⚠️ [F-2025-017] PaymentIntegration disabled by config")
+            logger.info(f"⚠️ [F-2025-017] PaymentIntegration disabled (not packaged)")
 
-        # Whatsapp System
+        # WhatsApp system - config-driven feature (can be enabled per profile/environment)
         whatsapp_config = self.config.get_whatsapp_config()
-        if whatsapp_config.get('enabled', True):
+        if whatsapp_config.get('enabled', False):
             integrations['whatsapp'] = WhatsappIntegration(
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,
@@ -339,7 +393,7 @@ class IntegrationFactory:
             )
             logger.info(f"✅ [F-2025-019] WhatsappIntegration registered (enabled=True)")
         else:
-            logger.info(f"⚠️ [F-2025-019] WhatsappIntegration disabled by config")        
+            logger.info(f"⚠️ [F-2025-019] WhatsappIntegration disabled (not packaged)")        
 
 
         # First Run Permissions

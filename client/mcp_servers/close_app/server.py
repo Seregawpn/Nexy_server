@@ -4,13 +4,13 @@ MCP Server для закрытия приложений на macOS.
 """
 
 import logging
-import sys
 import subprocess
+import sys
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 logging.basicConfig(
     level=logging.INFO,

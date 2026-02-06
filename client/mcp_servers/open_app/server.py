@@ -4,14 +4,14 @@ MCP Server для открытия приложений на macOS.
 """
 
 import logging
-import sys
-import subprocess
 from pathlib import Path
+import subprocess
+import sys
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 logging.basicConfig(
     level=logging.INFO,

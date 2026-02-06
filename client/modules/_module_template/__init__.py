@@ -4,7 +4,7 @@ Brief description of what this module does.
 """
 
 from .core.logic import TemplateLogic
-from .core.types import TemplateConfig, TemplateState, TemplateEvent
+from .core.types import TemplateConfig, TemplateEvent, TemplateState
 
 __all__ = [
     'TemplateLogic',

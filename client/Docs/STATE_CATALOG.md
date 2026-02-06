@@ -12,17 +12,17 @@
 
 ### Оси / флаги (v0)
 
-- **permissions.mic**: `granted | denied | prompt_blocked`
-- **permissions.screen**: `granted | denied | prompt_blocked`
-- **permissions.accessibility**: `granted | denied | prompt_blocked`
-- **device.input**: `default_ok | busy`
-- **network**: `online | offline`
-- **firstRun**: `true | false`
+- **Permission.mic** (alias: `permissions.mic`): `granted | denied | prompt_blocked`
+- **Permission.screen** (alias: `permissions.screen`): `granted | denied | prompt_blocked`
+- **Permission.accessibility** (alias: `permissions.accessibility`): `granted | denied | prompt_blocked`
+- **Device.input** (alias: `device.input`): `default_ok | busy`
+- **Network** (alias: `network`): `online | offline`
+- **FirstRun** (alias: `firstRun`): `true | false`
 - **appMode**: `SLEEPING | LISTENING | PROCESSING`
 
 ### Карточки осей
 
-#### 1) permissions.mic
+#### 1) Permission.mic (alias: permissions.mic, perm.mic)
 - **владелец**: Permissions module owner
 - **пишет**: `permissions` интеграции (первый запуск + мониторинг)
 - **читает**: `voice_recognition`, `mode_management`, `permission_restart`, `listening_workflow`
@@ -30,7 +30,7 @@
 - **метрики**: `tcc_prompt_duration_ms`, `permission_flow_success`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `denied` → `abort_listen`
 
-#### 2) permissions.screen
+#### 2) Permission.screen (alias: permissions.screen, perm.screen)
 - **владелец**: Permissions module owner
 - **пишет**: `permissions` интеграции (первый запуск + мониторинг)
 - **читает**: `screenshot_capture`, `processing_workflow`, `permission_restart`
@@ -38,7 +38,7 @@
 - **метрики**: `tcc_prompt_duration_ms`, `permission_flow_success`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `denied` + `PROCESSING` → `abort_processing`
 
-#### 3) permissions.accessibility
+#### 3) Permission.accessibility (alias: permissions.accessibility, perm.accessibility)
 - **владелец**: Permissions module owner
 - **пишет**: `permissions` интеграции (первый запуск + мониторинг)
 - **читает**: `input_processing`, `voice_recognition`, `permission_restart`
@@ -46,7 +46,7 @@
 - **метрики**: `tcc_prompt_duration_ms`, `permission_flow_success`
 - **правила в interaction_matrix.yaml**: критические для `input_processing`
 
-#### 4) device.input
+#### 4) Device.input (alias: device.input)
 - **владелец**: InputProcessing module owner
 - **пишет**: `input_processing`
 - **читает**: `voice_recognition`, `listening_workflow`
@@ -54,7 +54,7 @@
 - **метрики**: `device_busy_rate`
 - **правила в interaction_matrix.yaml**: `graceful` при `busy` → `retry_backoff`
 
-#### 5) network
+#### 5) Network (alias: network, network.offline, network.online)
 - **владелец**: NetworkManager module owner
 - **пишет**: `network_manager`
 - **читает**: `grpc_client`, `voice_recognition`, `processing_workflow`
@@ -62,15 +62,16 @@
 - **метрики**: `network_online_ratio`
 - **правила в interaction_matrix.yaml**: `graceful` при `offline` → `degrade_offline`
 
-#### 6) firstRun
+#### 6) FirstRun (alias: firstRun, app.first_run)
 - **владелец**: Tech Lead клиента
-- **пишет**: `first_run_permissions_integration` (флаг `permissions_first_run_completed.flag`)
+- **пишет**: `permissions` V2 orchestrator (ledger phase)
 - **читает**: все интеграции, влияющие на UX первого запуска (`listening_workflow`, `voice_recognition`)
-- **источник истины**: локальное хранилище состояния приложения (`~/Library/Application Support/Nexy/permissions_first_run_completed.flag`)
+- **источник истины**: V2 ledger (`~/Library/Application Support/Nexy/permission_ledger.json`)
+- **кеш**: `permissions_first_run_completed.flag` (не используется для принятия решения о запуске wizard)
 - **метрики**: `first_run_completion_time_ms`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `true` → блокирует активацию (abort listening)
 
-#### 7) appMode
+#### 7) appMode (alias: app.mode)
 - **владелец**: ModeManagement module owner
 - **пишет**: `mode_management` (единственный источник изменения режима)
 - **читает**: все интеграции, `permission_restart` (ожидание `SLEEPING` для перезапуска)
@@ -80,18 +81,19 @@
 
 #### 8) permissions.restart_pending **[НОВАЯ ОСЬ - Phase 2]**
 - **владелец**: Tech Lead клиента
-- **пишет**: `first_run_permissions_integration` (через флаг `restart_completed.flag`)
+- **пишет**: `permissions` V2 orchestrator (ledger phase)
 - **читает**: `simple_module_coordinator`, `voice_recognition`, `permission_restart`
-- **источник истины**: persistent file flag `~/Library/Application Support/Nexy/restart_completed.flag`
+- **источник истины**: V2 ledger phase (`RESTART_PENDING`, `POST_RESTART_VERIFY`)
+- **fallback**: `~/Library/Application Support/Nexy/restart_completed.flag` (legacy)
+- **derived predicates**: `app.restart_pending`, `app.first_run_restart_pending`
 - **метрики**: `restart_pending_duration_ms`, `restart_completed_flag_orphan_rate`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `true` + `firstRun: true` → блокирует запуск остальных интеграций
 - **жизненный цикл**:
-  1. `start()` устанавливает `restart_completed.flag`
-  2. Публикуется `permissions.first_run_restart_pending` (без `completed`)
-  3. Coordinator проверяет флаг и триггерит перезапуск
-  4. Новый процесс в `initialize()` находит флаг
-  5. Публикуется `permissions.first_run_completed`
-  6. Флаг удаляется
+  1. V2 orchestrator переводит ledger в `RESTART_PENDING`
+  2. Публикуется `permissions.first_run_restart_pending`
+  3. Coordinator триггерит перезапуск
+  4. Новый процесс в `initialize()` читает ledger (`POST_RESTART_VERIFY`)
+  5. После верификации — `COMPLETED`, `permissions.first_run_completed`
 - **связанные документы**: `Docs/ADRs/ADR_2025-01-XX_avfoundation_audio_migration.md`
 
 #### 9) process.lifecycle **[НОВАЯ ОСЬ - Phase 2]**
@@ -119,6 +121,7 @@
   - `graceful` при `update_in_progress=true` → блокирует permission restart (через gateway `decide_permission_restart_safety()`)
   - `hard_stop` при `update_in_progress=true` + `appMode=LISTENING|PROCESSING` → блокирует запуск обновления (через `UpdaterIntegration._can_update()`)
 - **gateway**: `integration/core/gateways/permission_gateways.py::decide_permission_restart_safety()` — проверяет `snapshot.update_in_progress` и возвращает `Decision.ABORT` при `true` (graceful блокировка)
+- **predicate alias**: `update.in_progress`
 - **тесты**: обязательны ≥1 happy (update_in_progress=false) + 1 негативный (update_in_progress=true) с проверкой decision-логов в каноническом формате
 - **события**: `updater.in_progress.changed` публикуется при изменении статуса (`{active: bool, trigger: str}`)
 - **shadow-mode**: параллельно с записью `state_data` публикуются события для постепенной миграции на selectors
@@ -150,6 +153,7 @@
 - **пишет**: `permissions` интеграции
 - **читает**: `messages`, `simple_module_coordinator` (через gateway)
 - **источник истины**: TCC (macOS) - ручная проверка доступа к файлам (`chat.db`)
+- **статус**: planned (нет в Snapshot/selectors/predicates)
 - **метрики**: `fda_prompt_success_rate`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `denied` → блокирует функции сообщений
 
@@ -158,6 +162,7 @@
 - **пишет**: `payment_integration`
 - **читает**: `processing_workflow`, `server_gateway`
 - **источник истины**: `ApplicationStateManager` (синхронизируется с сервером)
+- **статус**: planned (нет в Snapshot/selectors/predicates)
 - **метрики**: `subscription_check_latency_ms`
 - **состояния**: `active | inactive | trial | expired | payment_failed`
 - **правила в interaction_matrix.yaml**: `degrade` при `active=false` → ограничение функционала
@@ -167,6 +172,7 @@
 - **пишет**: `browser_progress_integration`
 - **читает**: `processing_workflow`, `browser_use_integration`
 - **источник истины**: `ApplicationStateManager`
+- **статус**: planned (нет в Snapshot/selectors/predicates)
 - **состояния**: `idle | running | waiting_user`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `running` → блокирует новые голосовые команды (или ставит в очередь)
     
@@ -288,4 +294,3 @@ decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=
 5. ✅ **Owner оси/артефакта уведомлён и одобрил изменения**
 
 **Ответственный за документ**: Tech Lead клиента (единый владелец).
-

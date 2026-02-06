@@ -4,13 +4,14 @@ ProcessingWorkflow - Управление режимом PROCESSING
 """
 
 import asyncio
-import logging
-from typing import Dict, Any, Optional, Set
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
+import logging
+from typing import Any
 
-from .base_workflow import BaseWorkflow, WorkflowState, AppMode
 from integration.core.event_bus import EventPriority
+
+from .base_workflow import AppMode, BaseWorkflow, WorkflowState  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -40,18 +41,18 @@ class ProcessingWorkflow(BaseWorkflow):
         super().__init__(event_bus, "ProcessingWorkflow")
         
         # Конфигурация
-        self.stage_timeout = 30.0  # секунд на каждый этап
-        self.total_timeout = 300.0  # секунд общий таймаут (5 минут)
+        self.stage_timeout = None  # ОТКЛЮЧЕНО: ждём ответа без ограничения времени на этап
+        self.total_timeout = 300.0  # секунд общий таймаут (5 минут) - защита от зависания
         
         # Состояние цепочки
         self.current_stage = ProcessingStage.STARTING
-        self.stage_start_time: Optional[datetime] = None
-        self.processing_start_time: Optional[datetime] = None
-        self.completed_stages: Set[ProcessingStage] = set()
+        self.stage_start_time: datetime | None = None
+        self.processing_start_time: datetime | None = None
+        self.completed_stages: set[ProcessingStage] = set()
         
         # Мониторинг
-        self.stage_timeout_task: Optional[asyncio.Task] = None
-        self.total_timeout_task: Optional[asyncio.Task] = None
+        self.stage_timeout_task: asyncio.Task[Any] | None = None
+        self.total_timeout_task: asyncio.Task[Any] | None = None
         
         # Флаги завершения
         self.screenshot_captured = False
@@ -223,7 +224,7 @@ class ProcessingWorkflow(BaseWorkflow):
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки mode_changed - {e}")
     
-    async def _start_processing_chain(self, session_id: Optional[str]):
+    async def _start_processing_chain(self, session_id: str | None):
         """Начало координации цепочки PROCESSING"""
         try:
             logger.info(f"⚙️ ProcessingWorkflow: НАЧАЛО цепочки обработки, session_id={session_id}")
@@ -279,11 +280,12 @@ class ProcessingWorkflow(BaseWorkflow):
             if self.stage_timeout_task and not self.stage_timeout_task.done():
                 self.stage_timeout_task.cancel()
             
-            # Запускаем новый stage timeout
-            self.stage_timeout_task = self._create_task(
-                self._stage_timeout_monitor(new_stage), 
-                f"stage_timeout_{new_stage.value}"
-            )
+            # Запускаем новый stage timeout (если включен)
+            if self.stage_timeout is not None:
+                self.stage_timeout_task = self._create_task(
+                    self._stage_timeout_monitor(new_stage), 
+                    f"stage_timeout_{new_stage.value}"
+                )
             
             # Отмечаем предыдущий этап как завершенный
             if old_stage != ProcessingStage.STARTING:
@@ -706,6 +708,8 @@ class ProcessingWorkflow(BaseWorkflow):
     async def _stage_timeout_monitor(self, stage: ProcessingStage):
         """Мониторинг таймаута этапа"""
         try:
+            if self.stage_timeout is None:
+                return
             await asyncio.sleep(self.stage_timeout)
             
             if self.current_stage == stage and not self.interrupted:
@@ -760,19 +764,19 @@ class ProcessingWorkflow(BaseWorkflow):
             
         return True
     
-    def get_processing_duration(self) -> Optional[float]:
+    def get_processing_duration(self) -> float | None:
         """Получение длительности обработки"""
         if self.processing_start_time:
             return (datetime.now() - self.processing_start_time).total_seconds()
         return None
     
-    def get_stage_duration(self) -> Optional[float]:
+    def get_stage_duration(self) -> float | None:
         """Получение длительности текущего этапа"""
         if self.stage_start_time:
             return (datetime.now() - self.stage_start_time).total_seconds()
         return None
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Расширенный статус workflow'а"""
         base_status = super().get_status()
         base_status.update({

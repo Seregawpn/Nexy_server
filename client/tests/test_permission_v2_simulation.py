@@ -19,35 +19,32 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
+from dataclasses import dataclass
 import logging
 import os
 import sys
-import time
 import tempfile
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+import time
+from typing import Literal
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.permissions.v2 import (
-    PermissionId,
+    LedgerStore,
     PermissionCriticality,
-    StepMode,
-    StepConfig,
-    StepTiming,
-    RestartConfig,
-    ProbeResult,
-    ProbeEvidence,
-    StepOutcome,
-    OutcomeKind,
+    PermissionId,
     Phase,
+    ProbeEvidence,
+    ProbeResult,
+    RestartConfig,
+    StepConfig,
+    StepMode,
+    StepTiming,
     UIEvent,
     UIEventType,
-    LedgerStore,
-    SettingsNavigator,
     get_classifier,
 )
 from modules.permissions.v2.orchestrator import PermissionOrchestrator
@@ -159,7 +156,7 @@ class MockSettingsNavigator:
 # Test Scenarios
 # ============================================================
 
-def create_scenario_all_pass() -> Dict[PermissionId, MockProberConfig]:
+def create_scenario_all_pass() -> dict[PermissionId, MockProberConfig]:
     """All permissions pass quickly."""
     return {
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
@@ -171,7 +168,7 @@ def create_scenario_all_pass() -> Dict[PermissionId, MockProberConfig]:
     }
 
 
-def create_scenario_input_monitoring_needs_restart() -> Dict[PermissionId, MockProberConfig]:
+def create_scenario_input_monitoring_needs_restart() -> dict[PermissionId, MockProberConfig]:
     """Input Monitoring needs restart, others pass."""
     return {
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
@@ -187,7 +184,7 @@ def create_scenario_input_monitoring_needs_restart() -> Dict[PermissionId, MockP
     }
 
 
-def create_scenario_hard_fail() -> Dict[PermissionId, MockProberConfig]:
+def create_scenario_hard_fail() -> dict[PermissionId, MockProberConfig]:
     """Microphone (hard) fails, should enter limited mode."""
     return {
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, should_fail=True),
@@ -199,7 +196,7 @@ def create_scenario_hard_fail() -> Dict[PermissionId, MockProberConfig]:
     }
 
 
-def create_scenario_feature_fail() -> Dict[PermissionId, MockProberConfig]:
+def create_scenario_feature_fail() -> dict[PermissionId, MockProberConfig]:
     """Contacts (feature) fails, should still complete."""
     return {
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
@@ -227,7 +224,7 @@ class EventCollector:
     """Collects UI events for verification."""
     
     def __init__(self):
-        self.events: List[UIEvent] = []
+        self.events: list[UIEvent] = []
     
     def emit(self, event: UIEvent) -> None:
         self.events.append(event)
@@ -236,11 +233,11 @@ class EventCollector:
     def has_event(self, event_type: UIEventType) -> bool:
         return any(e.type == event_type for e in self.events)
     
-    def get_events(self, event_type: UIEventType) -> List[UIEvent]:
+    def get_events(self, event_type: UIEventType) -> list[UIEvent]:
         return [e for e in self.events if e.type == event_type]
 
 
-def create_fast_step_configs() -> Dict[PermissionId, StepConfig]:
+def create_fast_step_configs() -> dict[PermissionId, StepConfig]:
     """Create step configs with fast timing for testing."""
     order = [
         PermissionId.MICROPHONE,

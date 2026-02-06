@@ -2,10 +2,9 @@
 Типы данных для модуля gRPC клиента
 """
 
-from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Callable
-from datetime import datetime
+from enum import Enum
+from typing import Callable
 
 
 class ConnectionState(Enum):
@@ -32,7 +31,7 @@ class ServerConfig:
     port: int
     use_ssl: bool = False
     ssl_verify: bool = True  # Проверка SSL сертификата (False для self-signed)
-    grpc_path: Optional[str] = None  # Путь для Nginx reverse proxy (например /grpc)
+    grpc_path: str | None = None  # Путь для Nginx reverse proxy (например /grpc)
     use_http2: bool = True  # Использовать HTTP/2 (ALPN h2)
     timeout: int = 30
     retry_attempts: int = 3
@@ -55,8 +54,8 @@ class ConnectionMetrics:
     successful_requests: int = 0
     failed_requests: int = 0
     average_response_time: float = 0.0
-    last_connection_time: Optional[float] = None
-    last_error: Optional[str] = None
+    last_connection_time: float | None = None
+    last_error: str | None = None
 
 
 @dataclass

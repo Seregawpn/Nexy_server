@@ -12,12 +12,12 @@ ModeManagementIntegration — центральная точка управлен
 
 import asyncio
 import logging
-from typing import Optional, Dict, Any
+from typing import Any
 
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.event_types import EventTypes
-from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core import selectors
+from integration.core.state_manager import ApplicationStateManager
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -30,12 +30,18 @@ except Exception:
 # Централизованный контроллер режимов
 try:
     from mode_management import (  # type: ignore[reportMissingImports]
-        ModeController, ModeTransition, ModeTransitionType, ModeConfig,
+        ModeConfig,
+        ModeController,
+        ModeTransition,
+        ModeTransitionType,
     )
 except Exception:
     # Fallback to explicit modules path when running from repo
     from modules.mode_management import (
-        ModeController, ModeTransition, ModeTransitionType, ModeConfig,
+        ModeConfig,
+        ModeController,
+        ModeTransition,
+        ModeTransitionType,
     )
 
 logger = logging.getLogger(__name__)
@@ -62,14 +68,14 @@ class ModeManagementIntegration:
 
         # Управление таймаутом PROCESSING (0.0 = отключено по требованиям)
         self._processing_timeout_sec = 0.0
-        self._processing_timeout_task: Optional[asyncio.Task] = None
+        self._processing_timeout_task: asyncio.Task[Any] | None = None
 
         # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager
         # Не храним дублирующие переменные здесь
 
         # Таймаут LISTENING (0.0 = отключено по требованиям)
         self._listening_timeout_sec = 0.0
-        self._listening_timeout_task: Optional[asyncio.Task] = None
+        self._listening_timeout_task: asyncio.Task[Any] | None = None
 
         # Приоритеты источников (чем больше — тем важнее)
         self._priorities = {
@@ -97,13 +103,15 @@ class ModeManagementIntegration:
             
             # 🆕 Прямой переход для приветствия: SLEEPING -> PROCESSING
             self.controller.register_transition(ModeTransition(AppMode.SLEEPING, AppMode.PROCESSING, ModeTransitionType.MANUAL))
+            # 🆕 PTT override: разрешаем LISTENING из PROCESSING
+            self.controller.register_transition(ModeTransition(AppMode.PROCESSING, AppMode.LISTENING, ModeTransitionType.MANUAL))
             # 🆕 Позволяем отменить слушание и вернуться в сон вручную
             self.controller.register_transition(ModeTransition(AppMode.LISTENING, AppMode.SLEEPING, ModeTransitionType.MANUAL))
 
             # Мост: при смене режима контроллером — обновляем StateManager,
             # который централизованно публикует события (app.mode_changed/app.state_changed)
             # КРИТИЧНО: Храним session_id для передачи в set_mode через callback
-            self._pending_session_id_for_callback: Optional[str] = None
+            self._pending_session_id_for_callback: str | None = None
             
             async def _on_controller_mode_changed(event):
                 try:
@@ -202,7 +210,7 @@ class ModeManagementIntegration:
             session_id = data.get("session_id")
 
             # Фильтрация по сессии (в PROCESSING принимаем только текущую либо interrupt)
-            current_mode = self.state_manager.get_current_mode()
+            current_mode = selectors.get_current_mode(self.state_manager)
             logger.info(f"🔄 MODE_REQUEST: current_mode={current_mode}, target={target}, source={source}")
 
             # КРИТИЧНО: Для PROCESSING разрешаем повторные запросы с новым session_id
@@ -210,7 +218,7 @@ class ModeManagementIntegration:
             # еще обрабатывает предыдущий запрос
             if target == AppMode.PROCESSING and current_mode == AppMode.PROCESSING:
                 # Проверяем, это новый запрос с другим session_id?
-                current_session_id = self.state_manager.get_current_session_id()
+                current_session_id = selectors.get_current_session_id(self.state_manager)
                 if session_id is not None and current_session_id is not None:
                     if session_id != current_session_id:
                         # КРИТИЧНО: Просто вызываем set_mode() с новым session_id
@@ -238,7 +246,7 @@ class ModeManagementIntegration:
                 return
             
             if current_mode == AppMode.PROCESSING and source != 'interrupt':
-                current_session_id = self.state_manager.get_current_session_id()
+                current_session_id = selectors.get_current_session_id(self.state_manager)
                 logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={current_session_id}, request={session_id})")
                 if current_session_id is not None and session_id is not None:
                     if session_id != current_session_id:
@@ -346,9 +354,31 @@ class ModeManagementIntegration:
 
     async def _bridge_playback_done(self, event):
         try:
+            data = (event or {}).get("data", {}) or {}
+            session_id = data.get("session_id")
+            current_mode = selectors.get_current_mode(self.state_manager)
+            current_session_id = selectors.get_current_session_id(self.state_manager)
+
+            # Guard: не возвращаем SLEEPING, если не в PROCESSING или это не текущая сессия
+            if current_mode != AppMode.PROCESSING:
+                logger.debug(
+                    "MODE_REQUEST skipped (playback done): current_mode=%s, session_id=%s",
+                    current_mode,
+                    session_id,
+                )
+                return
+            if session_id is None or current_session_id is None or session_id != current_session_id:
+                logger.debug(
+                    "MODE_REQUEST skipped (playback done): session mismatch event=%s current=%s",
+                    session_id,
+                    current_session_id,
+                )
+                return
+
             await self.event_bus.publish("mode.request", {
                 "target": AppMode.SLEEPING,
-                "source": "playback"
+                "source": "playback",
+                "session_id": session_id,
             })
         except Exception:
             pass
@@ -364,7 +394,7 @@ class ModeManagementIntegration:
             pass
 
     # ---------------- Internals ----------------
-    async def _apply_mode(self, target: AppMode, *, source: str, session_id: Optional[str] = None):
+    async def _apply_mode(self, target: AppMode, *, source: str, session_id: str | None = None):
         try:
             # КРИТИЧНО: Сохраняем session_id для передачи в set_mode через callback
             self._pending_session_id_for_callback = session_id
@@ -379,7 +409,7 @@ class ModeManagementIntegration:
     async def _processing_timeout_guard(self):
         try:
             await asyncio.sleep(self._processing_timeout_sec)
-            if self.state_manager.get_current_mode() == AppMode.PROCESSING:
+            if selectors.get_current_mode(self.state_manager) == AppMode.PROCESSING:
                 logger.warning("PROCESSING timeout — forcing SLEEPING via controller")
                 try:
                     await self.controller.switch_mode(AppMode.SLEEPING)
@@ -398,18 +428,18 @@ class ModeManagementIntegration:
         """Автовозврат в SLEEPING, если LISTENING затянулся без RELEASE/STOP."""
         try:
             await asyncio.sleep(self._listening_timeout_sec)
-            if self.state_manager.get_current_mode() == AppMode.LISTENING:
+            if selectors.get_current_mode(self.state_manager) == AppMode.LISTENING:
                 await self._apply_mode(AppMode.SLEEPING, source="mode_management")
         except asyncio.CancelledError:
             return
         except Exception:
             pass
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "initialized": self._initialized,
             "running": self._running,
             "processing_timeout_sec": self._processing_timeout_sec,
             "listening_timeout_sec": self._listening_timeout_sec,
-            "active_session_id": self.state_manager.get_current_session_id(),
+            "active_session_id": selectors.get_current_session_id(self.state_manager),
         }

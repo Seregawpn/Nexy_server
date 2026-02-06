@@ -3,9 +3,10 @@
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Any
 
-from ..core.types import InterruptConfig, InterruptType, InterruptPriority
+from ..core.types import InterruptConfig, InterruptPriority, InterruptType
+
 
 @dataclass
 class InterruptModuleConfig:
@@ -23,7 +24,7 @@ class InterruptModuleConfig:
     full_reset_timeout: float = 15.0
     
     # Приоритеты по умолчанию
-    default_priorities: Optional[Dict[InterruptType, InterruptPriority]] = None
+    default_priorities: dict[InterruptType, InterruptPriority] | None = None
     
     def __post_init__(self):
         if self.default_priorities is None:
@@ -36,7 +37,7 @@ class InterruptModuleConfig:
             }
     
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'InterruptModuleConfig':
+    def from_dict(cls, config_dict: dict[str, Any]) -> 'InterruptModuleConfig':
         """Создает конфигурацию из словаря"""
         coordinator_config = InterruptConfig(**config_dict.get('coordinator', {}))
         
@@ -52,7 +53,7 @@ class InterruptModuleConfig:
             full_reset_timeout=config_dict.get('full_reset_timeout', 15.0),
         )
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Преобразует конфигурацию в словарь"""
         return {
             'coordinator': {

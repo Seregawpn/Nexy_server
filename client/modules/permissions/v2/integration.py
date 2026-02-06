@@ -8,26 +8,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import Any, cast
 
 from integration.core.event_bus import EventBus
 
-from .types import PermissionId, StepConfig, Phase, StepState
-from .orchestrator import PermissionOrchestrator, UIEvent, UIEventType, PermissionClassifier
-from .ledger import LedgerStore
-from .settings_nav import SettingsNavigator
 from .classifiers import get_classifier
 from .config_loader import load_v2_config
+from .ledger import LedgerStore
+from .orchestrator import PermissionClassifier, PermissionOrchestrator, UIEvent, UIEventType
 from .probers import (
     AccessibilityProber,
+    ContactsProber,
+    FullDiskAccessProber,
     InputMonitoringProber,
     MicrophoneProber,
     ScreenCaptureProber,
-    FullDiskAccessProber,
-    ContactsProber,
 )
+from .settings_nav import SettingsNavigator
+from .types import PermissionId, Phase, StepConfig, StepState
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +44,9 @@ class PermissionOrchestratorIntegration:
         self,
         *,
         event_bus: EventBus,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         ledger_path: str,
-        restart_handler: Optional[Any] = None,
+        restart_handler: Any | None = None,
         is_gui_process: bool = True,
         advance_on_timeout: bool = False,
     ):
@@ -59,17 +57,21 @@ class PermissionOrchestratorIntegration:
         self.is_gui_process = is_gui_process
         self._advance_on_timeout = advance_on_timeout
         
-        self._orchestrator: Optional[PermissionOrchestrator] = None
-        self._task: Optional[asyncio.Task] = None
+        self._orchestrator: PermissionOrchestrator | None = None
+        self._task: asyncio.Task[Any] | None = None
         self._enabled = False
-        self._ledger_store: Optional[LedgerStore] = None
-        self._hard_permissions: List[PermissionId] = []
+        self._ledger_store: LedgerStore | None = None
+        self._hard_permissions: list[PermissionId] = []
         
         # Completion tracking for blocking start
         self._completion_event: asyncio.Event = asyncio.Event()
         self._completed = False
         self._all_hard_granted = False
-        self._missing_hard: List[str] = []
+        self._missing_hard: list[str] = []
+        self._completion_signaled = False
+        
+        # Track if ready_to_greet was already published (prevents duplicates in advance_on_timeout mode)
+        self._ready_published = False
     
     async def initialize(self) -> bool:
         """Initialize the V2 integration."""
@@ -90,7 +92,7 @@ class PermissionOrchestratorIntegration:
         probers = self._create_probers(step_configs)
         
         # Create classifiers
-        classifiers: Dict[PermissionId, PermissionClassifier] = {
+        classifiers: dict[PermissionId, PermissionClassifier] = {
             perm: cast(PermissionClassifier, get_classifier(perm)) 
             for perm in order
         }
@@ -125,7 +127,7 @@ class PermissionOrchestratorIntegration:
         logger.info("[V2_INTEGRATION] Initialized with %d permissions", len(order))
         return True
 
-    def _load_ledger(self) -> Optional[Any]:
+    def _load_ledger(self) -> Any | None:
         if not self._ledger_store:
             return None
         try:
@@ -134,7 +136,7 @@ class PermissionOrchestratorIntegration:
             logger.warning("[V2_INTEGRATION] Failed to load ledger: %s", e)
             return None
 
-    def is_first_run_complete(self) -> Optional[bool]:
+    def is_first_run_complete(self) -> bool | None:
         """Return True if ledger indicates completed/limited, False if in progress, None if unknown."""
         ledger = self._load_ledger()
         if not ledger:
@@ -145,14 +147,14 @@ class PermissionOrchestratorIntegration:
             return False
         return None
 
-    def hard_permissions_summary(self) -> tuple[bool, List[str]]:
+    def hard_permissions_summary(self) -> tuple[bool, list[str]]:
         """Return (all_hard_granted, missing_hard)."""
         ledger = self._load_ledger()
         if not ledger:
             return False, []
         if not self._hard_permissions:
             return True, []
-        missing: List[str] = []
+        missing: list[str] = []
         for perm in self._hard_permissions:
             entry = ledger.steps.get(perm)
             if not entry:
@@ -162,7 +164,7 @@ class PermissionOrchestratorIntegration:
                 missing.append(perm.value)
         return (len(missing) == 0), missing
     
-    def _create_probers(self, step_configs: Dict[PermissionId, StepConfig]) -> Dict[PermissionId, Any]:
+    def _create_probers(self, step_configs: dict[PermissionId, StepConfig]) -> dict[PermissionId, Any]:
         """Create prober instances for each permission."""
         prober_classes = {
             PermissionId.ACCESSIBILITY: AccessibilityProber,
@@ -198,6 +200,14 @@ class PermissionOrchestratorIntegration:
         except Exception as e:
             logger.error("[V2_INTEGRATION] Failed to emit V2 event: %s", e)
 
+        # CRITICAL FIX: Unblock startup if restart is scheduled
+        if event.type == UIEventType.RESTART_SCHEDULED:
+             if not self._completion_signaled:
+                 logger.info("[V2_INTEGRATION] Restart scheduled - signaling completion to unblock startup waiters")
+                 self._completed = True
+                 self._completion_event.set()
+                 self._completion_signaled = True
+
         # 1.1 Notification logic removed per user request
 
 
@@ -216,7 +226,7 @@ class PermissionOrchestratorIntegration:
 
     def _map_to_legacy_event(
         self, event: UIEvent
-    ) -> Optional[tuple[tuple[str, Dict[str, Any]], bool]]:
+    ) -> tuple[tuple[str, dict[str, Any]], bool] | None:
         """Map V2 UI events to legacy system events.
         Returns (legacy_name, legacy_payload), publish_ready_to_greet).
         """
@@ -256,16 +266,17 @@ class PermissionOrchestratorIntegration:
             }), True
 
         elif event.type == UIEventType.RESTART_SCHEDULED:
-            return ("permissions.first_run_restart_pending", {
-                "session_id": "v2_session",
-                "source": "v2_integration",
-                "note": "Restart scheduled by V2",
-                "permissions": []
-            }), False
+            # V2 orchestrator is the single owner of restart.
+            # Do not emit legacy restart_pending to avoid duplicate restarts.
+            
+            # CRITICAL FIX: Treat RESTART_SCHEDULED as "first-run outcome determined" for blocking startup.
+            # We don't emit "completed" here to avoid confusing the UI, 
+            # but we allow the integration to unblock waiters.
+            return None
 
         return None
 
-    def _summarize_hard_permissions(self) -> tuple[bool, List[str]]:
+    def _summarize_hard_permissions(self) -> tuple[bool, list[str]]:
         """Build summary for legacy events."""
         if not self._orchestrator or not self._orchestrator.ledger:
             return False, []
@@ -324,6 +335,7 @@ class PermissionOrchestratorIntegration:
             # Signal completion regardless of outcome
             self._completed = True
             self._completion_event.set()
+            self._completion_signaled = True
             logger.info("[V2_INTEGRATION] Pipeline completed, signaling completion event")
     
     async def wait_for_completion(self, timeout: float = 300.0) -> bool:
@@ -387,6 +399,9 @@ class PermissionOrchestratorIntegration:
                 "permissions": summary,
                 "v2": True
             })
+            
+            # Mark as published to prevent duplicates in advance_on_timeout mode
+            self._ready_published = True
             
             logger.info("✅ [V2_INTEGRATION] system.ready_to_greet published successfully")
         except Exception as e:

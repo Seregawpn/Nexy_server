@@ -3,11 +3,11 @@
 Debug script to inspect current WhatsApp session.
 Lists recent chats to verify account identity.
 """
-import sys
-import os
 import asyncio
-import logging
 import json
+import logging
+import os
+import sys
 
 # Setup path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +18,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DebugWhatsApp")
 
 # Correct imports relative to client_dir
-from modules.whatsapp import WhatsappServiceManager, WhatsappMCPClient, WhatsappConfig
+from modules.whatsapp import WhatsappConfig, WhatsappMCPClient, WhatsappServiceManager
+
 # Assuming config is in client/config
 # But verify unified_config_loader location. 
 # If it's in client/config/unified_config_loader.py, then 'from config.unified_config_loader' works

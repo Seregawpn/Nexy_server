@@ -3,13 +3,14 @@
 Упрощенная версия - только Hardware UUID
 """
 
-import json
-import os
-import logging
-from pathlib import Path
-from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
-from ..core.types import HardwareIdResult, HardwareIdStatus, CacheInfo, HardwareIdCacheError
+import json
+import logging
+import os
+from pathlib import Path
+from typing import Any
+
+from ..core.types import CacheInfo, HardwareIdResult, HardwareIdStatus
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class HardwareIdCache:
         # Создаем директорию для кэша
         self._cache_dir.mkdir(parents=True, exist_ok=True)
     
-    def get_cached_uuid(self) -> Optional[HardwareIdResult]:
+    def get_cached_uuid(self) -> HardwareIdResult | None:
         """
         Получает Hardware UUID из кэша
         
@@ -66,7 +67,7 @@ class HardwareIdCache:
             logger.error(f"❌ Ошибка загрузки кэша: {e}")
             return None
     
-    def save_uuid_to_cache(self, uuid: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+    def save_uuid_to_cache(self, uuid: str, metadata: dict[str, Any] | None = None) -> bool:
         """
         Сохраняет Hardware UUID в кэш
         
@@ -97,7 +98,7 @@ class HardwareIdCache:
             logger.error(f"❌ Ошибка сохранения в кэш: {e}")
             return False
     
-    def _is_cache_valid(self, cache_data: Dict[str, Any]) -> bool:
+    def _is_cache_valid(self, cache_data: dict[str, Any]) -> bool:
         """
         Проверяет валидность кэша
         

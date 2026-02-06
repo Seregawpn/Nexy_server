@@ -3,11 +3,11 @@ BaseWorkflow - Базовый класс для всех workflow'ов
 Обеспечивает единообразную архитектуру и интеграцию с EventBus
 """
 
-import asyncio
-import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Set
+import asyncio
 from enum import Enum
+import logging
+from typing import Any
 
 # Импорт режимов из централизованного источника
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
@@ -53,8 +53,8 @@ class BaseWorkflow(ABC):
         self.event_bus = event_bus
         self.workflow_name = workflow_name
         self.state = WorkflowState.IDLE
-        self.current_session_id: Optional[str] = None
-        self.active_tasks: Set[asyncio.Task] = set()
+        self.current_session_id: str | None = None
+        self.active_tasks: set[asyncio.Task[Any]] = set()
         self._shutdown_requested = False
         
     async def initialize(self):
@@ -111,14 +111,14 @@ class BaseWorkflow(ABC):
         """Действия при остановке - может быть переопределено"""
         pass
     
-    def _create_task(self, coro, name: Optional[str] = None) -> asyncio.Task:
+    def _create_task(self, coro, name: str | None = None) -> asyncio.Task[Any]:
         """Создание отслеживаемой задачи"""
         task = asyncio.create_task(coro, name=f"{self.workflow_name}:{name or 'task'}")
         self.active_tasks.add(task)
         task.add_done_callback(self._task_done_callback)
         return task
     
-    def _task_done_callback(self, task: asyncio.Task):
+    def _task_done_callback(self, task: asyncio.Task[Any]):
         """Callback завершения задачи"""
         self.active_tasks.discard(task)
         if task.cancelled():
@@ -127,7 +127,7 @@ class BaseWorkflow(ABC):
             logger.error(f"❌ {self.workflow_name}: ошибка в задаче {task.get_name()} - {task.exception()}")
     
     async def _wait_for_event(self, event_type: str, timeout: float = 30.0, 
-                            session_filter: bool = True) -> Optional[Dict[str, Any]]:
+                            session_filter: bool = True) -> dict[str, Any] | None:
         """
         Ожидание конкретного события с таймаутом
         
@@ -173,7 +173,7 @@ class BaseWorkflow(ABC):
                 pass
     
     async def _publish_mode_request(self, target_mode: AppMode, source: str, 
-                                   session_id: Optional[str] = None, priority: int = 50):
+                                   session_id: str | None = None, priority: int = 50):
         """Публикация запроса смены режима"""
         try:
             await self.event_bus.publish("mode.request", {
@@ -190,7 +190,7 @@ class BaseWorkflow(ABC):
         """Проверка активности workflow'а"""
         return self.state == WorkflowState.ACTIVE and not self._shutdown_requested
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получение статуса workflow'а"""
         return {
             "name": self.workflow_name,

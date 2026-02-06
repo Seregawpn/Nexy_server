@@ -2,10 +2,10 @@
 Конфигурация для Tray Controller
 """
 
-from typing import Dict, Any, Optional
 import logging
 
 from config.unified_config_loader import UnifiedConfigLoader
+
 from .tray_types import TrayConfig
 
 logger = logging.getLogger(__name__)
@@ -16,10 +16,10 @@ class TrayConfigManager:
     Использует централизованный UnifiedConfigLoader.
     """
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str | None = None):
         # config_path игнорируется, так как используется unified_config
         self._config_loader = UnifiedConfigLoader.get_instance()
-        self._config: Optional[TrayConfig] = None
+        self._config: TrayConfig | None = None
     
     def _get_default_config(self) -> TrayConfig:
         """Получить конфигурацию по умолчанию"""

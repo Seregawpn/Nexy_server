@@ -10,17 +10,17 @@
 
 import asyncio
 import logging
+from pathlib import Path
 import sys
 import time
-from pathlib import Path
 
 # Добавляем корень проекта в PYTHONPATH
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from modules.input_processing.keyboard.types import KeyboardConfig, KeyEventType
-from modules.input_processing.keyboard.mac.quartz_monitor import QuartzKeyboardMonitor
 from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
+from modules.input_processing.keyboard.mac.quartz_monitor import QuartzKeyboardMonitor
+from modules.input_processing.keyboard.types import KeyboardConfig, KeyEventType
 
 # Настройка логирования
 logging.basicConfig(

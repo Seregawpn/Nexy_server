@@ -3,16 +3,17 @@ ChunkBuffer - Буфер для хранения аудио чанков
 """
 
 import logging
-from typing import Optional, Dict, Any
-import numpy as np
+from typing import Any
 import uuid
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
 class ChunkInfo:
     """Информация о чанке"""
-    def __init__(self, chunk_id: str, data: np.ndarray, metadata: Dict[str, Any]):
+    def __init__(self, chunk_id: str, data: np.ndarray, metadata: dict[str, Any]):
         self.chunk_id = chunk_id
         self.data = data
         self.metadata = metadata
@@ -26,9 +27,9 @@ class ChunkBuffer:
         self.sample_rate = sample_rate
         self.channels = channels
         self.dtype = dtype
-        self._chunks: Dict[str, ChunkInfo] = {}
+        self._chunks: dict[str, ChunkInfo] = {}
         
-    def add_chunk(self, audio_data: np.ndarray, metadata: Dict[str, Any]) -> str:
+    def add_chunk(self, audio_data: np.ndarray, metadata: dict[str, Any]) -> str:
         """Добавление чанка в буфер"""
         chunk_id = str(uuid.uuid4())
         chunk = ChunkInfo(chunk_id, audio_data, metadata)
@@ -36,7 +37,7 @@ class ChunkBuffer:
         logger.debug(f"Чанк добавлен: {chunk_id}")
         return chunk_id
         
-    def get_chunk(self, chunk_id: str) -> Optional[ChunkInfo]:
+    def get_chunk(self, chunk_id: str) -> ChunkInfo | None:
         """Получение чанка по ID"""
         return self._chunks.get(chunk_id)
     

@@ -3,14 +3,13 @@
 Единственное место для управления всеми настройками обновлений
 """
 
-import yaml
-import os
-from pathlib import Path
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from typing import Any
 
-from integration.utils.resource_path import get_resource_path
+import yaml
+
 from config.unified_config_loader import UnifiedConfigLoader
+from integration.utils.resource_path import get_resource_path
 
 
 @dataclass
@@ -35,10 +34,10 @@ class UpdaterConfig:
     auto_install: bool
     install_after_download: bool
     silent_mode: bool
-    security: Dict[str, Any]
-    network: Dict[str, Any]
-    ui: Dict[str, Any]
-    channels: Dict[str, UpdateChannel]
+    security: dict[str, Any]
+    network: dict[str, Any]
+    ui: dict[str, Any]
+    channels: dict[str, UpdateChannel]
 
 
 class UpdaterManager:
@@ -64,7 +63,9 @@ class UpdaterManager:
             self._parse_updater_config()
             
         except Exception as e:
-            raise RuntimeError(f"Не удалось загрузить конфигурацию из {self.config_path}: {e}")
+            raise RuntimeError(
+                f"Не удалось загрузить конфигурацию из {self.config_path}: {e}"
+            ) from e
     
     def _parse_updater_config(self):
         """Парсит конфигурацию обновлений"""
@@ -101,7 +102,7 @@ class UpdaterManager:
             channels=channels
         )
 
-    def _resolve_environment_section(self, data: Any) -> Dict[str, Any]:
+    def _resolve_environment_section(self, data: Any) -> dict[str, Any]:
         """Возвращает секцию updater с учётом default/development настроек"""
         if not isinstance(data, dict):
             return {}
@@ -110,7 +111,7 @@ class UpdaterManager:
         env_section = data.get(self._environment)
 
         if isinstance(default_section, dict) or isinstance(env_section, dict):
-            merged: Dict[str, Any] = {}
+            merged: dict[str, Any] = {}
             if isinstance(default_section, dict):
                 merged = self._deep_merge_dicts(merged, default_section)
             if isinstance(env_section, dict):
@@ -120,7 +121,7 @@ class UpdaterManager:
         # Формат без окружений
         return data
 
-    def _deep_merge_dicts(self, base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+    def _deep_merge_dicts(self, base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
         """Глубокое объединение словарей"""
         result = dict(base)
         for key, value in overrides.items():
@@ -138,9 +139,17 @@ class UpdaterManager:
         """Сохраняет конфигурацию в файл"""
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
-                yaml.dump(self._config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                yaml.dump(
+                    self._config,
+                    f,
+                    default_flow_style=False,
+                    allow_unicode=True,
+                    sort_keys=False,
+                )
         except Exception as e:
-            raise RuntimeError(f"Не удалось сохранить конфигурацию в {self.config_path}: {e}")
+            raise RuntimeError(
+                f"Не удалось сохранить конфигурацию в {self.config_path}: {e}"
+            ) from e
     
     def get_updater_config(self) -> UpdaterConfig:
         """Получает конфигурацию обновлений"""
@@ -148,14 +157,14 @@ class UpdaterManager:
             raise RuntimeError("Конфигурация обновлений не загружена")
         return self._updater_config
     
-    def get_current_channel(self) -> Optional[UpdateChannel]:
+    def get_current_channel(self) -> UpdateChannel | None:
         """Получает текущий канал обновлений"""
         if self._updater_config is None:
             return None
         channel_name = self._updater_config.update_channel
         return self._updater_config.channels.get(channel_name)
     
-    def get_all_channels(self) -> Dict[str, UpdateChannel]:
+    def get_all_channels(self) -> dict[str, UpdateChannel]:
         """Получает все доступные каналы"""
         if self._updater_config is None:
             return {}
@@ -340,7 +349,7 @@ def get_updater_config() -> UpdaterConfig:
     return updater_manager.get_updater_config()
 
 
-def get_current_channel() -> Optional[UpdateChannel]:
+def get_current_channel() -> UpdateChannel | None:
     """Получает текущий канал обновлений"""
     return updater_manager.get_current_channel()
 

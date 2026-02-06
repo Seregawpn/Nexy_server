@@ -5,9 +5,9 @@
 Удаляет все флаги, связанные с permissions, чтобы можно было заново пройти процедуру первого запуска.
 """
 
-import sys
 import os
 from pathlib import Path
+import sys
 
 # Добавляем пути к модулям
 CLIENT_ROOT = Path(__file__).parent.parent
@@ -15,6 +15,7 @@ sys.path.insert(0, str(CLIENT_ROOT))
 sys.path.insert(0, str(CLIENT_ROOT / "integration"))
 
 from integration.utils.resource_path import get_user_data_dir
+
 
 def clear_flags():
     """Очищает все флаги первого запуска"""

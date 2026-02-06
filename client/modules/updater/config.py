@@ -4,7 +4,7 @@
 
 from dataclasses import dataclass
 import os
-from typing import Optional
+
 
 @dataclass
 class UpdaterConfig:

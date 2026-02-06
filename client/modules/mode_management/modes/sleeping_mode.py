@@ -4,8 +4,7 @@
 
 import logging
 import time
-from typing import Optional, Dict, Any
-from ..core.types import AppMode, ModeEvent, ModeStatus
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ class SleepingMode:
         self.is_active = False
         self.sleep_start_time = None
         
-    async def enter_mode(self, context: Dict[str, Any] = None):
+    async def enter_mode(self, context: dict[str, Any] | None = None):
         """Вход в режим сна"""
         try:
             logger.info("😴 Вход в режим сна")
@@ -68,7 +67,7 @@ class SleepingMode:
             logger.warning(f"⚠️ Ошибка расчета длительности сна: {e}")
             return 0.0
             
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Возвращает статус режима сна"""
         return {
             "is_active": self.is_active,

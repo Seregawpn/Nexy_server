@@ -3,20 +3,20 @@
 """
 
 import asyncio
-import logging
-from typing import Optional, Dict, Any, AsyncGenerator, Tuple, List
-import importlib
-import sys
-from pathlib import Path
 from datetime import datetime
+import importlib
+import logging
+from pathlib import Path
+import sys
+from typing import Any, AsyncGenerator
 
 import numpy as np
 
 from integration.utils.resource_path import get_resource_path
 
-from .types import ServerConfig, RetryConfig, HealthCheckConfig, RetryStrategy
-from .retry_manager import RetryManager
 from .connection_manager import ConnectionManager
+from .retry_manager import RetryManager
+from .types import RetryConfig, RetryStrategy, ServerConfig
 
 # Импорт для получения server_audio_format (источник истины)
 try:
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class GrpcClient:
     """Основной gRPC клиент с модульной архитектурой"""
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or self._create_default_config()
         
         # Модульные компоненты
@@ -50,7 +50,7 @@ class GrpcClient:
         # Устанавливаем сервер по умолчанию из конфигурации
         self._set_default_server()
     
-    def _create_default_config(self) -> Dict[str, Any]:
+    def _create_default_config(self) -> dict[str, Any]:
         """Создает конфигурацию по умолчанию из централизованной системы"""
         try:
             # Загружаем конфигурацию из unified_config.yaml
@@ -154,7 +154,7 @@ class GrpcClient:
         self.connection_manager.set_connection_callback(self._on_connection_changed)
         self.connection_manager.set_error_callback(self._on_error)
     
-    def _get_server_audio_format(self) -> Dict[str, Any]:
+    def _get_server_audio_format(self) -> dict[str, Any]:
         """
         Получает server_audio_format из unified_config (источник истины)
             
@@ -230,7 +230,7 @@ class GrpcClient:
         """Обрабатывает ошибки"""
         logger.error(f"❌ Ошибка в {context}: {error}")
     
-    async def connect(self, server_name: Optional[str] = None) -> bool:
+    async def connect(self, server_name: str | None = None) -> bool:
         """Подключается к серверу"""
         return await self.connection_manager.connect(server_name)
     
@@ -262,11 +262,11 @@ class GrpcClient:
         self,
         prompt: str,
         screenshot_base64: str,
-        screen_info: dict,
+        screen_info: dict[str, Any],
         hardware_id: str,
         session_id: str,
         *,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> AsyncGenerator[Any, None]:
         """Стриминг аудио и текста на сервер
         
@@ -334,16 +334,58 @@ class GrpcClient:
         self,
         text: str,
         *,
-        voice: Optional[str] = None,
-        language: Optional[str] = None,
-        session_id: Optional[str] = None,
-        timeout: Optional[float] = None,
-        server_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        voice: str | None = None,
+        language: str | None = None,
+        session_id: str | None = None,
+        timeout: float | None = None,
+        server_name: str | None = None,
+    ) -> dict[str, Any]:
         """Запрашивает серверную генерацию приветственного аудио.
 
         Returns dict c numpy массивом аудио и метаданными.
         """
+        # КРИТИЧНО: gRPC aio channel привязан к loop, в котором создан.
+        # Если вызываем из другого loop — проксируем в loop канала.
+        channel_loop = self.connection_manager.get_channel_loop()
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        if channel_loop and current_loop and channel_loop != current_loop:
+            return await asyncio.wrap_future(
+                asyncio.run_coroutine_threadsafe(
+                    self._generate_welcome_audio_in_loop(
+                        text=text,
+                        voice=voice,
+                        language=language,
+                        session_id=session_id,
+                        timeout=timeout,
+                        server_name=server_name,
+                    ),
+                    channel_loop,
+                )
+            )
+
+        return await self._generate_welcome_audio_in_loop(
+            text=text,
+            voice=voice,
+            language=language,
+            session_id=session_id,
+            timeout=timeout,
+            server_name=server_name,
+        )
+
+    async def _generate_welcome_audio_in_loop(
+        self,
+        *,
+        text: str,
+        voice: str | None,
+        language: str | None,
+        session_id: str | None,
+        timeout: float | None,
+        server_name: str | None,
+    ) -> dict[str, Any]:
+        """Внутренний метод, выполняется в loop канала."""
         if not text or not text.strip():
             raise ValueError("Welcome text must be non-empty")
 
@@ -369,9 +411,9 @@ class GrpcClient:
         stub = streaming_pb2_grpc.StreamingServiceStub(self.connection_manager.channel)
         rpc_timeout = timeout or self.config.get('welcome_timeout_sec', 30.0)
 
-        audio_chunks: List[bytes] = []
-        metadata: Dict[str, Any] = {}
-        chunk_dtype: Optional[str] = None
+        audio_chunks: list[bytes] = []
+        metadata: dict[str, Any] = {}
+        chunk_dtype: str | None = None
 
         try:
             async for response in stub.GenerateWelcomeAudio(request, timeout=rpc_timeout):
@@ -487,11 +529,11 @@ class GrpcClient:
         self,
         text: str,
         *,
-        voice: Optional[str] = None,
-        language: Optional[str] = None,
-        session_id: Optional[str] = None,
-        timeout: Optional[float] = None,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+        voice: str | None = None,
+        language: str | None = None,
+        session_id: str | None = None,
+        timeout: float | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Streams TTS audio chunks via GenerateWelcomeAudio.
         
         Unlike generate_welcome_audio which buffers all audio, this yields each chunk
@@ -562,7 +604,7 @@ class GrpcClient:
         except Exception as e:
             logger.error(f"❌ Ошибка очистки GrpcClient: {e}")
 
-    def _import_proto_modules(self) -> Tuple[Any, Any]:
+    def _import_proto_modules(self) -> tuple[Any, Any]:
         """Гибкий импорт streaming_pb2 и streaming_pb2_grpc.
         Сначала пробуем из proto директории модуля, затем fallback в server/.
         """

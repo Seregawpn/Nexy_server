@@ -4,15 +4,17 @@
 """
 
 import logging
-from typing import Optional, Dict, Any
-from .types import (
-    HardwareIdResult, HardwareIdStatus, HardwareIdConfig,
-    HardwareIdError, HardwareIdNotFoundError, HardwareIdValidationError
-)
-from .config import get_hardware_id_config
+from typing import Any
+
 from ..macos.hardware_detector import HardwareDetector
 from ..utils.caching import HardwareIdCache
 from ..utils.validation import HardwareIdValidator
+from .config import get_hardware_id_config
+from .types import (
+    HardwareIdConfig,
+    HardwareIdResult,
+    HardwareIdStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 class HardwareIdentifier:
     """Основной класс для получения Hardware ID"""
     
-    def __init__(self, config: Optional[HardwareIdConfig] = None):
+    def __init__(self, config: HardwareIdConfig | None = None):
         self.config = config or get_hardware_id_config()
         self.detector = HardwareDetector(timeout=self.config.system_profiler_timeout)
         self.cache = HardwareIdCache(
@@ -28,7 +30,7 @@ class HardwareIdentifier:
             ttl_seconds=self.config.cache_ttl_seconds
         )
         self.validator = HardwareIdValidator()
-        self._cached_result: Optional[HardwareIdResult] = None
+        self._cached_result: HardwareIdResult | None = None
     
     def get_hardware_id(self, force_regenerate: bool = False) -> HardwareIdResult:
         """
@@ -72,7 +74,7 @@ class HardwareIdentifier:
                 error_message=str(e)
             )
     
-    def _get_cached_id(self) -> Optional[HardwareIdResult]:
+    def _get_cached_id(self) -> HardwareIdResult | None:
         """
         Получает Hardware ID из кэша
         
@@ -239,7 +241,7 @@ class HardwareIdentifier:
             logger.error(f"❌ Ошибка очистки кэша: {e}")
             return False
     
-    def get_cache_info(self) -> Dict[str, Any]:
+    def get_cache_info(self) -> dict[str, Any]:
         """
         Получает информацию о кэше
         
@@ -264,7 +266,7 @@ class HardwareIdentifier:
             logger.error(f"❌ Ошибка получения информации о кэше: {e}")
             return {"error": str(e)}
     
-    def get_hardware_info(self) -> Dict[str, Any]:
+    def get_hardware_info(self) -> dict[str, Any]:
         """
         Получает полную информацию об оборудовании
         
@@ -305,7 +307,7 @@ class HardwareIdentifier:
             logger.error(f"❌ Ошибка валидации Hardware ID: {e}")
             return False
     
-    def get_validation_info(self, uuid_str: str) -> Dict[str, Any]:
+    def get_validation_info(self, uuid_str: str) -> dict[str, Any]:
         """
         Получает информацию о валидации UUID
         

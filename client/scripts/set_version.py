@@ -14,12 +14,11 @@ It updates:
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
+import plistlib
 import re
 import sys
-from pathlib import Path
 from typing import Iterable
-
-import plistlib
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]

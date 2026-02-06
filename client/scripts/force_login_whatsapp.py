@@ -3,13 +3,11 @@
 Force Login Script for WhatsApp.
 Kills old processes, clears logs, starts fresh service, and displays QR code.
 """
-import sys
-import os
 import asyncio
 import logging
+import os
 import subprocess
-import signal
-from pathlib import Path
+import sys
 
 # Setup path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,10 +16,11 @@ sys.path.insert(0, client_dir)
 
 logging.basicConfig(level=logging.INFO)
 # Mute bulky logs
-logging.getLogger("client.modules.whatsapp.service_manager").setLevel(logging.INFO)
+logging.getLogger("modules.whatsapp.service_manager").setLevel(logging.INFO)
 
-from client.modules.whatsapp import WhatsappServiceManager, WhatsappConfig
 from config.unified_config_loader import UnifiedConfigLoader
+from modules.whatsapp import WhatsappConfig, WhatsappServiceManager
+
 
 async def main():
     print("🧹 Cleaning up old sessions...")

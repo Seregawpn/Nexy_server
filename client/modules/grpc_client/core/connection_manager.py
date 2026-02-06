@@ -5,12 +5,13 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Dict, Any, Callable
+from typing import Any, Callable
+
 import grpc
 import grpc.aio
 
-from .types import ConnectionState, ServerConfig, ConnectionMetrics
 from .health_checker import HealthChecker
+from .types import ConnectionMetrics, ConnectionState, ServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -19,14 +20,17 @@ class ConnectionManager:
     """Менеджер gRPC соединений"""
     
     def __init__(self):
-        self.servers: Dict[str, ServerConfig] = {}
-        self.current_server: Optional[str] = None
+        self.servers: dict[str, ServerConfig] = {}
+        self.current_server: str | None = None
         self.connection_state = ConnectionState.DISCONNECTED
         self.metrics = ConnectionMetrics()
         
         # gRPC компоненты
-        self.channel: Optional[grpc.aio.Channel] = None
-        self.stub: Optional[Any] = None
+        self.channel: grpc.aio.Channel | None = None
+        self.stub: Any | None = None
+
+        # Event loop, в котором создан gRPC channel (источник истины для aio вызовов)
+        self._channel_loop: asyncio.AbstractEventLoop | None = None
         
         # Thread safety
         self._connection_lock = asyncio.Lock()
@@ -35,8 +39,8 @@ class ConnectionManager:
         self.health_checker = HealthChecker()
         
         # Callbacks
-        self.on_connection_changed: Optional[Callable[[ConnectionState], None]] = None
-        self.on_error: Optional[Callable[[Exception, str], None]] = None
+        self.on_connection_changed: Callable[[ConnectionState], None] | None = None
+        self.on_error: Callable[[Exception, str], None] | None = None
     
     def add_server(self, name: str, config: ServerConfig):
         """Добавляет сервер в конфигурацию"""
@@ -45,7 +49,7 @@ class ConnectionManager:
             self.current_server = name
         logger.info(f"🌐 Добавлен сервер {name}: {config.address}:{config.port}")
     
-    async def connect(self, server_name: Optional[str] = None) -> bool:
+    async def connect(self, server_name: str | None = None) -> bool:
         """Подключается к серверу"""
         try:
             async with self._connection_lock:
@@ -87,6 +91,7 @@ class ConnectionManager:
 
             # КРИТИЧНО: Логируем loop id при создании канала для диагностики
             current_loop = asyncio.get_running_loop()
+            self._channel_loop = current_loop
             loop_id = id(current_loop)
             logger.info(f"🔌 [GRPC_LOOP] Creating channel in loop={loop_id} (running={current_loop.is_running()})")
             
@@ -170,7 +175,7 @@ class ConnectionManager:
             self._notify_connection_changed()
             return False
     
-    def _create_grpc_options(self, server_config: ServerConfig) -> list:
+    def _create_grpc_options(self, server_config: ServerConfig) -> list[tuple[str, Any]]:
         """Создает опции gRPC"""
         options = [
             ('grpc.max_send_message_length', server_config.max_message_size),
@@ -222,12 +227,17 @@ class ConnectionManager:
                     await self.channel.close()
                     self.channel = None
                     self.stub = None
+                self._channel_loop = None
                 
                 self.connection_state = ConnectionState.DISCONNECTED
                 self._notify_connection_changed()
                 logger.info("🔌 Отключение от сервера")
         except Exception as e:
             logger.error(f"❌ Ошибка отключения: {e}")
+
+    def get_channel_loop(self) -> asyncio.AbstractEventLoop | None:
+        """Возвращает loop, в котором создан gRPC channel."""
+        return self._channel_loop
     
     async def reconnect(self) -> bool:
         """Переподключается к серверу"""

@@ -3,10 +3,10 @@
 Установка PKG пакетов через installer
 """
 
-import subprocess
-import os
 import logging
-from typing import Optional
+import os
+import subprocess
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def verify_pkg_signature(pkg_path: str) -> bool:
         logger.error(f"Ошибка проверки подписи PKG: {e}")
         return False
 
-def get_pkg_info(pkg_path: str) -> dict:
+def get_pkg_info(pkg_path: str) -> dict[str, Any]:
     """
     Получение информации о PKG файле
     
@@ -147,7 +147,7 @@ def extract_pkg_contents(pkg_path: str, extract_path: str) -> bool:
         logger.error(f"❌ Ошибка извлечения PKG: {e}")
         raise RuntimeError(f"Ошибка извлечения PKG: {e}")
 
-def find_app_in_pkg(extract_path: str, app_name: str = "Nexy.app") -> Optional[str]:
+def find_app_in_pkg(extract_path: str, app_name: str = "Nexy.app") -> str | None:
     """
     Поиск .app файла в извлеченном PKG
     

@@ -1,9 +1,9 @@
 """
 WhatsApp Client Configuration
 """
-import os
-import logging
 from dataclasses import dataclass
+import logging
+import os
 
 logger = logging.getLogger(__name__)
 

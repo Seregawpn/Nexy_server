@@ -6,32 +6,30 @@ Feature ID: F-2025-016-mcp-app-opening-integration
 """
 
 import asyncio
+import hashlib
 import json
-import logging
-import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+import subprocess
+import time
+from typing import Any
 
+from config.unified_config_loader import OpenAppActionConfig, UnifiedConfigLoader
 from integration.core.base_integration import BaseIntegration
+from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-
-from config.unified_config_loader import UnifiedConfigLoader, OpenAppActionConfig
-from modules.mcp_action import McpActionExecutor, McpActionConfig
 from modules.action_errors.messages import resolver as action_error_resolver
+from modules.mcp_action import McpActionConfig, McpActionExecutor
 
 # Messages integration
 from modules.messages import (
-    check_db_access,
     connect_db,
+    find_contacts_by_name,
+    format_message_date,
     get_last_message,
     get_messages_by_contact,
-    send_message_to_contact,
-    send_message_via_applescript,
     resolve_contact,
-    find_contacts_by_name,
-    format_message_date
+    send_message_to_contact,
 )
 
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
@@ -87,9 +85,11 @@ class ActionExecutionIntegration(BaseIntegration):
         )
         self._mcp_executor = McpActionExecutor(mcp_config)
         self._actions_lock = asyncio.Lock()
-        self._active_actions: Dict[str, asyncio.Task] = {}  # session_id -> task
-        self._active_apps: Dict[str, str] = {}  # app_name -> session_id (для идемпотентности close_app)
-        self._spoken_error_sessions: Set[str] = set()
+        self._active_actions: dict[str, asyncio.Task[Any]] = {}  # session_id -> task
+        self._active_apps: dict[str, str] = {}  # app_name -> session_id (для идемпотентности close_app)
+        self._spoken_error_sessions: set[str] = set()
+        self._action_dedupe: dict[str, float] = {}
+        self._action_dedupe_ttl_sec = 90.0
         
         logger.info(
             "[%s] ActionExecutionIntegration initialized: enabled=%s, timeout=%.1fs, open_app_server=%s, close_app_server=%s",
@@ -146,7 +146,7 @@ class ActionExecutionIntegration(BaseIntegration):
         logger.info("[%s] ActionExecutionIntegration stopped", FEATURE_ID)
         return True
 
-    async def _on_action_received(self, event: Dict[str, Any]):
+    async def _on_action_received(self, event: dict[str, Any]):
         """
         Получает JSON действия из grpc.response.action.
         
@@ -201,6 +201,7 @@ class ActionExecutionIntegration(BaseIntegration):
         # Определяем тип команды и feature_id
         command = action_data.get("command")
         action_type = command  # "open_app" или "close_app"
+        args = action_data.get("args", {})
         
         # Строим список допустимых команд динамически на основе feature flags
         loader = UnifiedConfigLoader.get_instance()
@@ -296,7 +297,6 @@ class ActionExecutionIntegration(BaseIntegration):
                 return
         
         # Валидация параметров в зависимости от типа действия
-        args = action_data.get("args", {})
         if command == "open_app":
             # Для open_app требуется app_name или app_path
             if not args.get("app_name") and not args.get("app_path"):
@@ -359,16 +359,24 @@ class ActionExecutionIntegration(BaseIntegration):
 
         # Специальная обработка для Messages
         if command in ["read_messages", "send_message", "find_contact"]:
+            dedupe_key = self._make_action_dedupe_key(session_id, command, args)
+            if not await self._register_action_dedupe(dedupe_key, session_id, command):
+                return
             await self._execute_messages_action(
                 session_id=session_id,
                 command=command,
                 args=args,
-                feature_id=action_feature_id
+                feature_id=action_feature_id,
+                dedupe_key=dedupe_key
             )
             return
 
         # Специальная обработка для Browser Use
         if command == "browser_use":
+            dedupe_key = self._make_action_dedupe_key(session_id, command, args)
+            if not await self._register_action_dedupe(dedupe_key, session_id, command):
+                logger.info("[%s] Duplicate browser_use action ignored (session=%s)", action_feature_id, session_id)
+                return
             await self._execute_browser_use_action(
                 session_id=session_id,
                 args=args,
@@ -480,7 +488,7 @@ class ActionExecutionIntegration(BaseIntegration):
         self,
         *,
         session_id: str,
-        action_data: Dict[str, Any],
+        action_data: dict[str, Any],
         feature_id: str
     ):
         """
@@ -569,6 +577,11 @@ class ActionExecutionIntegration(BaseIntegration):
                     error="unsupported_action",
                 )
             
+            if result is None:
+                # Should not happen given logic above, but satisfies type checker
+                from modules.mcp_action import McpActionResult
+                result = McpActionResult(success=False, error="internal_error", message="Result is None")
+
             if result.success:
                 # Успешное выполнение
                 await self.event_bus.publish(
@@ -619,8 +632,8 @@ class ActionExecutionIntegration(BaseIntegration):
     async def _execute_open_app_fallback(
         self,
         *,
-        action_data: Dict[str, Any],
-        session_id: Optional[str],
+        action_data: dict[str, Any],
+        session_id: str | None,
     ):
         """Fallback: open app via system `open` when MCP server is missing."""
         from modules.mcp_action import McpActionResult
@@ -690,8 +703,8 @@ class ActionExecutionIntegration(BaseIntegration):
     async def _execute_close_app_fallback(
         self,
         *,
-        action_data: Dict[str, Any],
-        session_id: Optional[str],
+        action_data: dict[str, Any],
+        session_id: str | None,
     ):
         """Fallback: close app via system `osascript` when MCP server is missing or fails."""
         from modules.mcp_action import McpActionResult
@@ -773,15 +786,15 @@ class ActionExecutionIntegration(BaseIntegration):
                      if self._active_apps.get(app_name_normalized) == session_id:
                          self._active_apps.pop(app_name_normalized, None)
 
-    async def _on_interrupt(self, event: Dict[str, Any]):
+    async def _on_interrupt(self, event: dict[str, Any]):
         """Обработка прерывания - отмена всех действий."""
         await self._cancel_all_actions(reason="interrupt")
 
-    async def _on_keyboard_short_press(self, event: Dict[str, Any]):
+    async def _on_keyboard_short_press(self, event: dict[str, Any]):
         """Обработка короткого нажатия клавиши - отмена всех действий."""
         await self._cancel_all_actions(reason="keyboard_short_press")
 
-    async def _on_mode_changed(self, event: Dict[str, Any]):
+    async def _on_mode_changed(self, event: dict[str, Any]):
         """Обработка изменения режима приложения - отмена при переходе в спящий режим."""
         try:
             from modules.mode_management import AppMode
@@ -830,11 +843,11 @@ class ActionExecutionIntegration(BaseIntegration):
     async def _publish_failure(
         self,
         *,
-        session_id: Optional[str],
+        session_id: str | None,
         feature_id: str,
-        error_code: Optional[str],
+        error_code: str | None,
         message: str,
-        app_name: Optional[str],
+        app_name: str | None,
     ) -> None:
         """Публикует событие failure и голосовой фидбек."""
         if session_id:
@@ -865,14 +878,15 @@ class ActionExecutionIntegration(BaseIntegration):
             feature_id=feature_id,
         )
 
-    async def _cancel_active_playback(self, *, session_id: Optional[str], reason: str) -> None:
+    async def _cancel_active_playback(self, *, session_id: str | None, reason: str) -> None:
         """Останавливает текущее воспроизведение, чтобы не звучала старая реплика."""
         if not session_id:
             return
         try:
             await self.event_bus.publish(
-                "playback.cancelled",
+                "interrupt.request",
                 {
+                    "type": "speech_stop",
                     "session_id": session_id,
                     "source": "actions.open_app",
                     "reason": reason or "action_failed",
@@ -885,10 +899,10 @@ class ActionExecutionIntegration(BaseIntegration):
     async def _publish_speech_feedback(
         self,
         *,
-        session_id: Optional[str],
-        error_code: Optional[str],
-        app_name: Optional[str],
-        error_message: Optional[str] = None,
+        session_id: str | None,
+        error_code: str | None,
+        app_name: str | None,
+        error_message: str | None = None,
         feature_id: str = FEATURE_ID,
     ) -> None:
         """Публикует speech.playback.request с описанием ошибки."""
@@ -929,8 +943,9 @@ class ActionExecutionIntegration(BaseIntegration):
         *,
         session_id: str,
         command: str,
-        args: Dict[str, Any],
-        feature_id: str
+        args: dict[str, Any],
+        feature_id: str,
+        dedupe_key: str | None = None
     ):
         """
         Выполняет команду Messages (read_messages, send_message, find_contact).
@@ -976,6 +991,8 @@ class ActionExecutionIntegration(BaseIntegration):
                 # 4. Озвучиваем результат пользователю
                 await self._handle_messages_success_feedback(session_id, command, result)
             else:
+                if dedupe_key:
+                    await self._clear_action_dedupe(dedupe_key)
                 error_code_res = result.get("error_code")
                 error_msg = result.get("message", "Unknown error")
                 
@@ -983,6 +1000,22 @@ class ActionExecutionIntegration(BaseIntegration):
                      choices = result.get("choices", [])
                      choices_str = ", ".join(choices[:3])
                      text_to_speak = f"I found multiple contacts: {choices_str}. Please say the full name."
+                     
+                     # Speak specific feedback
+                     await self.event_bus.publish("grpc.tts_request", {
+                         "session_id": session_id,
+                         "text": text_to_speak,
+                         "source": f"actions.{command}"
+                     })
+                     self._spoken_error_sessions.add(session_id) # Prevent generic error speech
+                
+                elif error_code_res == "similar_contacts_found":
+                     suggestions = result.get("suggestions", [])
+                     if suggestions:
+                         suggestions_str = ", ".join(suggestions[:3])
+                         text_to_speak = f"Contact not found. Did you mean: {suggestions_str}?"
+                     else:
+                         text_to_speak = "Contact not found. Please check the name and try again."
                      
                      # Speak specific feedback
                      await self.event_bus.publish("grpc.tts_request", {
@@ -1002,6 +1035,8 @@ class ActionExecutionIntegration(BaseIntegration):
                 logger.warning("[%s] %s failed: %s", feature_id, command, error_msg)
                 
         except Exception as exc:
+            if dedupe_key:
+                await self._clear_action_dedupe(dedupe_key)
             await self._handle_error(exc, where=f"_execute_messages_action({command})")
             await self._publish_failure(
                 session_id=session_id,
@@ -1011,7 +1046,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 app_name="Messages",
             )
 
-    async def _handle_messages_success_feedback(self, session_id: str, command: str, result: Dict[str, Any]):
+    async def _handle_messages_success_feedback(self, session_id: str, command: str, result: dict[str, Any]):
         """Формирует и озвучивает результат успешного выполнения команды Messages."""
         text_to_speak = ""
         
@@ -1070,11 +1105,43 @@ class ActionExecutionIntegration(BaseIntegration):
                 },
             )
 
+    def _make_action_dedupe_key(self, session_id: str, command: str, args: dict[str, Any]) -> str:
+        stable_args = json.dumps(args or {}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        raw = f"{session_id}|{command}|{stable_args}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    async def _register_action_dedupe(self, key: str, session_id: str, command: str) -> bool:
+        now = time.monotonic()
+        async with self._actions_lock:
+            self._prune_action_dedupe(now)
+            if key in self._action_dedupe:
+                logger.info(
+                    "[%s] Duplicate action dropped: session=%s command=%s",
+                    FEATURE_ID,
+                    session_id,
+                    command,
+                )
+                return False
+            self._action_dedupe[key] = now
+        return True
+
+    async def _clear_action_dedupe(self, key: str):
+        async with self._actions_lock:
+            self._action_dedupe.pop(key, None)
+
+    def _prune_action_dedupe(self, now: float):
+        if not self._action_dedupe:
+            return
+        ttl = self._action_dedupe_ttl_sec
+        expired = [k for k, ts in self._action_dedupe.items() if now - ts > ttl]
+        for k in expired:
+            self._action_dedupe.pop(k, None)
+
     async def _execute_browser_use_action(
         self,
         *,
         session_id: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         feature_id: str
     ):
         """
@@ -1119,7 +1186,7 @@ class ActionExecutionIntegration(BaseIntegration):
             }
         )
 
-    def _handle_read_messages(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_read_messages(self, args: dict[str, Any]) -> dict[str, Any]:
         """Обработчик read_messages (синхронный)."""
         contact_id = args.get("contact")
         limit = int(args.get("limit", 10))
@@ -1138,7 +1205,12 @@ class ActionExecutionIntegration(BaseIntegration):
                 last_msg = get_last_message(conn)
                 if last_msg:
                     messages = [last_msg]
-                    target_name = last_msg.get("display_name") or last_msg.get("contact_id")
+                    raw_target = last_msg.get("display_name") or last_msg.get("contact_id")
+                    if raw_target:
+                        resolved = resolve_contact(raw_target, messages_conn=conn)
+                        target_name = resolved.get("display_label") or raw_target
+                    else:
+                        target_name = "Unknown"
             else:
                 # Резолвим контакт
                 resolved = resolve_contact(contact_id, messages_conn=conn)
@@ -1159,11 +1231,15 @@ class ActionExecutionIntegration(BaseIntegration):
             # Форматируем для ответа
             formatted_messages = []
             for msg in messages:
+                sender_label = msg.get("display_name") or msg.get("contact_id") or "Unknown"
+                if not msg.get("is_from_me") and sender_label:
+                    resolved_sender = resolve_contact(sender_label, messages_conn=conn)
+                    sender_label = resolved_sender.get("display_label") or sender_label
                 formatted_messages.append({
                     "text": msg.get("text", "[No text]"),
                     "from_me": msg.get("is_from_me", False),
                     "date": format_message_date(msg.get("date", 0)),
-                    "sender": "Me" if msg.get("is_from_me") else (msg.get("display_name") or "Unknown")
+                    "sender": "Me" if msg.get("is_from_me") else sender_label
                 })
             
             return {
@@ -1175,7 +1251,7 @@ class ActionExecutionIntegration(BaseIntegration):
         finally:
             conn.close()
 
-    def _handle_send_message(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_send_message(self, args: dict[str, Any]) -> dict[str, Any]:
         """Обработчик send_message (синхронный)."""
         contact = args.get("contact")
         message = args.get("message")
@@ -1188,7 +1264,7 @@ class ActionExecutionIntegration(BaseIntegration):
         result["message_content"] = message
         return result
 
-    def _handle_find_contact(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_find_contact(self, args: dict[str, Any]) -> dict[str, Any]:
         """Обработчик find_contact (синхронный)."""
         query = args.get("query")
         if not query:

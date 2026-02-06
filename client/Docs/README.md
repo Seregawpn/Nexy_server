@@ -30,6 +30,14 @@
 - `Docs/PREFLIGHT_CHECKS.md` — система предварительных проверок перед сборкой
 - `Docs/PREFLIGHT_IMPLEMENTATION_PLAN.md` — план реализации системы preflight проверок
 
+### Quality Gates (скрипты)
+- `scripts/pre_build_gate.sh` — базовый pre-build gate
+- `scripts/quality_strict.sh` — строгий алиас pre-build gate (`--require-basedpyright`)
+- `scripts/problem_scan.sh` — consolidated scan + priority report
+- `scripts/problem_scan_gate.sh` — release/CI gate (blocking issues only)
+- `scripts/problem_scan_prioritize.py` — генерация приоритетного отчёта
+- `scripts/setup_dev_env.sh` — bootstrap dev-окружения для quality checks
+
 ### Feature Flags
 - `Docs/FEATURE_FLAGS.md` — единый источник истины для всех feature flags/kill-switches
 

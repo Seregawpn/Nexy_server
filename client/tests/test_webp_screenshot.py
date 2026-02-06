@@ -3,21 +3,38 @@
 Тест для проверки WebP функциональности скриншотов
 """
 
-import sys
 import asyncio
 import base64
 from pathlib import Path
+import sys
+
+import pytest
 
 # Добавляем путь к модулям
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from modules.screenshot_capture.core.screenshot_capture import ScreenshotCapture
 from modules.screenshot_capture.core.types import (
     ScreenshotConfig,
     ScreenshotFormat,
     ScreenshotQuality,
-    ScreenshotRegion
+    ScreenshotRegion,
 )
-from modules.screenshot_capture.core.screenshot_capture import ScreenshotCapture
+
+pytestmark = pytest.mark.asyncio
+
+
+def _skip_if_capture_unavailable(error: str | None) -> None:
+    if not error:
+        return
+    markers = (
+        "CGDisplayCreateImage failed",
+        "screen recording permission",
+        "permission denied",
+    )
+    lowered = error.lower()
+    if any(marker.lower() in lowered for marker in markers):
+        pytest.skip(f"Screenshot environment unavailable: {error}")
 
 
 async def test_webp_capture():
@@ -46,8 +63,7 @@ async def test_webp_capture():
         capture = ScreenshotCapture(config)
         print("✅ ScreenshotCapture инициализирован")
     except Exception as e:
-        print(f"❌ Ошибка инициализации: {e}")
-        return False
+        raise AssertionError(f"Ошибка инициализации: {e}") from e
     
     # Проверяем статус
     status = capture.get_status()
@@ -60,67 +76,48 @@ async def test_webp_capture():
     
     # Тестируем захват
     print("📸 Захват скриншота...")
-    try:
-        result = await capture.capture_screenshot()
-        
-        if not result.success:
-            print(f"❌ Захват не удался: {result.error}")
-            return False
-        
-        print(f"✅ Скриншот захвачен успешно!")
-        print(f"   Формат: {result.data.format.value}")
-        print(f"   Размеры: {result.data.width}x{result.data.height}")
-        print(f"   Размер файла: {result.data.size_bytes} bytes")
-        print(f"   MIME-тип: {result.data.mime_type}")
-        print(f"   Время захвата: {result.capture_time:.3f}s")
-        print()
-        
-        # Проверяем формат
-        if result.data.format != ScreenshotFormat.WEBP:
-            print(f"⚠️ Ожидался WebP, получен {result.data.format.value}")
-            return False
-        
-        # Проверяем Base64
-        if not result.data.base64_data:
-            print("❌ Base64 данные отсутствуют")
-            return False
-        
-        # Декодируем и проверяем WebP сигнатуру
-        try:
-            webp_data = base64.b64decode(result.data.base64_data)
-            
-            # WebP файл начинается с "RIFF" и содержит "WEBP"
-            if webp_data[:4] != b'RIFF':
-                print("❌ Неверная сигнатура WebP (ожидается RIFF)")
-                return False
-            
-            if b'WEBP' not in webp_data[:12]:
-                print("❌ Неверная сигнатура WebP (ожидается WEBP)")
-                return False
-            
-            print("✅ WebP сигнатура корректна")
-            print(f"   Размер декодированных данных: {len(webp_data)} bytes")
-            
-            # Проверяем качество из метаданных
-            if 'quality' in result.data.metadata:
-                quality = result.data.metadata['quality']
-                print(f"   Качество: {quality}")
-                if quality != 80:
-                    print(f"⚠️ Ожидалось качество 80, получено {quality}")
-            
-        except Exception as e:
-            print(f"❌ Ошибка проверки WebP данных: {e}")
-            return False
-        
-        print()
-        print("✅ Все проверки пройдены успешно!")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Ошибка захвата: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    result = await capture.capture_screenshot()
+    _skip_if_capture_unavailable(result.error)
+    assert result.success, f"Захват не удался: {result.error}"
+
+    print(f"✅ Скриншот захвачен успешно!")
+    print(f"   Формат: {result.data.format.value}")
+    print(f"   Размеры: {result.data.width}x{result.data.height}")
+    print(f"   Размер файла: {result.data.size_bytes} bytes")
+    print(f"   MIME-тип: {result.data.mime_type}")
+    print(f"   Время захвата: {result.capture_time:.3f}s")
+    print()
+
+    # Проверяем формат
+    if result.data.format != ScreenshotFormat.WEBP:
+        raise AssertionError(f"Ожидался WebP, получен {result.data.format.value}")
+
+    # Проверяем Base64
+    if not result.data.base64_data:
+        raise AssertionError("Base64 данные отсутствуют")
+
+    # Декодируем и проверяем WebP сигнатуру
+    webp_data = base64.b64decode(result.data.base64_data)
+
+    # WebP файл начинается с "RIFF" и содержит "WEBP"
+    if webp_data[:4] != b'RIFF':
+        raise AssertionError("Неверная сигнатура WebP (ожидается RIFF)")
+
+    if b'WEBP' not in webp_data[:12]:
+        raise AssertionError("Неверная сигнатура WebP (ожидается WEBP)")
+
+    print("✅ WebP сигнатура корректна")
+    print(f"   Размер декодированных данных: {len(webp_data)} bytes")
+
+    # Проверяем качество из метаданных
+    if 'quality' in result.data.metadata:
+        quality = result.data.metadata['quality']
+        print(f"   Качество: {quality}")
+        if quality != 80:
+            raise AssertionError(f"Ожидалось качество 80, получено {quality}")
+
+    print()
+    print("✅ Все проверки пройдены успешно!")
 
 
 async def test_jpeg_fallback():
@@ -140,13 +137,9 @@ async def test_jpeg_fallback():
     
     # Захватываем (должен работать с fallback если нужно)
     result = await capture.capture_screenshot()
-    
-    if result.success:
-        print(f"✅ Захват выполнен: {result.data.format.value}")
-        return True
-    else:
-        print(f"❌ Захват не удался: {result.error}")
-        return False
+    _skip_if_capture_unavailable(result.error)
+    assert result.success, f"Захват не удался: {result.error}"
+    print(f"✅ Захват выполнен: {result.data.format.value}")
 
 
 async def test_quality_levels():
@@ -173,15 +166,20 @@ async def test_quality_levels():
         
         capture = ScreenshotCapture(config)
         result = await capture.capture_screenshot()
-        
-        if result.success and result.data.format == ScreenshotFormat.WEBP:
-            actual_quality = result.data.metadata.get('quality', 0)
-            size = result.data.size_bytes
-            
-            status = "✅" if actual_quality == expected_quality else "⚠️"
-            print(f"{status} {quality_enum.value:8s}: качество={actual_quality:3d} (ожидается {expected_quality}), размер={size:6d} bytes")
-        else:
-            print(f"❌ {quality_enum.value}: захват не удался")
+        _skip_if_capture_unavailable(result.error)
+        assert result.success, f"{quality_enum.value}: захват не удался: {result.error}"
+        assert result.data.format == ScreenshotFormat.WEBP, (
+            f"{quality_enum.value}: ожидался WebP, получен {result.data.format.value}"
+        )
+        actual_quality = result.data.metadata.get('quality', 0)
+        size = result.data.size_bytes
+        assert actual_quality == expected_quality, (
+            f"{quality_enum.value}: качество={actual_quality}, ожидалось {expected_quality}"
+        )
+        print(
+            f"✅ {quality_enum.value:8s}: качество={actual_quality:3d} "
+            f"(ожидается {expected_quality}), размер={size:6d} bytes"
+        )
 
 
 async def main():
@@ -223,5 +221,3 @@ async def main():
 if __name__ == "__main__":
     exit_code = asyncio.run(main())
     sys.exit(exit_code)
-
-

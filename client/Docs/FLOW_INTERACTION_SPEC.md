@@ -26,13 +26,15 @@ EventBus публикует событие как:
 - `event.timestamp` — время публикации (asyncio loop).
 - Не размещать данные payload на верхнем уровне `event`.
 - Поля `session_id` и `source` обязательны там, где указано в контракте.
+- Типы событий должны использовать константы из `integration/core/event_types.py` (EventTypes).
 
 ## 2) Глобальные инварианты
 
 - Смена режима: только через `mode.request`; факт смены — только `ApplicationStateManager` (`app.mode_changed`).
 - `session_id` — единый источник истины: `ApplicationStateManager`.
 - Завершение PROCESSING: только по `playback.completed` или `grpc.request_completed` (без фиксированных таймаутов).
-- Прерывания: единый канал отмены аудио — `playback.cancelled`.
+- Прерывания: единый канал отмены аудио — `playback.cancelled` (publisher только `SpeechPlaybackIntegration`).
+- `grpc.request_cancel` публикуется только `InterruptManagementIntegration`.
 - Любые локальные стейты не заменяют централизованные оси (`STATE_CATALOG.md`).
 
 ## 3) Контракты событий (канонические)
@@ -202,6 +204,7 @@ required:
 ```
 
 Event: `grpc.request_cancel`  
+Publisher: `InterruptManagementIntegration`  
 Payload:
 ```yaml
 required:
@@ -229,12 +232,14 @@ required:
 ```
 
 Event: `grpc.response.action` (MCP)  
+Publisher: `GrpcClientIntegration` (только ActionMessage; legacy text‑tunneling отключен)  
 Payload:
 ```yaml
 required:
   session_id: str|float
   action_json: str|None
   feature_id: str
+  source: str  # action_message
 optional:
   error: str
 ```
@@ -268,6 +273,7 @@ required:
 ```
 
 Event: `playback.cancelled` (единый канал прерывания)  
+Publisher: `SpeechPlaybackIntegration`  
 Payload:
 ```yaml
 required:
@@ -698,8 +704,9 @@ Source of Truth: `InterruptCoordinator`
 
 Sequence:
 1. `keyboard.short_press` или программный вызов публикует `interrupt.request`.
-2. `InterruptManagementIntegration` при `type="speech_stop"` публикует `playback.cancelled` и `grpc.request_cancel`.
-3. Дополнительно публикуется `mode.request(SLEEPING)` как гарантия возврата.
+2. `InterruptManagementIntegration` при `type="speech_stop"` публикует `grpc.request_cancel`.
+3. `SpeechPlaybackIntegration` при `grpc.request_cancel` публикует `playback.cancelled`.
+4. Дополнительно публикуется `mode.request(SLEEPING)` как гарантия возврата.
 
 Requirements:
 - `interrupt.request.type` обязателен.

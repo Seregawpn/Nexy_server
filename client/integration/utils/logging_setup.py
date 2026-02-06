@@ -12,9 +12,8 @@
 """
 
 import logging
-import os
 from logging.handlers import RotatingFileHandler
-from typing import Optional
+import os
 
 # Singleton flag для однократной настройки
 _logging_configured: bool = False
@@ -71,31 +70,38 @@ def setup_logging(force: bool = False) -> None:
         file_path = logging_section.get('file_path')
         if file_path:
             abs_path = os.path.abspath(os.path.expanduser(file_path))
-            log_dir = os.path.dirname(abs_path)
-            if log_dir:
-                os.makedirs(log_dir, exist_ok=True)
+            try:
+                log_dir = os.path.dirname(abs_path)
+                if log_dir:
+                    os.makedirs(log_dir, exist_ok=True)
 
-            has_file = any(
-                isinstance(h, (logging.FileHandler, RotatingFileHandler))
-                and getattr(h, 'baseFilename', '') == abs_path
-                for h in root_logger.handlers
-            )
-            if not has_file:
-                use_rotation = bool(logging_section.get('rotation', True))
-                max_bytes = int(logging_section.get('max_file_size', 10 * 1024 * 1024))
-                backup_count = int(logging_section.get('max_files', 5))
-                if use_rotation:
-                    file_handler = RotatingFileHandler(
-                        abs_path,
-                        maxBytes=max_bytes,
-                        backupCount=backup_count,
-                        encoding='utf-8',
-                    )
-                else:
-                    file_handler = logging.FileHandler(abs_path, encoding='utf-8')
-                file_handler.setLevel(file_level)
-                file_handler.setFormatter(formatter)
-                root_logger.addHandler(file_handler)
+                has_file = any(
+                    isinstance(h, (logging.FileHandler, RotatingFileHandler))
+                    and getattr(h, 'baseFilename', '') == abs_path
+                    for h in root_logger.handlers
+                )
+                if not has_file:
+                    use_rotation = bool(logging_section.get('rotation', True))
+                    max_bytes = int(logging_section.get('max_file_size', 10 * 1024 * 1024))
+                    backup_count = int(logging_section.get('max_files', 5))
+                    if use_rotation:
+                        file_handler = RotatingFileHandler(
+                            abs_path,
+                            maxBytes=max_bytes,
+                            backupCount=backup_count,
+                            encoding='utf-8',
+                        )
+                    else:
+                        file_handler = logging.FileHandler(abs_path, encoding='utf-8')
+                    file_handler.setLevel(file_level)
+                    file_handler.setFormatter(formatter)
+                    root_logger.addHandler(file_handler)
+            except OSError as e:
+                logging.getLogger(__name__).warning(
+                    "Could not set up file logging at %s: %s (console logging only)",
+                    abs_path,
+                    e,
+                )
         
         # Устанавливаем уровни для конкретных интеграций из конфига
         # Можно добавить в будущем integrations.*.log_level

@@ -3,10 +3,11 @@ HTTP клиент для системы обновлений
 Безопасные HTTPS запросы с проверкой сертификатов
 """
 
-import urllib3
-import os
 import logging
-from typing import Optional, Callable
+import os
+from typing import Any, Callable
+
+import urllib3
 import urllib3.exceptions
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class UpdateHTTPClient:
             # На urllib3 2.x параметр assert_hostname удалён – отключаем проверку через SSLContext
             try:
                 from urllib3.util import ssl_
-                ssl_context = ssl_.create_urllib3_context(cert_reqs='CERT_NONE')
+                ssl_context = ssl_.create_urllib3_context(cert_reqs='CERT_NONE')  # type: ignore
                 ssl_context.check_hostname = False
                 pool_kwargs['ssl_context'] = ssl_context
             except Exception as exc:
@@ -57,7 +58,7 @@ class UpdateHTTPClient:
 
         logger.info(f"HTTP клиент инициализирован: timeout={timeout}s, retries={retries}, ssl_verify={ssl_verify}")
     
-    def get_manifest(self, url: str) -> dict:
+    def get_manifest(self, url: str) -> dict[str, Any]:
         """
         Получение манифеста обновлений
         
@@ -109,7 +110,7 @@ class UpdateHTTPClient:
                 logger.error(f"Неожиданная ошибка: {e}")
                 raise RuntimeError(f"Ошибка получения манифеста: {e}")
     
-    def _parse_xml_manifest(self, xml_content: str) -> dict:
+    def _parse_xml_manifest(self, xml_content: str) -> dict[str, Any]:
         """
         Парсинг XML манифеста (Sparkle appcast)
         
@@ -204,8 +205,8 @@ class UpdateHTTPClient:
         self,
         url: str,
         dest_path: str,
-        expected_size: Optional[int] = None,
-        on_progress: Optional[Callable[[int, Optional[int]], None]] = None,
+        expected_size: int | None = None,
+        on_progress: Callable[[int, int | None], None] | None = None,
     ):
         """
         Скачивание файла с проверкой размера

@@ -5,8 +5,7 @@
 
 import logging
 import threading
-import time
-from typing import Optional, Callable, Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +32,11 @@ class AudioDeviceMonitor:
             check_interval: Интервал проверки устройств в секундах
         """
         self.check_interval = check_interval
-        self.current_input_device: Optional[Any] = None
-        self.device_change_callback: Optional[Callable[[Any, Any], None]] = None
+        self.current_input_device: Any | None = None
+        self.device_change_callback: Callable[[Any, Any], None] | None = None
         
         # Threading
-        self._monitor_thread: Optional[threading.Thread] = None
+        self._monitor_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
         
@@ -127,7 +126,7 @@ class AudioDeviceMonitor:
                 logger.error(f"❌ Ошибка в цикле мониторинга: {e}")
                 self._stop_event.wait(1.0)  # Пауза при ошибке
     
-    def _get_current_input_device(self) -> Optional[Any]:
+    def _get_current_input_device(self) -> Any | None:
         """Получение текущего input устройства"""
         try:
             default_setting = _get_sd().default.device
@@ -138,7 +137,7 @@ class AudioDeviceMonitor:
             logger.debug(f"⚠️ Ошибка получения устройства: {e}")
             return None
     
-    def get_current_device(self) -> Optional[Any]:
+    def get_current_device(self) -> Any | None:
         """Получение текущего устройства (thread-safe)"""
         with self._lock:
             return self.current_input_device

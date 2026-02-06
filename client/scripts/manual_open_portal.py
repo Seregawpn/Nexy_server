@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 # Setup module path to run from client root context
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -9,11 +9,11 @@ os.chdir(client_dir) # Ensure relative paths in modules (like config/) work corr
 
 import asyncio
 import logging
+
+from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
 from integration.integrations.payment_integration import PaymentIntegration
-from config.unified_config_loader import UnifiedConfigLoader
 
 logging.basicConfig(level=logging.INFO)
 

@@ -3,13 +3,19 @@
 Упрощенная версия - только Hardware UUID
 """
 
+from typing import Any
+
+from .core.config import HardwareIdConfigManager, get_hardware_id_config
 from .core.hardware_identifier import HardwareIdentifier
 from .core.types import (
-    HardwareIdResult, HardwareIdStatus, HardwareIdConfig,
-    HardwareIdError, HardwareIdNotFoundError, HardwareIdValidationError,
-    CacheInfo
+    CacheInfo,
+    HardwareIdConfig,
+    HardwareIdError,
+    HardwareIdNotFoundError,
+    HardwareIdResult,
+    HardwareIdStatus,
+    HardwareIdValidationError,
 )
-from .core.config import get_hardware_id_config, HardwareIdConfigManager
 
 # Глобальный экземпляр для переиспользования
 _hardware_identifier = None
@@ -48,7 +54,7 @@ def get_hardware_id_result(force_regenerate: bool = False) -> HardwareIdResult:
     identifier = get_hardware_identifier()
     return identifier.get_hardware_id(force_regenerate)
 
-def get_hardware_info() -> dict:
+def get_hardware_info() -> dict[str, Any]:
     """Получает информацию об оборудовании"""
     identifier = get_hardware_identifier()
     return identifier.get_hardware_info()
@@ -58,7 +64,7 @@ def clear_hardware_id_cache():
     identifier = get_hardware_identifier()
     identifier.clear_cache()
 
-def get_cache_info() -> dict:
+def get_cache_info() -> dict[str, Any]:
     """Получает информацию о кэше"""
     identifier = get_hardware_identifier()
     return identifier.get_cache_info()

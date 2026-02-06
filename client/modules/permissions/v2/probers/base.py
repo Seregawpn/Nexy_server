@@ -6,11 +6,11 @@ Abstract interface for permission probers.
 
 from __future__ import annotations
 
-import time
 from abc import ABC, abstractmethod
+import time
 from typing import Literal
 
-from ..types import PermissionId, ProbeResult, StepConfig
+from ..types import ProbeResult, StepConfig
 
 
 class BaseProber(ABC):

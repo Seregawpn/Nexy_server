@@ -3,18 +3,19 @@
 Политика установки: системный домен /Applications.
 """
 
-import os
-import subprocess
-import shutil
-from pathlib import Path
 import logging
+import os
+import shutil
+import subprocess
+
+from modules.instance_manager import InstanceManager, InstanceManagerConfig
 
 logger = logging.getLogger(__name__)
 
 def get_current_app_path() -> str:
     """Получение пути к текущему приложению"""
     try:
-        from Cocoa import NSBundle
+        from Cocoa import NSBundle  # type: ignore[reportAttributeAccessIssue]
         bundle_path = NSBundle.mainBundle().bundlePath()
         if bundle_path and bundle_path.endswith(".app"):
             return bundle_path
@@ -54,9 +55,12 @@ def migrate_to_user_directory() -> bool:
         subprocess.check_call(["/usr/bin/ditto", current_path, user_path])
         logger.info("✅ Приложение скопировано в ~/Applications")
         
-        # Запускаем из нового места
-        subprocess.Popen(["/usr/bin/open", "-a", user_path])
-        logger.info("✅ Приложение запущено из ~/Applications")
+        # Запускаем из нового места, только если другого экземпляра нет
+        if _is_other_instance_running():
+            logger.warning("⚠️ Другой экземпляр уже запущен — пропускаем relaunch")
+        else:
+            subprocess.Popen(["/usr/bin/open", "-a", user_path])
+            logger.info("✅ Приложение запущено из ~/Applications")
         
         # Завершаем текущий процесс
         logger.info("🔚 Migration: exiting current process after relaunch")
@@ -67,3 +71,23 @@ def migrate_to_user_directory() -> bool:
         return False
     
     return True
+
+
+def _is_other_instance_running() -> bool:
+    try:
+        env_lock_file = os.environ.get("NEXY_INSTANCE_LOCK_FILE")
+        lock_file = env_lock_file or "~/Library/Application Support/Nexy/nexy.lock"
+        manager = InstanceManager(
+            InstanceManagerConfig(
+                enabled=True,
+                lock_file=lock_file,
+                timeout_seconds=30,
+                cleanup_on_startup=False,
+                show_duplicate_message=False,
+                pid_check=True,
+            )
+        )
+        return manager.is_other_instance_running()
+    except Exception as exc:
+        logger.warning("Migration: failed to check other instance: %s", exc)
+        return False

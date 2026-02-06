@@ -4,10 +4,11 @@ Resource Path Resolver для Nexy на macOS.
 и внутри упакованного .app (Resources/… либо Frameworks/…).
 """
 
-import sys
 import os
 from pathlib import Path
-from typing import Optional
+import sys
+
+from integration.utils.env_detection import is_production_env
 
 # Глобальный кэш для стабильности пути user data directory
 # КРИТИЧНО: Гарантирует что все вызовы get_user_data_dir() возвращают один и тот же путь
@@ -23,9 +24,36 @@ def _resolve_app_name(app_name: str) -> str:
     """
     explicit = os.environ.get("NEXY_APP_NAME")
     if explicit:
+        if is_production_env():
+            import logging
+            logging.getLogger(__name__).warning(
+                "[RESOURCE_PATH] NEXY_APP_NAME override used in production: %s",
+                explicit,
+            )
         return explicit
+        
+    # Validating environment: if not frozen (Dev), default to AppName-Dev
+    is_frozen = getattr(sys, "frozen", False)
     suffix = os.environ.get("NEXY_APP_DATA_SUFFIX")
+    
+    if not is_frozen:
+        # Dev mode: use suffix or default to "Dev"
+        if suffix and is_production_env():
+            import logging
+            logging.getLogger(__name__).warning(
+                "[RESOURCE_PATH] NEXY_APP_DATA_SUFFIX override used in production: %s",
+                suffix,
+            )
+        return f"{app_name}-{suffix or 'Dev'}"
+    
+    # Prod mode: use suffix only if explicitly set
     if suffix:
+        if is_production_env():
+            import logging
+            logging.getLogger(__name__).warning(
+                "[RESOURCE_PATH] NEXY_APP_DATA_SUFFIX override used in production: %s",
+                suffix,
+            )
         return f"{app_name}-{suffix}"
     return app_name
 
@@ -42,7 +70,7 @@ def get_resource_path(relative_path: str) -> Path:
     """
 
     if hasattr(sys, "_MEIPASS"):
-        base_path = Path(sys._MEIPASS)
+        base_path = Path(sys._MEIPASS)  # type: ignore[reportAttributeAccessIssue, reportArgumentType]
         candidate = base_path / relative_path
         if candidate.exists():
             return candidate
@@ -62,7 +90,7 @@ def get_resource_path(relative_path: str) -> Path:
     # Dev mode
     main_module = sys.modules.get("__main__")
     if main_module and getattr(main_module, "__file__", None):
-        project_root = Path(main_module.__file__).resolve().parent
+        project_root = Path(str(main_module.__file__)).resolve().parent
         candidate = project_root / relative_path
         if candidate.exists():
             return candidate
@@ -108,7 +136,7 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
         test_file.touch()
         test_file.unlink()
         logger.info(f"✅ Using standard user data directory: {data_dir}")
-        _USER_DATA_DIR_CACHE = data_dir
+        _USER_DATA_DIR_CACHE = data_dir  # type: ignore[reportConstantRedefinition]
         return data_dir
     except (PermissionError, OSError) as e:
         logger.warning(f"Cannot write to {data_dir}: {e}, trying sandbox path...")
@@ -123,7 +151,7 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
         test_file.touch()
         test_file.unlink()
         logger.warning(f"⚠️ Using sandbox data directory: {sandbox_dir}")
-        _USER_DATA_DIR_CACHE = sandbox_dir
+        _USER_DATA_DIR_CACHE = sandbox_dir  # type: ignore[reportConstantRedefinition]
         return sandbox_dir
     except (PermissionError, OSError) as e:
         logger.warning(f"Cannot write to sandbox {sandbox_dir}: {e}, trying /tmp fallback...")
@@ -133,7 +161,7 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
     try:
         tmp_dir.mkdir(parents=True, exist_ok=True)
         logger.error(f"🚨 CRITICAL: Using temporary data directory: {tmp_dir} - flags will be lost on reboot!")
-        _USER_DATA_DIR_CACHE = tmp_dir
+        _USER_DATA_DIR_CACHE = tmp_dir  # type: ignore[reportConstantRedefinition]
         return tmp_dir
     except (PermissionError, OSError) as e:
         logger.error(f"Cannot write to /tmp: {e}")

@@ -8,9 +8,10 @@ Feature ID: F-2025-014-close-app
 - mcp_close_app_test/server/app_launcher_server.py (если есть)
 """
 
-import pytest  # type: ignore
 from pathlib import Path
 import sys
+
+import pytest  # type: ignore
 
 # Добавляем путь к корню проекта
 project_root = Path(__file__).parent.parent.parent.parent.parent

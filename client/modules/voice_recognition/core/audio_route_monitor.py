@@ -7,11 +7,11 @@ Provides automatic device detection and PyAudio reinitialization for Google SR.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import logging
 import threading
 import time
-import logging
-from typing import Optional, Callable
-from dataclasses import dataclass
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +44,11 @@ class AudioRouteMonitor:
     - Reinitializes PyAudio when devices change
     """
     
-    def __init__(self, on_device_change: Optional[Callable[[str], None]] = None):
+    def __init__(self, on_device_change: Callable[[str], None] | None = None):
         self._on_change = on_device_change
-        self._last_snapshot: Optional[DeviceSnapshot] = None
+        self._last_snapshot: DeviceSnapshot | None = None
         self._stop = threading.Event()
-        self._poll_thread: Optional[threading.Thread] = None
+        self._poll_thread: threading.Thread | None = None
         self._obs_token = None
         self._lock = threading.Lock()
     
@@ -61,8 +61,8 @@ class AudioRouteMonitor:
         
         # Register for route change notifications (AVFoundation)
         try:
-            from Foundation import NSNotificationCenter
-            from AVFoundation import AVAudioSessionRouteChangeNotification
+            from AVFoundation import AVAudioSessionRouteChangeNotification  # type: ignore
+            from Foundation import NSNotificationCenter  # type: ignore
             
             nc = NSNotificationCenter.defaultCenter()
             self._obs_token = nc.addObserverForName_object_queue_usingBlock_(
@@ -88,21 +88,21 @@ class AudioRouteMonitor:
             self._poll_thread.join(timeout=3.0)
         if self._obs_token:
             try:
-                from Foundation import NSNotificationCenter
+                from Foundation import NSNotificationCenter  # type: ignore
                 NSNotificationCenter.defaultCenter().removeObserver_(self._obs_token)
             except Exception:
                 pass
         logger.info("🛑 AudioRouteMonitor stopped")
     
-    def get_current_input(self) -> Optional[str]:
+    def get_current_input(self) -> str | None:
         """Get current input device name."""
         with self._lock:
             return self._last_snapshot.input_name if self._last_snapshot else None
     
-    def _get_snapshot(self) -> Optional[DeviceSnapshot]:
+    def _get_snapshot(self) -> DeviceSnapshot | None:
         """Get current audio route snapshot."""
         try:
-            from AVFoundation import AVAudioSession
+            from AVFoundation import AVAudioSession  # type: ignore
             
             session = AVAudioSession.sharedInstance()
             route = session.currentRoute()

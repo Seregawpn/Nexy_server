@@ -8,11 +8,10 @@ keeping this module decoupled from UI specifics.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Protocol
 
-from ..core.interfaces import SignalChannel, SignalRequest, SignalKind
+from ..core.interfaces import SignalChannel, SignalKind, SignalRequest
 
 logger = logging.getLogger(__name__)
 

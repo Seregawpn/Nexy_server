@@ -5,8 +5,8 @@ Type definitions used by the permission restart module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
 from enum import Enum
+from typing import Sequence
 
 
 class PermissionType(Enum):
@@ -42,8 +42,8 @@ class PermissionTransition:
     permission: PermissionType
     old_status: PermissionStatus
     new_status: PermissionStatus
-    session_id: Optional[str] = None
-    source: Optional[str] = None
+    session_id: str | None = None
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -52,10 +52,10 @@ class RestartRequest:
     Aggregated information about a planned application restart.
     """
 
-    session_id: Optional[str]
+    session_id: str | None
     reason: str
     delay_sec: float
-    critical_permissions: Tuple[PermissionType, ...]
+    critical_permissions: tuple[PermissionType, ...]
 
 
 @dataclass(frozen=True)

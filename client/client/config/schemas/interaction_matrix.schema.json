@@ -3,7 +3,10 @@
   "title": "Interaction Matrix Schema",
   "description": "JSON Schema for interaction_matrix.yaml - rules for state transitions based on multiple axes",
   "type": "object",
-  "required": ["axes", "rules"],
+  "required": [
+    "axes",
+    "rules"
+  ],
   "properties": {
     "axes": {
       "type": "object",
@@ -11,7 +14,19 @@
       "patternProperties": {
         ".*": {
           "type": "array",
-          "items": {"oneOf": [{"type": "string"}, {"type": "boolean"}, {"type": "number"}]}
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
         }
       }
     },
@@ -20,18 +35,52 @@
       "description": "Interaction rules",
       "items": {
         "type": "object",
-        "required": ["when", "decision", "priority"],
+        "required": [
+          "when",
+          "decision",
+          "priority"
+        ],
         "properties": {
-          "when": {"type": "object"},
-          "decision": {"type": "string", "enum": ["abort_listen", "abort_processing", "retry_backoff", "degrade_offline", "skip_restart", "delay_restart", "abort_permission_restart", "abort_update_launch", "abort_integration_startup"]},
-          "priority": {"type": "string", "enum": ["hard_stop", "graceful", "preference"]},
-          "description": {"type": "string"},
-          "gateway": {"type": "string"},
-          "timeout_seconds": {"type": "number"},
-          "source": {"type": "string"}
+          "when": {
+            "type": "object"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "abort_listen",
+              "abort_processing",
+              "retry_backoff",
+              "degrade_offline",
+              "skip_restart",
+              "delay_restart",
+              "abort_permission_restart",
+              "abort_update_launch",
+              "abort_integration_startup",
+              "notify_user"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "hard_stop",
+              "graceful",
+              "preference"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "gateway": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          }
         }
       }
     }
   }
 }
-

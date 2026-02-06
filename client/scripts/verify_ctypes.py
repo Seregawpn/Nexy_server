@@ -13,9 +13,9 @@ verify_ctypes.py — Preflight проверки для ctypes/нативного
 - NULL-указатели после вызовов CF-функций
 """
 
-import sys
 import ctypes
 from ctypes import util as ctypes_util
+import sys
 
 # Цвета для вывода
 GREEN = "\033[92m"

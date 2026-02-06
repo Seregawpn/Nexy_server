@@ -4,10 +4,14 @@ macOS Hardware Detector для получения Hardware UUID
 """
 
 import logging
+from typing import Any
 import uuid
-from typing import Optional, Dict, Any
+
+from ..core.types import (
+    HardwareIdResult,
+    HardwareIdStatus,
+)
 from .system_profiler import SystemProfilerBridge
-from ..core.types import HardwareIdResult, HardwareIdStatus, HardwareIdError, HardwareIdNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +79,7 @@ class HardwareDetector:
                 error_message=str(e)
             )
     
-    def detect_hardware_info(self) -> Dict[str, Any]:
+    def detect_hardware_info(self) -> dict[str, Any]:
         """
         Обнаруживает полную информацию об оборудовании
         
@@ -191,7 +195,7 @@ class HardwareDetector:
         except Exception:
             return False
     
-    def get_system_info(self) -> Dict[str, Any]:
+    def get_system_info(self) -> dict[str, Any]:
         """
         Получает информацию о системе
         

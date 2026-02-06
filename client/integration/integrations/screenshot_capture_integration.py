@@ -4,23 +4,21 @@ ScreenshotCaptureIntegration - Интеграция модуля захвата 
 """
 
 import asyncio
-import logging
+import contextlib
+from dataclasses import dataclass
+import datetime
+import os
+from pathlib import Path
+import shlex
+import sys
 import tempfile
 import time
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
-import subprocess
-import shlex
-import os
-import datetime
-import contextlib
-import sys
+from typing import Any
 
+from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.event_types import EventTypes
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -31,15 +29,16 @@ except Exception:
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 # Модуль захвата скриншотов
-from modules.screenshot_capture.core.screenshot_capture import ScreenshotCapture
-from modules.screenshot_capture.core.types import (
-    ScreenshotConfig, ScreenshotFormat, ScreenshotQuality, ScreenshotRegion
-)
-
 # Конфиг
 from config.unified_config_loader import UnifiedConfigLoader
-
 from integration.utils.logging_setup import get_logger
+from modules.screenshot_capture.core.screenshot_capture import ScreenshotCapture
+from modules.screenshot_capture.core.types import (
+    ScreenshotConfig,
+    ScreenshotFormat,
+    ScreenshotQuality,
+    ScreenshotRegion,
+)
 
 logger = get_logger(__name__)
 
@@ -70,21 +69,21 @@ class ScreenshotCaptureIntegration:
         self._running = False
 
         # Сессии/идемпотентность
-        self._last_session_id: Optional[float] = None
-        self._captured_for_session: Optional[float] = None
-        self._screen_permission_status: Optional[str] = None
+        self._last_session_id: float | None = None
+        self._captured_for_session: float | None = None
+        self._screen_permission_status: str | None = None
         self._screen_permission_prompted = False
-        self._screen_permission_task: Optional[asyncio.Task] = None
+        self._screen_permission_task: asyncio.Task[Any] | None = None
         # Ранний захват: отслеживаем активные задачи захвата по session_id
-        self._early_capture_tasks: Dict[float, asyncio.Task] = {}
+        self._early_capture_tasks: dict[float, asyncio.Task[Any]] = {}
         # Кэш данных последнего захваченного скриншота для переопубликации
-        self._captured_screenshot_data: Optional[Dict[str, Any]] = None
+        self._captured_screenshot_data: dict[str, Any] | None = None
 
         # Компоненты
-        self._capture: Optional[ScreenshotCapture] = None
+        self._capture: ScreenshotCapture | None = None
         self._config = self._load_config()
-        self._prepared_screens: Dict[float, Dict[str, Any]] = {}
-        self._prepare_tasks: Dict[float, asyncio.Task] = {}
+        self._prepared_screens: dict[float, dict[str, Any]] = {}
+        self._prepare_tasks: dict[float, asyncio.Task[Any]] = {}
         # Принудительная проверка разрешений отключена без централизованного менеджера
         self._enforce_permissions = False
 
@@ -210,7 +209,7 @@ class ScreenshotCaptureIntegration:
             timeout=5.0,
         )
 
-    async def _on_recording_start(self, event: Dict[str, Any]):
+    async def _on_recording_start(self, event: dict[str, Any]):
         """Ранний захват скриншота при voice.recording_start (когда запись реально началась)"""
         try:
             # Извлекаем session_id из события
@@ -249,7 +248,7 @@ class ScreenshotCaptureIntegration:
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in recording_start: {e}")
 
-    async def _on_voice_recording_stop(self, event: Dict[str, Any]):
+    async def _on_voice_recording_stop(self, event: dict[str, Any]):
         try:
             data = (event or {}).get("data", {})
             session_id = data.get("session_id")
@@ -287,7 +286,7 @@ class ScreenshotCaptureIntegration:
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in voice_recording_stop: {e}")
 
-    async def _on_mode_changed(self, event: Dict[str, Any]):
+    async def _on_mode_changed(self, event: dict[str, Any]):
         try:
             data = (event or {}).get("data", {})
             mode = data.get("mode")
@@ -330,7 +329,7 @@ class ScreenshotCaptureIntegration:
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in mode_changed: {e}")
 
-    async def _on_state_changed(self, event: Dict[str, Any]):
+    async def _on_state_changed(self, event: dict[str, Any]):
         """Резервный триггер по старому событию состояния"""
         try:
             new_mode = (event or {}).get("data", {}).get("new_mode")
@@ -360,11 +359,11 @@ class ScreenshotCaptureIntegration:
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in state_changed: {e}")
 
-    async def _capture_once_early(self, session_id: Optional[float]):
+    async def _capture_once_early(self, session_id: float | None):
         """Ранний захват скриншота (не блокирует, может быть отменен)"""
         await self._capture_once(session_id, is_early=True)
     
-    async def _capture_once(self, session_id: Optional[float], is_early: bool = False):
+    async def _capture_once(self, session_id: float | None, is_early: bool = False):
         if not self._capture:
             fmt = (self._config.format or "jpeg").lower()
             if fmt == "webp":
@@ -431,7 +430,7 @@ class ScreenshotCaptureIntegration:
                 "error": str(e),
             })
 
-    async def _fallback_capture_cli(self) -> Tuple[bool, Optional[Path], Dict[str, Any]]:
+    async def _fallback_capture_cli(self) -> tuple[bool, Path | None, dict[str, Any]]:
         """Пытается сделать скриншот через системную утилиту screencapture (macOS).
         Возвращает (ok, path, meta)."""
         try:
@@ -527,7 +526,7 @@ class ScreenshotCaptureIntegration:
             logger.debug(f"CLI capture fallback failed: {e}")
             return False, None, {}
 
-    async def _on_permission_event(self, event: Dict[str, Any]):
+    async def _on_permission_event(self, event: dict[str, Any]):
         try:
             data = (event or {}).get("data", {})
             event_type = (event or {}).get("type", "permissions.unknown")
@@ -547,7 +546,7 @@ class ScreenshotCaptureIntegration:
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: permission event error: {e}")
 
-    async def _on_permissions_ready(self, event: Dict[str, Any]):
+    async def _on_permissions_ready(self, event: dict[str, Any]):
         try:
             data = (event or {}).get("data", {})
             permissions_map = data.get("permissions")
@@ -582,7 +581,7 @@ class ScreenshotCaptureIntegration:
         except Exception:
             pass
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "initialized": self._initialized,
             "running": self._running,
@@ -625,7 +624,7 @@ class ScreenshotCaptureIntegration:
         result = payload.get("result")
         await self._store_and_publish(session_id, result)
 
-    async def _store_and_publish(self, session_id: Optional[float], result):
+    async def _store_and_publish(self, session_id: float | None, result):
         tmp_dir = Path(tempfile.gettempdir()) / "nexy_screenshots"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         
@@ -795,9 +794,22 @@ class ScreenshotCaptureIntegration:
             granted = False
             # Используем только fallback проверку
             try:
-                from Quartz import CGPreflightScreenCaptureAccess  # type: ignore
+                from Quartz import (
+                    CGPreflightScreenCaptureAccess,  # type: ignore[reportMissingImports]
+                )
             except Exception:
                 CGPreflightScreenCaptureAccess = None
+            
+            # Также попробуем импортировать константы для проверки
+            try:
+                from Quartz.CoreGraphics import (  # type: ignore[reportMissingImports]
+                    CGWindowListCreateImage,  # type: ignore[reportAttributeAccessIssue]
+                    kCGNullWindowID,  # type: ignore[reportAttributeAccessIssue]
+                    kCGWindowImageDefault,  # type: ignore[reportAttributeAccessIssue]
+                    kCGWindowListOptionOnScreenOnly,  # type: ignore[reportAttributeAccessIssue]
+                )
+            except Exception:
+                pass
 
             if CGPreflightScreenCaptureAccess is not None:
                 try:
@@ -807,7 +819,12 @@ class ScreenshotCaptureIntegration:
             else:
                 # Фоллбек: пробуем создать изображение всего экрана
                 try:
-                    from Quartz import CGWindowListCreateImage, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault  # type: ignore
+                    from Quartz import (  # type: ignore[reportMissingImports]
+                        CGWindowListCreateImage,  # type: ignore[reportAttributeAccessIssue]
+                        kCGNullWindowID,  # type: ignore[reportAttributeAccessIssue]
+                        kCGWindowImageDefault,  # type: ignore[reportAttributeAccessIssue]
+                        kCGWindowListOptionOnScreenOnly,  # type: ignore[reportAttributeAccessIssue]
+                    )
                     rect = ((0, 0), (1, 1))
                     img = CGWindowListCreateImage(rect, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault)
                     granted = bool(img)

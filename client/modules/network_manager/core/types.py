@@ -2,11 +2,12 @@
 Типы данных для NetworkManager Module
 """
 
-from enum import Enum
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Callable, Any
 import asyncio
+from dataclasses import dataclass
+from enum import Enum
 import time
+from typing import Any, Callable
+
 
 class NetworkStatus(Enum):
     """Статусы сети"""
@@ -49,8 +50,8 @@ class NetworkConfig:
     ping_timeout: float = 5.0         # Таймаут пинга в секундах
     max_retries: int = 3              # Максимальное количество попыток
     retry_delay: float = 5.0          # Задержка между попытками в секундах
-    test_urls: List[str] = None       # URL для тестирования
-    ping_hosts: List[str] = None      # Хосты для пинга
+    test_urls: list[str] | None = None       # URL для тестирования
+    ping_hosts: list[str] | None = None      # Хосты для пинга
     
     def __post_init__(self):
         if self.test_urls is None:
@@ -72,8 +73,8 @@ class NetworkTestResult:
     success: bool                     # Успешность теста
     test_type: str                    # Тип теста
     duration: float                   # Время выполнения в секундах
-    details: Dict[str, Any]           # Дополнительные детали
-    error_message: Optional[str] = None # Сообщение об ошибке
+    details: dict[str, Any]           # Дополнительные детали
+    error_message: str | None = None # Сообщение об ошибке
     timestamp: float = 0.0            # Время выполнения теста
     
     def __post_init__(self):
@@ -84,12 +85,12 @@ class NetworkTestResult:
 class NetworkDiagnostic:
     """Диагностика сети"""
     overall_status: NetworkStatus     # Общий статус
-    connectivity_tests: List[NetworkTestResult]  # Результаты тестов
+    connectivity_tests: list[NetworkTestResult]  # Результаты тестов
     network_quality: NetworkQuality   # Качество сети
     connection_type: ConnectionType   # Тип соединения
     metrics: NetworkMetrics           # Метрики сети
-    issues: List[str]                 # Обнаруженные проблемы
-    recommendations: List[str]        # Рекомендации по исправлению
+    issues: list[str]                 # Обнаруженные проблемы
+    recommendations: list[str]        # Рекомендации по исправлению
     timestamp: float = 0.0            # Время диагностики
     
     def __post_init__(self):
@@ -102,7 +103,7 @@ class NetworkEvent:
     event_type: str                   # Тип события
     old_status: NetworkStatus         # Предыдущий статус
     new_status: NetworkStatus         # Новый статус
-    details: Dict[str, Any]           # Дополнительные детали
+    details: dict[str, Any]           # Дополнительные детали
     timestamp: float = 0.0            # Время события
     
     def __post_init__(self):
@@ -120,7 +121,7 @@ class NetworkCallback:
         """Вызвать callback"""
         try:
             if self.is_async:
-                await self.callback(event)
+                await self.callback(event)  # type: ignore
             else:
                 self.callback(event)
         except Exception as e:
@@ -136,9 +137,9 @@ class NetworkManagerState:
         self.metrics: NetworkMetrics = NetworkMetrics()
         self.is_monitoring: bool = False
         self.last_check: float = 0.0
-        self.callbacks: List[NetworkCallback] = []
-        self.config: Optional[NetworkConfig] = None
-        self.diagnostic_history: List[NetworkDiagnostic] = []
+        self.callbacks: list[NetworkCallback] = []
+        self.config: NetworkConfig | None = None
+        self.diagnostic_history: list[NetworkDiagnostic] = []
     
     def add_callback(self, callback: Callable[[NetworkEvent], None]):
         """Добавить callback"""
@@ -176,7 +177,7 @@ class NetworkManagerState:
         if len(self.diagnostic_history) > 10:
             self.diagnostic_history = self.diagnostic_history[-10:]
     
-    def get_latest_diagnostic(self) -> Optional[NetworkDiagnostic]:
+    def get_latest_diagnostic(self) -> NetworkDiagnostic | None:
         """Получить последнюю диагностику"""
         return self.diagnostic_history[-1] if self.diagnostic_history else None
 

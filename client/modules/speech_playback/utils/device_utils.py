@@ -3,12 +3,13 @@ Audio Utils - Утилиты для обработки аудио данных
 """
 
 import logging
+from typing import Any
+
 import numpy as np
-from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-def normalize_audio(audio_data: np.ndarray, target_dtype: np.dtype = np.int16) -> np.ndarray:
+def normalize_audio(audio_data: np.ndarray, target_dtype: Any = np.int16) -> np.ndarray:
     """Нормализует аудио данные"""
     logger.debug(f"🔍 [AUDIO_DEBUG] Нормализация аудио: shape={audio_data.shape}, dtype={audio_data.dtype} -> {target_dtype}")
     try:
@@ -116,7 +117,7 @@ def convert_channels(audio_data: np.ndarray, target_channels: int) -> np.ndarray
         logger.error(f"❌ Ошибка конвертации каналов: {e}")
         return audio_data
 
-def detect_silence(audio_data: np.ndarray, threshold: float = 0.01) -> List[tuple]:
+def detect_silence(audio_data: np.ndarray, threshold: float = 0.01) -> list[tuple[int, int]]:
     """Обнаруживает тишину в аудио"""
     try:
         # Вычисляем энергию сигнала
@@ -179,7 +180,7 @@ def trim_silence(audio_data: np.ndarray, threshold: float = 0.01) -> np.ndarray:
         logger.error(f"❌ Ошибка удаления тишины: {e}")
         return audio_data
 
-def get_audio_info(audio_data: np.ndarray, sample_rate: int) -> dict:
+def get_audio_info(audio_data: np.ndarray, sample_rate: int) -> dict[str, Any]:
     """Возвращает информацию об аудио"""
     try:
         duration = len(audio_data) / sample_rate

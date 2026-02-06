@@ -2,7 +2,7 @@
 Input Processing Configuration Module
 """
 
-from .input_config import InputConfig, DEFAULT_INPUT_CONFIG
+from .input_config import DEFAULT_INPUT_CONFIG, InputConfig
 
 __all__ = [
     'InputConfig',

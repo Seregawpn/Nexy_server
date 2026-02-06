@@ -6,12 +6,11 @@ AudioRecoveryManager - автоматическое восстановление
 """
 
 import asyncio
-import logging
-import subprocess
-import time
-from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
+import logging
+import time
+from typing import Any
 
 import numpy as np
 
@@ -55,12 +54,12 @@ class AudioConfig:
 class RecoveryStats:
     """Статистика восстановления."""
     silent_chunks: int = 0
-    recovery_steps_taken: List[RecoveryStep] = None
-    first_peak_ts: Optional[float] = None
+    recovery_steps_taken: list[RecoveryStep] | None = None
+    first_peak_ts: float | None = None
     max_peak: float = 0.0
     rms_avg: float = 0.0
-    config_used: Optional[AudioConfig] = None
-    ffmpeg_probe_result: Optional[bool] = None
+    config_used: AudioConfig | None = None
+    ffmpeg_probe_result: bool | None = None
     
     def __post_init__(self):
         if self.recovery_steps_taken is None:
@@ -97,11 +96,11 @@ class AudioRecoveryManager:
         self.device_id = device_id
         self.device_name = device_name
         self.stats = RecoveryStats()
-        self.tried_steps: Dict[RecoveryStep, bool] = {
+        self.tried_steps: dict[RecoveryStep, bool] = {
             step: False for step in RecoveryStep
         }
         self.current_config_index = 0
-        self.fallback_devices: List[int] = []
+        self.fallback_devices: list[int] = []
         self._setup_fallback_devices()
         
     def _setup_fallback_devices(self):
@@ -109,14 +108,14 @@ class AudioRecoveryManager:
         try:
             devices = _get_sd().query_devices()
             for i, device in enumerate(devices):
-                if device['max_input_channels'] > 0 and i != self.device_id:
+                if device['max_input_channels'] > 0 and i != self.device_id:  # type: ignore[reportArgumentType]
                     self.fallback_devices.append(i)
             logger.debug(f"🔧 Fallback devices: {self.fallback_devices}")
         except Exception as e:
             logger.warning(f"⚠️ Не удалось получить список устройств: {e}")
             self.fallback_devices = []
     
-    def on_chunk_received(self, chunk: np.ndarray, peak: float, rms: float) -> Optional[RecoveryStep]:
+    def on_chunk_received(self, chunk: np.ndarray, peak: float, rms: float) -> RecoveryStep | None:
         """
         Обработка полученного чанка аудио.
         
@@ -141,7 +140,7 @@ class AudioRecoveryManager:
             self.stats.silent_chunks = 0
             return None
     
-    def _check_recovery_thresholds(self) -> Optional[RecoveryStep]:
+    def _check_recovery_thresholds(self) -> RecoveryStep | None:
         """Проверка порогов восстановления."""
         silent_count = self.stats.silent_chunks
         
@@ -179,6 +178,7 @@ class AudioRecoveryManager:
             True если восстановление выполнено успешно
         """
         self.tried_steps[step] = True
+        assert self.stats.recovery_steps_taken is not None
         self.stats.recovery_steps_taken.append(step)
         
         try:
@@ -316,8 +316,9 @@ class AudioRecoveryManager:
         """Получение текущей конфигурации."""
         return self.AUDIO_CONFIGS[self.current_config_index]
     
-    def get_recovery_status(self) -> Dict[str, Any]:
+    def get_recovery_status(self) -> dict[str, Any]:
         """Получение статуса восстановления для логирования."""
+        assert self.stats.recovery_steps_taken is not None
         return {
             'silent_chunks': self.stats.silent_chunks,
             'recovery_steps': [step.value for step in self.stats.recovery_steps_taken],
@@ -336,7 +337,7 @@ class AudioRecoveryManager:
         logger.debug("🔄 AudioRecoveryManager сброшен")
 
 
-async def preflight_check(device_id: int, device_name: str, duration_ms: int = 100) -> Tuple[bool, float]:
+async def preflight_check(device_id: int, device_name: str, duration_ms: int = 100) -> tuple[bool, float]:
     """
     Preflight проверка устройства перед началом записи.
     

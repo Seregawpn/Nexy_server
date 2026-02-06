@@ -3,13 +3,13 @@
 SHA256 хеши, Ed25519 подписи, codesign проверки
 """
 
-import hashlib
 import base64
-import subprocess
+import hashlib
 import logging
 import os
+import subprocess
+
 from nacl.signing import VerifyKey
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +200,7 @@ def verify_dmg_signature(dmg_path: str) -> bool:
         logger.error(f"❌ Ошибка проверки подписи DMG: {e}")
         return False
 
-def get_app_bundle_id(app_path: str) -> Optional[str]:
+def get_app_bundle_id(app_path: str) -> str | None:
     """
     Получение Bundle ID приложения
     
@@ -225,7 +225,7 @@ def get_app_bundle_id(app_path: str) -> Optional[str]:
         logger.error(f"Ошибка получения Bundle ID: {e}")
         return None
 
-def get_app_version(app_path: str) -> Optional[str]:
+def get_app_version(app_path: str) -> str | None:
     """
     Получение версии приложения
     

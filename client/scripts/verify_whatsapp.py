@@ -1,13 +1,13 @@
 
 import asyncio
 import logging
-import sys
 import os
+import sys
 
 # Add client to sys.path
 sys.path.append(os.getcwd())
 
-from client.modules.whatsapp import WhatsappConfig, WhatsappServiceManager, WhatsappMCPClient
+from modules.whatsapp import WhatsappConfig, WhatsappMCPClient, WhatsappServiceManager
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)

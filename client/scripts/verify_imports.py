@@ -26,10 +26,9 @@ Exit codes:
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 import py_compile
 import sys
-from pathlib import Path
-from typing import List, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -192,7 +191,7 @@ class CheckError(Exception):
     """Ошибка проверки."""
 
 
-def check_syntax(file_path: Path) -> Tuple[bool, str]:
+def check_syntax(file_path: Path) -> tuple[bool, str]:
     """
     Проверяет синтаксис Python файла.
     
@@ -217,7 +216,7 @@ def check_syntax(file_path: Path) -> Tuple[bool, str]:
         return False, f"Unexpected error: {type(e).__name__}: {e}"
 
 
-def check_import(module_name: str) -> Tuple[bool, str]:
+def check_import(module_name: str) -> tuple[bool, str]:
     """
     Проверяет возможность импорта модуля.
     
@@ -235,7 +234,7 @@ def check_import(module_name: str) -> Tuple[bool, str]:
         return False, f"Unexpected error importing {module_name}: {type(e).__name__}: {e}"
 
 
-def check_all_syntax() -> List[str]:
+def check_all_syntax() -> list[str]:
     """Проверяет синтаксис всех критических файлов."""
     errors = []
     
@@ -252,7 +251,7 @@ def check_all_syntax() -> List[str]:
     return errors
 
 
-def check_all_integrations() -> List[str]:
+def check_all_integrations() -> list[str]:
     """Проверяет импорт всех интеграций."""
     errors = []
     
@@ -264,7 +263,7 @@ def check_all_integrations() -> List[str]:
     return errors
 
 
-def check_core_imports() -> List[str]:
+def check_core_imports() -> list[str]:
     """Проверяет импорт core компонентов."""
     errors = []
     
@@ -276,7 +275,7 @@ def check_core_imports() -> List[str]:
     return errors
 
 
-def check_pyobjc_imports() -> List[str]:
+def check_pyobjc_imports() -> list[str]:
     """Проверяет импорт PyObjC модулей."""
     errors = []
     
@@ -288,7 +287,7 @@ def check_pyobjc_imports() -> List[str]:
     return errors
 
 
-def check_all_modules() -> List[str]:
+def check_all_modules() -> list[str]:
     """Проверяет импорт всех модулей из modules/."""
     errors = []
     
@@ -300,7 +299,7 @@ def check_all_modules() -> List[str]:
     return errors
 
 
-def check_all_workflows() -> List[str]:
+def check_all_workflows() -> list[str]:
     """Проверяет импорт всех workflows."""
     errors = []
     
@@ -312,7 +311,7 @@ def check_all_workflows() -> List[str]:
     return errors
 
 
-def check_all_gateways() -> List[str]:
+def check_all_gateways() -> list[str]:
     """Проверяет импорт всех gateways."""
     errors = []
     
@@ -324,7 +323,7 @@ def check_all_gateways() -> List[str]:
     return errors
 
 
-def check_resources_exist() -> List[str]:
+def check_resources_exist() -> list[str]:
     """Проверяет существование критических ресурсов."""
     errors = []
     
@@ -336,7 +335,7 @@ def check_resources_exist() -> List[str]:
     return errors
 
 
-def check_configs_exist() -> List[str]:
+def check_configs_exist() -> list[str]:
     """Проверяет существование критических конфигурационных файлов."""
     errors = []
     
@@ -348,7 +347,7 @@ def check_configs_exist() -> List[str]:
     return errors
 
 
-def check_packaging_files() -> List[str]:
+def check_packaging_files() -> list[str]:
     """Проверяет существование критических packaging файлов."""
     errors = []
     
@@ -360,7 +359,7 @@ def check_packaging_files() -> List[str]:
     return errors
 
 
-def check_all_utils() -> List[str]:
+def check_all_utils() -> list[str]:
     """Проверяет импорт всех utils."""
     errors = []
     
@@ -372,7 +371,7 @@ def check_all_utils() -> List[str]:
     return errors
 
 
-def check_system_tools() -> List[str]:
+def check_system_tools() -> list[str]:
     """Проверяет доступность системных инструментов."""
     import shutil
     errors = []
@@ -384,7 +383,7 @@ def check_system_tools() -> List[str]:
     return errors
 
 
-def check_binary_permissions() -> List[str]:
+def check_binary_permissions() -> list[str]:
     """Проверяет права доступа на исполнение бинарников."""
     import os
     errors = []
@@ -398,7 +397,7 @@ def check_binary_permissions() -> List[str]:
     return errors
 
 
-def check_proto_files() -> List[str]:
+def check_proto_files() -> list[str]:
     """Проверяет существование proto файлов и pb2.py."""
     errors = []
     

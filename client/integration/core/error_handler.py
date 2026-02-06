@@ -2,9 +2,9 @@
 ErrorHandler - Обработка ошибок в интеграции
 """
 
-import logging
-from typing import Dict, Any, Optional
 from enum import Enum
+import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class ErrorHandler:
         self.max_history = 1000
         
     async def handle_error(self, severity: Any, category: Any, 
-                          message: str, context: Optional[Dict[str, Any]] = None):
+                          message: str, context: dict[str, Any] | None = None):
         """Обработать ошибку"""
         try:
             if context is None:
@@ -87,7 +87,7 @@ class ErrorHandler:
         except Exception as e:
             logger.error(f"❌ Ошибка в обработчике ошибок: {e}")
 
-    async def handle(self, error: Exception, category: Any = "unknown", severity: Any = "error", context: Optional[Dict[str, Any]] = None):
+    async def handle(self, error: Exception, category: Any = "unknown", severity: Any = "error", context: dict[str, Any] | None = None):
         """Совместимый метод обработки ошибок с гибкими типами аргументов.
 
         Args:
@@ -149,8 +149,8 @@ class ErrorHandler:
         import time
         return time.time()
     
-    def get_error_history(self, severity: Optional[ErrorSeverity] = None, 
-                         category: Optional[ErrorCategory] = None, limit: int = 100) -> list:
+    def get_error_history(self, severity: ErrorSeverity | None = None, 
+                         category: ErrorCategory | None = None, limit: int = 100) -> list[dict[str, Any]]:
         """Получить историю ошибок"""
         try:
             filtered_history = self.error_history
@@ -173,7 +173,7 @@ class ErrorHandler:
             logger.error(f"❌ Ошибка получения истории ошибок: {e}")
             return []
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус обработчика ошибок"""
         return {
             "error_history_size": len(self.error_history),

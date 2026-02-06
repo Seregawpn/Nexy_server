@@ -2,11 +2,11 @@
 Типы данных для Tray Controller
 """
 
-from enum import Enum
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Callable
 import base64
+from dataclasses import dataclass
+from enum import Enum
 import logging
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class TrayIcon:
     icon_type: TrayIconType
     color: str                   # HEX цвет
     size: int = 16              # Размер в пикселях
-    data: Optional[bytes] = None # Данные иконки (если нужна кастомная)
+    data: bytes | None = None # Данные иконки (если нужна кастомная)
     
     def get_base64_data(self) -> str:
         """Получить данные иконки в base64"""
@@ -43,18 +43,18 @@ class TrayIcon:
 class TrayMenuItem:
     """Элемент меню трея"""
     title: str
-    action: Optional[Callable] = None
+    action: Callable[..., Any] | None = None
     enabled: bool = True
     separator: bool = False
     submenu: Optional['TrayMenu'] = None
-    shortcut: Optional[str] = None
-    icon: Optional[str] = None
+    shortcut: str | None = None
+    icon: str | None = None
 
 @dataclass
 class TrayMenu:
     """Меню трея"""
-    items: List[TrayMenuItem]
-    title: Optional[str] = None
+    items: list[TrayMenuItem]
+    title: str | None = None
 
 @dataclass
 class TrayConfig:
@@ -77,7 +77,7 @@ class TrayConfig:
 class TrayEvent:
     """Событие трея"""
     event_type: str
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
     timestamp: float = 0.0
     source: str = "tray_controller"
 

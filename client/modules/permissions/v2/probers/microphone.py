@@ -7,10 +7,10 @@ Probes Microphone permission by attempting to open an audio stream.
 from __future__ import annotations
 
 import logging
-from typing import Literal, Optional, Tuple
+from typing import Literal
 
-from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from ..error_matrix import apply_normalization_to_evidence
+from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from .base import BaseProber
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class MicrophoneProber(BaseProber):
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.MICROPHONE
-        self._last_result: Optional[bool] = None
+        self._last_result: bool | None = None
     
     async def trigger(self) -> None:
         """
@@ -65,14 +65,14 @@ class MicrophoneProber(BaseProber):
             evidence=ev
         )
     
-    async def _capability_mic_frames(self, probe_kind: str) -> Tuple[Optional[bool], Optional[str], Optional[str], Optional[str]]:
+    async def _capability_mic_frames(self, probe_kind: str) -> tuple[bool | None, str | None, str | None, str | None]:
         """
         Test microphone capability by recording a few frames.
         Returns (frames_received, domain, code, message).
         """
         try:
-            import sounddevice as sd
             import numpy as np
+            import sounddevice as sd
             
             # Quick recording test
             duration = 0.1 if probe_kind == "heavy" else 0.02

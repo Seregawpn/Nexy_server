@@ -6,12 +6,12 @@ Probes Accessibility (AX) permission using AXIsProcessTrusted().
 
 from __future__ import annotations
 
-import logging
 from dataclasses import replace
-from typing import Literal, Optional
+import logging
+from typing import Literal
 
-from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from ..error_matrix import apply_normalization_to_evidence
+from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from .base import BaseProber
 
 logger = logging.getLogger(__name__)
@@ -23,20 +23,22 @@ class AccessibilityProber(BaseProber):
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.ACCESSIBILITY
-        self._last_result: Optional[bool] = None
+        self._last_result: bool | None = None
     
     async def trigger(self) -> None:
         """
-        No reliable dialog API for Accessibility.
-        Orchestrator opens Settings via deep-link.
-        We can try CGRequestPostEventAccess() but it's not guaranteed.
+        Trigger the accessibility permission prompt using AXIsProcessTrustedWithOptions.
+        This shows the native macOS dialog without opening System Settings.
         """
         try:
-            from Quartz import CGRequestPostEventAccess
-            CGRequestPostEventAccess()
-            logger.debug("[AX_PROBER] Called CGRequestPostEventAccess()")
+            from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt  # type: ignore[reportMissingImports]
+            
+            options = {kAXTrustedCheckOptionPrompt: True}
+            result = AXIsProcessTrustedWithOptions(options)
+            logger.debug("[AX_PROBER] Called AXIsProcessTrustedWithOptions(prompt=True) = %s", result)
+            
         except ImportError:
-            logger.debug("[AX_PROBER] Quartz not available, skipping trigger")
+            logger.debug("[AX_PROBER] ApplicationServices not available, skipping trigger")
         except Exception as e:
             logger.warning("[AX_PROBER] Trigger failed: %s", e)
     
@@ -71,13 +73,13 @@ class AccessibilityProber(BaseProber):
             evidence=ev
         )
     
-    async def _capability_ax_ok(self) -> Optional[bool]:
+    async def _capability_ax_ok(self) -> bool | None:
         """
         Check if Accessibility is enabled.
         Uses AXIsProcessTrusted() via PyObjC.
         """
         try:
-            from ApplicationServices import AXIsProcessTrusted
+            from ApplicationServices import AXIsProcessTrusted  # type: ignore[reportMissingImports]
             result = AXIsProcessTrusted()
             logger.debug("[AX_PROBER] AXIsProcessTrusted() = %s", result)
             return bool(result)

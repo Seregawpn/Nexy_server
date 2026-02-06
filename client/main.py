@@ -4,15 +4,16 @@
 """
 
 import asyncio
+from datetime import datetime
 import logging
 import os
-import sys
+from pathlib import Path
+import platform
 import signal
+import sys
 import tempfile
 import traceback
-import platform
-from pathlib import Path
-from datetime import datetime
+
 
 # --- Фикс PyObjC для macOS (применяется ВСЕГДА, ДО ВСЕХ ДРУГИХ ИМПОРТОВ) ---
 # КРИТИЧНО: Должен выполняться ДО любых импортов rumps/PyObjC
@@ -183,6 +184,7 @@ def activate_nsapplication_for_menu_bar():
 # Настройка логирования (через unified_config.yaml)
 # ВАЖНО: Для .app bundle логи должны писаться в файл, т.к. stdout недоступен
 from integration.utils.logging_setup import setup_logging
+
 setup_logging()
 
 log_file = None
@@ -382,7 +384,9 @@ async def main():
 
 if __name__ == "__main__":
     if "--diagnostics" in sys.argv or os.getenv("NEXY_DIAG") == "voice":
-        from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration
+        from integration.integrations.voice_recognition_integration import (
+            VoiceRecognitionIntegration,
+        )
 
         ok = VoiceRecognitionIntegration.run_dependency_check()
         sys.exit(0 if ok else 1)

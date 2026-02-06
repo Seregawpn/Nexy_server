@@ -5,11 +5,8 @@
 
 import asyncio
 import logging
-import sys
-import os
 
 # Пути уже добавлены в main.py - не дублируем
-
 from core.tray_controller import TrayController
 from core.tray_types import TrayStatus
 

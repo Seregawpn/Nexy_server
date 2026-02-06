@@ -4,8 +4,8 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any, Tuple
-import base64
+from typing import Any
+
 
 class ScreenshotFormat(Enum):
     """Поддерживаемые форматы скриншотов"""
@@ -33,11 +33,11 @@ class ScreenshotConfig:
     format: ScreenshotFormat = ScreenshotFormat.JPEG
     quality: ScreenshotQuality = ScreenshotQuality.MEDIUM
     region: ScreenshotRegion = ScreenshotRegion.FULL_SCREEN
-    custom_region: Optional[Tuple[int, int, int, int]] = None  # (x, y, width, height)
+    custom_region: tuple[int, int, int, int] | None = None  # (x, y, width, height)
     include_cursor: bool = False
     compress: bool = True
-    max_width: Optional[int] = 1280  # Оптимизированный размер
-    max_height: Optional[int] = 720  # Оптимизированный размер
+    max_width: int | None = 1280  # Оптимизированный размер
+    max_height: int | None = 720  # Оптимизированный размер
     timeout: float = 5.0  # Таймаут в секундах
 
 @dataclass
@@ -49,9 +49,9 @@ class ScreenshotData:
     height: int
     size_bytes: int
     mime_type: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Конвертирует в словарь для совместимости с text_processor"""
         return {
             "mime_type": self.mime_type,
@@ -65,7 +65,7 @@ class ScreenshotData:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ScreenshotData':
+    def from_dict(cls, data: dict[str, Any]) -> 'ScreenshotData':
         """Создает из словаря"""
         return cls(
             base64_data=data["data"],
@@ -92,9 +92,9 @@ class ScreenInfo:
 class ScreenshotResult:
     """Результат захвата скриншота"""
     success: bool
-    data: Optional[ScreenshotData] = None
-    error: Optional[str] = None
-    screen_info: Optional[ScreenInfo] = None
+    data: ScreenshotData | None = None
+    error: str | None = None
+    screen_info: ScreenInfo | None = None
     capture_time: float = 0.0  # Время захвата в секундах
     
     def is_valid(self) -> bool:

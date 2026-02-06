@@ -5,16 +5,16 @@ Instance Manager Integration
 Выполняется ПЕРВОЙ и является БЛОКИРУЮЩЕЙ.
 """
 
-import sys
-import os
 import asyncio
 import logging
-from typing import Optional, Dict, Any
+import os
+from typing import Any
 
-from modules.instance_manager import InstanceManager, InstanceStatus, InstanceManagerConfig
 from integration.core.error_handler import ErrorHandler
-from integration.core.state_manager import ApplicationStateManager
 from integration.core.event_bus import EventBus
+from integration.core.state_manager import ApplicationStateManager
+from integration.utils.env_detection import is_production_env
+from modules.instance_manager import InstanceManager, InstanceManagerConfig, InstanceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class InstanceManagerIntegration:
     """Интеграция для управления экземплярами приложения."""
     
     def __init__(self, event_bus: EventBus, state_manager: ApplicationStateManager, 
-                 error_handler: ErrorHandler, config: Optional[Dict[str, Any]] = None):
+                 error_handler: ErrorHandler, config: dict[str, Any] | None = None):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
@@ -32,6 +32,11 @@ class InstanceManagerIntegration:
         # Позволяем переопределять путь lock-файла через окружение (удобно в dev/sandbox)
         env_lock_file = os.environ.get("NEXY_INSTANCE_LOCK_FILE")
         if env_lock_file:
+            if is_production_env():
+                logger.warning(
+                    "[INSTANCE_MANAGER] NEXY_INSTANCE_LOCK_FILE override used in production: %s",
+                    env_lock_file,
+                )
             logger.info("[INSTANCE_MANAGER] Using lock file from env NEXY_INSTANCE_LOCK_FILE=%s", env_lock_file)
 
         lock_file = env_lock_file or self.config.get('lock_file', '~/Library/Application Support/Nexy/nexy.lock')
@@ -41,6 +46,7 @@ class InstanceManagerIntegration:
             enabled=self.config.get('enabled', True),
             lock_file=lock_file,
             timeout_seconds=self.config.get('timeout_seconds', 30),
+            lock_grace_ms=self.config.get('lock_grace_ms', 1500),
             cleanup_on_startup=self.config.get('cleanup_on_startup', True),
             show_duplicate_message=self.config.get('show_duplicate_message', True),
             pid_check=self.config.get('pid_check', True)
@@ -57,7 +63,6 @@ class InstanceManagerIntegration:
             await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown)
             await self.event_bus.subscribe("instance.check_request", self._on_instance_check_request)
             
-            self._initialized = True
             self._initialized = True
             logger.info("✅ InstanceManagerIntegration инициализирован")
             return True
@@ -180,7 +185,7 @@ class InstanceManagerIntegration:
             return False
     
     # Event handlers
-    async def _on_app_startup(self, event: Dict[str, Any]) -> None:
+    async def _on_app_startup(self, event: dict[str, Any]) -> None:
         """Обработчик события запуска приложения."""
         try:
             print("📱 Обработка события app.startup")
@@ -188,7 +193,7 @@ class InstanceManagerIntegration:
         except Exception as e:
             await self.error_handler.handle(e, category="runtime", severity="error")
     
-    async def _on_app_shutdown(self, event: Dict[str, Any]) -> None:
+    async def _on_app_shutdown(self, event: dict[str, Any]) -> None:
         """Обработчик события завершения приложения."""
         try:
             print("📱 Обработка события app.shutdown")
@@ -197,7 +202,7 @@ class InstanceManagerIntegration:
         except Exception as e:
             await self.error_handler.handle(e, category="runtime", severity="error")
     
-    async def _on_instance_check_request(self, event: Dict[str, Any]) -> None:
+    async def _on_instance_check_request(self, event: dict[str, Any]) -> None:
         """Обработчик запроса проверки экземпляра."""
         try:
             print("📱 Обработка события instance.check_request")

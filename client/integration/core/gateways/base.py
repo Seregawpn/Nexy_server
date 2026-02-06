@@ -5,13 +5,14 @@ Provides DecisionCtx for structured decision context and log_decision for canoni
 """
 from __future__ import annotations
 
-import time
-import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+import logging
+import time
+from typing import Any
+
+from integration.core.selectors import Snapshot
 
 from .types import Decision
-from integration.core.selectors import Snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,10 @@ class DecisionCtx:
     network: str
     firstRun: bool
     appMode: str
-    restart_pending: Optional[bool] = None
-    update_in_progress: Optional[bool] = None
-    whatsapp: Optional[str] = None
-    extra: Optional[Dict[str, Any]] = None
+    restart_pending: bool | None = None
+    update_in_progress: bool | None = None
+    whatsapp: str | None = None
+    extra: dict[str, Any] | None = None
 
     def to_log_string(self) -> str:
         """Generate canonical log context string."""
@@ -79,7 +80,7 @@ def log_decision(
     *,
     source: str,
     started_at: float,
-    reason: Optional[str] = None,
+    reason: str | None = None,
 ) -> str:
     """
     Log decision in canonical format and return log string.

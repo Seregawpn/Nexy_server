@@ -3,11 +3,10 @@
 Единственное место для управления всеми серверными настройками
 """
 
-import yaml
-import os
-from pathlib import Path
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from typing import Any
+
+import yaml
 
 from integration.utils.resource_path import get_resource_path
 
@@ -32,7 +31,7 @@ class ServerManager:
     def __init__(self, config_path: str = "config/unified_config.yaml"):
         resource_path = get_resource_path(config_path)
         self.config_path = resource_path
-        self._config: Optional[Dict[str, Any]] = None
+        self._config: dict[str, Any] | None = None
         self._load_config()
     
     def _load_config(self):
@@ -43,9 +42,11 @@ class ServerManager:
                 if self._config is None:
                     self._config = {}
         except Exception as e:
-            raise RuntimeError(f"Не удалось загрузить конфигурацию из {self.config_path}: {e}")
+            raise RuntimeError(
+                f"Не удалось загрузить конфигурацию из {self.config_path}: {e}"
+            ) from e
     
-    def _ensure_config(self) -> Dict[str, Any]:
+    def _ensure_config(self) -> dict[str, Any]:
         """Гарантирует, что конфигурация загружена"""
         if self._config is None:
             raise RuntimeError("Конфигурация не загружена")
@@ -61,9 +62,11 @@ class ServerManager:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
         except Exception as e:
-            raise RuntimeError(f"Не удалось сохранить конфигурацию в {self.config_path}: {e}")
+            raise RuntimeError(
+                f"Не удалось сохранить конфигурацию в {self.config_path}: {e}"
+            ) from e
     
-    def get_all_servers(self) -> Dict[str, ServerInfo]:
+    def get_all_servers(self) -> dict[str, ServerInfo]:
         """Получает информацию о всех серверах"""
         config = self._config
         if config is None:
@@ -88,7 +91,7 @@ class ServerManager:
         
         return servers
     
-    def get_server(self, server_name: str) -> Optional[ServerInfo]:
+    def get_server(self, server_name: str) -> ServerInfo | None:
         """Получает информацию о конкретном сервере"""
         servers = self.get_all_servers()
         return servers.get(server_name)
@@ -115,8 +118,18 @@ class ServerManager:
                 servers[server_name] = {}
             
             # Обновляем только переданные параметры
+            allowed_keys = {
+                "host",
+                "port",
+                "ssl",
+                "timeout",
+                "retry_attempts",
+                "retry_delay",
+                "description",
+                "enabled",
+            }
             for key, value in kwargs.items():
-                if key in ['host', 'port', 'ssl', 'timeout', 'retry_attempts', 'retry_delay', 'description', 'enabled']:
+                if key in allowed_keys:
                     servers[server_name][key] = value
             
             self._save_config()
@@ -191,7 +204,7 @@ class ServerManager:
             print(f"Ошибка установки сервера по умолчанию {server_name}: {e}")
             return False
     
-    def get_default_server(self) -> Optional[str]:
+    def get_default_server(self) -> str | None:
         """Получает сервер по умолчанию"""
         try:
             config = self._ensure_config()
@@ -207,7 +220,7 @@ class ServerManager:
         except Exception:
             return None
     
-    def list_servers(self) -> List[str]:
+    def list_servers(self) -> list[str]:
         """Возвращает список всех серверов"""
         return list(self.get_all_servers().keys())
     
@@ -236,12 +249,12 @@ def get_server_manager() -> ServerManager:
 
 
 # Удобные функции для быстрого доступа
-def get_all_servers() -> Dict[str, ServerInfo]:
+def get_all_servers() -> dict[str, ServerInfo]:
     """Получает все серверы"""
     return server_manager.get_all_servers()
 
 
-def get_server(server_name: str) -> Optional[ServerInfo]:
+def get_server(server_name: str) -> ServerInfo | None:
     """Получает информацию о сервере"""
     return server_manager.get_server(server_name)
 
@@ -256,7 +269,7 @@ def set_default_server(server_name: str) -> bool:
     return server_manager.set_default_server(server_name)
 
 
-def get_default_server() -> Optional[str]:
+def get_default_server() -> str | None:
     """Получает сервер по умолчанию"""
     return server_manager.get_default_server()
 

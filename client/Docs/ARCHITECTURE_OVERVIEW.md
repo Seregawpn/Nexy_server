@@ -42,10 +42,11 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  │  ├─ selectors.py           # 🎯 Селекторы для чтения состояния
 │  │  ├─ simple_module_coordinator.py # 🎯 Главный координатор
 │  │  └─ error_handler.py       # ❌ Обработка ошибок
-│  ├─ integrations/             # 🔗 23 интеграции (полный список см. раздел 13)
+│  ├─ integrations/             # 🔗 25 интеграций (полный список см. раздел 13)
 │  │  ├─ action_execution_integration.py
 │  │  ├─ autostart_manager_integration.py
 │  │  ├─ browser_progress_integration.py
+│  │  ├─ browser_use_integration.py
 │  │  ├─ first_run_permissions_integration.py
 │  │  ├─ grpc_client_integration.py
 │  │  ├─ hardware_id_integration.py
@@ -54,6 +55,7 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  │  ├─ interrupt_management_integration.py
 │  │  ├─ mode_management_integration.py
 │  │  ├─ network_manager_integration.py
+│  │  ├─ payment_integration.py
 │  │  ├─ permission_restart_integration.py
 │  │  ├─ screenshot_capture_integration.py
 │  │  ├─ signal_integration.py
@@ -64,7 +66,8 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 │  │  ├─ updater_integration.py
 │  │  ├─ voice_recognition_integration.py
 │  │  ├─ voiceover_ducking_integration.py
-│  │  └─ welcome_message_integration.py
+│  │  ├─ welcome_message_integration.py
+│  │  └─ whatsapp_integration.py
 │  ├─ workflows/                # ⚡ WORKFLOWS (НОВАЯ АРХИТЕКТУРА)
 │  │  ├─ base_workflow.py       # 🏗️ Базовый класс
 │  │  ├─ listening_workflow.py  # 🎤 Координатор LISTENING
@@ -157,6 +160,26 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 
 ---
 
+## 3) Dependency Enforcement & Contracts
+
+Для поддержания модульности и предотвращения циклических зависимостей, проект использует строгие правила (Enforced by `scripts/check_dependency_violations.py`):
+
+1. **Core Independence**: `integration/core` (EventBus, StateManager) НЕ зависит от конкретных интеграций.
+2. **Integrations Layering**: Интеграции зависят от Core и Modules, но НЕ друг от друга.
+3. **Modules Isolation**: Модули (`client/modules/*`) изолированы и не знают про EventBus/Integrations.
+4. **Runtime Enforcement**: (Планируется) Runtime-проверка импортов при старте.
+
+## 3.1) Quality Gates (Lint/CI)
+
+- `ruff` включён в `scripts/pre_build_gate.sh` в режиме soft‑block (WARN) до снижения текущего lint‑debt.
+- После снижения debt переводим `ruff` в hard‑block (ошибки блокируют сборку).
+- Канонический consolidated scan: `scripts/problem_scan.sh` (ruff + basedpyright + verify scripts + pytest + priority report).
+- Канонический release/CI блокер: `scripts/problem_scan_gate.sh`.
+  - Решение блокировки принимает только по `blocking_issues` из `build_logs/problem_scan_latest.json`.
+  - Для релизного режима обязателен `REQUIRE_BASEDPYRIGHT_IN_SCAN=true` (status должен быть `ok`).
+
+---
+
 ## 4) Централизация режимов (Single Source of Truth)
 
 - AppMode: единый импорт из `modules/mode_management` (дубликаты запрещены)
@@ -199,7 +222,7 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 
 Основные потоки:
 - **PTT Flow**: SLEEPING → LISTENING → PROCESSING → SLEEPING (см. разделы 4.4-4.5 канона)
-- **Interrupt Flow**: обработка прерываний через единый канал `playback.cancelled` (см. раздел 4.6 канона)
+- **Interrupt Flow**: `interrupt.request` → `grpc.request_cancel` (publisher: InterruptManagement) → `playback.cancelled` (publisher: SpeechPlaybackIntegration) (см. раздел 4.6 канона)
 
 Детальная последовательность событий, контракты payload и требования к координации описаны в каноническом документе.
 
@@ -214,7 +237,7 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 - Голос/распознавание (`voice.recording_*`, `voice.recognition_*`)
 - gRPC (`grpc.request_*`, `grpc.response.*`)
 - Воспроизведение (`playback.*`)
-- Прерывания (`interrupt.request`, `playback.cancelled`)
+- Прерывания (`interrupt.request`, `grpc.request_cancel`, `playback.cancelled`)
 - Разрешения (`permissions.*`)
 - Обновления (`updater.*`)
 - Сеть (`network.*`)
@@ -326,49 +349,10 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
   - Создаёт и запускает интеграции (в т.ч. ModeManagementIntegration)
   - Прикрепляет EventBus к StateManager для публикации событий смены режимов
 
-**Порядок создания интеграций** (`_create_integrations()`):
-1. instance_manager (ПЕРВЫЙ, блокирующий)
-2. hardware_id
-3. tray (если enabled)
-4. input
-5. updater
-6. permission_restart
-7. update_notification
-8. network
-9. interrupt
-10. screenshot_capture
-11. voice_recognition
-12. mode_management
-13. grpc
-14. action_execution (если enabled)
-15. speech_playback
-16. signals
-17. autostart_manager
-18. welcome_message
-19. voiceover_ducking
-20. first_run_permissions (ПОСЛЕДНЯЯ в создании, но 4-я в запуске)
-
-**Порядок запуска интеграций** (`startup_order`):
-1. instance_manager (ПЕРВЫЙ, блокирующий)
-2. tray (ВТОРОЙ, неблокирующий, критично для UX)
-3. hardware_id
-4. first_run_permissions (4-я в запуске, блокирующая - ПОСЛЕ tray!)
-5. permission_restart
-6. mode_management
-7. input
-8. voice_recognition
-9. network
-10. interrupt
-11. screenshot_capture
-12. grpc
-13. action_execution
-14. speech_playback
-15. signals
-16. update_notification
-17. updater
-18. welcome_message
-19. voiceover_ducking
-20. autostart_manager (ПОСЛЕДНИЙ, неблокирующий)
+**Порядок создания/запуска интеграций**:
+- Централизован в `IntegrationFactory.STARTUP_ORDER`
+- Координатор использует `IntegrationFactory.get_startup_order(...)`
+- Условные интеграции (feature‑flags) фильтруются по факту наличия
 
 Последовательность (упрощенно):
 1) Создание core-компонентов → 2) Запуск фонового loop → 2.5) **Настройка критичных подписок** (_setup_critical_subscriptions) → 3) Создание интеграций → 4) initialize() → 5) start() → 6) Остальные подписки EventBus
@@ -455,7 +439,7 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
 
 ## 12) Каталог модулей
 
-### 💻 **КЛИЕНТСКИЕ МОДУЛИ (client/modules) - 24 МОДУЛЯ**
+### 💻 **КЛИЕНТСКИЕ МОДУЛИ (client/modules) - 25 МОДУЛЕЙ**
 
 _macOS автоматически управляет активными аудиоустройствами, поэтому отдельный менеджер больше не требуется._
 - `action_errors` — обработка ошибок MCP действий: типизированные ошибки для open_app/close_app, локализованные сообщения.
@@ -475,11 +459,13 @@ _macOS автоматически управляет активными ауди
 - `screenshot_capture` — кроссплатформенный захват экрана, конфигурация качества/размера; на macOS — bridge/CLI fallback.
 - `signals` — акустические сигналы: listen_start/done/error/cancel + duplicate_instance.
 - `speech_playback` — последовательное воспроизведение аудио чанков, буферизация, управление устройством.
+- `telegram` — клиентский модуль Telegram‑интеграции (MCP команды, события).
 - `tray_controller` — UI-иконка/меню, статусы для режимов.
 - `updater` — НОВАЯ система обновлений: HTTP манифест, DMG файлы, миграция в ~/Applications, 3 уровня безопасности (SHA256 + Ed25519 + codesign).
 - `voice_recognition` — запись/распознавание речи, симулятор/реальный движок, таймауты, отмена.
 - `voiceover_control` — управление VoiceOver на macOS: умное отключение/включение через Command+F5, отслеживание состояния, диагностика.
 - `welcome_message` — приветственное сообщение: серверная генерация приветствия при запуске, конфигурируемые параметры.
+- `whatsapp` — клиентский модуль WhatsApp‑интеграции (MCP команды, события).
 - `messages` — интеграция с Apple Messages (iMessage/SMS): чтение и отправка сообщений, поиск контактов через AppleScript и SQLite. Требует Full Disk Access для доступа к `chat.db`.
 
 ### 🖥️ **Серверные модули и мониторинг**

@@ -7,18 +7,18 @@ This script tests:
 2. Browser installation (ensure_browser_installed)
 3. Task execution (process)
 """
-import sys
-import os
 import asyncio
 import logging
+import os
+import sys
 
 # Add client directory to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 client_dir = os.path.dirname(current_dir)
 sys.path.append(client_dir)
 
-from modules.browser_automation.module import BrowserUseModule
 from config.unified_config_loader import unified_config as global_config
+from modules.browser_automation.module import BrowserUseModule
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

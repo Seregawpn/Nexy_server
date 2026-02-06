@@ -5,8 +5,9 @@ Does NOT depend on EventBus or other Integrations.
 """
 
 import logging
-from typing import Optional, Dict, Any
-from .types import TemplateConfig, TemplateState, TemplateResult
+from typing import Any
+
+from .types import TemplateConfig, TemplateResult, TemplateState
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class TemplateLogic:
         self.state = TemplateState.READY
         return True
 
-    async def process_data(self, data: Dict[str, Any]) -> TemplateResult:
+    async def process_data(self, data: dict[str, Any]) -> TemplateResult:
         """
         Main processing method.
         Args:

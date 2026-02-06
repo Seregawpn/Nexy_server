@@ -17,16 +17,16 @@ Release Suite для Nexy Client
 
 import argparse
 import asyncio
+from datetime import datetime
 import json
 import logging
 import os
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 # Настройка логирования
 logging.basicConfig(
@@ -51,7 +51,7 @@ class ReleaseSuite:
         self.skip_build = skip_build
         self.skip_server = skip_server
         self.smoke_mode = smoke_mode
-        self.results: Dict[str, Any] = {
+        self.results: dict[str, Any] = {
             'timestamp': datetime.now().isoformat(),
             'version': self._get_version(),
             'checks': {}
@@ -92,7 +92,7 @@ class ReleaseSuite:
         start_time = time.time()
         
         try:
-            result = check_func(*args, **kwargs)
+            result = check_func(*args, **kwargs)  # type: ignore[reportArgumentType, reportCallIssue]
             duration = time.time() - start_time
             
             if result:
@@ -142,6 +142,32 @@ class ReleaseSuite:
             return False
         except Exception as e:
             self.log_error(f"Ошибка выполнения pre-build gate: {e}")
+            return False
+
+    def check_problem_scan_gate(self) -> bool:
+        """Проверка 1.1: Consolidated problem scan gate (blocking only)."""
+        gate_script = self.project_root / "scripts" / "problem_scan_gate.sh"
+        if not gate_script.exists():
+            self.log_warn("problem_scan_gate.sh не найден, пропускаем")
+            return True
+
+        try:
+            env = dict(os.environ)
+            env["REQUIRE_BASEDPYRIGHT_IN_SCAN"] = "true"
+            result = subprocess.run(
+                [str(gate_script)],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env=env,
+            )
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            self.log_error("Problem scan gate превысил таймаут")
+            return False
+        except Exception as e:
+            self.log_error(f"Ошибка выполнения problem scan gate: {e}")
             return False
     
     def build_dev_build(self) -> bool:
@@ -310,12 +336,12 @@ class ReleaseSuite:
         try:
             # Импортируем gRPC клиент
             sys.path.insert(0, str(self.project_root))
-            from modules.grpc_client import create_default_grpc_client
             from config.unified_config_loader import UnifiedConfigLoader
+            from modules.grpc_client import create_default_grpc_client
             
             # Загружаем конфигурацию
             config_loader = UnifiedConfigLoader()
-            config = config_loader.load()
+            config = config_loader._load_config()
             
             grpc_config = config.get('grpc', {})
             servers = grpc_config.get('servers', {})
@@ -362,7 +388,7 @@ class ReleaseSuite:
             from config.unified_config_loader import UnifiedConfigLoader
             
             config_loader = UnifiedConfigLoader()
-            config = config_loader.load()
+            config = config_loader._load_config()
             
             updater_config = config.get('updater', {})
             appcast_url = updater_config.get('appcast_url', '')
@@ -458,7 +484,7 @@ class ReleaseSuite:
             self.log_warn(f"Ошибка мониторинга метрик: {e}")
             return True  # Не критично
     
-    async def run_all_checks(self) -> Dict[str, Any]:
+    async def run_all_checks(self) -> dict[str, Any]:
         """Запускает все проверки"""
         mode_str = "SMOKE MODE" if self.smoke_mode else "FULL MODE"
         self.log_info("=" * 80)
@@ -468,6 +494,9 @@ class ReleaseSuite:
         
         # 1. Pre-build gate (всегда выполняется)
         self.run_check('pre_build_gate', self.check_pre_build_gate)
+
+        # 1.1 Consolidated problem scan gate (всегда выполняется)
+        self.run_check('problem_scan_gate', self.check_problem_scan_gate)
         
         # 2. Сборка dev-билда (пропускается в smoke mode)
         if not self.smoke_mode:
@@ -589,7 +618,7 @@ class ReleaseSuite:
         
         print()
     
-    def save_report(self, output_file: Optional[Path] = None):
+    def save_report(self, output_file: Path | None = None):
         """Сохраняет JSON-отчёт"""
         if output_file is None:
             output_file = self.project_root / 'release_suite_report.json'
@@ -652,4 +681,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

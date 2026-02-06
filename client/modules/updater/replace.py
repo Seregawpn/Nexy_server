@@ -2,10 +2,10 @@
 Атомарная замена приложений с возможностью отката
 """
 
+import logging
 import os
 import shutil
 import subprocess
-import logging
 
 logger = logging.getLogger(__name__)
 

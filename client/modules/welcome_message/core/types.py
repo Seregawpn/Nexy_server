@@ -4,9 +4,7 @@ Types and data structures for Welcome Message Module
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any
-from pathlib import Path
-
+from typing import Any
 
 
 class WelcomeState(Enum):
@@ -42,10 +40,10 @@ class WelcomeResult:
     success: bool
     method: str  # "server" | "none" | "error"
     duration_sec: float
-    error: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    error: str | None = None
+    metadata: dict[str, Any] | None = None
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Конвертировать в словарь для EventBus"""
         return {
             "success": self.success,

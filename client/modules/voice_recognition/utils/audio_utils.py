@@ -2,13 +2,14 @@
 Утилиты для работы с аудио в распознавании речи
 """
 
-import numpy as np
-from typing import List, Tuple, Optional
 import logging
+from typing import Any
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
-def normalize_audio(audio_data: np.ndarray, target_dtype: np.dtype = np.int16) -> np.ndarray:
+def normalize_audio(audio_data: np.ndarray, target_dtype: Any = np.int16) -> np.ndarray:
     """Нормализует аудио данные"""
     try:
         if audio_data.dtype != target_dtype:
@@ -90,7 +91,7 @@ def convert_channels(audio_data: np.ndarray, target_channels: int) -> np.ndarray
         logger.error(f"❌ Ошибка конвертации каналов: {e}")
         return audio_data
 
-def detect_silence(audio_data: np.ndarray, threshold: float = 0.01) -> List[Tuple[int, int]]:
+def detect_silence(audio_data: np.ndarray, threshold: float = 0.01) -> list[tuple[int, int]]:
     """Обнаруживает тишину в аудио"""
     try:
         # Вычисляем энергию сигнала
@@ -153,7 +154,7 @@ def trim_silence(audio_data: np.ndarray, threshold: float = 0.01) -> np.ndarray:
         logger.error(f"❌ Ошибка удаления тишины: {e}")
         return audio_data
 
-def get_audio_info(audio_data: np.ndarray, sample_rate: int) -> dict:
+def get_audio_info(audio_data: np.ndarray, sample_rate: int) -> dict[str, Any]:
     """Возвращает информацию об аудио"""
     try:
         duration = len(audio_data) / sample_rate

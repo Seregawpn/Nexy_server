@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
-import re
 import logging
-from typing import Optional, Dict, Any
-from ..core.types import HardwareIdValidationError, HardwareIdResult
+import re
+from typing import Any
+
+from ..core.types import HardwareIdResult
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ class HardwareIdValidator:
             logger.error(f"❌ Ошибка валидации результата: {e}")
             return False
     
-    def sanitize_uuid(self, uuid_str: str) -> Optional[str]:
+    def sanitize_uuid(self, uuid_str: str) -> str | None:
         """
         Очищает и нормализует UUID
         
@@ -184,7 +185,7 @@ class HardwareIdValidator:
             logger.error(f"❌ Ошибка очистки UUID: {e}")
             return None
     
-    def get_validation_info(self, uuid_str: str) -> Dict[str, Any]:
+    def get_validation_info(self, uuid_str: str) -> dict[str, Any]:
         """
         Получает информацию о валидации UUID
         

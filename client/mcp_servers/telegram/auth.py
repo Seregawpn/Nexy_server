@@ -1,9 +1,7 @@
 import os
 from pathlib import Path
-from typing import Optional, Tuple
 
-from telethon.sync import TelegramClient
-from telethon.sessions import StringSession
+from telethon.sync import TelegramClient  # type: ignore[reportMissingImports]
 
 # Стандартный путь к сессии (в корне home, как попросил пользователь в чате, 
 # или лучше скрытый файл. Используем скрытый для безопасности)
@@ -19,7 +17,7 @@ def get_session_path() -> Path:
     """Возвращает путь к файлу сессии."""
     return SESSION_FILE_PATH
 
-def load_session() -> Optional[str]:
+def load_session() -> str | None:
     """Загружает строку сессии из файла."""
     path = get_session_path()
     if not path.exists():

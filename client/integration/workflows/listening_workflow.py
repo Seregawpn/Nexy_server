@@ -4,12 +4,13 @@ ListeningWorkflow - Управление режимом LISTENING
 """
 
 import asyncio
+from datetime import datetime
 import logging
-from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from typing import Any
 
-from .base_workflow import BaseWorkflow, WorkflowState, AppMode
 from integration.core.event_bus import EventPriority
+
+from .base_workflow import AppMode, BaseWorkflow, WorkflowState  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,10 @@ class ListeningWorkflow(BaseWorkflow):
         self.silence_timeout = 5.0  # секунд - таймаут тишины
         
         # Состояние
-        self.listening_start_time: Optional[datetime] = None
-        self.last_voice_activity: Optional[datetime] = None
-        self.debounce_task: Optional[asyncio.Task] = None
-        self.timeout_task: Optional[asyncio.Task] = None
+        self.listening_start_time: datetime | None = None
+        self.last_voice_activity: datetime | None = None
+        self.debounce_task: asyncio.Task[Any] | None = None
+        self.timeout_task: asyncio.Task[Any] | None = None
         
     async def _setup_subscriptions(self):
         """Подписка на события режима LISTENING"""
@@ -279,13 +280,13 @@ class ListeningWorkflow(BaseWorkflow):
         self.last_voice_activity = None
         self.state = WorkflowState.IDLE
     
-    def get_listening_duration(self) -> Optional[float]:
+    def get_listening_duration(self) -> float | None:
         """Получение длительности текущего прослушивания"""
         if self.listening_start_time:
             return (datetime.now() - self.listening_start_time).total_seconds()
         return None
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Расширенный статус workflow'а"""
         base_status = super().get_status()
         base_status.update({

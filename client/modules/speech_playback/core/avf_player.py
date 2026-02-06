@@ -7,21 +7,41 @@ Plays raw PCM audio data from server.
 
 from __future__ import annotations
 
-import threading
+from dataclasses import dataclass
 import logging
 import queue
-from typing import Optional, Dict, Any
-from dataclasses import dataclass
+import threading
+import time
+from typing import Any
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
+try:
+    import AVFoundation as _AVFoundation
+except Exception:
+    _AVFoundation = None
+
+try:
+    import Foundation as _Foundation
+except Exception:
+    _Foundation = None
+
+AVAudioEngine = getattr(_AVFoundation, "AVAudioEngine", None)
+AVAudioFormat = getattr(_AVFoundation, "AVAudioFormat", None)
+AVAudioPCMBuffer = getattr(_AVFoundation, "AVAudioPCMBuffer", None)
+AVAudioPlayerNode = getattr(_AVFoundation, "AVAudioPlayerNode", None)
+AVAudioSession = getattr(_AVFoundation, "AVAudioSession", None)
+AVAudioSessionCategoryPlayback = getattr(_AVFoundation, "AVAudioSessionCategoryPlayback", None)
+AVAudioSessionRouteChangeNotification = getattr(_AVFoundation, "AVAudioSessionRouteChangeNotification", None)
+NSNotificationCenter = getattr(_Foundation, "NSNotificationCenter", None)
+
 
 @dataclass
 class AVFPlayerConfig:
     """Configuration for AVFoundation player."""
-    sample_rate: int = 24000
+    sample_rate: int = 48000  # CHANGED: Default to 48k to match server
     channels: int = 1
     buffer_size: int = 512
     volume: float = 0.8
@@ -30,48 +50,38 @@ class AVFPlayerConfig:
 class AVFoundationPlayer:
     """
     Audio player using AVAudioEngine (AVFoundation).
-    
-    Features:
-    - Plays raw PCM audio data (int16 or float32)
-    - Device-aware (follows system default)
-    - Queue-based for sequential playback
-    - Recreates engine on device change
     """
     
-    def __init__(self, config: Optional[AVFPlayerConfig] = None):
+    def __init__(self, config: AVFPlayerConfig | None = None):
         self.config = config or AVFPlayerConfig()
         
         self._engine = None
         self._player_node = None
         self._lock = threading.Lock()
-        self._audio_queue: queue.Queue = queue.Queue()
+        self._audio_queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
         self._playing = False
         self._initialized = False
         
-        # Device monitoring
-        self._current_output_device: Optional[str] = None
+        self._current_output_device: str | None = None
         self._obs_token = None
-        
-        # Thread tracking
-        self._playback_thread: Optional[threading.Thread] = None
-        self._recreate_threads: List[threading.Thread] = []
+        self._playback_thread: threading.Thread | None = None
+        self._recreate_threads: list[threading.Thread] = []
 
     def initialize(self) -> bool:
         """Initialize AVAudioEngine and player node."""
         try:
-            from AVFoundation import (
-                AVAudioEngine, AVAudioPlayerNode, AVAudioFormat,
-                AVAudioSession, AVAudioSessionCategoryPlayback
-            )
+            if not (AVAudioEngine and AVAudioFormat and AVAudioPlayerNode):
+                raise RuntimeError("AVFoundation audio symbols unavailable")
             
             # Activate audio session for playback
-            try:
-                session = AVAudioSession.sharedInstance()
-                session.setCategory_error_(AVAudioSessionCategoryPlayback, None)
-                session.setActive_error_(True, None)
-                logger.info("🔊 AVAudioSession activated for playback")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not activate AVAudioSession: {e}")
+            if AVAudioSession and AVAudioSessionCategoryPlayback is not None:
+                try:
+                    session = AVAudioSession.sharedInstance()
+                    session.setCategory_error_(AVAudioSessionCategoryPlayback, None)
+                    session.setActive_error_(True, None)
+                    logger.info("🔊 AVAudioSession activated for playback")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not activate AVAudioSession: {e}")
 
             with self._lock:
                 # Create engine
@@ -154,7 +164,7 @@ class AVFoundationPlayer:
 
         logger.info("🛑 AVFoundationPlayer shutdown")
 
-    def add_audio_data(self, audio_data: np.ndarray, metadata: Optional[Dict[str, Any]] = None) -> str:
+    def add_audio_data(self, audio_data: np.ndarray, metadata: dict[str, Any] | None = None) -> str:
         """
         Add audio data to playback queue.
         
@@ -196,30 +206,38 @@ class AVFoundationPlayer:
             logger.error("❌ Player not initialized")
             return False
         
-        # Импортируем AVAudioSession для логирования output device
-        try:
-            from AVFoundation import AVAudioSession
-        except ImportError:
-            AVAudioSession = None
-        
         with self._lock:
             try:
+                engine = self._engine
+                player_node = self._player_node
+                if engine is None or player_node is None:
+                    logger.error("❌ Player internals unavailable")
+                    return False
                 # КРИТИЧНО: Устанавливаем volume=1.0 для гарантии слышимого вывода
-                self._player_node.setVolume_(1.0)
-                mixer = self._engine.mainMixerNode()
+                player_node.setVolume_(1.0)
+                mixer = engine.mainMixerNode()
                 mixer.setOutputVolume_(1.0)
                 logger.info(f"🔊 [AVF_PLAYER] Volume set to 1.0 at playback start (mixer and player_node)")
                 
+                # Ensure Audio Session is active
+                if AVAudioSession:
+                    try:
+                        session = AVAudioSession.sharedInstance()
+                        session.setActive_error_(True, None)
+                        logger.debug("🔊 [AVF_PLAYER] AVAudioSession activated in start_playback")
+                    except Exception as e:
+                        logger.warning(f"⚠️ [AVF_PLAYER] Failed to activate AVAudioSession in start_playback: {e}")
+                
                 # Start engine if not running
                 # Note: mainMixerNode -> outputNode connection is AUTOMATIC in AVAudioEngine
-                if not self._engine.isRunning():
-                    success, error = self._engine.startAndReturnError_(None)
+                if not engine.isRunning():
+                    success, error = engine.startAndReturnError_(None)
                     if success:
                         logger.info("🔊 AVAudioEngine started successfully")
                         
                         # КРИТИЧНО: Логируем output device/format для диагностики
                         try:
-                            output_node = self._engine.outputNode()
+                            output_node = engine.outputNode()
                             output_format = output_node.outputFormatForBus_(0)
                             logger.info(
                                 f"🔊 [AVF_PLAYER] Output format: {output_format.sampleRate()}Hz, "
@@ -251,7 +269,7 @@ class AVFoundationPlayer:
                     logger.debug("🔊 AVAudioEngine already running")
                 
                 # Start the player node
-                self._player_node.play()
+                player_node.play()
                 self._playing = True
                 logger.info("▶️ Playback started")
                 
@@ -274,14 +292,26 @@ class AVFoundationPlayer:
         Returns:
             True if engine is running, False otherwise
         """
-        from AVFoundation import AVAudioFormat
-        
-        if not self._engine:
+        if not self._engine or AVAudioFormat is None:
             return False
             
         try:
             if not self._engine.isRunning():
-                logger.warning("⚠️ AVAudioEngine stopped, attempting to restart...")
+                now = time.time()
+                if getattr(self, "_engine_restart_in_progress", False):
+                    return False
+                last_attempt = getattr(self, "_engine_restart_last_attempt", 0.0)
+                backoff = getattr(self, "_engine_restart_backoff", 1.0)
+                if now - last_attempt < backoff:
+                    return False
+                self._engine_restart_in_progress = True
+                self._engine_restart_last_attempt = now
+                self._engine_restart_backoff = min(backoff * 2, 8.0)
+
+                last_warn = getattr(self, "_engine_restart_last_warn", 0.0)
+                if now - last_warn >= 5.0:
+                    logger.warning("⚠️ AVAudioEngine stopped, attempting to restart...")
+                    self._engine_restart_last_warn = now
                 
                 # CRITICAL: Reconnect playerNode to mixer before starting
                 # Connection may be lost when engine stops
@@ -303,25 +333,34 @@ class AVFoundationPlayer:
                 success, error = self._engine.startAndReturnError_(None)
                 if success:
                     logger.info("🔊 AVAudioEngine restarted successfully")
+                    self._engine_restart_backoff = 1.0
+                    self._engine_restart_in_progress = False
                     
                     # Set volumes
-                    self._player_node.setVolume_(1.0)
+                    player_node = self._player_node
+                    if player_node is None:
+                        logger.error("❌ Player node unavailable after restart")
+                        return False
+                    player_node.setVolume_(1.0)
                     mixer = self._engine.mainMixerNode()
                     mixer.setOutputVolume_(1.0)
                     
                     # Ensure player node is playing
-                    if self._player_node and not self._player_node.isPlaying():
-                        self._player_node.play()
+                    if not player_node.isPlaying():
+                        player_node.play()
                         logger.info("▶️ PlayerNode restarted")
                     return True
                 else:
                     logger.error(f"❌ Failed to restart AVAudioEngine: {error}")
+                    self._engine_restart_in_progress = False
                     return False
             return True
         except Exception as e:
             logger.error(f"❌ Error ensuring engine running: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            if getattr(self, "_engine_restart_in_progress", False):
+                self._engine_restart_in_progress = False
             return False
 
     def stop_playback(self) -> None:
@@ -364,8 +403,10 @@ class AVFoundationPlayer:
 
     def _playback_loop(self) -> None:
         """Background thread for processing audio queue."""
-        from AVFoundation import AVAudioPCMBuffer, AVAudioFormat
-        
+        if AVAudioFormat is None or AVAudioPCMBuffer is None:
+            logger.error("❌ AVFoundation buffer/format symbols unavailable")
+            return
+
         # Pre-create the format to avoid allocation in the loop if possible
         fmt = AVAudioFormat.alloc().initWithCommonFormat_sampleRate_channels_interleaved_(
             1,  # AVAudioPCMFormatFloat32
@@ -411,14 +452,19 @@ class AVFoundationPlayer:
                 if not self._ensure_engine_running():
                     logger.error("❌ Cannot schedule buffer - engine not running")
                     continue
+
+                player_node = self._player_node
+                if player_node is None:
+                    logger.error("❌ Cannot schedule buffer - player node unavailable")
+                    continue
                 
                 # Schedule buffer for playback
-                self._player_node.scheduleBuffer_completionHandler_(buffer, None)
+                player_node.scheduleBuffer_completionHandler_(buffer, None)
                 
                 # ДИАГНОСТИКА: проверяем состояние engine и player
                 try:
                     engine_running = self._engine.isRunning() if self._engine else False
-                    player_playing = self._player_node.isPlaying() if self._player_node else False
+                    player_playing = player_node.isPlaying() if player_node else False
                     
                     # Check buffer amplitude
                     peak = max(abs(ptr[i]) for i in range(min(100, frame_count)))
@@ -426,7 +472,10 @@ class AVFoundationPlayer:
                     # Check output format (only first time)
                     if frame_count > 0 and not hasattr(self, '_format_logged'):
                         try:
-                            out_fmt = self._engine.outputNode().outputFormatForBus_(0)
+                            engine = self._engine
+                            if engine is None:
+                                raise RuntimeError("Engine unavailable")
+                            out_fmt = engine.outputNode().outputFormatForBus_(0)
                             logger.info(f"🔊 Output format: {out_fmt.sampleRate()}Hz, {out_fmt.channelCount()}ch")
                             self._format_logged = True
                         except Exception:
@@ -469,8 +518,8 @@ class AVFoundationPlayer:
     def _register_for_route_changes(self) -> None:
         """Register for audio route change notifications."""
         try:
-            from Foundation import NSNotificationCenter
-            from AVFoundation import AVAudioSessionRouteChangeNotification
+            if AVAudioSessionRouteChangeNotification is None or NSNotificationCenter is None:
+                return
             
             nc = NSNotificationCenter.defaultCenter()
             self._obs_token = nc.addObserverForName_object_queue_usingBlock_(
@@ -487,8 +536,8 @@ class AVFoundationPlayer:
         """Unregister from notifications."""
         if self._obs_token:
             try:
-                from Foundation import NSNotificationCenter
-                NSNotificationCenter.defaultCenter().removeObserver_(self._obs_token)
+                if NSNotificationCenter is not None:
+                    NSNotificationCenter.defaultCenter().removeObserver_(self._obs_token)
             except Exception:
                 pass
             self._obs_token = None

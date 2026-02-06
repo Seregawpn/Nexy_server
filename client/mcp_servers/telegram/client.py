@@ -1,11 +1,11 @@
 import logging
-import asyncio
-from typing import List, Optional, Dict, Any
-from telethon import TelegramClient
-from telethon.tl.types import User, Chat, Channel
-from telethon.sessions import StringSession
+from typing import Any
 
-from .auth import load_session, DEFAULT_API_ID, DEFAULT_API_HASH
+from telethon import TelegramClient  # type: ignore
+from telethon.sessions import StringSession  # type: ignore
+from telethon.tl.types import Channel, Chat, User  # type: ignore
+
+from .auth import DEFAULT_API_HASH, DEFAULT_API_ID, load_session
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class TelegramWrapper:
     """Обертка над Telethon для упрощения операций."""
     
     def __init__(self):
-        self.client: Optional[TelegramClient] = None
+        self.client: TelegramClient | None = None
         self._session_str = load_session()
         
     async def connect(self):
@@ -33,9 +33,10 @@ class TelegramWrapper:
             int(DEFAULT_API_ID or 0), 
             DEFAULT_API_HASH or "dummy"
         )
-        await self.client.connect()
+        if self.client:
+            await self.client.connect()
         
-        if not await self.client.is_user_authorized():
+        if self.client and not await self.client.is_user_authorized():
             raise PermissionError("Session invalid or unauthorized. Please re-run setup_auth.py.")
             
         logger.info("Connected to Telegram successfully.")
@@ -44,7 +45,7 @@ class TelegramWrapper:
         if self.client:
             await self.client.disconnect()
 
-    async def get_dialogs(self, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_dialogs(self, limit: int = 10) -> list[dict[str, Any]]:
         """Получает список диалогов."""
         if not self.client:
              raise RuntimeError("Client not connected")
@@ -69,7 +70,7 @@ class TelegramWrapper:
             })
         return dialogs
 
-    async def get_messages(self, chat_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_messages(self, chat_id: int, limit: int = 10) -> list[dict[str, Any]]:
         """Получает сообщения из чата."""
         if not self.client:
              raise RuntimeError("Client not connected")
@@ -95,7 +96,7 @@ class TelegramWrapper:
             })
         return messages
 
-    async def send_message(self, chat_id: Any, text: str) -> Dict[str, Any]:
+    async def send_message(self, chat_id: Any, text: str) -> dict[str, Any]:
         """Отправляет сообщение."""
         if not self.client:
              raise RuntimeError("Client not connected")

@@ -1,9 +1,9 @@
 """
 Browser Use Integration - Client Side
 """
-import logging
 import asyncio
-from typing import Dict, Any
+import logging
+from typing import Any
 
 from integration.core.event_bus import EventBus, EventPriority
 from modules.browser_automation.module import BrowserUseModule
@@ -49,7 +49,7 @@ class BrowserUseIntegration:
             task.cancel()
         return True
 
-    async def _on_cancel_request(self, event: Dict[str, Any]):
+    async def _on_cancel_request(self, event: dict[str, Any]):
         """Handle cancellation requests (voice or manual)."""
         logger.info("🛑 [BROWSER] Interruption requested, cancelling active tasks...")
         if not self._processing_tasks:
@@ -76,7 +76,7 @@ class BrowserUseIntegration:
              'error': 'User interrupted'
         })
 
-    async def _on_browser_use_request(self, event: Dict[str, Any]):
+    async def _on_browser_use_request(self, event: dict[str, Any]):
         data = event.get('data', event)
         loop = asyncio.get_running_loop()
         task = loop.create_task(self._run_process(data))
@@ -126,6 +126,6 @@ class BrowserUseIntegration:
             await self.event_bus.publish('browser.failed', error_event)
             await self.event_bus.publish('browser.progress', error_event)
 
-    async def _on_browser_close_request(self, event: Dict[str, Any]):
+    async def _on_browser_close_request(self, event: dict[str, Any]):
         await self.module.close_browser()
         await self.event_bus.publish('browser.closed', {})

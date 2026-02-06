@@ -1,11 +1,13 @@
 #!/bin/bash
 
 # 📦 Nexy AI Assistant - Финальная упаковка и подпись Universal 2 (ОБНОВЛЕНО 17.11.2025)
-# Использование: ./packaging/build_final.sh [--skip-build] [--clean-install] [--permissions-smoke]
+# Использование: ./packaging/build_final.sh [--skip-build] [--clean-install] [--permissions-smoke] [--speed-check]
 #   --skip-build     Пропустить PyInstaller сборку (использовать существующий .app)
 #   --clean-install  Удалить старый /Applications/Nexy.app, сбросить TCC разрешения,
 #                    и автоматически установить новый .pkg после сборки
 #   --permissions-smoke  Запустить приложение и проверить first-run логи (smoke-check)
+#   --speed-check    Быстрый режим: выполнить только обязательные quality/preflight проверки
+#                    и завершиться без сборки/подписи/нотарификации
 # Автоматически выполняет Universal 2 сборку (arm64 + x86_64)
 
 # ГЛОБАЛЬНАЯ ЗАЩИТА ОТ EXTENDED ATTRIBUTES
@@ -91,6 +93,7 @@ echo -e "${BLUE}📝 Лог сборки: $BUILD_LOG${NC}"
 SKIP_BUILD=0
 CLEAN_INSTALL=0
 PERMISSIONS_SMOKE=0
+SPEED_CHECK=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-build)
@@ -105,45 +108,59 @@ while [[ $# -gt 0 ]]; do
             PERMISSIONS_SMOKE=1
             shift
             ;;
+        --speed-check)
+            SPEED_CHECK=1
+            shift
+            ;;
         *)
             shift
             ;;
     esac
 done
 
-# --- Удаление флагов first-run (по умолчанию при каждой сборке) ---
-echo -e "${YELLOW}🧹 Удаление флагов first-run...${NC}"
-NEXY_SUPPORT_DIR="$HOME/Library/Application Support/Nexy"
-if [ -d "$NEXY_SUPPORT_DIR" ]; then
-    find "$NEXY_SUPPORT_DIR" -name "*.flag" -type f -delete 2>/dev/null || true
-    rm -f "$NEXY_SUPPORT_DIR/permission_ledger.json" 2>/dev/null || true
-    echo "     ✓ Флаги first-run удалены"
-else
-    echo "     ✓ Директория Nexy не найдена (первый запуск)"
-fi
+if [ "$SPEED_CHECK" -eq 0 ]; then
+    # --- Удаление флагов first-run (по умолчанию при каждой сборке) ---
+    echo -e "${YELLOW}🧹 Удаление флагов first-run...${NC}"
+    NEXY_SUPPORT_DIR="$HOME/Library/Application Support/Nexy"
+    if [ -d "$NEXY_SUPPORT_DIR" ]; then
+        find "$NEXY_SUPPORT_DIR" -name "*.flag" -type f -delete 2>/dev/null || true
+        rm -f "$NEXY_SUPPORT_DIR/permission_ledger.json" 2>/dev/null || true
+        echo "     ✓ Флаги first-run удалены"
+    else
+        echo "     ✓ Директория Nexy не найдена (первый запуск)"
+    fi
 
-# --- Сброс TCC разрешений (по умолчанию при каждой сборке) ---
-echo -e "${YELLOW}🔐 Сброс TCC разрешений...${NC}"
-sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
-# Явный сброс каждого сервиса (reset All иногда пропускает некоторые)
-tccutil reset Microphone "com.nexy.assistant" 2>/dev/null || true
-tccutil reset Accessibility "com.nexy.assistant" 2>/dev/null || true
-tccutil reset ScreenCapture "com.nexy.assistant" 2>/dev/null || true
-tccutil reset ListenEvent "com.nexy.assistant" 2>/dev/null || true
-tccutil reset AddressBook "com.nexy.assistant" 2>/dev/null || true
-tccutil reset SystemPolicyAllFiles "com.nexy.assistant" 2>/dev/null || true
-killall tccd 2>/dev/null || true
-echo "     ✓ TCC разрешения сброшены"
+    # --- Очистка __pycache__ (предотвращает ошибки PyInstaller со stale .pyc) ---
+    echo -e "${YELLOW}🧹 Очистка __pycache__...${NC}"
+    find "$CLIENT_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    find "$CLIENT_DIR" -name "*.pyc" -delete 2>/dev/null || true
+    echo "     ✓ __pycache__ очищен"
 
-# --- Удаление старого приложения (по умолчанию при каждой сборке) ---
-echo -e "${YELLOW}🗑️  Удаление старого приложения...${NC}"
-pkill -9 -f "Nexy.app" 2>/dev/null || true
-pkill -9 -f "/Applications/Nexy.app" 2>/dev/null || true
-if [ -d "/Applications/Nexy.app" ]; then
-    sudo rm -rf "/Applications/Nexy.app"
-    echo "     ✓ /Applications/Nexy.app удалён"
+    # --- Сброс TCC разрешений (по умолчанию при каждой сборке) ---
+    echo -e "${YELLOW}🔐 Сброс TCC разрешений...${NC}"
+    sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
+    # Явный сброс каждого сервиса (reset All иногда пропускает некоторые)
+    tccutil reset Microphone "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset Accessibility "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset ScreenCapture "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset ListenEvent "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset AddressBook "com.nexy.assistant" 2>/dev/null || true
+    tccutil reset SystemPolicyAllFiles "com.nexy.assistant" 2>/dev/null || true
+    killall tccd 2>/dev/null || true
+    echo "     ✓ TCC разрешения сброшены"
+
+    # --- Удаление старого приложения (по умолчанию при каждой сборке) ---
+    echo -e "${YELLOW}🗑️  Удаление старого приложения...${NC}"
+    pkill -9 -f "Nexy.app" 2>/dev/null || true
+    pkill -9 -f "/Applications/Nexy.app" 2>/dev/null || true
+    if [ -d "/Applications/Nexy.app" ]; then
+        sudo rm -rf "/Applications/Nexy.app"
+        echo "     ✓ /Applications/Nexy.app удалён"
+    else
+        echo "     ✓ /Applications/Nexy.app не найден (пропускаем)"
+    fi
 else
-    echo "     ✓ /Applications/Nexy.app не найден (пропускаем)"
+    echo -e "${BLUE}⚡ SPEED-CHECK режим: пропускаем очистку/сброс TCC и сборочные этапы${NC}"
 fi
 
 if [ "$CLEAN_INSTALL" -eq 1 ]; then
@@ -250,6 +267,36 @@ PREFLIGHT_FAILED=false
 echo "Лог preflight: $PREFLIGHT_LOG"
 echo ""
 
+# Канонический packaging-readiness gate (должен пройти до любых стадий упаковки)
+if [ -f "$CLIENT_DIR/scripts/verify_packaging_readiness.py" ]; then
+    echo -e "${YELLOW}Запуск verify_packaging_readiness.py...${NC}"
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_packaging_readiness.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+        echo -e "${GREEN}✅ verify_packaging_readiness.py - все проверки пройдены${NC}"
+    else
+        echo -e "${RED}❌ verify_packaging_readiness.py - есть ошибки!${NC}"
+        PREFLIGHT_FAILED=true
+    fi
+else
+    echo -e "${YELLOW}⚠️  scripts/verify_packaging_readiness.py не найден, пропускаем${NC}"
+fi
+
+echo ""
+
+# Канонический consolidated quality gate (release/CI режим)
+if [ -f "$CLIENT_DIR/scripts/problem_scan_gate.sh" ]; then
+    echo -e "${YELLOW}Запуск problem_scan_gate.sh (blocking issues only)...${NC}"
+    if REQUIRE_BASEDPYRIGHT_IN_SCAN=true "$CLIENT_DIR/scripts/problem_scan_gate.sh" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+        echo -e "${GREEN}✅ problem_scan_gate.sh - quality gate пройден${NC}"
+    else
+        echo -e "${RED}❌ problem_scan_gate.sh - quality gate провален${NC}"
+        PREFLIGHT_FAILED=true
+    fi
+else
+    echo -e "${YELLOW}⚠️  scripts/problem_scan_gate.sh не найден, пропускаем${NC}"
+fi
+
+echo ""
+
 # --- Permissions preflight (no bypass + config sanity) ---
 echo -e "${YELLOW}Проверка permissions preflight...${NC}"
 if [ -n "${NEXY_TEST_SKIP_PERMISSIONS:-}" ] || [ -n "${NEXY_DEV_FORCE_PERMISSIONS:-}" ]; then
@@ -312,6 +359,57 @@ if [ -f "$CLIENT_DIR/scripts/verify_pyinstaller.py" ]; then
     fi
 else
     echo -e "${YELLOW}⚠️  scripts/verify_pyinstaller.py не найден, пропускаем${NC}"
+fi
+
+echo ""
+
+# --- Verify Nexy.spec hiddenimports (browser-use dependencies) ---
+if [ -f "$CLIENT_DIR/scripts/verify_spec_dependencies.py" ]; then
+    echo -e "${YELLOW}Запуск verify_spec_dependencies.py (проверка hiddenimports)...${NC}"
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_spec_dependencies.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
+        echo -e "${GREEN}✅ verify_spec_dependencies.py - все зависимости доступны${NC}"
+    else
+        echo -e "${RED}❌ verify_spec_dependencies.py - отсутствуют зависимости для Nexy.spec!${NC}"
+        echo -e "${YELLOW}Подсказка: запустите 'python scripts/verify_spec_dependencies.py --fix' для списка пакетов${NC}"
+        PREFLIGHT_FAILED=true
+    fi
+else
+    echo -e "${YELLOW}⚠️  scripts/verify_spec_dependencies.py не найден, пропускаем${NC}"
+fi
+
+echo ""
+
+# --- Playwright preflight (browser_use) ---
+echo -e "${YELLOW}Проверка Playwright (browser_use)...${NC}"
+if "$BUILD_PYTHON" - <<'PY' >/dev/null 2>&1
+import sys
+from pathlib import Path
+try:
+    import playwright
+except Exception as e:
+    sys.stderr.write(f"import playwright failed: {e}\n")
+    sys.exit(2)
+driver_name = "playwright.cmd" if sys.platform == "win32" else "playwright.sh"
+driver_path = Path(playwright.__file__).resolve().parent / "driver" / driver_name
+if driver_path.exists():
+    sys.exit(0)
+
+# Newer Playwright wheels may not include playwright.sh; accept node+package layout
+driver_dir = Path(playwright.__file__).resolve().parent / "driver"
+node_bin = driver_dir / "node"
+cli_js = driver_dir / "package" / "cli.js"
+if node_bin.exists() and cli_js.exists():
+    sys.exit(0)
+
+sys.stderr.write(f"driver missing: {driver_path}\n")
+sys.exit(3)
+PY
+then
+    echo -e "${GREEN}✅ Playwright module + driver OK${NC}"
+else
+    echo -e "${RED}❌ Playwright preflight failed (install playwright / check driver)${NC}"
+    echo -e "${YELLOW}Подсказка: $BUILD_PYTHON -m pip install -U playwright && $BUILD_PYTHON -m playwright install chromium${NC}"
+    PREFLIGHT_FAILED=true
 fi
 
 echo -e "${YELLOW}Проверка pyobjc Contacts...${NC}"
@@ -408,6 +506,12 @@ fi
 
 echo -e "${GREEN}✅ Все preflight проверки пройдены успешно!${NC}"
 echo ""
+
+if [ "$SPEED_CHECK" -eq 1 ]; then
+    echo -e "${GREEN}✅ SPEED-CHECK: проект соответствует обязательным preflight/quality требованиям${NC}"
+    echo -e "${BLUE}ℹ️  Для полной упаковки запустите: ./packaging/build_final.sh${NC}"
+    exit 0
+fi
 
 # Конфигурация
 IDENTITY="Developer ID Application: Sergiy Zasorin (5NKLL2CLB9)"

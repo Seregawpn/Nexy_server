@@ -2,10 +2,11 @@
 Типы данных для распознавания речи
 """
 
-from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Callable
+from enum import Enum
 import time
+from typing import Any
+
 
 class RecognitionEngine(Enum):
     """Доступные движки распознавания"""
@@ -75,12 +76,12 @@ class RecognitionConfig:
 class RecognitionResult:
     """Результат распознавания речи"""
     text: str
-    confidence: Optional[float] = None
-    alternatives: List[str] = None
+    confidence: float | None = None
+    alternatives: list[str] | None = None
     language: str = "en-US"  # Только английский
     duration: float = 0.0
     timestamp: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
     
     def __post_init__(self):
         if self.timestamp == 0.0:
@@ -94,9 +95,9 @@ class RecognitionEvent:
     event_type: RecognitionEventType
     state: RecognitionState
     timestamp: float
-    result: Optional[RecognitionResult] = None
-    error: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
+    result: RecognitionResult | None = None
+    error: str | None = None
+    data: dict[str, Any] | None = None
 
 @dataclass
 class RecognitionMetrics:
@@ -106,7 +107,7 @@ class RecognitionMetrics:
     failed_recognitions: int = 0
     average_confidence: float = 0.0
     average_duration: float = 0.0
-    recognitions_by_language: Dict[str, int] = None
+    recognitions_by_language: dict[str, int] | None = None
     
     def __post_init__(self):
         if self.recognitions_by_language is None:

@@ -4,9 +4,9 @@ Types for browser automation progress events.
 """
 
 from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
 from datetime import datetime
+from enum import Enum
+from typing import Any
 
 
 class BrowserProgressType(str, Enum):
@@ -26,13 +26,13 @@ class BrowserProgressEvent:
     session_id: str
     step_number: int = 0
     description: str = ""
-    url: Optional[str] = None
-    action: Optional[str] = None
-    error: Optional[str] = None
-    timestamp: Optional[datetime] = None
+    url: str | None = None
+    action: str | None = None
+    error: str | None = None
+    timestamp: datetime | None = None
     
     @classmethod
-    def from_dict(cls, data: dict) -> "BrowserProgressEvent":
+    def from_dict(cls, data: dict[str, Any]) -> "BrowserProgressEvent":
         """Create event from dict (from gRPC)"""
         return cls(
             type=BrowserProgressType(data.get("type", "BROWSER_TASK_STARTED")),

@@ -8,9 +8,9 @@ verify_resources.py — Preflight проверки ресурсов
 3. Universal бинарники для macOS
 """
 
-import sys
 import os
 import struct
+import sys
 
 # Цвета для вывода
 GREEN = "\033[92m"

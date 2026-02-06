@@ -11,8 +11,8 @@ before any PyObjC-based modules (e.g. rumps) are imported.
 чтобы гарантировать раннее выполнение до любых импортов.
 """
 
-import sys
 import os
+import sys
 import tempfile
 
 
@@ -54,7 +54,7 @@ def _apply_fix():
         
         # Применяем фикс для всех проблемных символов
         symbols_to_fix = ["NSMakeRect", "NSMakePoint", "NSMakeSize", "NSMakeRange"]
-        fixed_symbols = []
+        fixed_symbols: list[str] = []
         
         for symbol in symbols_to_fix:
             if not hasattr(Foundation, symbol) and hasattr(AppKit, symbol):
@@ -98,9 +98,9 @@ def _activate_nsapplication():
         sys.stderr.write("[NEXY_INIT] Activating NSApplication for menu bar app...\n")
         sys.stderr.flush()
         import AppKit
-        app = AppKit.NSApplication.sharedApplication()
+        app = AppKit.NSApplication.sharedApplication()  # type: ignore[reportAttributeAccessIssue]
         # NSApplicationActivationPolicyAccessory (hide from Dock, show in menu bar)
-        app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+        app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)  # type: ignore[reportAttributeAccessIssue]
         # ADDITIONALLY: Force activate the app to ensure menu bar items are visible
         app.activateIgnoringOtherApps_(True)
         sys.stderr.write("[NEXY_INIT] SUCCESS: NSApplication activated for menu bar app\n")

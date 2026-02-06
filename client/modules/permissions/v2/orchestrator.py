@@ -8,29 +8,27 @@ Runs all steps sequentially, handles restarts, and emits UI events.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
+from enum import Enum
 import logging
 import os
 import time
+from typing import Any, Callable, Literal, Protocol
 import uuid
-from dataclasses import dataclass
-from enum import Enum
-from typing import Callable, Dict, List, Literal, Optional, Protocol
 
-from .types import (
-    Phase,
-    PermissionId,
-    StepConfig,
-    StepMode,
-    StepState,
-    StepTiming,
-    OutcomeKind,
-    PermissionCriticality,
-    RestartConfig,
-    ProbeResult,
-    StepOutcome,
-)
 from .ledger import LedgerRecord, LedgerStore, StepLedgerEntry
 from .settings_nav import SettingsNavigator
+from .types import (
+    OutcomeKind,
+    PermissionId,
+    Phase,
+    ProbeResult,
+    RestartConfig,
+    StepConfig,
+    StepMode,
+    StepOutcome,
+    StepState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +54,7 @@ class UIEventType(str, Enum):
 class UIEvent:
     type: UIEventType
     timestamp: float
-    payload: dict
+    payload: dict[str, Any]
 
 
 # -----------------------------
@@ -94,7 +92,7 @@ class PermissionClassifier(Protocol):
 class RestartHandler(Protocol):
     """Protocol for restart handling."""
     
-    async def trigger_restart(self, *, reason: str, permissions: List[str]) -> bool:
+    async def trigger_restart(self, *, reason: str, permissions: list[str]) -> bool:
         """Trigger application restart."""
         ...
 
@@ -105,7 +103,7 @@ class RestartHandler(Protocol):
 
 def should_restart(
     ledger: LedgerRecord,
-    hard_permissions: List[PermissionId],
+    hard_permissions: list[PermissionId],
     restart_cfg: RestartConfig,
 ) -> bool:
     """Check if restart is needed.
@@ -137,7 +135,7 @@ def should_restart(
     return bool(hard_permissions)
 
 
-def should_enter_limited_mode(ledger: LedgerRecord, hard_permissions: List[PermissionId]) -> bool:
+def should_enter_limited_mode(ledger: LedgerRecord, hard_permissions: list[PermissionId]) -> bool:
     """Check if any HARD permission failed."""
     for p in hard_permissions:
         if p not in ledger.steps:
@@ -179,18 +177,18 @@ class PermissionOrchestrator:
     def __init__(
         self,
         *,
-        order: List[PermissionId],
-        step_configs: Dict[PermissionId, StepConfig],
-        probers: Dict[PermissionId, PermissionProber],
-        classifiers: Dict[PermissionId, PermissionClassifier],
-        hard_permissions: List[PermissionId],
+        order: list[PermissionId],
+        step_configs: dict[PermissionId, StepConfig],
+        probers: dict[PermissionId, PermissionProber],
+        classifiers: dict[PermissionId, PermissionClassifier],
+        hard_permissions: list[PermissionId],
         restart_cfg: RestartConfig,
         settings_nav: SettingsNavigator,
         ledger_store: LedgerStore,
         emit: Callable[[UIEvent], None],
-        restart_handler: Optional[RestartHandler] = None,
+        restart_handler: RestartHandler | None = None,
         is_gui_process: bool = True,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         inter_step_pause_s: float = 0.0,
         advance_on_timeout: bool = False,
     ):
@@ -212,7 +210,7 @@ class PermissionOrchestrator:
         self._running = False
         self._cancelled = False
         self._idx = 0
-        self.ledger: Optional[LedgerRecord] = None
+        self.ledger: LedgerRecord | None = None
     
     # ---------- Lifecycle ----------
     
@@ -233,6 +231,17 @@ class PermissionOrchestrator:
         
         # Load or create ledger
         self.ledger = self._init_or_load_ledger()
+        
+        # If ledger is already completed (e.g., after restart completed)
+        if self.ledger.phase in (Phase.COMPLETED, Phase.LIMITED_MODE):
+            logger.info(
+                "[ORCHESTRATOR] Ledger already %s (restart_count=%d) - emitting completion event and exiting",
+                self.ledger.phase.value,
+                self.ledger.restart_count,
+            )
+            # Re-emit completion event for integrations that started after restart
+            await self._emit_completion_from_ledger()
+            return
         
         # If we're resuming after restart
         if self.ledger.phase == Phase.POST_RESTART_VERIFY:
@@ -349,7 +358,7 @@ class PermissionOrchestrator:
             if self._cancelled:
                 break
             
-            step_deadline: Optional[float] = None
+            step_deadline: float | None = None
             if self.advance_on_timeout and cfg.timing.step_timeout_s:
                 step_start = entry.grace_started_at or time.time()
                 step_deadline = step_start + cfg.timing.step_timeout_s
@@ -440,7 +449,7 @@ class PermissionOrchestrator:
         self._maybe_open_settings(perm, cfg, entry)
         self._save()
     
-    async def _poll_until_done(self, perm: PermissionId, cfg: StepConfig, deadline: Optional[float]) -> bool:
+    async def _poll_until_done(self, perm: PermissionId, cfg: StepConfig, deadline: float | None) -> bool:
         """Poll until step is done (PASS/FAIL/etc) or timeout."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot poll")
@@ -554,19 +563,49 @@ class PermissionOrchestrator:
             await self._enter_limited_mode()
             return
         
+        # Hard guard: V2 policy allows only one automatic restart per first-run cycle.
+        if self.ledger.restart_count >= 1:
+            logger.info(
+                "[ORCHESTRATOR] Restart already performed once (restart_count=%d) - skipping additional restart",
+                self.ledger.restart_count,
+            )
+            await self._complete(full_mode=True)
+            return
+
         # Check if restart needed and safe
         if should_restart(self.ledger, self.hard_permissions, self.restart_cfg):
             if can_restart_safely(self.ledger, self.restart_cfg):
-                await self._enter_restart_pending()
+                # However, to satisfy "Restart only after actual completion of first-run (all steps processed)",
+                # we are already there.
+                
+                # The issue is likely that RESTART_PENDING is not "COMPLETED". 
+                # Let's perform the restart logic but ensure we don't block.
+                # Or better: emit a "completion-like" event before restarting?
+                
+                await self._enter_restart_sequence()
                 return
         
         # Complete immediately
         await self._complete(full_mode=True)
     
-    async def _enter_restart_pending(self) -> None:
-        """Prepare for and trigger restart."""
+    async def _enter_restart_sequence(self) -> None:
+        """
+        Prepare for and trigger restart.
+        
+        Changed in V2 Fix:
+        We now treat this as the end of the first run. We emit restart-related events,
+        but we ensure the system knows we are 'done' with the wizard steps.
+        """
         if not self.ledger:
-            logger.error("[ORCHESTRATOR] Ledger not initialized, cannot enter restart pending")
+            logger.error("[ORCHESTRATOR] Ledger not initialized, cannot enter restart sequence")
+            return
+
+        if self.ledger.restart_count >= 1:
+            logger.info(
+                "[ORCHESTRATOR] Restart sequence skipped: restart already performed (restart_count=%d)",
+                self.ledger.restart_count,
+            )
+            await self._complete(full_mode=True)
             return
         
         self.ledger.phase = Phase.RESTART_PENDING
@@ -578,6 +617,11 @@ class PermissionOrchestrator:
             time.time(),
             {"reason": "Restart required to activate permissions"}
         ))
+        
+        # Explicitly emit a 'completed' event for compatibility if needed, 
+        # or rely on the fact that we are about to restart.
+        # User goal: "Restart only after actual completion of first-run".
+        # We are here => all steps processed.
         
         await asyncio.sleep(self.restart_cfg.delay_sec)
         
@@ -593,10 +637,13 @@ class PermissionOrchestrator:
             ))
             
             self.ledger.restart_count += 1
+            # Next boot should verify permissions
             self.ledger.phase = Phase.POST_RESTART_VERIFY
             self._save()
             
             permissions = [p.value for p in self.order if self.ledger.steps[p].needs_restart_marked]
+            
+            # Fire restart
             await self.restart_handler.trigger_restart(
                 reason="permission_activation",
                 permissions=permissions
@@ -735,6 +782,41 @@ class PermissionOrchestrator:
             {"full_mode": full_mode}
         ))
     
+    
+    async def _emit_completion_from_ledger(self) -> None:
+        """Re-emit completion event from existing completed ledger state."""
+        if not self.ledger:
+            logger.error("[ORCHESTRATOR] Ledger not initialized, cannot emit completion")
+            return
+        
+        is_full_mode = self.ledger.phase == Phase.COMPLETED
+        event_type = UIEventType.COMPLETED if is_full_mode else UIEventType.LIMITED_MODE_ENTERED
+        
+        # Build summary
+        summary = {}
+        for perm_id, entry in self.ledger.steps.items():
+            summary[perm_id.value] = {
+                "state": entry.state.value,
+                "mode": entry.mode.value,
+            }
+        
+        self.emit(UIEvent(
+            event_type,
+            time.time(),
+            {
+                "full_mode": is_full_mode,
+                "phase": self.ledger.phase.value,
+                "summary": summary,
+                "restart_count": self.ledger.restart_count,
+            }
+        ))
+        
+        logger.info(
+            "[ORCHESTRATOR] Re-emitted %s from ledger (restart_count=%d)",
+            event_type.value,
+            self.ledger.restart_count,
+        )
+    
     # ---------- Helpers ----------
     
     def _init_or_load_ledger(self) -> LedgerRecord:
@@ -744,7 +826,7 @@ class PermissionOrchestrator:
             return existing
         
         now = time.time()
-        steps: Dict[PermissionId, StepLedgerEntry] = {}
+        steps: dict[PermissionId, StepLedgerEntry] = {}
         for p in self.order:
             cfg = self.step_configs[p]
             steps[p] = StepLedgerEntry(permission=p, mode=cfg.mode)

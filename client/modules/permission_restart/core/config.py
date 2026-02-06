@@ -5,12 +5,11 @@ Configuration helpers for the permission restart module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional
-
+from typing import Iterable
 
 from .types import PermissionType
 
-DEFAULT_CRITICAL_PERMISSIONS: List[PermissionType] = [
+DEFAULT_CRITICAL_PERMISSIONS: list[PermissionType] = [
     PermissionType.MICROPHONE,
     PermissionType.ACCESSIBILITY,
     PermissionType.INPUT_MONITORING,
@@ -26,7 +25,7 @@ class PermissionRestartConfig:
 
     enabled: bool = True
     allow_dev_fallback: bool = True
-    critical_permissions: List[PermissionType] = field(
+    critical_permissions: list[PermissionType] = field(
         default_factory=lambda: list(DEFAULT_CRITICAL_PERMISSIONS)
     )
     restart_delay_sec: float = 5.0
@@ -39,7 +38,7 @@ class PermissionRestartConfig:
     graceful_shutdown_poll_interval_sec: float = 0.25  # Poll step while waiting for PID to exit
 
     @classmethod
-    def from_dict(cls, raw: Optional[Dict[str, object]]) -> "PermissionRestartConfig":
+    def from_dict(cls, raw: dict[str, object] | None) -> "PermissionRestartConfig":
         """
         Build configuration from raw dictionary data (usually unified_config).
         """
@@ -49,16 +48,16 @@ class PermissionRestartConfig:
 
         enabled = bool(raw.get("enabled", True))
         allow_dev_fallback = bool(raw.get("allow_dev_fallback", True))
-        restart_delay_sec = float(raw.get("restart_delay_sec", 5.0))
-        max_attempts = int(raw.get("max_restart_attempts", 3))
+        restart_delay_sec = float(str(raw.get("restart_delay_sec", 5.0)))
+        max_attempts = int(str(raw.get("max_restart_attempts", 3)))
         respect_sessions = bool(raw.get("respect_active_sessions", True))
         respect_updates = bool(raw.get("respect_updates", True))
-        handler_launch_delay_ms = float(raw.get("handler_launch_delay_ms", 1000.0))
-        packaged_launch_grace_ms = float(raw.get("packaged_launch_grace_ms", 3000.0))
-        graceful_shutdown_timeout_sec = float(raw.get("graceful_shutdown_timeout_sec", 10.0))
-        graceful_shutdown_poll_interval_sec = float(raw.get("graceful_shutdown_poll_interval_sec", 0.25))
+        handler_launch_delay_ms = float(str(raw.get("handler_launch_delay_ms", 1000.0)))
+        packaged_launch_grace_ms = float(str(raw.get("packaged_launch_grace_ms", 3000.0)))
+        graceful_shutdown_timeout_sec = float(str(raw.get("graceful_shutdown_timeout_sec", 10.0)))
+        graceful_shutdown_poll_interval_sec = float(str(raw.get("graceful_shutdown_poll_interval_sec", 0.25)))
 
-        critical_raw: Optional[Iterable[object]] = raw.get("critical_permissions")  # type: ignore[assignment]
+        critical_raw: Iterable[object] | None = raw.get("critical_permissions")  # type: ignore[assignment]
         critical_permissions = _parse_permission_list(critical_raw)
 
         return cls(
@@ -76,7 +75,7 @@ class PermissionRestartConfig:
         )
 
 
-def load_permission_restart_config(section: Optional[Dict[str, object]]) -> PermissionRestartConfig:
+def load_permission_restart_config(section: dict[str, object] | None) -> PermissionRestartConfig:
     """
     Adapter used by integrations to obtain a fully parsed configuration object.
     """
@@ -84,11 +83,11 @@ def load_permission_restart_config(section: Optional[Dict[str, object]]) -> Perm
     return PermissionRestartConfig.from_dict(section)
 
 
-def _parse_permission_list(values: Optional[Iterable[object]]) -> List[PermissionType]:
+def _parse_permission_list(values: Iterable[object] | None) -> list[PermissionType]:
     if not values:
         return []
 
-    resolved: List[PermissionType] = []
+    resolved: list[PermissionType] = []
     for value in values:
         perm = _normalize_permission(value)
         if perm is not None and perm not in resolved:
@@ -96,7 +95,7 @@ def _parse_permission_list(values: Optional[Iterable[object]]) -> List[Permissio
     return resolved
 
 
-def _normalize_permission(value: object) -> Optional[PermissionType]:
+def _normalize_permission(value: object) -> PermissionType | None:
     if isinstance(value, PermissionType):
         return value
 

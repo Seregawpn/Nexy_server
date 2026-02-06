@@ -6,11 +6,11 @@ Simulation script to verify permission flow fixes.
 3. Checks for duplicate TCC triggers.
 """
 
-import sys
 import asyncio
 import logging
+import sys
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -82,7 +82,9 @@ def main():
         
         # Mock FirstRunPermissionsIntegration
         # We use the REAL class but inject the mock v2
-        from integration.integrations.first_run_permissions_integration import FirstRunPermissionsIntegration
+        from integration.integrations.first_run_permissions_integration import (
+            FirstRunPermissionsIntegration,
+        )
         
         real_first_run = FirstRunPermissionsIntegration(MagicMock(), MagicMock(), MagicMock(), {"permissions_v2": {"enabled": True}})
         real_first_run._v2_integration = mock_v2
@@ -119,9 +121,9 @@ def main():
         # Set dummy tray ready and initialized
         coordinator._tray_ready = True
         coordinator.is_initialized = True
-        coordinator._state_manager = MagicMock()
+        coordinator.state_manager = MagicMock()
         # Mock get_state_data to return False for first_run/restart flags
-        coordinator._state_manager.get_state_data.return_value = False
+        coordinator.state_manager.get_state_data.return_value = False
         
         print("   Coordinator initialized with mocks.")
         print("   Running start()...")

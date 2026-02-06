@@ -6,11 +6,13 @@ Unit-тесты для проверки правильной последова�
 - Событие permissions.first_run_completed не должно теряться
 """
 
-import pytest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, call
-from integration.core.simple_module_coordinator import SimpleModuleCoordinator
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
 from integration.core.event_bus import EventBus, EventPriority
+from integration.core.simple_module_coordinator import SimpleModuleCoordinator
 
 
 class TestCoordinatorCriticalSubscriptions:

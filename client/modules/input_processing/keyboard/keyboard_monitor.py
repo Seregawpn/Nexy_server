@@ -3,12 +3,12 @@
 """
 
 import asyncio
+import logging
 import threading
 import time
-import logging
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable
 
-from .types import KeyEvent, KeyEventType, KeyboardConfig
+from .types import KeyboardConfig, KeyEvent, KeyEventType
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,10 @@ class KeyboardMonitor:
         self.state_lock = threading.RLock()
         
         # Callbacks
-        self.event_callbacks: Dict[KeyEventType, Callable] = {}
+        self.event_callbacks: dict[KeyEventType, Callable[[KeyEvent], Any]] = {}
         
         # Event loop для async колбэков
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         
         # Fallback режим
         self.fallback_mode = False
@@ -51,7 +51,7 @@ class KeyboardMonitor:
         self._control_pressed = False
         self._n_pressed = False
         self._combo_active = False
-        self._combo_start_time: Optional[float] = None
+        self._combo_start_time: float | None = None
         
         # pynput будет импортирован лениво в start_monitoring()
         # чтобы не триггерить проверку Accessibility при создании объекта
@@ -143,7 +143,7 @@ class KeyboardMonitor:
         except Exception as e:
             logger.error(f"❌ Ошибка остановки мониторинга: {e}")
     
-    def register_callback(self, event_type, callback: Callable):
+    def register_callback(self, event_type: KeyEventType | str, callback: Callable[[KeyEvent], Any]) -> None:
         """Регистрирует callback для типа события"""
         # Поддерживаем как KeyEventType, так и строки
         if isinstance(event_type, str):
@@ -162,10 +162,14 @@ class KeyboardMonitor:
         self._loop = loop
         logger.debug("🔄 Event loop установлен для KeyboardMonitor")
     
-    def _run_keyboard_listener(self):
+    def _run_keyboard_listener(self) -> None:
         """Запускает listener клавиатуры"""
         try:
-            with self.keyboard.Listener(
+            keyboard = self.keyboard
+            if keyboard is None:
+                logger.error("❌ Keyboard listener unavailable: keyboard backend not initialized")
+                return
+            with keyboard.Listener(
                 on_press=self._on_key_press,
                 on_release=self._on_key_release
             ) as listener:
@@ -203,7 +207,7 @@ class KeyboardMonitor:
                 logger.error(f"❌ Ошибка в мониторе удержания: {e}")
                 time.sleep(0.1)
     
-    def _on_key_press(self, key):
+    def _on_key_press(self, key: Any) -> None:
         """Обработка нажатия клавиши"""
         try:
             current_time = time.time()
@@ -212,11 +216,8 @@ class KeyboardMonitor:
                 # Обработка комбинации Control+N
                 with self.state_lock:
                     # Определяем, какая клавиша нажата
-                    is_control = (key == self.keyboard.Key.ctrl or 
-                                 key == self.keyboard.Key.ctrl_l or 
-                                 key == self.keyboard.Key.ctrl_r)
-                    is_n = ((hasattr(key, 'char') and key.char and key.char.lower() == 'n') or
-                           (hasattr(key, 'name') and key.name and key.name.lower() == 'n'))
+                    is_control = self._is_control_key(key)
+                    is_n = self._is_n_key(key)
                     
                     if is_control:
                         if self._control_pressed:
@@ -267,7 +268,7 @@ class KeyboardMonitor:
         except Exception as e:
             logger.error(f"❌ Ошибка обработки нажатия: {e}")
     
-    def _on_key_release(self, key):
+    def _on_key_release(self, key: Any) -> None:
         """Обработка отпускания клавиши"""
         try:
             current_time = time.time()
@@ -276,11 +277,8 @@ class KeyboardMonitor:
                 # Обработка комбинации Control+N
                 with self.state_lock:
                     # Определяем, какая клавиша отпущена
-                    is_control = (key == self.keyboard.Key.ctrl or 
-                                 key == self.keyboard.Key.ctrl_l or 
-                                 key == self.keyboard.Key.ctrl_r)
-                    is_n = ((hasattr(key, 'char') and key.char and key.char.lower() == 'n') or
-                           (hasattr(key, 'name') and key.name and key.name.lower() == 'n'))
+                    is_control = self._is_control_key(key)
+                    is_n = self._is_n_key(key)
                     
                     if is_control:
                         if not self._control_pressed:
@@ -309,7 +307,6 @@ class KeyboardMonitor:
 
                     # КРИТИЧНО: Сбрасываем состояние СРАЗУ, чтобы hold_monitor не отправил LONG_PRESS
                     self.key_pressed = False
-                    press_start_time_backup = self.press_start_time
                     self.press_start_time = None
 
                     # Определяем тип события
@@ -384,7 +381,7 @@ class KeyboardMonitor:
             )
             self._trigger_event(KeyEventType.RELEASE, duration, event)
     
-    def _is_target_key(self, key) -> bool:
+    def _is_target_key(self, key: Any) -> bool:
         """Проверяет, является ли клавиша целевой"""
         try:
             if not self.keyboard_available:
@@ -392,19 +389,19 @@ class KeyboardMonitor:
             
             if self._is_combo:
                 # Для комбинации проверяем отдельно Control и N
-                if key == self.keyboard.Key.ctrl or key == self.keyboard.Key.ctrl_l or key == self.keyboard.Key.ctrl_r:
+                if self._is_control_key(key):
                     return True
-                # Проверяем N по символу или keycode
-                if hasattr(key, 'char') and key.char and key.char.lower() == 'n':
-                    return True
-                if hasattr(key, 'name') and key.name and key.name.lower() == 'n':
+                if self._is_n_key(key):
                     return True
                 return False
                 
             if self.key_to_monitor == 'left_shift':
                 # pynput не различает левый/правый Shift, используем общий shift
                 logger.warning("⚠️ pynput не различает левый/правый Shift, используем общий shift")
-                return key == self.keyboard.Key.shift
+                keyboard = self.keyboard
+                if keyboard is None:
+                    return False
+                return key == keyboard.Key.shift
             else:
                 logger.warning(f"⚠️ Неподдерживаемая клавиша для pynput: {self.key_to_monitor}")
                 return False
@@ -413,16 +410,18 @@ class KeyboardMonitor:
             logger.error(f"❌ Ошибка проверки клавиши: {e}")
             return False
     
-    def _key_to_string(self, key) -> str:
+    def _key_to_string(self, key: Any) -> str:
         """Преобразует клавишу в строку"""
         try:
             if not self.keyboard_available:
                 return "unknown"
                 
-            if hasattr(key, 'char') and key.char:
-                return key.char
-            elif hasattr(key, 'name'):
-                return key.name
+            key_char = getattr(key, "char", None)
+            if isinstance(key_char, str) and key_char:
+                return key_char
+            key_name = getattr(key, "name", None)
+            if isinstance(key_name, str) and key_name:
+                return key_name
             else:
                 return str(key)
                 
@@ -430,7 +429,7 @@ class KeyboardMonitor:
             logger.error(f"❌ Ошибка преобразования клавиши: {e}")
             return "unknown"
     
-    def _trigger_event(self, event_type: KeyEventType, duration: float, event: KeyEvent = None):
+    def _trigger_event(self, event_type: KeyEventType, duration: float, event: KeyEvent | None = None) -> None:
         """Запускает событие"""
         try:
             callback = self.event_callbacks.get(event_type)
@@ -452,7 +451,7 @@ class KeyboardMonitor:
         except Exception as e:
             logger.error(f"❌ Ошибка запуска события: {e}")
     
-    def _run_callback(self, callback, event):
+    def _run_callback(self, callback: Callable[[KeyEvent], Any], event: KeyEvent) -> None:
         """Запуск callback с правильной обработкой async/sync функций"""
         try:
             import inspect
@@ -471,8 +470,23 @@ class KeyboardMonitor:
                 
         except Exception as e:
             logger.error(f"❌ Ошибка выполнения callback: {e}")
+
+    def _is_control_key(self, key: Any) -> bool:
+        """Проверяет, что нажата одна из control-клавиш."""
+        keyboard = self.keyboard
+        if keyboard is None:
+            return False
+        return key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r)
+
+    def _is_n_key(self, key: Any) -> bool:
+        """Проверяет, что нажата клавиша N."""
+        key_char = getattr(key, "char", None)
+        if isinstance(key_char, str) and key_char.lower() == "n":
+            return True
+        key_name = getattr(key, "name", None)
+        return isinstance(key_name, str) and key_name.lower() == "n"
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Возвращает статус мониторинга"""
         with self.state_lock:
             status = {

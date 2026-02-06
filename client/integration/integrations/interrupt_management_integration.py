@@ -4,16 +4,16 @@ InterruptManagementIntegration - Интеграция InterruptCoordinator с Ev
 """
 
 import asyncio
-import logging
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+import logging
+from typing import Any
+
+from integration.core import selectors
+from integration.core.error_handler import ErrorHandler
 
 # Пути уже добавлены в main.py - не дублируем
-
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-from integration.core import selectors
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -24,11 +24,17 @@ except Exception:
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 # Импорты модуля InterruptManagement
-from modules.interrupt_management.core.interrupt_coordinator import InterruptCoordinator, InterruptDependencies
-from modules.interrupt_management.core.types import (
-    InterruptType, InterruptPriority, InterruptStatus, InterruptEvent, InterruptConfig
+from modules.interrupt_management.core.interrupt_coordinator import (
+    InterruptCoordinator,
+    InterruptDependencies,
 )
-from modules.interrupt_management.config.interrupt_config import InterruptModuleConfig
+from modules.interrupt_management.core.types import (
+    InterruptConfig,
+    InterruptEvent,
+    InterruptPriority,
+    InterruptStatus,
+    InterruptType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +58,7 @@ class InterruptManagementIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        config: Optional[InterruptManagementIntegrationConfig] = None,
+        config: InterruptManagementIntegrationConfig | None = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
@@ -60,7 +66,7 @@ class InterruptManagementIntegration:
         self.config = config or InterruptManagementIntegrationConfig()
         
         # InterruptCoordinator экземпляр
-        self._coordinator: Optional[InterruptCoordinator] = None
+        self._coordinator: InterruptCoordinator | None = None
         self._initialized = False
         self._running = False
         
@@ -324,16 +330,11 @@ class InterruptManagementIntegration:
             # КРИТИЧНО: Централизованная остановка речи для type == "speech_stop"
             if interrupt_type == "speech_stop":
                 logger.info(f"🛑 InterruptManager: останавливаем речь (session_id={session_id})")
-                await self.event_bus.publish("playback.cancelled", {
-                    "session_id": session_id,
-                    "reason": "interrupt_request",
-                    "source": "interrupt_manager"
-                })
                 if session_id is not None:
                     await self.event_bus.publish("grpc.request_cancel", {
                         "session_id": session_id
                     })
-                logger.info("🛑 InterruptManager: playback.cancelled и grpc.request_cancel опубликованы")
+                logger.info("🛑 InterruptManager: grpc.request_cancel опубликован")
             
             # Создаем событие прерывания
             interrupt_event = InterruptEvent(
@@ -554,7 +555,7 @@ class InterruptManagementIntegration:
         except Exception as e:
             logger.error(f"Error cancelling all interrupts: {e}")
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус InterruptManagementIntegration"""
         coordinator = self._coordinator
         if coordinator is None:
@@ -574,7 +575,7 @@ class InterruptManagementIntegration:
             }
         }
     
-    async def request_interrupt(self, interrupt_type: InterruptType, priority: InterruptPriority = InterruptPriority.NORMAL, source: str = "integration", data: Optional[Dict[str, Any]] = None) -> bool:
+    async def request_interrupt(self, interrupt_type: InterruptType, priority: InterruptPriority = InterruptPriority.NORMAL, source: str = "integration", data: dict[str, Any] | None = None) -> bool:
         """Запросить прерывание"""
         if not self._coordinator:
             return False

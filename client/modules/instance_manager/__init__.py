@@ -5,7 +5,7 @@ Instance Manager Module
 """
 
 from .core.instance_manager import InstanceManager
-from .core.types import InstanceStatus, LockInfo, InstanceManagerConfig
+from .core.types import InstanceManagerConfig, InstanceStatus, LockInfo
 
 __all__ = [
     'InstanceManager',

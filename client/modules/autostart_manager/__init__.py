@@ -5,8 +5,8 @@ Autostart Manager Module
 """
 
 from .core.autostart_manager import AutostartManager
-from .core.types import AutostartStatus, AutostartConfig
 from .core.config import AutostartConfig as Config
+from .core.types import AutostartConfig, AutostartStatus
 
 __all__ = [
     'AutostartManager',

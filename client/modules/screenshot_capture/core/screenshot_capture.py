@@ -4,9 +4,14 @@
 
 import asyncio
 import logging
-import time
-from typing import Optional, Tuple
-from .types import ScreenshotResult, ScreenshotConfig, ScreenshotRegion, ScreenshotError, ScreenshotTimeoutError
+from typing import Any
+
+from .types import (
+    ScreenshotConfig,
+    ScreenshotError,
+    ScreenshotRegion,
+    ScreenshotResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +57,7 @@ class ScreenshotCapture:
             logger.error(f"❌ Ошибка инициализации bridge: {e}")
             raise ScreenshotError(f"Ошибка инициализации bridge: {e}")
     
-    async def capture_screenshot(self, config: ScreenshotConfig = None) -> ScreenshotResult:
+    async def capture_screenshot(self, config: ScreenshotConfig | None = None) -> ScreenshotResult:
         """
         Захватывает скриншот экрана
         
@@ -95,6 +100,7 @@ class ScreenshotCapture:
     def _capture_sync(self, config: ScreenshotConfig) -> ScreenshotResult:
         """Синхронный захват скриншота"""
         try:
+            assert self._bridge is not None
             if config.region == ScreenshotRegion.FULL_SCREEN:
                 return self._bridge.capture_full_screen(config)
             elif config.region == ScreenshotRegion.PRIMARY_MONITOR:
@@ -112,7 +118,7 @@ class ScreenshotCapture:
                 error=f"Ошибка синхронного захвата: {e}"
             )
     
-    async def capture_region(self, region: Tuple[int, int, int, int], config: ScreenshotConfig = None) -> ScreenshotResult:
+    async def capture_region(self, region: tuple[int, int, int, int], config: ScreenshotConfig | None = None) -> ScreenshotResult:
         """
         Захватывает указанную область экрана
         
@@ -154,9 +160,10 @@ class ScreenshotCapture:
                 error=f"Ошибка захвата области: {e}"
             )
     
-    def _capture_region_sync(self, region: Tuple[int, int, int, int], config: ScreenshotConfig) -> ScreenshotResult:
+    def _capture_region_sync(self, region: tuple[int, int, int, int], config: ScreenshotConfig) -> ScreenshotResult:
         """Синхронный захват области"""
         try:
+            assert self._bridge is not None
             return self._bridge.capture_region(region, config)
         except Exception as e:
             logger.error(f"❌ Ошибка синхронного захвата области: {e}")
@@ -176,6 +183,7 @@ class ScreenshotCapture:
             return False
         
         try:
+            assert self._bridge is not None
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, self._bridge.test_capture)
             return result
@@ -188,6 +196,7 @@ class ScreenshotCapture:
         if not self._initialized:
             raise ScreenshotError("ScreenshotCapture не инициализирован")
         
+        assert self._bridge is not None
         return self._bridge.get_screen_info()
     
     def update_config(self, config: ScreenshotConfig):
@@ -195,7 +204,7 @@ class ScreenshotCapture:
         self.config = config
         logger.info("✅ Конфигурация обновлена")
     
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, Any]:
         """Получает статус модуля"""
         return {
             "initialized": self._initialized,

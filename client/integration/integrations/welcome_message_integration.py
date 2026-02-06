@@ -40,10 +40,12 @@ class WelcomeMessageIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
+        grpc_integration: Any | None = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
+        self._grpc_integration = grpc_integration
         
         # Загружаем конфигурацию
         try:
@@ -54,8 +56,24 @@ class WelcomeMessageIntegration:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка загрузки конфигурации: {e}")
             self.config = WelcomeConfig()
         
-        # Создаем плеер приветствия
-        self.welcome_player = WelcomePlayer(self.config)
+        # Создаем плеер приветствия (gRPC клиент опционален)
+        grpc_client = None
+        grpc_server_name = None
+        grpc_timeout = None
+        try:
+            if self._grpc_integration:
+                grpc_client = self._grpc_integration.get_client()
+                grpc_server_name = self._grpc_integration.get_server_name()
+                grpc_timeout = self._grpc_integration.get_request_timeout_sec()
+        except Exception as e:
+            logger.warning(f"⚠️ [WELCOME_INTEGRATION] Не удалось получить gRPC клиент: {e}")
+
+        self.welcome_player = WelcomePlayer(
+            self.config,
+            grpc_client=grpc_client,
+            grpc_server_name=grpc_server_name,
+            grpc_timeout=grpc_timeout,
+        )
         
         # Настраиваем коллбеки
         self.welcome_player.set_callbacks(
@@ -74,6 +92,8 @@ class WelcomeMessageIntegration:
         self._welcome_played = False
         self._welcome_lock = asyncio.Lock()
         self._deferred_until_first_run = False
+        self._playback_ready = False
+        self._playback_ready_event = asyncio.Event()
 
         # Блокировки по разрешениям отключены по умолчанию
         self._enforce_permissions = bool(
@@ -94,6 +114,7 @@ class WelcomeMessageIntegration:
             await self.event_bus.subscribe("permissions.requested", self._on_permission_event, EventPriority.MEDIUM)
             await self.event_bus.subscribe("permissions.integration_ready", self._on_permissions_ready, EventPriority.MEDIUM)
             await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("playback.ready", self._on_playback_ready, EventPriority.MEDIUM)
             
             self._initialized = True
             logger.info("✅ [WELCOME_INTEGRATION] Инициализирован")
@@ -111,8 +132,11 @@ class WelcomeMessageIntegration:
             logger.error("❌ [WELCOME_INTEGRATION] Не инициализирован")
             return False
         
+        self._refresh_grpc_client()
         self._running = True
         logger.info("✅ [WELCOME_INTEGRATION] Запущен")
+        if self._pending_welcome and self._playback_ready:
+            asyncio.create_task(self._request_welcome_play("playback_ready", allow_pending=True))
         return True
     
     async def stop(self) -> bool:
@@ -141,26 +165,7 @@ class WelcomeMessageIntegration:
                 logger.info("⏳ [WELCOME_INTEGRATION] First-run in progress — откладываем приветствие до permissions.first_run_completed")
                 return
             
-            async with self._welcome_lock:
-                if self._welcome_played or self._pending_welcome:
-                    source = (event or {}).get("data", {}).get("source", "unknown")
-                    logger.info("🔁 [WELCOME_INTEGRATION] Уже воспроизводилось/ожидает — игнорируем (source=%s)", source)
-                    return
-
-                logger.info("🚀 [WELCOME_INTEGRATION] Обработка события готовности к приветствию")
-                self._pending_welcome = True
-                self._welcome_played = True
-
-                if self.config.delay_sec > 0:
-                    await asyncio.sleep(self.config.delay_sec)
-
-                try:
-                    await self._play_welcome_message(trigger="system_ready")
-                except Exception as e:
-                    self._welcome_played = False
-                    raise
-                finally:
-                    self._pending_welcome = False
+            await self._request_welcome_play("system_ready")
 
             # 🎙️ Разрешения будут запрошены через PermissionsIntegration автоматически
             # Не запрашиваем здесь, чтобы избежать дублирования
@@ -178,11 +183,58 @@ class WelcomeMessageIntegration:
             await self._on_ready_to_greet({"data": {"source": "permissions.first_run_completed"}})
         except Exception as e:
             await self._handle_error(e, where="welcome.on_first_run_completed", severity="warning")
+
+    async def _on_playback_ready(self, event: Dict[str, Any]) -> None:
+        """Получили готовность playback — можно воспроизводить приветствие."""
+        if self._playback_ready:
+            return
+        self._playback_ready = True
+        self._playback_ready_event.set()
+        logger.info("✅ [WELCOME_INTEGRATION] Playback ready")
+        if self._pending_welcome and not self._welcome_played:
+            asyncio.create_task(self._request_welcome_play("playback_ready", allow_pending=True))
+
+    async def _request_welcome_play(self, trigger: str, allow_pending: bool = False) -> None:
+        """Единая точка запуска приветствия с gate по playback."""
+        async with self._welcome_lock:
+            if self._welcome_played:
+                return
+            if self._pending_welcome and not allow_pending:
+                source = trigger or "unknown"
+                logger.info("🔁 [WELCOME_INTEGRATION] Уже ожидает — игнорируем (source=%s)", source)
+                return
+            if not self._running or not self._playback_ready:
+                self._pending_welcome = True
+                logger.info(
+                    "⏳ [WELCOME_INTEGRATION] Playback не готов или интеграция не запущена — откладываем приветствие "
+                    "(running=%s, playback_ready=%s)",
+                    self._running,
+                    self._playback_ready,
+                )
+                return
+
+            logger.info("🚀 [WELCOME_INTEGRATION] Обработка события готовности к приветствию")
+            self._pending_welcome = True
+            self._welcome_played = True
+
+            if self.config.delay_sec > 0:
+                await asyncio.sleep(self.config.delay_sec)
+
+            try:
+                await self._play_welcome_message(trigger=trigger)
+            except Exception:
+                self._welcome_played = False
+                raise
+            finally:
+                self._pending_welcome = False
     
     async def _play_welcome_message(self, trigger: str = "app_startup"):
         """Воспроизводит приветственное сообщение"""
         try:
             logger.info(f"🎵 [WELCOME_INTEGRATION] Начинаю воспроизведение приветствия (trigger={trigger})")
+
+            # Обновляем gRPC клиент непосредственно перед воспроизведением
+            self._refresh_grpc_client()
             
             # 🆕 ПЕРЕХОД В PROCESSING РЕЖИМ
             logger.info("🔄 [WELCOME_INTEGRATION] Переход в режим PROCESSING для приветствия")
@@ -193,7 +245,9 @@ class WelcomeMessageIntegration:
             })
             
             # Воспроизводим через плеер
+            logger.info("TRACE [WELCOME_INT] calling welcome_player.play_welcome()")
             result = await self.welcome_player.play_welcome()
+            logger.info(f"TRACE [WELCOME_INT] welcome_player.play_welcome() returned: {result}")
             
             if result.success:
                 logger.info(f"✅ [WELCOME_INTEGRATION] Приветствие воспроизведено: {result.method}, {result.duration_sec:.1f}s")
@@ -213,8 +267,12 @@ class WelcomeMessageIntegration:
             else:
                 logger.warning(f"⚠️ [WELCOME_INTEGRATION] Приветствие не удалось: {result.error}")
             
-        except Exception as e:
+        except BaseException as e:
             # 🆕 ВОЗВРАТ В SLEEPING ПРИ ОШИБКЕ (с задержкой для видимости)
+            logger.critical(f"🛑 [WELCOME_INTEGRATION] CRITICAL ERROR/CANCELLED: {type(e).__name__}: {e}")
+            import traceback
+            logger.critical(traceback.format_exc())
+            
             logger.error("🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING из-за ошибки")
             await asyncio.sleep(0.5)  # Небольшая задержка для видимости изменения иконки
             await self.event_bus.publish("mode.request", {
@@ -222,7 +280,21 @@ class WelcomeMessageIntegration:
                 "source": "welcome_message", 
                 "reason": "welcome_error"
             })
-            await self._handle_error(e, where="welcome.play_message", severity="warning")
+            if isinstance(e, Exception):
+                await self._handle_error(e, where="welcome.play_message", severity="warning")
+            raise
+
+    def _refresh_grpc_client(self) -> None:
+        """Отложенная инъекция gRPC клиента для welcome-аудио."""
+        try:
+            if not self._grpc_integration:
+                return
+            grpc_client = self._grpc_integration.get_client()
+            if grpc_client is None:
+                return
+            self.welcome_player.set_grpc_client(grpc_client)
+        except Exception as e:
+            logger.warning(f"⚠️ [WELCOME_INTEGRATION] Не удалось обновить gRPC клиент: {e}")
     
     def _on_welcome_started(self):
         """Коллбек начала воспроизведения приветствия (вызывается из sync контекста)"""
@@ -448,7 +520,7 @@ class WelcomeMessageIntegration:
             asyncio.create_task(self._cancel_permission_recheck_task())
             # Если ожидали приветствие, запускаем его после получения разрешения
             if self.config.enabled and self.welcome_player:
-                asyncio.create_task(self._play_welcome_message(trigger="permissions"))
+                asyncio.create_task(self._request_welcome_play("permissions", allow_pending=True))
         else:
             # Любой статус кроме granted означает, что приветствие пока нельзя воспроизвести
             self._pending_welcome = True

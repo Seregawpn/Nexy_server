@@ -124,6 +124,17 @@ lipo -info dist/Nexy.app/Contents/Resources/resources/ffmpeg/ffmpeg
 
 ---
 
+## Исключённые модули
+
+> [!NOTE]
+> Следующие модули **НЕ упакованы** и отключены по умолчанию:
+> - ❌ **WhatsApp** (whatsapp_integration)
+> - ❌ **Payment** (payment_integration)
+>
+> Для включения см. [PACKAGING_FINAL_GUIDE.md](file:///Users/sergiyzasorin/Fix_new/client/Docs/PACKAGING_FINAL_GUIDE.md)
+
+---
+
 ## Связанная документация
 
 | Документ | Назначение |

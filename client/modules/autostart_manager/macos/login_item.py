@@ -2,9 +2,8 @@
 Управление Login Items для macOS (альтернативный метод автозапуска).
 """
 
-import os
 import subprocess
-from typing import Optional
+
 
 class LoginItemManager:
     """Менеджер Login Items для автозапуска."""

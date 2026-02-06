@@ -7,12 +7,12 @@ application switches into interactive modes (e.g. LISTENING).
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import platform
 import subprocess
 import time
-from dataclasses import dataclass
-from typing import Literal, Optional, Sequence
+from typing import Any, Literal, Sequence
 
 # NOTE: AccessibilityHandler import removed - permission checks now use
 # check_accessibility_status() from status_checker.py (centralized)
@@ -25,11 +25,11 @@ _KEY_CODE_CONTROL = 59  # macOS virtual key code for the left Control key
 if platform.system() == "Darwin":  # pragma: no branch - platform guard
     try:  # pragma: no cover - Quartz is only available on macOS runtime
         from Quartz import (  # type: ignore
-            CGEventCreateKeyboardEvent,
-            CGEventPost,
-            CGEventSetFlags,
-            kCGEventFlagMaskControl,
-            kCGHIDEventTap,
+            CGEventCreateKeyboardEvent,  # type: ignore[reportAttributeAccessIssue]
+            CGEventPost,  # type: ignore[reportAttributeAccessIssue]
+            CGEventSetFlags,  # type: ignore[reportAttributeAccessIssue]
+            kCGEventFlagMaskControl,  # type: ignore[reportAttributeAccessIssue]
+            kCGHIDEventTap,  # type: ignore[reportAttributeAccessIssue]
         )
     except Exception:  # pragma: no cover - import failure fallback
         CGEventCreateKeyboardEvent = None  # type: ignore
@@ -77,7 +77,7 @@ class VoiceOverControlSettings:
 class VoiceOverController:
     """Controller that mutes VoiceOver speech when required."""
 
-    def __init__(self, settings: Optional[VoiceOverControlSettings] = None) -> None:
+    def __init__(self, settings: VoiceOverControlSettings | None = None) -> None:
         self.settings = settings or VoiceOverControlSettings()
         self._lock = asyncio.Lock()
         self._ducked = False
@@ -184,7 +184,7 @@ class VoiceOverController:
                 else:
                     logger.debug(f"VoiceOverController: VoiceOver not ducked, staying in mode {mode_value}")
 
-    async def duck(self, reason: Optional[str] = None) -> bool:
+    async def duck(self, reason: str | None = None) -> bool:
         """Explicitly request VoiceOver ducking."""
         if not self.settings.enabled or not self._platform_supported:
             return False
@@ -236,7 +236,7 @@ class VoiceOverController:
         """Ensure VoiceOver is released on shutdown."""
         await self.release(force=True)
 
-    async def _ensure_ducked(self, reason: Optional[str] = None) -> bool:
+    async def _ensure_ducked(self, reason: str | None = None) -> bool:
         async with self._lock:
             if self._ducked:
                 logger.debug("VoiceOverController: ducking already active, skip reapply")
@@ -335,7 +335,7 @@ class VoiceOverController:
         else:
             logger.debug("VoiceOverController: stop speaking succeeded (context=%s)", context)
 
-    def _run_osascript(self, script: str, capture_output: bool = False) -> tuple[bool, Optional[str], Optional[str]]:
+    def _run_osascript(self, script: str, capture_output: bool = False) -> tuple[bool, str | None, str | None]:
         """Run a short AppleScript command."""
         try:
             # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ КОМАНД
@@ -400,7 +400,7 @@ class VoiceOverController:
                 logger.warning(error_msg)
             return False, None, str(exc)
 
-    def _get_voiceover_speech_muted(self) -> Optional[bool]:
+    def _get_voiceover_speech_muted(self) -> bool | None:
         if not self._speech_muted_supported:
             return None
 
@@ -456,7 +456,7 @@ class VoiceOverController:
     def _toggle_voiceover_speech_with_shortcut(
         self,
         target_state: bool,
-        current_state: Optional[bool],
+        current_state: bool | None,
     ) -> bool:
         if current_state is not None and current_state == target_state:
             return True
@@ -484,7 +484,7 @@ class VoiceOverController:
             )
         return toggled_state == target_state
 
-    def _handle_speech_muted_unsupported(self, stderr: Optional[str], *, force: bool = False) -> None:
+    def _handle_speech_muted_unsupported(self, stderr: str | None, *, force: bool = False) -> None:
         if not self._speech_muted_supported:
             return
 
@@ -525,7 +525,7 @@ class VoiceOverController:
             )
         return False
 
-    def _check_voiceover_status(self) -> dict:
+    def _check_voiceover_status(self) -> dict[str, Any]:
         """Проверить статус VoiceOver и вернуть детальную информацию"""
         status = {
             "voiceover_running": False,

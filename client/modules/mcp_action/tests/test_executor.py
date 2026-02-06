@@ -4,13 +4,12 @@ Unit tests for McpActionExecutor.
 Feature ID: F-2025-014-close-app
 """
 
-import asyncio
-import pytest  # type: ignore
 from unittest.mock import AsyncMock, MagicMock, patch
-from pathlib import Path
+
+import pytest  # type: ignore
 
 from modules.mcp_action.core.mcp_action_executor import McpActionExecutor
-from modules.mcp_action.core.types import McpActionConfig, McpActionResult
+from modules.mcp_action.core.types import McpActionConfig
 
 
 @pytest.fixture

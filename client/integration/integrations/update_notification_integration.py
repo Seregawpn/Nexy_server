@@ -8,15 +8,15 @@ UpdateNotificationIntegration
 from __future__ import annotations
 
 import asyncio
-import time
-import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+import logging
+import time
+from typing import Any
 
 from integration.core.base_integration import BaseIntegration
+from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class UpdateNotificationConfig:
     announce_on_startup: bool = False
 
     @classmethod
-    def from_dict(cls, raw: Optional[Dict[str, Any]]) -> "UpdateNotificationConfig":
+    def from_dict(cls, raw: dict[str, Any] | None) -> "UpdateNotificationConfig":
         if raw is None:
             return cls()
         return cls(
@@ -64,7 +64,7 @@ class UpdateNotificationIntegration(BaseIntegration):
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ):
         super().__init__(
             event_bus=event_bus,
@@ -73,9 +73,9 @@ class UpdateNotificationIntegration(BaseIntegration):
             name="UpdateNotification",
         )
         self.config = UpdateNotificationConfig.from_dict(config)
-        self._subscriptions: List[Tuple[str, Any]] = []
+        self._subscriptions: list[tuple[str, Any]] = []
         self._last_percent: int = 0
-        self._last_stage: Optional[str] = None
+        self._last_stage: str | None = None
         self._last_announce_ts: float = 0.0
         self._lock = asyncio.Lock()
         self._update_completed: bool = False  # Флаг завершения обновления
@@ -138,7 +138,7 @@ class UpdateNotificationIntegration(BaseIntegration):
                 continue
         self._subscriptions.clear()
 
-    async def _on_update_started(self, event: Dict[str, Any]) -> None:
+    async def _on_update_started(self, event: dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
             self._update_in_progress = True
@@ -161,7 +161,7 @@ class UpdateNotificationIntegration(BaseIntegration):
             if not self._suppress_announcements and self.config.use_signals:
                 await self._play_signal("update_start")
 
-    async def _on_progress(self, event: Dict[str, Any]) -> None:
+    async def _on_progress(self, event: dict[str, Any]) -> None:
         if not self.config.speak_progress or self._suppress_announcements:
             return
 
@@ -187,7 +187,7 @@ class UpdateNotificationIntegration(BaseIntegration):
         )
         await self._speak(f"Nexy update: {stage_text} {percent} percent completed.")
 
-    async def _on_update_completed(self, event: Dict[str, Any]) -> None:
+    async def _on_update_completed(self, event: dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
             self._update_in_progress = False
@@ -209,7 +209,7 @@ class UpdateNotificationIntegration(BaseIntegration):
         await self._unsubscribe_all()
         self._suppress_announcements = False
 
-    async def _on_update_failed(self, event: Dict[str, Any]) -> None:
+    async def _on_update_failed(self, event: dict[str, Any]) -> None:
         async with self._lock:
             self._reset_progress()
             self._update_in_progress = False

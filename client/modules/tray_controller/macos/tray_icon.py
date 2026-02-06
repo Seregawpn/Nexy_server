@@ -2,12 +2,12 @@
 macOS реализация иконки трея
 """
 
-import os
-import tempfile
 import base64
 import logging
-from typing import Optional
-from ..core.tray_types import TrayStatus, TrayIconGenerator
+import os
+import tempfile
+
+from ..core.tray_types import TrayIconGenerator, TrayStatus
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ try:
     from PIL import Image, ImageDraw  # type: ignore
     _PIL_AVAILABLE = True
 except Exception:
-    _PIL_AVAILABLE = False
+    _PIL_AVAILABLE = False  # type: ignore[reportConstantRedefinition]
 
 
 class MacOSTrayIcon:
@@ -40,7 +40,7 @@ class MacOSTrayIcon:
         self.size = size
         self.icon_generator = TrayIconGenerator()
         self._temp_files = []
-        self._current_icon_path: Optional[str] = None
+        self._current_icon_path: str | None = None
     
     def create_icon_file(self, status: TrayStatus) -> str:
         """Создать файл иконки для macOS (PNG)."""
@@ -120,7 +120,7 @@ class MacOSTrayIcon:
             logger.error(f"❌ Ошибка обновления статуса иконки: {e}", exc_info=True)
             return False
     
-    def get_icon_path(self) -> Optional[str]:
+    def get_icon_path(self) -> str | None:
         """Получить путь к текущей иконке"""
         return self._current_icon_path
     

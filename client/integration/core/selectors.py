@@ -12,14 +12,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
 
 from integration.utils.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
-from integration.core.state_manager import ApplicationStateManager
 from integration.core.state_keys import StateKeys
+from integration.core.state_manager import ApplicationStateManager
 
 # Import AppMode with fallback mechanism (same as state_manager.py)
 try:
@@ -319,6 +318,11 @@ def get_current_mode(state_manager: ApplicationStateManager) -> AppMode:
     except Exception as e:
         logger.debug(f"Failed to get current mode, defaulting to SLEEPING: {e}")
         return AppMode.SLEEPING
+
+
+def get_state_value(state_manager: ApplicationStateManager, key: str, default: Any = None) -> Any:
+    """Read state_data via centralized selector access."""
+    return state_manager.get_state_data(key, default)
 
 
 def is_ptt_pressed(state_manager: ApplicationStateManager) -> bool:

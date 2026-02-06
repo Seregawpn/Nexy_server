@@ -4,9 +4,8 @@ SLO (Service Level Objectives) tests for Nexy metrics.
 Tests performance thresholds from client/metrics/registry.md.
 See .cursorrules section 20 for SLO definitions.
 """
+
 import pytest
-import time
-from typing import Dict, Any
 
 
 class TestSLOPerformance:

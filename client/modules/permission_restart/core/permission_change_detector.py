@@ -5,10 +5,9 @@ Utility that normalises permission events and spots meaningful transitions.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Iterable, Iterator
 
-
-from .types import PermissionTransition, PermissionStatus, PermissionType
+from .types import PermissionStatus, PermissionTransition, PermissionType
 
 logger = logging.getLogger(__name__)
 
@@ -21,19 +20,19 @@ class PermissionChangeDetector:
 
     def __init__(self, critical_permissions: Iterable[PermissionType]):
         self._critical: set[PermissionType] = set(critical_permissions)
-        self._last_status: Dict[PermissionType, PermissionStatus] = {}
+        self._last_status: dict[PermissionType, PermissionStatus] = {}
 
     def set_critical_permissions(self, permissions: Iterable[PermissionType]) -> None:
         """Update the set of permissions that should trigger a restart."""
 
         self._critical = set(permissions)
 
-    def process_event(self, event_type: str, payload: Dict[str, object]) -> List[PermissionTransition]:
+    def process_event(self, event_type: str, payload: dict[str, object]) -> list[PermissionTransition]:
         """
         Normalise raw event data and return transitions that require attention.
         """
 
-        transitions: List[PermissionTransition] = []
+        transitions: list[PermissionTransition] = []
 
         for perm, old_status, new_status, session_id, source in self._extract_entries(
             event_type, payload
@@ -89,8 +88,8 @@ class PermissionChangeDetector:
         return transitions
 
     def _extract_entries(
-        self, event_type: str, payload: Dict[str, object]
-    ) -> Iterator[Tuple[PermissionType, Optional[PermissionStatus], Optional[PermissionStatus], Optional[str], Optional[str]]]:
+        self, event_type: str, payload: dict[str, object]
+    ) -> Iterator[tuple[PermissionType, PermissionStatus | None, PermissionStatus | None, str | None, str | None]]:
         base_session_id = _safe_str(payload.get("session_id"))
         base_source = _safe_str(payload.get("source")) or event_type
 
@@ -136,7 +135,7 @@ class PermissionChangeDetector:
                 yield perm, old_status, new_status, entry_session_id, entry_source
 
 
-def _normalize_permission(value: object) -> Optional[PermissionType]:
+def _normalize_permission(value: object) -> PermissionType | None:
     if isinstance(value, PermissionType):
         return value
 
@@ -148,7 +147,7 @@ def _normalize_permission(value: object) -> Optional[PermissionType]:
     return None
 
 
-def _normalize_status(value: object) -> Optional[PermissionStatus]:
+def _normalize_status(value: object) -> PermissionStatus | None:
     if isinstance(value, PermissionStatus):
         return value
 
@@ -160,7 +159,7 @@ def _normalize_status(value: object) -> Optional[PermissionStatus]:
     return None
 
 
-def _safe_str(value: object) -> Optional[str]:
+def _safe_str(value: object) -> str | None:
     if value is None:
         return None
     return str(value)

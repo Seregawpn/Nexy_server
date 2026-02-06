@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Optional
 
-from ..core.interfaces import SignalChannel, SignalRequest, SignalKind, AudioSink
+from ..core.interfaces import AudioSink, SignalChannel, SignalKind, SignalRequest
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@
 """
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
 from enum import Enum
+from typing import Any
 
 
 class HardwareIdStatus(Enum):
@@ -23,8 +23,8 @@ class HardwareIdResult:
     status: HardwareIdStatus
     source: str  # "cache", "system_profiler", "fallback"
     cached: bool
-    error_message: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    error_message: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass

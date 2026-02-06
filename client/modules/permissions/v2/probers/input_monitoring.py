@@ -8,10 +8,10 @@ This is the only permission that commonly needs app restart to activate.
 from __future__ import annotations
 
 import logging
-from typing import Literal, Optional, Tuple
+from typing import Literal
 
-from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from ..error_matrix import apply_normalization_to_evidence
+from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from .base import BaseProber
 
 logger = logging.getLogger(__name__)
@@ -23,8 +23,8 @@ class InputMonitoringProber(BaseProber):
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.INPUT_MONITORING
-        self._last_tap_created: Optional[bool] = None
-        self._last_tap_enabled: Optional[bool] = None
+        self._last_tap_created: bool | None = None
+        self._last_tap_enabled: bool | None = None
         self._consecutive_create_fail: int = 0
     
     async def trigger(self) -> None:
@@ -94,22 +94,21 @@ class InputMonitoringProber(BaseProber):
             evidence=ev
         )
     
-    async def _capability_event_tap(self) -> Tuple[Optional[bool], Optional[bool], Optional[str], Optional[str], Optional[str]]:
+    async def _capability_event_tap(self) -> tuple[bool | None, bool | None, str | None, str | None, str | None]:
         """
         Test CGEventTap creation capability.
         Returns (tap_created, tap_enabled, domain, code, message).
         """
         try:
-            from Quartz import (
-                CGEventTapCreate,
-                kCGSessionEventTap,
-                kCGHeadInsertEventTap,
-                kCGEventTapOptionListenOnly,
-                kCGEventMaskForAllEvents,
-                CGEventTapEnable,
-                CFMachPortIsValid,
+            from Quartz import (  # type: ignore[reportMissingImports]
+                CFMachPortIsValid,  # type: ignore[reportAttributeAccessIssue]
+                CGEventTapCreate,  # type: ignore[reportAttributeAccessIssue]
+                CGEventTapEnable,  # type: ignore[reportAttributeAccessIssue]
+                kCGEventMaskForAllEvents,  # type: ignore[reportAttributeAccessIssue]
+                kCGEventTapOptionListenOnly,  # type: ignore[reportAttributeAccessIssue]
+                kCGHeadInsertEventTap,  # type: ignore[reportAttributeAccessIssue]
+                kCGSessionEventTap,  # type: ignore[reportAttributeAccessIssue]
             )
-            import Quartz
             
             # Dummy callback
             def dummy_callback(proxy, event_type, event, refcon):

@@ -87,6 +87,10 @@ class InputProcessingIntegration:
         # Флаг для отмены текущего нажатия (short-tap cancel)
         self._cancelled_this_press: bool = False
         
+        # Задача проверки состояния клавиатуры (Secure Input detection)
+        self._health_check_task: Optional[asyncio.Task] = None
+        self._hidden_hotkey_item: Any = None
+        
     async def initialize(self) -> bool:
         """Инициализация input_processing (клавиатура)"""
         try:
@@ -787,6 +791,61 @@ class InputProcessingIntegration:
             # Не критично - если не удалось добавить, просто будет NSBeep
             logger.warning(f"⚠️ Не удалось настроить hidden hotkey handler: {e}")
 
+    def _remove_hidden_hotkey_handler(self):
+        """Удаляет скрытый обработчик Ctrl+N (восстанавливает нормальную работу)."""
+        if not self._hidden_hotkey_item:
+            return
+            
+        try:
+            import AppKit
+            nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
+            if not nsapp or not nsapp.mainMenu():
+                return
+                
+            main_menu = nsapp.mainMenu()
+            main_menu.removeItem_(self._hidden_hotkey_item)
+            self._hidden_hotkey_item = None
+            logger.info("✅ Hidden hotkey handler удален (Secure Input закончился)")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось удалить hidden hotkey handler: {e}")
+
+    async def _run_health_check(self):
+        """Фоновая задача проверки доступности клавиатуры (Secure Input detection)."""
+        logger.info("🏥 Запуск health-check монитора клавиатуры...")
+        try:
+            while self.is_running:
+                await asyncio.sleep(1.0)  # Проверка раз в секунду
+                
+                if not self.keyboard_monitor or not self._using_quartz:
+                    continue
+                    
+                status = self.keyboard_monitor.get_status()
+                # Если tap_enabled отсутствует в статусе (старая версия), считаем True
+                tap_enabled = status.get("tap_enabled", True)
+                
+                # ЛОГИКА ДЕГРАДАЦИИ
+                # Случай 1: Tap отключен (Secure Input активен), но PTT еще считается доступным
+                if not tap_enabled and self.ptt_available:
+                     logger.warning("🚫 SECURE INPUT DETECTED: Tap отключен! Деградация PTT...")
+                     self.ptt_available = False
+                     
+                     # Включаем перехватчик клавиш, чтобы не было системных "beep"
+                     key_to_monitor = self.config.keyboard.key_to_monitor
+                     if key_to_monitor == "ctrl_n":
+                         self._setup_hidden_hotkey_handler()
+                         
+                # Случай 2: Tap восстановлен (Secure Input закончился), но PTT еще выключен
+                elif tap_enabled and not self.ptt_available:
+                    logger.info("✅ SECURE INPUT ENDED: Tap восстановлен! Восстановление PTT...")
+                    self.ptt_available = True
+                    self._remove_hidden_hotkey_handler()
+                    
+        except asyncio.CancelledError:
+            logger.info("🏥 Health-check монитор остановлен")
+        except Exception as e:
+            logger.error(f"❌ Ошибка в health-check мониторе: {e}")
+
     async def start(self) -> bool:
         """Запуск input_processing"""
         logger.debug(f"InputProcessingIntegration.start() вызван")
@@ -900,6 +959,11 @@ class InputProcessingIntegration:
                         logger.info("✅ hidden_hotkey_handler=enabled (предотвращает NSBeep при keyboard_backend=none)")
                 
             self.is_running = True
+            
+            # Запускаем health-check монитор
+            if self.config.enable_keyboard_monitoring:
+                self._health_check_task = asyncio.create_task(self._run_health_check())
+                
             # Логируем финальный статус PTT
             logger.info(f"✅ input_processing запущен (ptt_available={self.ptt_available})")
             return True
@@ -918,6 +982,15 @@ class InputProcessingIntegration:
         try:
             # Остановка мониторинга таймаута микрофона
             self._stop_mic_monitor()
+            
+            # Остановка health-check монитора
+            if self._health_check_task and not self._health_check_task.done():
+                self._health_check_task.cancel()
+                try:
+                    await self._health_check_task
+                except asyncio.CancelledError:
+                    pass
+                self._health_check_task = None
             
             # Остановка мониторинга клавиатуры
             if self.keyboard_monitor:
@@ -1294,17 +1367,17 @@ class InputProcessingIntegration:
                 except asyncio.TimeoutError:
                     pass  # Игнорируем таймаут - запись уже запущена, не блокируем
 
-                # Запрашиваем переход в LISTENING централизованно, но только если не в PROCESSING
+                # Запрашиваем переход в LISTENING централизованно (PTT должен переводить режим в LISTENING)
                 # REQ-004: use selector for mode access
                 current_mode = selectors.get_current_mode(self.state_manager)
                 if current_mode == AppMode.PROCESSING:
-                    logger.info("LONG_PRESS: в PROCESSING режиме, пропускаем запрос на LISTENING")
-                else:
-                    await self.event_bus.publish("mode.request", {
-                        "target": AppMode.LISTENING,
-                        "source": "input_processing"
-                    })
-                    logger.info("LONG_PRESS: запрос на LISTENING отправлен")
+                    logger.info("LONG_PRESS: в PROCESSING режиме, запрашиваем LISTENING (PTT override)")
+                await self.event_bus.publish("mode.request", {
+                    "target": AppMode.LISTENING,
+                    "source": "input_processing",
+                    "session_id": active_session_id,
+                })
+                logger.info("LONG_PRESS: запрос на LISTENING отправлен")
             
         except Exception as e:
             await self.error_handler.handle_error(

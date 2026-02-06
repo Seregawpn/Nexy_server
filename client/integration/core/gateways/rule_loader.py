@@ -3,12 +3,11 @@ Load rules from interaction_matrix.yaml for specific gateways.
 """
 from __future__ import annotations
 
-from pathlib import Path
-from typing import List
-import sys
 from pathlib import Path as PathType
+import sys
+from typing import Any
 
-from .decision_engine import Rule, Priority
+from .decision_engine import Priority, Rule
 from .types import Decision
 
 # Import existing loader - add config to path for import
@@ -21,7 +20,7 @@ try:
 except ImportError:
     # Fallback: direct import if config is in PYTHONPATH
     import yaml
-    def load_interaction_matrix(dev_only: bool = False) -> dict:
+    def load_interaction_matrix(dev_only: bool = False) -> dict[str, Any]:
         """Fallback loader if interaction_matrix_loader not available."""
         matrix_path = PathType(__file__).parent.parent.parent.parent / "config" / "interaction_matrix.yaml"
         if not matrix_path.exists():
@@ -66,7 +65,7 @@ def _to_decision(raw: str) -> Decision:
     return decision_map.get(raw, Decision.DEGRADE)
 
 
-def load_rules_for_gateway(gateway_name: str) -> List[Rule]:
+def load_rules_for_gateway(gateway_name: str) -> list[Rule]:
     """
     Load rules for a specific gateway from interaction_matrix.yaml.
     
@@ -79,7 +78,7 @@ def load_rules_for_gateway(gateway_name: str) -> List[Rule]:
     matrix = load_interaction_matrix(dev_only=False)  # Load in all environments
     raw_rules = matrix.get("rules", [])
     
-    out: List[Rule] = []
+    out: list[Rule] = []
     for rr in raw_rules:
         # Match gateway name (exact or partial match)
         rule_gateway = rr.get("gateway", "")

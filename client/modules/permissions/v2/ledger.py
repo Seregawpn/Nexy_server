@@ -6,15 +6,15 @@ Stores permission wizard state to disk for recovery after restarts.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import json
 import logging
 import os
-import time
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+import time
+from typing import Any
 
-from .types import Phase, PermissionId, StepMode, StepState
+from .types import PermissionId, Phase, StepMode, StepState
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +26,15 @@ class StepLedgerEntry:
     mode: StepMode
     state: StepState = StepState.UNKNOWN
 
-    triggered_at: Optional[float] = None
-    grace_started_at: Optional[float] = None
-    polling_started_at: Optional[float] = None
+    triggered_at: float | None = None
+    grace_started_at: float | None = None
+    polling_started_at: float | None = None
 
-    settings_opened_at: Optional[float] = None
-    waiting_long_entered_at: Optional[float] = None
+    settings_opened_at: float | None = None
+    waiting_long_entered_at: float | None = None
 
-    last_probe_at: Optional[float] = None
-    next_heavy_allowed_at: Optional[float] = None
+    last_probe_at: float | None = None
+    next_heavy_allowed_at: float | None = None
 
     attempts: int = 0
 
@@ -43,13 +43,13 @@ class StepLedgerEntry:
     consecutive_transient: int = 0
     consecutive_needs_restart: int = 0
 
-    last_reason_code: Optional[str] = None
-    last_reason: Optional[str] = None
-    last_error_domain: Optional[str] = None
-    last_error_code: Optional[str] = None
+    last_reason_code: str | None = None
+    last_reason: str | None = None
+    last_error_domain: str | None = None
+    last_error_code: str | None = None
 
     needs_restart_marked: bool = False
-    needs_restart_marked_at: Optional[float] = None
+    needs_restart_marked_at: float | None = None
 
 
 @dataclass
@@ -64,13 +64,13 @@ class LedgerRecord:
     needs_restart: bool = False
     restart_unavailable: bool = False  # True if restart was needed but handler unavailable
 
-    current_step: Optional[PermissionId] = None
+    current_step: PermissionId | None = None
 
-    steps: Dict[PermissionId, StepLedgerEntry] = field(default_factory=dict)
+    steps: dict[PermissionId, StepLedgerEntry] = field(default_factory=dict)
 
-    app_bundle_id: Optional[str] = None
-    app_path: Optional[str] = None
-    gui_process_pid: Optional[int] = None
+    app_bundle_id: str | None = None
+    app_path: str | None = None
+    gui_process_pid: int | None = None
 
 
 class LedgerStore:
@@ -82,7 +82,7 @@ class LedgerStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def load(self) -> Optional[LedgerRecord]:
+    def load(self) -> LedgerRecord | None:
         """Load ledger from disk. Returns None if not found or corrupt."""
         if not self.path.exists():
             return None
@@ -95,7 +95,7 @@ class LedgerStore:
 
         try:
             # Reconstruct enums
-            steps: Dict[PermissionId, StepLedgerEntry] = {}
+            steps: dict[PermissionId, StepLedgerEntry] = {}
             for k, v in data.get("steps", {}).items():
                 pid = PermissionId(k)
                 steps[pid] = StepLedgerEntry(
@@ -143,7 +143,7 @@ class LedgerStore:
         """Save ledger atomically (write to tmp, then rename)."""
         ledger.updated_at = time.time()
 
-        def step_to_dict(s: StepLedgerEntry) -> dict:
+        def step_to_dict(s: StepLedgerEntry) -> dict[str, Any]:
             return {
                 "permission": s.permission.value,
                 "mode": s.mode.value,
@@ -183,6 +183,13 @@ class LedgerStore:
         }
 
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        # Ensure parent exists (fix for potential crash on clean install/cleanup)
+        try:
+            # Fix: Ensure directory exists before writing
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.warning("Failed to create parent dir for ledger %s: %s", tmp, e)
+
         try:
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(tmp, self.path)

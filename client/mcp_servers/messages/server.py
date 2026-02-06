@@ -11,17 +11,17 @@ MCP Server для работы с приложением Messages на macOS
 import asyncio
 import logging
 import sys
-from typing import Any, Sequence
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
-    Tool,
     TextContent,
+    Tool,
 )
 
 # Импорт модуля работы с базой данных
-import messages_db
+import messages_db  # pyright: ignore[reportImplicitRelativeImport]
 
 # Настройка логирования
 logging.basicConfig(
@@ -273,14 +273,14 @@ async def handle_read_messages(arguments: dict[str, Any]) -> list[TextContent]:
             
             # Получаем имя контакта
             contact_id = last_message.get("contact_id")
-            import contact_resolver
-            contact_info = contact_resolver.resolve_contact(contact_id, messages_conn=conn)
+            import contact_resolver  # pyright: ignore[reportImplicitRelativeImport]
+            contact_info = contact_resolver.resolve_contact(str(contact_id or ""), messages_conn=conn)
             contact_name = contact_info.get("display_label", contact_id)
             
             # Форматируем сообщение
-            formatted_text = messages_db.format_messages(
+            formatted_text = messages_db.format_messages(  # pyright: ignore[reportArgumentType]
                 [last_message],
-                contact_name,
+                str(contact_name or "Unknown"),
                 group_by_date=True,
                 show_chat_info=False,
                 messages_conn=conn
@@ -359,7 +359,7 @@ async def handle_read_messages(arguments: dict[str, Any]) -> list[TextContent]:
             found_contacts = messages_db.find_contact(conn, contact)
             
             # 2. Ищем через Swift helper в системных контактах
-            import contact_resolver
+            import contact_resolver  # pyright: ignore[reportImplicitRelativeImport]
             swift_contacts = contact_resolver.find_contacts_by_name(contact)
             
             # Объединяем результаты
@@ -531,7 +531,7 @@ async def handle_read_messages(arguments: dict[str, Any]) -> list[TextContent]:
                     ]
         
         # Получаем имя контакта через новый ContactResolver
-        import contact_resolver
+        import contact_resolver  # pyright: ignore[reportImplicitRelativeImport]
         contact_info = contact_resolver.resolve_contact(contact_id, messages_conn=conn)
         contact_name = contact_info.get("display_label")
         
@@ -553,9 +553,9 @@ async def handle_read_messages(arguments: dict[str, Any]) -> list[TextContent]:
                         logger.info(f"[MCP Messages] Message #{i+1} extracted from attributedBody (first 100 chars): {extracted[:100]}")
         
         # Форматируем сообщения с улучшенным форматированием
-        formatted_text = messages_db.format_messages(
+        formatted_text = messages_db.format_messages(  # pyright: ignore[reportArgumentType]
             messages, 
-            contact_name, 
+            str(contact_name or "Unknown"), 
             group_by_date=True,  # Группировка по датам
             show_chat_info=True,  # Показывать информацию о чате
             messages_conn=conn  # Передаем соединение для resolver
@@ -651,13 +651,13 @@ async def handle_send_message(arguments: dict[str, Any]) -> list[TextContent]:
     
     try:
         # Импортируем модуль отправки сообщений
-        import send_message
-        import contact_resolver
-        from errors import (
+        import contact_resolver  # pyright: ignore[reportImplicitRelativeImport]
+        from errors import (  # pyright: ignore[reportImplicitRelativeImport]
             ContactNotFoundError,
+            MessageSendError,
             NoPhoneNumbersError,
-            MessageSendError
         )
+        import send_message  # pyright: ignore[reportImplicitRelativeImport]
         
         # Определяем, что передано: номер/email или имя
         is_phone_or_email = contact.startswith("+") or "@" in contact or contact.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").isdigit()
@@ -717,7 +717,7 @@ async def handle_send_message(arguments: dict[str, Any]) -> list[TextContent]:
                     logger.info(f"Используется указанный номер: {phone_number}")
                 else:
                     # Умный выбор: номер с последним сообщением
-                    import messages_db
+                    import messages_db  # pyright: ignore[reportImplicitRelativeImport]
                     conn = messages_db.connect_db()
                     if conn:
                         try:

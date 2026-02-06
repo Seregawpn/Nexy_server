@@ -1,12 +1,13 @@
+# ruff: noqa: I001
 """Welcome Audio Generator — серверный источник приветствия."""
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Any
 
 import numpy as np
 
-from config.unified_config_loader import UnifiedConfigLoader
 from modules.grpc_client.core.grpc_client import GrpcClient
+from config.unified_config_loader import UnifiedConfigLoader
 
 from .types import WelcomeConfig
 
@@ -16,38 +17,51 @@ logger = logging.getLogger(__name__)
 class WelcomeAudioGenerator:
     """Генератор аудио для приветственного сообщения"""
 
-    def __init__(self, config: WelcomeConfig):
+    def __init__(
+        self,
+        config: WelcomeConfig,
+        *,
+        grpc_client: GrpcClient | None = None,
+        grpc_server_name: str | None = None,
+        grpc_timeout: float | None = None,
+    ):
         self.config = config
-        self._last_server_metadata: Dict[str, Any] = {}
+        self._last_server_metadata: dict[str, Any] = {}
 
-        self._grpc_client: Optional[GrpcClient] = None
-        self._grpc_client_config: Optional[Dict[str, Any]] = None
-        self._grpc_server_name: Optional[str] = None
-        self._grpc_timeout: float = float(config.server_timeout_sec)
+        self._grpc_client: GrpcClient | None = grpc_client
+        self._grpc_client_config: dict[str, Any] | None = None
+        self._grpc_server_name: str | None = grpc_server_name
+        self._grpc_timeout: float = float(
+            grpc_timeout if grpc_timeout is not None else config.server_timeout_sec
+        )
 
-        self._load_grpc_settings()
+        if self._grpc_client is None:
+            self._load_grpc_settings()
 
-    async def generate_audio(self, text: str) -> Optional[np.ndarray]:
+    async def generate_audio(self, text: str) -> np.ndarray | None:
         """Генерирует аудио на сервере (совместимость API)."""
         return await self.generate_server_audio(text)
 
-    async def generate_server_audio(self, text: str) -> Optional[np.ndarray]:
+    async def generate_server_audio(self, text: str) -> np.ndarray | None:
         """Пытается получить приветствие только с сервера"""
         if not self.config.use_server:
             return None
         return await self._generate_with_server(text)
 
-    async def _generate_with_server(self, text: str) -> Optional[np.ndarray]:
+    async def _generate_with_server(self, text: str) -> np.ndarray | None:
         """Запрашивает генерацию приветствия на сервере"""
+        logger.info("TRACE [WELCOME_GEN] _generate_with_server: START")
         if not text:
             logger.error("❌ [WELCOME_AUDIO] Пустой текст приветствия")
             return None
 
         client = self._ensure_grpc_client()
         if not client:
+            logger.error("❌ [WELCOME_AUDIO] GrpcClient is None")
             return None
 
         try:
+            logger.info(f"TRACE [WELCOME_GEN] calling client.generate_welcome_audio(timeout={self._grpc_timeout})")
             result = await client.generate_welcome_audio(
                 text=text,
                 voice=self.config.voice,
@@ -55,7 +69,9 @@ class WelcomeAudioGenerator:
                 server_name=self._grpc_server_name,
                 timeout=self._grpc_timeout,
             )
-            audio_array: Optional[np.ndarray] = result.get('audio')
+            logger.info("TRACE [WELCOME_GEN] client.generate_welcome_audio returned")
+            
+            audio_array: np.ndarray | None = result.get('audio')
             metadata = result.get('metadata', {})
             self._last_server_metadata = metadata
 
@@ -93,12 +109,24 @@ class WelcomeAudioGenerator:
                 )
                 # Пока не выполняем ресэмплинг, сообщаем в лог.
 
+            logger.info("TRACE [WELCOME_GEN] _generate_with_server: SUCCESS")
             return audio_array
+            
+        except ImportError as e:
+            logger.error(f"❌ [WELCOME_AUDIO] ImportError (missing deps?): {e}")
+            return None
         except Exception as exc:
             logger.error(f"❌ [WELCOME_AUDIO] Ошибка серверной генерации: {exc}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
+        except BaseException as be:
+            logger.critical(f"🛑 [WELCOME_AUDIO] FATAL ERROR/CANCELLED: {type(be).__name__}: {be}")
+            import traceback
+            logger.critical(traceback.format_exc())
+            raise
 
-    def get_last_server_metadata(self) -> Dict[str, Any]:
+    def get_last_server_metadata(self) -> dict[str, Any]:
         """Возвращает метаданные последней серверной генерации"""
         return self._last_server_metadata
 
@@ -117,7 +145,7 @@ class WelcomeAudioGenerator:
             self._grpc_timeout = float(self.config.server_timeout_sec or integration_timeout)
 
             network_cfg = loader.get_network_config()
-            servers_cfg: Dict[str, Dict[str, Any]] = {}
+            servers_cfg: dict[str, dict[str, Any]] = {}
             for name, server in network_cfg.grpc_servers.items():
                 servers_cfg[name] = {
                     'address': server.host,
@@ -146,12 +174,20 @@ class WelcomeAudioGenerator:
             self._grpc_server_name = None
             self._grpc_timeout = 30.0
 
-    def _ensure_grpc_client(self) -> Optional[GrpcClient]:
+    def _ensure_grpc_client(self) -> GrpcClient | None:
         try:
             if self._grpc_client is None:
-                self._grpc_client = GrpcClient(config=self._grpc_client_config)
+                logger.error(
+                    "❌ [WELCOME_AUDIO] GrpcClient not injected. "
+                    "WelcomeMessageIntegration should provide the client."
+                )
+                return None
             return self._grpc_client
         except Exception as exc:
             logger.error(f"❌ [WELCOME_AUDIO] Ошибка создания gRPC клиента: {exc}")
             self._grpc_client = None
             return None
+
+    def set_grpc_client(self, grpc_client: GrpcClient | None) -> None:
+        """Обновить gRPC клиент (отложенная инъекция)."""
+        self._grpc_client = grpc_client

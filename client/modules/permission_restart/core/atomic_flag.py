@@ -6,14 +6,13 @@
 проверку времени и PID для игнорирования протухших флагов.
 """
 
-import json
-import os
-import time
+from dataclasses import asdict, dataclass
 import fcntl
+import json
 import logging
+import os
 from pathlib import Path
-from typing import Optional, Dict, Any
-from dataclasses import dataclass, asdict
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ class RestartFlagData:
     timestamp: float  # Unix timestamp создания
     pid: int  # PID процесса, создавшего флаг
     reason: str  # Причина перезапуска
-    permissions: list  # Список разрешений, для которых был перезапуск
+    permissions: list[str]  # Список разрешений, для которых был перезапуск
 
 
 class AtomicRestartFlag:
@@ -47,7 +46,7 @@ class AtomicRestartFlag:
         self.flag_path = Path(flag_path)
         self.flag_path.parent.mkdir(parents=True, exist_ok=True)
     
-    def write(self, reason: str, permissions: list) -> bool:
+    def write(self, reason: str, permissions: list[str]) -> bool:
         """
         Атомарно записать флаг перезапуска.
         
@@ -98,7 +97,7 @@ class AtomicRestartFlag:
                 pass
             return False
     
-    def read_and_remove(self) -> Optional[RestartFlagData]:
+    def read_and_remove(self) -> RestartFlagData | None:
         """
         Прочитать флаг и удалить его атомарно под файловой блокировкой.
         
@@ -176,6 +175,56 @@ class AtomicRestartFlag:
             )
             return None
     
+    def peek(self) -> RestartFlagData | None:
+        """
+        Прочитать флаг без удаления (для idempotency-guard).
+
+        Returns:
+            RestartFlagData если флаг существует и валиден, None в противном случае
+        """
+        if not self.flag_path.exists():
+            return None
+
+        try:
+            with open(self.flag_path, 'r', encoding='utf-8') as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                content = f.read()
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+            if not content:
+                logger.debug(f"[ATOMIC_FLAG] Flag file is empty: {self.flag_path}")
+                return None
+
+            data_dict = json.loads(content)
+            data = RestartFlagData(**data_dict)
+
+            if not self._is_valid(data):
+                logger.warning(
+                    f"⚠️ [ATOMIC_FLAG] Flag is invalid or expired (peek): "
+                    f"age={time.time() - data.timestamp:.2f}s, pid={data.pid}"
+                )
+                # Удаляем невалидный флаг
+                self.remove()
+                return None
+
+            return data
+
+        except json.JSONDecodeError as exc:
+            logger.error(
+                f"❌ [ATOMIC_FLAG] Invalid JSON in flag file (peek): {exc}",
+                exc_info=True
+            )
+            self.remove()
+            return None
+        except FileNotFoundError:
+            return None
+        except Exception as exc:
+            logger.error(
+                f"❌ [ATOMIC_FLAG] Failed to peek restart flag: {exc}",
+                exc_info=True
+            )
+            return None
+
     def _is_valid(self, data: RestartFlagData) -> bool:
         """
         Проверяет валидность флага.

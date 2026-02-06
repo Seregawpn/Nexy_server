@@ -49,3 +49,6 @@ logs/
 *.tmp
 *.temp
 resources/ffmpeg/ffmpeg
+dist-arm64/
+build-arm64/
+build_logs/

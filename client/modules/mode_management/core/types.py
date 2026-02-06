@@ -2,9 +2,10 @@
 Типы данных для управления режимами
 """
 
-from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Callable
+from enum import Enum
+from typing import Any, Callable
+
 
 class AppMode(Enum):
     """Режимы приложения"""
@@ -30,11 +31,11 @@ class ModeTransition:
     from_mode: AppMode
     to_mode: AppMode
     transition_type: ModeTransitionType
-    condition: Optional[Callable] = None
-    action: Optional[Callable] = None
+    condition: Callable[..., Any] | None = None
+    action: Callable[..., Any] | None = None
     priority: int = 1
     timeout: float = 5.0
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 @dataclass
 class ModeEvent:
@@ -42,9 +43,9 @@ class ModeEvent:
     mode: AppMode
     status: ModeStatus
     timestamp: float
-    transition_type: Optional[ModeTransitionType] = None
-    data: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    transition_type: ModeTransitionType | None = None
+    data: dict[str, Any] | None = None
+    error: str | None = None
 
 @dataclass
 class ModeConfig:
@@ -62,8 +63,8 @@ class ModeMetrics:
     total_transitions: int = 0
     successful_transitions: int = 0
     failed_transitions: int = 0
-    time_in_modes: Optional[Dict[AppMode, float]] = None
-    transitions_by_type: Optional[Dict[ModeTransitionType, int]] = None
+    time_in_modes: dict[AppMode, float] | None = None
+    transitions_by_type: dict[ModeTransitionType, int] | None = None
     average_transition_time: float = 0.0
     
     def __post_init__(self):

@@ -13,34 +13,38 @@ import base64
 import io
 import logging
 import time
-from typing import Any, Dict, Tuple
+from typing import Any
 
-from AppKit import NSBitmapImageRep, NSImageCompressionFactor, NSBitmapImageFileTypeJPEG
+from AppKit import (
+    NSBitmapImageFileTypeJPEG,  # pyright: ignore[reportAttributeAccessIssue]
+    NSBitmapImageRep,  # pyright: ignore[reportAttributeAccessIssue]
+    NSImageCompressionFactor,  # pyright: ignore[reportAttributeAccessIssue]
+)
 from Quartz import (
-    CGMainDisplayID,
-    CGDisplayCreateImage,
-    CGWindowListCreateImage,
-    kCGWindowListOptionOnScreenOnly,
-    kCGNullWindowID,
-    kCGWindowImageDefault,
-    CGBitmapContextCreate,
-    CGBitmapContextCreateImage,
-    CGColorSpaceCreateDeviceRGB,
-    CGContextDrawImage,
-    kCGImageAlphaPremultipliedLast,
-    CGImageGetWidth,
-    CGImageGetHeight,
+    CGBitmapContextCreate,  # pyright: ignore[reportAttributeAccessIssue]
+    CGBitmapContextCreateImage,  # pyright: ignore[reportAttributeAccessIssue]
+    CGColorSpaceCreateDeviceRGB,  # pyright: ignore[reportAttributeAccessIssue]
+    CGContextDrawImage,  # pyright: ignore[reportAttributeAccessIssue]
+    CGDisplayCreateImage,  # pyright: ignore[reportAttributeAccessIssue]
+    CGImageGetHeight,  # pyright: ignore[reportAttributeAccessIssue]
+    CGImageGetWidth,  # pyright: ignore[reportAttributeAccessIssue]
+    CGMainDisplayID,  # pyright: ignore[reportAttributeAccessIssue]
+    CGWindowListCreateImage,  # pyright: ignore[reportAttributeAccessIssue]
+    kCGImageAlphaPremultipliedLast,  # pyright: ignore[reportAttributeAccessIssue]
+    kCGNullWindowID,  # pyright: ignore[reportAttributeAccessIssue]
+    kCGWindowImageDefault,  # pyright: ignore[reportAttributeAccessIssue]
+    kCGWindowListOptionOnScreenOnly,  # pyright: ignore[reportAttributeAccessIssue]
 )
 
 logger = logging.getLogger(__name__)
 
+from ..core.quality_utils import get_jpeg_quality, get_webp_quality
 from ..core.types import (
-    ScreenshotResult,
     ScreenshotConfig,
     ScreenshotData,
     ScreenshotFormat,
+    ScreenshotResult,
 )
-from ..core.quality_utils import get_webp_quality, get_jpeg_quality
 
 
 class CoreGraphicsBridge:
@@ -63,7 +67,7 @@ class CoreGraphicsBridge:
         )
 
     def capture_region(
-        self, region: Tuple[int, int, int, int], config: ScreenshotConfig
+        self, region: tuple[int, int, int, int], config: ScreenshotConfig
     ) -> ScreenshotResult:
         start_ts = time.time()
         x, y, w, h = region
@@ -87,11 +91,11 @@ class CoreGraphicsBridge:
     def test_capture(self) -> bool:
         return CGDisplayCreateImage(CGMainDisplayID()) is not None
 
-    def get_screen_info(self) -> Dict[str, Any]:
+    def get_screen_info(self) -> dict[str, Any]:
         return {"bridge_type": "core_graphics"}
 
     def _encode_result(
-        self, cg_image, config: ScreenshotConfig, start_ts: float, meta: Dict[str, Any]
+        self, cg_image, config: ScreenshotConfig, start_ts: float, meta: dict[str, Any]
     ) -> ScreenshotResult:
         """Кодирует CGImage напрямую в нужный формат (JPEG или WebP) без промежуточных форматов."""
         target_cg_image = self._resize_if_needed(cg_image, config)
@@ -107,7 +111,7 @@ class CoreGraphicsBridge:
             return self._encode_as_jpeg_result(target_cg_image, config, start_ts, meta)
     
     def _encode_as_webp_result(
-        self, cg_image, config: ScreenshotConfig, start_ts: float, meta: Dict[str, Any]
+        self, cg_image, config: ScreenshotConfig, start_ts: float, meta: dict[str, Any]
     ) -> ScreenshotResult:
         """Кодирует CGImage напрямую в WebP через Pillow БЕЗ промежуточных форматов."""
         try:
@@ -157,7 +161,9 @@ class CoreGraphicsBridge:
             else:
                 # Fallback: используем PNG как промежуточный формат (только если не удалось получить raw data)
                 logger.debug(f"Нестандартный формат пикселей ({bits_per_pixel}bpp, {samples_per_pixel}spp), используем PNG fallback")
-                from AppKit import NSBitmapImageFileTypePNG
+                from AppKit import (
+                    NSBitmapImageFileTypePNG,  # pyright: ignore[reportAttributeAccessIssue]
+                )
                 nsdata = rep.representationUsingType_properties_(
                     NSBitmapImageFileTypePNG, {}
                 )
@@ -202,7 +208,7 @@ class CoreGraphicsBridge:
             return self._encode_as_jpeg_result(cg_image, config, start_ts, meta)
     
     def _encode_as_jpeg_result(
-        self, cg_image, config: ScreenshotConfig, start_ts: float, meta: Dict[str, Any]
+        self, cg_image, config: ScreenshotConfig, start_ts: float, meta: dict[str, Any]
     ) -> ScreenshotResult:
         """Кодирует CGImage в JPEG через нативный NSBitmapImageRep (быстрее чем через Pillow)."""
         rep = NSBitmapImageRep.alloc().initWithCGImage_(cg_image)

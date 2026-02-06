@@ -3,14 +3,18 @@
 """
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import time
-from typing import Dict, List, Optional, Callable, Any
-from dataclasses import dataclass
+from typing import Any, Callable
 
 from .types import (
-    InterruptEvent, InterruptType, InterruptPriority, InterruptStatus,
-    InterruptConfig, InterruptMetrics
+    InterruptConfig,
+    InterruptEvent,
+    InterruptMetrics,
+    InterruptPriority,
+    InterruptStatus,
+    InterruptType,
 )
 
 logger = logging.getLogger(__name__)
@@ -18,25 +22,25 @@ logger = logging.getLogger(__name__)
 @dataclass
 class InterruptDependencies:
     """Зависимости для прерываний"""
-    speech_player: Optional[Any] = None
-    speech_recognizer: Optional[Any] = None
-    grpc_client: Optional[Any] = None
-    state_manager: Optional[Any] = None
+    speech_player: Any | None = None
+    speech_recognizer: Any | None = None
+    grpc_client: Any | None = None
+    state_manager: Any | None = None
 
 class InterruptCoordinator:
     """Координатор прерываний - управляет всеми типами прерываний"""
     
-    def __init__(self, config: Optional[InterruptConfig] = None):
+    def __init__(self, config: InterruptConfig | None = None):
         self.config = config or InterruptConfig()
         self.dependencies = InterruptDependencies()
         
         # Активные прерывания
-        self.active_interrupts: List[InterruptEvent] = []
-        self.interrupt_history: List[InterruptEvent] = []
+        self.active_interrupts: list[InterruptEvent] = []
+        self.interrupt_history: list[InterruptEvent] = []
         
         # Обработчики прерываний
-        self.interrupt_handlers: Dict[InterruptType, Callable] = {}
-        self.priority_handlers: Dict[InterruptPriority, List[Callable]] = {}
+        self.interrupt_handlers: dict[InterruptType, Callable[..., Any]] = {}
+        self.priority_handlers: dict[InterruptPriority, list[Callable[..., Any]]] = {}
         
         # Метрики
         self.metrics = InterruptMetrics()
@@ -49,12 +53,12 @@ class InterruptCoordinator:
         self.dependencies = dependencies
         logger.info("✅ Координатор прерываний инициализирован")
         
-    def register_handler(self, interrupt_type: InterruptType, handler: Callable):
+    def register_handler(self, interrupt_type: InterruptType, handler: Callable[..., Any]):
         """Регистрирует обработчик для типа прерывания"""
         self.interrupt_handlers[interrupt_type] = handler
         logger.debug(f"📝 Зарегистрирован обработчик для {interrupt_type.value}")
         
-    def register_priority_handler(self, priority: InterruptPriority, handler: Callable):
+    def register_priority_handler(self, priority: InterruptPriority, handler: Callable[..., Any]):
         """Регистрирует обработчик для приоритета"""
         if priority not in self.priority_handlers:
             self.priority_handlers[priority] = []
@@ -81,7 +85,9 @@ class InterruptCoordinator:
             
             # Обновляем метрики
             self.metrics.total_interrupts += 1
+            assert self.metrics.interrupts_by_type is not None
             self.metrics.interrupts_by_type[event.type] += 1
+            assert self.metrics.interrupts_by_priority is not None
             self.metrics.interrupts_by_priority[event.priority] += 1
             
             logger.info(f"🔄 Запуск прерывания {event.type.value} (приоритет: {event.priority.value})")
@@ -157,11 +163,11 @@ class InterruptCoordinator:
         """Проверяет, идет ли прерывание"""
         return len(self.active_interrupts) > 0
         
-    def get_active_interrupts(self) -> List[InterruptEvent]:
+    def get_active_interrupts(self) -> list[InterruptEvent]:
         """Возвращает активные прерывания"""
         return self.active_interrupts.copy()
         
-    def get_interrupt_history(self, limit: int = 10) -> List[InterruptEvent]:
+    def get_interrupt_history(self, limit: int = 10) -> list[InterruptEvent]:
         """Возвращает историю прерываний"""
         return self.interrupt_history[-limit:]
         
@@ -174,7 +180,7 @@ class InterruptCoordinator:
         self.interrupt_history.clear()
         logger.info("🧹 История прерываний очищена")
         
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Возвращает статус координатора"""
         return {
             "active_interrupts": len(self.active_interrupts),

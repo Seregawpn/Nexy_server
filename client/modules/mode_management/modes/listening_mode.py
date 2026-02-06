@@ -4,8 +4,7 @@
 
 import logging
 import time
-from typing import Optional, Dict, Any
-from ..core.types import AppMode, ModeEvent, ModeStatus
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +17,7 @@ class ListeningMode:
         self.listening_start_time = None
         self.recognized_text = None
         
-    async def enter_mode(self, context: Dict[str, Any] = None):
+    async def enter_mode(self, context: dict[str, Any] | None = None):
         """Вход в режим прослушивания"""
         try:
             logger.info("👂 Вход в режим прослушивания")
@@ -95,9 +94,9 @@ class ListeningMode:
         try:
             if hasattr(self.speech_recognizer, 'is_recording'):
                 if callable(self.speech_recognizer.is_recording):
-                    return self.speech_recognizer.is_recording()
+                    return bool(self.speech_recognizer.is_recording())
                 else:
-                    return self.speech_recognizer.is_recording
+                    return bool(self.speech_recognizer.is_recording)
             elif hasattr(self.speech_recognizer, 'get_status'):
                 status = self.speech_recognizer.get_status()
                 return status.get('is_recording', False)
@@ -118,11 +117,11 @@ class ListeningMode:
             logger.warning(f"⚠️ Ошибка расчета длительности прослушивания: {e}")
             return 0.0
             
-    def get_recognized_text(self) -> Optional[str]:
+    def get_recognized_text(self) -> str | None:
         """Возвращает распознанный текст"""
         return self.recognized_text
             
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Возвращает статус режима прослушивания"""
         return {
             "is_active": self.is_active,

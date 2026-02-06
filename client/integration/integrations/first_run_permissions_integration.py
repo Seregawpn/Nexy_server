@@ -12,28 +12,33 @@ V1 система разрешений (batch sequential requests) полнос�
 
 import asyncio
 import logging
-import os
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from config.unified_config_loader import UnifiedConfigLoader
+from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-from config.unified_config_loader import UnifiedConfigLoader
-from integration.utils.resource_path import get_resource_path, get_user_data_dir
+from integration.utils.resource_path import get_user_data_dir
 
 # V2 Imports
 if TYPE_CHECKING:
+    from modules.permission_restart.macos.permissions_restart_handler import (
+        PermissionsRestartHandler,
+    )
     from modules.permissions.v2.integration import PermissionOrchestratorIntegration
-    from modules.permission_restart.macos.permissions_restart_handler import PermissionsRestartHandler
 
 try:
+    from modules.permission_restart.macos.permissions_restart_handler import (
+        PermissionsRestartHandler,
+    )
     from modules.permissions.v2.integration import PermissionOrchestratorIntegration
-    from modules.permission_restart.macos.permissions_restart_handler import PermissionsRestartHandler
-    V2_AVAILABLE = True
+    _v2_available = True
 except ImportError:
-    V2_AVAILABLE = False
+    _v2_available = False
     PermissionOrchestratorIntegration = None  # type: ignore
     PermissionsRestartHandler = None  # type: ignore
+
+V2_AVAILABLE = _v2_available
 
 logger = logging.getLogger(__name__)
 
@@ -50,18 +55,18 @@ class FirstRunPermissionsIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
         self.config = config or {}
         
-        self._v2_integration: Optional[Any] = None  # PermissionOrchestratorIntegration when V2_AVAILABLE
+        self._v2_integration: Any | None = None  # PermissionOrchestratorIntegration when V2_AVAILABLE
         self._v2_enabled = False
         self._running = False
         self._advance_on_timeout = False
-        self._timeout_wait_s: Optional[float] = None
+        self._timeout_wait_s: float | None = None
         
         # Flag file path (cache only, not a decision gate)
         self._flag_path = get_user_data_dir() / "permissions_first_run_completed.flag"
@@ -171,17 +176,19 @@ class FirstRunPermissionsIntegration:
 
         self._running = True
 
-        if self._v2_integration:
-            completed = self._v2_integration.is_first_run_complete()
-            if completed is True:
-                logger.info("ℹ️ [FIRST_RUN_PERMISSIONS] First-run already completed (ledger) - skipping")
-                return True
-
         # Если V2 активен - запускаем его и ЖДЁМ завершения
         if self._v2_enabled and self._v2_integration:
-            logger.info("🆕 [FIRST_RUN_PERMISSIONS] Запускаем V2 систему разрешений")
+            # Check if already completed
+            completed = self._v2_integration.is_first_run_complete()
+            if completed is True:
+                logger.info(
+                    "ℹ️ [FIRST_RUN_PERMISSIONS] Ledger shows completed - starting orchestrator to re-emit events"
+                )
+            else:
+                logger.info("🆕 [FIRST_RUN_PERMISSIONS] Запускаем V2 систему разрешений")
+            
             try:
-                # Запускаем V2 orchestrator
+                # Запускаем V2 orchestrator (will handle completed state internally)
                 await self._v2_integration.start()
                 if self._advance_on_timeout:
                     logger.info("⏭️ [FIRST_RUN_PERMISSIONS] advance_on_timeout=true — не блокируем startup")
@@ -237,7 +244,25 @@ class FirstRunPermissionsIntegration:
             await self._v2_integration.wait_for_completion(timeout=timeout)
         except Exception as e:
             logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode wait failed: %s", e)
+        
         self._mark_first_run_completed()
+        
+        # CHECK: Было ли уже опубликовано ready_to_greet от V2?
+        # Если да - пропускаем дубль
+        if hasattr(self._v2_integration, '_ready_published') and self._v2_integration._ready_published:
+            logger.info("⏭️ [FIRST_RUN_PERMISSIONS] ready_to_greet already published by V2, skipping timeout publish")
+            # Still publish permissions.first_run_completed for legacy compatibility
+            try:
+                await self.event_bus.publish("permissions.first_run_completed", {
+                    "session_id": "timeout_mode",
+                    "source": "permissions_v2_timeout",
+                    "all_granted": False,
+                    "missing": [],
+                })
+            except Exception as e:
+                logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode legacy event publish failed: %s", e)
+            return
+        
         try:
             await self.event_bus.publish("permissions.first_run_completed", {
                 "session_id": "timeout_mode",
@@ -246,10 +271,12 @@ class FirstRunPermissionsIntegration:
                 "missing": [],
             })
             await self.event_bus.publish("system.ready_to_greet", {
-                "source": "permissions_v2",
+                "source": "permissions_v2_timeout",
                 "phase": "timeout_mode",
                 "permissions": {},
                 "v2": True,
             })
+            logger.info("✅ [FIRST_RUN_PERMISSIONS] Timeout-mode events published")
         except Exception as e:
             logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode publish failed: %s", e)
+

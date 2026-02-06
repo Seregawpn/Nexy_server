@@ -14,23 +14,22 @@ ContactResolver - модуль для получения имени контак
     # Returns: {"display_label": "John Doe", "first_name": "John", ...}
 """
 
-import logging
-import sqlite3
-import re
-import subprocess
 import json
-import time
+import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
-from functools import lru_cache
+import re
+import sqlite3
+import subprocess
+import time
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Кэш для результатов резолвинга по номеру/email
-_CONTACT_CACHE: Dict[str, Dict[str, Any]] = {}
+_CONTACT_CACHE: dict[str, dict[str, Any]] = {}
 
 # Кэш для результатов поиска по имени (с TTL)
-_CONTACT_NAME_CACHE: Dict[str, Tuple[List[Dict[str, Any]], float]] = {}
+_CONTACT_NAME_CACHE: dict[str, tuple[list[dict[str, Any]], float]] = {}
 _CACHE_TTL = 300  # 5 минут в секундах
 
 # Путь к базе данных контактов
@@ -69,7 +68,7 @@ def normalize_phone_for_search(phone: str) -> str:
     return re.sub(r'\D', '', phone)
 
 
-def get_name_from_messages_db(conn: sqlite3.Connection, identifier: str) -> Optional[Dict[str, Any]]:
+def get_name_from_messages_db(conn: sqlite3.Connection, identifier: str) -> dict[str, Any] | None:
     """
     Шаг 1: Получение имени из Messages (chat.display_name)
     
@@ -111,7 +110,7 @@ def get_name_from_messages_db(conn: sqlite3.Connection, identifier: str) -> Opti
     return None
 
 
-def get_name_from_addressbook_sqlite(identifier: str) -> Optional[Dict[str, Any]]:
+def get_name_from_addressbook_sqlite(identifier: str) -> dict[str, Any] | None:
     """
     Шаг 2A: Получение имени из AddressBook SQLite (локальная база)
     
@@ -192,7 +191,7 @@ def get_name_from_addressbook_sqlite(identifier: str) -> Optional[Dict[str, Any]
     return None
 
 
-def get_name_from_contacts_framework(identifier: str) -> Optional[Dict[str, Any]]:
+def get_name_from_contacts_framework(identifier: str) -> dict[str, Any] | None:
     """
     Шаг 2B: Получение имени через Contacts.framework (Swift helper)
     
@@ -254,7 +253,7 @@ def get_name_from_contacts_framework(identifier: str) -> Optional[Dict[str, Any]
     return None
 
 
-def get_name_from_contacts_framework_applescript(identifier: str) -> Optional[Dict[str, Any]]:
+def get_name_from_contacts_framework_applescript(identifier: str) -> dict[str, Any] | None:
     """
     Fallback: Получение имени через Contacts.framework (AppleScript)
     
@@ -350,7 +349,7 @@ def get_name_from_contacts_framework_applescript(identifier: str) -> Optional[Di
     return None
 
 
-def find_contacts_by_name(name: str) -> List[Dict[str, Any]]:
+def find_contacts_by_name(name: str) -> list[dict[str, Any]]:
     """
     Находит все контакты с указанным именем через Swift helper.
     Использует кэширование с TTL для ускорения повторных запросов.
@@ -413,7 +412,7 @@ def find_contacts_by_name(name: str) -> List[Dict[str, Any]]:
     return []
 
 
-def resolve_contact(identifier: str, messages_conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
+def resolve_contact(identifier: str, messages_conn: sqlite3.Connection | None = None) -> dict[str, Any]:
     """
     Главная функция для получения информации о контакте.
     

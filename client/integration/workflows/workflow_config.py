@@ -4,7 +4,8 @@
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Any
+
 
 @dataclass
 class ListeningWorkflowConfig:
@@ -21,7 +22,7 @@ class ListeningWorkflowConfig:
     voice_activity_enabled: bool = False  # мониторинг активности голоса
     
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'ListeningWorkflowConfig':
+    def from_dict(cls, config_dict: dict[str, Any]) -> 'ListeningWorkflowConfig':
         """Создание конфигурации из словаря"""
         return cls(
             debounce_threshold=float(config_dict.get('debounce_threshold', 0.3)),
@@ -48,7 +49,7 @@ class ProcessingWorkflowConfig:
     max_retries: int = 1  # количество повторных попыток при ошибках
     
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'ProcessingWorkflowConfig':
+    def from_dict(cls, config_dict: dict[str, Any]) -> 'ProcessingWorkflowConfig':
         """Создание конфигурации из словаря"""
         return cls(
             stage_timeout=float(config_dict.get('stage_timeout', 30.0)),
@@ -72,7 +73,7 @@ class WorkflowsConfig:
     debug_mode: bool = False
     
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'WorkflowsConfig':
+    def from_dict(cls, config_dict: dict[str, Any]) -> 'WorkflowsConfig':
         """Создание конфигурации из словаря"""
         listening_config = ListeningWorkflowConfig.from_dict(
             config_dict.get('listening', {})

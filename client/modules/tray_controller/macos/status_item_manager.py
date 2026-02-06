@@ -9,14 +9,13 @@
 - Метрики для диагностики
 """
 
-import os
-import time
-import random
-import logging
-import threading
-from typing import Optional, Callable, Dict, Any
+from dataclasses import dataclass
 from enum import Enum
-from dataclasses import dataclass, field
+import logging
+import random
+import threading
+import time
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +32,14 @@ class StatusItemMetrics:
     """Метрики создания NSStatusItem"""
     series_id: str = ""  # ID серии попыток
     attempt_count: int = 0  # Количество попыток в текущей серии
-    last_attempt_code: Optional[str] = None  # Код последней ошибки
+    last_attempt_code: str | None = None  # Код последней ошибки
     last_attempt_duration_ms: int = 0  # Длительность последней попытки
     backoff_next_ms: int = 0  # Следующий backoff в миллисекундах
     circuit_state: CircuitState = CircuitState.CLOSED
-    circuit_open_reason: Optional[str] = None
-    tal_hold_start: Optional[float] = None  # Время начала TAL удержания
-    tal_released: Optional[float] = None  # Время снятия TAL удержания
-    restart_flag_seen: Optional[Dict[str, Any]] = None  # Данные флага перезапуска
+    circuit_open_reason: str | None = None
+    tal_hold_start: float | None = None  # Время начала TAL удержания
+    tal_released: float | None = None  # Время снятия TAL удержания
+    restart_flag_seen: dict[str, Any] | None = None  # Данные флага перезапуска
 
 
 class StatusItemManager:
@@ -54,7 +53,7 @@ class StatusItemManager:
     - Косвенный признак готовности Control Center
     """
     
-    # Дефолтные константы (переопределяются из конфига)
+    # Дефолтные константы
     CIRCUIT_OPEN_THRESHOLD = 3
     CIRCUIT_OPEN_DURATION_SEC = 8.0
     CIRCUIT_HALF_OPEN_TIMEOUT_SEC = 5.0
@@ -68,28 +67,47 @@ class StatusItemManager:
     FINAL_TIMEOUT_MS = 60000
     BACKGROUND_RETRY_INTERVAL_SEC = 45
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self._lock = threading.Lock()  # Блокировка для single-flight
         self._is_creating = False  # Флаг создания (single-flight)
         self._metrics = StatusItemMetrics()
         self._consecutive_failures = 0  # Количество подряд идущих ошибок
-        self._circuit_open_until: Optional[float] = None  # Время до закрытия circuit
+        self._circuit_open_until: float | None = None  # Время до закрытия circuit
         self._control_center_ready = False  # Флаг готовности Control Center
-        self._control_center_ready_ts: Optional[float] = None  # Время готовности Control Center
+        self._control_center_ready_ts: float | None = None  # Время готовности Control Center
+
+        # Runtime-настройки (могут быть переопределены конфигом)
+        self._circuit_open_threshold = self.CIRCUIT_OPEN_THRESHOLD
+        self._circuit_open_duration_sec = self.CIRCUIT_OPEN_DURATION_SEC
+        self._max_attempts_per_series = self.MAX_ATTEMPTS_PER_SERIES
+        self._initial_backoff_ms = self.INITIAL_BACKOFF_MS
+        self._max_backoff_ms = self.MAX_BACKOFF_MS
+        self._backoff_multiplier = self.BACKOFF_MULTIPLIER
+        self._jitter_percent = self.JITTER_PERCENT
+        self._control_center_ready_timeout_sec = self.CONTROL_CENTER_READY_TIMEOUT_SEC
+        self._first_attempt_delay_ms = self.FIRST_ATTEMPT_DELAY_MS
+        self._final_timeout_ms = self.FINAL_TIMEOUT_MS
+        self._background_retry_interval_sec = self.BACKGROUND_RETRY_INTERVAL_SEC
         
         # Загружаем конфиг из unified_config.yaml (если передан)
         if config:
-            self.CIRCUIT_OPEN_THRESHOLD = config.get('circuit_open_threshold', self.CIRCUIT_OPEN_THRESHOLD)
-            self.CIRCUIT_OPEN_DURATION_SEC = config.get('circuit_open_duration_ms', int(self.CIRCUIT_OPEN_DURATION_SEC * 1000)) / 1000.0
-            self.MAX_ATTEMPTS_PER_SERIES = config.get('max_attempts_per_series', self.MAX_ATTEMPTS_PER_SERIES)
-            self.INITIAL_BACKOFF_MS = config.get('initial_backoff_ms', self.INITIAL_BACKOFF_MS)
-            self.MAX_BACKOFF_MS = config.get('max_backoff_ms', self.MAX_BACKOFF_MS)
-            self.BACKOFF_MULTIPLIER = config.get('backoff_multiplier', self.BACKOFF_MULTIPLIER)
-            self.JITTER_PERCENT = config.get('jitter_percent', self.JITTER_PERCENT)
-            self.CONTROL_CENTER_READY_TIMEOUT_SEC = config.get('control_center_ready_timeout_sec', self.CONTROL_CENTER_READY_TIMEOUT_SEC)
-            self.FIRST_ATTEMPT_DELAY_MS = config.get('first_attempt_delay_ms', self.FIRST_ATTEMPT_DELAY_MS)
-            self.FINAL_TIMEOUT_MS = config.get('final_timeout_ms', self.FINAL_TIMEOUT_MS)
-            self.BACKGROUND_RETRY_INTERVAL_SEC = config.get('background_retry_interval_sec', self.BACKGROUND_RETRY_INTERVAL_SEC)
+            self._circuit_open_threshold = int(config.get("circuit_open_threshold", self._circuit_open_threshold))
+            self._circuit_open_duration_sec = float(
+                config.get("circuit_open_duration_ms", int(self._circuit_open_duration_sec * 1000)) / 1000.0
+            )
+            self._max_attempts_per_series = int(config.get("max_attempts_per_series", self._max_attempts_per_series))
+            self._initial_backoff_ms = int(config.get("initial_backoff_ms", self._initial_backoff_ms))
+            self._max_backoff_ms = int(config.get("max_backoff_ms", self._max_backoff_ms))
+            self._backoff_multiplier = float(config.get("backoff_multiplier", self._backoff_multiplier))
+            self._jitter_percent = float(config.get("jitter_percent", self._jitter_percent))
+            self._control_center_ready_timeout_sec = float(
+                config.get("control_center_ready_timeout_sec", self._control_center_ready_timeout_sec)
+            )
+            self._first_attempt_delay_ms = int(config.get("first_attempt_delay_ms", self._first_attempt_delay_ms))
+            self._final_timeout_ms = int(config.get("final_timeout_ms", self._final_timeout_ms))
+            self._background_retry_interval_sec = int(
+                config.get("background_retry_interval_sec", self._background_retry_interval_sec)
+            )
         
         # Генерируем ID серии
         import uuid
@@ -128,7 +146,7 @@ class StatusItemManager:
             )
             return True
     
-    def finish_creation(self, success: bool, error_code: Optional[str] = None, duration_ms: int = 0):
+    def finish_creation(self, success: bool, error_code: str | None = None, duration_ms: int = 0):
         """
         Завершает создание NSStatusItem.
         
@@ -160,7 +178,7 @@ class StatusItemManager:
                 )
                 
                 # Проверяем circuit-breaker
-                if self._consecutive_failures >= self.CIRCUIT_OPEN_THRESHOLD:
+                if self._consecutive_failures >= self._circuit_open_threshold:
                     self._open_circuit(f"consecutive_failures={self._consecutive_failures}")
     
     def _circuit_state(self) -> CircuitState:
@@ -176,7 +194,7 @@ class StatusItemManager:
             self._metrics.circuit_state = CircuitState.HALF_OPEN
             logger.info(
                 f"[STATUS_ITEM_MANAGER] Circuit transitioning to HALF_OPEN "
-                f"(was open for {self.CIRCUIT_OPEN_DURATION_SEC}s)"
+                f"(was open for {self._circuit_open_duration_sec}s)"
             )
         
         return CircuitState.HALF_OPEN
@@ -185,11 +203,11 @@ class StatusItemManager:
         """Открывает circuit-breaker"""
         self._metrics.circuit_state = CircuitState.OPEN
         self._metrics.circuit_open_reason = reason
-        self._circuit_open_until = time.monotonic() + self.CIRCUIT_OPEN_DURATION_SEC
+        self._circuit_open_until = time.monotonic() + self._circuit_open_duration_sec
         
         logger.warning(
             f"[STATUS_ITEM_MANAGER] 🔴 Circuit OPEN: {reason} "
-            f"(will retry after {self.CIRCUIT_OPEN_DURATION_SEC}s)"
+            f"(will retry after {self._circuit_open_duration_sec}s)"
         )
     
     def calculate_backoff_ms(self, attempt: int) -> int:
@@ -203,19 +221,19 @@ class StatusItemManager:
             Backoff в миллисекундах
         """
         # Экспоненциальный backoff
-        base_backoff = self.INITIAL_BACKOFF_MS * (self.BACKOFF_MULTIPLIER ** (attempt - 1))
-        base_backoff = min(base_backoff, self.MAX_BACKOFF_MS)
+        base_backoff = self._initial_backoff_ms * (self._backoff_multiplier ** (attempt - 1))
+        base_backoff = min(base_backoff, self._max_backoff_ms)
         
         # Добавляем jitter ±15%
-        jitter_range = int(base_backoff * self.JITTER_PERCENT)
+        jitter_range = int(base_backoff * self._jitter_percent)
         jitter = random.randint(-jitter_range, jitter_range)
         
-        backoff_ms = max(0, base_backoff + jitter)
+        backoff_ms = int(max(0, base_backoff + jitter))
         self._metrics.backoff_next_ms = backoff_ms
         
         return backoff_ms
     
-    def wait_for_control_center_ready(self, timeout_sec: float = None) -> bool:
+    def wait_for_control_center_ready(self, timeout_sec: float | None = None) -> bool:
         """
         Ждет готовности Control Center через косвенные признаки.
         
@@ -226,7 +244,7 @@ class StatusItemManager:
             True если Control Center готов, False если таймаут
         """
         if timeout_sec is None:
-            timeout_sec = self.CONTROL_CENTER_READY_TIMEOUT_SEC
+            timeout_sec = self._control_center_ready_timeout_sec
         
         if self._control_center_ready:
             return True
@@ -263,12 +281,18 @@ class StatusItemManager:
             import AppKit
             
             # Признак 1: NSStatusBar.system() доступен
-            status_bar = AppKit.NSStatusBar.systemStatusBar()
+            status_bar_cls = getattr(AppKit, "NSStatusBar", None)
+            if status_bar_cls is None:
+                return False
+            status_bar = status_bar_cls.systemStatusBar()
             if status_bar is None:
                 return False
             
             # Признак 2: NSRunningApplication для ControlCenter существует
-            workspace = AppKit.NSWorkspace.sharedWorkspace()
+            workspace_cls = getattr(AppKit, "NSWorkspace", None)
+            if workspace_cls is None:
+                return False
+            workspace = workspace_cls.sharedWorkspace()
             if workspace is None:
                 return False
             
@@ -322,8 +346,7 @@ class StatusItemManager:
                     f"(duration={hold_duration:.2f}s)"
                 )
     
-    def set_restart_flag_data(self, flag_data: Dict[str, Any]):
+    def set_restart_flag_data(self, flag_data: dict[str, Any]):
         """Устанавливает данные флага перезапуска для метрик"""
         with self._lock:
             self._metrics.restart_flag_seen = flag_data
-

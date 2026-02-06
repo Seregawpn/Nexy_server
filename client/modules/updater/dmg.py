@@ -3,11 +3,11 @@
 Монтирование, размонтирование, поиск .app файлов
 """
 
-import subprocess
-import os
-import tempfile
 import logging
-from typing import Optional
+import os
+import subprocess
+import tempfile
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def unmount_dmg(mount_point: str):
         logger.error(f"Ошибка размонтирования DMG: {e}")
         # Не выбрасываем исключение, чтобы не блокировать процесс обновления
 
-def find_app_in_dmg(mount_point: str, app_name: str = "Nexy.app") -> Optional[str]:
+def find_app_in_dmg(mount_point: str, app_name: str = "Nexy.app") -> str | None:
     """
     Поиск .app файла в DMG
     
@@ -118,7 +118,7 @@ def find_app_in_dmg(mount_point: str, app_name: str = "Nexy.app") -> Optional[st
         logger.error(f"Ошибка поиска .app файла в DMG: {e}")
         return None
 
-def get_dmg_info(dmg_path: str) -> dict:
+def get_dmg_info(dmg_path: str) -> dict[str, Any]:
     """
     Получение информации о DMG файле
     

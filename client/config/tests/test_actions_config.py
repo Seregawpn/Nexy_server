@@ -5,7 +5,8 @@ Feature ID: F-2025-016-mcp-app-opening-integration
 """
 
 import pytest
-from config.unified_config_loader import UnifiedConfigLoader, OpenAppActionConfig
+
+from config.unified_config_loader import OpenAppActionConfig, UnifiedConfigLoader
 
 
 def test_get_actions_config():

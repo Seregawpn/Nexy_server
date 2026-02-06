@@ -3,9 +3,7 @@
 Упрощенная версия - только Hardware UUID для macOS
 """
 
-from typing import Dict, Any, Optional
 import logging
-from pathlib import Path
 
 from config.unified_config_loader import UnifiedConfigLoader
 from integration.utils.resource_path import get_user_data_dir
@@ -21,10 +19,10 @@ class HardwareIdConfigManager:
     Использует централизованный UnifiedConfigLoader.
     """
     
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: str | None = None):
         # config_file игнорируется, так как используется unified_config
         self._config_loader = UnifiedConfigLoader.get_instance()
-        self._config: Optional[HardwareIdConfig] = None
+        self._config: HardwareIdConfig | None = None
     
     def _create_default_config(self) -> HardwareIdConfig:
         """Создает конфигурацию по умолчанию"""

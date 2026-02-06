@@ -5,7 +5,7 @@ Welcome Message Configuration Loader
 """
 
 import logging
-from typing import Optional
+from typing import Any
 
 from ..core.types import WelcomeConfig
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class WelcomeConfigLoader:
     """Загрузчик конфигурации для модуля приветствия"""
     
-    def __init__(self, config_data: Optional[dict] = None):
+    def __init__(self, config_data: dict[str, Any] | None = None):
         self.config_data = config_data or {}
     
     def load_config(self) -> WelcomeConfig:

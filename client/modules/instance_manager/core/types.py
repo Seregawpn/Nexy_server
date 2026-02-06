@@ -2,10 +2,9 @@
 Типы данных для модуля управления экземплярами.
 """
 
-from enum import Enum
 from dataclasses import dataclass
-from typing import Optional
-import time
+from enum import Enum
+
 
 class InstanceStatus(Enum):
     """Статус экземпляра приложения."""
@@ -28,7 +27,7 @@ class InstanceManagerConfig:
     enabled: bool = True
     lock_file: str = "~/Library/Application Support/Nexy/nexy.lock"
     timeout_seconds: int = 30
+    lock_grace_ms: int = 1500
     cleanup_on_startup: bool = True
     show_duplicate_message: bool = True
     pid_check: bool = True  # Проверка PID процесса
-

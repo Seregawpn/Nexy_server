@@ -7,9 +7,9 @@ Feature ID: F-2025-014-close-app
 
 import asyncio
 import logging
-import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+import sys
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -45,8 +45,8 @@ class McpActionExecutor:
 
     async def execute_action(
         self,
-        action_data: Dict[str, Any],
-        session_id: Optional[str] = None,
+        action_data: dict[str, Any],
+        session_id: str | None = None,
     ) -> McpActionResult:
         """
         Выполняет действие через MCP сервер.
@@ -240,7 +240,7 @@ class McpActionExecutor:
             )
 
     @staticmethod
-    def _resolve_server_path(server_path: str, action_type: str) -> Optional[Path]:
+    def _resolve_server_path(server_path: str, action_type: str) -> Path | None:
         if not server_path:
             logger.error(
                 "[%s] Empty MCP server path for action=%s",

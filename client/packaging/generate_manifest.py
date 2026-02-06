@@ -4,13 +4,14 @@
 Поддерживает SHA256 хеширование и Ed25519 подпись
 """
 
-import json
-import hashlib
 import base64
+from datetime import datetime
+import hashlib
+import json
 import os
 import sys
-from datetime import datetime
-from pathlib import Path
+from typing import Any
+
 
 def sha256_checksum(file_path: str) -> str:
     """Вычисление SHA256 хеша файла"""
@@ -44,7 +45,7 @@ def sign_file_ed25519(file_path: str, private_key_path: str) -> str:
         print(f"⚠️ Ошибка Ed25519 подписи: {e}")
         return ""
 
-def generate_manifest(dmg_path: str, version: str, build: int, private_key_path: str = None) -> dict:
+def generate_manifest(dmg_path: str, version: str, build: int, private_key_path: str | None = None) -> dict[str, Any]:
     """Генерация манифеста обновлений"""
     
     if not os.path.exists(dmg_path):

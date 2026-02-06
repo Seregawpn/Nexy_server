@@ -19,9 +19,8 @@
 
 | name | type | owner | default | scope | kill_switch | description |
 |------|------|-------|---------|-------|-------------|-------------|
-| `NEXY_FEATURE_FIRST_RUN_V2` | feature | permissions | true | client | `NEXY_KS_PERMISSION_RESTART_V2` | Включить систему первого запуска (v2) |
-| `NEXY_FEATURE_PERMISSION_RESTART_V2` | feature | permissions | true | client | `NEXY_KS_PERMISSION_RESTART_V2` | Включить автоматический перезапуск после разрешений (v2) |
-| `NEXY_KS_PERMISSION_RESTART_V2` | kill_switch | permissions | true | client | - | Отключить автоматический перезапуск (мгновенный откат) |
+| `NEXY_FEATURE_FIRST_RUN_V2` | feature | permissions | true | client | - | Включить систему первого запуска (v2) |
+| `NEXY_FEATURE_PERMISSION_RESTART_V2` | feature | permissions | true | client | - | Включить автоматический перезапуск после разрешений (v2) |
 | `NEXY_DISABLE_AUTO_RESTART` | kill_switch | permissions | false | client | - | Dry-run mode (перезапуск не выполняется, env переменная) |
 | `NEXY_FEATURE_AVFOUNDATION_AUDIO_V2` | feature | audio | false | client | `NEXY_KS_AVFOUNDATION_AUDIO_V2` | Включить AVFoundation аудиосистему (master switch) |
 | `NEXY_FEATURE_AVFOUNDATION_INPUT_MONITOR_V2` | feature | audio | false | client | `NEXY_KS_AVFOUNDATION_INPUT_MONITOR_V2` | Включить AVFoundation мониторинг input устройств |
@@ -31,16 +30,17 @@
 | `NEXY_KS_AVFOUNDATION_INPUT_MONITOR_V2` | kill_switch | audio | false | client | - | Отключить AVFoundation мониторинг input (мгновенный откат) |
 | `NEXY_KS_AVFOUNDATION_OUTPUT_V2` | kill_switch | audio | false | client | - | Отключить AVFoundation output (мгновенный откат) |
 | `NEXY_KS_AVFOUNDATION_ROUTE_MANAGER_V2` | kill_switch | audio | false | client | - | Отключить RouteManager (мгновенный откат) |
-| `serial_tcc_prompts` | feature | permissions | false | client | `ks_serial_tcc` | Последовательный показ TCC диалогов (зарезервировано для будущего релиза) |
-| `ks_serial_tcc` | kill_switch | permissions | false | client | - | Мгновенно отключает serial_tcc_prompts (зарезервировано) |
+| `features.serial_tcc_prompts` | feature | permissions | false | client | `features.ks_serial_tcc` | Последовательный показ TCC диалогов (зарезервировано для будущего релиза) |
+| `features.ks_serial_tcc` | kill_switch | permissions | false | client | - | Мгновенно отключает serial_tcc_prompts (config kill-switch) |
+| `ks_serial_tcc` | kill_switch | permissions | false | client | - | Мгновенно отключает serial_tcc_prompts (config kill-switch) |
 | `NEXY_KS_SERIAL_TCC` | kill_switch | permissions | false | client | - | Мгновенно отключает serial_tcc_prompts (env переменная, альтернатива ks_serial_tcc) |
 | `NEXY_KS_FIRST_RUN_RESTART` | kill_switch | permissions | false | client | - | Отключить перезапуск после first-run (env переменная, мгновенный откат) |
-| `NEXY_DISABLE_TERMINAL_PERMISSIONS_BYPASS` | kill_switch | permissions | false | client | - | Отключить обход проверки разрешений в терминале (env переменная) |
 | `NEXY_DISABLE_TRAY` | kill_switch | tray | false | client | - | Отключить tray меню (env переменная, для тестирования) |
-| `use_events_for_update_status` | feature | core | true | client | - | Включить shadow-mode публикацию `updater.in_progress.changed` вместо прямого state_data |
-| `use_events_for_restart_pending` | feature | core | true | client | - | Читать `permissions.restart_pending` через события/селекторы вместо прямого state_data |
-| `critical_subscriptions_fix` | feature | core | true | client | - | Гарантирует подписку на `permissions.*` до инициализации интеграций (fix race) |
-| `ks_first_run_normalization` | kill_switch | permissions | false | client | - | Отключает gateway-проверку first_run/restart_pending для PermissionRestartIntegration |
+| `features.use_events_for_update_status` | feature | core | true | client | - | Включить shadow-mode публикацию `updater.in_progress.changed` вместо прямого state_data |
+| `features.use_events_for_restart_pending` | feature | core | true | client | - | Читать `permissions.restart_pending` через события/селекторы вместо прямого state_data |
+| `features.critical_subscriptions_fix` | feature | core | true | client | - | Гарантирует подписку на `permissions.*` до инициализации интеграций (fix race) |
+| `features.ks_first_run_normalization` | kill_switch | permissions | false | client | - | Отключает gateway-проверку first_run/restart_pending для PermissionRestartIntegration |
+| `ks_first_run_normalization` | kill_switch | permissions | false | client | - | Отключает gateway-проверку first_run/restart_pending для PermissionRestartIntegration (config) |
 | `actions.open_app` | feature | mcp | true | client | - | Включить функциональность открытия приложений через MCP (Feature ID: F-2025-013) |
 | `actions.close_app` | feature | mcp | true | client | - | Включить функциональность закрытия приложений через MCP (Feature ID: F-2025-014) |
 | `actions.browser_use` | feature | mcp | true | both | - | Включить веб-автоматизацию через голосовые команды (Feature ID: F-2025-015) |
@@ -49,6 +49,25 @@
 | `features.payment` | feature | payment | true | client | `ks_payment` | Включить систему оплаты и подписок (Tray menu + Integration) |
 | `features.messages` | feature | messages | true | client | - | Включить команды iMessage (read_messages, send_message, find_contact) |
 | `features.browser` | feature | browser | true | client | - | Включить browser automation интеграции (BrowserUseIntegration, BrowserProgressIntegration) |
+| `features.actions` | feature | mcp | true | client | - | Включить набор действий MCP (open_app/close_app и др.) |
+| `features.browser_use` | feature | mcp | true | both | - | Включить browser_use конфигурацию (alias для MCP browser_use) |
+| `features.template_feature` | feature | core | false | client | `features.ks_template_feature` | Шаблонная фича для конфигурации (template) |
+| `features.ks_template_feature` | kill_switch | core | false | client | - | Kill-switch для template_feature |
+| `ks_template_feature` | kill_switch | core | false | client | - | Kill-switch для template_feature (config) |
+| `ks_avfoundation_input_monitor` | kill_switch | audio | false | client | - | Отключить AVFoundation input monitor (config kill-switch) |
+| `ks_avfoundation_output` | kill_switch | audio | false | client | - | Отключить AVFoundation output (config kill-switch) |
+| `ks_avfoundation_route_manager` | kill_switch | audio | false | client | - | Отключить AVFoundation route manager (config kill-switch) |
+| `NEXY_BYPASS_PERMISSION_READY` | kill_switch | permissions | false | client | - | Обход проверки готовности разрешений (для тестов) |
+| `REQUIRE_BASEDPYRIGHT_IN_SCAN` | config | release | false | client | - | Требует статус `basedpyright=ok` в `scripts/problem_scan_gate.sh` (релиз/CI режим) |
+| `NEXY_GRPC_SERVER` | config | grpc | - | client | - | Адрес gRPC сервера (override) |
+| `NEXY_INSTANCE_LOCK_FILE` | config | core | - | client | - | Путь к lock-файлу экземпляра (override) |
+| `NEXY_APP_NAME` | config | core | Nexy | client | - | Имя приложения (override) |
+| `NEXY_APP_DATA_SUFFIX` | config | core | - | client | - | Суффикс папки данных (для dev/test окружений) |
+| `NEXY_ENV` | config | core | production | both | - | Окружение (production/development) |
+| `NEXY_ENVIRONMENT` | config | core | production | both | - | Окружение (production/development), алиас для `NEXY_ENV` |
+| `NEXY_DIAG` | config | core | false | client | - | Включить расширенную диагностику |
+| `NEXY_FIRST_RUN_RESTARTED` | state | permissions | false | client | - | Флаг, указывающий что приложение было перезапущено во время first-run |
+| `NEXY_INIT` | config | core | false | client | - | Включить раннюю инициализацию/диагностику старта (bootstrap) |
 ## Использование
 
 ### Feature Flag (постепенный роллаут)

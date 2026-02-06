@@ -5,15 +5,16 @@ Feature ID: F-2025-015-browser-use
 """
 
 import asyncio
-import logging
-import uuid
-import sys
-import os
-from typing import Dict, Any, AsyncIterator, Optional
 from datetime import datetime
+import logging
+import os
+import sys
+from typing import Any, AsyncIterator
+import uuid
 
-from modules.browser_automation.constants import FEATURE_ID
 from config.unified_config_loader import unified_config as global_config
+from integration.utils.resource_path import get_user_data_dir
+from modules.browser_automation.constants import FEATURE_ID
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,8 @@ class GeminiLLMAdapter:
         Uses with_structured_output for proper schema binding when output_format is provided.
         """
         from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
-        from langchain_core.messages import HumanMessage, AIMessage, SystemMessage as LCSystemMessage
+        from langchain_core.messages import AIMessage, HumanMessage
+        from langchain_core.messages import SystemMessage as LCSystemMessage
         
         # Convert browser-use messages to langchain format
         lc_messages = []
@@ -140,12 +142,16 @@ class GeminiLLMAdapter:
                     # Use with_structured_output for proper schema binding with Gemini
                     structured_llm = self._llm.with_structured_output(output_format)
                     completion = await structured_llm.ainvoke(lc_messages, **filtered_kwargs)
-                    logger.debug(f"[{FEATURE_ID}] Structured output parsed successfully: {type(completion).__name__}")
+                    logger.debug(f"[{FEATURE_ID}] Structured output parsed successfully: {type(completion).__name__} -> {completion}")
                 except Exception as struct_err:
                     logger.warning(f"[{FEATURE_ID}] Structured output failed: {struct_err}, falling back to JSON parsing")
                     # Fallback: manual JSON parsing
                     response = await self._llm.ainvoke(lc_messages, **filtered_kwargs)
                     content = response.content if hasattr(response, 'content') else str(response)
+                    
+                    # Ensure content is string for JSON finding
+                    if not isinstance(content, str):
+                        content = str(content)
                     
                     import json
                     try:
@@ -155,7 +161,8 @@ class GeminiLLMAdapter:
                         if json_start != -1 and json_end > json_start:
                             json_str = content[json_start:json_end]
                             parsed = json.loads(json_str)
-                            completion = output_format(**parsed) if isinstance(parsed, dict) else parsed
+                            # Cast to Any to satisfy type checker
+                            completion = output_format(**parsed) if isinstance(parsed, dict) else parsed  # type: ignore[reportArgumentType]
                         else:
                             logger.error(f"[{FEATURE_ID}] No JSON found in response: {content[:200]}...")
                             completion = content
@@ -193,7 +200,7 @@ class GeminiLLMAdapter:
                     )
             
             return ChatInvokeCompletion(
-                completion=completion,
+                completion=completion,  # type: ignore[reportArgumentType]
                 usage=usage,
                 stop_reason='end_turn'
             )
@@ -213,15 +220,15 @@ class BrowserUseModule:
 
     def __init__(self):
         """Initialize the module."""
-        self._config: Dict[str, Any] = {}
-        self._active_tasks: Dict[str, Any] = {}  # task_id -> agent
+        self._config: dict[str, Any] = {}
+        self._active_tasks: dict[str, Any] = {}  # task_id -> agent
         self._initialized = False
         
         # Persistent browser session support
         self._persistent_session = None
         self._keep_browser_open = False
 
-    async def initialize(self, config: Optional[Dict[str, Any]] = None, notification_callback: Optional[Any] = None) -> None:
+    async def initialize(self, config: dict[str, Any] | None = None, notification_callback: Any | None = None) -> None:
         """
         Initialize the module.
         
@@ -253,6 +260,7 @@ class BrowserUseModule:
 
             self._keep_browser_open = self._config.get('keep_browser_open', False)
             logger.info(f"[{FEATURE_ID}] keep_browser_open={self._keep_browser_open}")
+            self._apply_runtime_tuning()
             
             if not _check_browser_use_available():
                 logger.warning(f"[{FEATURE_ID}] browser-use not available locally")
@@ -265,6 +273,23 @@ class BrowserUseModule:
         except Exception as e:
             logger.error(f"[{FEATURE_ID}] Initialization error: {e}")
             raise
+
+    def _apply_runtime_tuning(self) -> None:
+        """Apply runtime tuning for browser-use timeouts/logging."""
+        # Increase browser-use event timeouts via env vars to avoid early timeouts.
+        timeouts = self._config.get("event_timeouts", {}) if isinstance(self._config, dict) else {}
+        overrides = {
+            "BrowserStartEvent": int(timeouts.get("BrowserStartEvent", 60)),
+            "BrowserLaunchEvent": int(timeouts.get("BrowserLaunchEvent", 60)),
+        }
+        for name, value in overrides.items():
+            env_key = f"TIMEOUT_{name}"
+            os.environ.setdefault(env_key, str(value))
+            logger.info(f"[{FEATURE_ID}] {env_key}={os.environ.get(env_key)}")
+
+        # Suppress browser_use/bubus watchdog warnings if configured.
+        if self._config.get("suppress_watchdog_warnings", False):
+            logging.getLogger("bubus").setLevel(logging.ERROR)
 
     async def _ensure_browser_installed(self):
         """Check and install Chromium if necessary (single-flight)."""
@@ -282,6 +307,34 @@ class BrowserUseModule:
                 return
 
             logger.info(f"[{FEATURE_ID}] Checking browser installation (Chromium)...")
+
+            # Ensure Playwright browsers path is writable and deterministic in .app
+            def _resolve_playwright_browsers_path() -> str:
+                # Use centralized resource path resolution to match app's user data dir and handle sandbox
+                app_support = get_user_data_dir()
+                browsers_path = os.path.join(app_support, "ms-playwright")
+                try:
+                    os.makedirs(browsers_path, exist_ok=True)
+                except Exception as e:
+                    logger.warning(f"[{FEATURE_ID}] Failed to ensure browsers path: {browsers_path} err={e}")
+                return browsers_path
+
+            browsers_path = _resolve_playwright_browsers_path()
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
+            logger.info(f"[{FEATURE_ID}] PLAYWRIGHT_BROWSERS_PATH={browsers_path}")
+
+            # Optimization: Check if chromium is already installed to avoid redundant 'install' calls
+            # Playwright creates folders like 'chromium-123456' inside browsers_path
+            try:
+                if os.path.exists(browsers_path):
+                    installed_browsers = os.listdir(browsers_path)
+                    has_chromium = any(name.startswith("chromium-") for name in installed_browsers)
+                    if has_chromium:
+                        logger.info(f"[{FEATURE_ID}] Chromium detected in {browsers_path}, skipping install check")
+                        BrowserUseModule._browser_installed = True
+                        return
+            except Exception as e:
+                logger.warning(f"[{FEATURE_ID}] Failed to check existing browsers: {e}")
             
             # Use playwright cli to install
             async def run_install():
@@ -307,20 +360,56 @@ class BrowserUseModule:
                         
                         if os.path.exists(driver_path):
                             logger.info(f"[{FEATURE_ID}] Found playwright driver at: {driver_path}")
+                            try:
+                                os.chmod(driver_path, 0o755)
+                            except Exception as e:
+                                logger.warning(f"[{FEATURE_ID}] Failed to chmod driver: {driver_path} err={e}")
                             cmd = [driver_path, "install", "chromium"]
                         else:
-                            # Fallback: maybe it's in a different location or we have to try another way
-                            # Some PyInstaller hooks put it in sys._MEIPASS
+                            # Fallback 1: sys._MEIPASS (onefile)
                             if hasattr(sys, "_MEIPASS"):
-                                base_path = sys._MEIPASS
+                                base_path = sys._MEIPASS  # type: ignore[reportAttributeAccessIssue]
                                 driver_path = os.path.join(base_path, "playwright", "driver", driver_name)
                                 if os.path.exists(driver_path):
-                                    logger.info(f"[{FEATURE_ID}] Found bundled driver at: {driver_path}")
+                                    logger.info(f"[{FEATURE_ID}] Found bundled driver at (onefile): {driver_path}")
+                                    try:
+                                        os.chmod(driver_path, 0o755)
+                                    except Exception as e:
+                                        logger.warning(f"[{FEATURE_ID}] Failed to chmod bundled driver: {driver_path} err={e}")
                                     cmd = [driver_path, "install", "chromium"]
                                 else:
                                     logger.warning(f"[{FEATURE_ID}] Driver NOT found at _MEIPASS path: {driver_path}")
+                            
+                            # Fallback 2: Relative to executable (onedir / .app)
+                            # In .app, sys.executable is inside Contents/MacOS/
+                            # Resources are usually nearby or in ../Resources
+                            # Based on Nexy.spec, we collect 'playwright/driver' into 'playwright/driver' folder in the bundle root.
+                            # In onedir, bundle root is os.path.dirname(sys.executable).
+                            bundle_root = os.path.dirname(sys.executable)
+                            onedir_driver_path = os.path.join(bundle_root, "playwright", "driver", driver_name)
+                             
+                            if os.path.exists(onedir_driver_path):
+                                logger.info(f"[{FEATURE_ID}] Found bundled driver at (onedir): {onedir_driver_path}")
+                                try:
+                                    os.chmod(onedir_driver_path, 0o755)
+                                except Exception as e:
+                                    logger.warning(f"[{FEATURE_ID}] Failed to chmod onedir driver: {onedir_driver_path} err={e}")
+                                cmd = [onedir_driver_path, "install", "chromium"]
+                                # Fix: Ensure bundled 'node' and other binaries are executable
+                                driver_dir = os.path.dirname(onedir_driver_path)
+                                try:
+                                    for root, dirs, files in os.walk(driver_dir):
+                                        for fname in files:
+                                            fpath = os.path.join(root, fname)
+                                            try:
+                                                os.chmod(fpath, 0o755)
+                                            except Exception:
+                                                pass
+                                    logger.info(f"[{FEATURE_ID}] Recursively chmod+x applied to {driver_dir}")
+                                except Exception as e:
+                                    logger.warning(f"[{FEATURE_ID}] Failed to recursive chmod driver dir: {e}")
                             else:
-                                logger.warning(f"[{FEATURE_ID}] sys._MEIPASS not present (not a standard single-file bundle?)")
+                                logger.warning(f"[{FEATURE_ID}] Driver NOT found at onedir path: {onedir_driver_path}")
 
                     except Exception as e:
                         logger.warning(f"[{FEATURE_ID}] Failed to resolve driver path in frozen mode: {e}")
@@ -335,7 +424,13 @@ class BrowserUseModule:
                     stderr=asyncio.subprocess.PIPE
                 )
                 stdout, stderr = await process.communicate()
-                return process.returncode, stderr.decode().strip()
+                stdout_text = stdout.decode().strip()
+                stderr_text = stderr.decode().strip()
+                if stdout_text:
+                    logger.info(f"[{FEATURE_ID}] Playwright install stdout: {stdout_text}")
+                if stderr_text:
+                    logger.warning(f"[{FEATURE_ID}] Playwright install stderr: {stderr_text}")
+                return process.returncode, stderr_text
 
             try:
                 # Start install task
@@ -443,7 +538,7 @@ class BrowserUseModule:
             
         return ". ".join(descriptions)
 
-    async def process(self, request: Dict[str, Any]) -> AsyncIterator[Dict[str, Any]]:
+    async def process(self, request: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
         """
         Execute a browser-use task.
         
@@ -530,7 +625,15 @@ class BrowserUseModule:
             if task_id in self._active_tasks:
                 del self._active_tasks[task_id]
 
-    async def _run_agent(self, task: str, task_id: str, session_id: str, config_preset: str) -> AsyncIterator[Dict[str, Any]]:
+    async def _run_agent(
+        self,
+        task: str,
+        task_id: str,
+        session_id: str,
+        config_preset: str,
+        *,
+        retry_count: int = 0,
+    ) -> AsyncIterator[dict[str, Any]]:
         # Get/Create LLM
         try:
             llm = self._create_llm()
@@ -551,6 +654,9 @@ class BrowserUseModule:
             # Persistent session handling
             Agent, ChatGoogle, BrowserProfile = _get_browser_use_classes()
             
+            if not Agent or not BrowserProfile:
+                raise ImportError("browser-use classes not loaded")
+
             browser_session = None
             if self._keep_browser_open and self._persistent_session:
                 browser_session = self._persistent_session
@@ -623,6 +729,24 @@ class BrowserUseModule:
                     try:
                         await agent_task
                     except Exception as e:
+                        if self._should_retry_browser_session(e, retry_count):
+                            await self._cleanup_browser_context(agent, task_id, force=True)
+                            yield {
+                                'type': 'BROWSER_TASK_RETRY',
+                                'task_id': task_id,
+                                'session_id': session_id,
+                                'description': 'Browser session lost, retrying task',
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            async for progress in self._run_agent(
+                                task,
+                                task_id,
+                                session_id,
+                                config_preset,
+                                retry_count=retry_count + 1,
+                            ):
+                                yield progress
+                            return
                         yield {
                             'type': 'BROWSER_TASK_FAILED',
                             'task_id': task_id,
@@ -650,6 +774,19 @@ class BrowserUseModule:
             }
         finally:
              await self._cleanup_browser_context(agent, task_id)
+
+    def _should_retry_browser_session(self, exc: Exception, retry_count: int) -> bool:
+        max_retries = int(self._config.get('recovery_retries', 1))
+        if retry_count >= max_retries:
+            return False
+        message = str(exc).lower()
+        retry_signals = [
+            "browser not connected",
+            "no browser is open",
+            "failed to open new tab",
+            "target closed",
+        ]
+        return any(signal in message for signal in retry_signals)
 
     def _create_llm(self):
         """Создание LLM для Agent, совместимого с browser-use Protocol"""
@@ -685,7 +822,7 @@ class BrowserUseModule:
         # Use adapter to make ChatGoogleGenerativeAI compatible with browser-use
         return GeminiLLMAdapter(api_key=api_key, model=model_name)
 
-    def _get_agent_config(self, config_preset: str) -> Dict[str, Any]:
+    def _get_agent_config(self, config_preset: str) -> dict[str, Any]:
         base_config = {
             'llm_timeout': 120,
             'step_timeout': 180,

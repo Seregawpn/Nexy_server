@@ -3,10 +3,9 @@ macOS system_profiler bridge для получения Hardware UUID
 Упрощенная версия - только Hardware UUID
 """
 
-import subprocess
 import logging
-from typing import Optional, Dict, Any
-from ..core.types import HardwareIdError, HardwareIdNotFoundError
+import subprocess
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,7 @@ class SystemProfilerBridge:
     def __init__(self, timeout: int = 5):
         self.timeout = timeout
     
-    def get_hardware_uuid(self) -> Optional[str]:
+    def get_hardware_uuid(self) -> str | None:
         """
         Получает Hardware UUID через system_profiler
         
@@ -58,7 +57,7 @@ class SystemProfilerBridge:
             logger.error(f"❌ Ошибка выполнения system_profiler: {e}")
             return None
     
-    def _parse_hardware_uuid(self, output: str) -> Optional[str]:
+    def _parse_hardware_uuid(self, output: str) -> str | None:
         """
         Парсит Hardware UUID из вывода system_profiler
         
@@ -123,7 +122,7 @@ class SystemProfilerBridge:
         
         return True
     
-    def get_hardware_info(self) -> Dict[str, Any]:
+    def get_hardware_info(self) -> dict[str, Any]:
         """
         Получает полную информацию об оборудовании через system_profiler
         
@@ -154,7 +153,7 @@ class SystemProfilerBridge:
             logger.error(f"❌ Ошибка получения информации об оборудовании: {e}")
             return {}
     
-    def _parse_hardware_info(self, output: str) -> Dict[str, Any]:
+    def _parse_hardware_info(self, output: str) -> dict[str, Any]:
         """
         Парсит информацию об оборудовании из вывода system_profiler
         

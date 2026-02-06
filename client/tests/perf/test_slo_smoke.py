@@ -9,12 +9,10 @@ Checks that SLO thresholds are met:
 
 See .cursorrules section 20 for SLO requirements.
 """
-import re
 from pathlib import Path
-from typing import Dict, List, Optional
+import re
 
 import pytest
-
 
 # SLO thresholds
 SLO_THRESHOLDS = {
@@ -25,7 +23,7 @@ SLO_THRESHOLDS = {
 }
 
 
-def extract_metric_from_logs(log_content: str, metric_name: str) -> Optional[float]:
+def extract_metric_from_logs(log_content: str, metric_name: str) -> float | None:
     """Extract metric value from logs."""
     # Pattern: metric_name=value or metric_name: value
     patterns = [
@@ -45,7 +43,7 @@ def extract_metric_from_logs(log_content: str, metric_name: str) -> Optional[flo
     return None
 
 
-def extract_percentile_from_logs(log_content: str, metric_name: str, percentile: int = 95) -> Optional[float]:
+def extract_percentile_from_logs(log_content: str, metric_name: str, percentile: int = 95) -> float | None:
     """Extract percentile value from logs (e.g., p95)."""
     # Pattern: metric_name p95=value or metric_name_p95=value
     patterns = [

@@ -5,6 +5,7 @@ Common decision gateways used across integrations.
 from __future__ import annotations
 
 import logging
+
 from integration.core.selectors import (
     Snapshot,
     can_process_audio,
@@ -14,7 +15,6 @@ from integration.core.selectors import (
     is_restart_pending,
     mic_ready,
     network_offline,
-    network_online,
     should_degrade_offline,
 )
 

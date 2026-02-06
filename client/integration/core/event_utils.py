@@ -1,5 +1,5 @@
 """Утилиты для работы с событиями EventBus (dict-формат)."""
-from typing import Any, Dict
+from typing import Any
 
 
 def event_type(event: Any, default: str = "unknown") -> str:
@@ -9,7 +9,7 @@ def event_type(event: Any, default: str = "unknown") -> str:
     return getattr(event, "event_type", default)
 
 
-def event_data(event: Any) -> Dict[str, Any]:
+def event_data(event: Any) -> dict[str, Any]:
     """Безопасно получить data из события."""
     if isinstance(event, dict):
         return event.get("data", {}) or {}

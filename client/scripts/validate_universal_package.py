@@ -13,12 +13,11 @@
 """
 
 import argparse
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import tarfile
-from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Any
 
 # Цвета
 GREEN = '\033[0;32m'
@@ -28,7 +27,7 @@ BLUE = '\033[0;34m'
 NC = '\033[0m'
 
 
-def run_cmd(cmd: List[str], check: bool = True) -> Tuple[int, str, str]:
+def run_cmd(cmd: list[str], check: bool = True) -> tuple[int, str, str]:
     """Выполняет команду и возвращает код, stdout, stderr"""
     result = subprocess.run(cmd, capture_output=True, text=True)
     if check and result.returncode != 0:
@@ -37,7 +36,7 @@ def run_cmd(cmd: List[str], check: bool = True) -> Tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
-def check_lipo_architectures(binary_path: Path) -> Dict[str, bool]:
+def check_lipo_architectures(binary_path: Path) -> dict[str, Any]:
     """Проверяет архитектуры бинарника через lipo"""
     code, stdout, stderr = run_cmd(["lipo", "-info", str(binary_path)], check=False)
     if code != 0:
@@ -52,7 +51,7 @@ def check_lipo_architectures(binary_path: Path) -> Dict[str, bool]:
     }
 
 
-def extract_pkg_app(pkg_path: Path, extract_dir: Path) -> Optional[Path]:
+def extract_pkg_app(pkg_path: Path, extract_dir: Path) -> Path | None:
     """Извлекает .app из PKG для проверки"""
     print(f"{BLUE}📦 Извлекаем .app из PKG...{NC}")
     

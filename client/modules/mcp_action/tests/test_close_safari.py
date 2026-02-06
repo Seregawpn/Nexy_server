@@ -7,9 +7,10 @@ Feature ID: F-2025-014-close-app
 
 import asyncio
 import logging
-import sys
-import pytest
 from pathlib import Path
+import sys
+
+import pytest
 
 # Добавляем путь к client(prod)
 client_prod_root = Path(__file__).parent.parent.parent.parent

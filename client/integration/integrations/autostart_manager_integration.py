@@ -4,14 +4,16 @@ AutostartManagerIntegration - Минимальная интеграция для
 """
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import os
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Any
 
+from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
+from modules.autostart_manager.core.autostart_manager import AutostartManager
+from modules.autostart_manager.core.types import AutostartConfig, AutostartStatus
 
 # Импорт конфигурации
 
@@ -23,6 +25,11 @@ class AutostartManagerIntegrationConfig:
     check_interval: float = 60.0  # Проверка каждую минуту
     monitor_enabled: bool = True
     auto_repair: bool = False  # Не чиним автоматически - PKG управляет
+    launch_agent_path: str = "~/Library/LaunchAgents/com.nexy.assistant.plist"
+    bundle_id: str = "com.nexy.assistant"
+    cleanup_legacy_launch_agent: bool = False
+    legacy_launch_agent_path: str = "/Library/LaunchAgents/com.sergiyzasorin.nexy.voiceassistant.plist"
+    legacy_launch_agent_label: str = "com.sergiyzasorin.nexy.voiceassistant"
 
 class AutostartManagerIntegration:
     """
@@ -33,7 +40,7 @@ class AutostartManagerIntegration:
     """
     
     def __init__(self, event_bus: EventBus, state_manager: ApplicationStateManager, 
-                 error_handler: ErrorHandler, config: Optional[Dict[str, Any]] = None):
+                 error_handler: ErrorHandler, config: dict[str, Any] | None = None):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
@@ -43,13 +50,33 @@ class AutostartManagerIntegration:
         self.config = AutostartManagerIntegrationConfig(
             check_interval=config.get('check_interval', 60.0),
             monitor_enabled=config.get('monitor_enabled', True),
-            auto_repair=config.get('auto_repair', False)
+            auto_repair=config.get('auto_repair', False),
+            launch_agent_path=config.get('launch_agent_path', "~/Library/LaunchAgents/com.nexy.assistant.plist"),
+            bundle_id=config.get('bundle_id', "com.nexy.assistant"),
+            cleanup_legacy_launch_agent=config.get('cleanup_legacy_launch_agent', False),
+            legacy_launch_agent_path=config.get(
+                'legacy_launch_agent_path',
+                "/Library/LaunchAgents/com.sergiyzasorin.nexy.voiceassistant.plist",
+            ),
+            legacy_launch_agent_label=config.get(
+                'legacy_launch_agent_label',
+                "com.sergiyzasorin.nexy.voiceassistant",
+            ),
+        )
+
+        self._autostart_manager = AutostartManager(
+            AutostartConfig(
+                enabled=True,
+                method="launch_agent",
+                launch_agent_path=self.config.launch_agent_path,
+                bundle_id=self.config.bundle_id,
+            )
         )
         
         # Состояние
         self.is_initialized = False
         self.is_running = False
-        self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_task: asyncio.Task[Any] | None = None
         
         logger.info("AutostartManagerIntegration created (мониторинг LaunchAgent)")
     
@@ -141,24 +168,51 @@ class AutostartManagerIntegration:
         """Проверка статуса автозапуска"""
         try:
             # Проверяем LaunchAgent
-            launch_agent_path = os.path.expanduser("~/Library/LaunchAgents/com.nexy.assistant.plist")
+            launch_agent_path = os.path.expanduser(self.config.launch_agent_path)
             launch_agent_exists = os.path.exists(launch_agent_path)
+            legacy_launch_agent_path = "/Library/LaunchAgents/com.sergiyzasorin.nexy.voiceassistant.plist"
+            legacy_launch_agent_exists = os.path.exists(legacy_launch_agent_path)
             
             # Публикуем статус
             status_data = {
                 "launch_agent_exists": launch_agent_exists,
                 "launch_agent_path": launch_agent_path,
                 "method": "launch_agent",
-                "managed_by": "PKG installer"
+                "managed_by": "PKG installer",
+                "legacy_launch_agent_exists": legacy_launch_agent_exists,
+                "legacy_launch_agent_path": legacy_launch_agent_path,
+                "legacy_cleanup_enabled": bool(self.config.cleanup_legacy_launch_agent),
             }
             
             await self.event_bus.publish("autostart.status_checked", status_data)
-            
+
             if launch_agent_exists:
                 logger.info("✅ LaunchAgent автозапуск настроен корректно")
             else:
                 logger.warning("⚠️ LaunchAgent автозапуск не найден")
-            
+            if legacy_launch_agent_exists:
+                logger.warning(
+                    "⚠️ Detected legacy LaunchAgent (duplicate autostart): %s",
+                    legacy_launch_agent_path,
+                )
+                if self.config.cleanup_legacy_launch_agent:
+                    logger.info("🧹 Attempting legacy LaunchAgent cleanup")
+                    removed = await self._autostart_manager.cleanup_legacy_launch_agent(
+                        legacy_path=legacy_launch_agent_path,
+                        legacy_label=self.config.legacy_launch_agent_label,
+                    )
+                    if removed:
+                        logger.info("✅ Legacy LaunchAgent removed")
+                    else:
+                        logger.warning("⚠️ Legacy LaunchAgent removal failed (permissions?)")
+                if self.config.auto_repair:
+                    logger.info("🔧 Пытаемся восстановить LaunchAgent (auto_repair=true)")
+                    result = await self._autostart_manager.enable_autostart()
+                    if result == AutostartStatus.ENABLED:
+                        logger.info("✅ LaunchAgent восстановлен")
+                    else:
+                        logger.warning("⚠️ Не удалось восстановить LaunchAgent")
+
         except Exception as e:
             logger.error(f"❌ Ошибка проверки автозапуска: {e}")
     

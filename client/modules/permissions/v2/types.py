@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 
 class Phase(str, Enum):
@@ -82,7 +82,7 @@ class StepTiming:
 
     post_restart_verify_window_s: float = 20.0
     post_restart_verify_tick_s: float = 2.0
-    step_timeout_s: Optional[float] = None
+    step_timeout_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -93,7 +93,7 @@ class StepConfig:
     timing: StepTiming
 
     supports_needs_restart: bool = False
-    settings_target: Optional[str] = None
+    settings_target: str | None = None
     criticality: PermissionCriticality = PermissionCriticality.FEATURE
 
 
@@ -113,24 +113,24 @@ class ProbeEvidence:
     Hints are set by error_matrix normalization or stack-specific logic.
     """
     # Capability signals
-    frames_received: Optional[bool] = None     # mic/screen
-    tap_created: Optional[bool] = None         # input monitoring
-    tap_enabled: Optional[bool] = None
-    ax_action_ok: Optional[bool] = None        # accessibility
-    file_access_ok: Optional[bool] = None      # FDA
-    contacts_fetch_ok: Optional[bool] = None
+    frames_received: bool | None = None     # mic/screen
+    tap_created: bool | None = None         # input monitoring
+    tap_enabled: bool | None = None
+    ax_action_ok: bool | None = None        # accessibility
+    file_access_ok: bool | None = None      # FDA
+    contacts_fetch_ok: bool | None = None
 
     # Error normalization inputs
-    error_domain: Optional[str] = None
-    error_code: Optional[str] = None
-    error_message: Optional[str] = None
+    error_domain: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
 
     # Prober hints
-    permission_denied_hint: Optional[bool] = None
-    permission_not_determined_hint: Optional[bool] = None
-    transient_hint: Optional[bool] = None
-    likely_needs_restart_hint: Optional[bool] = None
-    misconfig_hint: Optional[bool] = None
+    permission_denied_hint: bool | None = None
+    permission_not_determined_hint: bool | None = None
+    transient_hint: bool | None = None
+    likely_needs_restart_hint: bool | None = None
+    misconfig_hint: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -140,7 +140,7 @@ class ProbeResult:
     timestamp: float
     probe_kind: Literal["light", "heavy"]
     evidence: ProbeEvidence
-    suggested_next_heavy_after_s: Optional[float] = None
+    suggested_next_heavy_after_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -154,4 +154,4 @@ class StepOutcome:
     needs_restart: bool = False
     is_transient: bool = False
 
-    debug: Dict[str, Any] = field(default_factory=dict)
+    debug: dict[str, Any] = field(default_factory=dict)

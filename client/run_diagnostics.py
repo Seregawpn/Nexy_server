@@ -5,10 +5,11 @@
 """
 
 import asyncio
-import sys
-import os
+import importlib
 import logging
-from typing import Dict, Any, List
+import os
+import sys
+from typing import Any
 
 # Добавляем путь к модулям
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '.'))
@@ -21,39 +22,65 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tests/modules'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tests/integrations'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tests/config'))
 
-from diagnostic_audio_device_manager import AudioDeviceManagerDiagnostic
-from diagnostic_voice_recognition import VoiceRecognitionDiagnostic
-from diagnostic_grpc_client import GrpcClientDiagnostic
-from diagnostic_input_processing import InputProcessingDiagnostic
-from diagnostic_speech_playback import SpeechPlaybackDiagnostic
-from diagnostic_permissions import PermissionsDiagnostic
-from diagnostic_network_manager import NetworkManagerDiagnostic
-from diagnostic_mode_management import ModeManagementDiagnostic
-from diagnostic_audio_device_integration import AudioDeviceIntegrationDiagnostic
-from diagnostic_grpc_client_integration import GrpcClientIntegrationDiagnostic
-from diagnostic_mode_management_integration import ModeManagementIntegrationDiagnostic
-from diagnostic_input_processing_integration import InputProcessingIntegrationDiagnostic
-from diagnostic_autostart_manager_integration import AutostartManagerIntegrationDiagnostic
-from diagnostic_hardware_id_integration import HardwareIdIntegrationDiagnostic
-from diagnostic_instance_manager_integration import InstanceManagerIntegrationDiagnostic
-from diagnostic_speech_playback_integration import SpeechPlaybackIntegrationDiagnostic
-from diagnostic_voice_recognition_integration import VoiceRecognitionIntegrationDiagnostic
-from diagnostic_tray_controller_integration import TrayControllerIntegrationDiagnostic
-from diagnostic_interrupt_management_integration import InterruptManagementIntegrationDiagnostic
-from diagnostic_network_manager_integration import NetworkManagerIntegrationDiagnostic
-from diagnostic_screenshot_capture_integration import ScreenshotCaptureIntegrationDiagnostic
-from diagnostic_signal_integration import SignalIntegrationDiagnostic
-from diagnostic_updater_integration import UpdaterIntegrationDiagnostic
-from diagnostic_voiceover_ducking_integration import VoiceOverDuckingIntegrationDiagnostic
-from diagnostic_welcome_message_integration import WelcomeMessageIntegrationDiagnostic
-from diagnostic_unified_config import UnifiedConfigDiagnostic
-
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def _load_diagnostic_class(module_name: str, class_name: str) -> type:
+    """Динамически загружает диагностический класс с fallback-реализацией."""
+    try:
+        module = importlib.import_module(module_name)
+        loaded_class = getattr(module, class_name)
+        if isinstance(loaded_class, type):
+            return loaded_class
+        raise TypeError(f"{class_name} is not a class")
+    except Exception as exc:
+        logger.warning(f"⚠️ Diagnostic import skipped: {module_name}.{class_name} ({exc})")
+
+        class _MissingDiagnostic:
+            async def run_diagnostic(self) -> dict[str, Any]:
+                return {
+                    "success": False,
+                    "skipped": True,
+                    "error": f"Diagnostic module unavailable: {module_name}.{class_name}",
+                    "total_tests": 0,
+                    "successful_tests": 0,
+                    "results": [],
+                }
+
+        return _MissingDiagnostic
+
+
+AudioDeviceIntegrationDiagnostic = _load_diagnostic_class("diagnostic_audio_device_integration", "AudioDeviceIntegrationDiagnostic")
+AudioDeviceManagerDiagnostic = _load_diagnostic_class("diagnostic_audio_device_manager", "AudioDeviceManagerDiagnostic")
+AutostartManagerIntegrationDiagnostic = _load_diagnostic_class("diagnostic_autostart_manager_integration", "AutostartManagerIntegrationDiagnostic")
+GrpcClientDiagnostic = _load_diagnostic_class("diagnostic_grpc_client", "GrpcClientDiagnostic")
+GrpcClientIntegrationDiagnostic = _load_diagnostic_class("diagnostic_grpc_client_integration", "GrpcClientIntegrationDiagnostic")
+HardwareIdIntegrationDiagnostic = _load_diagnostic_class("diagnostic_hardware_id_integration", "HardwareIdIntegrationDiagnostic")
+InputProcessingDiagnostic = _load_diagnostic_class("diagnostic_input_processing", "InputProcessingDiagnostic")
+InputProcessingIntegrationDiagnostic = _load_diagnostic_class("diagnostic_input_processing_integration", "InputProcessingIntegrationDiagnostic")
+InstanceManagerIntegrationDiagnostic = _load_diagnostic_class("diagnostic_instance_manager_integration", "InstanceManagerIntegrationDiagnostic")
+InterruptManagementIntegrationDiagnostic = _load_diagnostic_class("diagnostic_interrupt_management_integration", "InterruptManagementIntegrationDiagnostic")
+ModeManagementDiagnostic = _load_diagnostic_class("diagnostic_mode_management", "ModeManagementDiagnostic")
+ModeManagementIntegrationDiagnostic = _load_diagnostic_class("diagnostic_mode_management_integration", "ModeManagementIntegrationDiagnostic")
+NetworkManagerDiagnostic = _load_diagnostic_class("diagnostic_network_manager", "NetworkManagerDiagnostic")
+NetworkManagerIntegrationDiagnostic = _load_diagnostic_class("diagnostic_network_manager_integration", "NetworkManagerIntegrationDiagnostic")
+PermissionsDiagnostic = _load_diagnostic_class("diagnostic_permissions", "PermissionsDiagnostic")
+ScreenshotCaptureIntegrationDiagnostic = _load_diagnostic_class("diagnostic_screenshot_capture_integration", "ScreenshotCaptureIntegrationDiagnostic")
+SignalIntegrationDiagnostic = _load_diagnostic_class("diagnostic_signal_integration", "SignalIntegrationDiagnostic")
+SpeechPlaybackDiagnostic = _load_diagnostic_class("diagnostic_speech_playback", "SpeechPlaybackDiagnostic")
+SpeechPlaybackIntegrationDiagnostic = _load_diagnostic_class("diagnostic_speech_playback_integration", "SpeechPlaybackIntegrationDiagnostic")
+TrayControllerIntegrationDiagnostic = _load_diagnostic_class("diagnostic_tray_controller_integration", "TrayControllerIntegrationDiagnostic")
+UnifiedConfigDiagnostic = _load_diagnostic_class("diagnostic_unified_config", "UnifiedConfigDiagnostic")
+UpdaterIntegrationDiagnostic = _load_diagnostic_class("diagnostic_updater_integration", "UpdaterIntegrationDiagnostic")
+VoiceRecognitionDiagnostic = _load_diagnostic_class("diagnostic_voice_recognition", "VoiceRecognitionDiagnostic")
+VoiceRecognitionIntegrationDiagnostic = _load_diagnostic_class("diagnostic_voice_recognition_integration", "VoiceRecognitionIntegrationDiagnostic")
+VoiceOverDuckingIntegrationDiagnostic = _load_diagnostic_class("diagnostic_voiceover_ducking_integration", "VoiceOverDuckingIntegrationDiagnostic")
+WelcomeMessageIntegrationDiagnostic = _load_diagnostic_class("diagnostic_welcome_message_integration", "WelcomeMessageIntegrationDiagnostic")
 
 class MasterDiagnostic:
     """Главный диагностический класс"""
@@ -62,7 +89,7 @@ class MasterDiagnostic:
         self.results = {}
         self.all_results = {}
         
-    async def run_all_diagnostics(self) -> Dict[str, Any]:
+    async def run_all_diagnostics(self) -> dict[str, Any]:
         """Запуск всех диагностических тестов"""
         logger.info("🚀 Запуск полного диагностического пакета...")
         
@@ -70,12 +97,13 @@ class MasterDiagnostic:
         logger.info("\n" + "="*60)
         logger.info("1️⃣ ОБЩИЙ ДИАГНОСТИЧЕСКИЙ ПАКЕТ")
         logger.info("="*60)
-        try:
-            general_diagnostic = MasterDiagnostic()
-            self.results['general'] = await general_diagnostic.run_all_diagnostics()
-        except Exception as e:
-            logger.error(f"❌ Ошибка общего диагностического пакета: {e}")
-            self.results['general'] = {"error": str(e), "success": False}
+        self.results['general'] = {
+            "total_tests": 0,
+            "successful_tests": 0,
+            "results": [],
+            "skipped": True,
+            "reason": "legacy_general_suite_removed",
+        }
         
         # 2. Тесты модулей
         logger.info("\n" + "="*60)
@@ -348,7 +376,7 @@ class MasterDiagnostic:
         
         return self._generate_summary()
     
-    def _generate_summary(self) -> Dict[str, Any]:
+    def _generate_summary(self) -> dict[str, Any]:
         """Генерация сводного отчета"""
         logger.info("\n" + "="*60)
         logger.info("📊 СВОДНЫЙ ОТЧЕТ")

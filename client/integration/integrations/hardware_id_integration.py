@@ -7,24 +7,20 @@ HardwareIdIntegration — тонкая обёртка над modules.hardware_id
 """
 
 import asyncio
-import logging
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
-
-# Пути уже добавлены в main.py - не дублируем
-
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.event_types import EventTypes
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-
-# Модуль hardware_id
-from modules.hardware_id.core import HardwareIdentifier, HardwareIdResult, HardwareIdStatus
+from typing import Any
 
 # Конфиг (опционально используем unified_config для интеграционных параметров)
 from config.unified_config_loader import UnifiedConfigLoader
+from integration.core.error_handler import ErrorHandler
 
+# Пути уже добавлены в main.py - не дублируем
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_manager import ApplicationStateManager
 from integration.utils.logging_setup import get_logger
+
+# Модуль hardware_id
+from modules.hardware_id.core import HardwareIdentifier, HardwareIdResult
 
 logger = get_logger(__name__)
 
@@ -44,7 +40,7 @@ class HardwareIdIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        config: Optional[HardwareIdIntegrationConfig] = None,
+        config: HardwareIdIntegrationConfig | None = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
@@ -65,10 +61,10 @@ class HardwareIdIntegration:
         self.config = config
 
         # Модульный идентификатор
-        self._identifier: Optional[HardwareIdentifier] = None
+        self._identifier: HardwareIdentifier | None = None
 
         # Памятный кэш результата
-        self._id_result: Optional[HardwareIdResult] = None
+        self._id_result: HardwareIdResult | None = None
         self._ready_event: asyncio.Event = asyncio.Event()
         self._lock: asyncio.Lock = asyncio.Lock()
 
@@ -204,7 +200,7 @@ class HardwareIdIntegration:
                 return
             await self._obtain_id(force=False)
 
-    async def _obtain_id(self, force: bool) -> Optional[HardwareIdResult]:
+    async def _obtain_id(self, force: bool) -> HardwareIdResult | None:
         if not self._identifier:
             return None
         try:
@@ -237,7 +233,7 @@ class HardwareIdIntegration:
         except Exception as e:
             logger.debug(f"Failed to publish hardware.id_obtained: {e}")
 
-    async def _publish_response(self, res: HardwareIdResult, *, request_id: Optional[str]):
+    async def _publish_response(self, res: HardwareIdResult, *, request_id: str | None):
         try:
             await self.event_bus.publish("hardware.id_response", {
                 "request_id": request_id,
@@ -270,7 +266,7 @@ class HardwareIdIntegration:
             logger.error(f"Error in HardwareIdIntegration ({where}): {e}")
 
     # --------------------- Introspection ---------------------
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         res = self._id_result
         return {
             "initialized": self._initialized,

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 DEV_ENVIRONMENTS = {"development", "dev", "diagnostics", "diag"}
 
 
-def load_interaction_matrix(dev_only: bool = True, *, path: Optional[Path] = None) -> Dict[str, Any]:
+def load_interaction_matrix(dev_only: bool = True, *, path: Path | None = None) -> dict[str, Any]:
     """
     Load the interaction_matrix.yaml file. When `dev_only` is True (default),
     the matrix is only returned for development/diagnostic environments to

@@ -7,6 +7,9 @@
 # 1. Docs/STATE_CATALOG.md (source of truth for axes)
 # 2. integration/core/gateways.py (decision logic)
 # 3. Gateway tests (≥8–14 pairwise + 2 negative)
+#
+# NOTE: Rule keys use predicate aliases from integration/core/gateways/predicates.py
+# (e.g., perm.mic, app.first_run, update.in_progress).
 
 axes:
   Permission.mic: [granted, denied, prompt_blocked]
@@ -174,17 +177,6 @@ rules:
     gateway: decide_update_launch
     source: STATE_CATALOG.md (update_in_progress axis)
 
-  # Hard stop: first_run + restart_pending blocks update launch
-  # Rule: If firstRun=true AND restart_pending=true → block update launch
-  # Reason: First-run restart takes precedence over update
-  # NOTE: This is handled by decide_permission_restart_safety via app.first_run_restart_pending
-  - when: {app.first_run_restart_pending: true}
-    decision: abort_permission_restart
-    priority: hard_stop
-    description: First-run restart pending - block update launch (restart takes precedence)
-    gateway: decide_permission_restart_safety
-    source: STATE_CATALOG.md (restart_pending + update_in_progress)
-
   # Hard stop: max_restart_attempts exceeded
   # Rule: If attempts >= max_restart_attempts → skip restart
   # Reason: Protection against infinite restart loops
@@ -248,37 +240,54 @@ rules:
   # ============================================================================
 
   # Hard stop: Full Disk Access denied blocks messages
-  - when: {perm.full_disk_access: denied}
-    decision: abort_messages
-    priority: hard_stop
-    description: Full Disk Access denied - cannot access messages database
-    gateway: decide_messages_access
+  # NOTE: Disabled until perm.full_disk_access is implemented in Snapshot/selectors/predicates.
+  # - when: {perm.full_disk_access: denied}
+  #   decision: abort_messages
+  #   priority: hard_stop
+  #   description: Full Disk Access denied - cannot access messages database
+  #   gateway: decide_messages_access
 
   # ============================================================================
   # SUBSCRIPTION RULES
   # ============================================================================
 
   # Graceful: Subscription inactive degrades features
-  - when: {subscription.status: [inactive, expired, payment_failed]}
-    decision: limit_features
-    priority: graceful
-    description: Subscription not active - degrade to limited feature set
-    gateway: decide_feature_access
+  # NOTE: Disabled until subscription.status is implemented in Snapshot/selectors/predicates.
+  # - when: {subscription.status: [inactive, expired, payment_failed]}
+  #   decision: limit_features
+  #   priority: graceful
+  #   description: Subscription not active - degrade to limited feature set
+  #   gateway: decide_feature_access
 
   # ============================================================================
   # BROWSER RULES
   # ============================================================================
 
   # Hard stop: Browser busy blocks new voice commands
-  - when: {browser.active_task: running, app.mode: listening}
-    decision: queue_or_abort
-    priority: hard_stop
-    description: Browser task running - cannot accept new voice commands
-    gateway: decide_start_listening
+  # NOTE: Disabled until browser.active_task is implemented in Snapshot/selectors/predicates.
+  # - when: {browser.active_task: running, app.mode: listening}
+  #   decision: queue_or_abort
+  #   priority: hard_stop
+  #   description: Browser task running - cannot accept new voice commands
+  #   gateway: decide_start_listening
 
   # ============================================================================
   # WHATSAPP RULES
   # ============================================================================
+
+  # Graceful: Disconnected requires user attention
+  - when: {whatsapp.status: disconnected}
+    decision: notify_user
+    priority: graceful
+    description: WhatsApp disconnected - notify user to connect
+    gateway: decide_whatsapp_action
+
+  # Graceful: Connecting still requires user attention
+  - when: {whatsapp.status: connecting}
+    decision: notify_user
+    priority: graceful
+    description: WhatsApp connecting - notify user to wait/scan QR if needed
+    gateway: decide_whatsapp_action
 
   # Graceful: QR required needs user attention
   - when: {whatsapp.status: qr_required}

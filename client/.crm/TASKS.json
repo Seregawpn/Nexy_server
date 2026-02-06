@@ -1,7 +1,7 @@
 {
     "workspace": "client",
     "id_prefix": "CLI",
-    "next_id": 13,
+    "next_id": 18,
     "tasks": [
         {
             "id": "CLI-001",
@@ -157,6 +157,73 @@
             "updated_at": "2026-01-19T00:00:00-05:00",
             "description": "## Цель\n\nПолучать browser_use как MCP command и удерживать PROCESSING до завершения автоматизации.\n\n## Definition of Done\n\n- ActionExecutionIntegration выполняет browser_use\n- ProcessingWorkflow не уходит в SLEEPING до browser_task_completed\n",
             "file_path": "integration/integrations/action_execution_integration.py"
+        },
+        {
+            "id": "CLI-013",
+            "epicId": "EPIC-MVP",
+            "title": "De-duplicate subscription limit handling in gRPC integration",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-02T00:00:00-05:00",
+            "description": "## Цель\n\nСвести обработку лимит-ошибки к единой точке, чтобы избежать двойных действий и расхождений между ветками error_message и AioRpcError.\n\n## Definition of Done\n\n- общий helper для TTS+wait+payment action\n- обе ветки вызывают единый helper\n- логика loop-safe signaling сохранена\n",
+            "file_path": "integration/integrations/grpc_client_integration.py"
+        },
+        {
+            "id": "CLI-014",
+            "epicId": "EPIC-MVP",
+            "title": "Fix duplicate app launches due to lock ownership",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-04T19:22:21-05:00",
+            "description": "## Цель\n\nУстранить повторные запуски и мульти-иконки из-за удаления lock-файла не-владельцами.\n\n## Definition of Done\n\n- lock-файл удаляет только владелец\n- дубликаты не сбивают блокировку активного процесса\n",
+            "file_path": "modules/instance_manager/core/instance_manager.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-015",
+            "epicId": "EPIC-MVP",
+            "title": "Gate welcome greeting on playback readiness",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-05T10:31:51-05:00",
+            "description": "## Цель\n\nГарантировать воспроизведение приветствия только после готовности playback.\n\n## Definition of Done\n\n- welcome_message ждет playback.ready\n- приветствие воспроизводится на первом запуске\n",
+            "file_path": "integration/integrations/welcome_message_integration.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-016",
+            "epicId": "EPIC-MVP",
+            "title": "Disable legacy autostart relaunch after Quit",
+            "status": "testing",
+            "priority": "P1",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-05T10:48:46.611447-05:00",
+            "workspace": "client",
+            "description": "Удалить legacy LaunchAgent и предотвратить автоперезапуск после Quit.",
+            "file_path": "integration/integrations/autostart_manager_integration.py"
+        },
+        {
+            "id": "CLI-017",
+            "epicId": "EPIC-MVP",
+            "title": "Prevent duplicate instance race on lock file",
+            "status": "testing",
+            "priority": "P1",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-05T11:00:14.085151-05:00",
+            "workspace": "client",
+            "description": "Добавить grace-период для lock-файла, чтобы второй процесс не удалял свежий lock и не стартовал параллельно.",
+            "file_path": "modules/instance_manager/core/instance_manager.py"
         }
     ]
 }

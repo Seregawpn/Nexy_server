@@ -9,8 +9,9 @@ verify_config.py — Preflight проверки конфигурации
 4. Валидность настроек серверов (local/production)
 """
 
-import sys
 import os
+import sys
+from typing import Any
 
 # Цвета для вывода
 GREEN = "\033[92m"
@@ -62,7 +63,7 @@ def find_config_file() -> str:
     return config_path
 
 
-def test_yaml_syntax(result: TestResult, config_path: str) -> dict | None:
+def test_yaml_syntax(result: TestResult, config_path: str) -> dict[str, Any] | None:
     """Проверка синтаксиса YAML."""
     try:
         import yaml
@@ -86,8 +87,7 @@ def test_yaml_syntax(result: TestResult, config_path: str) -> dict | None:
         result.fail("YAML загрузка", str(e))
         return None
 
-
-def test_required_sections(result: TestResult, config: dict):
+def test_required_sections(result: TestResult, config: dict[str, Any]):
     """Проверка обязательных секций."""
     required = ["app", "integrations", "grpc"]
     
@@ -98,15 +98,15 @@ def test_required_sections(result: TestResult, config: dict):
             result.fail(f"Секция '{section}'", "Отсутствует")
 
 
-def test_integrations(result: TestResult, config: dict):
+def test_integrations(result: TestResult, config: dict[str, Any]):
     """Проверка конфигурации интеграций."""
     integrations = config.get("integrations", {})
     if not integrations:
         result.fail("integrations", "Секция пустая")
         return
     
-    # Критичные интеграции
-    critical = ["grpc_client", "first_run_permissions", "audio"]
+    # Критичные интеграции (актуальный канон)
+    critical = ["grpc_client", "permissions_v2", "voice_recognition"]
     for name in critical:
         if name in integrations:
             int_cfg = integrations[name]
@@ -120,7 +120,7 @@ def test_integrations(result: TestResult, config: dict):
             result.warn(f"Интеграция '{name}'", "Не найдена в конфиге")
 
 
-def test_grpc_servers(result: TestResult, config: dict):
+def test_grpc_servers(result: TestResult, config: dict[str, Any]):
     """Проверка конфигурации gRPC серверов."""
     grpc = config.get("grpc", {})
     servers = grpc.get("servers", {})
@@ -147,7 +147,7 @@ def test_grpc_servers(result: TestResult, config: dict):
             result.ok(f"gRPC '{server_name}' = {host}:{port}")
 
 
-def test_grpc_client_config(result: TestResult, config: dict):
+def test_grpc_client_config(result: TestResult, config: dict[str, Any]):
     """Проверка конфигурации gRPC клиента."""
     integrations = config.get("integrations", {})
     grpc_client = integrations.get("grpc_client", {})
@@ -173,7 +173,7 @@ def test_grpc_client_config(result: TestResult, config: dict):
         result.ok(f"grpc_client.request_timeout_sec = {timeout}s")
 
 
-def test_updater_config(result: TestResult, config: dict):
+def test_updater_config(result: TestResult, config: dict[str, Any]):
     """Проверка конфигурации Sparkle/Updater."""
     updater = config.get("updater", {})
     default = updater.get("default", {})
@@ -193,28 +193,32 @@ def test_updater_config(result: TestResult, config: dict):
         result.ok(f"updater: enabled={enabled}, check_on_startup={check_on_startup}")
 
 
-def test_permissions_config(result: TestResult, config: dict):
+def test_permissions_config(result: TestResult, config: dict[str, Any]):
     """Проверка конфигурации разрешений."""
     integrations = config.get("integrations", {})
-    perms = integrations.get("first_run_permissions", {})
-    
-    if not perms:
-        result.warn("first_run_permissions", "Конфигурация не найдена")
+    perms_v2 = integrations.get("permissions_v2", {})
+
+    if not perms_v2:
+        result.warn("permissions_v2", "Конфигурация не найдена")
         return
-    
-    required = perms.get("required_permissions", [])
-    if not required:
-        result.warn("required_permissions", "Список пуст")
+
+    if perms_v2.get("enabled", False):
+        result.ok("permissions_v2.enabled = true")
     else:
-        result.ok(f"required_permissions: {required}")
-    
-    # Проверяем критичные разрешения
-    critical = ["accessibility", "microphone"]
-    for perm in critical:
-        if perm in required:
-            result.ok(f"Разрешение '{perm}' в списке")
-        else:
-            result.warn(f"Разрешение '{perm}'", "Не в списке required_permissions")
+        result.warn("permissions_v2.enabled", "false (flow разрешений отключен)")
+
+    order = perms_v2.get("order", [])
+    if not isinstance(order, list) or not order:
+        result.warn("permissions_v2.order", "Список пуст")
+    else:
+        result.ok(f"permissions_v2.order: {order}")
+
+    perm_restart = integrations.get("permission_restart", {})
+    critical_permissions = perm_restart.get("critical_permissions", [])
+    if not isinstance(critical_permissions, list) or not critical_permissions:
+        result.warn("permission_restart.critical_permissions", "Список пуст")
+    else:
+        result.ok(f"permission_restart.critical_permissions: {critical_permissions}")
 
 
 def main():

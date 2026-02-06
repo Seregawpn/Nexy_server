@@ -2,12 +2,11 @@
 Утилиты для работы с качеством изображений
 """
 
-from typing import Dict
+
 from .types import ScreenshotQuality
 
-
 # Маппинг качества WebP (0-100)
-WEBP_QUALITY_MAP: Dict[str, int] = {
+WEBP_QUALITY_MAP: dict[str, int] = {
     "low": 50,
     "medium": 80,
     "high": 85,
@@ -15,7 +14,7 @@ WEBP_QUALITY_MAP: Dict[str, int] = {
 }
 
 # Маппинг качества JPEG (0.0-1.0 для NSBitmapImageRep)
-JPEG_QUALITY_MAP: Dict[str, float] = {
+JPEG_QUALITY_MAP: dict[str, float] = {
     "low": 0.5,
     "medium": 0.75,
     "high": 0.85,

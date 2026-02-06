@@ -8,41 +8,44 @@ critical permissions become available.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from integration.core.base_integration import BaseIntegration
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_keys import StateKeys
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-from integration.core.selectors import (
-    create_snapshot_from_state,
-)
-from integration.core.gateways.permission_gateways import decide_permission_restart_safety
-from integration.core.gateways.types import Decision
+# from modules.permissions.first_run.status_checker import get_bundle_id
+from Foundation import NSBundle  # type: ignore
 
 from config.unified_config_loader import UnifiedConfigLoader
-from integration.utils.resource_path import get_user_data_dir
+from integration.core.base_integration import BaseIntegration
+from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.gateways.permission_gateways import decide_permission_restart_safety
+from integration.core.gateways.types import Decision
+from integration.core.selectors import (
+    create_snapshot_from_state,
+    get_state_value,
+)
+from integration.core.state_keys import StateKeys
+from integration.core.state_manager import ApplicationStateManager
+from integration.utils.env_detection import is_production_env
+from integration.utils.logging_setup import get_logger
 from modules.permission_restart import (
-    PermissionRestartConfig,
     PermissionChangeDetector,
+    PermissionRestartConfig,
     load_permission_restart_config,
+)
+from modules.permission_restart.core.types import (
+    PermissionStatus,
+    PermissionTransition,
+    PermissionType,
 )
 from modules.permission_restart.macos.permissions_restart_handler import (
     PermissionsRestartHandler,
 )
-from modules.permission_restart.core.types import PermissionTransition, PermissionStatus, PermissionType
-# from modules.permissions.first_run.status_checker import get_bundle_id
-from Foundation import NSBundle
-
-from integration.utils.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
 
-def get_bundle_id() -> Optional[str]:
+def get_bundle_id() -> str | None:
     """Get the current application bundle identifier."""
     try:
         return NSBundle.mainBundle().bundleIdentifier()
@@ -61,9 +64,9 @@ class PermissionRestartIntegration(BaseIntegration):
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         *,
-        updater_integration: Optional[object] = None,
+        updater_integration: object | None = None,
     ):
         super().__init__(
             event_bus=event_bus,
@@ -79,11 +82,14 @@ class PermissionRestartIntegration(BaseIntegration):
         self._config: PermissionRestartConfig = load_permission_restart_config(self._raw_config)
         self._detector = PermissionChangeDetector(self._config.critical_permissions)
 
-        self._restart_handler: Optional[PermissionsRestartHandler] = None
-        self._restart_task: Optional[asyncio.Task] = None
+        self._restart_handler: PermissionsRestartHandler | None = None
+        self._restart_task: asyncio.Task[Any] | None = None
         self._subscriptions: list[tuple[str, Any]] = []
         self._ready_emitted: bool = False
         self._ready_pending_update: bool = False
+        self._last_restart_flag_seen: float | None = None
+        self._v2_enabled: bool = False
+        self._was_restarted_this_session: bool = False
 
     async def _do_initialize(self) -> bool:
         try:
@@ -91,6 +97,7 @@ class PermissionRestartIntegration(BaseIntegration):
             self._config = load_permission_restart_config(config_section)
             self._detector.set_critical_permissions(self._config.critical_permissions)
             self._restart_handler = PermissionsRestartHandler(config=self._config)
+            self._v2_enabled = self._is_v2_enabled()
             
             logger.info(
                 "[PERMISSION_RESTART] Integration initialised (enabled=%s, delay=%s, attempts=%s)",
@@ -98,6 +105,8 @@ class PermissionRestartIntegration(BaseIntegration):
                 self._config.restart_delay_sec,
                 self._config.max_restart_attempts,
             )
+            if self._v2_enabled:
+                logger.info("[PERMISSION_RESTART] V2 enabled - permission-based restarts disabled")
             return True
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Failed to initialise: %s", exc)
@@ -113,9 +122,10 @@ class PermissionRestartIntegration(BaseIntegration):
             return False
 
         try:
-            await self._subscribe("permissions.changed", self._on_permission_event, EventPriority.HIGH)
-            await self._subscribe("permissions.first_run_restart_pending", self._on_first_run_restart_pending, EventPriority.HIGH)
-            await self._subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.HIGH)
+            if not self._v2_enabled:
+                await self._subscribe("permissions.changed", self._on_permission_event, EventPriority.HIGH)
+                await self._subscribe("permissions.first_run_restart_pending", self._on_first_run_restart_pending, EventPriority.HIGH)
+                await self._subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.HIGH)
             await self._subscribe("updater.update_started", self._on_update_started, EventPriority.MEDIUM)
             await self._subscribe("updater.update_completed", self._on_update_completed, EventPriority.HIGH)
             await self._subscribe("updater.update_skipped", self._on_update_completed, EventPriority.HIGH)
@@ -126,7 +136,14 @@ class PermissionRestartIntegration(BaseIntegration):
 
             # Если restart_pending уже выставлен (event был опубликован до старта интеграции),
             # восстанавливаем обработку через синтетический replay.
-            await self._resume_pending_first_run_restart()
+            if not self._v2_enabled:
+                # КРИТИЧНО: Проверяем флаг рестарта ПРИ ЗАПУСКЕ и запоминаем в памяти
+                # Файл может быть удален позже, но мы должны помнить этот факт до конца сессии
+                if self._has_recent_restart_flag():
+                    logger.info("[PERMISSION_RESTART] 🚩 Detected recent restart flag at startup - Marking session as 'restarted'")
+                    self._was_restarted_this_session = True
+                
+                await self._resume_pending_first_run_restart()
 
             return True
         except Exception as exc:
@@ -158,8 +175,11 @@ class PermissionRestartIntegration(BaseIntegration):
                 logger.debug("[PERMISSION_RESTART] Failed to unsubscribe %s: %s", event_type, exc)
         self._subscriptions.clear()
 
-    async def _on_permission_event(self, event: Dict[str, Any]) -> None:
+    async def _on_permission_event(self, event: dict[str, Any]) -> None:
         if not self._config.enabled:
+            return
+        if self._v2_enabled:
+            logger.debug("[PERMISSION_RESTART] V2 enabled - ignoring permissions.changed")
             return
 
         try:
@@ -175,7 +195,7 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Error handling permission event: %s", exc)
 
-    async def _on_first_run_restart_pending(self, event: Dict[str, Any]) -> None:
+    async def _on_first_run_restart_pending(self, event: dict[str, Any]) -> None:
         """
         Обработчик события ожидания рестарта после first-run.
         
@@ -184,13 +204,33 @@ class PermissionRestartIntegration(BaseIntegration):
         """
         if not self._config.enabled:
             return
+        if self._v2_enabled:
+            logger.debug("[PERMISSION_RESTART] V2 enabled - ignoring first_run_restart_pending")
+            return
 
         data = (event or {}).get("data") or {}
         session_id = data.get("session_id")
+        source = data.get("source", "")
         permissions = data.get("permissions", [])
         is_last_batch = data.get("is_last_batch", True)
         batch_index = data.get("batch_index", 0)
         total_batches = data.get("total_batches", 1)
+
+        # V2 orchestrator owns restart. Avoid double-restart from legacy mapping.
+        if source == "v2_integration":
+            logger.info(
+                "[PERMISSION_RESTART] Skipping legacy restart_pending from v2 (session_id=%s) - Decision: ABORT",
+                session_id,
+            )
+            # Guard: Explicitly abort legacy restart for V2 source
+            return
+
+        if self._was_restarted_this_session or self._has_recent_restart_flag():
+            logger.info(
+                "[PERMISSION_RESTART] Skipping restart_pending due to fresh restart flag/cached state (session_id=%s)",
+                session_id,
+            )
+            return
 
         logger.info(
             "[PERMISSION_RESTART] First run restart pending (session_id=%s, permissions=%s, batch=%d/%d, is_last=%s)",
@@ -201,42 +241,20 @@ class PermissionRestartIntegration(BaseIntegration):
             is_last_batch,
         )
 
-        # Обновляем состояние first_run через state_manager
+        # Обновляем состояние restart_pending через state_manager
+        # first_run состояние обновляет координатор (single writer).
         try:
-            self.state_manager.set_first_run_state(
-                in_progress=False,
-                required=False,
-                completed=False
-            )
             self.state_manager.set_restart_pending(True)
         except Exception as e:
-            logger.debug("[PERMISSION_RESTART] Failed to update first_run state: %s", e)
+            logger.debug("[PERMISSION_RESTART] Failed to update restart_pending state: %s", e)
 
         # КРИТИЧНО: Для продолжения батчей напрямую вызываем restart
         # Не используем детектор/переходы, т.к. они имеют guards которые блокируют restart
         if not is_last_batch:
             logger.info(
-                "[PERMISSION_RESTART] Batch %d/%d completed, scheduling restart for next batch",
+                "[PERMISSION_RESTART] Batch %d/%d completed, skipping restart (waiting for last batch)",
                 batch_index + 1,
                 total_batches,
-            )
-            
-            reason = f"first_run_batch:{batch_index + 1}/{total_batches}"
-            critical_perms = permissions if permissions else ["batch_restart"]
-            
-            if self._restart_task and not self._restart_task.done():
-                logger.info("[PERMISSION_RESTART] Restart already scheduled, ignoring new request")
-                return
-            
-            logger.info(
-                "[PERMISSION_RESTART] Scheduling restart in %.1fs (reason=%s, permissions=%s)",
-                self._config.restart_delay_sec,
-                reason,
-                critical_perms
-            )
-
-            self._restart_task = asyncio.create_task(
-                self._execute_scheduled_restart(reason, critical_perms)
             )
             return
 
@@ -266,7 +284,7 @@ class PermissionRestartIntegration(BaseIntegration):
                 await self._handle_transition(transition)
 
 
-    async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
+    async def _on_first_run_completed(self, event: dict[str, Any]) -> None:
         """
         Обработчик завершения процедуры первого запуска.
         
@@ -302,8 +320,12 @@ class PermissionRestartIntegration(BaseIntegration):
         if self._restart_task and not self._restart_task.done():
             return
 
+        if self._was_restarted_this_session or self._has_recent_restart_flag():
+            logger.info("[PERMISSION_RESTART] Pending restart already completed (fresh flag/cached) - skip resume")
+            return
+
         try:
-            pending = bool(self.state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False))
+            pending = bool(get_state_value(self.state_manager, StateKeys.PERMISSIONS_RESTART_PENDING, False))
         except Exception:
             pending = False
 
@@ -311,7 +333,8 @@ class PermissionRestartIntegration(BaseIntegration):
             return
 
         try:
-            stored_permissions = self.state_manager.get_state_data(
+            stored_permissions = get_state_value(
+                self.state_manager,
                 "permissions_restart_pending_permissions",
                 [],
             )
@@ -320,15 +343,18 @@ class PermissionRestartIntegration(BaseIntegration):
 
         # КРИТИЧНО: Читаем информацию о батчах из state
         try:
-            batch_index = self.state_manager.get_state_data(
+            batch_index = get_state_value(
+                self.state_manager,
                 "permissions_restart_pending_batch_index",
                 0,
             )
-            total_batches = self.state_manager.get_state_data(
+            total_batches = get_state_value(
+                self.state_manager,
                 "permissions_restart_pending_total_batches",
                 1,
             )
-            is_last_batch = self.state_manager.get_state_data(
+            is_last_batch = get_state_value(
+                self.state_manager,
                 "permissions_restart_pending_is_last_batch",
                 True,  # Default to True only if not saved
             )
@@ -348,7 +374,8 @@ class PermissionRestartIntegration(BaseIntegration):
         permissions = [str(perm) for perm in stored_permissions if perm]
 
         try:
-            session_id = self.state_manager.get_state_data(
+            session_id = get_state_value(
+                self.state_manager,
                 "permissions_restart_pending_session_id",
                 "pending_state",
             )
@@ -379,6 +406,12 @@ class PermissionRestartIntegration(BaseIntegration):
         )
 
     async def _handle_transition(self, transition: PermissionTransition) -> None:
+        if self._v2_enabled:
+            logger.debug(
+                "[PERMISSION_RESTART] V2 enabled - ignoring permission transition (%s)",
+                transition.permission.value,
+            )
+            return
         # GUARD: Блокируем перезапуск во время first_run
         # Если first_run активен и restart_pending еще не true (т.е. first_run_restart_pending не публиковался),
         # значит flow разрешений еще не завершён — не планируем рестарт, чтобы не прервать flow
@@ -398,6 +431,13 @@ class PermissionRestartIntegration(BaseIntegration):
             # Continue if guard check fails (defensive)
 
         if not self._restart_handler:
+            return
+
+        if self._was_restarted_this_session or self._has_recent_restart_flag():
+            logger.info(
+                "[PERMISSION_RESTART] Skipping restart due to fresh restart flag/cached state (permission=%s)",
+                transition.permission.value,
+            )
             return
 
         # Check restart safety via gateway before scheduling
@@ -445,10 +485,20 @@ class PermissionRestartIntegration(BaseIntegration):
             self._execute_scheduled_restart(reason, critical_perms)
         )
 
-    async def _execute_scheduled_restart(self, reason: str, permissions: List[str]) -> None:
+    async def _execute_scheduled_restart(self, reason: str, permissions: list[str]) -> None:
         try:
             await asyncio.sleep(self._config.restart_delay_sec)
-            
+
+            # Updater is the owner of relaunch while update is active.
+            # Avoid competing relaunch paths.
+            if self._is_updater_busy():
+                logger.info(
+                    "[PERMISSION_RESTART] Restart aborted: updater is active (reason=%s, permissions=%s)",
+                    reason,
+                    permissions,
+                )
+                return
+
             if self._restart_handler:
                 await self._restart_handler.trigger_restart(
                     reason=reason,
@@ -459,16 +509,49 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Error executing scheduled restart: %s", exc)
 
+    def _is_updater_busy(self) -> bool:
+        updater = self._updater_integration
+        if not updater:
+            return False
+        if not hasattr(updater, "is_update_in_progress"):
+            return False
+        try:
+            return bool(getattr(updater, "is_update_in_progress")())
+        except Exception as exc:
+            logger.debug("[PERMISSION_RESTART] Failed to read updater busy state: %s", exc)
+            return False
 
-    async def _on_update_started(self, event: Dict[str, Any]) -> None:
+    def _has_recent_restart_flag(self) -> bool:
+        if not self._restart_handler:
+            return False
+        try:
+            data = self._restart_handler.get_recent_restart_flag()
+        except Exception:
+            return False
+        if not data:
+            return False
+        ts = data.get("timestamp")
+        if not isinstance(ts, (int, float)):
+            return True
+        # De-dupe log noise if the same flag is observed repeatedly.
+        if self._last_restart_flag_seen == ts:
+            return True
+        self._last_restart_flag_seen = ts
+        return True
+
+
+    async def _on_update_started(self, event: dict[str, Any]) -> None:
         self._ready_pending_update = True
         self._ready_emitted = False
+        if self._restart_task and not self._restart_task.done():
+            self._restart_task.cancel()
+            logger.info("[PERMISSION_RESTART] Cancelled scheduled restart: updater started")
 
-    async def _on_update_completed(self, event: Dict[str, Any]) -> None:
+    async def _on_update_completed(self, event: dict[str, Any]) -> None:
         self._ready_pending_update = False
         await self._publish_ready_if_applicable(source="update_completed")
 
-    async def _on_app_startup_event(self, event: Dict[str, Any]) -> None:
+    async def _on_app_startup_event(self, event: dict[str, Any]) -> None:
         """
         Обработчик события app.startup.
         """
@@ -498,7 +581,7 @@ class PermissionRestartIntegration(BaseIntegration):
                 perm_status = PermissionStatus.GRANTED
                 
                 # Синтетическое событие для инициализации детектора
-                payload: Dict[str, object] = {
+                payload: dict[str, object] = {
                     "permission": perm_name,
                     "old_status": PermissionStatus.NOT_DETERMINED.value,
                     "new_status": perm_status.value,
@@ -517,8 +600,8 @@ class PermissionRestartIntegration(BaseIntegration):
         
         await self._publish_ready_if_applicable(source="app_startup")
 
-    def _get_current_permission_statuses(self) -> Dict[PermissionType, PermissionStatus]:
-        status_map: Dict[PermissionType, PermissionStatus] = {}
+    def _get_current_permission_statuses(self) -> dict[PermissionType, PermissionStatus]:
+        status_map: dict[PermissionType, PermissionStatus] = {}
         for permission in self._config.critical_permissions:
             status = PermissionStatus.GRANTED
             status_map[permission] = status
@@ -531,15 +614,9 @@ class PermissionRestartIntegration(BaseIntegration):
 
         # V2 FIX: Если V2 включён, НЕ публикуем ready_to_greet здесь!
         # V2 Orchestrator отвечает за публикацию после завершения pipeline
-        try:
-            from config.unified_config_loader import UnifiedConfigLoader
-            config = UnifiedConfigLoader.get_instance()
-            v2_config = config.get("permissions_v2", {})
-            if v2_config.get("enabled", False):
-                logger.info("[PERMISSION_RESTART] V2 enabled, deferring ready_to_greet to V2 Orchestrator")
-                return
-        except Exception as e:
-            logger.debug("[PERMISSION_RESTART] Could not check V2 config: %s", e)
+        if self._v2_enabled:
+            logger.info("[PERMISSION_RESTART] V2 enabled, deferring ready_to_greet to V2 Orchestrator")
+            return
 
         # Для запусков не из основного bundle считаем готовым, без TCC-запросов
         bundle_id = get_bundle_id()
@@ -570,6 +647,10 @@ class PermissionRestartIntegration(BaseIntegration):
 
         # DEV/diagnostic escape hatch: skip hard permission checks
         if os.environ.get("NEXY_BYPASS_PERMISSION_READY", "").strip().lower() in {"1", "true", "yes"}:
+            if is_production_env():
+                logger.warning(
+                    "[PERMISSION_RESTART] NEXY_BYPASS_PERMISSION_READY used in production - forcing readiness bypass"
+                )
             self._ready_emitted = True
             self._ready_pending_update = False
             logger.info("[PERMISSION_RESTART] Bypassing permission readiness checks via env override")
@@ -630,7 +711,7 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception as exc:
             logger.debug("[PERMISSION_RESTART] Failed to publish readiness events: %s", exc)
 
-    def _resolve_config_section(self) -> Dict[str, Any]:
+    def _resolve_config_section(self) -> dict[str, Any]:
         if self._raw_config:
             return dict(self._raw_config)
 
@@ -641,3 +722,13 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception as exc:
             logger.debug("[PERMISSION_RESTART] Failed to read unified config: %s", exc)
             return {}
+
+    def _is_v2_enabled(self) -> bool:
+        try:
+            full_config = self._config_loader._load_config()
+            integrations_cfg = full_config.get("integrations", {}) if isinstance(full_config, dict) else {}
+            v2_cfg = integrations_cfg.get("permissions_v2", {}) if isinstance(integrations_cfg, dict) else {}
+            return bool(v2_cfg.get("enabled", False))
+        except Exception as exc:
+            logger.debug("[PERMISSION_RESTART] Failed to read permissions_v2 config: %s", exc)
+            return False

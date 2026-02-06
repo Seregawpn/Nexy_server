@@ -3,15 +3,16 @@
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Any
 
 from ..keyboard.types import KeyboardConfig
+
 # from ..speech.types import SpeechConfig  # Временно отключено
 
 @dataclass
 class InputConfig:
     """Общая конфигурация модулей ввода"""
-    keyboard: Optional[KeyboardConfig] = None
+    keyboard: KeyboardConfig | None = None
     # speech: SpeechConfig = None  # Временно отключено
     
     def __post_init__(self):
@@ -30,7 +31,7 @@ class InputConfig:
         #     self.speech = SpeechConfig()
     
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'InputConfig':
+    def from_dict(cls, config_dict: dict[str, Any]) -> 'InputConfig':
         """Создает конфигурацию из словаря"""
         keyboard_config = KeyboardConfig(**config_dict.get('keyboard', {}))
         # speech_config = SpeechConfig(**config_dict.get('speech', {}))  # Временно отключено
@@ -40,7 +41,7 @@ class InputConfig:
             # speech=speech_config  # Временно отключено
         )
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Преобразует конфигурацию в словарь"""
         if self.keyboard is None:
             return {'keyboard': {}}

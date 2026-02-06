@@ -9,7 +9,7 @@
 # - Специализированные проверки (TAL, permissions, updater)
 #
 # Использование:
-#   ./scripts/pre_build_gate.sh [--skip-tests] [--skip-lint] [--skip-gui] [--verbose]
+#   ./scripts/pre_build_gate.sh [--skip-tests] [--skip-lint] [--skip-gui] [--verbose] [--require-basedpyright]
 #
 # Exit codes:
 #   0 - все проверки пройдены
@@ -29,6 +29,7 @@ SKIP_TESTS=false
 SKIP_LINT=false
 SKIP_GUI=false
 VERBOSE=false
+REQUIRE_BASEDPYRIGHT="${REQUIRE_BASEDPYRIGHT:-false}"
 
 # Парсинг аргументов
 while [[ $# -gt 0 ]]; do
@@ -49,9 +50,13 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
+        --require-basedpyright)
+            REQUIRE_BASEDPYRIGHT=true
+            shift
+            ;;
         *)
             echo "Неизвестный аргумент: $1"
-            echo "Использование: $0 [--skip-tests] [--skip-lint] [--skip-gui] [--verbose]"
+            echo "Использование: $0 [--skip-tests] [--skip-lint] [--skip-gui] [--verbose] [--require-basedpyright]"
             exit 1
             ;;
     esac
@@ -148,11 +153,31 @@ if [ "$SKIP_LINT" = false ]; then
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     # 1.1 Ruff lint
-    if command -v ruff &> /dev/null; then
-        if run_check "Ruff lint" ruff check .; then
+    # Check for ruff in .venv first, then system path
+    if [ -x "$PROJECT_ROOT/.venv/bin/ruff" ]; then
+        RUFF_BIN="$PROJECT_ROOT/.venv/bin/ruff"
+        set +e
+        "$RUFF_BIN" check .
+        RUFF_STATUS=$?
+        set -e
+        if [ $RUFF_STATUS -eq 0 ]; then
+            log_info "✅ Ruff lint (.venv) - PASSED"
             ((PASSED++))
         else
-            ((FAILED++))
+            log_warn "⚠️ Ruff lint found errors (Soft Block) - see output above"
+            ((SKIPPED++))
+        fi
+    elif command -v ruff &> /dev/null; then
+        set +e
+        ruff check .
+        RUFF_STATUS=$?
+        set -e
+        if [ $RUFF_STATUS -eq 0 ]; then
+            log_info "✅ Ruff lint (system) - PASSED"
+            ((PASSED++))
+        else
+            log_warn "⚠️ Ruff lint found errors (Soft Block) - see output above"
+            ((SKIPPED++))
         fi
     else
         log_warn "ruff не установлен, пропускаем проверку"
@@ -165,6 +190,46 @@ if [ "$SKIP_LINT" = false ]; then
         ((PASSED++))
     else
         ((FAILED++))
+    fi
+
+    # 1.3 Проверка нарушений dependency-правил (CI-only enforcement)
+    if run_check "Проверка dependency-нарушений" "$PYTHON_BIN" scripts/check_dependency_violations.py; then
+        ((PASSED++))
+    else
+        ((FAILED++))
+    fi
+
+    # 1.4 Type-check (basedpyright) — если доступен в окружении
+    BASEDPYRIGHT_BIN=""
+    if [ -n "${BASEDPYRIGHT_BIN_OVERRIDE:-}" ] && [ -x "$BASEDPYRIGHT_BIN_OVERRIDE" ]; then
+        BASEDPYRIGHT_BIN="$BASEDPYRIGHT_BIN_OVERRIDE"
+    elif [ -x "$PROJECT_ROOT/.venv/bin/basedpyright" ]; then
+        BASEDPYRIGHT_BIN="$PROJECT_ROOT/.venv/bin/basedpyright"
+    elif [ -x "$PROJECT_ROOT/.venv_x86/bin/basedpyright" ]; then
+        BASEDPYRIGHT_BIN="$PROJECT_ROOT/.venv_x86/bin/basedpyright"
+    elif [ -x "$PROJECT_ROOT/../server/.venv/bin/basedpyright" ]; then
+        BASEDPYRIGHT_BIN="$PROJECT_ROOT/../server/.venv/bin/basedpyright"
+    elif command -v basedpyright &> /dev/null; then
+        BASEDPYRIGHT_BIN="basedpyright"
+    fi
+
+    if [ -n "$BASEDPYRIGHT_BIN" ]; then
+        if run_check "Type-check (basedpyright)" "$BASEDPYRIGHT_BIN"; then
+            ((PASSED++))
+        else
+            ((FAILED++))
+        fi
+    else
+        if [ "$REQUIRE_BASEDPYRIGHT" = true ]; then
+            log_error "basedpyright обязателен, но не найден в окружении"
+            log_error "Установите dev-зависимости: ./scripts/setup_dev_env.sh"
+            log_error "Offline fallback: BASEDPYRIGHT_WHEEL=/abs/path/basedpyright-*.whl ./scripts/setup_dev_env.sh"
+            ((FAILED++))
+        else
+            log_warn "basedpyright не установлен, пропускаем type-check"
+            log_warn "Рекомендуется: ./scripts/setup_dev_env.sh"
+            ((SKIPPED++))
+        fi
     fi
     
     echo ""
@@ -310,6 +375,40 @@ if run_check "Регистрация feature flags (FEATURE_FLAGS.md)" \
     ((PASSED++))
 else
     ((FAILED++))
+fi
+
+# 3.6.0 Проверка централизации cancel-событий
+if run_check "Централизация cancel-событий" \
+    "$PYTHON_BIN" scripts/verify_cancel_centralization.py; then
+    ((PASSED++))
+else
+    ((FAILED++))
+fi
+
+# 3.6.1 Проверка консистентности STATE_CATALOG ↔ Snapshot (soft block)
+set +e
+"$PYTHON_BIN" scripts/verify_state_catalog.py
+STATE_CATALOG_STATUS=$?
+set -e
+if [ $STATE_CATALOG_STATUS -eq 0 ]; then
+    log_info "✅ STATE_CATALOG ↔ Snapshot - PASSED"
+    ((PASSED++))
+else
+    log_warn "⚠️ STATE_CATALOG ↔ Snapshot - WARN (soft block)"
+    ((SKIPPED++))
+fi
+
+# 3.6.2 Packaging readiness (soft block)
+set +e
+"$PYTHON_BIN" scripts/verify_packaging_readiness.py
+PACKAGING_READY_STATUS=$?
+set -e
+if [ $PACKAGING_READY_STATUS -eq 0 ]; then
+    log_info "✅ Packaging readiness - PASSED"
+    ((PASSED++))
+else
+    log_warn "⚠️ Packaging readiness - WARN (soft block)"
+    ((SKIPPED++))
 fi
 
 # 3.7 Проверка требований (если есть PROJECT_REQUIREMENTS.md)

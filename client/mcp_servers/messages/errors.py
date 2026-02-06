@@ -12,7 +12,7 @@ class MessagesError(Exception):
 
 class ContactNotFoundError(MessagesError):
     """Ошибка: контакт не найден"""
-    def __init__(self, contact: str, message: str = None):
+    def __init__(self, contact: str, message: str | None = None):
         self.contact = contact
         if message is None:
             message = f"Contact '{contact}' not found"
@@ -21,7 +21,7 @@ class ContactNotFoundError(MessagesError):
 
 class NoPhoneNumbersError(MessagesError):
     """Ошибка: у контакта нет номеров телефонов"""
-    def __init__(self, contact: str, message: str = None):
+    def __init__(self, contact: str, message: str | None = None):
         self.contact = contact
         if message is None:
             message = f"No phone numbers found for contact '{contact}'"
@@ -30,7 +30,7 @@ class NoPhoneNumbersError(MessagesError):
 
 class MessageSendError(MessagesError):
     """Ошибка: не удалось отправить сообщение"""
-    def __init__(self, phone_number: str, reason: str, message: str = None):
+    def __init__(self, phone_number: str, reason: str, message: str | None = None):
         self.phone_number = phone_number
         self.reason = reason
         if message is None:
@@ -40,7 +40,7 @@ class MessageSendError(MessagesError):
 
 class DatabaseError(MessagesError):
     """Ошибка: проблема с базой данных"""
-    def __init__(self, operation: str, reason: str, message: str = None):
+    def __init__(self, operation: str, reason: str, message: str | None = None):
         self.operation = operation
         self.reason = reason
         if message is None:
@@ -50,7 +50,7 @@ class DatabaseError(MessagesError):
 
 class PermissionError(MessagesError):
     """Ошибка: недостаточно разрешений"""
-    def __init__(self, permission: str, message: str = None):
+    def __init__(self, permission: str, message: str | None = None):
         self.permission = permission
         if message is None:
             message = f"Permission denied: {permission}. Please grant Full Disk Access."
@@ -59,7 +59,7 @@ class PermissionError(MessagesError):
 
 class ContactResolverError(MessagesError):
     """Ошибка: проблема при резолвинге контакта"""
-    def __init__(self, identifier: str, reason: str, message: str = None):
+    def __init__(self, identifier: str, reason: str, message: str | None = None):
         self.identifier = identifier
         self.reason = reason
         if message is None:

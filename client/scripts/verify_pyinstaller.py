@@ -18,11 +18,10 @@ Exit codes:
 
 from __future__ import annotations
 
-import ast
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
-from typing import List, Set
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SPEC_FILE = PROJECT_ROOT / "packaging" / "Nexy.spec"
@@ -116,7 +115,7 @@ class CheckError(Exception):
     """Ошибка проверки."""
 
 
-def parse_spec_file() -> dict:
+def parse_spec_file() -> dict[str, Any]:
     """Парсит Nexy.spec и извлекает конфигурацию."""
     if not SPEC_FILE.exists():
         raise CheckError(f"Файл {SPEC_FILE} не найден")
@@ -204,7 +203,7 @@ def parse_spec_file() -> dict:
     }
 
 
-def check_hidden_imports(config: dict) -> List[str]:
+def check_hidden_imports(config: dict[str, Any]) -> list[str]:
     """Проверяет полноту hiddenimports."""
     errors = []
     hiddenimports = set(config["hiddenimports"])
@@ -234,7 +233,7 @@ def check_hidden_imports(config: dict) -> List[str]:
     return errors
 
 
-def check_data_files(config: dict) -> List[str]:
+def check_data_files(config: dict[str, Any]) -> list[str]:
     """Проверяет наличие необходимых ресурсов в datas."""
     errors = []
     datas = config["datas"]
@@ -254,7 +253,7 @@ def check_data_files(config: dict) -> List[str]:
     return errors
 
 
-def check_runtime_hooks(config: dict) -> List[str]:
+def check_runtime_hooks(config: dict[str, Any]) -> list[str]:
     """Проверяет наличие runtime hooks."""
     errors = []
     runtime_hooks = config["runtime_hooks"]
@@ -268,7 +267,7 @@ def check_runtime_hooks(config: dict) -> List[str]:
     return errors
 
 
-def check_info_plist(config: dict) -> List[str]:
+def check_info_plist(config: dict[str, Any]) -> list[str]:
     """Проверяет наличие обязательных ключей в Info.plist."""
     errors = []
     info_plist = config["info_plist"]

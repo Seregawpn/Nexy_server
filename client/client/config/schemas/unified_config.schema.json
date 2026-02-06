@@ -3,7 +3,9 @@
   "title": "Unified Config Schema",
   "description": "JSON Schema for unified_config.yaml - single source of truth for Nexy configuration",
   "type": "object",
-  "required": ["integrations"],
+  "required": [
+    "integrations"
+  ],
   "properties": {
     "integrations": {
       "type": "object",
@@ -12,28 +14,58 @@
         "permission_restart": {
           "type": "object",
           "properties": {
-            "enabled": {"type": "boolean"},
-            "restart_delay_sec": {"type": "number", "minimum": 0},
-            "poll_interval_sec": {"type": "number", "minimum": 0.5},
-            "max_restart_attempts": {"type": "integer", "minimum": 1},
-            "respect_active_sessions": {"type": "boolean"},
-            "respect_updates": {"type": "boolean"},
-            "polling_enabled": {"type": "boolean"},
+            "enabled": {
+              "type": "boolean"
+            },
+            "restart_delay_sec": {
+              "type": "number",
+              "minimum": 0
+            },
+            "poll_interval_sec": {
+              "type": "number",
+              "minimum": 0.5
+            },
+            "max_restart_attempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "respect_active_sessions": {
+              "type": "boolean"
+            },
+            "respect_updates": {
+              "type": "boolean"
+            },
+            "polling_enabled": {
+              "type": "boolean"
+            },
             "critical_permissions": {
               "type": "array",
-              "items": {"type": "string", "enum": ["microphone", "accessibility", "input_monitoring", "screen_capture"]}
+              "items": {
+                "type": "string",
+                "enum": [
+                  "microphone",
+                  "accessibility",
+                  "input_monitoring",
+                  "screen_capture",
+                  "contacts",
+                  "full_disk_access"
+                ]
+              }
             }
           },
-          "required": ["enabled"]
+          "required": [
+            "enabled"
+          ]
         },
         "first_run_permissions": {
           "type": "object",
           "properties": {
-            "enabled": {"type": "boolean"}
+            "enabled": {
+              "type": "boolean"
+            }
           }
         }
       }
     }
   }
 }
-

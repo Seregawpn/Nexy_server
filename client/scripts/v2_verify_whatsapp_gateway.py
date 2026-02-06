@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
+# ruff: noqa: I001
 """
 Verification script for WhatsApp Gateway Logic.
 Tests that the DecisionEngine correctly processes WhatsApp status.
 """
 
-import sys
 import os
+import sys
 import unittest
-from unittest.mock import MagicMock, patch
 
 # Add client directory to path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 client_dir = os.path.dirname(current_dir)
 sys.path.insert(0, client_dir)
 
-from integration.core.selectors import Snapshot, WhatsappStatus, PermissionStatus, DeviceStatus, NetworkStatus, AppMode
 from integration.core.gateways.types import Decision
 from integration.core.gateways.whatsapp_gateways import decide_whatsapp_action
+from integration.core.selectors import (
+    DeviceStatus,
+    NetworkStatus,
+    PermissionStatus,
+    Snapshot,
+    WhatsappStatus,
+)
+try:
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except ImportError:
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
+
 
 class TestWhatsappGateway(unittest.TestCase):
 

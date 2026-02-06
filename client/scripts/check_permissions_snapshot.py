@@ -10,12 +10,12 @@ Options:
     --loop N    Run N iterations with 2s delay to detect stale cache (default: 1)
 """
 
+from datetime import datetime
+from enum import Enum
 import subprocess
 import sys
 import time
-from datetime import datetime
-from enum import Enum
-from typing import Dict, Optional
+
 
 class Status(Enum):
     GRANTED = "✅ GRANTED"
@@ -29,8 +29,8 @@ def check_microphone() -> tuple[Status, str]:
     """Check microphone permission via AVFoundation."""
     try:
         import AVFoundation
-        status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
-            AVFoundation.AVMediaTypeAudio
+        status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(  # type: ignore[reportAttributeAccessIssue]
+            AVFoundation.AVMediaTypeAudio  # type: ignore[reportAttributeAccessIssue]
         )
         # 0=NotDetermined, 1=Restricted, 2=Denied, 3=Authorized
         if status == 3:
@@ -60,7 +60,9 @@ def check_accessibility() -> tuple[Status, str]:
     try:
         # Get bundle_id
         try:
-            from Foundation import NSBundle
+            from Foundation import (
+                NSBundle,  # type: ignore[reportMissingImports, reportAttributeAccessIssue]
+            )
             bundle_id = NSBundle.mainBundle().bundleIdentifier() or "com.nexy.assistant"
         except Exception:
             bundle_id = "com.nexy.assistant"
@@ -89,9 +91,9 @@ def check_input_monitoring() -> tuple[Status, str]:
     """Check input monitoring via IOHIDCheckAccess or pynput fallback."""
     # Try IOHIDCheckAccess first
     try:
-        from Quartz import (
-            kIOHIDRequestTypeListenEvent,
-            IOHIDCheckAccess,
+        from Quartz import (  # type: ignore[reportMissingImports]
+            IOHIDCheckAccess,  # type: ignore[reportAttributeAccessIssue]
+            kIOHIDRequestTypeListenEvent,  # type: ignore[reportAttributeAccessIssue]
         )
         # IOHIDCheckAccess returns: 0=Denied, 1=Granted, 2=Unknown/NotDetermined
         access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
@@ -108,8 +110,9 @@ def check_input_monitoring() -> tuple[Status, str]:
     
     # Fallback: try pynput listener briefly
     try:
-        from pynput import keyboard
         import threading
+
+        from pynput import keyboard
         
         result = {"status": Status.NOT_DETERMINED, "detail": "pynput test"}
         event_received = threading.Event()
@@ -120,7 +123,7 @@ def check_input_monitoring() -> tuple[Status, str]:
             event_received.set()
             return False  # Stop listener
         
-        listener = keyboard.Listener(on_press=on_press)
+        listener = keyboard.Listener(on_press=on_press)  # type: ignore[reportArgumentType]
         listener.start()
         
         # Wait briefly - if listener starts without error, likely granted
@@ -145,7 +148,9 @@ def check_input_monitoring() -> tuple[Status, str]:
 def check_screen_capture() -> tuple[Status, str]:
     """Check screen capture via CGPreflightScreenCaptureAccess."""
     try:
-        from Quartz import CGPreflightScreenCaptureAccess
+        from Quartz import (
+            CGPreflightScreenCaptureAccess,  # type: ignore[reportMissingImports, reportAttributeAccessIssue]
+        )
         granted = CGPreflightScreenCaptureAccess()
         if granted:
             return Status.GRANTED, "CGPreflightScreenCaptureAccess=True"
@@ -157,7 +162,7 @@ def check_screen_capture() -> tuple[Status, str]:
         return Status.ERROR, str(e)
 
 
-def run_snapshot() -> Dict[str, tuple[Status, str]]:
+def run_snapshot() -> dict[str, tuple[Status, str]]:
     """Run all permission checks and return results."""
     return {
         "Microphone": check_microphone(),
@@ -167,7 +172,7 @@ def run_snapshot() -> Dict[str, tuple[Status, str]]:
     }
 
 
-def print_table(results: Dict[str, tuple[Status, str]], iteration: int, timestamp: str):
+def print_table(results: dict[str, tuple[Status, str]], iteration: int, timestamp: str):
     """Print results as a formatted table."""
     print(f"\n{'='*70}")
     print(f"Iteration {iteration} | {timestamp}")

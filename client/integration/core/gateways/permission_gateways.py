@@ -4,16 +4,16 @@ Permission-centric gateway helpers shared between integrations.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+import logging
+from typing import Any, Iterable, Sequence
 
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.gateways.common import _log_decision
-from integration.core.gateways.types import Decision
 from integration.core.gateways.base import create_ctx_from_snapshot
+from integration.core.gateways.common import _log_decision
 from integration.core.gateways.engine_loader import get_engine
+from integration.core.gateways.types import Decision
 from integration.core.selectors import Snapshot, is_first_run_restart_pending, is_update_in_progress
+from integration.core.state_manager import ApplicationStateManager
 
 try:  # pragma: no cover - defensive fallback for tooling contexts
     from integration.core.state_manager import AppMode  # type: ignore
@@ -39,7 +39,7 @@ class PermissionRestartDecision:
 
     allowed: bool
     reason: str
-    blocked_by: Optional[str] = None
+    blocked_by: str | None = None
     requires_idle: bool = False
 
 
@@ -53,7 +53,7 @@ class PermissionRestartGateway:
         self,
         state_manager: ApplicationStateManager,
         *,
-        updater_integration: Optional[object] = None,
+        updater_integration: object | None = None,
     ) -> None:
         self._state_manager = state_manager
         self._updater_integration = updater_integration
@@ -111,9 +111,9 @@ class PermissionRestartGateway:
     @staticmethod
     def _normalise_permissions(
         pending_permissions: Iterable[PermissionType],
-    ) -> Tuple[PermissionType, ...]:
+    ) -> tuple[PermissionType, ...]:
         seen = set()
-        ordered: List[PermissionType] = []
+        ordered: list[PermissionType] = []
         for permission in pending_permissions:
             if permission in seen:
                 continue
@@ -246,7 +246,7 @@ def decide_permission_restart_safety(
 def decide_permission_restart_schedule(
     snapshot: Snapshot,
     *,
-    extra: Optional[Dict[str, Any]] = None,
+    extra: dict[str, Any] | None = None,
 ) -> Decision:
     """
     Decide whether to schedule a permission restart based on config context.
@@ -276,7 +276,7 @@ def decide_permission_restart_schedule(
 def decide_permission_restart_wait(
     snapshot: Snapshot,
     *,
-    extra: Optional[Dict[str, Any]] = None,
+    extra: dict[str, Any] | None = None,
 ) -> Decision:
     """
     Decide whether to wait before restarting (graceful delay).

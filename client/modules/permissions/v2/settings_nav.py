@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-SETTINGS_URLS: Dict[str, str] = {
+SETTINGS_URLS: dict[str, str] = {
     "accessibility": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
     "input_monitoring": "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
     "screen_capture": "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",

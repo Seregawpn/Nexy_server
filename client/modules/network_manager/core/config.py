@@ -4,8 +4,10 @@
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any
+
 from .types import NetworkConfig
+
 
 @dataclass
 class NetworkManagerConfig:
@@ -18,10 +20,10 @@ class NetworkManagerConfig:
     retry_delay: float = 5.0
     
     # Хосты для пинга (из unified_config.yaml)
-    ping_hosts: List[str] = None
+    ping_hosts: list[str] | None = None
     
     # URL для тестирования
-    test_urls: List[str] = None
+    test_urls: list[str] | None = None
     
     def __post_init__(self):
         if self.ping_hosts is None:
@@ -39,7 +41,7 @@ class NetworkManagerConfig:
             ]
     
     @classmethod
-    def from_unified_config(cls, config_data: dict) -> 'NetworkManagerConfig':
+    def from_unified_config(cls, config_data: dict[str, Any]) -> 'NetworkManagerConfig':
         """Создать конфигурацию из unified_config.yaml"""
         network_data = config_data.get('network', {})
         

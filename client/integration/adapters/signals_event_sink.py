@@ -8,9 +8,7 @@ decoupled from playback internals and improves reliability.
 
 from __future__ import annotations
 
-from typing import Optional
-
-from integration.core.event_bus import EventBus, EventPriority
+from integration.core.event_bus import EventBus
 from modules.signals.core.interfaces import AudioSink
 
 
@@ -25,7 +23,7 @@ class EventBusAudioSink(AudioSink):
         channels: int = 1,
         gain: float = 1.0,
         priority: int = 10,
-        pattern: Optional[str] = None,
+        pattern: str | None = None,
     ) -> None:
         # publish non-blocking; consumers must handle buffer sizes/priorities
         await self._bus.publish(

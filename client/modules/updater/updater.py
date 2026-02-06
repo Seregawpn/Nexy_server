@@ -2,21 +2,23 @@
 Основной класс системы обновлений
 """
 
-import json
-import tempfile
-import os
-import subprocess
-from typing import Optional, Dict, Any
-from packaging import version
-from pathlib import Path
-from .config import UpdaterConfig
-from .net import UpdateHTTPClient
-from .verify import sha256_checksum, verify_ed25519_signature, verify_app_signature
-from .dmg import mount_dmg, unmount_dmg, find_app_in_dmg
-from .pkg import install_pkg, verify_pkg_signature, extract_pkg_contents, find_app_in_pkg, cleanup_pkg_extract
-from .replace import atomic_replace_app
-from .migrate import get_user_app_path
 import logging
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+from typing import Any
+
+from packaging import version
+
+from .config import UpdaterConfig
+from .dmg import find_app_in_dmg, mount_dmg, unmount_dmg
+from .migrate import get_user_app_path
+from .net import UpdateHTTPClient
+from .pkg import install_pkg, verify_pkg_signature
+from .replace import atomic_replace_app
+from .verify import sha256_checksum, verify_app_signature, verify_ed25519_signature
+from modules.instance_manager import InstanceManager, InstanceManagerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +63,7 @@ class Updater:
         except Exception:
             return "0"
     
-    def check_for_updates(self) -> Optional[Dict[str, Any]]:
+    def check_for_updates(self) -> dict[str, Any] | None:
         """Проверка доступности обновлений"""
         try:
             manifest = self.http_client.get_manifest(self.config.manifest_url)
@@ -87,7 +89,7 @@ class Updater:
             logger.error(f"Ошибка проверки обновлений: {e}")
             return None
     
-    def download_and_verify(self, artifact_info: Dict[str, Any]) -> str:
+    def download_and_verify(self, artifact_info: dict[str, Any]) -> str:
         """Скачивание и проверка артефакта"""
         artifact_type = artifact_info.get("type", "dmg")
         artifact_url = artifact_info["url"]
@@ -122,7 +124,7 @@ class Updater:
         
         return temp_file
     
-    def install_update(self, artifact_path: str, artifact_info: Dict[str, Any]):
+    def install_update(self, artifact_path: str, artifact_info: dict[str, Any]):
         """Установка обновления"""
         artifact_type = artifact_info.get("type", "dmg")
         user_app_path = get_user_app_path()
@@ -178,6 +180,10 @@ class Updater:
         user_app_path = get_user_app_path()
         logger.info("🔁 Updater: relaunching app after update, exiting current process")
 
+        if self._is_other_instance_running():
+            logger.warning("⚠️ Another Nexy instance already running - skip relaunch")
+            return
+
         # Используем subprocess.run() для синхронного выполнения команды запуска
         # Это гарантирует, что команда 'open' успеет запуститься до завершения процесса
         try:
@@ -195,6 +201,25 @@ class Updater:
             logger.error(f"❌ Ошибка при перезапуске приложения: {e}")
 
         os._exit(0)
+
+    def _is_other_instance_running(self) -> bool:
+        try:
+            env_lock_file = os.environ.get("NEXY_INSTANCE_LOCK_FILE")
+            lock_file = env_lock_file or "~/Library/Application Support/Nexy/nexy.lock"
+            manager = InstanceManager(
+                InstanceManagerConfig(
+                    enabled=True,
+                    lock_file=lock_file,
+                    timeout_seconds=30,
+                    cleanup_on_startup=False,
+                    show_duplicate_message=False,
+                    pid_check=True,
+                )
+            )
+            return manager.is_other_instance_running()
+        except Exception as exc:
+            logger.warning("Updater: failed to check other instance: %s", exc)
+            return False
     
     def update(self) -> bool:
         """Полный цикл обновления"""
@@ -221,7 +246,7 @@ class Updater:
             logger.error(f"Ошибка обновления: {e}")
             return False
 
-    def _report_download_progress(self, downloaded: int, expected_size: Optional[int]) -> None:
+    def _report_download_progress(self, downloaded: int, expected_size: int | None) -> None:
         if not callable(self.on_download_progress):
             return
         try:

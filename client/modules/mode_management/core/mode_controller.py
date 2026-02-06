@@ -5,12 +5,16 @@
 import asyncio
 import logging
 import time
-from typing import Dict, List, Optional, Callable, Any
-from dataclasses import dataclass
+from typing import Any, Callable
 
 from .types import (
-    AppMode, ModeTransition, ModeTransitionType, ModeStatus, ModeEvent,
-    ModeConfig, ModeMetrics
+    AppMode,
+    ModeConfig,
+    ModeEvent,
+    ModeMetrics,
+    ModeStatus,
+    ModeTransition,
+    ModeTransitionType,
 )
 
 logger = logging.getLogger(__name__)
@@ -18,20 +22,20 @@ logger = logging.getLogger(__name__)
 class ModeController:
     """Контроллер режимов приложения"""
     
-    def __init__(self, config: Optional[ModeConfig] = None):
+    def __init__(self, config: ModeConfig | None = None):
         self.config = config or ModeConfig()
         self.current_mode = self.config.default_mode
         self.previous_mode = None
         self.mode_start_time = time.time()
         
         # Переходы между режимами
-        self.transitions: Dict[AppMode, List[ModeTransition]] = {}
+        self.transitions: dict[AppMode, list[ModeTransition]] = {}
         
         # Обработчики режимов
-        self.mode_handlers: Dict[AppMode, Callable] = {}
+        self.mode_handlers: dict[AppMode, Callable[..., Any]] = {}
         
         # Callbacks для уведомлений
-        self.mode_change_callbacks: List[Callable] = []
+        self.mode_change_callbacks: list[Callable[..., Any]] = []
         
         # Метрики
         self.metrics = ModeMetrics()
@@ -50,19 +54,19 @@ class ModeController:
         
         logger.debug(f"📝 Зарегистрирован переход: {transition.from_mode.value} → {transition.to_mode.value}")
         
-    def register_mode_handler(self, mode: AppMode, handler: Callable):
+    def register_mode_handler(self, mode: AppMode, handler: Callable[..., Any]):
         """Регистрирует обработчик режима"""
         self.mode_handlers[mode] = handler
         logger.debug(f"📝 Зарегистрирован обработчик для режима {mode.value}")
         
-    def register_mode_change_callback(self, callback: Callable):
+    def register_mode_change_callback(self, callback: Callable[..., Any]):
         """Регистрирует callback для смены режима"""
         self.mode_change_callbacks.append(callback)
         logger.debug("📝 Зарегистрирован callback смены режима")
         
     async def switch_mode(self, new_mode: AppMode, force: bool = False, 
                          transition_type: ModeTransitionType = ModeTransitionType.MANUAL,
-                         data: Optional[Dict[str, Any]] = None) -> bool:
+                         data: dict[str, Any] | None = None) -> bool:
         """Переключает режим приложения"""
         async with self._lock:
             try:
@@ -79,7 +83,8 @@ class ModeController:
                 # Обновляем метрики времени в текущем режиме
                 current_time = time.time()
                 time_in_current_mode = current_time - self.mode_start_time
-                self.metrics.time_in_modes[self.current_mode] += time_in_current_mode
+                if self.metrics.time_in_modes is not None:
+                    self.metrics.time_in_modes[self.current_mode] += time_in_current_mode
                 
                 # Сохраняем предыдущий режим
                 self.previous_mode = self.current_mode
@@ -111,7 +116,8 @@ class ModeController:
                 # Обновляем метрики
                 self.metrics.total_transitions += 1
                 self.metrics.successful_transitions += 1
-                self.metrics.transitions_by_type[transition_type] += 1
+                if self.metrics.transitions_by_type is not None:
+                     self.metrics.transitions_by_type[transition_type] += 1
                 
                 logger.info(f"✅ Режим изменен: {old_mode.value} → {new_mode.value}")
                 return True
@@ -126,7 +132,7 @@ class ModeController:
         transitions = self.transitions.get(self.current_mode, [])
         return any(t.to_mode == mode for t in transitions)
         
-    def _find_transition(self, from_mode: AppMode, to_mode: AppMode) -> Optional[ModeTransition]:
+    def _find_transition(self, from_mode: AppMode, to_mode: AppMode) -> ModeTransition | None:
         """Находит переход между режимами"""
         transitions = self.transitions.get(from_mode, [])
         for transition in transitions:
@@ -135,7 +141,7 @@ class ModeController:
         return None
         
     async def _notify_mode_change(self, from_mode: AppMode, to_mode: AppMode, 
-                                 transition_type: ModeTransitionType, data: Optional[Dict[str, Any]] = None):
+                                 transition_type: ModeTransitionType, data: dict[str, Any] | None = None):
         """Уведомляет о смене режима"""
         try:
             event = ModeEvent(
@@ -159,11 +165,11 @@ class ModeController:
         """Возвращает текущий режим"""
         return self.current_mode
         
-    def get_previous_mode(self) -> Optional[AppMode]:
+    def get_previous_mode(self) -> AppMode | None:
         """Возвращает предыдущий режим"""
         return self.previous_mode
         
-    def get_available_transitions(self) -> List[AppMode]:
+    def get_available_transitions(self) -> list[AppMode]:
         """Возвращает доступные переходы из текущего режима"""
         transitions = self.transitions.get(self.current_mode, [])
         return [t.to_mode for t in transitions]
@@ -172,7 +178,7 @@ class ModeController:
         """Возвращает метрики режимов"""
         return self.metrics
         
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Возвращает статус контроллера режимов"""
         current_time = time.time()
         time_in_current_mode = current_time - self.mode_start_time

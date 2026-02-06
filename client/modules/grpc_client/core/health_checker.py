@@ -5,8 +5,9 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Callable
-from .types import ConnectionState, HealthCheckConfig
+from typing import Any, Callable
+
+from .types import HealthCheckConfig
 
 logger = logging.getLogger(__name__)
 
@@ -14,16 +15,16 @@ logger = logging.getLogger(__name__)
 class HealthChecker:
     """Система проверки здоровья соединения"""
     
-    def __init__(self, config: Optional[HealthCheckConfig] = None):
+    def __init__(self, config: HealthCheckConfig | None = None):
         self.config = config or HealthCheckConfig()
-        self.task: Optional[asyncio.Task] = None
+        self.task: asyncio.Task[Any] | None = None
         self.failure_count = 0
         self.last_check_time = 0.0
         self.is_healthy = True
         
         # Callbacks
-        self.on_health_changed: Optional[Callable[[bool], None]] = None
-        self.on_connection_lost: Optional[Callable[[], None]] = None
+        self.on_health_changed: Callable[[bool], None] | None = None
+        self.on_connection_lost: Callable[[], None] | None = None
     
     def start(self, check_function: Callable[[], bool]):
         """Запускает health checker"""
@@ -94,7 +95,7 @@ class HealthChecker:
             logger.error(f"❌ Ошибка health check: {e}")
             self.failure_count += 1
     
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, Any]:
         """Возвращает статус health checker"""
         return {
             "enabled": self.config.enabled,

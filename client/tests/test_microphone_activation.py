@@ -10,18 +10,16 @@
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, Mock, MagicMock, patch
-from typing import Dict, Any, List
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from integration.core.event_bus import EventBus
-from integration.core.state_manager import ApplicationStateManager
+from config.unified_config_loader import InputProcessingConfig, KeyboardConfig
 from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus
+from integration.core.state_manager import ApplicationStateManager, AppMode
 from integration.integrations.input_processing_integration import InputProcessingIntegration
 from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
-from integration.core.state_manager import AppMode
-from config.unified_config_loader import InputProcessingConfig, KeyboardConfig
 
 
 class TestMicrophoneActivation:

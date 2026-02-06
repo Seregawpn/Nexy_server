@@ -7,10 +7,10 @@ Probes Contacts permission using CNContactStore.
 from __future__ import annotations
 
 import logging
-from typing import Literal, Optional, Tuple
+from typing import Literal
 
-from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from ..error_matrix import apply_normalization_to_evidence
+from ..types import PermissionId, ProbeEvidence, ProbeResult, StepConfig
 from .base import BaseProber
 
 logger = logging.getLogger(__name__)
@@ -22,15 +22,17 @@ class ContactsProber(BaseProber):
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.CONTACTS
-        self._last_result: Optional[bool] = None
+        self._last_result: bool | None = None
     
     async def trigger(self) -> None:
         """
         Trigger Contacts permission via CNContactStore.requestAccess().
         """
         try:
-            from Contacts import CNContactStore, CNEntityTypeContacts
-            import objc
+            from Contacts import (  # type: ignore[reportMissingImports, reportAttributeAccessIssue]
+                CNContactStore,  # type: ignore[reportAttributeAccessIssue]
+                CNEntityTypeContacts,  # type: ignore[reportAttributeAccessIssue]
+            )
             
             store = CNContactStore.alloc().init()
             
@@ -79,21 +81,21 @@ class ContactsProber(BaseProber):
             evidence=ev
         )
     
-    async def _capability_contacts(self) -> Tuple[Optional[bool], Optional[str], Optional[str], Optional[str]]:
+    async def _capability_contacts(self) -> tuple[bool | None, str | None, str | None, str | None]:
         """
         Test Contacts capability by checking authorization status.
         Returns (contacts_fetch_ok, domain, code, message).
         """
         try:
-            from Contacts import (
-                CNContactStore,
-                CNEntityTypeContacts,
-                CNAuthorizationStatusAuthorized,
-                CNAuthorizationStatusDenied,
-                CNAuthorizationStatusNotDetermined,
+            from Contacts import (  # type: ignore[reportMissingImports]
+                CNAuthorizationStatusAuthorized,  # type: ignore[reportAttributeAccessIssue]
+                CNAuthorizationStatusDenied,  # type: ignore[reportAttributeAccessIssue]
+                CNAuthorizationStatusNotDetermined,  # type: ignore[reportAttributeAccessIssue]
+                CNContactStore,  # type: ignore[reportAttributeAccessIssue]
+                CNEntityTypeContacts,  # type: ignore[reportAttributeAccessIssue]
             )
             
-            status = CNContactStore.authorizationStatusForEntityType_(CNEntityTypeContacts)
+            status = CNContactStore.authorizationStatusForEntityType_(CNEntityTypeContacts)  # type: ignore[reportAttributeAccessIssue]
             
             if status == CNAuthorizationStatusAuthorized:
                 logger.debug("[CONTACTS_PROBER] Authorized")

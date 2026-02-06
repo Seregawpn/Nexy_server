@@ -4,9 +4,10 @@
 Читает версию из unified_config.yaml и обновляет все модули
 """
 
-import re
-import yaml
 from pathlib import Path
+import re
+
+import yaml
 
 
 def get_version_from_config() -> str:

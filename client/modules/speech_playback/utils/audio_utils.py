@@ -2,8 +2,8 @@
 Утилиты для работы с аудио
 """
 
+
 import numpy as np
-from typing import Optional
 
 
 def resample_audio(audio_data: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:

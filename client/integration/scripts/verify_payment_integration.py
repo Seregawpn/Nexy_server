@@ -5,11 +5,10 @@ Verifies:
 1. Deep link handling -> payment.sync_requested
 2. Subscription status update -> local cache update
 """
-import sys
 import asyncio
-import logging
-from typing import Dict, Any, Callable
 from pathlib import Path
+import sys
+from typing import Any, Callable
 
 # Add project root and client directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
@@ -21,13 +20,13 @@ class MockEventBus:
         self.subscribers = {}
         self.published_events = []
 
-    async def subscribe(self, topic: str, handler: Callable, priority: int = 0):
+    async def subscribe(self, topic: str, handler: Callable[..., Any], priority: int = 0):
         if topic not in self.subscribers:
             self.subscribers[topic] = []
         self.subscribers[topic].append(handler)
         print(f"[MockEventBus] Subscribed to {topic}")
 
-    async def publish(self, topic: str, data: Dict[str, Any] = None):
+    async def publish(self, topic: str, data: dict[str, Any] | None = None):
         print(f"[MockEventBus] Publishing {topic}: {data}")
         self.published_events.append((topic, data))
         if topic in self.subscribers:
@@ -51,6 +50,8 @@ async def main():
     # From scripts/ to integration/integrations/payment_integration.py
     file_path = Path(__file__).parent.parent / "integrations" / "payment_integration.py"
     spec = importlib.util.spec_from_file_location("payment_integration", file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("Could not load payment_integration spec")
     module = importlib.util.module_from_spec(spec)
     sys.modules["payment_integration"] = module
     spec.loader.exec_module(module)

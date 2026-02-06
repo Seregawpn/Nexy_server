@@ -2,10 +2,11 @@
 Управление состоянием воспроизведения речи
 """
 
-from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from enum import Enum
 import time
+from typing import Any
+
 
 class PlaybackState(Enum):
     """Состояния воспроизведения"""
@@ -33,8 +34,8 @@ class ChunkInfo:
     data: bytes
     timestamp: float
     state: ChunkState = ChunkState.PENDING
-    duration: Optional[float] = None
-    error: Optional[str] = None
+    duration: float | None = None
+    error: str | None = None
 
 class StateManager:
     """Менеджер состояния воспроизведения"""
@@ -42,10 +43,10 @@ class StateManager:
     def __init__(self):
         self.current_state = PlaybackState.IDLE
         self.previous_state = None
-        self.state_history: List[PlaybackState] = []
+        self.state_history: list[PlaybackState] = []
         self.state_change_time = time.time()
-        self.chunks: Dict[str, ChunkInfo] = {}
-        self.current_chunk_id: Optional[str] = None
+        self.chunks: dict[str, ChunkInfo] = {}
+        self.current_chunk_id: str | None = None
         
     def set_state(self, new_state: PlaybackState):
         """Устанавливает новое состояние"""
@@ -81,18 +82,18 @@ class StateManager:
         self.chunks[chunk_id] = chunk
         return chunk
         
-    def get_chunk(self, chunk_id: str) -> Optional[ChunkInfo]:
+    def get_chunk(self, chunk_id: str) -> ChunkInfo | None:
         """Возвращает чанк по ID"""
         return self.chunks.get(chunk_id)
         
-    def update_chunk_state(self, chunk_id: str, state: ChunkState, error: str = None):
+    def update_chunk_state(self, chunk_id: str, state: ChunkState, error: str | None = None):
         """Обновляет состояние чанка"""
         if chunk_id in self.chunks:
             self.chunks[chunk_id].state = state
             if error:
                 self.chunks[chunk_id].error = error
                 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Возвращает статус"""
         return {
             "current_state": self.current_state.value,

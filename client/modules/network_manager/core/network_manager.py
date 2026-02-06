@@ -4,44 +4,41 @@ NetworkManager Module - Мониторинг состояния сети
 """
 
 import asyncio
-import time
 import logging
-from typing import Optional, Callable, Dict, Any, List
-from pathlib import Path
-import sys
+import time
+from typing import Any, Callable
+
+from config.unified_config_loader import unified_config
+
+from .config import NetworkManagerConfig
 
 # Пути уже добавлены в main.py - не дублируем
-
 from .types import (
-    NetworkStatus,
-    NetworkQuality,
-    ConnectionType,
-    NetworkConfig,
-    NetworkMetrics,
     NetworkDiagnostic,
-    NetworkTestResult,
     NetworkEvent,
-    NetworkManagerState
+    NetworkManagerState,
+    NetworkMetrics,
+    NetworkQuality,
+    NetworkStatus,
+    NetworkTestResult,
 )
-from .config import NetworkManagerConfig
-from config.unified_config_loader import unified_config
 
 logger = logging.getLogger(__name__)
 
 class NetworkManager:
     """Менеджер сети для мониторинга подключения и качества"""
     
-    def __init__(self, config: Optional[NetworkManagerConfig] = None):
+    def __init__(self, config: NetworkManagerConfig | None = None):
         self.config = config or self._get_config_from_unified()
         self.state = NetworkManagerState()
         self.state.config = self.config.to_network_config()
         
         # Состояние работы
         self._running = False
-        self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_task: asyncio.Task[Any] | None = None
         
         # Callbacks
-        self._callbacks: List[Callable[[NetworkEvent], None]] = []
+        self._callbacks: list[Callable[[NetworkEvent], None]] = []
         
     def _get_config_from_unified(self) -> NetworkManagerConfig:
         """Загружает конфигурацию из unified_config.yaml"""
@@ -53,7 +50,7 @@ class NetworkManager:
             logger.error(f"❌ Ошибка загрузки конфигурации network_manager: {e}")
             return NetworkManagerConfig()
         
-        logger.info(f"NetworkManager initialized with config: {self.config}")
+        return NetworkManagerConfig()
     
     async def initialize(self) -> bool:
         """Инициализация NetworkManager"""
@@ -132,7 +129,7 @@ class NetworkManager:
         start_time = time.time()
         is_connected = False
         
-        for host in self.config.ping_hosts:
+        for host in (self.config.ping_hosts or []):
             try:
                 if await self._test_tcp_connection(host, 53, self.config.ping_timeout):
                     is_connected = True
@@ -214,7 +211,7 @@ class NetworkManager:
         else:
             return NetworkQuality.VERY_POOR
     
-    async def _emit_status_change(self, old_status: NetworkStatus, new_status: NetworkStatus, details: Dict[str, Any]):
+    async def _emit_status_change(self, old_status: NetworkStatus, new_status: NetworkStatus, details: dict[str, Any]):
         """Отправка события изменения статуса"""
         event = NetworkEvent(
             event_type="network.status_changed",
@@ -264,7 +261,7 @@ class NetworkManager:
         
         logger.debug(f"Network quality changed: {new_quality.value if hasattr(new_quality, 'value') else str(new_quality)}")
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить текущий статус сети"""
         return {
             'status': self.state.current_status.value,
@@ -285,7 +282,7 @@ class NetworkManager:
     def get_diagnostic(self) -> NetworkDiagnostic:
         """Получить диагностику сети"""
         test_results = []
-        for host in self.config.ping_hosts:
+        for host in (self.config.ping_hosts or []):
             test_results.append(NetworkTestResult(
                 success=self.state.current_status == NetworkStatus.CONNECTED,
                 test_type="tcp_ping",

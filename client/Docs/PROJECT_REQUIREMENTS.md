@@ -85,7 +85,7 @@
 ### REQ-006: Порядок инициализации интеграций
 - **Домен**: Client Runtime / Initialization
 - **Критичность**: MUST
-- **Описание**: Интеграции инициализируются в фиксированной последовательности: InstanceManager → HardwareId → FirstRunPermissions → PermissionRestart → Tray → ModeManagement → InputProcessing → VoiceRecognition → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → SpeechPlayback → Signals → Updater → AutostartManager → WelcomeMessage → VoiceOverDucking.
+- **Описание**: Интеграции инициализируются в фиксированной последовательности: InstanceManager → Tray → HardwareId → FirstRunPermissions → PermissionRestart → ModeManagement → InputProcessing → VoiceRecognition → NetworkManager → InterruptManagement → ScreenshotCapture → GrpcClient → ActionExecution → Whatsapp → BrowserUse → BrowserProgress → SpeechPlayback → Signals → UpdateNotification → Updater → WelcomeMessage → VoiceOverDucking → Payment → AutostartManager.
 - **Источник**: `.cursorrules` раздел 4, `integration/core/simple_module_coordinator.py`
 - **Owner**: Tech Lead клиента
 - **Ожидаемый результат**: Все интеграции инициализируются в правильном порядке без ошибок
@@ -213,12 +213,12 @@
 ### REQ-018: Packaging Regression Checklist
 - **Домен**: Packaging
 - **Критичность**: MUST
-- **Описание**: Любые изменения, влияющие на рантайм, ресурсы, конфигурацию, зависимости или упаковку, сопровождаются заполненным Packaging Regression Checklist до ревью.
+- **Описание**: Любые изменения, влияющие на рантайм, ресурсы, конфигурацию, зависимости или упаковку, сопровождаются заполненным Packaging Regression Checklist до ревью. Для релизной готовности обязателен consolidated quality gate: `REQUIRE_BASEDPYRIGHT_IN_SCAN=true ./scripts/problem_scan_gate.sh` с `blocking_issues=0`.
 - **Источник**: `.cursorrules` раздел 11.2, `Docs/PACKAGING_FINAL_GUIDE.md`
 - **Owner**: Release/Delivery
 - **Ожидаемый результат**: Checklist заполнен, логи приложены к PR
 - **Implementation**: `Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md`
-- **Verification**: Проверка наличия checklist в PR
+- **Verification**: Проверка наличия checklist в PR, `scripts/problem_scan_gate.sh`, `scripts/run_release_suite.py`
 
 ---
 
@@ -362,10 +362,10 @@
 | REQ-012 | `integration/core/simple_module_coordinator.py` | `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py` | Permissions SWAT |
 | REQ-013 | `modules/permission_restart/macos/permissions_restart_handler.py` | Unit тесты | Permissions SWAT |
 | REQ-014 | `modules/permissions/first_run/*`, `modules/permission_restart/core/atomic_flag.py` | `scripts/clear_first_run_flags.py` | Permissions SWAT |
-| REQ-015 | `Docs/PACKAGING_FINAL_GUIDE.md`, `rebuild_from_scratch.sh` | `Docs/PRE_PACKAGING_VERIFICATION.md` | Release/Delivery |
+| REQ-015 | `Docs/PACKAGING_FINAL_GUIDE.md`, `packaging/build_final.sh` | `Docs/PRE_PACKAGING_VERIFICATION.md`, `scripts/run_release_suite.py` | Release/Delivery |
 | REQ-016 | `packaging/Nexy.spec`, `rebuild_from_scratch.sh` | Проверка содержимого `.app` | Release/Delivery |
 | REQ-017 | `packaging/build_final.sh` | `codesign -vvv`, `spctl -a -vv` | Release/Delivery |
-| REQ-018 | `Docs/PRE_PACKAGING_VERIFICATION.md` | Проверка checklist в PR | Release/Delivery |
+| REQ-018 | `Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md` | `scripts/problem_scan_gate.sh`, `scripts/run_release_suite.py`, проверка checklist в PR | Release/Delivery |
 | REQ-019 | `modules/tray_controller/macos/menu_handler.py`, `main.py` | `scripts/test_tray_termination.py` | Tray Controller Owner |
 | REQ-020 | `main.py`, `modules/tray_controller/macos/menu_handler.py` | `scripts/test_tray_termination.py` | Tray Controller Owner |
 | REQ-021 | `Docs/FEATURE_FLAGS.md` | Ревью кода | Tech Lead клиента |

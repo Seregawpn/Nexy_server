@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Проверка версий клиента и сервера"""
 
-import json
+from pathlib import Path
 import sys
+
 import requests
 import yaml
-from pathlib import Path
+
 
 def get_client_version():
     """Получает версию клиента из конфигурации"""

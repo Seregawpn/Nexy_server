@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional
 
 from .types import PermissionId, ProbeEvidence
 
@@ -27,9 +26,9 @@ class NormCategory(str, Enum):
 @dataclass(frozen=True)
 class MarkerSet:
     """Markers for error classification."""
-    denied_markers: List[str]
-    transient_markers: List[str]
-    misconfig_markers: List[str]
+    denied_markers: list[str]
+    transient_markers: list[str]
+    misconfig_markers: list[str]
 
 
 # Global defaults
@@ -67,7 +66,7 @@ DEFAULT_MARKERS = MarkerSet(
 
 
 # Per-permission enrichments
-PERMISSION_MARKERS: Dict[PermissionId, MarkerSet] = {
+PERMISSION_MARKERS: dict[PermissionId, MarkerSet] = {
     PermissionId.MICROPHONE: MarkerSet(
         denied_markers=["microphone", "ktccservicemicrophone", "avauthorizationstatusdenied"],
         transient_markers=["device", "sample rate", "format", "coreaudio", "overrun", "underrun"],
@@ -106,16 +105,16 @@ DENY_CONFIRM_COUNT = 3
 RESTART_SUSPECT_COUNT = 2
 
 
-def _lower(s: Optional[str]) -> str:
+def _lower(s: str | None) -> str:
     return (s or "").strip().lower()
 
 
 def normalize_error(
     *,
     permission: PermissionId,
-    domain: Optional[str],
-    code: Optional[str],
-    message: Optional[str],
+    domain: str | None,
+    code: str | None,
+    message: str | None,
 ) -> NormCategory:
     """Normalize an error to a category based on domain/code/message."""
     d = _lower(domain)

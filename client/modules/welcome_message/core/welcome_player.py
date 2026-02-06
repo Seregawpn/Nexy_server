@@ -3,11 +3,14 @@ Welcome Player — воспроизведение приветствия, сге
 """
 
 import logging
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable
+
 import numpy as np
 
-from .types import WelcomeConfig, WelcomeState, WelcomeResult
+from modules.grpc_client.core.grpc_client import GrpcClient
+
 from .audio_generator import WelcomeAudioGenerator
+from .types import WelcomeConfig, WelcomeResult, WelcomeState
 
 logger = logging.getLogger(__name__)
 
@@ -15,25 +18,41 @@ logger = logging.getLogger(__name__)
 class WelcomePlayer:
     """Плеер для воспроизведения приветственного сообщения"""
     
-    def __init__(self, config: WelcomeConfig):
+    def __init__(
+        self,
+        config: WelcomeConfig,
+        *,
+        grpc_client: GrpcClient | None = None,
+        grpc_server_name: str | None = None,
+        grpc_timeout: float | None = None,
+    ):
         self.config = config
         self.state = WelcomeState.IDLE
-        self.audio_generator = WelcomeAudioGenerator(config)
+        self.audio_generator = WelcomeAudioGenerator(
+            config,
+            grpc_client=grpc_client,
+            grpc_server_name=grpc_server_name,
+            grpc_timeout=grpc_timeout,
+        )
         
         # Коллбеки
-        self._on_started: Optional[Callable[[], None]] = None
-        self._on_completed: Optional[Callable[[WelcomeResult], None]] = None
-        self._on_error: Optional[Callable[[str], None]] = None
+        self._on_started: Callable[[], None] | None = None
+        self._on_completed: Callable[[WelcomeResult], None] | None = None
+        self._on_error: Callable[[str], None] | None = None
         
         # Последнее подготовленное аудио и метаданные
-        self._last_audio: Optional[np.ndarray] = None
-        self._last_metadata: Optional[Dict[str, Any]] = None
+        self._last_audio: np.ndarray | None = None
+        self._last_metadata: dict[str, Any] | None = None
+
+    def set_grpc_client(self, grpc_client: GrpcClient | None) -> None:
+        """Обновить gRPC клиент в генераторе аудио."""
+        self.audio_generator.set_grpc_client(grpc_client)
     
     def set_callbacks(
         self,
-        on_started: Optional[Callable[[], None]] = None,
-        on_completed: Optional[Callable[[WelcomeResult], None]] = None,
-        on_error: Optional[Callable[[str], None]] = None
+        on_started: Callable[[], None] | None = None,
+        on_completed: Callable[[WelcomeResult], None] | None = None,
+        on_error: Callable[[str], None] | None = None
     ):
         """Установить коллбеки для событий"""
         self._on_started = on_started
@@ -98,7 +117,9 @@ class WelcomePlayer:
                 return result
 
             logger.info("🔍 [WELCOME_PLAYER] Запрашиваю серверное аудио...")
+            logger.info("TRACE [WELCOME_PLAYER] calling _play_server_audio()")
             server_result = await self._play_server_audio()
+            logger.info(f"TRACE [WELCOME_PLAYER] _play_server_audio() returned: success={server_result.success}")
             logger.info(f"🔍 [WELCOME_PLAYER] Серверное аудио получено: success={server_result.success}, error={server_result.error}")
 
             if server_result.success:
@@ -162,6 +183,12 @@ class WelcomePlayer:
                 self._on_completed(result)
             
             return result
+        except BaseException as be:
+            logger.critical(f"🛑 [WELCOME_PLAYER] FATAL ERROR/CANCELLED: {type(be).__name__}: {be}")
+            import traceback
+            logger.critical(traceback.format_exc())
+            self.state = WelcomeState.ERROR
+            raise
     
     async def _play_server_audio(self) -> WelcomeResult:
         """Пытается воспроизвести приветствие, сгенерированное на сервере"""
@@ -234,7 +261,6 @@ class WelcomePlayer:
         """
         Запасной вариант: воспроизведение через macOS 'say'
         """
-        import subprocess
         import asyncio
 
         try:
@@ -257,8 +283,8 @@ class WelcomePlayer:
             await process.wait()
             
             if process.returncode != 0:
-                stderr = await process.stderr.read()
-                error_msg = f"Local 'say' command failed: {stderr.decode().strip()}"
+                stderr_data = await process.stderr.read() if process.stderr else b""
+                error_msg = f"Local 'say' command failed: {stderr_data.decode().strip()}"
                 logger.error(f"❌ [WELCOME_PLAYER] {error_msg}")
                 return WelcomeResult(False, "local", 0.0, error_msg)
 
@@ -278,11 +304,11 @@ class WelcomePlayer:
 
 
     
-    def get_audio_data(self) -> Optional[np.ndarray]:
+    def get_audio_data(self) -> np.ndarray | None:
         """Получить аудио данные для воспроизведения"""
         return self._last_audio
 
-    def get_audio_metadata(self) -> Optional[Dict[str, Any]]:
+    def get_audio_metadata(self) -> dict[str, Any] | None:
         """Получить метаданные последнего аудио"""
         return self._last_metadata
     

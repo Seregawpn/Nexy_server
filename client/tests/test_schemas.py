@@ -2,9 +2,9 @@
 Schema validation tests for unified_config.yaml and interaction_matrix.yaml
 """
 import json
-import os
-import pytest
 from pathlib import Path
+
+import pytest
 
 try:
     import jsonschema

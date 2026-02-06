@@ -37,6 +37,8 @@ try:
         kCGKeyboardEventKeycode,
         kCGEventFlagMaskShift,
         kCGEventFlagMaskControl,
+        kCGEventTapDisabledByTimeout,
+        kCGEventTapDisabledByUserInput,
     )
     QUARTZ_AVAILABLE = True
 except Exception as e:  # pragma: no cover
@@ -493,6 +495,18 @@ class QuartzKeyboardMonitor:
             # Создаем Event Tap
             def _tap_callback(proxy, event_type, event, refcon):
                 try:
+                    # Обработка отключения event tap (Secure Input или таймаут)
+                    if event_type == kCGEventTapDisabledByTimeout:
+                        self._tap_recovery_count += 1
+                        logger.warning(f"⚠️ Quartz tap disabled by timeout! Attempting recovery #{self._tap_recovery_count}...")
+                        CGEventTapEnable(self._tap, True)
+                        return None
+                    elif event_type == kCGEventTapDisabledByUserInput:
+                        self._tap_recovery_count += 1
+                        logger.warning(f"⚠️ Quartz tap disabled by user input (Secure Input)! Attempting recovery #{self._tap_recovery_count}...")
+                        CGEventTapEnable(self._tap, True)
+                        return None
+                        
                     # Обработка комбинации Control+N
                     if self._is_combo:
                         return self._handle_combo_event(event_type, event)
@@ -1027,5 +1041,15 @@ class QuartzKeyboardMonitor:
                 status["n_pressed"] = self._n_pressed
             else:
                 status["key_pressed"] = self.key_pressed
+            
+            # Добавляем расширенную диагностику для input_processing_integration
+            from Quartz import CGEventTapIsEnabled  # type: ignore
+            try:
+                status["tap_enabled"] = bool(CGEventTapIsEnabled(self._tap)) if self._tap else False
+            except Exception:
+                status["tap_enabled"] = False
+                
+            status["last_event_ts"] = self.last_event_time
+            status["tap_recovery_count"] = self._tap_recovery_count
             
             return status

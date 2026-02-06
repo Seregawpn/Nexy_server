@@ -2,8 +2,9 @@
 Типы данных для модуля автозапуска.
 """
 
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+
 
 class AutostartStatus(Enum):
     """Статус автозапуска."""

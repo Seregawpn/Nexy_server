@@ -2,13 +2,13 @@
 Базовый класс для всех интеграций
 """
 
-import logging
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+import logging
+from typing import Any
 
+from .error_handler import ErrorHandler
 from .event_bus import EventBus
 from .state_manager import ApplicationStateManager
-from .error_handler import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,8 @@ class BaseIntegration(ABC):
         self.state_manager = state_manager
         self.error_handler = error_handler
         self.name = name
+        self.provides: set[str] = set()
+        self.requires: set[str] = set()
         
         # Состояние интеграции
         self._initialized = False
@@ -154,7 +156,7 @@ class BaseIntegration(ABC):
             logger.error(f"Error handler failed for {self.name}: {handler_error}")
             logger.error(f"Original error in {self.name} ({where}): {e}")
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус интеграции"""
         return {
             "name": self.name,

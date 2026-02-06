@@ -4,25 +4,21 @@ NetworkManagerIntegration - Интеграция NetworkManager с EventBus
 """
 
 import asyncio
-import logging
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
-
-# Пути уже добавлены в main.py - не дублируем
-
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-
-# Импорты модуля NetworkManager
-from modules.network_manager.core.types import NetworkEvent, NetworkStatus
-from modules.network_manager.core.network_manager import NetworkManager
-from modules.network_manager.core.config import NetworkManagerConfig
+from typing import Any
 
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
+from integration.core.error_handler import ErrorHandler
 
+# Пути уже добавлены в main.py - не дублируем
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_manager import ApplicationStateManager
 from integration.utils.logging_setup import get_logger
+from modules.network_manager.core.config import NetworkManagerConfig
+from modules.network_manager.core.network_manager import NetworkManager
+
+# Импорты модуля NetworkManager
+from modules.network_manager.core.types import NetworkEvent, NetworkStatus
 
 logger = get_logger(__name__)
 
@@ -36,7 +32,7 @@ class NetworkManagerIntegration:
         event_bus: EventBus,
         state_manager: ApplicationStateManager,
         error_handler: ErrorHandler,
-        config: Optional[NetworkManagerConfig] = None,
+        config: NetworkManagerConfig | None = None,
     ):
         self.event_bus = event_bus
         self.state_manager = state_manager
@@ -62,7 +58,7 @@ class NetworkManagerIntegration:
         self.config = config
         
         # NetworkManager экземпляр
-        self._manager: Optional[NetworkManager] = None
+        self._manager: NetworkManager | None = None
         self._initialized = False
         self._running = False
         
@@ -275,7 +271,7 @@ class NetworkManagerIntegration:
             else:
                 logger.error(f"Error in NetworkManagerIntegration.event_handler: {e}")
     
-    async def _update_tray_tooltip(self, status: Dict[str, Any]):
+    async def _update_tray_tooltip(self, status: dict[str, Any]):
         """Обновление tooltip в трее с информацией о сети"""
         try:
             # Формируем tooltip с информацией о сети
@@ -294,7 +290,7 @@ class NetworkManagerIntegration:
         except Exception as e:
             logger.debug(f"Failed to update tray tooltip: {e}")
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус NetworkManagerIntegration"""
         if not self._manager:
             return {

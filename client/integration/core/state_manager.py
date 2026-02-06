@@ -3,8 +3,8 @@ ApplicationStateManager - Управление состоянием прилож
 """
 
 import logging
-from typing import Dict, Any, Optional
 import threading
+from typing import Any
 
 """
 NOTE: AppMode is imported from the centralized mode_management module to avoid
@@ -19,7 +19,6 @@ except Exception:
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 # New imports for StateKeys and get_logger
-from integration.utils.logging_setup import get_logger
 from integration.core.state_keys import StateKeys  # type: ignore[reportMissingImports]
 
 # Экспортируем AppMode для использования в других модулях
@@ -38,7 +37,7 @@ class ApplicationStateManager:
         self.mode_history = []
         self.state_data = {}
         # КРИТИЧНО: Единый источник истины для session_id
-        self.current_session_id: Optional[str] = None
+        self.current_session_id: str | None = None
         # EventBus (необязателен). Устанавливается координатором.
         self._event_bus = None
         self._loop = None  # основной asyncio loop, на который публикуем события
@@ -63,7 +62,7 @@ class ApplicationStateManager:
         except Exception:
             self._loop = None
         
-    def set_mode(self, mode: AppMode, session_id: Optional[str] = None):
+    def set_mode(self, mode: AppMode, session_id: str | None = None):
         """Установить режим приложения
         
         Публикует app.mode_changed если:
@@ -161,7 +160,7 @@ class ApplicationStateManager:
         except Exception as e:
             logger.error(f"❌ StateManager: Не удалось опубликовать события: {e}")
     
-    def update_session_id(self, session_id: Optional[str]) -> bool:
+    def update_session_id(self, session_id: str | None) -> bool:
         """
         Обновить session_id БЕЗ публикации app.mode_changed.
         
@@ -189,7 +188,7 @@ class ApplicationStateManager:
             logger.error(f"❌ Ошибка обновления session_id: {e}")
             return False
     
-    def get_current_session_id(self) -> Optional[str]:
+    def get_current_session_id(self) -> str | None:
         """Получить текущий session_id"""
         with self._lock:
             return self.current_session_id
@@ -199,7 +198,7 @@ class ApplicationStateManager:
         with self._lock:
             return self.current_mode
     
-    def get_previous_mode(self) -> Optional[AppMode]:
+    def get_previous_mode(self) -> AppMode | None:
         """Получить предыдущий режим"""
         with self._lock:
             return self.previous_mode
@@ -219,7 +218,7 @@ class ApplicationStateManager:
         with self._lock:
             return self.state_data.get(key, default)
     
-    def get_mode_history(self, limit: int = 10) -> list:
+    def get_mode_history(self, limit: int = 10) -> list[dict[str, Any]]:
         """Получить историю режимов"""
         with self._lock:
             return self.mode_history[-limit:]
@@ -253,7 +252,7 @@ class ApplicationStateManager:
         import time
         return time.time()
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус менеджера состояния"""
         return {
             "current_mode": self.current_mode.value,

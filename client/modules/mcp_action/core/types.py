@@ -3,7 +3,6 @@ Types for MCP Action Executor.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -22,6 +21,6 @@ class McpActionResult:
 
     success: bool
     message: str
-    error: Optional[str] = None
-    app_name: Optional[str] = None
+    error: str | None = None
+    app_name: str | None = None
 

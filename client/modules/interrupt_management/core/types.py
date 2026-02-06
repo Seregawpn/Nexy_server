@@ -2,9 +2,10 @@
 Типы данных для управления прерываниями
 """
 
-from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from enum import Enum
+from typing import Any
+
 
 class InterruptType(Enum):
     """Типы прерываний"""
@@ -37,9 +38,9 @@ class InterruptEvent:
     source: str
     timestamp: float
     status: InterruptStatus = InterruptStatus.PENDING
-    data: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-    result: Optional[Any] = None
+    data: dict[str, Any] | None = None
+    error: str | None = None
+    result: Any | None = None
 
 @dataclass
 class InterruptConfig:
@@ -58,8 +59,8 @@ class InterruptMetrics:
     successful_interrupts: int = 0
     failed_interrupts: int = 0
     average_processing_time: float = 0.0
-    interrupts_by_type: Dict[InterruptType, int] = None
-    interrupts_by_priority: Dict[InterruptPriority, int] = None
+    interrupts_by_type: dict[InterruptType, int] | None = None
+    interrupts_by_priority: dict[InterruptPriority, int] | None = None
     
     def __post_init__(self):
         if self.interrupts_by_type is None:

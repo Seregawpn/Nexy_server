@@ -2,27 +2,24 @@
 Изолированный тест для проверки логики прерывания воспроизведения при SHORT_PRESS.
 
 Проверяет:
-1. Публикацию playback.cancelled при SHORT_PRESS в PROCESSING режиме
+1. Публикацию interrupt.request при SHORT_PRESS в PROCESSING режиме
 2. Обработку прерывания в SpeechPlaybackIntegration
 3. Идемпотентность обработки (безопасность множественных вызовов)
 """
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from typing import Dict, Any
+from unittest.mock import Mock
 
 import pytest
 import pytest_asyncio
 
-from integration.core.event_bus import EventBus
-from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus
+from integration.core.state_manager import ApplicationStateManager, AppMode
 from integration.integrations.input_processing_integration import InputProcessingIntegration
 from integration.integrations.speech_playback_integration import SpeechPlaybackIntegration
-from integration.core.state_manager import AppMode
 from modules.speech_playback.core.state import PlaybackState
-
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +93,10 @@ class TestInterruptPlayback:
             pass
 
     @pytest.mark.asyncio
-    async def test_short_press_publishes_playback_cancelled_in_processing(
+    async def test_short_press_publishes_interrupt_request_in_processing(
         self, input_integration, state_manager, event_bus
     ):
-        """Тест: SHORT_PRESS в PROCESSING режиме публикует playback.cancelled"""
+        """Тест: SHORT_PRESS в PROCESSING режиме публикует interrupt.request"""
         # Устанавливаем PROCESSING режим
         state_manager.set_mode(AppMode.PROCESSING)
         
@@ -125,8 +122,8 @@ class TestInterruptPlayback:
             payload = event.get("data") if isinstance(event, dict) else event
             published_events.append((event_type, payload))
         
-        # Подписываемся на playback.cancelled для проверки
-        await event_bus.subscribe("playback.cancelled", capture_event)
+        # Подписываемся на interrupt.request для проверки
+        await event_bus.subscribe("interrupt.request", capture_event)
         
         # Создаем событие SHORT_PRESS
         from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
@@ -144,25 +141,22 @@ class TestInterruptPlayback:
         # Даем время на обработку асинхронных событий
         await asyncio.sleep(0.1)
         
-        # Проверяем, что playback.cancelled был опубликован
-        playback_cancelled_events = [
+        # Проверяем, что interrupt.request был опубликован
+        interrupt_events = [
             (event_type, payload)
             for event_type, payload in published_events
-            if event_type == "playback.cancelled" or (isinstance(payload, dict) and payload.get("reason") == "keyboard")
+            if event_type == "interrupt.request"
         ]
         
-        assert len(playback_cancelled_events) > 0, f"playback.cancelled должен быть опубликован. Полученные события: {published_events}"
+        assert len(interrupt_events) > 0, f"interrupt.request должен быть опубликован. Полученные события: {published_events}"
         
         # Проверяем содержимое события
-        event_type, payload = playback_cancelled_events[0]
+        event_type, payload = interrupt_events[0]
         if isinstance(payload, dict):
-            assert payload.get("reason") == "keyboard"
-            assert payload.get("source") == "input_processing"
-            # КРИТИЧНО: Проверяем как числовой, так и строковый формат (state_manager хранит строки, _get_active_session_id конвертирует в float)
-            session_id = payload.get("session_id")
-            assert session_id == test_session_id or session_id == str(test_session_id), f"session_id должен быть {test_session_id} или {str(test_session_id)}, получен {session_id}"
+            assert payload.get("source") == "keyboard"
+            assert payload.get("type") == "speech_stop"
         
-        logger.info("✅ Тест пройден: playback.cancelled опубликован при SHORT_PRESS в PROCESSING")
+        logger.info("✅ Тест пройден: interrupt.request опубликован при SHORT_PRESS в PROCESSING")
 
     @pytest.mark.asyncio
     async def test_speech_playback_handles_interrupt_idempotently(
@@ -175,7 +169,7 @@ class TestInterruptPlayback:
         mock_player.state_manager.current_state = PlaybackState.PLAYING
         mock_player.stop_playback = Mock(return_value=True)
         
-        speech_playback_integration._player = mock_player
+        speech_playback_integration._avf_player = mock_player
         # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
         # Используем числовой session_id (timestamp), так как state_manager хранит строки
         test_session_id = 1234567890.0
@@ -215,7 +209,7 @@ class TestInterruptPlayback:
         mock_player.state_manager.current_state = PlaybackState.IDLE
         mock_player.stop_playback = Mock(return_value=False)
         
-        speech_playback_integration._player = mock_player
+        speech_playback_integration._avf_player = mock_player
         # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
         # Используем числовой session_id (timestamp), так как state_manager хранит строки
         test_session_id = 1234567890.0
@@ -253,7 +247,7 @@ class TestInterruptPlayback:
         mock_player.state_manager.current_state = PlaybackState.PLAYING
         mock_player.stop_playback = Mock(side_effect=Exception("Test error"))
         
-        speech_playback_integration._player = mock_player
+        speech_playback_integration._avf_player = mock_player
         # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
         # Используем числовой session_id (timestamp), так как state_manager хранит строки
         test_session_id = 1234567890.0
@@ -281,4 +275,3 @@ class TestInterruptPlayback:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

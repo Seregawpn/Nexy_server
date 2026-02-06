@@ -5,8 +5,8 @@ scripts/verify_rule_coverage.py can validate coverage.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -22,12 +22,14 @@ from integration.core.gateways import (
     decide_route_manager_reconcile,
     decide_start_listening,
     decide_update_launch,
+    decide_whatsapp_action,
 )
 from integration.core.selectors import (
     DeviceStatus,
     NetworkStatus,
     PermissionStatus,
     Snapshot,
+    WhatsappStatus,
 )
 
 try:
@@ -45,6 +47,7 @@ GATEWAYS = [
     "decide_permission_restart_wait",
     "decide_route_manager_reconcile",
     "decide_update_launch",
+    "decide_whatsapp_action",
 ]
 
 DECISIONS = [
@@ -57,6 +60,7 @@ DECISIONS = [
     "abort_permission_restart",
     "abort_update_launch",
     "abort_integration_startup",
+    "notify_user",
 ]
 
 
@@ -71,6 +75,7 @@ def _make_snapshot(
     app_mode: AppMode = AppMode.SLEEPING,
     restart_pending: bool = False,
     update_in_progress: bool = False,
+    whatsapp_status: WhatsappStatus = WhatsappStatus.DISCONNECTED,
 ) -> Snapshot:
     return Snapshot(
         perm_mic=perm_mic,
@@ -82,6 +87,7 @@ def _make_snapshot(
         app_mode=app_mode,
         restart_pending=restart_pending,
         update_in_progress=update_in_progress,
+        whatsapp_status=whatsapp_status,
     )
 
 
@@ -154,3 +160,8 @@ def test_decide_route_manager_reconcile_retry_backoff() -> None:
 def test_decide_update_launch_abort_update_launch() -> None:
     snapshot = _make_snapshot(app_mode=AppMode.LISTENING, update_in_progress=True)
     assert decide_update_launch(snapshot) == Decision.ABORT
+
+
+def test_decide_whatsapp_action_notify_user() -> None:
+    snapshot = _make_snapshot(whatsapp_status=WhatsappStatus.DISCONNECTED)
+    assert decide_whatsapp_action(snapshot) == Decision.NOTIFY_USER

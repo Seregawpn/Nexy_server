@@ -9,14 +9,14 @@
 """
 
 import logging
-import sqlite3
-import re
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+import re
+import sqlite3
+from typing import Any
 
 # Импортируем новый ContactResolver
 try:
-    from contact_resolver import resolve_contact
+    from .contact_resolver import resolve_contact
 except ImportError:
     # Если модуль не найден, используем простую функцию
     def resolve_contact(identifier, messages_conn=None):
@@ -38,7 +38,7 @@ def get_db_path() -> Path:
     return MESSAGES_DB_PATH
 
 
-def check_db_access() -> tuple[bool, Optional[str]]:
+def check_db_access() -> tuple[bool, str | None]:
     """
     Проверяет доступность базы данных Messages.
     
@@ -76,7 +76,7 @@ def check_db_access() -> tuple[bool, Optional[str]]:
     return True, None
 
 
-def connect_db() -> Optional[sqlite3.Connection]:
+def connect_db() -> sqlite3.Connection | None:
     """
     Подключается к базе данных Messages.
     
@@ -132,7 +132,7 @@ def get_tables(conn: sqlite3.Connection) -> list[str]:
         return []
 
 
-def get_table_schema(conn: sqlite3.Connection, table_name: str) -> list[dict]:
+def get_table_schema(conn: sqlite3.Connection, table_name: str) -> list[dict[str, Any]]:
     """
     Возвращает схему таблицы (список колонок с их типами).
     
@@ -165,7 +165,7 @@ def get_table_schema(conn: sqlite3.Connection, table_name: str) -> list[dict]:
         return []
 
 
-def test_connection() -> dict:
+def test_connection() -> dict[str, Any]:
     """
     Тестирует подключение к базе данных и возвращает информацию о ней.
     
@@ -219,7 +219,7 @@ def test_connection() -> dict:
     return result
 
 
-def find_contact_exact(conn: sqlite3.Connection, query: str) -> List[Dict[str, Any]]:
+def find_contact_exact(conn: sqlite3.Connection, query: str) -> list[dict[str, Any]]:
     """
     Находит контакт по точному совпадению номера телефона или email.
     
@@ -285,7 +285,7 @@ def find_contact_exact(conn: sqlite3.Connection, query: str) -> List[Dict[str, A
         return []
 
 
-def find_contact_by_name(conn: sqlite3.Connection, name: str) -> List[Dict[str, Any]]:
+def find_contact_by_name(conn: sqlite3.Connection, name: str) -> list[dict[str, Any]]:
     """
     Находит контакты по имени (поиск в display_name).
     
@@ -339,7 +339,7 @@ def find_contact_by_name(conn: sqlite3.Connection, name: str) -> List[Dict[str, 
         return []
 
 
-def find_contact(conn: sqlite3.Connection, query: str) -> List[Dict[str, Any]]:
+def find_contact(conn: sqlite3.Connection, query: str) -> list[dict[str, Any]]:
     """
     Универсальная функция поиска контакта.
     Пытается найти по номеру/email, если не найдено - ищет по имени.
@@ -361,7 +361,7 @@ def find_contact(conn: sqlite3.Connection, query: str) -> List[Dict[str, Any]]:
     return contacts
 
 
-def format_contact_info(contact: Dict[str, Any]) -> str:
+def format_contact_info(contact: dict[str, Any]) -> str:
     """
     Форматирует информацию о контакте для вывода.
     
@@ -400,7 +400,7 @@ def format_contact_info(contact: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def get_last_message(conn: sqlite3.Connection) -> Optional[Dict[str, Any]]:
+def get_last_message(conn: sqlite3.Connection) -> dict[str, Any] | None:
     """
     Получает последнее сообщение из всех чатов.
     
@@ -477,7 +477,7 @@ def get_last_message(conn: sqlite3.Connection) -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_phone_with_last_message(conn: sqlite3.Connection, phone_numbers: List[str]) -> Optional[str]:
+def get_phone_with_last_message(conn: sqlite3.Connection, phone_numbers: list[str]) -> str | None:
     """
     Определяет номер телефона, от которого было последнее сообщение.
     Используется для умного выбора номера при нескольких номерах у контакта.
@@ -531,7 +531,7 @@ def get_phone_with_last_message(conn: sqlite3.Connection, phone_numbers: List[st
         return phone_numbers[0] if phone_numbers else None
 
 
-def get_messages_by_contact(conn: sqlite3.Connection, contact_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+def get_messages_by_contact(conn: sqlite3.Connection, contact_id: str, limit: int = 10) -> list[dict[str, Any]]:
     """
     Получает последние сообщения из чата с контактом.
     
@@ -657,7 +657,7 @@ def format_message_date_nice(timestamp_ns: int) -> tuple[str, str]:
         return "Unknown", "date"
 
 
-def extract_text_from_attributed_body(attributed_body: bytes) -> Optional[str]:
+def extract_text_from_attributed_body(attributed_body: bytes) -> str | None:
     """
     Извлекает текст из attributedBody (NSKeyedArchiver формат).
     
@@ -906,7 +906,7 @@ def format_date_header(date_str: str) -> str:
         return date_str
 
 
-def format_messages(messages: List[Dict[str, Any]], contact_name: str = None, group_by_date: bool = True, show_chat_info: bool = True, messages_conn: Optional[sqlite3.Connection] = None) -> str:
+def format_messages(messages: list[dict[str, Any]], contact_name: str | None = None, group_by_date: bool = True, show_chat_info: bool = True, messages_conn: sqlite3.Connection | None = None) -> str:
     """
     Форматирует список сообщений для вывода с улучшенным форматированием.
     

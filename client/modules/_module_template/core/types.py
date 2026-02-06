@@ -3,9 +3,10 @@ Template Types
 Dataclasses and Enums for the module.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Dict, Any, Optional
+from typing import Any
+
 
 class TemplateState(Enum):
     """Module operational states"""
@@ -26,8 +27,8 @@ class TemplateConfig:
 class TemplateResult:
     """Standardized result object"""
     success: bool
-    data: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
+    data: dict[str, Any] | None = None
+    error: str | None = None
 
 class TemplateEvent:
     """

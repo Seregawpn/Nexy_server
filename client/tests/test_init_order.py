@@ -6,9 +6,9 @@ and first_run_permissions/permission_restart are sequenced for the gate mechanis
 See .cursorrules section 4 for the required order.
 """
 import ast
-import inspect
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def extract_startup_order_from_code() -> list:
