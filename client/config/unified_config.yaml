@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.1.16
+  version: 1.6.1.14
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -281,8 +281,8 @@ integrations:
         criticality: hard
         
       accessibility:
-        mode: open_settings
-        settings_target: accessibility
+        mode: auto_dialog
+        # settings_target: accessibility  <-- disabled to prevent auto-open
         grace_s: 13.0
         poll_s: 2.0
         waiting_long_after_s: 300.0
@@ -608,6 +608,7 @@ browser_use:
   log_terminal: true
   keep_browser_open: true
   gemini_api_key: "AIzaSyBB6iKD1oeW_GdidzhBgx68s-OsCRDpJiA"
+  gemini_model: "gemini-3-flash-preview"  # User explicitly requested gemini-3-flash-preview
 payment_use:
   enabled: true  # F-2025-018-payment-use enabled
   log_steps: true
