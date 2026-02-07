@@ -26,7 +26,19 @@ class BrowserUseIntegration:
                      "message": message
                  })
 
-             await self.module.initialize(notification_callback=notify_user)
+             async def tts_feedback(text: str, session_id: str):
+                 # Text is now context-aware (e.g. "Analyzing google.com...")
+                 # We can just use it directly, or add variety if it's generic
+                 await self.event_bus.publish("grpc.tts_request", {
+                     "text": text,
+                     "session_id": session_id,
+                     "source": "browser_latency_mask"
+                 })
+
+             await self.module.initialize(
+                 notification_callback=notify_user,
+                 tts_callback=tts_feedback
+             )
              
              await self.event_bus.subscribe("browser.use.request", self._on_browser_use_request, EventPriority.HIGH)
              await self.event_bus.subscribe("browser.close.request", self._on_browser_close_request, EventPriority.HIGH)

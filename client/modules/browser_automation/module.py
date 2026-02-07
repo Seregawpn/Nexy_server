@@ -69,11 +69,12 @@ class GeminiLLMAdapter:
     browser-use expects: provider, name, model properties and ainvoke method.
     """
     
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", tts_callback=None):
         from langchain_google_genai import ChatGoogleGenerativeAI
         self._llm = ChatGoogleGenerativeAI(model=model, api_key=api_key)
         self._model = model
         self._api_key = api_key
+        self.tts_callback = tts_callback
     
     @property
     def provider(self) -> str:
@@ -98,37 +99,39 @@ class GeminiLLMAdapter:
         This converts browser-use message format to langchain format and back.
         Uses with_structured_output for proper schema binding when output_format is provided.
         """
-        from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
-        from langchain_core.messages import AIMessage, HumanMessage
-        from langchain_core.messages import SystemMessage as LCSystemMessage
-        
-        # Convert browser-use messages to langchain format
-        lc_messages = []
-        for msg in messages:
-            msg_type = type(msg).__name__
-            if msg_type == 'SystemMessage':
-                lc_messages.append(LCSystemMessage(content=msg.content))
-            elif msg_type == 'UserMessage':
-                # Handle content which can be string or list of content parts
-                if isinstance(msg.content, str):
-                    lc_messages.append(HumanMessage(content=msg.content))
-                else:
-                    # Complex content with images etc - convert to text for now
-                    text_parts = []
-                    for part in msg.content:
-                        if hasattr(part, 'text'):
-                            text_parts.append(part.text)
-                        elif hasattr(part, 'source'):
-                            text_parts.append("[Image]")
-                    lc_messages.append(HumanMessage(content=' '.join(text_parts) if text_parts else str(msg.content)))
-            elif msg_type == 'AssistantMessage':
-                lc_messages.append(AIMessage(content=msg.content if isinstance(msg.content, str) else str(msg.content)))
-            else:
-                # Fallback
-                lc_messages.append(HumanMessage(content=str(getattr(msg, 'content', str(msg)))))
-        
-        # Call the underlying LLM
         try:
+            from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
+            from langchain_core.messages import AIMessage, HumanMessage
+            from langchain_core.messages import SystemMessage as LCSystemMessage
+            
+            # Convert browser-use messages to langchain format
+            lc_messages = []
+            for msg in messages:
+                msg_type = type(msg).__name__
+                if msg_type == 'SystemMessage':
+                    lc_messages.append(LCSystemMessage(content=msg.content))
+                elif msg_type == 'UserMessage':
+                    # Handle content which can be string or list of content parts
+                    if isinstance(msg.content, str):
+                        lc_messages.append(HumanMessage(content=msg.content))
+                    else:
+                        # Complex content with images etc - convert to text for now
+                        text_parts = []
+                        for part in msg.content:
+                            if hasattr(part, 'text'):
+                                text_parts.append(part.text)
+                            elif hasattr(part, 'source'):
+                                text_parts.append("[Image]")
+                        lc_messages.append(HumanMessage(content=' '.join(text_parts) if text_parts else str(msg.content)))
+                elif msg_type == 'AssistantMessage':
+                    lc_messages.append(AIMessage(content=msg.content if isinstance(msg.content, str) else str(msg.content)))
+                else:
+                    # Fallback
+                    lc_messages.append(HumanMessage(content=str(getattr(msg, 'content', str(msg)))))
+
+                # NOTE: "Analyzing page..." TTS feedback removed as per user request.
+                # Only final action descriptions should be spoken, not intermediate status.
+
             # Filter out kwargs that ChatGoogleGenerativeAI doesn't support
             unsupported_kwargs = {'session_id', 'run_id', 'run_manager', 'metadata', 'tags'}
             filtered_kwargs = {k: v for k, v in kwargs.items() if k not in unsupported_kwargs}
@@ -139,8 +142,7 @@ class GeminiLLMAdapter:
             # Use structured output if format is provided (this is the key fix!)
             if output_format is not None:
                 try:
-                    # Use with_structured_output for proper schema binding with Gemini
-                    structured_llm = self._llm.with_structured_output(output_format)
+                    structured_llm = self._llm.with_structured_output(output_format)          
                     completion = await structured_llm.ainvoke(lc_messages, **filtered_kwargs)
                     logger.debug(f"[{FEATURE_ID}] Structured output parsed successfully: {type(completion).__name__} -> {completion}")
                 except Exception as struct_err:
@@ -228,16 +230,18 @@ class BrowserUseModule:
         self._persistent_session = None
         self._keep_browser_open = False
 
-    async def initialize(self, config: dict[str, Any] | None = None, notification_callback: Any | None = None) -> None:
+    async def initialize(self, config: dict[str, Any] | None = None, notification_callback: Any | None = None, tts_callback: Any | None = None) -> None:
         """
         Initialize the module.
         
         Args:
             config: Module configuration (optional)
             notification_callback: Async callback(message: str) for user notifications
+            tts_callback: Async callback(text: str, session_id: str) for immediate audio feedback
         """
         try:
             self.notification_callback = notification_callback
+            self.tts_callback = tts_callback
             
             # Load config from unified_config just in case
             if config is None:
@@ -636,7 +640,7 @@ class BrowserUseModule:
     ) -> AsyncIterator[dict[str, Any]]:
         # Get/Create LLM
         try:
-            llm = self._create_llm()
+            llm = self._create_llm(self.tts_callback)
         except Exception as e:
             yield {
                 'type': 'BROWSER_TASK_FAILED',
@@ -788,7 +792,7 @@ class BrowserUseModule:
         ]
         return any(signal in message for signal in retry_signals)
 
-    def _create_llm(self):
+    def _create_llm(self, tts_callback=None):
         """Создание LLM для Agent, совместимого с browser-use Protocol"""
         import os
         
@@ -820,7 +824,7 @@ class BrowserUseModule:
             model_name = "gemini-2.5-flash" # Fallback default 
         
         # Use adapter to make ChatGoogleGenerativeAI compatible with browser-use
-        return GeminiLLMAdapter(api_key=api_key, model=model_name)
+        return GeminiLLMAdapter(api_key=api_key, model=model_name, tts_callback=tts_callback)
 
     def _get_agent_config(self, config_preset: str) -> dict[str, Any]:
         base_config = {
