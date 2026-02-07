@@ -1,12 +1,12 @@
 """
 Edge TTS Provider для генерации речи
 
-Генерирует аудио в точно таком же формате, как Azure TTS для полной совместимости:
-- Формат: Raw PCM (без заголовков, как в Azure TTS после удаления RIFF заголовка)
-- Sample Rate: 24kHz (Riff24Khz16BitMonoPcm)
+Генерирует аудио в едином формате проекта (единый источник истины):
+- Формат: Raw PCM (без заголовков)
+- Sample Rate: 48kHz (по unified_config)
 - Bit Depth: 16-bit
 - Channels: Mono (1 канал)
-- Разбиение на чанки: по streaming_chunk_size (как в Azure TTS)
+- Разбиение на чанки: по streaming_chunk_size
 
 Это обеспечивает полную совместимость формата аудио между Edge TTS и Azure TTS провайдерами.
 """
@@ -14,7 +14,9 @@ Edge TTS Provider для генерации речи
 import logging
 import io
 import asyncio
-from typing import AsyncGenerator, Dict, Any, Optional
+import sys
+from array import array
+from typing import AsyncGenerator, Dict, Any, Optional, List
 from integrations.core.universal_provider_interface import UniversalProviderInterface
 
 logger = logging.getLogger(__name__)
@@ -53,9 +55,9 @@ class EdgeTTSProvider(UniversalProviderInterface):
     Бесплатный провайдер для преобразования текста в речь с поддержкой
     streaming и различных форматов аудио. Не требует API ключей.
     
-    Генерирует аудио в точно таком же формате, как Azure TTS:
-    - Raw PCM без заголовков (24kHz, 16-bit, mono)
-    - Совместимый формат для seamless переключения между провайдерами
+    Генерирует аудио в едином формате проекта:
+    - Raw PCM без заголовков (48kHz, 16-bit, mono)
+    - Совместимый формат для всех TTS путей
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -78,11 +80,10 @@ class EdgeTTSProvider(UniversalProviderInterface):
         self.pitch = config.get('pitch', '+0Hz')
         
         # Аудио настройки - используем централизованную конфигурацию
-        # По умолчанию используем те же параметры, что и Azure TTS для совместимости
         self.audio_format = config.get('audio_format', 'pcm')
-        self.sample_rate = config.get('sample_rate', 24000)  # 24kHz как в Azure TTS
-        self.channels = config.get('channels', 1)  # Mono как в Azure TTS
-        self.bits_per_sample = config.get('bits_per_sample', 16)  # 16-bit как в Azure TTS
+        self.sample_rate = config.get('sample_rate', 48000)  # Единый формат проекта
+        self.channels = config.get('channels', 1)
+        self.bits_per_sample = config.get('bits_per_sample', 16)
         
         # Настройки streaming - для разбиения на чанки
         self.streaming_chunk_size = config.get('streaming_chunk_size', 4096)
@@ -132,8 +133,8 @@ class EdgeTTSProvider(UniversalProviderInterface):
         """
         ✅ ОПТИМИЗИРОВАНО: Streaming обработка текста в речь
         
-        Генерирует аудио в точно таком же формате, как Azure TTS:
-        - 24kHz sample rate (Riff24Khz16BitMonoPcm)
+        Генерирует аудио в едином формате проекта:
+        - 48kHz sample rate
         - 16-bit depth
         - Mono (1 channel)
         - Raw PCM без заголовков
@@ -147,74 +148,98 @@ class EdgeTTSProvider(UniversalProviderInterface):
         Yields:
             Chunks аудио данных (PCM формат)
         """
-        try:
-            if not self.is_initialized:
-                raise Exception("Edge TTS Provider not initialized")
-            
-            assert edge_tts is not None, "edge_tts должен быть доступен при is_initialized=True"
-            
-            logger.info(f"EdgeTTS → generating speech for text: {input_data[:100]}...")
-            
-            # Создаем Communicate объект
-            communicate = edge_tts.Communicate(
-                text=input_data,
-                voice=self.voice_name,
-                rate=self.rate,
-                volume=self.volume,
-                pitch=self.pitch
-            )
-            
-            # ✅ ОПТИМИЗАЦИЯ: Streaming конвертация MP3→PCM
-            if self.convert_to_pcm and FFMPEG_AVAILABLE:
-                # Используем async streaming через ffmpeg
-                async for pcm_chunk in self._stream_mp3_to_pcm_async(communicate):
-                    yield pcm_chunk
-            else:
-                # Fallback: собираем всё MP3 и конвертируем (старый метод)
-                mp3_chunks = []
-                async for chunk in communicate.stream():
-                    if chunk.get("type") == "audio" and "data" in chunk:
-                        mp3_chunks.append(chunk["data"])
+        MAX_RETRIES = 3
+
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            has_yielded = False
+            try:
+                if not self.is_initialized:
+                    raise Exception("Edge TTS Provider not initialized")
                 
-                if not mp3_chunks:
-                    raise Exception("No audio data received from Edge TTS")
+                assert edge_tts is not None, "edge_tts должен быть доступен при is_initialized=True"
                 
-                mp3_data = b''.join(mp3_chunks)
-                logger.info(f"EdgeTTS → received MP3: {len(mp3_data)} bytes (fallback mode)")
+                logger.info(f"EdgeTTS → generating speech for text: {input_data[:100]}... (attempt {attempt+1}/{MAX_RETRIES})")
                 
-                if self.convert_to_pcm:
-                    # Конвертация через pydub или ffmpeg
-                    if PYDUB_AVAILABLE:
-                        try:
-                            assert AudioSegment is not None
-                            audio = AudioSegment.from_mp3(io.BytesIO(mp3_data))
-                            audio = audio.set_frame_rate(self.sample_rate)
-                            audio = audio.set_channels(self.channels)
-                            audio = audio.set_sample_width(self.bits_per_sample // 8)
-                            pcm_data = audio.raw_data
-                        except Exception as e:
-                            logger.warning(f"pydub failed: {e}, trying ffmpeg...")
-                            pcm_data = self._convert_mp3_to_pcm_ffmpeg(mp3_data)
-                    else:
-                        pcm_data = self._convert_mp3_to_pcm_ffmpeg(mp3_data)
-                    
-                    # Разбиваем на чанки
-                    offset = 0
-                    while offset < len(pcm_data):
-                        chunk_end = min(offset + self.streaming_chunk_size, len(pcm_data))
-                        yield pcm_data[offset:chunk_end]
-                        offset = chunk_end
+                # Создаем Communicate объект
+                communicate = edge_tts.Communicate(
+                    text=input_data,
+                    voice=self.voice_name,
+                    rate=self.rate,
+                    volume=self.volume,
+                    pitch=self.pitch
+                )
+                
+                # ✅ ОПТИМИЗАЦИЯ: Streaming конвертация MP3→PCM
+                if self.convert_to_pcm and FFMPEG_AVAILABLE:
+                    # Используем async streaming через ffmpeg
+                    async for pcm_chunk in self._stream_mp3_to_pcm_async(communicate):
+                        yield pcm_chunk
+                        has_yielded = True
                 else:
-                    # Возвращаем MP3 как есть
-                    offset = 0
-                    while offset < len(mp3_data):
-                        chunk_end = min(offset + self.streaming_chunk_size, len(mp3_data))
-                        yield mp3_data[offset:chunk_end]
-                        offset = chunk_end
+                    # Fallback: собираем всё MP3 и конвертируем (старый метод)
+                    mp3_chunks = []
+                    async for chunk in communicate.stream():
+                        if chunk.get("type") == "audio" and "data" in chunk:
+                            mp3_chunks.append(chunk["data"])
+                    
+                    if not mp3_chunks:
+                        raise Exception("No audio data received from Edge TTS")
+                    
+                    mp3_data = b''.join(mp3_chunks)
+                    logger.info(f"EdgeTTS → received MP3: {len(mp3_data)} bytes (fallback mode)")
+                    
+                    if self.convert_to_pcm:
+                        # Конвертация через pydub или ffmpeg
+                        if PYDUB_AVAILABLE:
+                            try:
+                                assert AudioSegment is not None
+                                audio = AudioSegment.from_mp3(io.BytesIO(mp3_data))
+                                audio = audio.set_frame_rate(self.sample_rate)
+                                audio = audio.set_channels(self.channels)
+                                audio = audio.set_sample_width(self.bits_per_sample // 8)
+                                pcm_data = audio.raw_data
+                            except Exception as e:
+                                logger.warning(f"pydub failed: {e}, trying ffmpeg...")
+                                pcm_data = self._convert_mp3_to_pcm_ffmpeg(mp3_data)
+                        else:
+                            pcm_data = self._convert_mp3_to_pcm_ffmpeg(mp3_data)
                         
-        except Exception as e:
-            logger.error(f"Edge TTS Provider processing error: {e}")
-            raise e
+                        # Разбиваем на чанки
+                        offset = 0
+                        while offset < len(pcm_data):
+                            chunk_end = min(offset + self.streaming_chunk_size, len(pcm_data))
+                            yield pcm_data[offset:chunk_end]
+                            has_yielded = True
+                            offset = chunk_end
+                    else:
+                        # Возвращаем MP3 как есть
+                        offset = 0
+                        while offset < len(mp3_data):
+                            chunk_end = min(offset + self.streaming_chunk_size, len(mp3_data))
+                            yield mp3_data[offset:chunk_end]
+                            has_yielded = True
+                            offset = chunk_end
+                
+                # Если успешно завершили (или ничего не упало), выходим из цикла
+                return
+
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Edge TTS Provider attempt {attempt+1} failed: {e}")
+                
+                # Если уже отправили данные, ретрай невозможен (поток испорчен)
+                if has_yielded:
+                    logger.error("Cannot retry Edge TTS because data has already been streamed to client")
+                    raise e
+                
+                # Если это была последняя попытка, пробрасываем ошибку
+                if attempt == MAX_RETRIES - 1:
+                    logger.error(f"Edge TTS Provider failed after {MAX_RETRIES} attempts: {e}")
+                    raise e
+                
+                # Небольшая пауза перед ретраем (exponential backoff)
+                await asyncio.sleep(0.5 * (2 ** attempt))
     
     async def _stream_mp3_to_pcm_async(self, communicate) -> AsyncGenerator[bytes, None]:
         """
@@ -225,7 +250,7 @@ class EdgeTTSProvider(UniversalProviderInterface):
         а не после получения всего аудио).
         
         Yields:
-            PCM chunks (24kHz, 16-bit, mono)
+            PCM chunks (48kHz, 16-bit, mono)
         """
         if not FFMPEG_AVAILABLE:
             raise Exception("ffmpeg not available for streaming conversion")
@@ -235,9 +260,9 @@ class EdgeTTSProvider(UniversalProviderInterface):
             "ffmpeg",
             "-i", "pipe:0",         # Читаем MP3 из stdin
             "-f", "s16le",           # Формат: signed 16-bit little-endian PCM
-            "-ar", str(self.sample_rate),  # Sample rate (24kHz)
+            "-ar", str(self.sample_rate),  # Sample rate (единый формат)
             "-ac", str(self.channels),     # Channels (1 = mono)
-            "-loglevel", "error",
+            "-loglevel", "warning",  # Changed from error to warning for diagnostics
             "pipe:1"                 # Выводим PCM в stdout
         ]
         
@@ -251,7 +276,16 @@ class EdgeTTSProvider(UniversalProviderInterface):
         chunk_count = 0
         total_mp3_bytes = 0
         total_pcm_bytes = 0
-        
+        # Buffer initial chunks to detect silent PCM before yielding
+        prebuffer_chunks: List[bytes] = []
+        prebuffer_peaks: List[int] = []
+        prebuffer_bytes = 0
+        prebuffer_start = asyncio.get_running_loop().time()
+        max_silent_chunks = 10
+        max_silent_bytes = self.streaming_chunk_size * 10
+        max_silent_seconds = 0.8
+        prebuffer_done = False
+
         async def write_mp3_to_stdin():
             """Фоновая задача: пишем MP3 chunks в stdin ffmpeg"""
             nonlocal total_mp3_bytes
@@ -281,7 +315,48 @@ class EdgeTTSProvider(UniversalProviderInterface):
                     break
                 chunk_count += 1
                 total_pcm_bytes += len(pcm_chunk)
-                yield pcm_chunk
+                if not prebuffer_done:
+                    prebuffer_chunks.append(pcm_chunk)
+                    peak = self._pcm_peak_int16(pcm_chunk)
+                    prebuffer_peaks.append(peak)
+                    prebuffer_bytes += len(pcm_chunk)
+                    if peak > 0:
+                        for buffered in prebuffer_chunks:
+                            yield buffered
+                        prebuffer_chunks.clear()
+                        prebuffer_peaks.clear()
+                        prebuffer_done = True
+                    else:
+                        elapsed = asyncio.get_running_loop().time() - prebuffer_start
+                        if (
+                            len(prebuffer_peaks) >= max_silent_chunks
+                            or prebuffer_bytes >= max_silent_bytes
+                            or elapsed >= max_silent_seconds
+                        ):
+                            logger.warning(
+                                "EdgeTTS → silent PCM detected in initial window "
+                                "(chunks=%s, bytes=%s, elapsed=%.3fs); retrying generation",
+                                len(prebuffer_peaks),
+                                prebuffer_bytes,
+                                elapsed,
+                            )
+                            raise Exception("Silent PCM detected in initial window")
+                else:
+                    yield pcm_chunk
+
+            # If stream ended before prebuffer_target, decide based on what we saw
+            if not prebuffer_done and prebuffer_peaks:
+                if all(p == 0 for p in prebuffer_peaks):
+                    logger.warning(
+                        "EdgeTTS → silent PCM detected in %s prebuffered chunks; retrying generation",
+                        len(prebuffer_peaks),
+                    )
+                    raise Exception("Silent PCM detected in prebuffered chunks")
+                for buffered in prebuffer_chunks:
+                    yield buffered
+                prebuffer_chunks.clear()
+                prebuffer_peaks.clear()
+                prebuffer_done = True
             
             # Ждем завершения записи
             await write_task
@@ -291,6 +366,11 @@ class EdgeTTSProvider(UniversalProviderInterface):
             if return_code != 0:
                 stderr = await process.stderr.read() if process.stderr else b''
                 logger.error(f"ffmpeg error (code {return_code}): {stderr.decode()}")
+            else:
+                # Log stderr even on success if there are warnings
+                stderr = await process.stderr.read() if process.stderr else b''
+                if stderr:
+                    logger.warning(f"ffmpeg warnings: {stderr.decode()}")
             
             logger.info(
                 f"EdgeTTS → streaming conversion complete: MP3={total_mp3_bytes} bytes, "
@@ -306,13 +386,31 @@ class EdgeTTSProvider(UniversalProviderInterface):
             except asyncio.CancelledError:
                 pass
             raise e
+
+    def _pcm_peak_int16(self, pcm_bytes: bytes) -> int:
+        """Return peak absolute amplitude for int16 PCM bytes."""
+        if not pcm_bytes:
+            return 0
+        # Use array('h') for int16; byteswap on big-endian platforms
+        pcm_arr = array('h')
+        pcm_arr.frombytes(pcm_bytes)
+        if sys.byteorder != "little":
+            pcm_arr.byteswap()
+        peak = 0
+        for sample in pcm_arr:
+            val = sample if sample >= 0 else -sample
+            if val > peak:
+                peak = val
+                if peak == 32767:
+                    break
+        return peak
     
     def _convert_mp3_to_pcm_ffmpeg(self, mp3_data: bytes) -> bytes:
         """
         Конвертация MP3 в PCM через ffmpeg (альтернатива pydub)
         
-        Конвертирует в точно такой же формат, как Azure TTS:
-        - 24kHz sample rate (Riff24Khz16BitMonoPcm)
+        Конвертирует в единый формат проекта:
+        - 48kHz sample rate
         - 16-bit depth (s16le)
         - Mono (1 channel)
         - Raw PCM без заголовков (как в Azure TTS после удаления RIFF заголовка)
@@ -541,4 +639,3 @@ class EdgeTTSProvider(UniversalProviderInterface):
             "price_per_million": 0.0,
             "voice_name": self.voice_name
         }
-

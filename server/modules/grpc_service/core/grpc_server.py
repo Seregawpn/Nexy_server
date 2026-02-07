@@ -130,6 +130,21 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
         """Обработка StreamRequest через новые модули с мониторингом"""
         start_time = time.time()
         
+        # КРИТИЧНО: hardware_id обязателен и валиден (не "unknown")
+        hardware_id = request.hardware_id
+        if not hardware_id or hardware_id.strip() == "" or hardware_id.lower() == "unknown":
+            error_msg = "hardware_id is required and must be valid (not empty or 'unknown')"
+            log_rpc_error(
+                logger,
+                method="StreamAudio",
+                error_code="INVALID_ARGUMENT",
+                error_message=error_msg,
+                ctx={"reason": "invalid_hardware_id", "hardware_id": hardware_id}
+            )
+            log_decision(logger, decision="abort", method="StreamAudio", ctx={"reason": "invalid_hardware_id", "hardware_id": hardware_id})
+            yield streaming_pb2.StreamResponse(error_message=error_msg)  # type: ignore
+            return
+
         # КРИТИЧНО: Строгий контракт идентификаторов - session_id обязателен от клиента
         # Единственный писатель session_id - InputProcessingIntegration на клиенте
         session_id = request.session_id
@@ -143,21 +158,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 ctx={"reason": "invalid_session_id", "session_id": session_id}
             )
             log_decision(logger, decision="abort", method="StreamAudio", ctx={"reason": "invalid_session_id"})
-            yield streaming_pb2.StreamResponse(error_message=error_msg)  # type: ignore
-            return
-        
-        # КРИТИЧНО: hardware_id обязателен и валиден (не "unknown")
-        hardware_id = request.hardware_id
-        if not hardware_id or hardware_id.strip() == "" or hardware_id.lower() == "unknown":
-            error_msg = "hardware_id is required and must be valid (not empty or 'unknown')"
-            log_rpc_error(
-                logger,
-                method="StreamAudio",
-                error_code="INVALID_ARGUMENT",
-                error_message=error_msg,
-                ctx={"reason": "invalid_hardware_id", "hardware_id": hardware_id}
-            )
-            log_decision(logger, decision="abort", method="StreamAudio", ctx={"reason": "invalid_hardware_id", "hardware_id": hardware_id})
             yield streaming_pb2.StreamResponse(error_message=error_msg)  # type: ignore
             return
         
@@ -330,44 +330,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 # КРИТИЧНО: Backpressure rate limit проверка теперь централизована в GrpcServiceIntegration
                 # Удалена дублирующая проверка check_message_rate
                 
-                # Фаза 3: MCP command_payload (отправляем как ActionMessage)
-                cmd_payload = item.get('command_payload')
-                if cmd_payload:
-                    import json
-                    try:
-                        # NEW: Use ActionMessage protocol field
-                        # cmd_payload from parser might be nested: {'event': 'mcp.command_request', 'payload': {...}}
-                        # Client expects flat: {'command': '...', 'args': ...}
-                        
-                        final_payload = cmd_payload
-                        if 'payload' in cmd_payload and isinstance(cmd_payload['payload'], dict) and 'command' in cmd_payload['payload']:
-                            final_payload = cmd_payload['payload']
-                            # Add session_id if missing (client expects it in the payload too sometimes?)
-                            # Actually client uses event.session_id, but good to be safe if payload needs it contextually
-                            if 'session_id' not in final_payload and session_id:
-                                final_payload['session_id'] = str(session_id)
-                        
-                        action_json = json.dumps(final_payload, ensure_ascii=False)
-                        
-                        # Inspect payload to maybe set feature_id if available (optional)
-                        feature_id = final_payload.get('feature_id') # Usually not here, but maybe passed in future
-                        
-                        # Принудительно конвертируем session_id в строку
-                        sid_str = str(session_id) if session_id else ""
-                        
-                        action_msg = streaming_pb2.ActionMessage(
-                            action_json=action_json,
-                            session_id=sid_str
-                        )
-                        if feature_id:
-                            action_msg.feature_id = str(feature_id)
-                            
-                        logger.info(f"→ StreamAudio: sending ActionMessage session={session_id}, command={final_payload.get('command', 'unknown')}")
-                        yield streaming_pb2.StreamResponse(action_message=action_msg)  # type: ignore
-                        sent_any = True
-                    except Exception as mcp_error:
-                        logger.warning(f"⚠️ Ошибка создания ActionMessage: {mcp_error}")
-                
                 # Текст
                 txt = item.get('text_response')
                 if txt:
@@ -459,6 +421,44 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                         sent_any = True
                     except Exception as browser_error:
                         logger.error(f"⚠️ Ошибка создания BrowserProgressMessage: {browser_error}", exc_info=True)
+
+                # Фаза 3: MCP command_payload (отправляем как ActionMessage) — после text/audio
+                cmd_payload = item.get('command_payload')
+                if cmd_payload:
+                    import json
+                    try:
+                        # NEW: Use ActionMessage protocol field
+                        # cmd_payload from parser might be nested: {'event': 'mcp.command_request', 'payload': {...}}
+                        # Client expects flat: {'command': '...', 'args': ...}
+
+                        final_payload = cmd_payload
+                        if 'payload' in cmd_payload and isinstance(cmd_payload['payload'], dict) and 'command' in cmd_payload['payload']:
+                            final_payload = cmd_payload['payload']
+                            # Add session_id if missing (client expects it in the payload too sometimes?)
+                            # Actually client uses event.session_id, but good to be safe if payload needs it contextually
+                            if 'session_id' not in final_payload and session_id:
+                                final_payload['session_id'] = str(session_id)
+
+                        action_json = json.dumps(final_payload, ensure_ascii=False)
+
+                        # Inspect payload to maybe set feature_id if available (optional)
+                        feature_id = final_payload.get('feature_id') # Usually not here, but maybe passed in future
+
+                        # Принудительно конвертируем session_id в строку
+                        sid_str = str(session_id) if session_id else ""
+
+                        action_msg = streaming_pb2.ActionMessage(
+                            action_json=action_json,
+                            session_id=sid_str
+                        )
+                        if feature_id:
+                            action_msg.feature_id = str(feature_id)
+
+                        logger.info(f"→ StreamAudio: sending ActionMessage session={session_id}, command={final_payload.get('command', 'unknown')}")
+                        yield streaming_pb2.StreamResponse(action_message=action_msg)  # type: ignore
+                        sent_any = True
+                    except Exception as mcp_error:
+                        logger.warning(f"⚠️ Ошибка создания ActionMessage: {mcp_error}")
             
             # Завершение стрима
             # КРИТИЧНО: Не отправляем end_message при раннем завершении (terminated_early)

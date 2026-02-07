@@ -112,6 +112,29 @@ class TestSecretMasking:
         assert "1234567890" in formatted
         assert "abcdef123456" in formatted
         assert "Hello world" in formatted
+
+    def test_no_mask_key_substring_words(self, formatter):
+        """Тест, что слова с подстрокой key не маскируются"""
+        json_data = {
+            "keyboard": "value123",
+            "monkey": "banana456"
+        }
+        
+        record = LogRecord(
+            name="test",
+            level=20,
+            pathname="test.py",
+            lineno=1,
+            msg="Request data",
+            args=(),
+            exc_info=None
+        )
+        record.ctx = json_data
+        
+        formatted = formatter.format(record)
+        
+        assert "value123" in formatted
+        assert "banana456" in formatted
     
     def test_nested_dict_masking(self, formatter):
         """Тест маскирования вложенных словарей"""
@@ -174,4 +197,3 @@ class TestSecretMasking:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

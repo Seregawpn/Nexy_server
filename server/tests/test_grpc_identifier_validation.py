@@ -124,6 +124,26 @@ class TestGrpcIdentifierValidation:
         error_response = responses[0]
         assert error_response.WhichOneof("content") == "error_message"
         assert "hardware_id" in error_response.error_message.lower()
+
+    @pytest.mark.asyncio
+    async def test_stream_audio_both_invalid_hardware_first(self, servicer):
+        """Тест: при двух невалидных id приоритет ошибки hardware_id"""
+        request = streaming_pb2.StreamRequest(
+            prompt="test",
+            hardware_id="unknown",
+            session_id=""  # Невалидный session_id
+        )
+        
+        context = Mock()
+        
+        responses = []
+        async for response in servicer.StreamAudio(request, context):
+            responses.append(response)
+        
+        assert len(responses) > 0
+        error_response = responses[0]
+        assert error_response.WhichOneof("content") == "error_message"
+        assert "hardware_id" in error_response.error_message.lower()
     
     @pytest.mark.asyncio
     async def test_stream_audio_valid_identifiers(self, servicer):

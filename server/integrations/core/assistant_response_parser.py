@@ -232,14 +232,19 @@ class AssistantResponseParser:
             ParsedResponse
         """
         normalized_data = self._normalize_action_payload(data)
-        # Always enforce request session_id for action commands.
-        if session_id and normalized_data.get("command"):
+        # Always propagate or enforce session_id (even for text-only JSON).
+        if session_id:
             if normalized_data.get("session_id") and normalized_data.get("session_id") != session_id:
                 self.logger.warning(
                     "⚠️ LLM session_id override: response=%s request=%s",
                     normalized_data.get("session_id"),
                     session_id,
                 )
+                try:
+                    from utils.metrics_collector import record_decision_metric
+                    record_decision_metric("assistant_response", "session_id_override")
+                except Exception:
+                    self.logger.debug("Failed to record session_id_override metric")
             normalized_data["session_id"] = session_id
 
         # Попытка валидации через Pydantic (если доступен)
@@ -294,7 +299,7 @@ class AssistantResponseParser:
                     return ParsedResponse(
                         text_response=validated_model.text,
                         command_payload=None,
-                        session_id=None,
+                        session_id=context_session_id,
                         raw_args=None
                     )
             else:
@@ -330,6 +335,19 @@ class AssistantResponseParser:
         
         # Валидация обязательных полей для action-ответа
         validation_errors = []
+
+        # Проверяем, что команда разрешена фичами (fallback без Pydantic)
+        try:
+            from config.unified_config import get_config, get_allowed_commands
+            cfg = get_config()
+            allowed_commands = get_allowed_commands(cfg.features, cfg)
+            if command not in allowed_commands:
+                validation_errors.append(
+                    f"Команда '{command}' отключена или не разрешена. Allowed: {allowed_commands}"
+                )
+        except Exception:
+            # Если конфиг недоступен, не блокируем fallback
+            pass
         
         if not action_session_id:
             validation_errors.append("Отсутствует обязательное поле 'session_id' (не предоставлен ни в данных, ни в контексте)")
@@ -356,6 +374,18 @@ class AssistantResponseParser:
         # Для команды close_browser аргументы не требуются
         # if command == 'close_browser':
         #     pass  # No required args
+
+        # Для команды send_whatsapp_message требуются contact и message
+        if command == 'send_whatsapp_message':
+            if 'contact' not in args or not args.get('contact'):
+                validation_errors.append("Для команды 'send_whatsapp_message' требуется поле 'args.contact'")
+            if 'message' not in args or not args.get('message'):
+                validation_errors.append("Для команды 'send_whatsapp_message' требуется поле 'args.message'")
+        
+        # Для команды read_whatsapp_messages аргументы опциональны, но если есть contact - он должен быть не пустой
+        if command == 'read_whatsapp_messages':
+            if 'contact' in args and not args.get('contact'):
+                validation_errors.append("Для команды 'read_whatsapp_messages' поле 'args.contact' не может быть пустым")
 
         
         # Логируем ошибки валидации

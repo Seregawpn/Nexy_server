@@ -48,6 +48,23 @@ nexy_new/server/          ← Исходный код
 
 ## 🔄 **ПОШАГОВАЯ ИНСТРУКЦИЯ ДЕПЛОЯ**
 
+### **ШАГ 0: PRE-PRODUCTION GATE (ОБЯЗАТЕЛЬНО)**
+
+Перед любым прод-деплоем выполните:
+
+```bash
+bash server/scripts/prod_ready_check.sh
+```
+
+Опционально для расширенной проверки:
+
+```bash
+RUN_GRPC_SMOKE=true GRPC_HOST=127.0.0.1 GRPC_PORT=50051 bash server/scripts/prod_ready_check.sh
+RUN_WEB_SEARCH_SMOKE=true bash server/scripts/prod_ready_check.sh
+```
+
+Источник правил: `server/Docs/PRE_PRODUCTION_TESTING.md`.
+
 ### **ШАГ 1: ПОДГОТОВКА (1-2 минуты)**
 
 **1.1. Убедитесь, что изменения готовы:**

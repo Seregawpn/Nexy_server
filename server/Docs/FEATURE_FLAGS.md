@@ -23,6 +23,8 @@
 | `use_workflow_integrations` | feature | server-platform | true | server | `disable_workflow_integrations` | Включить использование workflow integrations для orchestration |
 | `use_fallback_manager` | feature | server-platform | true | server | - | Включить использование FallbackManager для обработки ошибок |
 | `forward_assistant_actions` | feature | mcp-integration | true | server | `disable_forward_assistant_actions` | Включить передачу JSON действий на клиента (MCP command forwarding) |
+| `messages_enabled` | feature | messages | true | server | - | Включить обработку iMessage-команд в серверном prompt/router |
+| `web_search_enabled` | feature | browser | true | server | - | Включить обработку web-search intents и команд |
 | `disable_module_coordinator` | kill_switch | server-platform | false | server | - | Отключить ModuleCoordinator (мгновенный откат) |
 | `disable_workflow_integrations` | kill_switch | server-platform | false | server | - | Отключить workflow integrations (мгновенный откат) |
 | `disable_forward_assistant_actions` | kill_switch | mcp-integration | false | server | - | Отключить передачу JSON действий на клиента (мгновенный откат) |
@@ -38,6 +40,9 @@
 | `BROWSER_USE_TIMEOUT` | env_config | browser | 120 | server | - | Таймаут задачи браузера (секунды) |
 | `BROWSER_USE_MAX_STEPS` | env_config | browser | 50 | server | - | Максимум шагов агента на задачу |
 | `BROWSER_USE_MODEL` | env_config | browser | gemini-2.5-flash | server | - | LLM модель для browser-агента |
+| `MESSAGES_ENABLED` | env_config | messages | true | server | - | Включить интеграцию iMessage (read_messages, send_message, find_contact) |
+| `BROWSER_ENABLED` | env_config | browser | true | server | - | Включить browser automation (альтернатива BROWSER_USE_ENABLED) |
+| `SUBSCRIPTION_ENABLED` | env_config | payment | true | server | - | Включить систему подписок и проверку квот |
 
 ## Правила добавления
 

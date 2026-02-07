@@ -20,6 +20,8 @@ sys.path.insert(0, str(project_root))
 # Импорты для тестирования gRPC слоя
 from integrations.service_integrations.grpc_service_integration import GrpcServiceIntegration
 from integrations.workflow_integrations.streaming_workflow_integration import StreamingWorkflowIntegration
+from modules.grpc_service.core.grpc_server import NewStreamingServicer
+from modules.grpc_service import streaming_pb2
 
 
 class TestGrpcMcpIntegration:
@@ -189,7 +191,55 @@ class TestGrpcMcpIntegration:
         if final_results:
             assert 'command_payload' not in final_results[0], "command_payload не должен быть при выключенном фича-флаге"
 
+    @pytest.mark.asyncio
+    async def test_action_message_order_after_text_audio(self):
+        """Тест 5: ActionMessage отправляется после text/audio в рамках одного item"""
+        servicer = NewStreamingServicer()
+        mock_manager = Mock()
+        mock_manager.initialize = AsyncMock(return_value=True)
+        mock_manager.streaming_workflow = None
+        mock_manager.interrupt_workflow = Mock()
+        mock_manager.interrupt_workflow.check_interrupts = AsyncMock(return_value=False)
+
+        async def process_stream(request_data):
+            yield {
+                'success': True,
+                'text_response': 'Hello',
+                'audio_chunk': b'1234',
+                'command_payload': {
+                    'event': 'mcp.command_request',
+                    'payload': {'session_id': request_data['session_id'], 'command': 'open_app', 'args': {'app_name': 'Safari'}}
+                }
+            }
+
+        mock_manager.process = process_stream
+        servicer.grpc_service_manager = mock_manager
+
+        request = streaming_pb2.StreamRequest(
+            prompt="test",
+            hardware_id="valid_hardware_id",
+            session_id="123e4567-e89b-42d3-a456-426614174000"
+        )
+        context = Mock()
+
+        kinds = []
+        with patch('modules.grpc_service.core.grpc_server.get_metrics', return_value={'active_connections': 0}), \
+             patch('modules.grpc_service.core.grpc_server.set_active_connections'), \
+             patch('modules.grpc_service.core.grpc_server.record_request'):
+            async for response in servicer.StreamAudio(request, context):
+                if response.text_chunk:
+                    kinds.append("text")
+                elif response.audio_chunk and response.audio_chunk.audio_data:
+                    kinds.append("audio")
+                elif response.action_message and response.action_message.action_json:
+                    kinds.append("action")
+                elif response.end_message:
+                    kinds.append("end")
+
+        # ожидаем порядок: text -> audio -> action -> end
+        assert "text" in kinds and "audio" in kinds and "action" in kinds
+        assert kinds.index("text") < kinds.index("audio") < kinds.index("action")
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

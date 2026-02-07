@@ -297,6 +297,20 @@ server/server/
 
 Backpressure лимиты, error-коды и рекомендации по отладке — в `Docs/BACKPRESSURE_README.md`.
 
+### 5.1 Feature Flags Architecture (Server-Side)
+
+Сервер агрессивно использует Feature Flags для защиты от галлюцинаций LLM и экономии ресурсов.
+
+**1. Modular Prompt Engineering:**
+- `unified_config.py` собирает системный промпт динамически.
+- Если `MESSAGES_ENABLED=false` → секция "Messages" вырезается из промпта.
+- Если `SUBSCRIPTION_ENABLED=false` → секция "Subscriptions" вырезается.
+
+**2. Command Validator:**
+- `ResponseValidator` проверяет каждую команду от LLM.
+- `allowed_commands` формируются динамически на основе `FeaturesConfig`.
+- Попытка выполнить `read_messages` при отключенном флаге вызывает `ValidationError` (защита от "взлома" промпта).
+
 ---
 
 ## 6. Наблюдаемость и fail-fast

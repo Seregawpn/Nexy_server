@@ -352,6 +352,12 @@ class StreamingWorkflowIntegration:
                         }
                     }
                 )
+                
+            # Сохраняем контекст подписки для промпта
+            subscription_context = gate_result.subscription_context
+            
+        else:
+            subscription_context = None
         
         # СОЗДАЕМ request-scoped контекст
 
@@ -533,12 +539,16 @@ class StreamingWorkflowIntegration:
             llm_chunks_received = 0
             parsed = None  # [FIX] Инициализация перед циклом для предотвращения NameError
 
-            async for sentence in self._iter_processed_sentences(
+
+
+            async for processed_sentence in self._iter_processed_sentences(
                 prompt_text_stripped,
                 request_data.get('screenshot'),
                 memory_context,
+                subscription_context=subscription_context, # Передаем контекст подписки
                 session_id=session_id
             ):
+                sentence = processed_sentence
                 if not llm_iteration_started:
                     llm_iteration_started = True
                     logger.info(f"✅ Итерация LLM началась: получено первое предложение")
@@ -961,12 +971,13 @@ class StreamingWorkflowIntegration:
         text: str,
         screenshot: Optional[str],
         memory_context: Optional[Dict[str, Any]],
+        subscription_context: Optional[Dict[str, Any]] = None,
         session_id: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """Стримингово возвращает предложения с учётом памяти и скриншота."""
         import time
         enrich_start = time.time()
-        enriched_text = self._enrich_with_memory(text, memory_context)
+        enriched_text = self._enrich_context(text, memory_context, subscription_context)
         enrich_time = (time.time() - enrich_start) * 1000
         logger.info(f"⏱️  Обогащение текста памятью заняло {enrich_time:.2f}ms (исходный: {len(text)} символов, обогащенный: {len(enriched_text)} символов)")
 
@@ -1330,6 +1341,9 @@ class StreamingWorkflowIntegration:
             # Обычный текст — возвращаем как есть
             return chunk
         
+            # Обычный текст — возвращаем как есть
+            return chunk
+        
         # Случай 2: chunk — словарь (обёртка от TextProcessingModule)
         if isinstance(chunk, dict):
             # Приоритет извлечения: text -> text_response -> value -> chunk
@@ -1339,51 +1353,36 @@ class StreamingWorkflowIntegration:
                     continue
                 
                 # Если значение — строка
+                cleaned_value = str(value).strip()
+                # Удаляем markdown code blocks если есть
+                if cleaned_value.startswith("```"):
+                     cleaned_value = cleaned_value.strip("`").replace("json", "").replace("python", "").strip()
+
                 if isinstance(value, str):
-                    value_stripped = value.strip()
-                    
-                    # Рекурсивно проверяем, не JSON ли это
-                    if value_stripped.startswith('{'):
-                        try:
-                            import json
-                            parsed = json.loads(value_stripped)
-                            if isinstance(parsed, dict):
-                                if 'command' in parsed:
-                                    logger.debug(f"🎯 Action в value: command={parsed.get('command')}")
-                                    return value_stripped
-                                if 'text' in parsed:
-                                    text_val = parsed['text']
-                                    return str(text_val) if text_val else ""
-                                # Metadata без text — пропускаем
-                                logger.debug(f"⚠️ JSON value без 'text': {list(parsed.keys())}")
-                                return ""
-                        except (json.JSONDecodeError, ValueError):
-                            pass
-                    
-                    return value
+                     # Проверяем JSON в value
+                     if cleaned_value.startswith('{') and "command" in cleaned_value:
+                         return cleaned_value
+                     return value
                 
-                # Если значение — вложенный dict, рекурсивно извлекаем
-                if isinstance(value, dict):
-                    # Проверяем, есть ли там нужные ключи
-                    if any(k in value for k in ("text", "text_response", "value", "chunk", "command")):
-                        return self._extract_text_chunk(value)
-                    # Нет текстовых ключей — это metadata, пропускаем
-                    logger.debug(f"⚠️ Вложенный dict без текстовых ключей: {list(value.keys())}")
-                    return ""
-                
-                # Если значение — list, это не текст для TTS
-                if isinstance(value, list):
-                    logger.debug(f"⚠️ Значение list, пропускаем (не TTS контент)")
-                    return ""
-                
-                # Другие типы (int, float, bool) — конвертируем только если это единственное что есть
-                if key == "text":
-                    return str(value) if value is not None else ""
+                # Если text не строка, конвертируем
+                logger.warning(f"⚠️ Поле '{key}' не строка: {type(value)}")
+                return str(value)
             
-            # Словарь без текстовых полей — НЕ конвертируем в строку, пропускаем
-            logger.warning(f"⚠️ Dict без текстовых полей, пропускаем: {list(chunk.keys())}")
+            # Если словарь пустой или не содержит нужных ключей
+            # Пробуем string representation словаря, если он похож на command
+            chunk_str = str(chunk)
+            if "'command':" in chunk_str or '"command":' in chunk_str:
+                 logger.debug(f"🎯 Обнаружен словарь-команда: {chunk_str}")
+                 try:
+                     import json
+                     return json.dumps(chunk)
+                 except:
+                     return chunk_str
+
             return ""
-        
+
+        return str(chunk)
+
         # Случай 3: другие типы
         # Если это что-то иное — конвертируем только если это примитив
         if isinstance(chunk, (int, float, bool)):
@@ -1406,27 +1405,61 @@ class StreamingWorkflowIntegration:
                     return bytes(value)
         return b""
 
-    def _enrich_with_memory(self, text: str, memory_context: Optional[Dict[str, Any]]) -> str:
+    def _enrich_context(
+        self, 
+        text: str, 
+        memory_context: Optional[Dict[str, Any]],
+        subscription_context: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
-        Объединение текста с контекстом памяти
-        
-        Args:
-            text: Исходный текст
-            memory_context: Контекст памяти
+        Объединение текста с контекстом памяти и подписки.
+        Добавляет инструкции для LLM по использованию команд.
         """
-        if not memory_context:
-            return text
+        context_parts = []
         
-        try:
-            memory_info = memory_context.get('recent_context', '') if memory_context else ''
+        # 1. Memory Context
+        if memory_context:
+            memory_info = memory_context.get('recent_context', '')
             if memory_info:
-                enriched_text = f"Контекст: {memory_info}\n\n{text}"
-                logger.debug("Текст обогащен контекстом памяти")
-                return enriched_text
+                context_parts.append(f"Memory Context: {memory_info}")
+                
+            # 2. Subscription Context & Instructions
+        if subscription_context:
+            status = subscription_context.get('status', 'unknown')
+            sub_info = f"Subscription Status: {status}"
+            if reason := subscription_context.get('reason'):
+                sub_info += f" ({reason})"
+            if limits := subscription_context.get('limits'):
+                 sub_info += f"\nLimits: {limits}"
+                 
+            context_parts.append(sub_info)
+            
+            # Инструкции по командам
+            # Если платный - manage, иначе - buy
+            # CRITICAL: Do not ask questions. Execute immediately.
+            if status in ('paid', 'paid_trial', 'admin_active', 'grandfathered'):
+                instructions = (
+                    "URGENT INSTRUCTION: User wants to manage subscription/billing.\n"
+                    "YOU MUST EXECUTE COMMAND: {\"command\": \"manage_subscription\", \"args\": {}}\n"
+                    "ACT IMMEDIATELY. DO NOT ASK 'Do you want to open...'. JUSE DO IT.\n"
+                    "Output ONLY the JSON command. DO NOT write any text introduction."
+                )
+            else:
+                 instructions = (
+                    "URGENT INSTRUCTION: User wants to subscribe/upgrade.\n"
+                    "YOU MUST EXECUTE COMMAND: {\"command\": \"buy_subscription\", \"args\": {}}\n"
+                    "ACT IMMEDIATELY. DO NOT ASK 'Do you want to subscribe...'. JUST DO IT.\n"
+                    "Output ONLY the JSON command. DO NOT write any text introduction."
+                )
+            context_parts.append(instructions)
+            
+        if not context_parts:
             return text
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка обогащения текста памятью: {e}")
-            return text
+            
+        prefix = "\n\n".join(context_parts)
+        enriched_text = f"SYSTEM_CONTEXT:\n{prefix}\n\nUSER_INPUT:\n{text}"
+        logger.debug(f"Текст обогащен контекстом (len={len(enriched_text)})")
+        return enriched_text
 
     async def _stream_audio_for_sentence(self, sentence: str, sentence_index: int) -> AsyncGenerator[bytes, None]:
         """

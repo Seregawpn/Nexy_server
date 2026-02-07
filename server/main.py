@@ -1,9 +1,9 @@
 import asyncio
 import logging
+import os
 import signal
 import sys
-import os
-import socket
+from urllib.parse import quote
 from dataclasses import asdict
 from aiohttp import web
 # Ленивый импорт для избежания циклических зависимостей
@@ -22,10 +22,12 @@ from modules.grpc_service.core.backpressure import get_backpressure_manager
 # 🚀 Тест автоматического деплоя - 30 сентября 2025
 
 # Загружаем config.env (определяем путь относительно расположения main.py)
-import os
 from pathlib import Path
 MAIN_DIR = Path(__file__).parent
-CONFIG_ENV_PATH = MAIN_DIR / 'config.env'
+SERVER_ROOT = MAIN_DIR.parent
+PRIMARY_CONFIG_ENV = SERVER_ROOT / "config.env"
+FALLBACK_CONFIG_ENV = MAIN_DIR / "config.env"
+CONFIG_ENV_PATH = PRIMARY_CONFIG_ENV if PRIMARY_CONFIG_ENV.exists() else FALLBACK_CONFIG_ENV
 load_dotenv(CONFIG_ENV_PATH)
 
 # Загружаем конфигурацию
@@ -38,6 +40,12 @@ http_config = unified_config.http
 log_level = unified_config.logging.level if hasattr(unified_config, 'logging') else 'INFO'
 setup_structured_logging(level=log_level)
 logger = logging.getLogger(__name__)
+if CONFIG_ENV_PATH == FALLBACK_CONFIG_ENV:
+    logger.warning(
+        "⚠️ Using fallback config.env at %s (primary missing at %s)",
+        FALLBACK_CONFIG_ENV,
+        PRIMARY_CONFIG_ENV,
+    )
 
 # Валидация конфигурации БД перед запуском
 def validate_database_config():
@@ -139,6 +147,162 @@ async def root_handler(request):
     """Корневой endpoint"""
     return web.Response(text="Voice Assistant Server is running!", status=200)
 
+async def portal_handler(request):
+    """
+    Создание сессии Customer Portal
+    Endpoint: POST /api/subscription/portal
+    Payload: { "hardware_id": "..." }
+    """
+    try:
+        data = await request.json()
+        hardware_id = data.get('hardware_id')
+        
+        if not hardware_id:
+            return web.json_response({'error': 'hardware_id required'}, status=400)
+        
+        # Lazy import to get singleton
+        from modules.subscription import get_subscription_module
+        subscription_module = get_subscription_module()
+        
+        if not subscription_module:
+             return web.json_response({'error': 'Subscription module disabled'}, status=503)
+             
+        result = await subscription_module.create_portal_session(hardware_id)
+        
+        if not result:
+             return web.json_response({'error': 'Could not create portal session (no subscription?)'}, status=404)
+             
+        return web.json_response(result)
+        
+    except Exception as e:
+        logger.error(f"[F-2025-017] Portal creation error: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+async def checkout_handler(request):
+    """
+    Создание сессии Checkout для покупки
+    Endpoint: POST /api/subscription/checkout
+    Payload: { "hardware_id": "..." }
+    """
+    try:
+        data = await request.json()
+        hardware_id = data.get('hardware_id')
+        
+        if not hardware_id:
+            return web.json_response({'error': 'hardware_id required'}, status=400)
+        
+        from modules.subscription import get_subscription_module
+        subscription_module = get_subscription_module()
+        
+        if not subscription_module:
+             return web.json_response({'error': 'Subscription module disabled'}, status=503)
+             
+        # Определяем base_url для корректного success/cancel редиректа
+        forwarded_host = request.headers.get("X-Forwarded-Host")
+        forwarded_proto = request.headers.get("X-Forwarded-Proto")
+        host = forwarded_host or request.host
+        scheme = forwarded_proto or request.scheme
+        base_url = f"{scheme}://{host}"
+
+        # Вызываем create_checkout_session
+        result = await subscription_module.create_checkout_session(
+            hardware_id=hardware_id,
+            base_url=base_url
+        )
+        
+        if not result:
+             return web.json_response({'error': 'Could not create checkout session'}, status=500)
+             
+        return web.json_response(result)
+        
+    except Exception as e:
+        logger.error(f"[F-2025-017] Checkout creation error: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+async def subscription_status_handler(request):
+    """
+    Получение статуса подписки (для поллинга)
+    Endpoint: GET /api/subscription/status?hardware_id=...
+    """
+    try:
+        hardware_id = request.query.get('hardware_id')
+        
+        if not hardware_id:
+            return web.json_response({'error': 'hardware_id required'}, status=400)
+        
+        from modules.subscription import get_subscription_module
+        subscription_module = get_subscription_module()
+        
+        if not subscription_module:
+            return web.json_response({'error': 'Subscription module disabled'}, status=503)
+            
+        result = await subscription_module.get_subscription_status(hardware_id)
+        return web.json_response(result)
+        
+    except Exception as e:
+        logger.error(f"[F-2025-017] Subscription status error: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+async def payment_success_handler(request):
+    """Страница успешной оплаты (redirect target для Stripe Checkout)."""
+    deep_link_base = os.getenv("DEEP_LINK_BASE_URL", "nexy://payment/")
+    session_id = request.query.get("session_id")
+    if session_id:
+        deep_link = f"{deep_link_base}success?session_id={quote(session_id)}"
+    else:
+        deep_link = f"{deep_link_base}success"
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Payment Successful</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; }}
+    .card {{ max-width: 540px; padding: 24px; border: 1px solid #e5e5e5; border-radius: 12px; }}
+    .btn {{ display: inline-block; padding: 10px 16px; background: #111; color: #fff; border-radius: 8px; text-decoration: none; }}
+  </style>
+  <script>
+    setTimeout(function() {{
+      try {{ window.close(); }} catch (e) {{}}
+    }}, 1200);
+  </script>
+</head>
+<body>
+  <div class="card">
+    <h2>Payment Successful ✅</h2>
+    <p>You can close this page. Your subscription is now active.</p>
+    <a class="btn" href="{deep_link}">Open App</a>
+  </div>
+</body>
+</html>"""
+    return web.Response(text=html, content_type="text/html")
+
+async def payment_cancel_handler(request):
+    """Страница отмены оплаты (redirect target для Stripe Checkout)."""
+    deep_link = os.getenv("DEEP_LINK_BASE_URL", "nexy://payment/") + "cancel"
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Payment Cancelled</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; }}
+    .card {{ max-width: 540px; padding: 24px; border: 1px solid #e5e5e5; border-radius: 12px; }}
+    .btn {{ display: inline-block; padding: 10px 16px; background: #111; color: #fff; border-radius: 8px; text-decoration: none; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Payment Cancelled</h2>
+    <p>If you changed your mind, you can try again.</p>
+    <a class="btn" href="{deep_link}">Return to App</a>
+  </div>
+</body>
+</html>"""
+    return web.Response(text=html, content_type="text/html")
+
 async def status_handler(request):
     """
     Статус сервера (PR-7 compliance)
@@ -199,17 +363,6 @@ async def cancel_task(task: asyncio.Task):
         await task
     except asyncio.CancelledError:
         pass
-
-
-def is_port_available(host: str, port: int) -> bool:
-    """Проверка доступности порта"""
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(1)
-            result = sock.connect_ex((host, port))
-            return result != 0  # Порт доступен, если соединение не удалось
-    except Exception:
-        return False
 
 
 def get_port_process_info(port: int) -> str:
@@ -314,6 +467,11 @@ async def main():
     app.router.add_get('/health', health_handler)
     app.router.add_get('/', root_handler)
     app.router.add_get('/status', status_handler)
+    app.router.add_get('/payment/success', payment_success_handler)
+    app.router.add_get('/payment/cancel', payment_cancel_handler)
+    app.router.add_post('/api/subscription/portal', portal_handler)
+    app.router.add_post('/api/subscription/checkout', checkout_handler)
+    app.router.add_get('/api/subscription/status', subscription_status_handler)
     
     # ⭐ SUBSCRIPTION MODULE: инициализация и webhook routes
     # Feature ID: F-2025-017-stripe-payment
@@ -353,26 +511,6 @@ async def main():
         })
     
 
-    # Проверяем доступность порта перед запуском
-    if not is_port_available(http_config.host, http_config.port):
-        port_info = get_port_process_info(http_config.port)
-        error_msg = (
-            f"Порт {http_config.port} уже занят процессом {port_info}. "
-            f"Используйте другой порт через переменную окружения HTTP_PORT или остановите процесс: "
-            f"lsof -ti :{http_config.port} | xargs kill"
-        )
-        logger.error(error_msg, extra={
-            'scope': 'server',
-            'decision': 'error',
-            'ctx': {
-                'host': http_config.host,
-                'port': http_config.port,
-                'port_info': port_info,
-                'error': 'port_already_in_use'
-            }
-        })
-        raise OSError(f"[Errno 48] Address already in use: {http_config.host}:{http_config.port}")
-    
     # Запускаем HTTP сервер на порту 8080
     try:
         runner = web.AppRunner(app)
@@ -449,26 +587,7 @@ async def main():
         'ctx': {'host': grpc_config.host, 'port': grpc_config.port}
     })
     
-    # Проверяем доступность порта gRPC перед запуском
-    if not is_port_available(grpc_config.host, grpc_config.port):
-        port_info = get_port_process_info(grpc_config.port)
-        error_msg = (
-            f"Порт gRPC {grpc_config.port} уже занят процессом {port_info}. "
-            f"Используйте другой порт через переменную окружения GRPC_PORT или остановите процесс: "
-            f"lsof -ti :{grpc_config.port} | xargs kill"
-        )
-        logger.error(error_msg, extra={
-            'scope': 'grpc',
-            'decision': 'error',
-            'ctx': {
-                'host': grpc_config.host,
-                'port': grpc_config.port,
-                'port_info': port_info,
-                'error': 'port_already_in_use'
-            }
-        })
-        raise OSError(f"[Errno 48] Address already in use: {grpc_config.host}:{grpc_config.port}")
-    
+    shutdown_wait_task: asyncio.Task[object] | None = None
     try:
         # Ленивый импорт run_server для избежания циклических зависимостей
         from modules.grpc_service.core.grpc_server import run_server as serve
@@ -493,16 +612,14 @@ async def main():
         
         # Запускаем gRPC сервер в фоне
         serve_task = asyncio.create_task(run_grpc_server())
-        
+        shutdown_wait_task = asyncio.create_task(shutdown_event.wait())
+        wait_tasks: list[asyncio.Task[object]] = [serve_task, shutdown_wait_task]
+
         # Регистрируем cleanup функцию
-        servers_cleanup.append(lambda: cancel_task(metrics_task))
         servers_cleanup.append(lambda: cancel_task(serve_task))
-        
+
         # Ждем сигнала завершения или ошибки
-        await asyncio.wait(
-            [serve_task, asyncio.create_task(shutdown_event.wait())],
-            return_when=asyncio.FIRST_COMPLETED
-        )
+        await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
         
     finally:
         # Graceful shutdown
@@ -514,6 +631,13 @@ async def main():
             await metrics_task
         except asyncio.CancelledError:
             pass
+        
+        if shutdown_wait_task is not None and not shutdown_wait_task.done():
+            shutdown_wait_task.cancel()
+            try:
+                await shutdown_wait_task
+            except asyncio.CancelledError:
+                pass
 
 if __name__ == "__main__":
     try:

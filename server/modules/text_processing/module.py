@@ -96,7 +96,7 @@ class TextProcessingModule(UniversalModuleInterface):
             
             text = request.get("text", "")
             image_data = request.get("image_data")
-            use_search = request.get("use_search", False)
+            use_search = request.get("use_search", None)
             session_id = request.get("session_id")
             
             if not text:
@@ -107,7 +107,10 @@ class TextProcessingModule(UniversalModuleInterface):
             if image_data:
                 async def stream_with_image():
                     async for chunk in processor.process_text_streaming(
-                        text, image_data, session_id=session_id
+                        text,
+                        image_data,
+                        session_id=session_id,
+                        use_search=use_search
                     ):
                         # Возвращаем текст напрямую
                         yield {"text": chunk, "type": "text_chunk"}
@@ -116,7 +119,11 @@ class TextProcessingModule(UniversalModuleInterface):
                 # Обычная обработка текста
                 # Возвращаем текст напрямую
                 async def stream_text():
-                    async for chunk in processor.process_text_streaming(text, session_id=session_id):
+                    async for chunk in processor.process_text_streaming(
+                        text,
+                        session_id=session_id,
+                        use_search=use_search
+                    ):
                         # Возвращаем текст напрямую
                         yield {"text": chunk, "type": "text_chunk"}
                 return stream_text()
@@ -177,4 +184,3 @@ class TextProcessingModule(UniversalModuleInterface):
             Экземпляр TextProcessor или None
         """
         return self._processor
-

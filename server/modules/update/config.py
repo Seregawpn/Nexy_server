@@ -9,17 +9,12 @@ from pathlib import Path
 
 # Импортируем функцию для получения версии из единого источника истины
 # Используем относительный импорт через sys.path для избежания циклических зависимостей
-import sys
 import logging
 from pathlib import Path as PathLib
 
 logger = logging.getLogger(__name__)
-
-_config_path = PathLib(__file__).parent.parent.parent / "config"
-if str(_config_path) not in sys.path:
-    sys.path.insert(0, str(_config_path))
 try:
-    from unified_config import get_version_from_file
+    from config.unified_config import get_version_from_file
 except ImportError:
     # Fallback если импорт не удался (для тестов или других случаев)
     def get_version_from_file() -> str:
@@ -150,6 +145,5 @@ class UpdateConfig:
         except Exception as e:
             logger.warning(f"Config validation failed: {e}")
             return False
-
 
 

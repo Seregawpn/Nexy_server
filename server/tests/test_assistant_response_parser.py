@@ -221,7 +221,20 @@ class TestAssistantResponseParser:
             # Проверяем, что было предупреждение
             assert mock_warning.called
 
+    def test_session_id_override_logs_and_metrics(self, parser):
+        """Дополнительный тест: session_id override логируется и метрика фиксируется"""
+        response = {
+            "session_id": "123e4567-e89b-12d3-a456-426614174000",
+            "text": "Текст"
+        }
+        
+        with patch.object(parser.logger, 'warning') as mock_warning:
+            with patch('utils.metrics_collector.record_decision_metric') as mock_metric:
+                result = parser.parse(response, session_id="00000000-0000-4000-8000-000000000000")
+                assert result.session_id == "00000000-0000-4000-8000-000000000000"
+                assert mock_warning.called
+                assert mock_metric.called
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

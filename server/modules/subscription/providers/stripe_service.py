@@ -9,7 +9,7 @@ import stripe
 import time
 import hashlib
 import json
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 import os
 from dotenv import load_dotenv
 
@@ -25,13 +25,14 @@ class StripeService:
             raise ValueError("STRIPE_SECRET_KEY not found")
         stripe.api_key = self.api_key
     
-    def create_checkout_session(
+    async def create_checkout_session(
         self,
         hardware_id: str,
         success_url: str,
         cancel_url: str,
         price_id: Optional[str] = None,
-        customer_id: Optional[str] = None
+        customer_id: Optional[str] = None,
+        trial_days: Optional[int] = None
     ) -> Dict:
         """
         Создать Checkout Session для подписки
@@ -46,10 +47,13 @@ class StripeService:
             cancel_url: URL для редиректа при отмене
             price_id: Опциональный Stripe Price ID (если не указан, создается динамически)
             customer_id: Опциональный Stripe Customer ID (если уже существует)
+            trial_days: Опционально кол-во дней триала (переопределяет Price)
         
         Returns:
             Dict с checkout_url, session_id, customer_id, subscription_id
         """
+        import asyncio
+        
         try:
             print(f"[STRIPE] Creating checkout session for hardware_id: {hardware_id}")
             
@@ -77,20 +81,10 @@ class StripeService:
                 # ⭐ Промокоды отключены (по требованию)
                 # 'allow_promotion_codes': False,  # Не указываем, чтобы отключить промокоды
                 
-                # ⭐ Методы оплаты: Карта, Link, Apple Pay, Google Pay
-                # - 'card': Обычные карты (Visa, Mastercard, etc.)
-                # - 'link': Stripe Link (быстрая оплата с сохраненными данными)
-                # - Apple Pay и Google Pay активируются автоматически, если:
-                #   1. Включены в Stripe Dashboard (Settings → Payment methods)
-                #   2. Домен верифицирован (для production) или используется localhost
-                #   3. Браузер/устройство поддерживает эти методы
-                # ⚠️ ВАЖНО: apple_pay и google_pay НЕ являются валидными значениями для payment_method_types
-                # Они активируются автоматически Stripe через другие механизмы
+                # ⭐ Методы оплаты: Карта, Link
                 'payment_method_types': ['card', 'link'],
                 
                 # ⭐ Опционально: Настройки для Apple Pay / Google Pay
-                # Эти настройки позволяют явно контролировать поведение Apple Pay/Google Pay
-                # Если не указаны, Stripe использует настройки по умолчанию из Dashboard
                 'payment_method_options': {
                     'card': {
                         'request_three_d_secure': 'automatic',  # 3D Secure для безопасности
@@ -98,9 +92,11 @@ class StripeService:
                 },
             }
             
+            # Добавляем trial_days если передан
+            if trial_days and trial_days > 0:
+                session_params['subscription_data']['trial_period_days'] = int(trial_days)
+            
             # ⭐ КРИТИЧНО: Для customer metadata в subscription mode нужно создать customer заранее
-            # В subscription mode customer создается автоматически, но metadata нельзя установить через Checkout
-            # Решение: создаем customer заранее с metadata (если не передан customer_id)
             if not customer_id:
                 # Создаем customer с hardware_id в metadata заранее
                 customer = self.create_customer(hardware_id=hardware_id)
@@ -133,13 +129,10 @@ class StripeService:
                     'quantity': 1,
                 }]
             
-            # ⭐ КРИТИЧНО: Idempotency key для предотвращения дубликатов при ретраях
-            # Включает хеш параметров, чтобы при изменении параметров создавался новый ключ
-            # Формат: checkout_{hardware_id}_{день}_{hash_params}
-            # Это гарантирует, что одинаковые параметры в один день = один checkout
+            # ⭐ КРИТИЧНО: Idempotency key
             day_key = int(time.time() / 86400)
             
-            # Создаем хеш из ключевых параметров, которые влияют на результат
+            # Создаем хеш из ключевых параметров
             params_for_hash = {
                 'payment_method_types': sorted(session_params.get('payment_method_types', [])),
                 'price_id': price_id,
@@ -160,11 +153,17 @@ class StripeService:
             
             idempotency_key = f"checkout_{hardware_id}_{day_key}_{params_hash}"
             
-            # ⭐ КРИТИЧНО: Idempotency key передается как именованный параметр функции create()
-            # Это более безопасно и явно, чем передача в session_params
-            session = stripe.checkout.Session.create(
-                **session_params,
-                idempotency_key=idempotency_key
+            print(f"[STRIPE] Using idempotency key: {idempotency_key} for {hardware_id}")
+
+            # ⭐ EXECUTE Blocking call in executor
+            loop = asyncio.get_running_loop()
+            session = await loop.run_in_executor(
+                None,
+                lambda: stripe.checkout.Session.create(
+                    api_key=self.api_key,
+                    idempotency_key=idempotency_key,
+                    **session_params
+                )
             )
             
             result = {
@@ -177,20 +176,11 @@ class StripeService:
             
             print(f"[STRIPE] ✅ Checkout session created: {session.id}")
             print(f"[STRIPE] URL: {session.url}")
-            print(f"[STRIPE] Idempotency key: {idempotency_key}")
-            
-            # Проверка metadata
-            if session.metadata and session.metadata.get('hardware_id') == hardware_id:
-                print(f"[STRIPE] ✅ hardware_id в metadata подтвержден: {hardware_id}")
-            else:
-                print(f"[STRIPE] ⚠️  WARNING: hardware_id не найден в metadata!")
             
             return result
             
         except stripe.error.IdempotencyError as e:
             print(f"[STRIPE] ⚠️  Idempotency error (дубликат): {e}")
-            # При idempotency error можно попробовать получить существующую сессию
-            # Но для MVP 3 просто пробрасываем ошибку
             raise
         except stripe.error.StripeError as e:
             print(f"[STRIPE] ❌ Stripe error: {e}")
@@ -229,7 +219,7 @@ class StripeService:
         try:
             print(f"[STRIPE] Creating customer for hardware_id: {hardware_id}")
             
-            customer_params = {
+            customer_params: Dict[str, Any] = {
                 'metadata': {
                     'hardware_id': hardware_id,
                 },
@@ -254,7 +244,8 @@ class StripeService:
     def create_portal_session(
         self,
         customer_id: str,
-        return_url: Optional[str] = None
+        return_url: Optional[str] = None,
+        email: Optional[str] = None
     ) -> Dict:
         """
         Создать Customer Portal Session для управления подпиской
@@ -264,6 +255,7 @@ class StripeService:
         Args:
             customer_id: Stripe Customer ID
             return_url: URL для возврата из Portal (deep link)
+            email: Email пользователя для синхронизации (опционально)
         
         Returns:
             Dict с portal_url и session_id
@@ -271,12 +263,23 @@ class StripeService:
         try:
             print(f"[STRIPE] Creating portal session for customer: {customer_id}")
             
+            # Sync email if provided
+            if email:
+                try:
+                    # Retrieve customer to check current email? Or just overwrite?
+                    # Overwriting is safer to ensure sync.
+                    print(f"[STRIPE] Syncing email to Stripe: {email}")
+                    stripe.Customer.modify(customer_id, email=email)
+                except Exception as e:
+                    # Non-blocking error
+                    print(f"[STRIPE] ⚠️ Failed to sync email: {e}")
+
             # Формируем return_url для deep link
             if not return_url:
                 base_url = os.getenv('DEEP_LINK_BASE_URL', 'nexy://payment/')
                 return_url = f"{base_url}portal_return"
             
-            session_params = {
+            session_params: Dict[str, Any] = {
                 'customer': customer_id,
                 'return_url': return_url,
             }

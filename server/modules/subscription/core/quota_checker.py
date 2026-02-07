@@ -13,6 +13,8 @@ import logging
 from typing import Dict, Optional, TYPE_CHECKING
 from datetime import datetime, date, timedelta
 
+from .subscription_types import AccessTier, map_status_to_tier
+
 if TYPE_CHECKING:
     from ..repository.subscription_repository import SubscriptionRepository
 
@@ -80,16 +82,7 @@ class QuotaChecker:
         
         status = subscription.get('status')
         
-        # Безлимитный доступ для определенных статусов
-        if status in ['paid_trial', 'paid', 'admin_active', 'grandfathered']:
-            return {
-                'allowed': True,
-                'reason': 'unlimited_access',
-                'status': status,
-                'limits': None
-            }
-        
-        # Billing problem - проверяем grace period
+        # 1. BILLING PROBLEM (Grace Period)
         if status == 'billing_problem':
             grace_end = subscription.get('grace_period_end_at')
             if grace_end and isinstance(grace_end, datetime) and grace_end > datetime.now():
@@ -99,97 +92,132 @@ class QuotaChecker:
                     'status': status,
                     'limits': None
                 }
-            # Grace period истек, или его не было
+            # Grace period истек, но мы не блокируем полностью!
+            # Переходим к логике Limited Free Tier (fallback)
+
+        # 2. UNLIMITED ACCESS
+        if map_status_to_tier(status) == AccessTier.UNLIMITED:
             return {
-                'allowed': False,
-                'reason': 'grace_period_expired',
+                'allowed': True,
+                'reason': 'unlimited_access',
                 'status': status,
-                'message': 'Payment failed. Please update your payment method to continue.',
                 'limits': None
             }
         
-        # Limited free trial - проверяем квоты
-        if status == 'limited_free_trial':
-            today = date.today()
-            
-            # Автоматический сброс счетчиков, если дата последнего сброса устарела
-            last_reset_date = subscription.get('usage_last_reset_date')
-            if last_reset_date and isinstance(last_reset_date, date) and last_reset_date < today:
-                # Сбрасываем только те счетчики, которые должны быть сброшены
-                # (например, если last_reset_date был вчера, сбрасываем daily)
-                # Более сложные сбросы (weekly/monthly) делаются через периодические задачи
-                logger.info(f"[QuotaChecker] Auto-resetting daily quota for {hardware_id[:8]}...")
-                self.repository.update_subscription(
-                    hardware_id,
-                    usage_daily_count=0,
-                    usage_last_reset_date=today # Обновляем дату сброса
-                )
-                subscription['usage_daily_count'] = 0
-                subscription['usage_last_reset_date'] = today
-            
-            daily_used = subscription.get('usage_daily_count', 0)
-            weekly_used = subscription.get('usage_weekly_count', 0)
-            monthly_used = subscription.get('usage_monthly_count', 0)
-            
-            limits = {
-                'daily': {'used': daily_used, 'limit': self.DAILY_LIMIT},
-                'weekly': {'used': weekly_used, 'limit': self.WEEKLY_LIMIT},
-                'monthly': {'used': monthly_used, 'limit': self.MONTHLY_LIMIT}
-            }
-            
-            if daily_used >= self.DAILY_LIMIT:
-                return {
-                    'allowed': False,
-                    'reason': 'daily_limit_exceeded',
-                    'status': status,
-                    'message': f'Daily request limit ({self.DAILY_LIMIT}) exceeded. Please subscribe for unlimited access.',
-                    'limits': limits
-                }
-            if weekly_used >= self.WEEKLY_LIMIT:
-                return {
-                    'allowed': False,
-                    'reason': 'weekly_limit_exceeded',
-                    'status': status,
-                    'message': f'Weekly request limit ({self.WEEKLY_LIMIT}) exceeded. Please subscribe for unlimited access.',
-                    'limits': limits
-                }
-            if monthly_used >= self.MONTHLY_LIMIT:
-                return {
-                    'allowed': False,
-                    'reason': 'monthly_limit_exceeded',
-                    'status': status,
-                    'message': f'Monthly request limit ({self.MONTHLY_LIMIT}) exceeded. Please subscribe for unlimited access.',
-                    'limits': limits
-                }
-            
+        # 3. LIMITED FREE TIER (Fallback)
+        # Статусы, которые попадают сюда:
+        # - limited_free_trial (наш дефолт)
+        # - canceled (отменена подписка)
+        # - unpaid / past_due (неоплачена)
+        # - incomplete / incomplete_expired
+        # - paused
+        # - none / unknown
+        
+        # Для всех этих статусов применяем лимиты
+        today = date.today()
+        
+        # Автоматический сброс счетчиков
+        last_reset_date = subscription.get('usage_last_reset_date')
+        if last_reset_date and isinstance(last_reset_date, date) and last_reset_date < today:
+            logger.info(f"[QuotaChecker] Auto-resetting daily quota for {hardware_id[:8]}...")
+            self.repository.update_subscription(
+                hardware_id,
+                usage_daily_count=0,
+                usage_last_reset_date=today
+            )
+            subscription['usage_daily_count'] = 0
+            subscription['usage_last_reset_date'] = today
+        
+        daily_used = subscription.get('usage_daily_count', 0)
+        weekly_used = subscription.get('usage_weekly_count', 0)
+        monthly_used = subscription.get('usage_monthly_count', 0)
+        
+        limits = {
+            'daily': {'used': daily_used, 'limit': self.DAILY_LIMIT},
+            'weekly': {'used': weekly_used, 'limit': self.WEEKLY_LIMIT},
+            'monthly': {'used': monthly_used, 'limit': self.MONTHLY_LIMIT}
+        }
+        
+        # Формируем сообщение в зависимости от статуса
+        status_msg = ""
+        if status == 'canceled':
+            status_msg = "Your subscription is canceled."
+        elif status in ['unpaid', 'past_due']:
+            status_msg = "Payment failed."
+        elif status == 'trialing_expired': # Если был наш внутренний триал
+             status_msg = "Your trial has expired."
+
+        base_msg = f"{status_msg} You are on the Limited Free Tier ({self.DAILY_LIMIT} requests/day)." if status_msg else f"You have {self.DAILY_LIMIT - daily_used} daily requests remaining."
+
+        if daily_used >= self.DAILY_LIMIT:
             return {
-                'allowed': True,
-                'reason': 'within_quota',
+                'allowed': False,
+                'reason': 'daily_limit_exceeded',
                 'status': status,
-                'message': f'You have {self.DAILY_LIMIT - daily_used} daily requests remaining.',
+                'message': f'Daily limit exceeded. {base_msg}',
+                'limits': limits
+            }
+        if weekly_used >= self.WEEKLY_LIMIT:
+            return {
+                'allowed': False,
+                'reason': 'weekly_limit_exceeded',
+                'status': status,
+                'message': f'Weekly limit exceeded. {base_msg}',
+                'limits': limits
+            }
+        if monthly_used >= self.MONTHLY_LIMIT:
+            return {
+                'allowed': False,
+                'reason': 'monthly_limit_exceeded',
+                'status': status,
+                'message': f'Monthly limit exceeded. {base_msg}',
                 'limits': limits
             }
         
-        # Неизвестный статус - по умолчанию запрещаем, чтобы не было бесконечного использования
-        logger.warning(f"[QuotaChecker] Unknown status {status} for {hardware_id[:8]}..., denying access by default.")
         return {
-            'allowed': False,
-            'reason': 'unknown_status',
+            'allowed': True,
+            'reason': 'within_quota',
             'status': status,
-            'message': 'Your subscription status is unknown. Please contact support.',
-            'limits': None
+            'message': base_msg,
+            'limits': limits
         }
 
-    def increment_usage(self, hardware_id: str) -> Dict:
+    async def increment_usage(self, hardware_id: str) -> Dict:
         """
         Инкрементирует счетчики использования для пользователя.
         Вызывается после успешной обработки запроса.
         """
         subscription = self.repository.get_subscription(hardware_id)
-        if not subscription or subscription.get('status') != 'limited_free_trial':
-            return {'success': False, 'message': 'Not a limited_free_trial user or subscription not found'}
         
+        # Если подписки нет - создаем её (первое использование)
+        if not subscription:
+            logger.info(f"[QuotaChecker] First use by {hardware_id[:8]}..., creating limited_free_trial")
+            self.repository.create_or_update_subscription(
+                hardware_id=hardware_id,
+                status='limited_free_trial'
+            )
+            subscription = self.repository.get_subscription(hardware_id)
+        if not subscription:
+            return {'success': False, 'message': 'Subscription not found after create'}
+
+        # Проверяем, что подписка позволяет лимиты
+        # Если платный - ничего не инкрементируем (unlimited)
+        # Если trial/billing_problem - проверяем логику
+        status = subscription.get('status')
+        if status == 'billing_problem':
+            grace_end = subscription.get('grace_period_end_at')
+            if grace_end and isinstance(grace_end, datetime) and grace_end > datetime.now():
+                return {'success': True, 'message': 'Grace period active, no increment needed'}
+
+        if map_status_to_tier(status) == AccessTier.UNLIMITED:
+            # Для безлимитных тарифов просто возвращаем успех
+            return {'success': True, 'message': 'Unlimited access, no increment needed'}
+             
+        # Для всех остальных статусов (limited_free_trial, canceled, unpaid, none, etc.)
+        # Инкрементируем счетчики
         current_date = date.today()
+        # [FIX] Используем async/sync правильно. Репозиторий - синхронный (sqlite), но вызывается в thread executor или async wrapper?
+        # В данном коде репозиторий синхронный.
         success = self.repository.increment_usage(hardware_id, current_date)
         
         if success:
@@ -266,4 +294,3 @@ class QuotaChecker:
         
         logger.info(f"[QuotaChecker] Reset monthly counters: {reset_count} subscriptions")
         return {'success': True, 'reset_count': reset_count, 'reset_date': month_start.isoformat()}
-

@@ -25,7 +25,7 @@ def sign_file(file_path: str, private_key_path: str) -> str:
     with open(private_key_path, 'r') as f:
         private_key_b64 = f.read().strip()
     
-    private_key = SigningKey(private_key_b64, encoder=Base64Encoder)
+    private_key = SigningKey(private_key_b64.encode("utf-8"), encoder=Base64Encoder)
     
     # Читаем файл
     with open(file_path, 'rb') as f:

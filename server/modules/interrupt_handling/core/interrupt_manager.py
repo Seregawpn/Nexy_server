@@ -400,7 +400,7 @@ class InterruptManager(UniversalModuleInterface):
             logger.info("Cleaning up Interrupt Manager...")
             
             # Сбрасываем флаги
-            self._reset_interrupt_flags()
+            await self._reset_interrupt_flags()
             
             # Очищаем зарегистрированные модули
             self.registered_modules.clear()
@@ -409,7 +409,7 @@ class InterruptManager(UniversalModuleInterface):
             self.interrupt_callbacks.clear()
             
             # Очищаем провайдеры
-            if hasattr(self, 'global_flag_provider'):
+            if hasattr(self, 'global_flag_provider') and self.global_flag_provider is not None:
                 await self.global_flag_provider.cleanup()
             
             self._status = ModuleStatus(state=ModuleState.STOPPED, health="ok")

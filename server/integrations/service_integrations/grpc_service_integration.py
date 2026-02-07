@@ -4,6 +4,7 @@ GrpcServiceIntegration - координирует все workflow интегра
 """
 
 import asyncio
+import inspect
 import logging
 from typing import Dict, Any, AsyncGenerator, Optional
 from datetime import datetime
@@ -304,7 +305,10 @@ class GrpcServiceIntegration:
                         'workflow_instance_id': id(self.streaming_workflow)
                     }
                 )
-                async for result in self.streaming_workflow.process_request_streaming(request_data):
+                stream_iter = self.streaming_workflow.process_request_streaming(request_data)
+                if inspect.isawaitable(stream_iter):
+                    stream_iter = await stream_iter
+                async for result in stream_iter:
                     will_emit = bool(result.get('text_response')) or bool(result.get('command_payload'))
                     if isinstance(result.get('audio_chunk'), (bytes, bytearray)):
                         will_emit = True

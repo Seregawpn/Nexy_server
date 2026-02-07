@@ -171,6 +171,8 @@ class LangChainGeminiProvider(UniversalProviderInterface):
         
         # LangChain клиент
         self.llm = None
+        self.llm_with_tools = None
+        self.llm_no_tools = None
         self.is_available = LANGCHAIN_AVAILABLE and bool(self.api_key)
         self.is_initialized = False
         
@@ -203,26 +205,32 @@ class LangChainGeminiProvider(UniversalProviderInterface):
                 logger.info("✅ Google Search включен")
             else:
                 logger.info("ℹ️  Google Search выключен (работает без поиска)")
-            
-            # Создаем LLM с model_kwargs только если есть tools, иначе не передаем
+
+            # Создаем LLM без tools (default)
             llm_params = {
                 "model": self.model_name,
                 "google_api_key": self.api_key,
                 "temperature": self.temperature,
                 "streaming": True,
             }
-            
-            # Добавляем model_kwargs только если есть tools
-            if model_kwargs:
-                llm_params["model_kwargs"] = model_kwargs
-            
+
             if not ChatGoogleGenerativeAI:
                 logger.error("ChatGoogleGenerativeAI не доступен (LangChain не установлен)")
                 return False
-            
-            self.llm = ChatGoogleGenerativeAI(**llm_params)
-            
-            logger.info(f"✅ LangChain клиент создан")
+
+            self.llm_no_tools = ChatGoogleGenerativeAI(**llm_params)
+
+            if model_kwargs:
+                llm_with_tools_params = dict(llm_params)
+                llm_with_tools_params["model_kwargs"] = model_kwargs
+                self.llm_with_tools = ChatGoogleGenerativeAI(**llm_with_tools_params)
+            else:
+                self.llm_with_tools = None
+
+            # Backward-compatible default
+            self.llm = self.llm_with_tools or self.llm_no_tools
+
+            logger.info("✅ LangChain клиент создан")
             
             # Тестируем подключение
             logger.info(f"🔍 Тестируем подключение к LangChain...")
@@ -236,7 +244,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             if HumanMessage:
                 messages.append(HumanMessage(content=test_query))
             
-            for chunk in self.llm.stream(messages):
+            async for chunk in self.llm.astream(messages):
                 text = extract_text_from_chunk(chunk)
                 if text:
                     # Убеждаемся, что text - это строка
@@ -258,7 +266,13 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             traceback.print_exc()
             return False
     
-    async def process(self, input_data: str, session_id: Optional[str] = None) -> AsyncGenerator[str, None]:
+    async def process(
+        self,
+        input_data: str,
+        session_id: Optional[str] = None,
+        use_search: Optional[bool] = None,
+        system_prompt_override: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
         """
         ЭТАП 1: Обработка текста через LangChain
         Возвращаем текст напрямую
@@ -270,14 +284,18 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             Части текстового ответа
         """
         try:
-            if not self.is_initialized or not self.llm:
+            llm = self._select_llm(use_search)
+            if not self.is_initialized or not llm:
                 raise Exception("LangChain not initialized")
             
             # Формируем сообщения согласно требованиям: SystemMessage + HumanMessage
             # System prompt уже содержит все необходимые инструкции из конфигурации
             messages = []
-            if self.system_prompt and SystemMessage:
-                messages.append(SystemMessage(content=self.system_prompt))
+            system_prompt = system_prompt_override if system_prompt_override is not None else self.system_prompt
+            if system_prompt and SystemMessage:
+                messages.append(SystemMessage(content=system_prompt))
+            if use_search is True and SystemMessage:
+                messages.append(SystemMessage(content="You MUST use google_search for this request and base the answer on search results."))
             if HumanMessage:
                 content = input_data
                 if session_id:
@@ -286,7 +304,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             
             # Стриминг через LangChain
             # НЕ разбиваем на предложения здесь - это делает StreamingWorkflowIntegration
-            for chunk in self.llm.stream(messages):
+            async for chunk in llm.astream(messages):
                 # Используем chunk.text напрямую
                 # Используем extract_text_from_chunk для надежности
                 text = extract_text_from_chunk(chunk)
@@ -304,7 +322,14 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             logger.error(f"LangChain text processing error: {e}")
             raise e
     
-    async def process_with_image(self, input_data: str, image_data: Union[str, bytes], session_id: Optional[str] = None) -> AsyncGenerator[str, None]:
+    async def process_with_image(
+        self,
+        input_data: str,
+        image_data: Union[str, bytes],
+        session_id: Optional[str] = None,
+        use_search: Optional[bool] = None,
+        system_prompt_override: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
         """
         ЭТАП 2: Обработка текста с WebP изображением
         
@@ -316,7 +341,8 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             Части текстового ответа
         """
         try:
-            if not self.is_initialized or not self.llm:
+            llm = self._select_llm(use_search)
+            if not self.is_initialized or not llm:
                 raise Exception("LangChain not initialized")
             
             # Проверяем, что image_data не None
@@ -362,8 +388,11 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             
             # Формируем сообщения согласно требованиям: SystemMessage + HumanMessage с изображением
             messages = []
-            if self.system_prompt and SystemMessage:
-                messages.append(SystemMessage(content=self.system_prompt))
+            system_prompt = system_prompt_override if system_prompt_override is not None else self.system_prompt
+            if system_prompt and SystemMessage:
+                messages.append(SystemMessage(content=system_prompt))
+            if use_search is True and SystemMessage:
+                messages.append(SystemMessage(content="You MUST use google_search for this request and base the answer on search results."))
             
             # HumanMessage с текстом и изображением
             if HumanMessage:
@@ -371,7 +400,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             
             # Стриминг через LangChain
             # НЕ разбиваем на предложения здесь - это делает StreamingWorkflowIntegration
-            for chunk in self.llm.stream(messages):
+            async for chunk in llm.astream(messages):
                 # Используем chunk.text напрямую
                 # Используем extract_text_from_chunk для надежности
                 text = extract_text_from_chunk(chunk)
@@ -400,6 +429,8 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             logger.info("Cleaning up LangChainGeminiProvider...")
             
             self.llm = None
+            self.llm_with_tools = None
+            self.llm_no_tools = None
             self.is_initialized = False
             
             logger.info("LangChainGeminiProvider cleaned up successfully")
@@ -439,3 +470,10 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             "max_tokens": self.max_tokens
         })
         return base_metrics
+
+    def _select_llm(self, use_search: Optional[bool]):
+        if use_search is True and self.llm_with_tools:
+            return self.llm_with_tools
+        if use_search is False:
+            return self.llm_no_tools
+        return self.llm

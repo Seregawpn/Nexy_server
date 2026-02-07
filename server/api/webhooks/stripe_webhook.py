@@ -49,6 +49,8 @@ async def stripe_webhook_handler(request: web.Request) -> web.Response:
         payload = await request.read()
         sig_header = request.headers.get('Stripe-Signature', '')
         
+        logger.debug(f"[F-2025-017] Webhook received: payload_size={len(payload)}, sig_header={bool(sig_header)}")
+        
         # Verify signature
         event = await _verify_and_construct_event(
             payload=payload,
@@ -66,36 +68,58 @@ async def stripe_webhook_handler(request: web.Request) -> web.Response:
         logger.info(f"[F-2025-017] Webhook received: type={event_type} id={event_id}")
         
         # Check idempotency
-        is_duplicate = await _check_idempotency(event_id)
-        if is_duplicate:
-            logger.info(f"[F-2025-017] Duplicate event ignored: {event_id}")
-            return web.json_response({
-                'status': 'duplicate',
-                'message': 'Event already processed'
-            }, status=200)
+        try:
+            is_duplicate = await _check_idempotency(event_id)
+            if is_duplicate:
+                logger.info(f"[F-2025-017] Duplicate event ignored: {event_id}")
+                return web.json_response({
+                    'status': 'duplicate',
+                    'message': 'Event already processed'
+                }, status=200)
+        except Exception as e:
+            logger.warning(f"[F-2025-017] Idempotency check failed, continuing: {e}")
+            # Continue processing even if idempotency check fails
         
         # Process event
-        result = await _process_event(event)
-        
-        # Invalidate cache
-        subscription_module = get_subscription_module()
-        if subscription_module:
-            subscription_module.invalidate_all_cache()
-        
-        logger.info(f"[F-2025-017] Webhook processed: type={event_type} id={event_id} result={result}")
-        
-        return web.json_response({
-            'status': 'processed',
-            'event_id': event_id,
-            'result': result
-        }, status=200)
+        try:
+            result = await _process_event(event)
+            
+            # Invalidate cache
+            try:
+                subscription_module = get_subscription_module()
+                if subscription_module:
+                    subscription_module.invalidate_all_cache()
+            except Exception as e:
+                logger.warning(f"[F-2025-017] Cache invalidation failed: {e}")
+            
+            logger.info(f"[F-2025-017] Webhook processed: type={event_type} id={event_id} result={result}")
+            
+            # Return 200 OK even for ignored events (payment_intent.*, charge.*)
+            return web.json_response({
+                'status': 'processed',
+                'event_id': event_id,
+                'result': result
+            }, status=200)
+        except Exception as e:
+            import traceback
+            logger.error(f"[F-2025-017] Event processing exception: {e}")
+            logger.error(f"[F-2025-017] Traceback: {traceback.format_exc()}")
+            # Return 200 OK to prevent Stripe from retrying
+            # Log the error but don't fail the webhook
+            return web.json_response({
+                'status': 'error',
+                'event_id': event_id,
+                'message': str(e)
+            }, status=200)
         
     except json.JSONDecodeError:
         logger.error("[F-2025-017] Invalid JSON in webhook payload")
         return web.json_response({'error': 'Invalid JSON'}, status=400)
         
     except Exception as e:
+        import traceback
         logger.error(f"[F-2025-017] Webhook error: {e}")
+        logger.error(f"[F-2025-017] Traceback: {traceback.format_exc()}")
         return web.json_response({
             'status': 'error',
             'message': str(e)
@@ -170,6 +194,11 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
     event_type = event.get('type')
     event_data = event.get('data', {}).get('object', {})
     stripe_created = event.get('created')
+
+    if not isinstance(event_id, str) or not event_id:
+        return {'status': 'error', 'message': 'missing_event_id'}
+    if not isinstance(event_type, str) or not event_type:
+        return {'status': 'error', 'message': 'missing_event_type'}
     
     repo = SubscriptionRepository()
     
@@ -191,7 +220,15 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
             return {'status': 'skipped', 'reason': 'already_recorded'}
         
         # Process based on event type
-        result = await _handle_event_type(event_type, event_data, hardware_id, repo)
+        # Pass event_id AND stripe_created for idempotency/ordering guards
+        result = await _handle_event_type(
+            event_type, 
+            event_data, 
+            hardware_id, 
+            repo,
+            event_id,
+            stripe_created
+        )
         
         # Mark as processed
         repo.record_event(
@@ -206,7 +243,9 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
         return result
         
     except Exception as e:
+        import traceback
         logger.error(f"[F-2025-017] Event processing failed: {e}")
+        logger.error(f"[F-2025-017] Traceback: {traceback.format_exc()}")
         return {'status': 'error', 'message': str(e)}
 
 
@@ -235,7 +274,9 @@ async def _handle_event_type(
     event_type: str,
     event_data: Dict[str, Any],
     hardware_id: Optional[str],
-    repo
+    repo,
+    event_id: str,
+    stripe_created: Optional[int]
 ) -> Dict[str, Any]:
     """
     Handle specific event types.
@@ -257,12 +298,40 @@ async def _handle_event_type(
     subscription = repo.get_subscription(hardware_id)
     current_status = subscription.get('status') if subscription else None
     
-    # Determine new status based on event
+    # Initialize variables (will be set for handled events)
+    new_status = None
+    stripe_status = None
+    
+    # Extract extra data for state machine
+    current_period_end = None
+    email = None
+    
     if event_type == 'checkout.session.completed':
         # New subscription created
-        if not subscription:
-            repo.create_subscription(hardware_id, status='paid_trial')
-        return {'status': 'subscription_created'}
+        # ⭐ КРИТИЧНО: Извлекаем stripe_customer_id и stripe_subscription_id для Portal
+        stripe_customer_id = event_data.get('customer')
+        stripe_subscription_id = event_data.get('subscription')
+        
+        # Try to get email from customer_details
+        email = event_data.get('customer_details', {}).get('email')
+        # Fallback to customer_email
+        if not email:
+            email = event_data.get('customer_email')
+        
+        # Используем create_or_update_subscription чтобы сохранить stripe_customer_id
+        repo.create_or_update_subscription(
+            hardware_id=hardware_id,
+            status='paid_trial',
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id
+        )
+        
+        # Обновляем email отдельно (если есть)
+        if email:
+            repo.update_subscription(hardware_id, email=email)
+        
+        return {'status': 'subscription_created', 'customer_id': stripe_customer_id}
+
     
     elif event_type == 'invoice.payment_succeeded':
         new_status = 'paid'
@@ -290,10 +359,16 @@ async def _handle_event_type(
         stripe_status = 'deleted'
         
     else:
-        logger.debug(f"[F-2025-017] Unhandled event type: {event_type}")
+        # Unhandled event types (payment_intent.*, charge.*, etc.)
+        # These are informational and don't require state changes
+        logger.debug(f"[F-2025-017] Unhandled event type: {event_type} - ignoring")
         return {'status': 'ignored', 'reason': 'unhandled_event_type'}
     
-    # Use state machine for transition
+    # Use state machine for transition (only for handled events)
+    if new_status is None or stripe_status is None:
+        logger.warning(f"[F-2025-017] Missing status for event {event_type}")
+        return {'status': 'error', 'reason': 'missing_status'}
+    
     result = SubscriptionStateMachine.transition(
         hardware_id=hardware_id,
         from_status=current_status,
@@ -301,7 +376,8 @@ async def _handle_event_type(
         event_type=event_type,
         repository=repo,
         stripe_status=stripe_status,
-        stripe_event_id=event_data.get('id'),
+        stripe_event_id=event_id,          # CORRECT: event_id (evt_...) not object id
+        stripe_event_at=stripe_created,    # CORRECT: timestamp from event
         current_period_end=event_data.get('current_period_end')
     )
     

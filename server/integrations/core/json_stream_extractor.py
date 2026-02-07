@@ -105,6 +105,19 @@ class JsonStreamExtractor:
                     new_text.append('\t')
                 elif char == 'r':
                     new_text.append('\r')
+                elif char == 'u':
+                    # Unicode escape: \uXXXX
+                    if i + 4 >= len(self.buffer):
+                        # Неполная escape-последовательность, ждём следующий chunk.
+                        break
+                    hex_digits = self.buffer[i + 1:i + 5]
+                    if all(c in '0123456789abcdefABCDEF' for c in hex_digits):
+                        new_text.append(chr(int(hex_digits, 16)))
+                        self.escape_next = False
+                        i += 5
+                        continue
+                    # Некорректный unicode escape - сохраняем как литерал
+                    new_text.append('u')
                 elif char == '"':
                     new_text.append('"')
                 elif char == '\\':
@@ -223,6 +236,18 @@ def extract_text_streaming(buffer: str, last_extracted_pos: int = 0) -> Tuple[st
                 new_text.append('\n')
             elif char == 't':
                 new_text.append('\t')
+            elif char == 'r':
+                new_text.append('\r')
+            elif char == 'u':
+                if i + 4 >= len(buffer):
+                    break
+                hex_digits = buffer[i + 1:i + 5]
+                if all(c in '0123456789abcdefABCDEF' for c in hex_digits):
+                    new_text.append(chr(int(hex_digits, 16)))
+                    escape_next = False
+                    i += 5
+                    continue
+                new_text.append('u')
             elif char == '"':
                 new_text.append('"')
             elif char == '\\':

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from config.unified_config import get_config
+from .core.subscription_types import AccessTier, PAID_STATUSES, map_status_to_tier
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +45,48 @@ class SubscriptionModule:
     
     def __init__(self):
         self.config = get_config().subscription
-        self._repository = None
-        self._quota_checker = None
-        self._state_machine = None
-        self._scheduler = None
+        self._repository: Optional[Any] = None
+        self._quota_checker: Optional[Any] = None
+        self._state_machine: Optional[Any] = None
+        self._scheduler: Optional[Any] = None
+        self._stripe_service: Optional[Any] = None
         self._initialized = False
         self._cache = {}  # Simple TTL cache
         self._cache_lock = threading.Lock()  # Защита кэша
         self._cache_ttl = self.config.cache_ttl_seconds
+        # In-flight guard: prevents concurrent can_process from overshooting quotas.
+        # Entries auto-expire to avoid stuck reservations if increment_usage is not called.
+        self._pending_usage: Dict[str, list[float]] = {}
+        self._pending_lock = threading.Lock()
+        self._pending_ttl_seconds = self.config.pending_ttl_seconds
+
+    def _prune_pending(self, hardware_id: str, now_ts: float) -> int:
+        """Prune expired pending entries and return current pending count."""
+        with self._pending_lock:
+            entries = self._pending_usage.get(hardware_id, [])
+            if not entries:
+                return 0
+            fresh = [ts for ts in entries if (now_ts - ts) <= self._pending_ttl_seconds]
+            if fresh:
+                self._pending_usage[hardware_id] = fresh
+            else:
+                self._pending_usage.pop(hardware_id, None)
+            return len(fresh)
+
+    def _add_pending(self, hardware_id: str, now_ts: float) -> None:
+        """Add a pending slot for a hardware_id."""
+        with self._pending_lock:
+            self._pending_usage.setdefault(hardware_id, []).append(now_ts)
+
+    def _release_pending(self, hardware_id: str) -> None:
+        """Release one pending slot for a hardware_id (best-effort)."""
+        with self._pending_lock:
+            entries = self._pending_usage.get(hardware_id)
+            if not entries:
+                return
+            entries.pop(0)
+            if not entries:
+                self._pending_usage.pop(hardware_id, None)
         
     async def initialize(self) -> bool:
         """
@@ -69,6 +104,7 @@ class SubscriptionModule:
             from .repository.subscription_repository import SubscriptionRepository
             from .core.quota_checker import QuotaChecker
             from .core.state_machine import SubscriptionStateMachine
+            from .providers.stripe_service import StripeService
             
             # Construct DB URL from unified_config
             # This is critical because SubscriptionRepository relies on DATABASE_URL or passed url
@@ -96,6 +132,13 @@ class SubscriptionModule:
             self._quota_checker = QuotaChecker(repository=self._repository)
             self._state_machine = SubscriptionStateMachine
             
+            # Use key from config
+            if not self.config.stripe_secret_key:
+                logger.error("[F-2025-017] STRIPE_SECRET_KEY not set in config!")
+                return False
+                
+            self._stripe_service = StripeService(api_key=self.config.stripe_secret_key)
+            
             self._initialized = True
             logger.info("[F-2025-017] Subscription module initialized")
             return True
@@ -104,6 +147,131 @@ class SubscriptionModule:
             logger.error(f"[F-2025-017] Failed to initialize subscription module: {e}")
             return False
     
+    async def create_portal_session(self, hardware_id: str) -> Optional[Dict[str, str]]:
+        """
+        Создать сессию Customer Portal для управления подпиской.
+        
+        Args:
+            hardware_id: ID устройства
+            
+        Returns:
+            Dict с portal_url или None
+        """
+        if not self._initialized or not self.config.is_active():
+            return None
+        if self._repository is None or self._stripe_service is None:
+            return None
+            
+        try:
+            # 1. Получаем подписку чтобы найти stripe_customer_id
+            sub = self._repository.get_subscription(hardware_id)
+            if not sub:
+                logger.warning(f"[F-2025-017] No subscription found for {hardware_id}")
+                return None
+                
+            customer_id = sub.get('stripe_customer_id')
+            if not customer_id:
+                logger.warning(f"[F-2025-017] No stripe_customer_id for {hardware_id}")
+                return None
+                
+            # 2. Создаем сессию портала через StripeService
+            # Синхронизируем email из локальной БД в Stripe, если он там отличается
+            email = sub.get('email')
+            result = self._stripe_service.create_portal_session(
+                customer_id=customer_id,
+                email=email
+            )
+            return result
+            
+        except Exception as e:
+            logger.error(f"[F-2025-017] Error creating portal session: {e}")
+            return None
+
+    async def create_checkout_session(
+        self,
+        hardware_id: str,
+        base_url: Optional[str] = None
+    ) -> Optional[Dict[str, str]]:
+        """
+        Создать сессию Checkout для покупки подписки.
+        
+        Args:
+            hardware_id: ID устройства
+            
+        Returns:
+            Dict с checkout_url или None
+        """
+        if not self._initialized or not self.config.is_active():
+            return None
+        if self._repository is None or self._stripe_service is None:
+            return None
+            
+        try:
+            # 1. Проверяем, есть ли уже customer_id
+            sub = self._repository.get_subscription(hardware_id)
+            customer_id = sub.get('stripe_customer_id') if sub else None
+
+            # 2. Формируем success/cancel URLs
+            # По умолчанию используем локальные страницы успешной оплаты.
+            # Можно переопределить через STRIPE_SUCCESS_URL / STRIPE_CANCEL_URL.
+            success_url = os.getenv("STRIPE_SUCCESS_URL")
+            cancel_url = os.getenv("STRIPE_CANCEL_URL")
+            if not success_url or not cancel_url:
+                resolved_base = base_url or os.getenv("PAYMENT_SUCCESS_BASE_URL", "http://127.0.0.1:8080")
+                resolved_base = resolved_base.rstrip("/")
+                if not success_url:
+                    success_url = f"{resolved_base}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
+                if not cancel_url:
+                    cancel_url = f"{resolved_base}/payment/cancel"
+            
+            # 3. Создаем сессию
+            # Передаем hardware_id в metadata, чтобы связать после оплаты (если webhook придет раньше)
+            # И customer_id если есть, чтобы не дублировать кастомеров
+            result = await self._stripe_service.create_checkout_session(
+                hardware_id=hardware_id,
+                customer_id=customer_id,
+                success_url=success_url,
+                cancel_url=cancel_url,
+                trial_days=self.config.trial_days
+            )
+            return result
+            
+        except Exception as e:
+            logger.error(f"[F-2025-017] Error creating checkout session: {e}")
+            return None
+    
+    async def get_subscription_status(self, hardware_id: str) -> Dict[str, Any]:
+        """
+        Получить текущий статус подписки для поллинга.
+        
+        Args:
+            hardware_id: ID устройства
+            
+        Returns:
+            Dict со статусом и метаданными
+        """
+        if not self._initialized or not self.config.is_active():
+            return {'status': 'unknown', 'active': False}
+        if self._repository is None:
+            return {'status': 'unknown', 'active': False}
+            
+        try:
+            sub = self._repository.get_subscription(hardware_id)
+            if not sub:
+                return {'status': 'none', 'active': False}
+                
+            return {
+                'status': sub.get('status'),
+                'stripe_status': sub.get('stripe_status'),
+                'email': sub.get('email'),
+                'active': sub.get('status') in ['paid', 'paid_trial', 'limited_free_trial'],
+                'current_period_end': sub.get('current_period_end')
+            }
+            
+        except Exception as e:
+            logger.error(f"[F-2025-017] Error getting subscription status: {e}")
+            return {'status': 'error', 'message': str(e)}
+
     async def can_process(self, hardware_id: str) -> CanProcessResult:
         """
         Единственный gate для проверки доступа.
@@ -136,6 +304,12 @@ class SubscriptionModule:
                 reason='initialization_error',
                 message='Subscription module not initialized'
             )
+        if self._quota_checker is None:
+            return CanProcessResult(
+                allowed=True,
+                reason='initialization_error',
+                message='Quota checker not initialized'
+            )
         
         try:
             # Проверяем cache
@@ -145,6 +319,43 @@ class SubscriptionModule:
             
             # Проверяем квоты
             quota_result = self._quota_checker.check_quota(hardware_id)
+
+            # In-flight guard (avoid concurrent requests overshooting limits)
+            pending_count = self._prune_pending(hardware_id, now_ts=datetime.now().timestamp())
+            if quota_result.get('allowed', False):
+                limits = quota_result.get('limits') or {}
+                daily = limits.get('daily') or {}
+                weekly = limits.get('weekly') or {}
+                monthly = limits.get('monthly') or {}
+                # Only enforce if limits present (limited tier)
+                if limits and pending_count > 0:
+                    daily_used = int(daily.get('used', 0)) + pending_count
+                    weekly_used = int(weekly.get('used', 0)) + pending_count
+                    monthly_used = int(monthly.get('used', 0)) + pending_count
+                    if daily and daily_used >= int(daily.get('limit', 0)):
+                        quota_result = {
+                            'allowed': False,
+                            'reason': 'daily_limit_exceeded',
+                            'status': quota_result.get('status'),
+                            'message': 'Daily limit exceeded (in-flight)',
+                            'limits': limits,
+                        }
+                    elif weekly and weekly_used >= int(weekly.get('limit', 0)):
+                        quota_result = {
+                            'allowed': False,
+                            'reason': 'weekly_limit_exceeded',
+                            'status': quota_result.get('status'),
+                            'message': 'Weekly limit exceeded (in-flight)',
+                            'limits': limits,
+                        }
+                    elif monthly and monthly_used >= int(monthly.get('limit', 0)):
+                        quota_result = {
+                            'allowed': False,
+                            'reason': 'monthly_limit_exceeded',
+                            'status': quota_result.get('status'),
+                            'message': 'Monthly limit exceeded (in-flight)',
+                            'limits': limits,
+                        }
             
             result = CanProcessResult(
                 allowed=quota_result.get('allowed', False),
@@ -153,10 +364,15 @@ class SubscriptionModule:
                 message=quota_result.get('message'),
                 subscription_context=self._build_context(quota_result)
             )
-            
-            # Кэшируем результат (только для allowed=True, чтобы denied обновлялись сразу)
+
+            # Reserve a pending slot for allowed requests (limited tiers)
             if result.allowed:
-                self._set_cached(hardware_id, result)
+                self._add_pending(hardware_id, datetime.now().timestamp())
+            
+            # Кэшируем результат (и allowed, и denied)
+            # Внимание: инваладация происходит через Webhooks (оплата) 
+            # и Scheduler (сброс квот), поэтому безопасно кэшировать всё.
+            self._set_cached(hardware_id, result)
             
             return result
             
@@ -183,9 +399,13 @@ class SubscriptionModule:
         """
         if not self._initialized or not self.config.is_active():
             return True
+        if self._quota_checker is None:
+            return True
         
         try:
-            result = self._quota_checker.increment_usage(hardware_id)
+            result = await self._quota_checker.increment_usage(hardware_id)
+            # Release one pending slot after usage increment (best-effort)
+            self._release_pending(hardware_id)
             
             if result.get('success'):
                 # Инвалидируем кэш
@@ -214,24 +434,48 @@ class SubscriptionModule:
             return ""
         
         try:
+            # 1. Get basic access result
             result = await self.can_process(hardware_id)
             
-            if not result.subscription_context:
-                return ""
+            # 2. Get detailed status (including dates)
+            sub_details = await self.get_subscription_status(hardware_id)
+            status = sub_details.get('status', 'unknown')
+            active = sub_details.get('active', False)
+            date = sub_details.get('current_period_end')
             
-            ctx = result.subscription_context
-            status = ctx.get('status', 'unknown')
-            
-            if status == 'limited_free_trial':
+            # Format date if present
+            date_str = ""
+            if date:
+                try:
+                    # Date might be timestamp or string
+                    if isinstance(date, (int, float)):
+                        dt = datetime.fromtimestamp(date)
+                        date_str = f". Renew: {dt.strftime('%Y-%m-%d')}"
+                    else:
+                        date_str = f". Renew: {date}"
+                except:
+                    pass
+
+            # Build context string (centralized tier mapping)
+            tier = map_status_to_tier(status)
+
+            if status in PAID_STATUSES or tier == AccessTier.UNLIMITED:
+                return f"[Subscription: Paid (Active){date_str}]"
+            if status == 'billing_problem':
+                return "[Subscription: Billing Problem - Payment Failed]"
+            if tier == AccessTier.LIMITED:
+                # Show remaining quota from context if available
+                ctx = result.subscription_context or {}
                 limits = ctx.get('limits', {})
-                daily = limits.get('daily', {})
-                remaining = daily.get('limit', 5) - daily.get('used', 0)
-                return f"[User has {remaining} free requests remaining today. Suggest subscription if helpful.]"
-            
-            elif status == 'billing_problem':
-                return "[User has billing issues. Gently remind about payment if asked about subscription.]"
-            
-            return ""
+                # Example limits: {'daily': {'used': 5, 'limit': 10}}
+                quota_str = ""
+                if limits:
+                    daily = limits.get('daily', {})
+                    if daily:
+                        quota_str = f" (Daily: {daily.get('used')}/{daily.get('limit')})"
+                return f"[Subscription: Free Limited{quota_str}]"
+
+            return "[Subscription: None / Inactive]"
             
         except Exception as e:
             logger.error(f"[F-2025-017] Error getting context: {e}")
@@ -253,13 +497,7 @@ class SubscriptionModule:
             
             self._scheduler = AsyncIOScheduler()
             
-            # Trial check
-            self._scheduler.add_job(
-                self._run_trial_check,
-                'interval',
-                hours=self.config.trial_check_interval_hours,
-                id='trial_check'
-            )
+            # Trial lifecycle handled by Stripe via webhooks.
             
             # Grace period check
             self._scheduler.add_job(
@@ -359,6 +597,8 @@ class SubscriptionModule:
     async def _run_trial_check(self) -> None:
         """Периодическая проверка истекших trial"""
         try:
+            if self._repository is None:
+                return
             from .core.trial_handler import TrialHandler
             handler = TrialHandler(self._repository)
             result = handler.process_expired_trials()
@@ -369,6 +609,8 @@ class SubscriptionModule:
     async def _run_grace_period_check(self) -> None:
         """Периодическая проверка истекших grace period"""
         try:
+            if self._repository is None:
+                return
             from .core.grace_period_handler import GracePeriodHandler
             handler = GracePeriodHandler(self._repository)
             result = handler.process_expired_grace_periods()
@@ -379,6 +621,8 @@ class SubscriptionModule:
     async def _run_daily_quota_reset(self) -> None:
         """Сброс ежедневных квот"""
         try:
+            if self._quota_checker is None:
+                return
             result = self._quota_checker.reset_daily_counters()
             self.invalidate_all_cache()
             logger.info(f"[F-2025-017] Daily quota reset completed: {result}")
@@ -388,6 +632,8 @@ class SubscriptionModule:
     async def _run_weekly_quota_reset(self) -> None:
         """Сброс недельных квот"""
         try:
+            if self._quota_checker is None:
+                return
             result = self._quota_checker.reset_weekly_counters()
             self.invalidate_all_cache()
             logger.info(f"[F-2025-017] Weekly quota reset completed: {result}")
@@ -397,6 +643,8 @@ class SubscriptionModule:
     async def _run_monthly_quota_reset(self) -> None:
         """Сброс месячных квот"""
         try:
+            if self._quota_checker is None:
+                return
             result = self._quota_checker.reset_monthly_counters()
             self.invalidate_all_cache()
             logger.info(f"[F-2025-017] Monthly quota reset completed: {result}")

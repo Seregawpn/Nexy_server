@@ -24,7 +24,7 @@ class TextProcessingConfig:
         
         # Используем централизованные настройки с возможностью переопределения
         self.gemini_api_key = self.config.get('gemini_api_key', unified_config.text_processing.gemini_api_key)
-        self.gemini_system_prompt = self.config.get('gemini_system_prompt', getattr(unified_config.text_processing, 'gemini_system_prompt', ''))
+        # Note: System prompt is now built dynamically via build_system_prompt() in get_provider_config()
         
         # LangChain настройки
         self.langchain_model = self.config.get('langchain_model', getattr(unified_config.text_processing, 'langchain_model', 'gemini-3-flash-preview'))
@@ -32,6 +32,9 @@ class TextProcessingConfig:
         self.temperature = self.config.get('temperature', getattr(unified_config.text_processing, 'temperature', 0.7))
         self.max_tokens = self.config.get('max_tokens', getattr(unified_config.text_processing, 'max_tokens', 2048))
         self.tools = self.config.get('tools', getattr(unified_config.text_processing, 'tools', ['google_search']))
+
+        self.web_search_enabled = getattr(unified_config.features, 'web_search_enabled', True)
+
         
         # Настройки изображений
         self.image_format = self.config.get('image_format', unified_config.text_processing.image_format)
@@ -65,13 +68,26 @@ class TextProcessingConfig:
             Словарь с конфигурацией провайдера
         """
         if provider_name == 'langchain':
+            # CRITICAL: Use dynamic system prompt with feature-specific instructions
+            # Import here to avoid circular dependency at module level
+            from config.prompts import build_system_prompt
+            
+            unified_config = get_config()
+            dynamic_prompt = build_system_prompt(
+                whatsapp_enabled=unified_config.whatsapp.enabled,
+                browser_enabled=unified_config.browser_use.enabled,
+                payment_enabled=unified_config.subscription.is_active(),
+                messages_enabled=unified_config.features.messages_enabled,
+                web_search_enabled=unified_config.features.web_search_enabled,
+            )
+            
             return {
                 'api_key': self.gemini_api_key,
                 'model': self.langchain_model,
                 'temperature': self.temperature,
                 'max_tokens': self.max_tokens,
                 'tools': self.tools,
-                'system_prompt': self.gemini_system_prompt,
+                'system_prompt': dynamic_prompt,
                 'image_mime_type': self.image_mime_type,
                 'image_max_size': self.image_max_size,
             }

@@ -120,7 +120,7 @@ class InterruptHandlingAdapter(UniversalModuleInterface):
                 result = {"success": success}
             elif action == "clear_interrupt":
                 if hasattr(self._manager, "_reset_interrupt_flags"):
-                    self._manager._reset_interrupt_flags()
+                    await self._manager._reset_interrupt_flags()
                 result = {"success": True}
             else:
                 raise ValueError(f"Неизвестное действие: {action}")

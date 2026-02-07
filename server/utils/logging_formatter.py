@@ -12,7 +12,7 @@ import logging
 import time
 import json
 import re
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional, Dict, Any
 
 
@@ -27,6 +27,7 @@ class StructuredFormatter(logging.Formatter):
     
     # Паттерны для маскировки секретов
     SECRET_PATTERNS = [
+        (r'api\s*key["\s:=]+([a-zA-Z0-9_-]{10,})', r'api_key="****"'),
         (r'api[_-]?key["\s:=]+([a-zA-Z0-9_-]{20,})', r'api_key="****"'),
         (r'token["\s:=]+([a-zA-Z0-9_-]{20,})', r'token="****"'),
         (r'password["\s:=]+([^\s,"}]+)', r'password="****"'),
@@ -34,6 +35,8 @@ class StructuredFormatter(logging.Formatter):
         (r'GEMINI_API_KEY["\s:=]+([a-zA-Z0-9_-]+)', r'GEMINI_API_KEY="****"'),
         (r'AZURE_SPEECH_KEY["\s:=]+([a-zA-Z0-9_-]+)', r'AZURE_SPEECH_KEY="****"'),
         (r'GITHUB_TOKEN["\s:=]+([a-zA-Z0-9_-]+)', r'GITHUB_TOKEN="****"'),
+        (r'Bearer\s+([A-Za-z0-9._-]{10,})', r'Bearer ****'),
+        (r'(sk_(?:live|test)_[A-Za-z0-9]{10,})', r'****'),
     ]
     
     def _mask_secrets(self, text: str) -> str:
@@ -46,7 +49,9 @@ class StructuredFormatter(logging.Formatter):
         Returns:
             Текст с замаскированными секретами
         """
-        masked = text
+        if text is None:
+            return ""
+        masked = str(text)
         for pattern, replacement in self.SECRET_PATTERNS:
             masked = re.sub(pattern, replacement, masked, flags=re.IGNORECASE)
         return masked
@@ -63,7 +68,7 @@ class StructuredFormatter(logging.Formatter):
         """
         # Базовые поля
         parts = [
-            f"ts={datetime.utcnow().isoformat()}",
+            f"ts={datetime.now(UTC).isoformat()}",
             f"level={record.levelname}",
         ]
         
@@ -138,17 +143,24 @@ class StructuredFormatter(logging.Formatter):
         Returns:
             Словарь с замаскированными секретами
         """
-        masked = {}
-        secret_keys = ['api_key', 'token', 'password', 'secret', 'key', 'GEMINI_API_KEY', 'AZURE_SPEECH_KEY', 'GITHUB_TOKEN']
-        
+        masked: Dict[str, Any] = {}
+        secret_keys = ['api_key', 'api-key', 'apikey', '_key', 'token', 'password', 'secret', 'gemini_api_key', 'azure_speech_key', 'github_token']
+
+        def mask_value(value: Any) -> Any:
+            if isinstance(value, dict):
+                return self._mask_secrets_in_dict(value)
+            if isinstance(value, list):
+                return [mask_value(item) for item in value]
+            if isinstance(value, str):
+                return self._mask_secrets(value)
+            return value
+
         for key, value in d.items():
-            if any(sk in key.lower() for sk in secret_keys) and isinstance(value, str) and len(value) > 10:
+            if isinstance(value, str) and any(sk in key.lower() for sk in secret_keys) and len(value) > 10:
                 masked[key] = "****"
-            elif isinstance(value, dict):
-                masked[key] = self._mask_secrets_in_dict(value)
-            else:
-                masked[key] = value
-        
+                continue
+            masked[key] = mask_value(value)
+
         return masked
 
 
@@ -330,4 +342,3 @@ def log_degradation(
         decision="degrade",
         ctx=ctx or {"reason": reason}
     )
-

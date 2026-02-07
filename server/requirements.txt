@@ -1,51 +1,56 @@
 # =====================================================
-# ЗАВИСИМОСТИ ДЛЯ СЕРВЕРА AZURE CONTAINER APPS
-# Обновлено: 11 января 2026 - все зависимости обновлены до последних версий
+# ЗАВИСИМОСТИ ДЛЯ СЕРВЕРА - ВСЕ ПОСЛЕДНИЕ ВЕРСИИ БЕЗ ОГРАНИЧЕНИЙ
+# Обновлено: 25 января 2026 - все зависимости до последних версий
 # =====================================================
 
-# 🌐 HTTP сервер для health checks (ОБЯЗАТЕЛЬНО для Azure)
-aiohttp>=3.13.3
+# 🌐 HTTP сервер для health checks
+aiohttp
 
 # 🚀 Google Gemini API (основной LLM)
-google-genai>=1.57.0
-google-generativeai>=0.8.0
+google-genai
+google-generativeai
 
 # 🔄 LangChain интеграция
-langchain>=1.2.3
-langchain-google-genai>=4.1.3
-langchain-core>=1.2.7
+langchain
+langchain-google-genai
+langchain-core
 
 # 🔧 Утилиты
-python-dotenv>=1.2.1
+python-dotenv
 
 # gRPC и Protocol Buffers
-# ВАЖНО: grpcio-tools 1.76.0 требует protobuf>=6.31.1,<7.0.0, но google-generativeai требует <6
-# Relaxing constraints for compatibility
-grpcio>=1.60.0
-grpcio-tools>=1.60.0
-protobuf>=4.25.3,<6.0.0
+grpcio
+grpcio-tools
+grpcio-status
+protobuf
 
-# Edge TTS (бесплатный, без API ключей) - основной провайдер TTS
-# Версия 7.2.7+ обязательна (в более старых версиях была проблема с NoAudioReceived)
-edge-tts>=7.2.7
+# Edge TTS
+edge-tts
 
-# Azure Speech Services (устаревший, можно удалить если не используется)
-# azure-cognitiveservices-speech
+# Azure Speech Services
+azure-cognitiveservices-speech
 
 # База данных
-psycopg2-binary>=2.9.11
+psycopg2-binary
 
 # Аудио обработка
-numpy>=2.4.1
-pydub>=0.25.1
+numpy
+pydub
 
 # Мониторинг системы
-psutil>=7.2.1
+psutil
 
-# Валидация данных (Pydantic)
-pydantic>=2.12.5
+# Валидация данных
+pydantic
 
-# Криптография для подписи обновлений (Ed25519)
-PyNaCl>=1.5.0
-apscheduler>=3.10.0
-stripe>=5.0.0
+# Криптография
+PyNaCl
+
+# Планировщик задач
+apscheduler
+
+# Платежи
+stripe
+
+# Тестирование
+pytest-asyncio

@@ -11,6 +11,8 @@ import logging
 from typing import Dict, Any, Optional, Union, AsyncGenerator
 from modules.text_processing.config import TextProcessingConfig
 from modules.text_processing.providers.langchain_gemini_provider import LangChainGeminiProvider
+from config.unified_config import get_config
+from config.prompts import build_system_prompt, resolve_prompt_sections
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,22 @@ class TextProcessor:
         self.is_initialized = False
         
         logger.info("TextProcessor initialized with LangChain provider")
+
+    @staticmethod
+    def _build_prompt_for_text(text: str) -> tuple[str, Dict[str, bool]]:
+        config = get_config()
+        sections = resolve_prompt_sections(text)
+
+        prompt = build_system_prompt(
+            system_control_enabled=sections["system_control"],
+            describe_enabled=sections["describe"],
+            messages_enabled=bool(config.features.messages_enabled and sections["messages"]),
+            whatsapp_enabled=bool(config.whatsapp.enabled and sections["whatsapp"]),
+            browser_enabled=bool(config.browser_use.enabled and sections["browser"]),
+            payment_enabled=bool(config.subscription.is_active() and sections["payment"]),
+            web_search_enabled=bool(config.features.web_search_enabled and sections["web_search"]),
+        )
+        return prompt, sections
     
     async def initialize(self) -> bool:
         """
@@ -62,7 +80,13 @@ class TextProcessor:
             return False
     
     
-    async def process_text_streaming(self, text: str, image_data: Optional[Union[str, bytes]] = None, session_id: Optional[str] = None) -> AsyncGenerator[str, None]:
+    async def process_text_streaming(
+        self,
+        text: str,
+        image_data: Optional[Union[str, bytes]] = None,
+        session_id: Optional[str] = None,
+        use_search: Optional[bool] = None
+    ) -> AsyncGenerator[str, None]:
         """
         Стриминговая обработка текста с изображением через LangChain провайдер
         Возвращает текст напрямую
@@ -78,13 +102,35 @@ class TextProcessor:
         try:
             if not self.is_initialized:
                 raise Exception("TextProcessor not initialized")
+
+            system_prompt_override = None
+            if text:
+                system_prompt_override, sections = self._build_prompt_for_text(text)
+                if use_search is None:
+                    use_search = bool(self.config.web_search_enabled and sections.get("web_search"))
+                logger.info(
+                    "TextProcessor: prompt_sections=%s use_search=%s",
+                    sections,
+                    use_search
+                )
             
             # Вызываем правильный метод в зависимости от наличия изображения
             if image_data:
-                async for chunk in self.live_provider.process_with_image(text, image_data, session_id=session_id):
+                async for chunk in self.live_provider.process_with_image(
+                    text,
+                    image_data,
+                    session_id=session_id,
+                    use_search=use_search,
+                    system_prompt_override=system_prompt_override
+                ):
                     yield chunk
             else:
-                async for chunk in self.live_provider.process(text, session_id=session_id):
+                async for chunk in self.live_provider.process(
+                    text,
+                    session_id=session_id,
+                    use_search=use_search,
+                    system_prompt_override=system_prompt_override
+                ):
                     yield chunk
                 
         except Exception as e:

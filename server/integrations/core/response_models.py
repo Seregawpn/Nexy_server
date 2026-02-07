@@ -69,6 +69,18 @@ class BrowserUseArgs(BaseModel):
     config_preset: Optional[str] = Field(None, description="Optional config preset")
 
 
+class SendWhatsappMessageArgs(BaseModel):
+    """Arguments for send_whatsapp_message command"""
+    contact: str = Field(..., min_length=1, description="Contact name or phone number")
+    message: str = Field(..., min_length=1, description="Message text content")
+
+
+class ReadWhatsappMessagesArgs(BaseModel):
+    """Arguments for read_whatsapp_messages command"""
+    contact: Optional[str] = Field(None, description="Optional contact to read messages from")
+
+
+
 class ActionResponse(BaseModel):
     """
     Model for action responses (with command)
@@ -91,14 +103,30 @@ class ActionResponse(BaseModel):
     @field_validator('command')
     @classmethod
     def validate_command(cls, v: str) -> str:
-        """Normalize and validate command type"""
+        """Normalize and validate command type based on enabled features"""
         if not isinstance(v, str):
-            raise ValueError(f"Unknown command: {v}. Allowed: ['open_app', 'close_app', 'browser_use', 'close_browser']")
+            # Переместили список разрешенных команд в конфиг, но для сообщения об ошибке базовый список
+            raise ValueError(f"Unknown command format: {v}")
+            
         normalized = re.sub(r'[\s\-.]+', '_', v.strip().lower())
         normalized = re.sub(r'_+', '_', normalized)
-        allowed_commands = ['open_app', 'close_app', 'browser_use', 'close_browser', 'read_messages', 'send_message', 'find_contact']
+        
+        # Получаем динамический список разрешенных команд из конфига
+        try:
+            from config.unified_config import get_config, get_allowed_commands
+            config = get_config()
+            allowed_commands = get_allowed_commands(config.features)
+        except ImportError:
+            # Fallback для тестов если конфиг недоступен
+            allowed_commands = [
+                'open_app', 'close_app', 'browser_use', 'close_browser', 
+                'read_messages', 'send_message', 'find_contact',
+                'send_whatsapp_message', 'read_whatsapp_messages',
+                'manage_subscription', 'buy_subscription'
+            ]
+            
         if normalized not in allowed_commands:
-            raise ValueError(f"Unknown command: {v}. Allowed: {allowed_commands}")
+            raise ValueError(f"Unknown or disabled command: {v}. Allowed: {allowed_commands}")
         return normalized
     
     @model_validator(mode='after')
@@ -125,6 +153,19 @@ class ActionResponse(BaseModel):
             # No args required
             if self.args:
                 raise ValueError(f"Invalid args for close_browser command: {self.args}")
+        elif self.command == 'send_whatsapp_message':
+            try:
+                SendWhatsappMessageArgs(**self.args)
+            except Exception as e:
+                raise ValueError(f"Invalid args for send_whatsapp_message: {e}")
+        elif self.command == 'read_whatsapp_messages':
+            try:
+                ReadWhatsappMessagesArgs(**self.args)
+            except Exception as e:
+                raise ValueError(f"Invalid args for read_whatsapp_messages: {e}")
+        elif self.command in ['manage_subscription', 'buy_subscription']:
+            # No specific args validation required for now
+            pass
         return self
 
 

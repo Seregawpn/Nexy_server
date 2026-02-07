@@ -146,6 +146,7 @@ class SubscriptionStateMachine:
                 - invoice_amount: Сумма платежа (int, в центах)
                 - invoice_currency: Валюта платежа (str)
                 - invoice_status: Статус платежа ('succeeded', 'failed')
+                - email: Email пользователя (str)
         
         Returns:
             Dict с:
@@ -233,6 +234,11 @@ class SubscriptionStateMachine:
         cancel_at_period_end = kwargs.get('cancel_at_period_end')
         stripe_event_id = kwargs.get('stripe_event_id')
         stripe_event_at = kwargs.get('stripe_event_at', now)
+        email = kwargs.get('email')
+        
+        # Обновление email (если передан)
+        if email:
+            updates['email'] = email
         
         # Обновление stripe_status (если передан)
         if stripe_status:

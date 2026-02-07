@@ -5,20 +5,33 @@ MVP 2: База данных
 """
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from datetime import datetime
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+import logging
+logger = logging.getLogger(__name__)
+
 class SubscriptionRepository:
     """Repository для работы с подписками"""
     
     def __init__(self, db_url: Optional[str] = None):
         self.db_url = db_url or os.getenv('DATABASE_URL')
+        self.db_url = db_url or os.getenv('DATABASE_URL')
         if not self.db_url:
-            raise ValueError("DATABASE_URL not found")
+            # Fallback: construct from components
+            host = os.getenv('DB_HOST', 'localhost')
+            port = os.getenv('DB_PORT', '5432')
+            name = os.getenv('DB_NAME', 'voice_assistant_db')
+            user = os.getenv('DB_USER', 'postgres')
+            password = os.getenv('DB_PASSWORD', '')
+            self.db_url = f"postgresql://{user}:{password}@{host}:{port}/{name}"
+            
+        if not self.db_url:
+            raise ValueError("DATABASE_URL not found and could not be constructed")
     
     def _get_connection(self):
         """Получить соединение с БД"""
@@ -42,18 +55,19 @@ class SubscriptionRepository:
         self, 
         hardware_id: str, 
         status: str = 'paid_trial',
-        paid_trial_end_at: Optional[datetime] = None
-    ) -> Dict:
+        paid_trial_end_at: Optional[datetime] = None,
+        email: Optional[str] = None
+    ) -> Optional[Dict]:
         """Создать новую подписку"""
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    """INSERT INTO subscriptions (hardware_id, status, paid_trial_end_at)
-                       VALUES (%s, %s, %s)
+                    """INSERT INTO subscriptions (hardware_id, status, paid_trial_end_at, email)
+                       VALUES (%s, %s, %s, %s)
                        ON CONFLICT (hardware_id) DO NOTHING
                        RETURNING *""",
-                    (hardware_id, status, paid_trial_end_at)
+                    (hardware_id, status, paid_trial_end_at, email)
                 )
                 row = cur.fetchone()
                 conn.commit()
@@ -112,6 +126,65 @@ class SubscriptionRepository:
         finally:
             conn.close()
     
+    def create_or_update_subscription(
+        self,
+        hardware_id: str,
+        status: str,
+        stripe_customer_id: Optional[str] = None,
+        stripe_subscription_id: Optional[str] = None,
+        billing_period_end_at: Optional[int] = None,
+        cancel_at_period_end: Optional[bool] = None,
+        email: Optional[str] = None
+    ) -> bool:
+        """
+        Создать или обновить подписку (UPSERT).
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                # 1. Пытаемся обновить
+                updates = ["status = %s", "updated_at = CURRENT_TIMESTAMP"]
+                params: List[Any] = [status]
+                
+                if stripe_customer_id:
+                    updates.append("stripe_customer_id = %s")
+                    params.append(stripe_customer_id)
+                if stripe_subscription_id:
+                    updates.append("stripe_subscription_id = %s")
+                    params.append(stripe_subscription_id)
+                if billing_period_end_at is not None:
+                    updates.append("billing_period_end_at = %s")
+                    params.append(billing_period_end_at)
+                if cancel_at_period_end is not None:
+                    updates.append("cancel_at_period_end = %s")
+                    params.append(cancel_at_period_end)
+                if email:
+                    updates.append("email = %s")
+                    params.append(email)
+                    
+                params.append(hardware_id) # WHERE clause
+                
+                cur.execute(f"UPDATE subscriptions SET {', '.join(updates)} WHERE hardware_id = %s", params)
+                
+                if cur.rowcount == 0:
+                    # 2. Если не найдено - создаем
+                    cur.execute(
+                        """INSERT INTO subscriptions 
+                           (hardware_id, status, stripe_customer_id, stripe_subscription_id, email,
+                            created_at, updated_at)
+                           VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                        (hardware_id, status, stripe_customer_id, stripe_subscription_id, email)
+                    )
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error in create_or_update_subscription: {e}")
+            return False
+            
+        finally:
+            conn.close()
+
     def record_event(
         self,
         stripe_event_id: str,
@@ -335,11 +408,36 @@ class SubscriptionRepository:
                 'payment_method_id', 'current_period_end', 'cancel_at_period_end',
                 'grace_period_end_at', 'paid_trial_end_at', 'last_stripe_event_id', 'last_stripe_event_at',
                 'last_checkout_created_at', 'last_checkout_session_id',  # MVP 8: Anti-spam и cooldown
-                'usage_daily_count', 'usage_weekly_count', 'usage_monthly_count', 'usage_last_reset_date'  # Quota Checker
+                'last_checkout_created_at', 'last_checkout_session_id',  # MVP 8: Anti-spam и cooldown
+                'usage_daily_count', 'usage_weekly_count', 'usage_monthly_count', 'usage_last_reset_date',  # Quota Checker
+                'email'  # New email field
             }
             
+            # Idempotency & Ordering Guards
+            incoming_event_id = kwargs.get('last_stripe_event_id')
+            incoming_event_at = kwargs.get('last_stripe_event_at')
+            
+            guards = []
+            guard_params = []
+            
+            if incoming_event_id:
+                # Prevent processing the exact same event again
+                # Use IS DISTINCT FROM to handle NULLs, but standard SQL '!=' with OR NULL works too
+                guards.append("(last_stripe_event_id IS NULL OR last_stripe_event_id != %s)")
+                guard_params.append(incoming_event_id)
+            
+            if incoming_event_at:
+                # Prevent processing older events (out-of-order)
+                # Allow strictly newer or same timestamp (de-dupe handles same ID)
+                guards.append("(last_stripe_event_at IS NULL OR last_stripe_event_at <= %s)")
+                guard_params.append(incoming_event_at)
+
             for key, value in kwargs.items():
                 if key in allowed_fields:
+                    # SAFETY: Don't overwrite existing email with None
+                    if key == 'email' and value is None:
+                        continue
+                    
                     updates.append(f"{key} = %s")
                     params.append(value)
             
@@ -347,13 +445,41 @@ class SubscriptionRepository:
                 return False
             
             updates.append("updated_at = CURRENT_TIMESTAMP")
+            
+            # Construct WHERE clause
+            where_clause = "hardware_id = %s"
             params.append(hardware_id)
             
-            query = f"UPDATE subscriptions SET {', '.join(updates)} WHERE hardware_id = %s"
+            if guards:
+                where_clause += " AND " + " AND ".join(guards)
+                params.extend(guard_params)
+            
+            query = f"UPDATE subscriptions SET {', '.join(updates)} WHERE {where_clause}"
+            
             with conn.cursor() as cur:
                 cur.execute(query, params)
                 conn.commit()
-                return cur.rowcount > 0
+                
+                # If rowcount > 0, update succeeded
+                if cur.rowcount > 0:
+                    return True
+                
+                # If rowcount == 0, it means either:
+                # 1. Hardware ID not found
+                # 2. Idempotency guard blocked it (duplicate or old event)
+                
+                # If it was an idempotency block, we consider it "success" (processed)
+                if incoming_event_id:
+                    # Check if user exists check
+                    cur.execute("SELECT 1 FROM subscriptions WHERE hardware_id = %s", (hardware_id,))
+                    if cur.fetchone():
+                        # User exists, so it was a guard block.
+                        # Log it? (Maybe overly verbose for repository)
+                        # Return True to indicate "request handled"
+                        return True
+                        
+                return False
+                
         finally:
             conn.close()
     
@@ -454,6 +580,7 @@ class SubscriptionRepository:
                 conn.commit()
                 return cur.rowcount > 0
         except Exception as e:
+            logger.error(f"Error in increment_usage: {e}")
             conn.rollback()
             return False
         finally:
@@ -527,4 +654,3 @@ class SubscriptionRepository:
                 return [dict(row) for row in cur.fetchall()]
         finally:
             conn.close()
-
