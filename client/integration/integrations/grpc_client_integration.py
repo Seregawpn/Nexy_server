@@ -109,7 +109,17 @@ class GrpcClientIntegration:
                 else:
                     logger.info(f"🔌 [CONFIG] Используется дефолтный сервер: '{config.server}'")
         self.config = config
-        logger.info(f"🔌 [CONFIG] Итоговый выбранный сервер для gRPC: '{self.config.server}' (local=127.0.0.1:50051, production=20.63.24.187:443)")
+        # Получаем адреса серверов из unified_config для лога
+        try:
+            uc = UnifiedConfigLoader.get_instance()
+            net = uc.get_network_config()
+            local_srv = net.grpc_servers.get('local')
+            prod_srv = net.grpc_servers.get('production')
+            local_addr = f"{local_srv.host}:{local_srv.port}" if local_srv else "127.0.0.1:50051"
+            prod_addr = f"{prod_srv.host}:{prod_srv.port}" if prod_srv else "N/A"
+            logger.info(f"🔌 [CONFIG] Итоговый выбранный сервер для gRPC: '{self.config.server}' (local={local_addr}, production={prod_addr})")
+        except Exception:
+            logger.info(f"🔌 [CONFIG] Итоговый выбранный сервер для gRPC: '{self.config.server}'")
 
         # gRPC клиент
         self._client: GrpcClient | None = None

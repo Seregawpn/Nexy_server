@@ -21,7 +21,7 @@ accessibility:
     log_osascript_commands: false
     log_voiceover_state: false
 server:
-  production_host: 20.63.24.187
+  production_host: nexy-server.canadacentral.cloudapp.azure.com
   production_grpc_port: 443
   production_http_port: 443
 app:
@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.1.19
+  version: 1.6.1.20
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -121,7 +121,7 @@ grpc:
       retry_delay: 1.0
       description: Локальный сервер для разработки
     production:
-      host: 20.63.24.187
+      host: nexy-server.canadacentral.cloudapp.azure.com
       port: 443
       ssl: true
       ssl_verify: false
@@ -241,6 +241,7 @@ integrations:
       - microphone
       - screen_capture
       - contacts
+      - messages
       - input_monitoring
       - accessibility
       - full_disk_access
@@ -265,6 +266,13 @@ integrations:
         criticality: hard
         
       contacts:
+        mode: auto_dialog
+        grace_s: 13.0
+        poll_s: 2.0
+        supports_needs_restart: false
+        criticality: hard
+        
+      messages:
         mode: auto_dialog
         grace_s: 13.0
         poll_s: 2.0
@@ -481,8 +489,8 @@ updater:
   default:
     enabled: true
     update_channel: stable
-    appcast_url: https://20.63.24.187/updates/appcast.xml
-    manifest_url: https://20.63.24.187/updates/appcast.xml
+    appcast_url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml
+    manifest_url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml
     auto_check: true
     check_interval: 3600
     check_on_startup: true
@@ -504,13 +512,13 @@ updater:
       progress_notifications: true
     channels:
       stable:
-        url: https://20.63.24.187/updates/appcast.xml
+        url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml
         description: Стабильные релизы
       beta:
-        url: https://20.63.24.187/updates/appcast-beta.xml
+        url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast-beta.xml
         description: Бета версии
       alpha:
-        url: https://20.63.24.187/updates/appcast-alpha.xml
+        url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast-alpha.xml
         description: Альфа версии
   development:
     enabled: false

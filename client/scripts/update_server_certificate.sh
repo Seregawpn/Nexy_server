@@ -3,11 +3,11 @@
 
 set -e
 
-SERVER_HOST="20.63.24.187"
-SERVER_PORT="443"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SERVER_HOST=$(python3 -c "import yaml; print(yaml.safe_load(open('$PROJECT_ROOT/config/unified_config.yaml'))['server']['production_host'])")
+SERVER_PORT=$(python3 -c "import yaml; print(yaml.safe_load(open('$PROJECT_ROOT/config/unified_config.yaml'))['server'].get('production_http_port', 443))")
 CERT_DIR="resources/certs"
 CERT_FILE="${CERT_DIR}/production_server.pem"
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "🔐 Обновление сертификата для ${SERVER_HOST}:${SERVER_PORT}..."
 

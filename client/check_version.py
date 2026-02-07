@@ -19,9 +19,22 @@ def get_client_version():
         print(f"❌ Ошибка чтения конфигурации: {e}")
         return None
 
+def get_server_url():
+    """Получает URL сервера из конфигурации"""
+    config_path = Path(__file__).parent / "config" / "unified_config.yaml"
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        host = config.get('server', {}).get('production_host', 'localhost')
+        port = config.get('server', {}).get('production_http_port', 443)
+        return f"https://{host}" if port == 443 else f"https://{host}:{port}"
+    except Exception as e:
+        print(f"⚠️ Ошибка чтения конфигурации сервера: {e}")
+        return "https://localhost"
+
 def get_server_version():
     """Получает версию сервера"""
-    server_url = "https://20.63.24.187"
+    server_url = get_server_url()
     
     try:
         # Пробуем health endpoint
