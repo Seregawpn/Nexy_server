@@ -1,24 +1,76 @@
-
 import logging
 import webbrowser
+import os
+import sys
+import io
 
 logger = logging.getLogger(__name__)
+
+# Add vendored libs to path
+try:
+    libs_path = os.path.join(os.path.dirname(__file__), 'libs')
+    if libs_path not in sys.path:
+        sys.path.append(libs_path)
+    
+    import qrcode
+    from qrcode.image.svg import SvgPathImage
+except ImportError as e:
+    logger.error(f"Failed to import local qrcode library: {e}")
+    qrcode = None
 
 class QRViewer:
     """
     Handles the display of the WhatsApp QR Code.
+    Supports both legacy URLs and local SVG generation.
     """
     
-    def display(self, qr_url: str):
+    def display(self, qr_content: str):
         """
         Display the QR code in a centered HTML page.
+        Args:
+            qr_content: Can be a URL (legacy) or "raw:<data>" string
         """
-        logger.info(f"Generated QR URL: {qr_url}")
+        logger.info(f"Display request for QR content (start): {qr_content[:30]}...")
         
+        image_src = ""
+        
+        # 1. Handle Raw Data (Local Generation)
+        if qr_content.startswith("raw:") and qrcode:
+            try:
+                raw_data = qr_content[4:] # Strip "raw:"
+                logger.info("Generatng local SVG for QR code...")
+                
+                # Generate SVG in memory
+                img = qrcode.make(raw_data, image_factory=SvgPathImage)
+                
+                # Serialize to string
+                stream = io.BytesIO()
+                img.save(stream)
+                svg_data = stream.getvalue().decode('utf-8')
+                
+                # Create Data URI
+                # Only need the <svg... part, but qrcode output usually full XML.
+                # Embedding directly as data URI is safest:
+                import base64
+                b64_svg = base64.b64encode(svg_data.encode('utf-8')).decode('utf-8')
+                image_src = f"data:image/svg+xml;base64,{b64_svg}"
+                logger.info("✅ Generated local SVG Data URI")
+                
+            except Exception as e:
+                logger.error(f"Failed to generate local QR: {e}")
+                # Fallback? No fallback for raw data if gen fails.
+        
+        # 2. Handle Legacy URL
+        elif qr_content.startswith("http"):
+             image_src = qr_content
+             
+        if not image_src:
+            logger.error("Could not determine image source for QR code")
+            return
+
         # Create a temporary HTML file to ensure centering
         try:
             import tempfile
-            import os
             
             html_content = f"""
             <!DOCTYPE html>
@@ -44,7 +96,7 @@ class QRViewer:
                     .container {{
                         text-align: center;
                         background: white;
-                        padding: 2.5rem;
+                        padding: 2rem;
                         border-radius: 1.5rem;
                         box-shadow: 0 10px 40px rgba(0,0,0,0.12);
                         
@@ -55,13 +107,13 @@ class QRViewer:
                         gap: 1.5rem;
                     }}
                     img {{
-                        /* Responsive sizing: fits within 75% of the viewport */
+                        /* Responsive sizing: fits within 85% of the viewport */
                         width: auto;
                         height: auto;
-                        max-width: 75vmin;
-                        max-height: 75vmin;
-                        min-width: 250px;
-                        min-height: 250px;
+                        max-width: 85vmin;
+                        max-height: 85vmin;
+                        min-width: 400px;
+                        min-height: 400px;
                         
                         /* Clean rendering */
                         display: block;
@@ -76,7 +128,7 @@ class QRViewer:
             <body>
                 <div class="container">
                     <h1>Scan to Connect</h1>
-                    <img src="{qr_url}" alt="WhatsApp QR Code">
+                    <img src="{image_src}" alt="WhatsApp QR Code">
                 </div>
             </body>
             </html>
@@ -92,11 +144,12 @@ class QRViewer:
             
         except Exception as e:
             logger.error(f"Failed to open HTML viewer: {e}")
-            # Fallback to direct URL
-            try:
-                webbrowser.open(qr_url)
-            except Exception as e2:
-                logger.warning(f"Could not open browser: {e2}")
+            # Fallback to direct URL (only if URL)
+            if image_src.startswith("http"):
+                try:
+                    webbrowser.open(image_src)
+                except Exception as e2:
+                    logger.warning(f"Could not open browser: {e2}")
 
     def close(self):
         """Close the QR viewer (no-op for browser-based viewer)."""

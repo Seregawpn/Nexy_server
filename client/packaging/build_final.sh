@@ -130,12 +130,6 @@ if [ "$SPEED_CHECK" -eq 0 ]; then
         echo "     ✓ Директория Nexy не найдена (первый запуск)"
     fi
 
-    # --- Очистка __pycache__ (предотвращает ошибки PyInstaller со stale .pyc) ---
-    echo -e "${YELLOW}🧹 Очистка __pycache__...${NC}"
-    find "$CLIENT_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-    find "$CLIENT_DIR" -name "*.pyc" -delete 2>/dev/null || true
-    echo "     ✓ __pycache__ очищен"
-
     # --- Сброс TCC разрешений (по умолчанию при каждой сборке) ---
     echo -e "${YELLOW}🔐 Сброс TCC разрешений...${NC}"
     sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true

@@ -52,6 +52,7 @@ class WhatsappIntegration(BaseIntegration):
         loader = UnifiedConfigLoader.get_instance()
         whatsapp_cfg = loader.get_whatsapp_config()
 
+
         self.config = WhatsappConfig.from_env()
         # Overlay unified config
         if 'enabled' in whatsapp_cfg:
@@ -175,7 +176,7 @@ class WhatsappIntegration(BaseIntegration):
              return
 
         self._last_qr_url = qr_url  # Save for later use
-        self._qr_shown_in_session = True # Mark as shown
+    # Flag will be set in _handle_qr_code only if actually displayed
         asyncio.create_task(self._handle_qr_code(qr_url))
 
     def _on_auth_failure(self):
@@ -271,6 +272,13 @@ class WhatsappIntegration(BaseIntegration):
         # 3. Execute Decision
         if decision == Decision.NOTIFY_USER:
             logger.info("Gateway decided to NOTIFY_USER for WhatsApp QR")
+            
+            # Use lock to prevent race condition on double-display
+            if getattr(self, '_qr_shown_in_session', False):
+                 logger.info("Race condition avoided: QR already shown")
+                 return
+            
+            self._qr_shown_in_session = True
             self.qr_viewer.display(qr_url)
             
             # Notify user via system notification
@@ -337,8 +345,9 @@ class WhatsappIntegration(BaseIntegration):
                     if snapshot.whatsapp_status in (WhatsappStatus.QR_REQUIRED, WhatsappStatus.DISCONNECTED, WhatsappStatus.CONNECTING):
                         qr_url = await self._get_or_generate_qr_url()
                         if qr_url:
-                            self.qr_viewer.display(qr_url)
-                            logger.info("🔓 QR code displayed (async)")
+                            # Use _handle_qr_code to ensure proper state/flag management
+                            await self._handle_qr_code(qr_url)
+                            logger.info("🔓 QR code handled (async)")
                 except Exception as e:
                     logger.error(f"Failed to display QR async: {e}")
             
@@ -496,7 +505,12 @@ class WhatsappIntegration(BaseIntegration):
         except WhatsAppNotAuthenticatedError as e:
             # Handle authentication issues
             logger.error(f"WhatsApp not authenticated: {e}")
-            speak_text = "WhatsApp is not connected. Please scan the QR code in the app."
+            speak_text = "WhatsApp is not connected. Please scan the QR code to link your device."
+            
+            # FORCE RECOVERY: If we are not authenticated, existing process might be stale.
+            # Don't just wait for QR, force a restart to generate one immediately.
+            logger.warning("☠️ Auth Error caught during command. Forcing service restart to generate fresh QR.")
+            asyncio.create_task(self._reset_session_and_restart())
             
             await self.event_bus.publish(f"actions.{command}.failed", {
                 "session_id": session_id,

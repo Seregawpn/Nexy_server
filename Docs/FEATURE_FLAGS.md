@@ -26,9 +26,8 @@ MESSAGES_ENABLED=false
 
 **Client (`client/config/unified_config.yaml`):**
 ```yaml
-features:
-  messages:
-    enabled: false
+messages:
+  enabled: false
 ```
 
 ### Effect
@@ -48,14 +47,14 @@ Controls: `browser_use` (complex web tasks), `close_browser`.
 ```bash
 BROWSER_USE_ENABLED=false
 ```
-*Alternative: `BROWSER_ENABLED=false` (both are checked)*
 
 **Client (`client/config/unified_config.yaml`):**
 ```yaml
-features:
-  browser:
-    enabled: false
+browser_use:
+  enabled: false
 ```
+
+*Note: `features.browser_use.enabled` может использоваться как rollout/legacy, но канонический флаг — `browser_use.enabled`.*
 
 ### Effect
 - "Open YouTube" will likely be handled as `open_app` (Safari app) or WebSearch, but NOT as an autonomous browser agent.
@@ -73,12 +72,14 @@ Controls: `buy_subscription`, `manage_subscription`, Quota checks.
 ```bash
 SUBSCRIPTION_ENABLED=false
 ```
+```bash
+SUBSCRIPTION_KILL_SWITCH=true
+```
 
 **Client (`client/config/unified_config.yaml`):**
 ```yaml
-features:
-  payment:
-    enabled: false
+payment_use:
+  enabled: false
 ```
 
 ### Effect
@@ -103,10 +104,14 @@ Ideally, flags should be synchronized between Server and Client for consistent b
 
 | Feature | Server Variable | Client YAML Path |
 |---------|-----------------|------------------|
-| Messages | `MESSAGES_ENABLED` | `features.messages.enabled` |
-| Browser | `BROWSER_USE_ENABLED` | `features.browser.enabled` |
-| Payment | `SUBSCRIPTION_ENABLED` | `features.payment.enabled` |
+| Messages | `MESSAGES_ENABLED` | `messages.enabled` |
+| Browser | `BROWSER_USE_ENABLED` | `browser_use.enabled` |
+| Payment | `SUBSCRIPTION_ENABLED` | `payment_use.enabled` |
 | WhatsApp | `WHATSAPP_ENABLED` | `whatsapp.enabled` |
+| Web Search | `WEB_SEARCH_ENABLED` | n/a (server-only) |
+| MCP Action Forwarding | `FORWARD_ASSISTANT_ACTIONS` | n/a (server-only) |
+| Payment Automation | `PAYMENT_USE_ENABLED` | n/a (server-only) |
+| Subscription Kill Switch | `SUBSCRIPTION_KILL_SWITCH` | n/a (server-only) |
 
 ---
 
@@ -133,3 +138,67 @@ whatsapp:
 - Client will not start the `whatsapp-mcp-ready` Node.js service.
 - Prompts related to WhatsApp are removed from LLM context.
 
+---
+
+## 5. Web Search (Server)
+
+Controls: `web_search` tool exposure in the server prompt and validator.
+
+### How to Disable
+
+**Server (`server/server/config.env`):**
+```bash
+WEB_SEARCH_ENABLED=false
+```
+
+### Effect
+- Web search instructions/tools are excluded from the system prompt.
+- Any web_search command is rejected server-side.
+
+---
+
+## 6. MCP Action Forwarding (Server)
+
+Controls: forwarding of MCP `command_payload` to the client.
+
+### How to Disable
+
+**Server (`server/server/config.env`):**
+```bash
+FORWARD_ASSISTANT_ACTIONS=false
+```
+
+### Effect
+- LLM can still return action JSON, but the server will not forward commands.
+
+---
+
+## 7. Payment Automation (Server)
+
+Controls: payment automation workflow (separate from subscription checks).
+
+### How to Disable
+
+**Server (`server/server/config.env`):**
+```bash
+PAYMENT_USE_ENABLED=false
+```
+
+### Effect
+- Payment automation workflow is disabled regardless of subscription system.
+
+---
+
+## 8. Subscription Kill Switch (Server)
+
+Controls: emergency disable of subscription checks.
+
+### How to Disable
+
+**Server (`server/server/config.env`):**
+```bash
+SUBSCRIPTION_KILL_SWITCH=true
+```
+
+### Effect
+- Subscription checks are bypassed even if `SUBSCRIPTION_ENABLED=true`.

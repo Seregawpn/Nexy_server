@@ -27,18 +27,16 @@ class AccessibilityProber(BaseProber):
     
     async def trigger(self) -> None:
         """
-        Trigger the accessibility permission prompt using AXIsProcessTrustedWithOptions.
-        This shows the native macOS dialog without opening System Settings.
+        No reliable dialog API for Accessibility.
+        Orchestrator opens Settings via deep-link.
+        We can try CGRequestPostEventAccess() but it's not guaranteed.
         """
         try:
-            from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt  # type: ignore[reportMissingImports]
-            
-            options = {kAXTrustedCheckOptionPrompt: True}
-            result = AXIsProcessTrustedWithOptions(options)
-            logger.debug("[AX_PROBER] Called AXIsProcessTrustedWithOptions(prompt=True) = %s", result)
-            
+            from Quartz import CGRequestPostEventAccess  # type: ignore[reportMissingImports]
+            CGRequestPostEventAccess()
+            logger.debug("[AX_PROBER] Called CGRequestPostEventAccess()")
         except ImportError:
-            logger.debug("[AX_PROBER] ApplicationServices not available, skipping trigger")
+            logger.debug("[AX_PROBER] Quartz not available, skipping trigger")
         except Exception as e:
             logger.warning("[AX_PROBER] Trigger failed: %s", e)
     

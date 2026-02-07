@@ -1,7 +1,7 @@
 # Payment System Logic & Schema (As Implemented)
 
-See: Docs/PAYMENT_UPDATE_CONTROLLER.md for command/fallback governance.
-See: Docs/PAYMENT_REQUIREMENTS.md for ownership and server-only speech rules.
+See: Docs/_archive/PAYMENT_UPDATE_CONTROLLER.md for command/fallback governance.
+See: Docs/_archive/PAYMENT_REQUIREMENTS.md for ownership and server-only speech rules.
 
 ## 1. Architecture Overview (High-Level)
 
@@ -54,7 +54,7 @@ sequenceDiagram
     Client->>Stripe: Open Stripe Checkout (URL)
     User->>Stripe: Pay $$
     Stripe->>Server: Webhook (checkout.session.completed)
-    Server->>DB: Create subscription -> paid_trial
+    Server->>DB: Create subscription -> trialing (if trial) or paid
     Server->>Server: Invalidate Cache
     
     %% Sync Back
@@ -79,18 +79,17 @@ sequenceDiagram
 4.  **Quota/Status Check (DB):**
     *   **Запрос в БД:** получаем текущий `status` и счетчики использования.
     *   **Status Logic (как в коде):**
-        *   `paid_trial`, `paid`, `admin_active`, `grandfathered`: **ALLOWED** (безлимит).
+        *   **UNLIMITED** (безлимит): `paid`, `active`, `paid_trial`, `trialing`, `admin_active`, `grandfathered`.
         *   `billing_problem`:
             *   если `grace_period_end_at > now` → **ALLOWED** (`reason='grace_period_active'`)
-            *   иначе → **DENIED** (`reason='grace_period_expired'`)
-        *   `limited_free_trial`: проверка квот:
+            *   иначе → **переход в LIMITED‑логику** (квоты применяются).
+        *   **LIMITED** (квоты применяются): `limited_free_trial`, `canceled`, `unpaid`, `past_due`, `incomplete`, `incomplete_expired`, `paused`, `trialing_expired`, `none`, `unknown`.
             *   `daily_used >= limit` → **DENIED** (`reason='daily_limit_exceeded'`)
             *   `weekly_used >= limit` → **DENIED** (`reason='weekly_limit_exceeded'`)
             *   `monthly_used >= limit` → **DENIED** (`reason='monthly_limit_exceeded'`)
             *   иначе → **ALLOWED** (`reason='within_quota'`)
-        *   неизвестный статус → **DENIED** (`reason='unknown_status'`)
-    *   **Нет записи в БД:** **ALLOWED** (`reason='new_user'`), запись создаётся позже через webhook.
-5.  **Result Caching:** кэшируются только **ALLOWED** результаты.
+    *   **Нет записи в БД:** **ALLOWED** (`reason='new_user'`), запись создаётся при первом успешном инкременте (status=`limited_free_trial`).
+5.  **Result Caching:** кэшируются **ALLOWED и DENIED** результаты (инвалидация через webhooks и scheduler).
 
 ---
 
@@ -116,15 +115,15 @@ sequenceDiagram
 
 Как пользователь переходит между состояниями:
 
-1.  **New User:** при первом запросе запись **не создаётся**. Gate возвращает `allowed=True` с `reason='new_user'`.
+1.  **New User:** при первом запросе запись **не создаётся**. Gate возвращает `allowed=True` с `reason='new_user'`. При первом успешном инкременте usage создаётся запись со статусом `limited_free_trial`.
 2.  **Trial / First Payment:**
-    *   `checkout.session.completed` → если записи нет, создаётся `paid_trial`.
+    *   `checkout.session.completed` → если записи нет, создаётся `paid_trial` (если trial активен) или `paid` через state machine.
 3.  **Paid:**
     *   `invoice.payment_succeeded` → статус `paid`.
 4.  **Payment Failure:**
     *   `invoice.payment_failed` → статус `billing_problem` + `grace_period_end_at`.
     *   Пока grace не истёк → **ALLOWED**.
-    *   После grace → `grace_period_check` переводит статус в `limited_free_trial`.
+    *   После grace → логика квот (LIMITED); периодическая проверка переводит статус в `limited_free_trial`.
 5.  **Subscription Updated/Deleted:**
     *   `customer.subscription.updated`:
         *   `active` → `paid`

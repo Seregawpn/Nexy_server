@@ -218,14 +218,9 @@ class WhatsappServiceManager:
                     # Detect Raw QR Code Data
                     qr_data = log_entry.get('qrCodeData')
                     if qr_data and self.qr_callback:
-                        # Construct quickchart URL
-                        # URL encode is needed, but for simplicity let's rely on basic string, 
-                        # or use urllib if needed. QR data usually safe chars but commas...
-                        from urllib.parse import quote
-                        encoded_qr = quote(qr_data)
-                        qr_url = f"https://quickchart.io/qr?text={encoded_qr}&dark=000000&light=ffffff&ecLevel=M&size=600&margin=0&format=svg"
-                        logger.warning(f"🛑 QR Code detected from JSON (Size 1000): {qr_url}")
-                        self.qr_callback(qr_url)
+                        # Pass raw data for local generation
+                        logger.info(f"🛑 QR Code Data detected (len={len(qr_data)})")
+                        self.qr_callback(f"raw:{qr_data}")
                         continue  # Skip legacy detection for this line
                             
                 except json.JSONDecodeError:

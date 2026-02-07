@@ -206,6 +206,7 @@ class PermissionOrchestrator:
         self.session_id = session_id or str(uuid.uuid4())
         self.inter_step_pause_s = inter_step_pause_s
         self.advance_on_timeout = advance_on_timeout
+        self._restart_limit = 5  # Allow up to 5 restarts to break TCC zombie state
         
         self._running = False
         self._cancelled = False
@@ -463,7 +464,13 @@ class PermissionOrchestrator:
             elapsed = now - start
 
             if deadline is not None and now >= deadline:
-                self._mark_timeout(perm, "TIMEOUT", "Step timeout reached")
+                logger.warning(f"[ORCHESTRATOR] Step {perm.value} timed out - treating as NEEDS_RESTART (fail-fast)")
+                # [FIXED BY AI] Fail-Fast: Treat timeout as a signal to restart
+                self._set_step_state(perm, StepState.NEEDS_RESTART, "TIMEOUT_RESTART", "Timeout reached - restarting")
+                entry.needs_restart_marked = True
+                entry.needs_restart_marked_at = now
+                self.ledger.needs_restart = True
+                self._save()
                 return True
             
             # Transition to WAITING_LONG for Settings steps
@@ -563,10 +570,10 @@ class PermissionOrchestrator:
             await self._enter_limited_mode()
             return
         
-        # Hard guard: V2 policy allows only one automatic restart per first-run cycle.
-        if self.ledger.restart_count >= 1:
+        # Hard guard: V2 policy allows multiple restarts to break TCC zombie state
+        if self.ledger.restart_count >= self._restart_limit:
             logger.info(
-                "[ORCHESTRATOR] Restart already performed once (restart_count=%d) - skipping additional restart",
+                "[ORCHESTRATOR] Restart limit reached (%d) - exiting loop",
                 self.ledger.restart_count,
             )
             await self._complete(full_mode=True)
