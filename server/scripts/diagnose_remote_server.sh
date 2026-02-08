@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-SERVER_IP="${1:-20.63.24.187}"
+SERVER_IP="${1:-nexy-server.canadacentral.cloudapp.azure.com}"
 SSH_USER="${2:-azureuser}"
 
 echo "=================================================================================="

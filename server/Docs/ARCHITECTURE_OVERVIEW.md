@@ -231,6 +231,23 @@ server/server/
 **Голосовая обратная связь:**
 После успешной отправки клиент озвучивает: "Message to {recipient}: '{content}'. Sent successfully."
 
+### 3.4 Token Usage Tracking (F-2025-019)
+
+Сервер централизованно собирает статистику использования токенов LLM от всех источников для биллинга и мониторинга.
+
+**Архитектура:**
+- **Source of Truth**: Таблица `token_usage` в PostgreSQL.
+- **Service**: `TokenUsageTracker` — единая точка входа для записи статистики.
+- **Repository**: `TokenUsageRepository` — абстракция над БД.
+
+**Источники данных:**
+1. **Main LLM**: `LangChainGeminiProvider` (через `usage_metadata` ответа).
+2. **Memory Analyzer**: `MemoryAnalyzer` (анализ памяти в фоне).
+3. **Browser Agent**: Клиент отправляет статистику через gRPC `ReportUsage` после выполнения задач.
+
+**Отчетность:**
+- Скрипт `server/scripts/report_token_costs.py` генерирует отчет по расходам пользователей.
+
 ---
 
 ## 4. gRPC ось

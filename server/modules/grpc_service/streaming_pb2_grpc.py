@@ -50,6 +50,11 @@ class StreamingServiceStub(object):
                 request_serializer=streaming__pb2.WelcomeRequest.SerializeToString,
                 response_deserializer=streaming__pb2.WelcomeResponse.FromString,
                 _registered_method=True)
+        self.ReportUsage = channel.unary_unary(
+                '/streaming.StreamingService/ReportUsage',
+                request_serializer=streaming__pb2.UsageRequest.SerializeToString,
+                response_deserializer=streaming__pb2.UsageResponse.FromString,
+                _registered_method=True)
 
 
 class StreamingServiceServicer(object):
@@ -77,6 +82,13 @@ class StreamingServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ReportUsage(self, request, context):
+        """Репорт использования токенов (например, от клиента)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_StreamingServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -94,6 +106,11 @@ def add_StreamingServiceServicer_to_server(servicer, server):
                     servicer.GenerateWelcomeAudio,
                     request_deserializer=streaming__pb2.WelcomeRequest.FromString,
                     response_serializer=streaming__pb2.WelcomeResponse.SerializeToString,
+            ),
+            'ReportUsage': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReportUsage,
+                    request_deserializer=streaming__pb2.UsageRequest.FromString,
+                    response_serializer=streaming__pb2.UsageResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -178,6 +195,33 @@ class StreamingService(object):
             '/streaming.StreamingService/GenerateWelcomeAudio',
             streaming__pb2.WelcomeRequest.SerializeToString,
             streaming__pb2.WelcomeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReportUsage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/streaming.StreamingService/ReportUsage',
+            streaming__pb2.UsageRequest.SerializeToString,
+            streaming__pb2.UsageResponse.FromString,
             options,
             channel_credentials,
             insecure,

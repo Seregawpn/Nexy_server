@@ -25,15 +25,17 @@ class MemoryManager:
     Предоставляет те же методы, которые ожидает TextProcessor.
     """
     
-    def __init__(self, db_manager=None):
+    def __init__(self, db_manager=None, token_usage_tracker=None):
         """
         Инициализация MemoryManager.
         
         Args:
             db_manager: Экземпляр DatabaseManager для работы с БД
+            token_usage_tracker: Сервис трекинга токенов (опционально)
         """
         self.config = MemoryConfig()
         self.db_manager = db_manager
+        self.token_usage_tracker = token_usage_tracker
         self.memory_analyzer = None
         self.is_initialized = False
         
@@ -43,7 +45,10 @@ class MemoryManager:
             # Инициализируем MemoryAnalyzer если доступен API ключ
             if self.config.gemini_api_key and self.config.validate_config():
                 try:
-                    self.memory_analyzer = MemoryAnalyzer(self.config.gemini_api_key)
+                    self.memory_analyzer = MemoryAnalyzer(
+                        self.config.gemini_api_key,
+                        token_tracker=self.token_usage_tracker
+                    )
                     logger.info("✅ MemoryAnalyzer initialized successfully")
                 except Exception as e:
                     logger.warning(f"⚠️ MemoryAnalyzer initialization failed: {e}")
@@ -124,13 +129,14 @@ class MemoryManager:
             logger.error(f"❌ Error getting memory context for {hardware_id}: {e}")
             return ""
     
-    async def analyze_conversation(self, prompt: str, response: str) -> Tuple[str, str]:
+    async def analyze_conversation(self, prompt: str, response: str, hardware_id: Optional[str] = None) -> Tuple[str, str]:
         """
         Анализирует диалог для извлечения памяти.
         
         Args:
             prompt: Запрос пользователя
             response: Ответ ассистента
+            hardware_id: ID устройства для трекинга (опционально)
             
         Returns:
             Кортеж (short_memory, long_memory)
@@ -142,7 +148,7 @@ class MemoryManager:
             return "", ""
         
         try:
-            return await self.memory_analyzer.analyze_conversation(prompt, response)
+            return await self.memory_analyzer.analyze_conversation(prompt, response, hardware_id=hardware_id)
         except Exception as e:
             logger.error(f"❌ Error analyzing conversation: {e}")
             return "", ""
@@ -162,7 +168,7 @@ class MemoryManager:
             logger.debug(f"🔄 Starting background memory update for {hardware_id}")
             
             # Анализируем разговор для извлечения памяти
-            short_memory, long_memory = await self.analyze_conversation(prompt, response)
+            short_memory, long_memory = await self.analyze_conversation(prompt, response, hardware_id=hardware_id)
             
             # Если есть что сохранять
             if short_memory or long_memory:

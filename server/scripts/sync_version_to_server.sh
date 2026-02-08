@@ -13,7 +13,7 @@ NC='\033[0m'
 # Параметры
 RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NetworkWatcherRG}"
 VM_NAME="${AZURE_VM_NAME:-Nexy}"
-SERVER_IP="${SERVER_IP:-20.63.24.187}"
+SERVER_IP="${SERVER_IP:-nexy-server.canadacentral.cloudapp.azure.com}"
 
 # Путь к VERSION файлу
 VERSION_FILE="$(cd "$(dirname "$0")/../.." && pwd)/VERSION"

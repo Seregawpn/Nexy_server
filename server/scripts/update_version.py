@@ -264,7 +264,7 @@ def main():
         print()
         
         # Опционально: обновить манифест на сервере
-        server_ip = os.getenv("SERVER_IP", "20.63.24.187")
+        server_ip = os.getenv("SERVER_IP", "nexy-server.canadacentral.cloudapp.azure.com")
         update_remote = os.getenv("UPDATE_REMOTE_MANIFEST", "false").lower() == "true"
         
         if update_remote:

@@ -11,7 +11,7 @@ Memory Analyzer - анализ диалогов для извлечения па
 import asyncio
 import logging
 import re
-from typing import Tuple
+from typing import Tuple, Optional, Any
 
 try:
     import google.generativeai as genai
@@ -30,17 +30,22 @@ class MemoryAnalyzer:
     для краткосрочной и долгосрочной памяти.
     """
     
-    def __init__(self, gemini_api_key: str):
+    def __init__(self, gemini_api_key: str, token_tracker: Optional[Any] = None, hardware_id: Optional[str] = None):
         """
         Инициализация MemoryAnalyzer.
         
         Args:
             gemini_api_key: API ключ для Gemini
+            token_tracker: Сервис для трекинга токенов (опционально)
+            hardware_id: ID устройства для привязки токенов (опционально)
         """
         if not GEMINI_AVAILABLE or genai is None:
             raise ImportError("google.generativeai not available")
         
         self.api_key = gemini_api_key
+        self.token_tracker = token_tracker
+        self.hardware_id = hardware_id
+        
         genai.configure(api_key=gemini_api_key)  # type: ignore
         
         # Настройки модели
@@ -87,18 +92,21 @@ class MemoryAnalyzer:
         
         logger.info("✅ MemoryAnalyzer initialized with Gemini API")
     
-    async def analyze_conversation(self, prompt: str, response: str) -> Tuple[str, str]:
+    async def analyze_conversation(self, prompt: str, response: str, hardware_id: Optional[str] = None) -> Tuple[str, str]:
         """
         Анализирует диалог для извлечения памяти.
         
         Args:
             prompt: Запрос пользователя
             response: Ответ ассистента
+            hardware_id: ID устройства для трекинга токенов (опционально)
             
         Returns:
             Кортеж (short_memory, long_memory)
         """
         try:
+            # Используем переданный hardware_id или сохраненный в self
+            target_hardware_id = hardware_id or self.hardware_id
             # Формируем промпт для анализа
             analysis_prompt = self.analysis_prompt_template.format(
                 prompt=prompt,
@@ -126,8 +134,28 @@ class MemoryAnalyzer:
                 analysis_prompt
             )
             
-            if not response_obj or not response_obj.text:
+            if not response_obj:
                 logger.warning("⚠️ Empty response from Gemini for memory analysis")
+                return "", ""
+                
+            # Записываем использование токенов
+            if self.token_tracker and target_hardware_id and hasattr(response_obj, 'usage_metadata'):
+                try:
+                    input_tokens = response_obj.usage_metadata.prompt_token_count
+                    output_tokens = response_obj.usage_metadata.candidates_token_count
+                    
+                    await self.token_tracker.record_usage(
+                        hardware_id=target_hardware_id,
+                        source='memory_analyzer',
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        model_name=self.model_name
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to record memory analysis tokens: {e}")
+            
+            if not response_obj.text:
+                logger.warning("⚠️ Empty text in response from Gemini")
                 return "", ""
             
             # Парсим результат

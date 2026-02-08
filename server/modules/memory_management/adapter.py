@@ -46,8 +46,17 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             
             self._config = config
             
+            # Инициализируем TokenUsageTracker
+            token_tracker = None
+            try:
+                from integrations.core.token_usage_tracker import TokenUsageTracker
+                token_tracker = TokenUsageTracker()
+                logger.info("TokenUsageTracker initialized for MemoryManager")
+            except Exception as e:
+                logger.warning(f"Failed to initialize TokenUsageTracker: {e}")
+            
             # Создаем менеджер (db_manager будет установлен позже)
-            self._manager = MemoryManager(db_manager=self._db_manager)
+            self._manager = MemoryManager(db_manager=self._db_manager, token_usage_tracker=token_tracker)
             
             # Инициализируем менеджер
             if await self._manager.initialize():

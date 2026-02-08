@@ -24,18 +24,23 @@ class TextProcessor:
     текстовых запросов с поддержкой изображений и поиска.
     """
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, token_usage_tracker: Optional[Any] = None):
         """
         Инициализация процессора текста
         
         Args:
             config: Конфигурация модуля
+            token_usage_tracker: Сервис трекинга токенов (опционально)
         """
         self.config = TextProcessingConfig(config)
+        self.token_usage_tracker = token_usage_tracker
         
         # Всегда используем LangChain провайдер
         logger.info("TextProcessor: Using LangChain provider")
-        self.live_provider = LangChainGeminiProvider(self.config.get_provider_config('langchain'))
+        self.live_provider = LangChainGeminiProvider(
+            self.config.get_provider_config('langchain'),
+            token_usage_tracker=self.token_usage_tracker
+        )
         
         self.is_initialized = False
         

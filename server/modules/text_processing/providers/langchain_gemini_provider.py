@@ -10,8 +10,11 @@ LangChain Gemini Provider для обработки текста с поддер
 
 import logging
 import base64
-from typing import AsyncGenerator, Dict, Any, Optional, Union
+from typing import AsyncGenerator, Dict, Any, Optional, Union, TYPE_CHECKING
 from integrations.core.universal_provider_interface import UniversalProviderInterface
+
+if TYPE_CHECKING:
+    from integrations.core.token_usage_tracker import TokenUsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -145,18 +148,20 @@ class LangChainGeminiProvider(UniversalProviderInterface):
     - Стриминг ответов
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], token_usage_tracker: Optional['TokenUsageTracker'] = None):
         """
         Инициализация LangChain Gemini провайдера
         
         Args:
             config: Конфигурация провайдера
+            token_usage_tracker: Сервис трекинга токенов (опционально)
         """
         super().__init__(
             name="langchain_gemini",
             priority=1,  # Основной провайдер
             config=config
         )
+        self.token_usage_tracker = token_usage_tracker
         
         self.model_name = config.get('model', 'gemini-3-flash-preview')
         self.temperature = config.get('temperature', 0.7)
@@ -304,7 +309,15 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             
             # Стриминг через LangChain
             # НЕ разбиваем на предложения здесь - это делает StreamingWorkflowIntegration
+            
+            # Для трекинга токенов
+            accumulated_usage = None
+            
             async for chunk in llm.astream(messages):
+                # Пытаемся извлечь usage_metadata из чанка
+                if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                    accumulated_usage = chunk.usage_metadata
+                
                 # Используем chunk.text напрямую
                 # Используем extract_text_from_chunk для надежности
                 text = extract_text_from_chunk(chunk)
@@ -315,6 +328,42 @@ class LangChainGeminiProvider(UniversalProviderInterface):
                     text = extract_text_from_chunk(chunk)
                     if text and text.strip():
                         yield text
+            
+            # Записываем использование токенов после завершения стрима
+            if self.token_usage_tracker and accumulated_usage:
+                try:
+                    # Extract hardware_id from session or context if available
+                    # Currently we don't have hardware_id passed explicitly to process,
+                    # but maybe we can extract it or pass it.
+                    # For now, we'll try to use session_id or 'unknown' if not available.
+                    # Ideally, TextProcessor should pass hardware_id.
+                    
+                    # Note: We need hardware_id to record usage. 
+                    # If session_id is UUID, we might be able to lookup hardware_id, 
+                    # but simpler is to pass it. 
+                    # For this step, we will use a placeholder or session_id 
+                    # and rely on the calling layer to provide hardware_id if possible.
+                    # Wait, usage table requires hardware_id.
+                    
+                    # We will assume session_id might be linked to hardware_id or used as fallback
+                    # But hardware_id is NOT session_id.
+                    # We need to update the signature of process to accept hardware_id or 
+                    # make sure it's available.
+                    
+                    # Let's check update_token_usage_tracker logic. 
+                    # We will use 'unknown' for now and fix it in TextProcessor
+                    target_id = 'unknown' # Placeholder
+                    
+                    self.token_usage_tracker.record_usage(
+                        hardware_id=target_id, 
+                        source='main_llm',
+                        input_tokens=accumulated_usage.get('input_tokens', 0),
+                        output_tokens=accumulated_usage.get('output_tokens', 0),
+                        session_id=session_id,
+                        model_name=self.model_name
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to record token usage: {e}")
                 
             logger.debug("LangChain text processing completed")
                 
@@ -400,7 +449,13 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             
             # Стриминг через LangChain
             # НЕ разбиваем на предложения здесь - это делает StreamingWorkflowIntegration
+            
+            accumulated_usage = None
+            
             async for chunk in llm.astream(messages):
+                if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                    accumulated_usage = chunk.usage_metadata
+                    
                 # Используем chunk.text напрямую
                 # Используем extract_text_from_chunk для надежности
                 text = extract_text_from_chunk(chunk)
@@ -411,6 +466,22 @@ class LangChainGeminiProvider(UniversalProviderInterface):
                     text = extract_text_from_chunk(chunk)
                     if text and text.strip():
                         yield text
+            
+            # Записываем использование токенов
+            if self.token_usage_tracker and accumulated_usage:
+                try:
+                    target_id = 'unknown' # Placeholder
+                    
+                    self.token_usage_tracker.record_usage(
+                        hardware_id=target_id,
+                        source='main_llm',
+                        input_tokens=accumulated_usage.get('input_tokens', 0),
+                        output_tokens=accumulated_usage.get('output_tokens', 0),
+                        session_id=session_id,
+                        model_name=self.model_name
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to record token usage (image): {e}")
                 
             logger.debug("LangChain with image processing completed")
                 

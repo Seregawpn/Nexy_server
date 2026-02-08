@@ -50,8 +50,17 @@ class TextProcessingModule(UniversalModuleInterface):
             # Создаем конфигурацию из unified_config
             self._config = TextProcessingConfig(config)
             
+            # Инициализируем TokenUsageTracker
+            token_tracker = None
+            try:
+                from integrations.core.token_usage_tracker import TokenUsageTracker
+                token_tracker = TokenUsageTracker()
+                logger.info("TokenUsageTracker initialized for TextProcessor")
+            except Exception as e:
+                logger.warning(f"Failed to initialize TokenUsageTracker: {e}")
+            
             # Создаем процессор
-            self._processor = TextProcessor(config)
+            self._processor = TextProcessor(config, token_usage_tracker=token_tracker)
             
             # Инициализируем процессор
             if await self._processor.initialize():

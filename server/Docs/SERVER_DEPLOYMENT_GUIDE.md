@@ -169,8 +169,8 @@ rm -rf nexy_server_temp
 
 ### **📊 Мониторинг деплоя:**
 - **GitHub Actions:** `https://github.com/Seregawpn/Nexy_server/actions`
-- **Health check (PUBLIC):** `https://20.63.24.187/health` (через Nginx/443)
-- **Status API (PUBLIC):** `https://20.63.24.187/status` (через Nginx/443)
+- **Health check (PUBLIC):** `https://nexy-server.canadacentral.cloudapp.azure.com/health` (через Nginx/443)
+- **Status API (PUBLIC):** `https://nexy-server.canadacentral.cloudapp.azure.com/status` (через Nginx/443)
 - **Health check (INTERNAL):** `http://127.0.0.1:8080/health` (прямой доступ, только локально)
 
 ### 🔐 HTTPS/443 Ingress (Nginx) — обновление
@@ -186,7 +186,7 @@ rm -rf nexy_server_temp
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name 20.63.24.187; # либо домен
+    server_name nexy-server.canadacentral.cloudapp.azure.com; # DNS имя
 
     ssl_certificate     /etc/nginx/ssl/server.crt;
     ssl_certificate_key /etc/nginx/ssl/server.key;
@@ -237,22 +237,22 @@ server {
 sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /etc/nginx/ssl/server.key \
   -out /etc/nginx/ssl/server.crt \
-  -subj "/CN=20.63.24.187" \
-  -addext "subjectAltName=IP:20.63.24.187"
+  -subj "/CN=nexy-server.canadacentral.cloudapp.azure.com" \
+  -addext "subjectAltName=DNS:nexy-server.canadacentral.cloudapp.azure.com"
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 Проверка:
 
 ```bash
-curl -sk https://20.63.24.187/updates/health  # 200 OK
-echo | openssl s_client -connect 20.63.24.187:443 -servername 20.63.24.187 -showcerts 2>/dev/null | \
+curl -sk https://nexy-server.canadacentral.cloudapp.azure.com/updates/health  # 200 OK
+echo | openssl s_client -connect nexy-server.canadacentral.cloudapp.azure.com:443 -servername nexy-server.canadacentral.cloudapp.azure.com -showcerts 2>/dev/null | \
   openssl x509 -noout -subject -ext subjectAltName
 ```
 
 Клиентские настройки:
-- gRPC endpoint: `https://20.63.24.187` (HTTP/2, TLS)
-- Updates: `https://20.63.24.187/updates/...`
+- gRPC endpoint: `https://nexy-server.canadacentral.cloudapp.azure.com` (HTTP/2, TLS)
+- Updates: `https://nexy-server.canadacentral.cloudapp.azure.com/updates/...`
 - На время self‑signed: доверить сертификат или отключить strict verify.
 
 ---
@@ -262,20 +262,20 @@ echo | openssl s_client -connect 20.63.24.187:443 -servername 20.63.24.187 -show
 ### **1. Health Check (PUBLIC - через Nginx/HTTPS):**
 ```bash
 # ПУБЛИЧНАЯ проверка (как её видит клиент)
-curl -sk https://20.63.24.187/health
+curl -sk https://nexy-server.canadacentral.cloudapp.azure.com/health
 # Ожидаемый результат: JSON с полями: status, latest_version, latest_build
 ```
 
 ### **2. Status API (PUBLIC - через Nginx/HTTPS):**
 ```bash
 # ПУБЛИЧНАЯ проверка (как её видит клиент)
-curl -sk https://20.63.24.187/status
+curl -sk https://nexy-server.canadacentral.cloudapp.azure.com/status
 # Ожидаемый результат: JSON с информацией о сервисе, включая latest_version и latest_build
 ```
 
 ### **3. Cache-Control на AppCast (PUBLIC - через Nginx/HTTPS):**
 ```bash
-curl -sI https://20.63.24.187/appcast.xml | grep -i "Cache-Control"  # ожидаем max-age=60
+curl -sI https://nexy-server.canadacentral.cloudapp.azure.com/appcast.xml | grep -i "Cache-Control"  # ожидаем max-age=60
 ```
 
 ### **4. Internal Health Check (для локальной диагностики):**
@@ -495,7 +495,7 @@ az vm run-command invoke \
   --scripts "systemctl status voice-assistant.service"
 
 # Health check (PUBLIC)
-curl -sk https://20.63.24.187/health
+curl -sk https://nexy-server.canadacentral.cloudapp.azure.com/health
 
 # Логи сервиса
 az vm run-command invoke \
@@ -566,7 +566,7 @@ az vm run-command invoke \
 
 **📞 Поддержка:** Документация в `Docs/` папке  
 **🔗 Репозиторий:** `https://github.com/Seregawpn/Nexy_server`  
-**🌐 Сервер:** `https://20.151.51.172`
+**🌐 Сервер:** `https://nexy-server.canadacentral.cloudapp.azure.com`
 **📊 GitHub Actions:** `https://github.com/Seregawpn/Nexy_server/actions`
 
 ---

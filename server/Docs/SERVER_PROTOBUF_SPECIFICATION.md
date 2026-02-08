@@ -1,4 +1,4 @@
-# Спецификация Protobuf для сервера GenerateWelcomeAudio
+# Спецификация Protobuf API
 
 ## Точные требования к формату ответа сервера
 
@@ -371,6 +371,34 @@ server/server/modules/grpc_service/streaming.proto
 ```
 
 Этот файл является источником истины для серверной стороны; любые изменения синхронизируются с клиентом через канон протокола.
+
+---
+
+## 6. Token Usage Reporting (F-2025-019)
+
+### 6.1 RPC Метод
+
+```protobuf
+rpc ReportUsage(UsageRequest) returns (UsageResponse);
+```
+
+### 6.2 Структуры
+
+```protobuf
+message UsageRequest {
+  string hardware_id = 1;
+  string source = 2;        // 'browser_agent', 'main_llm', etc.
+  int32 input_tokens = 3;
+  int32 output_tokens = 4;
+  optional string session_id = 5;
+  optional string model_name = 6;
+}
+
+message UsageResponse {
+  bool success = 1;
+  string message = 2;
+}
+```
 
 
 

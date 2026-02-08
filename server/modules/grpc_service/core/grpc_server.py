@@ -785,36 +785,64 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             record_metric("GenerateWelcomeAudio", dur_ms, is_error=False)
             
             yield streaming_pb2.WelcomeResponse(end_message="Welcome audio generation completed")  # type: ignore
-            
+        
         except Exception as e:
-            # Структурированное логирование ошибки (PR-4)
             dur_ms = (time.time() - start_time) * 1000
-            log_rpc_error(
-                logger,
-                method="GenerateWelcomeAudio",
-                error_code="INTERNAL",
-                error_message=f"Ошибка генерации приветственного аудио: {str(e)}",
-                dur_ms=dur_ms,
-                ctx={"session_id": session_id}
-            )
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}", extra={
+            logger.error(f"❌ GenerateWelcomeAudio error: {e}", extra={
                 'scope': 'grpc',
                 'method': 'GenerateWelcomeAudio',
                 'decision': 'error',
                 'ctx': {'error': str(e)}
             })
-            
             record_decision_metric("GenerateWelcomeAudio", "error")
             record_metric("GenerateWelcomeAudio", dur_ms, is_error=True)
             
-            # Устанавливаем статус ошибки в контексте
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"Ошибка генерации приветственного аудио: {str(e)}")
             
             yield streaming_pb2.WelcomeResponse(  # type: ignore
                 error_message=f"Ошибка генерации приветственного аудио: {str(e)}"
             )
+    
+    async def ReportUsage(self, request: streaming_pb2.UsageRequest, context) -> streaming_pb2.UsageResponse:  # type: ignore
+        """
+        Репорт использования токенов (например, от клиента/браузерного агента)
+        """
+        start_time = time.time()
+        
+        hardware_id = request.hardware_id
+        session_id = request.session_id
+        source = request.source or "unknown"
+        
+        if not hardware_id:
+            logger.warning("ReportUsage: hardware_id is missing")
+            return streaming_pb2.UsageResponse(success=False, message="hardware_id required")  # type: ignore
+
+        try:
+            # Получаем TokenUsageTracker
+            # Он должен быть доступен через unified config или singleton
+            # Но здесь у нас нет прямого доступа к нему, если он не передан в __init__
+            # Однако TokenUsageTracker - это синглтон (почти), можно создать instance
+            
+            from integrations.core.token_usage_tracker import TokenUsageTracker
+            token_tracker = TokenUsageTracker()
+            
+            token_tracker.record_usage(
+                hardware_id=hardware_id,
+                source=source,
+                input_tokens=request.input_tokens,
+                output_tokens=request.output_tokens,
+                model_name=request.model,
+                session_id=session_id
+            )
+            
+            logger.info(f"📊 Token usage reported: {source} ({request.input_tokens}/{request.output_tokens}) for {hardware_id}")
+            
+            return streaming_pb2.UsageResponse(success=True, message="Usage recorded")  # type: ignore
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to report token usage: {e}")
+            return streaming_pb2.UsageResponse(success=False, message=str(e))  # type: ignore
 
 async def run_server(
     host: Optional[str] = None,

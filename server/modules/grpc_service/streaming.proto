@@ -12,6 +12,25 @@ service StreamingService {
   
   // Генерация приветственного аудио сообщения
   rpc GenerateWelcomeAudio(WelcomeRequest) returns (stream WelcomeResponse);
+
+  // Репорт использования токенов (например, от клиента)
+  rpc ReportUsage(UsageRequest) returns (UsageResponse);
+}
+
+// Запрос на репорт использования токенов
+message UsageRequest {
+  string hardware_id = 1;     // Hardware ID
+  string session_id = 2;      // Session ID
+  string source = 3;          // Источник (e.g. "browser_agent")
+  int32 input_tokens = 4;     // Входные токены
+  int32 output_tokens = 5;    // Выходные токены
+  string model = 6;           // Модель
+}
+
+// Ответ на репорт
+message UsageResponse {
+  bool success = 1;
+  string message = 2;
 }
 
 // Запрос на стриминг

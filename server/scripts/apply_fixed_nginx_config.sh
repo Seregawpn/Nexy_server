@@ -33,13 +33,13 @@ upstream updates_backend {
 # HTTP редирект на HTTPS
 server {
     listen 80;
-    server_name 20.63.24.187;
+    server_name nexy-server.canadacentral.cloudapp.azure.com;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name 20.63.24.187;
+    server_name nexy-server.canadacentral.cloudapp.azure.com;
     
     # SSL сертификаты
     ssl_certificate /etc/nginx/ssl/server.crt;
@@ -219,4 +219,4 @@ az vm run-command invoke \
 
 echo ""
 echo "✅ Готово! Проверьте работу gRPC:"
-echo "   python3 server/scripts/test_grpc_connection.py 20.63.24.187 443"
+echo "   python3 server/scripts/test_grpc_connection.py nexy-server.canadacentral.cloudapp.azure.com 443"
