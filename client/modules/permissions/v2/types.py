@@ -27,6 +27,7 @@ class PermissionId(str, Enum):
     CONTACTS = "contacts"
     INPUT_MONITORING = "input_monitoring"
     ACCESSIBILITY = "accessibility"
+    MESSAGES = "messages"
     FULL_DISK_ACCESS = "full_disk_access"
 
 
@@ -118,6 +119,7 @@ class ProbeEvidence:
     tap_enabled: bool | None = None
     ax_action_ok: bool | None = None        # accessibility
     file_access_ok: bool | None = None      # FDA
+    messages_access_ok: bool | None = None
     contacts_fetch_ok: bool | None = None
 
     # Error normalization inputs

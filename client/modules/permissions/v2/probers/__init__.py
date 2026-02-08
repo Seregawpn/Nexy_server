@@ -7,6 +7,7 @@ from .base import BaseProber
 from .contacts import ContactsProber
 from .full_disk_access import FullDiskAccessProber
 from .input_monitoring import InputMonitoringProber
+from .messages import MessagesProber
 from .microphone import MicrophoneProber
 from .screen_capture import ScreenCaptureProber
 
@@ -17,5 +18,6 @@ __all__ = [
     "MicrophoneProber",
     "ScreenCaptureProber",
     "FullDiskAccessProber",
+    "MessagesProber",
     "ContactsProber",
 ]

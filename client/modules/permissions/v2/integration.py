@@ -21,6 +21,7 @@ from .probers import (
     ContactsProber,
     FullDiskAccessProber,
     InputMonitoringProber,
+    MessagesProber,
     MicrophoneProber,
     ScreenCaptureProber,
 )
@@ -169,6 +170,7 @@ class PermissionOrchestratorIntegration:
         prober_classes = {
             PermissionId.ACCESSIBILITY: AccessibilityProber,
             PermissionId.INPUT_MONITORING: InputMonitoringProber,
+            PermissionId.MESSAGES: MessagesProber,
             PermissionId.MICROPHONE: MicrophoneProber,
             PermissionId.SCREEN_CAPTURE: ScreenCaptureProber,
             PermissionId.FULL_DISK_ACCESS: FullDiskAccessProber,

@@ -229,6 +229,7 @@ class GrpcClientIntegration:
                 pass
             await self.event_bus.subscribe("network.status_changed", self._on_network_status_changed, EventPriority.MEDIUM)
             await self.event_bus.subscribe("grpc.tts_request", self._on_tts_request, EventPriority.HIGH)
+            await self.event_bus.subscribe("grpc.report_usage", self._on_report_usage, EventPriority.LOW)
             await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
 
             self._initialized = True
@@ -483,6 +484,55 @@ class GrpcClientIntegration:
 
     async def _on_app_shutdown(self, event):
         await self.stop()
+
+    async def _on_report_usage(self, event):
+        """Handle token usage report request."""
+        data = (event or {}).get("data", {})
+        session_id = data.get("session_id")
+        input_tokens = data.get("input_tokens", 0)
+        output_tokens = data.get("output_tokens", 0)
+        source = data.get("source", "unknown")
+        model = data.get("model", "unknown")
+        
+        # Ensure we have hardware_id
+        hwid = self._hardware_id
+        if not hwid:
+             hwid = await self._await_hardware_id(timeout_ms=3000)
+        
+        if not hwid:
+            logger.warning(f"Skipping usage report for {session_id}: inactive hardware_id")
+            return
+
+        if self._client:
+            try:
+                # КРИТИЧНО: выполняем gRPC операции в _grpc_loop
+                current_loop = asyncio.get_running_loop()
+                if self._grpc_loop and self._grpc_loop != current_loop:
+                     await asyncio.wrap_future(
+                        asyncio.run_coroutine_threadsafe(
+                            self._client.report_usage(
+                                session_id=str(session_id),
+                                hardware_id=hwid,
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                source=source,
+                                model=model
+                            ),
+                            self._grpc_loop
+                        )
+                    )
+                else:
+                    await self._client.report_usage(
+                        session_id=str(session_id),
+                        hardware_id=hwid,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        source=source,
+                        model=model
+                    )
+                logger.debug(f"Reported usage for {session_id}: {input_tokens}/{output_tokens} via {source}")
+            except Exception as e:
+                logger.error(f"Failed to report usage: {e}")
 
     # ---------------- Core logic ----------------
     async def _maybe_send(self, session_id):

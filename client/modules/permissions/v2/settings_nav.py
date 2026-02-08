@@ -18,6 +18,7 @@ SETTINGS_URLS: dict[str, str] = {
     "microphone": "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
     "full_disk_access": "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
     "contacts": "x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts",
+    "messages": "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
     "privacy_and_security": "x-apple.systempreferences:com.apple.preference.security",
 }
 

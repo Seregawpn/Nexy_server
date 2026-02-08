@@ -69,12 +69,13 @@ class GeminiLLMAdapter:
     browser-use expects: provider, name, model properties and ainvoke method.
     """
     
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", tts_callback=None):
+    def __init__(self, api_key: str, model: str, tts_callback=None, usage_callback=None):
         from langchain_google_genai import ChatGoogleGenerativeAI
         self._llm = ChatGoogleGenerativeAI(model=model, api_key=api_key)
         self._model = model
         self._api_key = api_key
         self.tts_callback = tts_callback
+        self.usage_callback = usage_callback
     
     @property
     def provider(self) -> str:
@@ -176,6 +177,10 @@ class GeminiLLMAdapter:
                     if hasattr(response, 'usage_metadata') and response.usage_metadata:
                         input_tokens = response.usage_metadata.get('input_tokens', 0)
                         output_tokens = response.usage_metadata.get('output_tokens', 0)
+                        
+                        if self.usage_callback:
+                            self.usage_callback(input_tokens, output_tokens, self._model)
+
                         usage = ChatInvokeUsage(
                             prompt_tokens=input_tokens,
                             prompt_cached_tokens=None,
@@ -192,6 +197,10 @@ class GeminiLLMAdapter:
                 if hasattr(response, 'usage_metadata') and response.usage_metadata:
                     input_tokens = response.usage_metadata.get('input_tokens', 0)
                     output_tokens = response.usage_metadata.get('output_tokens', 0)
+                    
+                    if self.usage_callback:
+                        self.usage_callback(input_tokens, output_tokens, self._model)
+
                     usage = ChatInvokeUsage(
                         prompt_tokens=input_tokens,
                         prompt_cached_tokens=None,
@@ -230,7 +239,7 @@ class BrowserUseModule:
         self._persistent_session = None
         self._keep_browser_open = False
 
-    async def initialize(self, config: dict[str, Any] | None = None, notification_callback: Any | None = None, tts_callback: Any | None = None) -> None:
+    async def initialize(self, config: dict[str, Any] | None = None, notification_callback: Any | None = None, tts_callback: Any | None = None, usage_callback: Any | None = None) -> None:
         """
         Initialize the module.
         
@@ -238,10 +247,12 @@ class BrowserUseModule:
             config: Module configuration (optional)
             notification_callback: Async callback(message: str) for user notifications
             tts_callback: Async callback(text: str, session_id: str) for immediate audio feedback
+            usage_callback: Callback(input_tokens: int, output_tokens: int) for token usage tracking
         """
         try:
             self.notification_callback = notification_callback
             self.tts_callback = tts_callback
+            self.usage_callback = usage_callback
             
             # Load config from unified_config just in case
             if config is None:
@@ -640,7 +651,15 @@ class BrowserUseModule:
     ) -> AsyncIterator[dict[str, Any]]:
         # Get/Create LLM
         try:
-            llm = self._create_llm(self.tts_callback)
+            # Create session-aware usage callback
+            usage_cb = None
+            actual_model = None
+            if self.usage_callback:
+                def _cb(input_tokens, output_tokens, model_name=None):
+                    self.usage_callback(input_tokens, output_tokens, session_id, model_name or "unknown")
+                usage_cb = _cb
+                
+            llm = self._create_llm(self.tts_callback, usage_callback=usage_cb)
         except Exception as e:
             yield {
                 'type': 'BROWSER_TASK_FAILED',
@@ -792,39 +811,28 @@ class BrowserUseModule:
         ]
         return any(signal in message for signal in retry_signals)
 
-    def _create_llm(self, tts_callback=None):
+    def _create_llm(self, tts_callback=None, usage_callback=None):
         """Создание LLM для Agent, совместимого с browser-use Protocol"""
         import os
+        from config.unified_config_loader import unified_config
         
-        # Try environment variables first
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        model_name = os.environ.get("GEMINI_MODEL") or os.environ.get("BROWSER_USE_MODEL")
+        # Load config from centralized source
+        browser_config = unified_config.get_browser_use_config()
         
-        # Then check self._config
-        if not api_key:
-            api_key = self._config.get("gemini_api_key")
-        if not model_name:
-            model_name = self._config.get("gemini_model")
-        
-        # Finally check global_config root 'browser_use' section directly
-        if not api_key or not model_name:
-            # global_config._load_config() returns the raw dict
-            if hasattr(global_config, '_load_config'):
-                raw_config = global_config._load_config()
-                browser_use_section = raw_config.get('browser_use', {})
-                if not api_key:
-                    api_key = browser_use_section.get("gemini_api_key")
-                if not model_name:
-                    model_name = browser_use_section.get("gemini_model")
+        # Priority: Env Var > Config > Fallback
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or browser_config.get("gemini_api_key")
+        model_name = os.environ.get("GEMINI_MODEL") or os.environ.get("BROWSER_USE_MODEL") or browser_config.get("gemini_model")
         
         if not api_key:
             raise ValueError("GEMINI_API_KEY not configured in environment variables or config")
             
         if not model_name:
-            model_name = "gemini-2.5-flash" # Fallback default 
+            # Fallback should ideally never be reached if config is correct
+            model_name = "gemini-3-flash-preview" 
         
         # Use adapter to make ChatGoogleGenerativeAI compatible with browser-use
-        return GeminiLLMAdapter(api_key=api_key, model=model_name, tts_callback=tts_callback)
+        return GeminiLLMAdapter(api_key=api_key, model=model_name, tts_callback=tts_callback, usage_callback=usage_callback)
+
 
     def _get_agent_config(self, config_preset: str) -> dict[str, Any]:
         base_config = {

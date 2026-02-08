@@ -34,11 +34,28 @@ class BrowserUseIntegration:
                      "session_id": session_id,
                      "source": "browser_latency_mask"
                  })
+                  
+             def usage_callback(input_tokens: int, output_tokens: int, session_id: str, model_name: str = "unknown"):
+                 # Publish usage event to be handled by gRPC integration
+                 try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self.event_bus.publish("grpc.report_usage", {
+                        "session_id": session_id,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "source": "browser_agent",
+                        "model": model_name
+                    }))
+                 except Exception as e:
+                     logger.warning(f"Failed to publish usage event: {e}")
+
 
              await self.module.initialize(
                  notification_callback=notify_user,
-                 tts_callback=tts_feedback
+                 tts_callback=tts_feedback,
+                 usage_callback=usage_callback
              )
+
              
              await self.event_bus.subscribe("browser.use.request", self._on_browser_use_request, EventPriority.HIGH)
              await self.event_bus.subscribe("browser.close.request", self._on_browser_close_request, EventPriority.HIGH)

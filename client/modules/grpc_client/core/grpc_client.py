@@ -604,6 +604,39 @@ class GrpcClient:
         except Exception as e:
             logger.error(f"❌ Ошибка очистки GrpcClient: {e}")
 
+    async def report_usage(
+        self,
+        session_id: str,
+        hardware_id: str,
+        input_tokens: int,
+        output_tokens: int,
+        source: str,
+        model: str
+    ):
+        """Отправляет отчет об использовании токенов."""
+        if not self.is_connected():
+            await self.connect()
+            
+        streaming_pb2, streaming_pb2_grpc = self._import_proto_modules()
+        stub = streaming_pb2_grpc.StreamingServiceStub(self.connection_manager.channel)
+        
+        request = streaming_pb2.UsageRequest(
+            hardware_id=hardware_id,
+            session_id=session_id,
+            source=source,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            model=model
+        )
+        
+        try:
+            # Unary call with timeout
+            response = await stub.ReportUsage(request, timeout=10.0)
+            return response
+        except Exception as e:
+            logger.error(f"❌ Failed to report usage: {e}")
+            raise
+
     def _import_proto_modules(self) -> tuple[Any, Any]:
         """Гибкий импорт streaming_pb2 и streaming_pb2_grpc.
         Сначала пробуем из proto директории модуля, затем fallback в server/.

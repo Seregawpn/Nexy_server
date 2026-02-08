@@ -140,6 +140,8 @@ class MockProber:
             return ProbeEvidence(file_access_ok=True)
         elif self.permission == PermissionId.CONTACTS:
             return ProbeEvidence(contacts_fetch_ok=True)
+        elif self.permission == PermissionId.MESSAGES:
+            return ProbeEvidence(messages_access_ok=True)
         else:
             return ProbeEvidence()
 
@@ -162,6 +164,7 @@ def create_scenario_all_pass() -> dict[PermissionId, MockProberConfig]:
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
         PermissionId.SCREEN_CAPTURE: MockProberConfig(PermissionId.SCREEN_CAPTURE, probes_until_pass=1),
         PermissionId.CONTACTS: MockProberConfig(PermissionId.CONTACTS, probes_until_pass=1),
+        PermissionId.MESSAGES: MockProberConfig(PermissionId.MESSAGES, probes_until_pass=1),
         PermissionId.INPUT_MONITORING: MockProberConfig(PermissionId.INPUT_MONITORING, probes_until_pass=1),
         PermissionId.ACCESSIBILITY: MockProberConfig(PermissionId.ACCESSIBILITY, probes_until_pass=2),
         PermissionId.FULL_DISK_ACCESS: MockProberConfig(PermissionId.FULL_DISK_ACCESS, probes_until_pass=2),
@@ -174,6 +177,7 @@ def create_scenario_input_monitoring_needs_restart() -> dict[PermissionId, MockP
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
         PermissionId.SCREEN_CAPTURE: MockProberConfig(PermissionId.SCREEN_CAPTURE, probes_until_pass=1),
         PermissionId.CONTACTS: MockProberConfig(PermissionId.CONTACTS, probes_until_pass=1),
+        PermissionId.MESSAGES: MockProberConfig(PermissionId.MESSAGES, probes_until_pass=1),
         PermissionId.INPUT_MONITORING: MockProberConfig(
             PermissionId.INPUT_MONITORING,
             needs_restart=True,
@@ -190,6 +194,7 @@ def create_scenario_hard_fail() -> dict[PermissionId, MockProberConfig]:
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, should_fail=True),
         PermissionId.SCREEN_CAPTURE: MockProberConfig(PermissionId.SCREEN_CAPTURE, probes_until_pass=1),
         PermissionId.CONTACTS: MockProberConfig(PermissionId.CONTACTS, probes_until_pass=1),
+        PermissionId.MESSAGES: MockProberConfig(PermissionId.MESSAGES, probes_until_pass=1),
         PermissionId.INPUT_MONITORING: MockProberConfig(PermissionId.INPUT_MONITORING, probes_until_pass=1),
         PermissionId.ACCESSIBILITY: MockProberConfig(PermissionId.ACCESSIBILITY, probes_until_pass=2),
         PermissionId.FULL_DISK_ACCESS: MockProberConfig(PermissionId.FULL_DISK_ACCESS, probes_until_pass=2),
@@ -202,6 +207,7 @@ def create_scenario_feature_fail() -> dict[PermissionId, MockProberConfig]:
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
         PermissionId.SCREEN_CAPTURE: MockProberConfig(PermissionId.SCREEN_CAPTURE, probes_until_pass=1),
         PermissionId.CONTACTS: MockProberConfig(PermissionId.CONTACTS, should_fail=True),
+        PermissionId.MESSAGES: MockProberConfig(PermissionId.MESSAGES, probes_until_pass=1),
         PermissionId.INPUT_MONITORING: MockProberConfig(PermissionId.INPUT_MONITORING, probes_until_pass=1),
         PermissionId.ACCESSIBILITY: MockProberConfig(PermissionId.ACCESSIBILITY, probes_until_pass=2),
         PermissionId.FULL_DISK_ACCESS: MockProberConfig(PermissionId.FULL_DISK_ACCESS, probes_until_pass=2),
@@ -243,6 +249,7 @@ def create_fast_step_configs() -> dict[PermissionId, StepConfig]:
         PermissionId.MICROPHONE,
         PermissionId.SCREEN_CAPTURE,
         PermissionId.CONTACTS,
+        PermissionId.MESSAGES,
         PermissionId.INPUT_MONITORING,
         PermissionId.ACCESSIBILITY,
         PermissionId.FULL_DISK_ACCESS,
@@ -257,7 +264,7 @@ def create_fast_step_configs() -> dict[PermissionId, StepConfig]:
             mode = StepMode.AUTO_DIALOG
             settings_target = None
         
-        if perm in [PermissionId.MICROPHONE, PermissionId.INPUT_MONITORING, PermissionId.ACCESSIBILITY]:
+        if perm in [PermissionId.MICROPHONE, PermissionId.INPUT_MONITORING, PermissionId.ACCESSIBILITY, PermissionId.MESSAGES]:
             criticality = PermissionCriticality.HARD
         elif perm == PermissionId.SCREEN_CAPTURE:
             criticality = PermissionCriticality.SOFT
@@ -308,6 +315,7 @@ async def run_test(scenario_name: str) -> bool:
         PermissionId.MICROPHONE,
         PermissionId.SCREEN_CAPTURE,
         PermissionId.CONTACTS,
+        PermissionId.MESSAGES,
         PermissionId.INPUT_MONITORING,
         PermissionId.ACCESSIBILITY,
         PermissionId.FULL_DISK_ACCESS,
@@ -337,6 +345,7 @@ async def run_test(scenario_name: str) -> bool:
             classifiers=classifiers,
             hard_permissions=[
                 PermissionId.MICROPHONE,
+                PermissionId.MESSAGES,
                 PermissionId.INPUT_MONITORING,
                 PermissionId.ACCESSIBILITY,
             ],

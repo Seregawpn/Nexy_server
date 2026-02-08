@@ -391,6 +391,49 @@ class FullDiskAccessClassifier(BaseClassifier):
         )
 
 
+
+class MessagesClassifier(BaseClassifier):
+    """Classifier for messages permission."""
+    
+    def __init__(self):
+        super().__init__(PermissionId.MESSAGES)
+    
+    def classify(self, probe: ProbeResult, entry: StepLedgerEntry) -> StepOutcome:
+        e = probe.evidence
+        
+        if e.messages_access_ok is True:
+            return StepOutcome(
+                permission=self.permission,
+                kind=OutcomeKind.PASS_,
+                reason="Messages access granted.",
+                reason_code="MESSAGES_PASS"
+            )
+        
+        cat = normalize_error(
+            permission=self.permission,
+            domain=e.error_domain,
+            code=e.error_code,
+            message=e.error_message
+        )
+        self._update_counters(entry, cat)
+        
+        if e.permission_denied_hint or entry.consecutive_denied >= DENY_CONFIRM_COUNT:
+            return StepOutcome(
+                permission=self.permission,
+                kind=OutcomeKind.WAITING_USER,
+                reason="Enable Automation for Messages in System Settings.",
+                reason_code="MESSAGES_WAITING_USER"
+            )
+        
+        return StepOutcome(
+            permission=self.permission,
+            kind=OutcomeKind.WAITING,
+            reason="Waiting for Messages access.",
+            reason_code="MESSAGES_WAITING",
+            is_transient=True
+        )
+
+
 # Factory function
 def get_classifier(permission: PermissionId) -> BaseClassifier:
     """Get classifier for a permission."""
@@ -400,6 +443,7 @@ def get_classifier(permission: PermissionId) -> BaseClassifier:
         PermissionId.INPUT_MONITORING: InputMonitoringClassifier,
         PermissionId.ACCESSIBILITY: AccessibilityClassifier,
         PermissionId.CONTACTS: ContactsClassifier,
+        PermissionId.MESSAGES: MessagesClassifier,
         PermissionId.FULL_DISK_ACCESS: FullDiskAccessClassifier,
     }
     return classifiers[permission]()

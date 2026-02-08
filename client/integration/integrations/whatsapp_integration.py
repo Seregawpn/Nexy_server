@@ -140,6 +140,9 @@ class WhatsappIntegration(BaseIntegration):
         """
         logger.info("WhatsApp Authenticated!")
         
+        # Reset retry counter on success
+        self._qr_retry_count = 0
+        
         # 1. Update State (Source of Truth)
         # Keep status aligned with selectors.WhatsappStatus enum.
         self.state_manager.set_state_data(StateKeys.WHATSAPP_STATUS, "connected")
@@ -235,8 +238,22 @@ class WhatsappIntegration(BaseIntegration):
             # Timeout -> Restart Logic
             logger.warning("Background Monitor: Timeout (15s). Force-restarting service...")
             
+            # Track retry count
+            if not hasattr(self, '_qr_retry_count'):
+                self._qr_retry_count = 0
+            self._qr_retry_count += 1
+            
+            if self._qr_retry_count > 3:
+                logger.error("❌ Background Monitor: Max retries (3) reached. Giving up.")
+                self._qr_monitor_task = None
+                return
+
             # Clear cache
             self._last_qr_url = None
+
+            # Clear auth cache to force new QR generation
+            logger.warning("🧹 Clearing auth cache to force fresh QR...")
+            self.service_manager.clear_auth_cache()
             
             # Restart
             logger.info("🔄 Stopping service (Background)...")

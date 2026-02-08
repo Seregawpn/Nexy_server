@@ -718,6 +718,13 @@ class UnifiedConfigLoader:
         config = self._load_config()
         return config.get('integrations', {}).get('hardware_id', {})
 
+    def get_browser_use_config(self) -> dict[str, Any]:
+        """
+        Получает конфигурацию browser_use.
+        """
+        config = self._load_config()
+        return config.get('browser_use', {})
+
     def get_feature_config(self, feature_name: str) -> dict[str, Any]:
         """
         Получает конфигурацию фичи из секции 'features'.
