@@ -117,7 +117,8 @@ class WhatsappServiceManager:
             logger.info(f"WhatsApp Service started with PID {self.process.pid}")
             
             # Start output monitoring tasks (stdout has JSON logs with QR, stderr has errors)
-            asyncio.create_task(self._monitor_output(self.process.stdout, 'stdout'))
+            # NOTE: stdout is monitored by mcp_client for JSON-RPC messages and logs
+            # asyncio.create_task(self._monitor_output(self.process.stdout, 'stdout'))
             asyncio.create_task(self._monitor_output(self.process.stderr, 'stderr'))
             
             # Initialize MCP Client (wraps the streams)
@@ -162,14 +163,8 @@ class WhatsappServiceManager:
         Used to reset the session if QR code cannot be generated.
         """
         try:
-            # Assuming str path, convert to Path
-            script_path = Path(self._node_script)
-            # node_modules/@iflow-mcp/whatsapp-mcp-ts/build/index.js
-            # auth_info is at: node_modules/@iflow-mcp/whatsapp-mcp-ts/auth_info
-            
-            # Go up from build/index.js to package root
-            package_root = script_path.parent.parent
-            auth_info_dir = package_root / "auth_info"
+            # SECURE: Auth stored in Application Support (matches whatsapp.js)
+            auth_info_dir = Path.home() / "Library" / "Application Support" / "Nexy" / "whatsapp_auth"
             
             if auth_info_dir.exists() and auth_info_dir.is_dir():
                 logger.warning(f"🧹 Clearing WhatsApp auth cache at {auth_info_dir}")
@@ -180,6 +175,65 @@ class WhatsappServiceManager:
                 
         except Exception as e:
             logger.error(f"❌ Failed to clear auth cache: {e}")
+
+    def handle_output_line(self, decoded_line: str):
+        """Process a single line of output (log or QR)"""
+        if not decoded_line:
+            return
+
+        # Check for Auth Failure
+        if "Auth failure" in decoded_line or "Authentication failure" in decoded_line or "Session closed" in decoded_line:
+            logger.warning("🚨 Detected WhatsApp Auth Failure in logs!")
+            if self.failure_callback:
+                self.failure_callback()
+        
+        # Try to parse JSON log
+        try:
+            log_entry = json.loads(decoded_line)
+            msg = log_entry.get('msg', '')
+            
+            # Detect Auth Success (multiple patterns for reliability)
+            auth_success = log_entry.get('authSuccess', False)
+            if auth_success or "connected to WA" in msg or "Application setup complete" in msg or "Connection opened" in msg:
+                logger.info("✅ WhatsApp Auth Success detected!")
+                
+                # Check for New Session Event
+                if log_entry.get('newSession'):
+                    logger.info("✨ NEW SESSION DETECTED: Database was cleared for fresh start.")
+                    
+                if self.auth_callback:
+                    self.auth_callback()
+
+            # Detect Raw QR Code Data
+            qr_data = log_entry.get('qrCodeData')
+            if qr_data and self.qr_callback:
+                # Pass raw data for local generation
+                logger.info(f"🛑 QR Code Data detected (len={len(qr_data)})")
+                self.qr_callback(f"raw:{qr_data}")
+                return # Skip legacy detection for this line
+                    
+        except json.JSONDecodeError:
+            pass
+
+        # Check for legacy QR Code URL (quickchart.io)
+        if "quickchart.io" in decoded_line and self.qr_callback:
+            # Extract URL
+            match = re.search(r'(https://quickchart\.io/qr\?[^ \n]+)', decoded_line)
+            if match:
+                qr_url = match.group(1)
+                # Force size to 1200
+                    
+                # Robustly force size and margin
+                # Remove existing size/margin to avoid dupes
+                qr_url = re.sub(r'[&?]size=\d+', '', qr_url)
+                qr_url = re.sub(r'[&?]margin=\d+', '', qr_url)
+                
+                # Append our preferred params. Use & or ? depending on if ? exists
+                sep = '&' if '?' in qr_url else '?'
+                qr_url += f"{sep}size=1000&margin=0"
+                    
+                logger.warning(f"🛑 QR Code detected (legacy, Size 1000): {qr_url}")
+                self.qr_callback(qr_url)
 
     async def _monitor_output(self, stream, stream_name: str = 'output'):
         """Monitor stdout/stderr for logs and QR codes"""
@@ -197,55 +251,11 @@ class WhatsappServiceManager:
                     continue
                     
                 # Log stderr as debug info
-                logger.debug(f"[WhatsApp Node] {decoded_line}")
+                if stream_name == 'stderr':
+                    logger.debug(f"[WhatsApp Node] {decoded_line}")
                 
-                # Check for Auth Failure
-                if "Auth failure" in decoded_line or "Authentication failure" in decoded_line or "Session closed" in decoded_line:
-                    logger.warning("🚨 Detected WhatsApp Auth Failure in logs!")
-                    if self.failure_callback:
-                        self.failure_callback()
-                
-                # Try to parse JSON log
-                try:
-                    log_entry = json.loads(decoded_line)
-                    msg = log_entry.get('msg', '')
-                    
-                    # Detect Auth Success
-                    if "connected to WA" in msg or "Application setup complete" in msg:
-                        if self.auth_callback:
-                            self.auth_callback()
-
-                    # Detect Raw QR Code Data
-                    qr_data = log_entry.get('qrCodeData')
-                    if qr_data and self.qr_callback:
-                        # Pass raw data for local generation
-                        logger.info(f"🛑 QR Code Data detected (len={len(qr_data)})")
-                        self.qr_callback(f"raw:{qr_data}")
-                        continue  # Skip legacy detection for this line
-                            
-                except json.JSONDecodeError:
-                    pass
- 
-                # Check for legacy QR Code URL (quickchart.io)
-                if "quickchart.io" in decoded_line and self.qr_callback:
-                    # Extract URL
-                    match = re.search(r'(https://quickchart\.io/qr\?[^ \n]+)', decoded_line)
-                    if match:
-                        qr_url = match.group(1)
-                        # Force size to 1200
-                            
-                        # Robustly force size and margin
-                        # Remove existing size/margin to avoid dupes
-                        qr_url = re.sub(r'[&?]size=\d+', '', qr_url)
-                        qr_url = re.sub(r'[&?]margin=\d+', '', qr_url)
-                        
-                        # Append our preferred params. Use & or ? depending on if ? exists
-                        sep = '&' if '?' in qr_url else '?'
-                        qr_url += f"{sep}size=1000&margin=0"
-                            
-                        logger.warning(f"🛑 QR Code detected (legacy, Size 1000): {qr_url}")
-                        self.qr_callback(qr_url)
+                self.handle_output_line(decoded_line)
                         
         except Exception as e:
-            logger.error(f"Error reading stderr: {e}")
+            logger.error(f"Error reading {stream_name}: {e}")
 

@@ -114,6 +114,10 @@ class QuartzKeyboardMonitor:
         # Время последнего события для каждой клавиши (для защиты от залипания)
         self._control_last_event_time: Optional[float] = None
         self._n_last_event_time: Optional[float] = None
+        # Защита от случайной реактивации комбинации после деактивации
+        # (когда пользователь отпускает Ctrl, но N ещё нажат, и случайно снова нажимает Ctrl)
+        self._combo_deactivation_time: Optional[float] = None
+        self._combo_reactivation_cooldown: float = 0.3  # 0.3s cooldown (защита от случайных двойных нажатий)
 
         # Доступность
         self.keyboard_available = QUARTZ_AVAILABLE
@@ -398,9 +402,23 @@ class QuartzKeyboardMonitor:
         should_be_active = self._control_pressed and self._n_pressed
         
         if should_be_active and not was_active:
+            # ЗАЩИТА: Проверяем cooldown после последней деактивации
+            # Это предотвращает случайную реактивацию, когда пользователь:
+            # 1. Отпускает Control (деактивация)
+            # 2. Случайно снова нажимает Control пока N ещё нажат
+            if self._combo_deactivation_time is not None:
+                time_since_deactivation = now - self._combo_deactivation_time
+                if time_since_deactivation < self._combo_reactivation_cooldown:
+                    logger.info(
+                        f"🔒 Combo реактивация заблокирована (cooldown): "
+                        f"прошло {time_since_deactivation:.3f}s < {self._combo_reactivation_cooldown}s"
+                    )
+                    return  # Не активируем комбинацию - ещё cooldown
+            
             # Активация комбинации: обе клавиши зажаты
             self._combo_active = True
             self._combo_start_time = now
+            self._combo_deactivation_time = None  # Сброс времени деактивации
             self._long_sent = False
             self._event_processed = False
             self._last_event_timestamp = 0.0
@@ -433,6 +451,7 @@ class QuartzKeyboardMonitor:
             self._combo_active = False
             duration = now - (self._combo_start_time or now)
             self._combo_start_time = None
+            self._combo_deactivation_time = now  # Засекаем время деактивации для cooldown
             
             # Защита от двойной обработки
             if self._event_processed and (now - self._last_event_timestamp) < 0.1:

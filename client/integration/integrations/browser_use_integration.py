@@ -81,12 +81,25 @@ class BrowserUseIntegration:
     async def _on_cancel_request(self, event: dict[str, Any]):
         """Handle cancellation requests (voice or manual)."""
         logger.info("🛑 [BROWSER] Interruption requested, cancelling active tasks...")
-        if not self._processing_tasks:
+        
+        # Копируем и очищаем сразу, чтобы новые задачи не добавлялись в старый набор
+        tasks_to_cancel = list(self._processing_tasks)
+        self._processing_tasks.clear()
+        
+        if not tasks_to_cancel:
             logger.info("ℹ️ [BROWSER] No active tasks to cancel")
             return
 
-        for task in list(self._processing_tasks):
-            task.cancel()
+        cancelled_count = 0
+        for task in tasks_to_cancel:
+            try:
+                if not task.done():
+                    task.cancel()
+                    cancelled_count += 1
+            except Exception as e:
+                logger.debug(f"Failed to cancel browser task: {e}")
+        
+        logger.info(f"🛑 [BROWSER] Cancelled {cancelled_count} browser tasks")
         
         # Also force stop the browser session
         await self.module.close_browser()

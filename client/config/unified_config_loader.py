@@ -162,9 +162,62 @@ class UnifiedConfigLoader:
         self._config_cache: dict[str, Any] | None = None
         self._last_modified: float | None = None
         self._environment: str = self._detect_environment()
+        self._secure_credentials: dict[str, Any] | None = None
         
         UnifiedConfigLoader._initialized = True
         logger.debug("UnifiedConfigLoader singleton initialized")
+
+    def _get_secure_credentials_path(self) -> Path:
+        """Returns path to secure credentials file in Application Support"""
+        return Path.home() / "Library" / "Application Support" / "Nexy" / "credentials.yaml"
+    
+    def _load_secure_credentials(self) -> dict[str, Any]:
+        """Load credentials from secure Application Support location"""
+        if self._secure_credentials is not None:
+            return self._secure_credentials
+            
+        creds_path = self._get_secure_credentials_path()
+        if creds_path.exists():
+            try:
+                with open(creds_path, 'r', encoding='utf-8') as f:
+                    self._secure_credentials = yaml.safe_load(f) or {}
+                logger.info("🔐 Loaded secure credentials from %s", creds_path)
+            except Exception as e:
+                logger.warning("Failed to load secure credentials: %s", e)
+                self._secure_credentials = {}
+        else:
+            logger.debug("Secure credentials file not found at %s", creds_path)
+            self._secure_credentials = {}
+        
+        return self._secure_credentials
+    
+    def get_api_key(self, key_name: str) -> str | None:
+        """
+        Get API key from secure storage.
+        Priority: 1. Environment variable, 2. Secure credentials, 3. Config file
+        """
+        # 1. Check environment variable (highest priority)
+        env_key = key_name.upper()
+        if os.environ.get(env_key):
+            return os.environ.get(env_key)
+        
+        # 2. Check secure credentials
+        creds = self._load_secure_credentials()
+        if creds.get(key_name):
+            return creds.get(key_name)
+        
+        # 3. Fallback to config (legacy, will log warning)
+        config = self._load_config()
+        browser_config = config.get('browser_use', {})
+        if browser_config.get(key_name):
+            logger.warning(
+                "⚠️ API key '%s' loaded from config file. "
+                "Consider moving to ~/Library/Application Support/Nexy/credentials.yaml",
+                key_name
+            )
+            return browser_config.get(key_name)
+        
+        return None
 
     
     def _load_config(self) -> dict[str, Any]:

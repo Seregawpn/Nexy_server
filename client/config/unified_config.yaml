@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.1.22
+  version: 1.6.1.23
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -240,6 +240,7 @@ integrations:
     order:
       - microphone
       - screen_capture
+      - network
       - contacts
       - messages
       - input_monitoring
@@ -265,6 +266,13 @@ integrations:
         supports_needs_restart: false
         criticality: hard
         
+      network:
+        mode: auto_dialog
+        grace_s: 13.0
+        poll_s: 2.0
+        supports_needs_restart: false
+        criticality: hard
+
       contacts:
         mode: auto_dialog
         grace_s: 13.0
@@ -615,10 +623,10 @@ browser_use:
   log_steps: true
   log_terminal: true
   keep_browser_open: true
-  gemini_api_key: "AIzaSyBB6iKD1oeW_GdidzhBgx68s-OsCRDpJiA"
+  gemini_api_key: ""  # SECURE: Moved to ~/Library/Application Support/Nexy/credentials.yaml
   gemini_model: "gemini-3-flash-preview"  # User explicitly requested gemini-3-flash-preview
 payment_use:
-  enabled: true  # F-2025-018-payment-use enabled
+  enabled: false  # F-2025-018-payment-use DISABLED
   log_steps: true
   log_transactions: true
 messages:
@@ -626,10 +634,10 @@ messages:
   require_full_disk_access: true
   require_contacts_permission: true
 whatsapp:
-  enabled: true  # F-2025-019-whatsapp enabled
-  keep_alive: true
+  enabled: false  # F-2025-019-whatsapp DISABLED
+  keep_alive: false
   node_path: /usr/local/bin/node
-  auto_start: true
+  auto_start: false
 actions:
   open_app:
     enabled: true

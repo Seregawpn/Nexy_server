@@ -444,6 +444,9 @@ class SimpleModuleCoordinator:
                     'hardware_id',
                     'first_run_permissions',
                     'permission_restart',
+                    'grpc',             # Нужен для welcome_message (генерация речи)
+                    'speech_playback',  # Нужен для воспроизведения приветствия
+                    'welcome_message',  # Приветствие после получения разрешений
                 ]
             
             # Запускаем в правильном порядке
@@ -452,7 +455,7 @@ class SimpleModuleCoordinator:
                 if name in self.integrations:
                     # GATE: Проверка разрешений для зависимых модулей
                     # Модули, которые открывают ресурсы (mic, screen, keyboard, audio) должны ждать разрешений
-                    if name in ["input", "voice_recognition", "screenshot_capture", "voiceover_ducking", "speech_playback"]:
+                    if name in ["input", "voice_recognition", "screenshot_capture", "voiceover_ducking"]:
                         first_run = self.integrations.get("first_run_permissions")
                         if first_run and not first_run.are_all_granted:
                             logger.warning(f"⛔ [PERMISSIONS] Skipping {name} start because permissions are not granted")
@@ -460,7 +463,7 @@ class SimpleModuleCoordinator:
                             continue
 
                     # GATE: Не запускаем зависимые модули во время first-run или pending restart
-                    if name in ["input", "voice_recognition", "screenshot_capture", "speech_playback", "signals", "voiceover_ducking"]:
+                    if name in ["input", "voice_recognition", "screenshot_capture", "signals", "voiceover_ducking"]:
                         state_manager = self._ensure_state_manager()
                         first_run_in_progress = state_manager.get_state_data(StateKeys.FIRST_RUN_IN_PROGRESS, False)
                         restart_pending = state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False)
@@ -597,10 +600,10 @@ class SimpleModuleCoordinator:
         """Остановка всех интеграций"""
         try:
             if not self.is_running:
-                print("⚠️ Компоненты не запущены")
+                logger.warning("⚠️ Компоненты не запущены")
                 return True
             
-            print("⏹️ Остановка всех интеграций...")
+            logger.info("⏹️ Остановка всех интеграций...")
             
             # КРИТИЧНО: Если TAL hold активен (tray ещё не готов), явно снимаем его
             # Это важно для корректного завершения при фатальных ошибках
@@ -617,22 +620,23 @@ class SimpleModuleCoordinator:
             
             # Останавливаем все интеграции
             for name, integration in self.integrations.items():
-                print(f"⏹️ Остановка {name}...")
+                logger.info(f"⏹️ Остановка {name}...")
                 success = await integration.stop()
                 if not success:
-                    print(f"⚠️ Ошибка остановки {name}")
+                    logger.warning(f"⚠️ Ошибка остановки {name}")
                 else:
-                    print(f"✅ {name} остановлен")
+                    logger.info(f"✅ {name} остановлен")
             
             # Останавливаем все Workflows
-            print("⏹️ Остановка Workflows...")
+            logger.info("⏹️ Остановка Workflows...")
             for name, workflow in self.workflows.items():
-                print(f"⏹️ Остановка workflow {name}...")
+                logger.info(f"⏹️ Остановка workflow {name}...")
                 await workflow.stop()
-                print(f"✅ Workflow {name} остановлен")
+                logger.info(f"✅ Workflow {name} остановлен")
             
             self.is_running = False
-            print("✅ Все интеграции и workflows остановлены")
+            self.is_running = False
+            logger.info("✅ Все интеграции и workflows остановлены")
             # Останавливаем фоновый loop
             try:
                 if self._bg_loop and self._bg_loop.is_running():
@@ -644,7 +648,7 @@ class SimpleModuleCoordinator:
             return True
             
         except Exception as e:
-            print(f"❌ Ошибка остановки интеграций: {e}")
+            logger.error(f"❌ Ошибка остановки интеграций: {e}")
             return False
     
     async def run(self):
@@ -653,7 +657,7 @@ class SimpleModuleCoordinator:
         try:
             # Проверяем, не запущено ли уже приложение
             if _app_running or self.is_running:
-                print("⚠️ Приложение уже запущено")
+                logger.warning("⚠️ Приложение уже запущено")
                 return
             
             _app_running = True
@@ -662,20 +666,20 @@ class SimpleModuleCoordinator:
             # Инициализируем
             success = await self.initialize()
             if not success:
-                print("❌ Не удалось инициализировать компоненты")
+                logger.error("❌ Не удалось инициализировать компоненты")
                 return
             
             # Запускаем
             success = await self.start()
             if not success:
-                print("❌ Не удалось запустить компоненты")
+                logger.error("❌ Не удалось запустить компоненты")
                 return
             
             # Получаем приложение rumps для отображения иконки (если трей включён)
             tray_integration = self.integrations.get('tray')
             if not tray_integration:
                 # Headless режим: трей отключён конфигом — продолжаем работу без меню-бара
-                print("🖥️ Headless mode: Tray disabled. Running without menu bar. Press Ctrl+C to exit.")
+                logger.info("🖥️ Headless mode: Tray disabled. Running without menu bar.")
                 while self.is_running:
                     await asyncio.sleep(3600)
                 return
@@ -688,16 +692,14 @@ class SimpleModuleCoordinator:
                     "⚠️ [TRAY] Tray unavailable (get_app()==None) - entering headless mode. "
                     "Possible causes: PyObjC fix not applied, NSApplication not activated, or rumps initialization failed."
                 )
-                print("⚠️ [TRAY] Tray unavailable - entering headless mode")
-                print("🖥️ Headless mode: Tray unavailable. Running without menu bar. Press Ctrl+C to exit.")
-                print("📝 Check nexy_debug.log for details about PyObjC fix and NSApplication activation")
+
                 
                 # Переходим в headless-цикл вместо завершения
                 while self.is_running:
                     await asyncio.sleep(3600)
                 return
 
-            print("🎯 Запуск приложения с иконкой в меню-баре...")
+            logger.info("🎯 Запуск приложения с иконкой в меню-баре...")
 
             # CRITICAL: Активируем NSApplication непосредственно ПЕРЕД app.run()
             # Это необходимо для корректного отображения иконки в menu bar,
@@ -734,7 +736,7 @@ class SimpleModuleCoordinator:
                 self._hold_tal_until_tray_ready()
                 logger.info("✅ [ANTI_TAL] _hold_tal_until_tray_ready() завершён успешно")
             except Exception as e:
-                print(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
+                logger.error(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
                 logger.error(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
                 import traceback
                 traceback.print_exc()
@@ -763,10 +765,9 @@ class SimpleModuleCoordinator:
                 logger.info("🔍 CRITICAL: app.run() (fallback) завершился")
             
         except KeyboardInterrupt:
-            print("\n⏹️ Приложение прервано пользователем")
-            logger.info("⏹️ Приложение прервано пользователем (KeyboardInterrupt)")
+            logger.info("⏹️ Приложение прервано пользователем")
         except Exception as e:
-            print(f"❌ Критическая ошибка: {e}")
+            logger.error(f"❌ Критическая ошибка: {e}")
             logger.error(f"❌ Критическая ошибка в coordinator.run(): {e}", exc_info=True)
             import traceback
             traceback.print_exc()
@@ -792,7 +793,6 @@ class SimpleModuleCoordinator:
             # Используем SystemExit вместо os._exit для корректного прохождения через finally в main.py
             if self._duplicate_instance_detected:
                 logger.info("💀 Duplicate instance detected - raising SystemExit(1) after cleanup")
-                print("💀 Дубликат экземпляра обнаружен - завершение с кодом 1 после cleanup")
                 raise SystemExit(1)  # Пробрасываем исключение для корректного завершения через main.py
     
     # Обработчики событий (только координация, не дублирование логики)
@@ -800,22 +800,21 @@ class SimpleModuleCoordinator:
     async def _on_app_startup(self, event):
         """Обработка запуска приложения"""
         try:
-            print("🚀 Обработка запуска приложения в координаторе")
+            logger.info("🚀 Обработка запуска приложения в координаторе")
             
             # V2 FIX: НЕ публикуем ready_to_greet здесь!
             # Событие system.ready_to_greet теперь публикуется V2 Orchestrator
             # после того как все разрешения будут получены (или pipeline завершится).
             # Это гарантирует что приветствие не воспроизведется до готовности.
             logger.info("🔒 [COORDINATOR] Waiting for V2 Orchestrator to publish system.ready_to_greet")
-            print("🔒 [COORDINATOR] Ждём V2 Orchestrator для публикации system.ready_to_greet")
             
         except Exception as e:
-            print(f"❌ Ошибка обработки запуска приложения: {e}")
+            logger.error(f"❌ Ошибка обработки запуска приложения: {e}")
     
     async def _on_app_shutdown(self, event):
         """Обработка завершения приложения"""
         try:
-            print("⏹️ Обработка завершения приложения в координаторе")
+            logger.info("⏹️ Обработка завершения приложения в координаторе")
             # Делегируем обработку интеграциям через EventBus
             
         except Exception as e:
@@ -826,7 +825,7 @@ class SimpleModuleCoordinator:
         """Обработка пользовательского завершения через Quit в меню"""
         global _user_initiated_shutdown
         try:
-            print("👤 Пользователь инициировал завершение приложения через Quit")
+            logger.info("👤 Пользователь инициировал завершение приложения через Quit")
             _user_initiated_shutdown = True
             
             # Публикуем событие завершения
@@ -848,7 +847,7 @@ class SimpleModuleCoordinator:
             data = event_data(event)
             new_mode = data.get("mode", None)
             printable_mode = getattr(new_mode, "value", None) or str(new_mode) if new_mode is not None else "unknown"
-            print(f"🔄 Координация смены режима: {printable_mode}")
+            logger.info(f"🔄 Координация смены режима: {printable_mode}")
             
             # Делегируем обработку интеграциям
             # Координатор только координирует, не обрабатывает!
@@ -889,7 +888,6 @@ class SimpleModuleCoordinator:
             data = (event or {}).get("data", {})
             session_id = data.get("session_id", "unknown")
             logger.info(f"⏳ [PERMISSIONS] Permission request started (session={session_id})")
-            print(f"⏳ [PERMISSIONS] Начат процесс запроса разрешений (session={session_id})")
             
             # Обновляем StateManager (единственный источник истины)
             try:
@@ -957,7 +955,6 @@ class SimpleModuleCoordinator:
             # Логируем UX-сигнал для микрофона при выдаче разрешения
             if permission == "microphone" and new_status == "granted":
                 logger.info(f"🎤 [COORDINATOR] Mic granted, waiting for other permissions (session={session_id})")
-                print(f"🎤 [COORDINATOR] Mic granted, waiting for other permissions")
             
             # Логируем UX-сигнал для timeout разрешений, требующих Settings
             # ВАЖНО: Проверяем is_timeout явно, чтобы не путать с реальным отказом
@@ -975,7 +972,6 @@ class SimpleModuleCoordinator:
                         f"⏱️ [COORDINATOR] Open System Settings to grant {perm_display_name} "
                         f"(timeout after waiting, session={session_id})"
                     )
-                    print(f"⏱️ [COORDINATOR] Open System Settings to grant {perm_display_name}")
             elif new_status == "denied" and not is_timeout:
                 # Реальный отказ (не timeout) - можно логировать отдельно, если нужно
                 logger.debug(
@@ -991,10 +987,8 @@ class SimpleModuleCoordinator:
             if self._tray_start_time:
                 duration_ms = int((time.time() - self._tray_start_time) * 1000)
                 logger.info(f"✅ [TRAY_GATE] Tray ready in {duration_ms}ms - releasing gate for blocking operations")
-                print(f"✅ [TRAY_GATE] Tray готов за {duration_ms}ms - разрешаем блокирующие операции")
             else:
                 logger.info("✅ [TRAY_GATE] Tray ready - releasing gate for blocking operations")
-                print("✅ [TRAY_GATE] Tray готов - разрешаем блокирующие операции")
 
             self._tray_ready = True
             
@@ -1097,20 +1091,17 @@ class SimpleModuleCoordinator:
             # ВАЖНО: Используем фоновый event loop (_bg_loop), чтобы периодическое обновление
             # работало даже когда основной поток заблокирован app.run()
             if self._bg_loop and self._bg_loop.is_running():
-                print(f"🛡️ [ANTI_TAL] Используем фоновый event loop для периодического обновления: {self._bg_loop}")
-                logger.info(f"🛡️ [ANTI_TAL] Используем фоновый event loop для периодического обновления")
+                logger.info(f"🛡️ [ANTI_TAL] Используем фоновый event loop для периодического обновления: {self._bg_loop}")
                 
                 # Создаем задачи в фоновом event loop
                 def schedule_tasks():
                     try:
                         asyncio.set_event_loop(self._bg_loop)
                         self._tal_refresh_task = self._ensure_bg_loop().create_task(self._periodically_refresh_tal_hold())
-                        print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop")
                         logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана в фоновом loop")
                         
                         # Планируем автоматическое снятие по таймауту (120s - увеличено)
                         timeout_task = self._ensure_bg_loop().create_task(self._release_tal_hold_after_timeout())
-                        print(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана в фоновом loop")
                         logger.info(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана в фоновом loop")
                     except Exception as task_err:
                         logger.error(f"❌ [ANTI_TAL] Ошибка создания задач в фоновом loop: {task_err}")
@@ -1123,27 +1114,20 @@ class SimpleModuleCoordinator:
                 # Fallback: пытаемся использовать текущий event loop
                 try:
                     loop = asyncio.get_running_loop()
-                    print(f"🛡️ [ANTI_TAL] Фоновый loop недоступен, используем текущий: {loop}")
-                    logger.warning(f"🛡️ [ANTI_TAL] Фоновый loop недоступен, используем текущий: {loop}")
-                    
                     self._tal_refresh_task = asyncio.create_task(self._periodically_refresh_tal_hold())
-                    print(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана: {self._tal_refresh_task}")
-                    logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана")
+                    logger.info(f"🛡️ [ANTI_TAL] Задача _periodically_refresh_tal_hold() создана: {self._tal_refresh_task}")
                     
                     # Планируем автоматическое снятие по таймауту (120s - увеличено)
                     timeout_task = asyncio.create_task(self._release_tal_hold_after_timeout())
-                    print(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана: {timeout_task}")
-                    logger.info(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана")
+                    logger.info(f"🛡️ [ANTI_TAL] Задача _release_tal_hold_after_timeout() создана: {timeout_task}")
                 except RuntimeError as loop_err:
                     # Event loop не активен - это критическая проблема
-                    print(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен! {loop_err}")
                     logger.error(f"❌ [ANTI_TAL] КРИТИЧНО: Event loop не активен! {loop_err}")
                     # Продолжаем работу, но периодическое обновление не будет работать
                     # Это может привести к timeout assertion
                 
         except Exception as exc:
             logger.error(f"❌ [ANTI_TAL] Failed to set TAL hold: {exc}")
-            print(f"❌ [ANTI_TAL] Failed to set TAL hold: {exc}")
             import traceback
             traceback.print_exc()
     
@@ -1207,14 +1191,12 @@ class SimpleModuleCoordinator:
                 logger.info(
                     f"TAL=released (ts={time.time():.2f}, duration={hold_duration:.2f}s, reason={reason}, auto_term_re-enabled=True)"
                 )
-                print(f"🛡️ [ANTI_TAL] TAL удержание снято (длительность={hold_duration:.2f}s, причина={reason}, auto_term re-enabled)")
             else:
                 # Если automatic termination уже отключен (например, в main.py),
                 # мы не включаем его обратно - это нормально для menu bar приложения
                 logger.info(
                     f"TAL=released (ts={time.time():.2f}, duration={hold_duration:.2f}s, reason={reason}, auto_term_re-enabled=False, menu_bar_app=True)"
                 )
-                print(f"🛡️ [ANTI_TAL] TAL удержание снято (длительность={hold_duration:.2f}s, причина={reason}, auto_term остаётся disabled - нормально для menu bar)")
                 
         except Exception as exc:
             logger.warning(f"⚠️ [ANTI_TAL] Failed to release TAL hold: {exc}")
@@ -1349,7 +1331,6 @@ class SimpleModuleCoordinator:
                     f"⚠️ [ANTI_TAL] TAL hold timeout (120s) - releasing automatically "
                     f"(tray may not be ready yet)"
                 )
-                print("⚠️ [ANTI_TAL] Таймаут TAL удержания (120s) - снимаем автоматически")
                 self._release_tal_hold(reason="timeout")
                 
         except Exception as exc:

@@ -830,6 +830,20 @@ class PermissionOrchestrator:
         """Load existing ledger or create new one."""
         existing = self.ledger_store.load()
         if existing:
+            # FIX: Ensure all permissions in current config are present in the ledger
+            # This handles cases where new permissions were added to config but not yet in ledger,
+            # or if a permission was dropped (though we don't delete extra keys here to be safe).
+            dirty = False
+            for p in self.order:
+                if p not in existing.steps:
+                    cfg = self.step_configs[p]
+                    existing.steps[p] = StepLedgerEntry(permission=p, mode=cfg.mode)
+                    logger.info("[ORCHESTRATOR] Backfilled missing permission in ledger: %s", p.value)
+                    dirty = True
+            
+            if dirty:
+                self.ledger_store.save(existing)
+            
             return existing
         
         now = time.time()

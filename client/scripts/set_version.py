@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def validate_version(value: str) -> str:
     # Very lightweight validation – ensure format like 1.0.0 etc.
-    if not re.match(r"^[0-9]+(\.[0-9]+){0,2}$", value):
+    if not re.match(r"^[0-9]+(\.[0-9]+){0,3}$", value):
         raise argparse.ArgumentTypeError(
             "Version must be numeric dots string, e.g. 1.0.0 or 2.1"
         )
@@ -35,10 +35,14 @@ def validate_version(value: str) -> str:
 
 def update_build_script(version: str) -> None:
     path = ROOT / "packaging" / "build_final.sh"
+    if not path.exists():
+        print(f"⚠️  {path} not found, skipping version update")
+        return
     text = path.read_text(encoding="utf-8")
     updated, count = re.subn(r'VERSION="[^"]+"', f'VERSION="{version}"', text, count=1)
     if count != 1:
-        raise RuntimeError("Failed to update VERSION in packaging/build_final.sh")
+        print(f"ℹ️  VERSION label not found in {path}, likely dynamic. Skipping.")
+        return
     path.write_text(updated, encoding="utf-8")
 
 

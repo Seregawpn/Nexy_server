@@ -254,6 +254,12 @@ class VoiceRecognitionIntegration:
 
             # Start GoogleSRController
             # Note: We rely on _GOOGLE_SR_AVAILABLE check done in init
+            
+            # Lazy initialize if needed (e.g. if start() was skipped due to permissions gate)
+            if not self._google_sr_controller and not self.config.simulate:
+                logger.info("🔄 [AUDIO] Lazy initializing GoogleSRController on first recording request...")
+                await self._initialize_controller()
+
             if self._google_sr_controller and not self.config.simulate:
                 try:
                     # КРИТИЧНО: Останавливаем предыдущее слушание ПЕРЕД стартом нового

@@ -87,6 +87,9 @@ class SpeechPlaybackIntegration:
         self._cancel_guard_window_sec: float = 0.5
         self._signal_block_until_ts: float = 0.0
         self._cancel_guard_task: asyncio.Task[Any] | None = None
+        
+        # Session switch detection - prevents audio overlap
+        self._current_session_id: str | None = None
 
     async def initialize(self) -> bool:
         try:
@@ -213,6 +216,15 @@ class SpeechPlaybackIntegration:
                 logger.debug(f"Ignoring audio chunk for cancelled sid={sid}")
                 return
             
+            # Session switch detection - log for debugging, but DON'T interrupt playback
+            # Audio will queue sequentially, user can manually interrupt if needed
+            if sid is not None and self._current_session_id is not None and sid != self._current_session_id:
+                logger.info(f"🔄 [AUDIO_SESSION_SWITCH] session changed: {self._current_session_id} → {sid}, queueing audio")
+            
+            # Update current session
+            if sid is not None:
+                self._current_session_id = sid
+            
             if sid is not None:
                 self.state_manager.update_session_id(str(sid))
                 
@@ -292,14 +304,27 @@ class SpeechPlaybackIntegration:
 
                 arr = np.frombuffer(audio_bytes_in, dtype=dt)
                 
+                # DIAGNOSTIC: Check raw bytes for debugging silence issue
+                if len(audio_bytes_in) >= 8:
+                    first_bytes = audio_bytes_in[:8].hex()
+                    peak_int16 = float(np.max(np.abs(arr))) if arr.size > 0 else 0.0
+                    # Check if data is all zeros
+                    is_all_zeros = np.all(arr == 0) if arr.size > 0 else True
+                    logger.info(
+                        f"🔬 [RAW_AUDIO_DIAG] session={sid} bytes={len(audio_bytes_in)} "
+                        f"dtype={dtype} first_bytes={first_bytes} peak_int16={peak_int16:.4f} all_zeros={is_all_zeros}"
+                    )
+                
                 # Check for float32 masquerading as int16
                 try:
                     if dtype in ('int16', 'short') and (len(audio_bytes_in) % 4 == 0):
                         arr_f32 = np.frombuffer(audio_bytes_in, dtype=np.float32)
                         peak_f32 = float(np.max(np.abs(arr_f32))) if arr_f32.size else 0.0
+                        logger.debug(f"🔬 [RAW_AUDIO_DIAG] float32 check: peak_f32={peak_f32:.6f}")
                         if peak_f32 > 0 and peak_f32 <= 1.2:
                             arr = arr_f32
                             dtype = 'float32'
+                            logger.info(f"🔬 [RAW_AUDIO_DIAG] Detected float32 data (peak={peak_f32:.4f}), switching dtype")
                 except Exception:
                     pass
                 
@@ -501,6 +526,9 @@ class SpeechPlaybackIntegration:
             if sid:
                 self._had_audio_for_session.pop(sid, None)
                 self._finalized_sessions.pop(sid, None)
+                # Reset current session on cancel
+                if self._current_session_id == sid:
+                    self._current_session_id = None
             
             # КРИТИЧНО: Публикуем playback.completed только при наличии session_id (чтобы не завершить чужую цепочку)
             if sid is not None:

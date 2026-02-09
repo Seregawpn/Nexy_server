@@ -819,12 +819,12 @@ class BrowserUseModule:
         # Load config from centralized source
         browser_config = unified_config.get_browser_use_config()
         
-        # Priority: Env Var > Config > Fallback
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or browser_config.get("gemini_api_key")
+        # Use secure API key loader (priority: env var > secure credentials > config fallback)
+        api_key = unified_config.get_api_key("gemini_api_key")
         model_name = os.environ.get("GEMINI_MODEL") or os.environ.get("BROWSER_USE_MODEL") or browser_config.get("gemini_model")
         
         if not api_key:
-            raise ValueError("GEMINI_API_KEY not configured in environment variables or config")
+            raise ValueError("GEMINI_API_KEY not configured in environment or ~/Library/Application Support/Nexy/credentials.yaml")
             
         if not model_name:
             # Fallback should ideally never be reached if config is correct
@@ -868,7 +868,12 @@ class BrowserUseModule:
                  self._persistent_session = None
 
     async def close_browser(self):
-        """Explicitly close persistent browser."""
+        """Explicitly close persistent browser and clear all active tasks."""
+        # Очищаем активные задачи при принудительном закрытии браузера
+        if self._active_tasks:
+            logger.info(f"[{FEATURE_ID}] Clearing {len(self._active_tasks)} active tasks on browser close")
+            self._active_tasks.clear()
+        
         if self._persistent_session:
             try:
                 if hasattr(self._persistent_session, 'close'):

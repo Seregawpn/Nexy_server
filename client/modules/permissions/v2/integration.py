@@ -23,6 +23,7 @@ from .probers import (
     InputMonitoringProber,
     MessagesProber,
     MicrophoneProber,
+    NetworkProber,
     ScreenCaptureProber,
 )
 from .settings_nav import SettingsNavigator
@@ -172,6 +173,7 @@ class PermissionOrchestratorIntegration:
             PermissionId.INPUT_MONITORING: InputMonitoringProber,
             PermissionId.MESSAGES: MessagesProber,
             PermissionId.MICROPHONE: MicrophoneProber,
+            PermissionId.NETWORK: NetworkProber,
             PermissionId.SCREEN_CAPTURE: ScreenCaptureProber,
             PermissionId.FULL_DISK_ACCESS: FullDiskAccessProber,
             PermissionId.CONTACTS: ContactsProber,

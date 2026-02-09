@@ -29,6 +29,7 @@ class PermissionId(str, Enum):
     ACCESSIBILITY = "accessibility"
     MESSAGES = "messages"
     FULL_DISK_ACCESS = "full_disk_access"
+    NETWORK = "network"
 
 
 class StepMode(str, Enum):
@@ -121,6 +122,7 @@ class ProbeEvidence:
     file_access_ok: bool | None = None      # FDA
     messages_access_ok: bool | None = None
     contacts_fetch_ok: bool | None = None
+    network_conn_ok: bool | None = None
 
     # Error normalization inputs
     error_domain: str | None = None

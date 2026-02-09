@@ -1,0 +1,748 @@
+{
+    "meta": {
+        "version": "2.1.0",
+        "updated_at": "2026-02-04T01:20:23.457793",
+        "revision": 1,
+        "smoke_test": 2
+    },
+    "config": {
+        "blocking_mode": "warning",
+        "statuses": [
+            {
+                "id": "plan",
+                "label": "План",
+                "icon": "📋",
+                "color": "#eab308"
+            },
+            {
+                "id": "in_progress",
+                "label": "В процессе",
+                "icon": "🔨",
+                "color": "#3b82f6"
+            },
+            {
+                "id": "testing",
+                "label": "Тестируется",
+                "icon": "🧪",
+                "color": "#9333ea"
+            },
+            {
+                "id": "released",
+                "label": "Готово к релизу",
+                "icon": "✅",
+                "color": "#22c55e"
+            }
+        ],
+        "priorities": {
+            "P0": {
+                "label": "Critical",
+                "color": "#9333ea"
+            },
+            "P1": {
+                "label": "High",
+                "color": "#ef4444"
+            },
+            "P2": {
+                "label": "Medium",
+                "color": "#eab308"
+            },
+            "P3": {
+                "label": "Low",
+                "color": "#22c55e"
+            }
+        }
+    },
+    "epics": [
+        {
+            "id": "EPIC-MVP",
+            "title": "MVP: Core Functionality",
+            "color": "#3b82f6",
+            "start_date": "2026-01-01",
+            "due_date": "2026-02-01"
+        },
+        {
+            "id": "EPIC-UI",
+            "title": "UI & UX Polish",
+            "color": "#ec4899",
+            "start_date": "2026-01-10",
+            "due_date": "2026-02-15"
+        }
+    ],
+    "cards": [
+        {
+            "id": "NEXY-001",
+            "epicId": "EPIC-MVP",
+            "title": "Thread Safety StateManager",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "Sergiy",
+            "estimate": "4h",
+            "blockedBy": [],
+            "description": "Ensure thread safety in State Manager using locks.",
+            "file_path": "main.py",
+            "updated_at": "2026-01-05",
+            "_isBlocked": false
+        },
+        {
+            "id": "NEXY-002",
+            "epicId": "EPIC-UI",
+            "title": "Interactive Kanban V2",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "Antigravity",
+            "estimate": "2d",
+            "blockedBy": [
+                "NEXY-001"
+            ],
+            "description": "Implement Single Source of Truth architecture and Gantt chart.",
+            "updated_at": "2026-01-05",
+            "_isBlocked": true
+        },
+        {
+            "id": "CLI-001",
+            "epicId": "EPIC-MVP",
+            "title": "Test Client-Server Communication",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "client",
+            "description": "## Цель\n\nПроверить связь клиента с удалённым сервером.\n\n## Test Scenarios\n\n- [ ] gRPC streaming (voice recognition)\n- [ ] Command execution flow\n- [ ] Network error handling\n- [ ] Reconnect on disconnect\n- [ ] Latency metrics\n\n## Definition of Done\n\nВсе сценарии проходят, latency < 500ms.",
+            "updated_at": "2026-01-11T10:50:00-05:00",
+            "workspace": "client",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "file_path": "integration/core/grpc_client.py"
+        },
+        {
+            "id": "SRV-001",
+            "epicId": "EPIC-MVP",
+            "title": "Validate session_id on gRPC server boundary",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "server",
+            "description": "## Цель\n\nОтклонять невалидный session_id на входе StreamAudio с корректным логом.\n\n## Definition of Done\n\n- сервер валидирует uuid4 session_id\n- невалидный session_id возвращает INVALID_ARGUMENT\n",
+            "updated_at": "2026-02-03T11:33:30-05:00",
+            "workspace": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "file_path": "server/modules/grpc_service/core/grpc_server.py"
+        },
+        {
+            "id": "NEXY-003",
+            "type": "goal",
+            "epicId": "EPIC-MVP",
+            "title": "CRM v2.1 Go-Live",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "Antigravity",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-08T14:11:00-05:00",
+            "registry_ref": "INS-009",
+            "description": "## Цель\n\nЗапустить CRM v2.1 в режим эксплуатации.\n\n## Acceptance Criteria\n\n1. Все механизмы реализованы (revision, 409, atomic write, audit)\n2. Ассистенты синхронизированы с правилами\n3. 3 smoke tests пройдены\n4. crm_doctor.py не находит ошибок\n\n## Test Plan\n\n1. Сценарий конфликта (409)\n2. Сценарий шума (noise control)\n3. Сценарий блокера\n\n## Definition of Done\n\nВсе пункты CRM_GO_LIVE_CHECKLIST.md выполнены.",
+            "responsible_docs": [
+                {
+                    "path": "Docs/CRM_CONSOLIDATED_RULES.md",
+                    "type": "source_of_truth"
+                },
+                {
+                    "path": "Docs/CRM_GO_LIVE_CHECKLIST.md",
+                    "type": "instruction"
+                }
+            ],
+            "subtasks": [
+                {
+                    "title": "Declare rules immutable",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement revision + 409",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement atomic write + backup",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement audit log",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement snapshot generation",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Implement WIP limits",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Update assistant prompts",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Write crm_doctor.py",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Smoke test: Conflict",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Smoke test: Noise",
+                    "status": "plan",
+                    "workspace": "master"
+                },
+                {
+                    "title": "Smoke test: Blocker",
+                    "status": "plan",
+                    "workspace": "master"
+                }
+            ],
+            "blockedBy": []
+        },
+        {
+            "id": "NEXY-004",
+            "type": "task",
+            "epicId": "EPIC-MVP",
+            "title": "Server Deployment to Remote",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "User",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:45:00-05:00",
+            "description": "## Цель\n\nПеренести серверную часть на удалённый сервер.\n\n## Subtasks\n\n1. [ ] Выбрать/подготовить VPS\n2. [ ] Скопировать server/ на VPS\n3. [ ] Настроить Python venv\n4. [ ] Настроить config.env\n5. [ ] Запустить как systemd service\n6. [ ] Настроить nginx reverse proxy\n7. [ ] Настроить SSL (Let's Encrypt)\n8. [ ] Настроить firewall\n\n## Definition of Done\n\nСервер доступен по HTTPS, API отвечает.",
+            "blockedBy": []
+        },
+        {
+            "id": "NEXY-005",
+            "type": "task",
+            "epicId": "EPIC-MVP",
+            "title": "Client-Server Integration Testing",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "Antigravity",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:45:00-05:00",
+            "description": "## Цель\n\nПроверить корректную работу клиентской части с удалённым сервером.\n\n## Test Scenarios\n\n1. [ ] Голосовое распознавание (streaming)\n2. [ ] Обработка команд\n3. [ ] Обработка ошибок сети\n4. [ ] Reconnect при обрыве\n5. [ ] Latency метрики\n\n## Definition of Done\n\nВсе сценарии проходят, latency < 500ms.",
+            "blockedBy": [
+                "NEXY-004"
+            ]
+        },
+        {
+            "id": "NEXY-006",
+            "type": "task",
+            "epicId": "EPIC-MVP",
+            "title": "Configure Auto-Update System",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "Antigravity",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:45:00-05:00",
+            "description": "## Цель\n\nНастроить автоматическое обновление клиента.\n\n## Subtasks\n\n1. [ ] Проанализировать server/server/updates/\n2. [ ] Настроить update endpoint на сервере\n3. [ ] Проверить update check в клиенте\n4. [ ] Протестировать полный цикл обновления\n\n## Definition of Done\n\nКлиент проверяет обновления, скачивает и устанавливает.",
+            "blockedBy": [
+                "NEXY-004"
+            ]
+        },
+        {
+            "id": "NEXY-007",
+            "type": "task",
+            "epicId": "EPIC-MVP",
+            "title": "Full E2E MVP Testing",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "User",
+            "workspace": "master",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:45:00-05:00",
+            "description": "## Цель\n\nПолное тестирование MVP перед выдачей пользователям.\n\n## Test Scenarios\n\n1. [ ] Fresh install (PKG)\n2. [ ] First-run permissions flow\n3. [ ] Voice recognition + command execution\n4. [ ] Auto-update flow\n5. [ ] Crash recovery\n6. [ ] Various macOS versions (12, 13, 14)\n7. [ ] Both architectures (arm64, x86_64)\n\n## Definition of Done\n\nВсе сценарии проходят на минимум 2 устройствах.",
+            "blockedBy": [
+                "NEXY-005",
+                "NEXY-006"
+            ]
+        },
+        {
+            "id": "CLI-002",
+            "epicId": "EPIC-MVP",
+            "title": "Test Auto-Update Integration",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:50:00-05:00",
+            "description": "## Цель\n\nПроверить механизм автообновления клиента.\n\n## Test Scenarios\n\n- [ ] Update check on startup\n- [ ] Download new version\n- [ ] Install and restart\n- [ ] Rollback on failure\n\n## Definition of Done\n\nКлиент обновляется автоматически.",
+            "file_path": "modules/updater/",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-003",
+            "epicId": "EPIC-MVP",
+            "title": "Test First-Run on Fresh Install",
+            "status": "plan",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Antigravity",
+            "modified_by": "Antigravity",
+            "updated_at": "2026-01-11T10:50:00-05:00",
+            "description": "## Цель\n\nПроверить полный цикл первого запуска.\n\n## Test Scenarios\n\n- [ ] Fresh install from PKG\n- [ ] Permission requests flow\n- [ ] Restart after permissions\n- [ ] TAL hold verification\n- [ ] First voice command\n\n## Definition of Done\n\nПриложение работает после первой установки.",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-004",
+            "epicId": "EPIC-MVP",
+            "title": "Harden session_id validation in client state/gRPC",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-12T12:29:44-05:00",
+            "description": "## Цель\n\nЦентрализовать валидацию session_id в клиентском Source of Truth и защитить gRPC отправку от невалидных значений.\n\n## Definition of Done\n\n- session_id валидируется в ApplicationStateManager\n- gRPC не падает на нестроковом session_id\n",
+            "file_path": "integration/core/state_manager.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-005",
+            "epicId": "EPIC-MVP",
+            "title": "Diagnose missing gRPC responses (session_id propagation)",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-12T21:48:20-05:00",
+            "description": "## Цель\n\nНайти причину отсутствия ответов gRPC при наличии распознавания и подготовить минимальный архитектурный фикс.\n\n## Definition of Done\n\n- подтверждена цепочка событий voice.recognition_completed → grpc.request_started\n- отсутствует потеря session_id на пути к GrpcClientIntegration\n",
+            "file_path": "integration/integrations/voice_recognition_integration.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-006",
+            "epicId": "EPIC-MVP",
+            "title": "Fix missing first-run restart pending handling",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Cursor",
+            "modified_by": "Cursor",
+            "updated_at": "2026-01-14T13:36:53-05:00",
+            "description": "## Цель\n\nВосстановить обработку permissions.first_run_restart_pending и обеспечить перезапуск после выдачи критических разрешений, чтобы PTT и приветствие работали после first-run.\n\n## Definition of Done\n\n- permissions.first_run_restart_pending сохраняется в state_manager\n- PermissionRestartIntegration восстанавливает pending restart при старте\n- события system.ready_to_greet после рестарта публикуются\n",
+            "file_path": "integration/core/simple_module_coordinator.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-007",
+            "epicId": "EPIC-MVP",
+            "title": "Centralize first-run permission order",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Cursor",
+            "modified_by": "Cursor",
+            "updated_at": "2026-01-14T20:16:46-05:00",
+            "description": "## Цель\n\nСделать порядок запросов разрешений единственным и конфигурируемым источником через integrations.permissions.required_permissions, устранить дублирование порядка в коде и документации.\n\n## Definition of Done\n\n- activate_all_permissions использует порядок из unified_config.yaml\n- Docs/first_run_flow_spec.md отражает config-driven порядок\n- REQ-010 обновлён на config-driven порядок\n",
+            "file_path": "modules/permissions/first_run/activator.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-008",
+            "epicId": "EPIC-MVP",
+            "title": "Guard Accessibility prompt to GUI app context",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Cursor",
+            "modified_by": "Cursor",
+            "updated_at": "2026-01-14T21:43:35-05:00",
+            "description": "## Цель\n\nОтключить все prompt-активации Accessibility и сразу открывать System Settings при отсутствии доступа.\n\n## Definition of Done\n\n- Accessibility prompt-активации не вызываются\n- При отсутствии доступа открываются System Settings\n- Документация обновлена (first_run_flow_spec + REQ-010)\n",
+            "file_path": "integration/integrations/first_run_permissions_integration.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-009",
+            "epicId": "EPIC-MVP",
+            "title": "Accessibility settings-only + first-run flag gating",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-15T01:02:57-05:00",
+            "description": "## Цель\n\nУбрать все prompt-способы для Accessibility и использовать только открытие System Settings. Исправить установку permissions_first_run_completed.flag, чтобы она писалась только при всех GRANTED и не запускала keyboard monitoring при missing.\n\n## Definition of Done\n\n- activate_accessibility не вызывает prompt-API\n- first_run не ставит permissions_first_run_completed.flag при needs_restart\n- first_run_flow_spec и PROJECT_REQUIREMENTS обновлены\n",
+            "file_path": "integration/integrations/first_run_permissions_integration.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-010",
+            "epicId": "EPIC-MVP",
+            "title": "Centralize permissions lists to config",
+            "status": "in_progress",
+            "priority": "P0",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-15T01:21:48-05:00",
+            "description": "## Цель\n\nЦентрализовать списки разрешений (order, restart-critical, settings-required) в unified_config.yaml и убрать дубли в коде.\n\n## Definition of Done\n\n- restart-critical берётся из integrations.permission_restart.critical_permissions\n- settings-required берётся из permissions.settings_required_permissions\n- списки в коде не дублируются\n",
+            "file_path": "integration/integrations/first_run_permissions_integration.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-011",
+            "epicId": "EPIC-MVP",
+            "title": "Keep browser session open after browser_use tasks",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-18T00:00:00-05:00",
+            "description": "## Цель\n\nНе закрывать браузер по завершении browser_use задач и использовать persistent session.\n\n## Definition of Done\n\n- keep_browser_open включен в unified_config\n- браузер не закрывается по завершении задачи\n",
+            "file_path": "client/config/unified_config.yaml",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-012",
+            "epicId": "EPIC-MVP",
+            "title": "Execute browser_use from MCP and block sleep until completion",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-19T00:00:00-05:00",
+            "description": "## Цель\n\nПолучать browser_use как MCP command и удерживать PROCESSING до завершения автоматизации.\n\n## Definition of Done\n\n- ActionExecutionIntegration выполняет browser_use\n- ProcessingWorkflow не уходит в SLEEPING до browser_task_completed\n",
+            "file_path": "integration/integrations/action_execution_integration.py",
+            "workspace": "client"
+        },
+        {
+            "id": "CLI-013",
+            "epicId": "EPIC-MVP",
+            "title": "De-duplicate subscription limit handling in gRPC integration",
+            "status": "in_progress",
+            "priority": "P1",
+            "owner": "client",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-02T00:00:00-05:00",
+            "description": "## Цель\n\nСвести обработку лимит-ошибки к единой точке, чтобы избежать двойных действий и расхождений между ветками error_message и AioRpcError.\n\n## Definition of Done\n\n- общий helper для TTS+wait+payment action\n- обе ветки вызывают единый helper\n- логика loop-safe signaling сохранена\n",
+            "file_path": "integration/integrations/grpc_client_integration.py",
+            "workspace": "client"
+        },
+        {
+            "id": "SRV-002",
+            "epicId": "EPIC-MVP",
+            "title": "Устранить серверное озвучивание при установке браузера",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-18T00:00:00-05:00",
+            "description": "## Цель\n\nУбрать локальные голосовые уведомления `say` на сервере и централизовать озвучивание в клиентском TTS.\n\n## Definition of Done\n\n- на сервере нет прямых вызовов `say` при установке браузера\n- прогресс установки не приводит к локальному аудио на сервере\n",
+            "file_path": "server/server/modules/browser_use/module.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-003",
+            "epicId": "EPIC-MVP",
+            "title": "Stream browser_use as MCP command and allow in validator",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T11:33:30-05:00",
+            "description": "## Цель\n\nНе завершать поток раньше времени из-за валидации browser_use и маршрутизировать команду как MCP payload.\n\n## Definition of Done\n\n- ActionResponse принимает browser_use/close_browser\n- streaming_workflow не исполняет browser_use на сервере\n- MCP command_payload передается на клиент\n",
+            "file_path": "server/server/integrations/core/response_models.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-004",
+            "epicId": "EPIC-MVP",
+            "title": "Уточнить правила browser_use vs websearch в system prompt",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-01-19T12:30:08-05:00",
+            "description": "## Цель\n\nУстранить конфликт правил между WebSearch и Browser Automation и уточнить условия использования browser_use.\n\n## Definition of Done\n\n- system prompt задает четкий выбор: websearch для фактов, browser_use для интерактивных задач\n- устранены конфликтующие инструкции про \"search\" в prompt\n- поведение валидатора/клиента остается совместимым\n",
+            "file_path": "server/server/config/unified_config.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-005",
+            "epicId": "EPIC-MVP",
+            "title": "Диагностика ActionMessage command=unknown в gRPC pipeline",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T11:33:30-05:00",
+            "description": "## Цель\n\nЛокализовать место, где команда теряется и отправляется в ActionMessage как unknown.\n\n## Definition of Done\n\n- есть воспроизводимый тест на localhost\n- в логах видно место потери command\n- определен участок кода для фикса\n",
+            "file_path": "server/server/modules/grpc_service/core/grpc_server.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-006",
+            "epicId": "EPIC-MVP",
+            "title": "Align EdgeTTS output format with unified audio format",
+            "status": "plan",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-01T11:05:08",
+            "description": "## Цель\n\nИспользовать единый формат аудио (sample_rate/channels/bits) из unified_config для EdgeTTS/GenerateWelcomeAudio.\n\n## Definition of Done\n\n- EdgeTTSProvider использует unified_config sample_rate/channels/bits\n- GenerateWelcomeAudio metadata соответствует реальному PCM формату\n",
+            "file_path": "server/modules/audio_generation/providers/edge_tts_provider.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-007",
+            "epicId": "EPIC-MVP",
+            "title": "Deduplicate server main startup/shutdown checks",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T11:47:36-05:00",
+            "description": "## Цель\n\nУбрать дубли проверки портов и двойную отмену задач в server/main.py; исключить утечку shutdown wait task.\n\n## Definition of Done\n\n- единая точка обработки занятых портов\n- metrics_task отменяется один раз\n- shutdown wait task не остается pending\n",
+            "file_path": "server/main.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-008",
+            "epicId": "EPIC-MVP",
+            "title": "Fix async generator mock handling in gRPC integration",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T11:55:22-05:00",
+            "description": "## Цель\n\nУстранить RuntimeWarning в тесте gRPC, корректно обрабатывая awaitable, возвращаемый моками process_request_streaming.\n\n## Definition of Done\n\n- async for работает и с awaitable, и с async iterable\n- warning в test_grpc_mcp_integration исчезает\n",
+            "file_path": "server/integrations/service_integrations/grpc_service_integration.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-009",
+            "epicId": "EPIC-MVP",
+            "title": "Contract conflict hardening (session_id override, masking, gRPC priority)",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T12:13:22-05:00",
+            "description": "## Цель\n\nПодтвердить контракт gRPC приоритетов, логировать/метрить session_id override, сузить маскирование ключей и добавить тесты.\n\n## Definition of Done\n\n- override session_id логируется и метрика фиксируется\n- маскирование не затрагивает keyboard/monkey\n- тесты на оба невалидных id и на non-secret key проходят\n",
+            "file_path": "server/integrations/core/assistant_response_parser.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-010",
+            "epicId": "EPIC-MVP",
+            "title": "Sync feature flags docs and config",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T12:21:07-05:00",
+            "description": "## Цель\n\nСинхронизировать Docs/FEATURE_FLAGS.md с фактическими флагами и прописать дефолты в config.env.\n\n## Definition of Done\n\n- Docs содержит WEB_SEARCH_ENABLED, PAYMENT_USE_ENABLED, SUBSCRIPTION_KILL_SWITCH, FORWARD_ASSISTANT_ACTIONS\n- Удален неработающий BROWSER_ENABLED\n- config.env содержит явные значения новых флагов\n",
+            "file_path": "Docs/FEATURE_FLAGS.md",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-011",
+            "epicId": "EPIC-MVP",
+            "title": "Resolve audit conflicts in audio format and command validation",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T12:34:08-05:00",
+            "description": "## Цель\n\nРазвести аудио dtype/codec и синхронизировать allowed_commands в fallback парсере.\n\n## Definition of Done\n\n- AUDIO_CODEC введен и используется для audio_format\n- fallback валидирует команды через get_allowed_commands\n",
+            "file_path": "server/config/unified_config.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-012",
+            "epicId": "EPIC-MVP",
+            "title": "MCP order + audio dtype validation",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T12:41:13-05:00",
+            "description": "## Цель\n\nЗакрепить порядок ActionMessage относительно text/audio и добавить валидацию dtype для AUDIO_FORMAT.\n\n## Definition of Done\n\n- ActionMessage отправляется после text/audio в рамках одного item\n- предупреждение при неверном dtype (pcm/mp3)\n",
+            "file_path": "server/modules/grpc_service/core/grpc_server.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-013",
+            "epicId": "EPIC-MVP",
+            "title": "Finalize cleanup docs/tests for MCP order and audio contract",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T12:52:03-05:00",
+            "description": "## Цель\n\nЗакрепить контракт MCP‑порядка и аудио dtype/codec в документации и добавить тест порядка ActionMessage.\n\n## Definition of Done\n\n- Документация MCP‑порядка и audio contract обновлена\n- Добавлен тест порядка ActionMessage\n",
+            "file_path": "Docs/ARCHITECTURE_OVERVIEW.md",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-014",
+            "epicId": "EPIC-MVP",
+            "title": "Sync payment commands in system prompt",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T13:04:30-05:00",
+            "description": "## Цель\n\nСинхронизировать allowed_commands в prompt с фактическими payment‑командами (buy_subscription + manage_subscription).\n\n## Definition of Done\n\n- build_system_prompt добавляет buy_subscription при payment_enabled\n- конфликт prompt/validator устранён\n",
+            "file_path": "server/config/prompts.py",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-015",
+            "epicId": "EPIC-MVP",
+            "title": "Add quick_check script for fast fixes",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T13:31:43-05:00",
+            "description": "## Цель\n\nДобавить быстрый скрипт проверок для ускорения фиксов.\n\n## Definition of Done\n\n- scripts/quick_check.sh существует\n- выполняет pytest server/tests -q и базовые проверки\n",
+            "file_path": "server/scripts/quick_check.sh",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-016",
+            "epicId": "EPIC-MVP",
+            "title": "Expand quick_check script",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T13:45:27-05:00",
+            "description": "## Цель\n\nРасширить quick_check.sh дополнительными sanity‑проверками (prompt vs allowed_commands, dtype/codec).\n\n## Definition of Done\n\n- quick_check.sh выполняет доп. проверки без падений\n",
+            "file_path": "server/scripts/quick_check.sh",
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-017",
+            "epicId": "EPIC-MVP",
+            "title": "Добавить intent-роутинг для web_search",
+            "status": "released",
+            "priority": "P1",
+            "owner": "server",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T15:19:47-05:00",
+            "description": "## Проблема\n\nWeb search не вызывается для явных запросов (\"последние новости\") из-за отсутствия серверного intent-роутинга.\n\n## Текущий прогресс\n\n- [x] Добавлен детектор intent для web search\n- [x] Форсирование use_search при триггерах\n- [x] Усилена директива для вызова google_search\n- [x] Проверка поведения на запросах\n\n## Следующие шаги\n\n1. Прогнать тестовый запрос \"найди последние новости\"\n2. Подтвердить лог intent=web_search\n",
+            "file_path": "server/modules/text_processing/core/text_processor.py",
+            "responsible_docs": [
+                {
+                    "path": "Docs/ARCHITECTURE_OVERVIEW.md",
+                    "type": "reference",
+                    "description": "Архитектура и правила централизации"
+                },
+                {
+                    "path": "Docs/PROJECT_REQUIREMENTS.md",
+                    "type": "control",
+                    "description": "Общие требования проекта"
+                }
+            ],
+            "workspace": "server"
+        },
+        {
+            "id": "SRV-018",
+            "epicId": "EPIC-MVP",
+            "title": "Intent-based prompt section routing",
+            "status": "in_progress",
+            "priority": "P2",
+            "created_by": "Codex",
+            "modified_by": "Codex",
+            "updated_at": "2026-02-03T15:52:14",
+            "workspace": "server",
+            "description": "Route prompt sections by request keywords; keep header/footer always; override system prompt per request.",
+            "file_path": "server/config/prompts.py",
+            "owner": "server"
+        }
+    ],
+    "releases": [],
+    "project_state": {
+        "focus": "client",
+        "active_goals": [
+            "NEXY-003"
+        ],
+        "current_problems": [],
+        "current_risks": [],
+        "top_blockers": [
+            {
+                "task": "NEXY-002",
+                "blocked_by": "NEXY-001",
+                "impact": "high"
+            },
+            {
+                "task": "NEXY-005",
+                "blocked_by": "NEXY-004",
+                "impact": "high"
+            },
+            {
+                "task": "NEXY-006",
+                "blocked_by": "NEXY-004",
+                "impact": "high"
+            },
+            {
+                "task": "NEXY-007",
+                "blocked_by": "NEXY-005",
+                "impact": "high"
+            },
+            {
+                "task": "NEXY-007",
+                "blocked_by": "NEXY-006",
+                "impact": "high"
+            }
+        ],
+        "wip_status": {
+            "master": {
+                "in_progress": 2,
+                "testing": 0
+            },
+            "client": {
+                "in_progress": 8,
+                "testing": 0
+            },
+            "server": {
+                "in_progress": 1,
+                "testing": 0
+            }
+        },
+        "last_sync_at": "2026-02-04T01:20:23.457760"
+    }
+}

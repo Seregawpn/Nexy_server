@@ -110,6 +110,7 @@ class ActionExecutionIntegration(BaseIntegration):
             logger.info("[%s] MCP action executor disabled, skipping start", FEATURE_ID)
             return True
 
+        logger.info("[%s] Starting ActionExecutionIntegration (subscribing to grpc.response.action)", FEATURE_ID)
         await self.event_bus.subscribe(
             "grpc.response.action",
             self._on_action_received,
@@ -197,6 +198,8 @@ class ActionExecutionIntegration(BaseIntegration):
             session_id,
             action_data.get("command"),
         )
+
+        logger.info("[%s] _on_action_received: event=%s", FEATURE_ID, action_data)
 
         # Определяем тип команды и feature_id
         command = action_data.get("command")

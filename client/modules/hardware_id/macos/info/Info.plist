@@ -21,8 +21,10 @@
 	<string>com.nexy.hardware.id</string>
 	<key>CFBundleName</key>
 	<string>NexyHardwareID</string>
-	<string>1.6.1.17</string>
-	<string>1.6.1.17</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.6.1.23</string>
+	<key>CFBundleVersion</key>
+	<string>1.6.1.23</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSArchitectureFlags</key>

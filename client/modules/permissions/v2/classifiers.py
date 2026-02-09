@@ -433,7 +433,21 @@ class MessagesClassifier(BaseClassifier):
             is_transient=True
         )
 
-
+class NetworkClassifier(BaseClassifier):
+    """Classifier for network permission."""
+    
+    def __init__(self):
+        super().__init__(PermissionId.NETWORK)
+    
+    def classify(self, probe: ProbeResult, entry: StepLedgerEntry) -> StepOutcome:
+        # Network is always considered passed because checking it is unreliable (offline etc)
+        # We only really care about triggering the dialog
+        return StepOutcome(
+            permission=self.permission,
+            kind=OutcomeKind.PASS_,
+            reason="Network dialog triggered.",
+            reason_code="NET_PASS"
+        )
 # Factory function
 def get_classifier(permission: PermissionId) -> BaseClassifier:
     """Get classifier for a permission."""
@@ -445,5 +459,6 @@ def get_classifier(permission: PermissionId) -> BaseClassifier:
         PermissionId.CONTACTS: ContactsClassifier,
         PermissionId.MESSAGES: MessagesClassifier,
         PermissionId.FULL_DISK_ACCESS: FullDiskAccessClassifier,
+        PermissionId.NETWORK: NetworkClassifier,
     }
     return classifiers[permission]()

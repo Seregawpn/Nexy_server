@@ -18,6 +18,7 @@ import time
 from typing import Any, Union
 
 import grpc
+import numpy as np
 
 from config.unified_config_loader import UnifiedConfigLoader
 from integration.core.error_handler import ErrorHandler
@@ -408,19 +409,35 @@ class GrpcClientIntegration:
             pass
 
     async def _on_interrupt(self, event):
+        """Обработка прерывания - отменяем ВСЕ активные задачи, а не только последнюю."""
         try:
-            # Отменяем активную задачу для текущей сессии, если известна
-            # Берём последнюю запись (по простоте) — или можно хранить current_session в StateManager контексте
-            sid = None
-            if self._sessions:
-                sid = list(self._sessions.keys())[-1]
-            if sid and sid in self._inflight:
-                task_or_future = self._inflight.pop(sid)
-                # Поддерживаем как Task, так и Future (от run_coroutine_threadsafe)
-                if hasattr(task_or_future, 'cancel'):
-                    task_or_future.cancel()
-                self._cancel_notified.add(sid)
-                await self.event_bus.publish("grpc.request_failed", {"session_id": sid, "error": "cancelled"})
+            # КРИТИЧНО: Отменяем ВСЕ активные задачи в _inflight
+            # Раньше отменялась только последняя сессия, что приводило к тому,
+            # что старые задачи продолжали выполняться после прерывания
+            cancelled_count = 0
+            for sid, task_or_future in list(self._inflight.items()):
+                try:
+                    # Поддерживаем как Task, так и Future (от run_coroutine_threadsafe)
+                    if hasattr(task_or_future, 'cancel'):
+                        task_or_future.cancel()
+                    self._cancel_notified.add(sid)
+                    cancelled_count += 1
+                except Exception as cancel_err:
+                    logger.debug(f"Failed to cancel task for session {sid}: {cancel_err}")
+            
+            # Очищаем все inflight задачи
+            self._inflight.clear()
+            
+            # Очищаем также накопленные сессии, чтобы старые данные не использовались
+            old_sessions = list(self._sessions.keys())
+            self._sessions.clear()
+            
+            if cancelled_count > 0:
+                logger.info(f"🛑 [INTERRUPT] Cancelled {cancelled_count} active gRPC tasks, cleared {len(old_sessions)} sessions")
+                # Публикуем событие об отмене (используем placeholder session_id)
+                await self.event_bus.publish("grpc.request_failed", {"session_id": "interrupted", "error": "cancelled", "cancelled_count": cancelled_count})
+            else:
+                logger.info("🛑 [INTERRUPT] No active gRPC tasks to cancel")
         except Exception as e:
             await self._handle_error(e, where="grpc.on_interrupt", severity="warning")
 
@@ -802,6 +819,18 @@ class GrpcClientIntegration:
                         f"🔍 [GRPC_CHUNK_DIAG] audio_chunk: bytes={len(data)}, dtype={dtype}, "
                         f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {session_id}"
                     )
+
+                    # DIAGNOSTIC: Check raw bytes at gRPC layer
+                    if len(data) >= 8:
+                        first_bytes = data[:8].hex()
+                        # Check if all bytes are zeros
+                        arr_check = np.frombuffer(data[:min(len(data), 1024)], dtype=np.int16)
+                        is_zeros = np.all(arr_check == 0) if arr_check.size > 0 else True
+                        peak_raw = float(np.max(np.abs(arr_check))) if arr_check.size > 0 else 0.0
+                        logger.info(
+                            f"🔬 [GRPC_AUDIO_RAW] session={session_id} chunk#{audio_chunk_count} "
+                            f"bytes={len(data)} first_bytes={first_bytes} peak_int16={peak_raw:.1f} all_zeros={is_zeros}"
+                        )
 
                     logger.info(f"🔊 [AUDIO_DIAG] Publishing grpc.response.audio: stream chunk #{audio_chunk_count}, bytes={len(data)}, sr={effective_sr}, ch={effective_ch}, session={session_id}")
                     await self.event_bus.publish("grpc.response.audio", {

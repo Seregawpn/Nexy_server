@@ -25,6 +25,7 @@ from modules.whatsapp import (
 )
 
 logger = get_logger(__name__)
+FEATURE_ID = "F-2025-019-whatsapp"
 
 class WhatsappIntegration(BaseIntegration):
     """
@@ -191,6 +192,8 @@ class WhatsappIntegration(BaseIntegration):
         """Reset session cache and restart service."""
         try:
              logger.info("🛡️ Initiating automatic auth cache cleanup (Fast Path)...")
+             self._qr_shown_in_session = False  # Reset to allow QR display
+             self._last_qr_url = None
              self.service_manager.clear_auth_cache()
              
              await self.service_manager.stop()
@@ -228,6 +231,9 @@ class WhatsappIntegration(BaseIntegration):
         try:
             logger.info("🕵️‍♂️ Background Monitor: Waiting for QR code (up to 15s)...")
             
+            # CRITICAL: Ensure service is running BEFORE waiting for QR
+            await self._ensure_service_running()
+            
             # Wait loop
             for i in range(30):  # 15s
                 if hasattr(self, '_last_qr_url') and self._last_qr_url:
@@ -248,8 +254,9 @@ class WhatsappIntegration(BaseIntegration):
                 self._qr_monitor_task = None
                 return
 
-            # Clear cache
+            # Clear cache and flags to allow QR to be displayed again
             self._last_qr_url = None
+            self._qr_shown_in_session = False  # Reset to allow QR display
 
             # Clear auth cache to force new QR generation
             logger.warning("🧹 Clearing auth cache to force fresh QR...")
@@ -333,16 +340,16 @@ class WhatsappIntegration(BaseIntegration):
             await self._ensure_service_running()
 
     async def _on_request(self, event: dict[str, Any]):
-        """Handle whatsapp.request event."""
-        data = event.get('data', event)
-        command = data.get('command')
-        args = data.get('args', {})
-        session_id = data.get('session_id')
-        feature_id = data.get('feature_id', 'F-2025-019-whatsapp')
+        """Обработка команд WhatsApp от ActionExecutionIntegration."""
+        data = event.get("data", {})
+        session_id = data.get("session_id")
+        command = data.get("command")
+        args = data.get("args", {})
+        feature_id = data.get("feature_id", FEATURE_ID)
         
-        logger.info(f"Processing WhatsApp request: {command} for session {session_id}")
-        
-        # Ensure service is running (may trigger QR flow)
+        logger.info("[%s] _on_request: command=%s, session=%s, args=%s", FEATURE_ID, command, session_id, args)
+
+        # Ensure service is running (idempotent)
         await self._ensure_service_running()
 
         # Guard: only allow commands when WhatsApp is connected.

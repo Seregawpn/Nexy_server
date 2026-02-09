@@ -59,11 +59,21 @@ class WhatsappMCPClient:
                 if not decoded_line:
                     continue
                     
+                # Pass to ServiceManager for Logs/QR detection
+                if hasattr(self.service_manager, 'handle_output_line'):
+                    try:
+                        self.service_manager.handle_output_line(decoded_line)
+                    except Exception as e:
+                        logger.error(f"Error handling log line: {e}")
+                    
                 try:
                     message = json.loads(decoded_line)
-                    await self._handle_message(message)
+                    # Check if it's a valid JSON-RPC message or result
+                    if isinstance(message, dict) and ('jsonrpc' in message or 'id' in message or 'result' in message or 'error' in message):
+                         await self._handle_message(message)
                 except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON received from WhatsApp service: {decoded_line}")
+                    # Valid JSON logs are handled by service_manager, but invalid JSON is just logged here
+                    logger.debug(f"Non-JSON output from WhatsApp service: {decoded_line}")
                     
         except asyncio.CancelledError:
             pass
@@ -109,7 +119,21 @@ class WhatsappMCPClient:
         
         # Wait for response with timeout
         try:
-            return await asyncio.wait_for(future, timeout=30.0)
+            result = await asyncio.wait_for(future, timeout=30.0)
+            
+            # Check for tool error (MCP protocol)
+            if isinstance(result, dict) and result.get('isError'):
+                 content = result.get('content', [])
+                 error_msg = "Unknown tool error"
+                 if content and isinstance(content, list) and len(content) > 0:
+                     # Check if content item is text
+                     item = content[0]
+                     if isinstance(item, dict) and item.get('type') == 'text':
+                         error_msg = item.get('text', error_msg)
+                 
+                 raise Exception(f"Tool execution failed: {error_msg}")
+                 
+            return result
         except asyncio.TimeoutError as e:
             if req_id in self.pending_requests:
                 del self.pending_requests[req_id]
@@ -136,11 +160,26 @@ class WhatsappMCPClient:
         await self._writer.drain()
         
         try:
-            return await asyncio.wait_for(future, timeout=10.0)
+            result = await asyncio.wait_for(future, timeout=10.0)
+            
+            # Check for tool error (MCP protocol)
+            if isinstance(result, dict) and result.get('isError'):
+                 content = result.get('content', [])
+                 error_msg = "Unknown tool error"
+                 if content and isinstance(content, list) and len(content) > 0:
+                     # Check if content item is text
+                     item = content[0]
+                     if isinstance(item, dict) and item.get('type') == 'text':
+                         error_msg = item.get('text', error_msg)
+                 
+                 raise Exception(f"Tool execution failed: {error_msg}")
+                 
+            return result
+            
         except asyncio.TimeoutError as e:
             if req_id in self.pending_requests:
                 del self.pending_requests[req_id]
-            raise TimeoutError("tools/list timed out") from e
+            raise TimeoutError(f"Tool '{name}' timed out") from e
 
 
     # High-Level Commands
@@ -233,10 +272,18 @@ class WhatsappMCPClient:
             raise # Propagate unexpected errors too, or wrap them
 
     async def send_whatsapp_message(self, contact: str, message: str) -> str:
-        """Send message"""
-        jid = await self.resolve_contact(contact)
-            
+        """
+        Send a WhatsApp message to a contact.
+        1. Resolve contact name to JID.
+        2. Send message via MCP.
+        """
+        
+        # 1. Resolve Contact to JID
         try:
+            jid = await self.resolve_contact(contact)
+            logger.info(f"Sending WhatsApp message to '{contact}' ({jid}): '{message}'")
+            
+            # 2. Send message via MCP
             await self.call_tool("send_message", {"recipient": jid, "message": message})
             return f"Message sent to {contact}"
         except Exception as e:

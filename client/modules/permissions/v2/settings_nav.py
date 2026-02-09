@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -38,26 +39,33 @@ class SettingsNavigator:
         """
         url = SETTINGS_URLS.get(target, SETTINGS_URLS["privacy_and_security"])
         
-        try:
-            result = subprocess.run(
-                ["open", url],
-                check=False,
-                capture_output=True,
-                timeout=5.0,
-            )
-            if result.returncode == 0:
-                logger.info("[SETTINGS_NAV] Opened Settings: %s", target)
-                return True
-            else:
-                logger.warning(
-                    "[SETTINGS_NAV] Failed to open Settings: %s (returncode=%d)",
-                    target,
-                    result.returncode,
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                result = subprocess.run(
+                    ["open", url],
+                    check=False,
+                    capture_output=True,
+                    timeout=5.0,
                 )
-                return False
-        except subprocess.TimeoutExpired:
-            logger.warning("[SETTINGS_NAV] Timeout opening Settings: %s", target)
-            return False
-        except Exception as e:
-            logger.error("[SETTINGS_NAV] Error opening Settings: %s - %s", target, e)
-            return False
+                if result.returncode == 0:
+                    logger.info("[SETTINGS_NAV] Opened Settings: %s", target)
+                    return True
+                else:
+                    logger.warning(
+                        "[SETTINGS_NAV] Failed to open Settings: %s (attempt %d/%d) (returncode=%d)",
+                        target,
+                        attempt + 1,
+                        max_retries,
+                        result.returncode,
+                    )
+            except subprocess.TimeoutExpired:
+                logger.warning("[SETTINGS_NAV] Timeout opening Settings: %s (attempt %d/%d)", target, attempt + 1, max_retries)
+            except Exception as e:
+                logger.error("[SETTINGS_NAV] Error opening Settings: %s - %s", target, e)
+            
+            # Wait before retry, but not after the last attempt
+            if attempt < max_retries - 1:
+                time.sleep(0.5)
+                
+        return False

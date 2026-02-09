@@ -746,6 +746,8 @@ class InputProcessingIntegration:
         
         АРХИТЕКТУРА: Этот метод находится в input_processing (единый владелец
         hotkey-логики), а не в UI слое (tray_controller).
+        
+        ВАЖНО: NSMenu операции должны выполняться на main thread!
         """
         try:
             import platform
@@ -754,58 +756,84 @@ class InputProcessingIntegration:
                 return
             
             import AppKit
+            import Foundation
             
-            nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
-            if not nsapp:
-                logger.warning("⚠️ _setup_hidden_hotkey_handler: NSApplication not available")
-                return
+            # Выполняем на main thread через NSOperationQueue.mainQueue()
+            def setup_on_main():
+                try:
+                    nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
+                    if not nsapp:
+                        logger.warning("⚠️ _setup_hidden_hotkey_handler: NSApplication not available")
+                        return
+                    
+                    # Получаем или создаём главное меню
+                    main_menu = nsapp.mainMenu()
+                    if not main_menu:
+                        main_menu = AppKit.NSMenu.alloc().init()  # type: ignore[attr-defined]
+                        nsapp.setMainMenu_(main_menu)
+                        logger.debug("✅ Создано главное меню для hidden hotkey handler")
+                    
+                    # Создаём скрытый пункт меню для Ctrl+N
+                    # keyEquivalent="n" + NSControlKeyMask = Ctrl+N
+                    # action=None - событие просто поглощается, никакой action не вызывается
+                    hidden_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(  # type: ignore[attr-defined]
+                        "",  # Пустой заголовок - элемент не виден
+                        None,  # Никакой action - просто поглощаем событие
+                        "n"  # keyEquivalent
+                    )
+                    
+                    # Устанавливаем модификатор Ctrl
+                    hidden_item.setKeyEquivalentModifierMask_(AppKit.NSControlKeyMask)  # type: ignore[attr-defined]
+                    
+                    # Добавляем в главное меню (скрытый, потому что заголовок пустой)
+                    main_menu.addItem_(hidden_item)
+                    
+                    # Сохраняем ссылку для предотвращения garbage collection
+                    self._hidden_hotkey_item = hidden_item
+                    
+                    logger.info("✅ Hidden hotkey handler установлен (Ctrl+N → consume, prevent NSBeep)")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось настроить hidden hotkey handler (main thread): {e}")
             
-            # Получаем или создаём главное меню
-            main_menu = nsapp.mainMenu()
-            if not main_menu:
-                main_menu = AppKit.NSMenu.alloc().init()  # type: ignore[attr-defined]
-                nsapp.setMainMenu_(main_menu)
-                logger.debug("✅ Создано главное меню для hidden hotkey handler")
-            
-            # Создаём скрытый пункт меню для Ctrl+N
-            # keyEquivalent="n" + NSControlKeyMask = Ctrl+N
-            # action=None - событие просто поглощается, никакой action не вызывается
-            hidden_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(  # type: ignore[attr-defined]
-                "",  # Пустой заголовок - элемент не виден
-                None,  # Никакой action - просто поглощаем событие
-                "n"  # keyEquivalent
-            )
-            
-            # Устанавливаем модификатор Ctrl
-            hidden_item.setKeyEquivalentModifierMask_(AppKit.NSControlKeyMask)  # type: ignore[attr-defined]
-            
-            # Добавляем в главное меню (скрытый, потому что заголовок пустой)
-            main_menu.addItem_(hidden_item)
-            
-            # Сохраняем ссылку для предотвращения garbage collection
-            self._hidden_hotkey_item = hidden_item
-            
-            logger.info("✅ Hidden hotkey handler установлен (Ctrl+N → consume, prevent NSBeep)")
+            # Используем NSOperationQueue.mainQueue() для выполнения на main thread
+            Foundation.NSOperationQueue.mainQueue().addOperationWithBlock_(setup_on_main)  # type: ignore[attr-defined]
             
         except Exception as e:
             # Не критично - если не удалось добавить, просто будет NSBeep
             logger.warning(f"⚠️ Не удалось настроить hidden hotkey handler: {e}")
+    
+
 
     def _remove_hidden_hotkey_handler(self):
-        """Удаляет скрытый обработчик Ctrl+N (восстанавливает нормальную работу)."""
+        """Удаляет скрытый обработчик Ctrl+N (восстанавливает нормальную работу).
+        
+        ВАЖНО: NSMenu операции должны выполняться на main thread!
+        """
         if not self._hidden_hotkey_item:
             return
+        
+        # Сохраняем ссылку для использования в closure
+        item_to_remove = self._hidden_hotkey_item
+        self._hidden_hotkey_item = None
             
         try:
             import AppKit
-            nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
-            if not nsapp or not nsapp.mainMenu():
-                return
-                
-            main_menu = nsapp.mainMenu()
-            main_menu.removeItem_(self._hidden_hotkey_item)
-            self._hidden_hotkey_item = None
-            logger.info("✅ Hidden hotkey handler удален (Secure Input закончился)")
+            import Foundation
+            
+            def remove_on_main():
+                try:
+                    nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
+                    if not nsapp or not nsapp.mainMenu():
+                        return
+                        
+                    main_menu = nsapp.mainMenu()
+                    main_menu.removeItem_(item_to_remove)
+                    logger.info("✅ Hidden hotkey handler удален (Secure Input закончился)")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось удалить hidden hotkey handler (main thread): {e}")
+            
+            # Используем NSOperationQueue.mainQueue() для выполнения на main thread
+            Foundation.NSOperationQueue.mainQueue().addOperationWithBlock_(remove_on_main)  # type: ignore[attr-defined]
             
         except Exception as e:
             logger.warning(f"⚠️ Не удалось удалить hidden hotkey handler: {e}")

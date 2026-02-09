@@ -115,9 +115,9 @@ class MacOSTrayMenu:
             # Сохраняем путь для отложенной установки через setup_delayed_icon_setting()
             if icon_path and os.path.exists(icon_path):
                 logger.info(f"✅ ДИАГНОСТИКА: Иконка существует, сохраняем путь для отложенной установки")
-                print("="*80)
-                print(f"CRITICAL: Icon path saved for delayed setting: {icon_path}")
-                print("="*80)
+                logger.info("="*80)
+                logger.info(f"CRITICAL: Icon path saved for delayed setting: {icon_path}")
+                logger.info("="*80)
                 self._pending_icon_path = icon_path
             else:
                 logger.error(f"❌ ДИАГНОСТИКА: Иконка НЕ существует или путь пустой!")
@@ -143,7 +143,7 @@ class MacOSTrayMenu:
             return self.app
             
         except Exception as e:
-            print(f"Ошибка создания приложения трея: {e}")
+            logger.error(f"❌ Создание приложения трея: {e}")
             return None
     
     def _setup_event_handlers(self):
@@ -219,7 +219,7 @@ class MacOSTrayMenu:
             self.menu_items.append(item)
             
         except Exception as e:
-            print(f"Ошибка добавления элемента меню: {e}")
+            logger.error(f"❌ Ошибка добавления элемента меню: {e}")
     
     def _add_submenu(self, parent_item, submenu: TrayMenu):
         """Добавить подменю"""
@@ -245,7 +245,7 @@ class MacOSTrayMenu:
                         self._add_submenu(sub_menu_item, sub_item.submenu)
         
         except Exception as e:
-            print(f"Ошибка добавления подменю: {e}")
+            logger.error(f"❌ Ошибка добавления подменю: {e}")
     
     def update_menu(self, menu: TrayMenu):
         """Обновить меню"""
@@ -311,7 +311,7 @@ class MacOSTrayMenu:
         try:
             self._status_item.title = f"Status: {text}"
         except Exception as e:
-            print(f"Ошибка обновления статуса меню: {e}")
+            logger.error(f"❌ Ошибка обновления статуса меню: {e}")
         
     def update_output_device(self, device_name: str):
         """Обновить название текущего устройства вывода в меню."""
@@ -320,7 +320,7 @@ class MacOSTrayMenu:
         try:
             self._output_item.title = f"Output: {device_name}"
         except Exception as e:
-            print(f"Ошибка обновления устройства в меню: {e}")
+            logger.error(f"❌ Ошибка обновления устройства в меню: {e}")
     
     def update_icon(self, icon_path: str):
         """Обновить иконку с retry механизмом"""
@@ -377,11 +377,7 @@ class MacOSTrayMenu:
         logger.info(f"CRITICAL: Icon path: {self._pending_icon_path}")
         logger.info(f"CRITICAL: Series ID: {self._status_item_manager._metrics.series_id}")
         logger.info("="*80)
-        print("="*80)
-        print("CRITICAL: Setting up delayed icon setting with single-flight + circuit-breaker")
-        print(f"CRITICAL: Icon path: {self._pending_icon_path}")
-        print(f"CRITICAL: Series ID: {self._status_item_manager._metrics.series_id}")
-        print("="*80)
+        # Removed print statements to avoid IOError on shutdown
 
         # Ждем готовности Control Center (косвенный признак)
         # КРИТИЧНО: Логируем начало ожидания Control Center
@@ -427,7 +423,6 @@ class MacOSTrayMenu:
                         f"TRAY_ATTEMPT{attempt} result=ok "
                         f"(series_id={series_id}, duration={duration_ms}ms)"
                     )
-                    print(f"✅ CRITICAL: Icon set successfully on attempt {attempt}")
                     
                     # Останавливаем таймер после успешной установки
                     if self._icon_timer:
@@ -492,7 +487,6 @@ class MacOSTrayMenu:
                         f"[STATUS_ITEM_MANAGER] ❌ All {StatusItemManager.MAX_ATTEMPTS_PER_SERIES} "
                         f"attempts failed (series_id={series_id})"
                     )
-                    print(f"❌ CRITICAL: All {StatusItemManager.MAX_ATTEMPTS_PER_SERIES} attempts failed!")
                     if self._icon_timer:
                         self._icon_timer.stop()
                         self._icon_timer = None
@@ -500,7 +494,6 @@ class MacOSTrayMenu:
         # КРИТИЧНО: Логируем TRAY_SERIES_ID при старте (для приёмки)
         series_id = self._status_item_manager._metrics.series_id
         logger.info(f"TRAY_SERIES_ID={series_id}")
-        print(f"TRAY_SERIES_ID={series_id}")
         
         # Первая попытка через 800-1200ms после старта (или после готовности Control Center)
         first_delay_sec = StatusItemManager.FIRST_ATTEMPT_DELAY_MS / 1000.0
@@ -648,7 +641,6 @@ class MacOSTrayMenu:
             # Проверяем, разрешен ли выход явно (через меню Quit)
             if getattr(self, '_quit_allowed', False):
                 logger.info("✅ custom_should_terminate: выход разрешен явно (flag=True)")
-                print("✅ custom_should_terminate: выход разрешен явно (flag=True)")
                 return True
 
             try:
@@ -676,7 +668,6 @@ class MacOSTrayMenu:
         if self.app:
             # КРИТИЧНО: Разрешаем выход перед вызовом rumps.quit_application()
             logger.info("🛑 quit() called - enabling quit_allowed flag")
-            print("🛑 quit() called - enabling quit_allowed flag")
             self._quit_allowed = True
             rumps.quit_application()
 

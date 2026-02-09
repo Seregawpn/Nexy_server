@@ -7,6 +7,7 @@ Plays raw PCM audio data from server.
 
 from __future__ import annotations
 
+import ctypes
 from dataclasses import dataclass
 import logging
 import queue
@@ -175,30 +176,47 @@ class AVFoundationPlayer:
         Returns:
             Chunk ID
         """
-        # Diagnostic: check for silent audio
+        # CRITICAL DIAGNOSTIC: Log ALL details about incoming data
+        logger.info(f"📊 [ADD_AUDIO] Incoming: shape={audio_data.shape}, dtype={audio_data.dtype}, size={audio_data.size}")
+        
+        # Diagnostic: check for silent audio on INPUT
         if audio_data.size > 0:
             peak = float(np.max(np.abs(audio_data)))
+            min_val = float(np.min(audio_data))
+            max_val = float(np.max(audio_data))
+            logger.info(f"📊 [ADD_AUDIO] INPUT peak={peak:.4f}, min={min_val:.4f}, max={max_val:.4f}")
             if peak == 0:
-                logger.debug("⚠️ Added totally silent audio chunk")
+                logger.warning("⚠️ [ADD_AUDIO] Incoming audio is TOTALLY SILENT")
             elif peak < 0.0001:
-                logger.debug(f"⚠️ Added very quiet audio chunk (peak: {peak:.6f})")
+                logger.warning(f"⚠️ [ADD_AUDIO] Incoming audio is very quiet (peak: {peak:.6f})")
 
         chunk_id = f"chunk_{id(audio_data)}"
         
         # Convert int16 to float32 if needed
         if audio_data.dtype == np.int16:
+            logger.info(f"📊 [ADD_AUDIO] Converting int16 -> float32 (dividing by 32768.0)")
             audio_float = audio_data.astype(np.float32) / 32768.0
+            float_peak = float(np.max(np.abs(audio_float)))
+            logger.info(f"📊 [ADD_AUDIO] AFTER conversion: peak={float_peak:.6f}")
         else:
             audio_float = audio_data.astype(np.float32)
+            float_peak = float(np.max(np.abs(audio_float)))
+            logger.info(f"📊 [ADD_AUDIO] Already float: peak={float_peak:.6f}")
+        
+        # CRITICAL FIX: Make an explicit copy to prevent race condition
+        # The original numpy array might be reused/modified by the caller
+        audio_copy = np.ascontiguousarray(audio_float, dtype=np.float32).copy()
+        logger.debug(f"📊 [ADD_AUDIO] Made copy: peak after copy={float(np.max(np.abs(audio_copy))):.6f}")
         
         self._audio_queue.put({
             "id": chunk_id,
-            "data": audio_float,
+            "data": audio_copy,
             "metadata": metadata
         })
         
-        logger.debug(f"📊 Added chunk {chunk_id}: {len(audio_data)} samples")
+        logger.info(f"📊 [ADD_AUDIO] Queued chunk {chunk_id}: {len(audio_data)} samples, queue_size={self._audio_queue.qsize()}")
         return chunk_id
+
 
     def start_playback(self) -> bool:
         """Start playback."""
@@ -428,6 +446,14 @@ class AVFoundationPlayer:
                 audio_data = chunk["data"]
                 frame_count = len(audio_data)
                 
+                # CRITICAL DIAGNOSTIC: Check data immediately after extracting from queue
+                if audio_data.size > 0:
+                    queue_peak = float(np.max(np.abs(audio_data)))
+                    first_10 = audio_data[:min(10, len(audio_data))]
+                    logger.info(f"📊 [QUEUE_EXTRACT] peak={queue_peak:.6f}, first_10={first_10[:5]}")
+                    if queue_peak == 0:
+                        logger.error("❌ [QUEUE_EXTRACT] Audio data is ZERO after extraction from queue!")
+                
                 if frame_count == 0:
                     continue
 
@@ -443,14 +469,94 @@ class AVFoundationPlayer:
                 
                 ptr = float_channel_data[0]
                 
-                # SAFE: Element-wise copy - guaranteed to work with PyObjC
-                # This is slower but doesn't cause segfaults
-                for i in range(frame_count):
-                    ptr[i] = float(audio_data[i])
+                # Log pre-copy peak for diagnostics (use full array, not just first 100)
+                pre_peak = float(np.max(np.abs(audio_data)))
+                logger.debug(f"📊 Pre-copy peak (FULL): {pre_peak:.4f}, samples={frame_count}")
+                
+                # CRITICAL FIX: Copy audio data to buffer
+                # PyObjC objc.varlist indexed assignment doesn't actually write to memory
+                # We need an alternative approach
+                try:
+                    import objc
+                    import struct
+                    
+                    # Prepare contiguous float32 array
+                    audio_contiguous = np.ascontiguousarray(audio_data, dtype=np.float32)
+                    
+                    # Method 1: Try to get actual memory pointer from objc.varlist
+                    # Each element in floatChannelData is a pointer to float buffer
+                    # In PyObjC, we can try to get the underlying pointer address
+                    
+                    buffer_ptr = None
+                    
+                    # Try __pyobjc_object__ which returns raw pointer address  
+                    if hasattr(ptr, '__pyobjc_object__'):
+                        buffer_ptr = ptr.__pyobjc_object__
+                    
+                    # Try getting pointer from buffer directly
+                    if buffer_ptr is None:
+                        # Get the internal pointer via objc internals
+                        # floatChannelData returns float** (array of pointers)
+                        # We need the first pointer (channel 0)
+                        try:
+                            # Use the buffer object's internal float pointer
+                            # AVAudioPCMBuffer stores floatChannelData as float** at a known offset
+                            import Foundation
+                            
+                            # Get NSData representation of float buffer for direct access
+                            # Alternative: use mutableBytes on a wrapper
+                            
+                            # Last resort: iterate and hope assignment works (it doesn't but let's verify)
+                            # Find a non-zero sample for testing
+                            test_idx = 0
+                            test_value = 0.5  # Use a known non-zero test value
+                            for i in range(min(1000, frame_count)):
+                                if abs(audio_contiguous[i]) > 0.01:
+                                    test_idx = i
+                                    test_value = float(audio_contiguous[i])
+                                    break
+                            else:
+                                # No non-zero found in first 1000, use a known test value
+                                test_value = 0.5
+                            
+                            # Write test value
+                            ptr[test_idx] = test_value
+                            
+                            # Check if it actually wrote
+                            read_back = float(ptr[test_idx])
+                            logger.debug(f"📊 Test write: idx={test_idx}, wrote {test_value:.6f}, read back {read_back:.6f}")
+                            
+                            if abs(read_back - test_value) < 0.0001:
+                                # It works! Do full copy
+                                for i in range(frame_count):
+                                    ptr[i] = float(audio_contiguous[i])
+                                logger.info(f"✅ PyObjC indexed assignment worked for {frame_count} samples")
+                            else:
+                                # Indexed assignment doesn't work, try struct pack
+                                logger.warning(f"⚠️ Indexed assignment failed - read back {test_val}, expected {float(audio_contiguous[0])}")
+                                raise RuntimeError("Indexed assignment doesn't work")
+                                
+                        except Exception as direct_e:
+                            logger.warning(f"⚠️ Direct pointer access failed: {direct_e}")
+                            raise
+                    
+                    if buffer_ptr is not None and isinstance(buffer_ptr, int):
+                        # Use ctypes.memmove with the pointer address
+                        ctypes.memmove(
+                            buffer_ptr,
+                            audio_contiguous.ctypes.data,
+                            frame_count * 4
+                        )
+                        logger.debug(f"📊 memmove completed: {frame_count} samples")
+                    
+                except Exception as copy_e:
+                    logger.error(f"❌ All copy methods failed: {copy_e}")
+                    logger.error("❌ AUDIO WILL BE SILENT - unable to write to AVAudioPCMBuffer")
                 
                 # Ensure engine is running before scheduling buffer
                 if not self._ensure_engine_running():
-                    logger.error("❌ Cannot schedule buffer - engine not running")
+                    logger.warning("⚠️ Engine not running, waiting before retry...")
+                    time.sleep(0.2)  # Prevent tight loop when engine is down
                     continue
 
                 player_node = self._player_node
@@ -466,8 +572,10 @@ class AVFoundationPlayer:
                     engine_running = self._engine.isRunning() if self._engine else False
                     player_playing = player_node.isPlaying() if player_node else False
                     
-                    # Check buffer amplitude
-                    peak = max(abs(ptr[i]) for i in range(min(100, frame_count)))
+                    # Check buffer amplitude - use middle of buffer since beginning may be silent
+                    mid = frame_count // 2
+                    check_range = range(max(0, mid - 50), min(frame_count, mid + 50))
+                    peak = max(abs(ptr[i]) for i in check_range) if len(list(check_range)) > 0 else 0.0
                     
                     # Check output format (only first time)
                     if frame_count > 0 and not hasattr(self, '_format_logged'):
