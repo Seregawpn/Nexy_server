@@ -26,7 +26,7 @@ server:
   production_http_port: 443
 app:
   bundle_id: com.nexy.assistant
-  debug: false
+  debug: true
   name: Nexy
   team_id: 5NKLL2CLB9
   version: 1.6.1.25
@@ -496,7 +496,7 @@ tray:
 updater:
   default:
     enabled: true
-    update_channel: stable
+    update_channel: fix
     appcast_url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml
     manifest_url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml
     auto_check: true
