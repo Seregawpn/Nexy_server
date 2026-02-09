@@ -1,6 +1,0 @@
-# Dev/CI quality gate dependencies
-ruff
-pytest
-jsonschema
-pyyaml
-basedpyright

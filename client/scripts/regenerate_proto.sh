@@ -1,1 +1,0 @@
-../../scripts/regenerate_proto.sh

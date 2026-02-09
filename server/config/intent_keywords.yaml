@@ -1,0 +1,70 @@
+system_control:
+  - open
+  - launch
+  - close
+  - quit
+  - exit
+  - start
+  - stop
+messages:
+  - read messages
+  - check messages
+  - show messages
+  - last messages
+  - messages from
+  - send message
+  - text
+  - tell
+  - message
+  - find contact
+  - search contact
+  - who is
+whatsapp:
+  - whatsapp
+browser:
+  - open website
+  - open site
+  - go to
+  - visit
+  - website
+  - site
+  - browser
+  - youtube
+  - google
+  - wikipedia
+  - amazon
+  - reddit
+payment:
+  - subscribe
+  - subscription
+  - billing
+  - upgrade
+  - premium
+  - pay
+  - payment
+  - manage subscription
+  - billing portal
+web_search:
+  - latest
+  - news
+  - search
+  - find
+  - google
+  - price
+  - prices
+  - compare
+  - comparison
+  - review
+  - rate
+  - rates
+  - weather
+  - forecast
+describe:
+  - describe
+  - what's on the screen
+  - what is on the screen
+  - what do you see
+  - screen
+  - screenshot
+  - can you see
+  - what is this
