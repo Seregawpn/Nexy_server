@@ -6,6 +6,7 @@ InterruptManagementIntegration - Интеграция InterruptCoordinator с Ev
 import asyncio
 from dataclasses import dataclass
 import logging
+import time
 from typing import Any
 
 from integration.core import selectors
@@ -69,6 +70,8 @@ class InterruptManagementIntegration:
         self._coordinator: InterruptCoordinator | None = None
         self._initialized = False
         self._running = False
+        self._interrupt_dedup_window_sec: float = 0.5
+        self._last_interrupt_publish_ts: dict[tuple[str, str], float] = {}
         
         logger.info("InterruptManagementIntegration created")
     
@@ -329,12 +332,24 @@ class InterruptManagementIntegration:
             
             # КРИТИЧНО: Централизованная остановка речи для type == "speech_stop"
             if interrupt_type == "speech_stop":
-                logger.info(f"🛑 InterruptManager: останавливаем речь (session_id={session_id})")
-                if session_id is not None:
-                    await self.event_bus.publish("grpc.request_cancel", {
-                        "session_id": session_id
-                    })
-                logger.info("🛑 InterruptManager: grpc.request_cancel опубликован")
+                sid_key = str(session_id) if session_id is not None else "__none__"
+                dedup_key = (interrupt_type, sid_key)
+                now = time.monotonic()
+                last_ts = self._last_interrupt_publish_ts.get(dedup_key, 0.0)
+                if (now - last_ts) < self._interrupt_dedup_window_sec:
+                    logger.debug(
+                        "🛑 InterruptManager: speech_stop dedup (session_id=%s, dt=%.3fs)",
+                        session_id,
+                        now - last_ts,
+                    )
+                else:
+                    self._last_interrupt_publish_ts[dedup_key] = now
+                    logger.info(f"🛑 InterruptManager: останавливаем речь (session_id={session_id})")
+                    if session_id is not None:
+                        await self.event_bus.publish("grpc.request_cancel", {
+                            "session_id": session_id
+                        })
+                    logger.info("🛑 InterruptManager: grpc.request_cancel опубликован")
             
             # Создаем событие прерывания
             interrupt_event = InterruptEvent(

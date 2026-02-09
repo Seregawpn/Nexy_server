@@ -17,6 +17,7 @@ ALLOWED_DIRS = {
 
 ALLOWED_FILES = {
     ROOT / "scripts" / "check_dependency_violations.py",
+    ROOT / "scripts" / "verify_welcome_audio.py",
 }
 
 TARGET_CALLS = {

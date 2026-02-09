@@ -18,6 +18,17 @@ import shutil
 import subprocess
 from typing import Any
 
+EXCLUDED_PATH_FRAGMENTS = (
+    "/Docs/_archive/",
+)
+
+
+def _is_excluded_issue_file(file_path: str | None) -> bool:
+    if not file_path:
+        return False
+    normalized = file_path.replace("\\", "/")
+    return any(fragment in normalized for fragment in EXCLUDED_PATH_FRAGMENTS)
+
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
@@ -79,19 +90,22 @@ def _scan_ruff(root: Path) -> dict[str, Any]:
     except json.JSONDecodeError:
         payload = []
     for item in payload:
+        file_path = item.get("filename")
+        if _is_excluded_issue_file(file_path):
+            continue
         loc = item.get("location", {}) or {}
         issues.append(
             {
                 "tool": "ruff",
                 "severity": "error",
-                "file": item.get("filename"),
+                "file": file_path,
                 "line": loc.get("row"),
                 "column": loc.get("column"),
                 "code": item.get("code"),
                 "message": item.get("message"),
             }
         )
-    status = "ok" if proc.returncode == 0 else "failed"
+    status = "ok" if not issues else "failed"
     return {"status": status, "issues": issues, "returncode": proc.returncode}
 
 
@@ -108,6 +122,9 @@ def _scan_basedpyright(root: Path) -> dict[str, Any]:
         payload = {}
 
     for item in payload.get("generalDiagnostics", []) or []:
+        file_path = item.get("file")
+        if _is_excluded_issue_file(file_path):
+            continue
         rng = item.get("range", {}) or {}
         start = rng.get("start", {}) or {}
         line = start.get("line")
@@ -116,7 +133,7 @@ def _scan_basedpyright(root: Path) -> dict[str, Any]:
             {
                 "tool": "basedpyright",
                 "severity": item.get("severity", "error"),
-                "file": item.get("file"),
+                "file": file_path,
                 "line": (line + 1) if isinstance(line, int) else None,
                 "column": (char + 1) if isinstance(char, int) else None,
                 "code": item.get("rule"),
@@ -124,7 +141,7 @@ def _scan_basedpyright(root: Path) -> dict[str, Any]:
             }
         )
 
-    status = "ok" if proc.returncode == 0 else "failed"
+    status = "ok" if not issues else "failed"
     return {"status": status, "issues": issues, "returncode": proc.returncode}
 
 

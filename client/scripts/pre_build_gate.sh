@@ -214,7 +214,14 @@ if [ "$SKIP_LINT" = false ]; then
     fi
 
     if [ -n "$BASEDPYRIGHT_BIN" ]; then
-        if run_check "Type-check (basedpyright)" "$BASEDPYRIGHT_BIN"; then
+        if run_check \
+            "Type-check (basedpyright)" \
+            "$BASEDPYRIGHT_BIN" \
+            "integration" \
+            "modules" \
+            "config" \
+            "main.py" \
+            "scripts"; then
             ((PASSED++))
         else
             ((FAILED++))

@@ -61,6 +61,7 @@ class ProcessingWorkflow(BaseWorkflow):
         self.playback_completed = False
         self.interrupted = False
         self.browser_active = False  # Browser automation in progress
+        self.grpc_started = False
         self._terminal_outcome_session_id: str | None = None
         self._terminal_outcome_reason: str | None = None
         
@@ -136,12 +137,6 @@ class ProcessingWorkflow(BaseWorkflow):
         )
         
         # === ПРЕРЫВАНИЯ ===
-        await self.event_bus.subscribe(
-            "keyboard.short_press", 
-            self._on_interrupt_request, 
-            EventPriority.CRITICAL
-        )
-        
         await self.event_bus.subscribe(
             "interrupt.request", 
             self._on_interrupt_request, 
@@ -260,6 +255,7 @@ class ProcessingWorkflow(BaseWorkflow):
             self.playback_completed = False
             self.interrupted = False
             self.browser_active = False
+            self.grpc_started = False
             
             # Запуск общего таймаута
             if self.total_timeout_task and not self.total_timeout_task.done():
@@ -364,15 +360,26 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.warning(f"🎤 ProcessingWorkflow: распознавание не удалось ({error}) - помечаем как failed")
             
             self.recognition_failed = True
-            
-            # Мы не ожидаем gRPC, если распознавание не удалось. 
-            # Однако, нужно дождаться окончания воспроизведения звука ошибки (bloop), 
-            # который запускает audio_feedback_integration или speech_playback_integration.
-            # Поэтому мы не завершаем цепочку здесь, а ждем playback.completed.
-            
+            # Если gRPC еще не стартовал, это terminal no-speech ветка:
+            # завершаем PROCESSING сразу и не ждём несессионный playback.signal.
+            # Важно: событие recognition_failed может прийти, пока workflow ещё в STARTING/CAPTURING
+            # (гонка между replay screenshot и запуском цепочки), поэтому проверяем только grpc_started.
+            if not self.grpc_started and self.current_stage in {
+                ProcessingStage.STARTING,
+                ProcessingStage.CAPTURING,
+                ProcessingStage.SENDING_GRPC,
+            }:
+                logger.info(
+                    "🎤 ProcessingWorkflow: recognition_failed до grpc.request_started "
+                    "(stage=%s) → завершаем цепочку без ожидания playback",
+                    self.current_stage.value,
+                )
+                await self._complete_processing_chain()
+                return
+
+            # Иначе сохраняем текущую логику: ждем playback.completed.
             if self.playback_completed:
-                 # Если звук уже проиграл (редко, но возможно), завершаем сразу
-                 await self._complete_processing_chain()
+                await self._complete_processing_chain()
             
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки recognition_failed - {e}")
@@ -386,6 +393,7 @@ class ProcessingWorkflow(BaseWorkflow):
             
         try:
             logger.info("🌐 ProcessingWorkflow: gRPC запрос начат")
+            self.grpc_started = True
             
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки grpc.request_started - {e}")
@@ -600,9 +608,12 @@ class ProcessingWorkflow(BaseWorkflow):
             
             # Немедленный возврат в SLEEPING (только если workflow активен)
             if self.is_active():
-                await self._return_to_sleeping("interrupted")
+                # Centralization: mode transition on interrupt is owned by
+                # InterruptManagementIntegration (single mode.request path).
+                await self._cleanup_processing()
             else:
-                # Если workflow не активен, просто публикуем запрос на SLEEPING
+                # Если workflow не активен, mode.request не публикуем:
+                # его публикует InterruptManagementIntegration.
                 if (
                     normalized_interrupt_sid is not None
                     and self._terminal_outcome_session_id == normalized_interrupt_sid
@@ -614,38 +625,28 @@ class ProcessingWorkflow(BaseWorkflow):
                         reason,
                     )
                     return
-                logger.info(f"⚙️ ProcessingWorkflow: workflow не активен, публикуем прямой запрос на SLEEPING")
-                await self.event_bus.publish("mode.request", {
-                    "target": AppMode.SLEEPING,
-                    "source": "processing_workflow",
-                    "reason": "interrupted",
-                    "priority": EventPriority.HIGH.value  # ✅ Передается int значение
-                })
+                logger.info(
+                    "⚙️ ProcessingWorkflow: workflow не активен, "
+                    "mode.request на interrupt делегирован InterruptManagementIntegration"
+                )
             
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки прерывания - {e}")
     
     async def _cancel_active_processes(self):
-        """Отмена всех активных процессов через ЕДИНЫЙ канал прерывания"""
+        """Отмена всех активных процессов через ЕДИНЫЙ канал прерывания.
+
+        Владелец отмены: InterruptManagementIntegration.
+        ProcessingWorkflow не публикует grpc.request_cancel/playback.cancelled напрямую,
+        чтобы не создавать дублирующий путь прерывания.
+        """
         try:
             session_id = self.current_session_id
-            
-            # Отменяем gRPC запрос
-            if not self.grpc_completed:
-                logger.info("⚙️ ProcessingWorkflow: отменяем gRPC запрос")
-                await self.event_bus.publish("grpc.request_cancel", {
-                    "session_id": session_id,
-                    "reason": "user_interrupt"
-                })
-            
-            # ЕДИНЫЙ канал прерывания аудио - публикуем playback.cancelled
-            if not self.playback_completed:
-                logger.info("⚙️ ProcessingWorkflow: останавливаем воспроизведение через ЕДИНЫЙ канал")
-                await self.event_bus.publish("playback.cancelled", {
-                    "session_id": session_id,
-                    "reason": "user_interrupt",
-                    "source": "processing_workflow"
-                })
+            logger.info(
+                "⚙️ ProcessingWorkflow: прерывание делегировано через interrupt.request "
+                "(session_id=%s), прямые cancel-события не публикуем",
+                session_id,
+            )
             
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка отмены процессов - {e}")
@@ -741,6 +742,7 @@ class ProcessingWorkflow(BaseWorkflow):
             self.playback_completed = False
             self.interrupted = False
             self.browser_active = False
+            self.grpc_started = False
             
             logger.debug("⚙️ ProcessingWorkflow: состояние очищено")
             

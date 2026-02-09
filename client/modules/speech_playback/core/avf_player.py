@@ -233,6 +233,13 @@ class AVFoundationPlayer:
                 if engine is None or player_node is None:
                     logger.error("❌ Player internals unavailable")
                     return False
+
+                # Idempotent fast-path: avoid spawning duplicate playback threads.
+                thread_alive = self._playback_thread.is_alive() if self._playback_thread else False
+                if self._playing and thread_alive and engine.isRunning() and player_node.isPlaying():
+                    logger.debug("▶️ Playback already active, start_playback is a no-op")
+                    return True
+
                 # КРИТИЧНО: Устанавливаем volume=1.0 для гарантии слышимого вывода
                 player_node.setVolume_(1.0)
                 mixer = engine.mainMixerNode()
@@ -254,39 +261,14 @@ class AVFoundationPlayer:
                     success, error = engine.startAndReturnError_(None)
                     if success:
                         logger.info("🔊 AVAudioEngine started successfully")
-                        
-                        # КРИТИЧНО: Логируем output device/format для диагностики
-                        try:
-                            output_node = engine.outputNode()
-                            output_format = output_node.outputFormatForBus_(0)
-                            logger.info(
-                                f"🔊 [AVF_PLAYER] Output format: {output_format.sampleRate()}Hz, "
-                                f"{output_format.channelCount()}ch, format={output_format.commonFormat()}"
-                            )
-                            
-                            # Логируем текущий output device (если доступно)
-                            if AVAudioSession:
-                                try:
-                                    session = AVAudioSession.sharedInstance()
-                                    current_route = session.currentRoute()
-                                    if current_route:
-                                        outputs = current_route.outputs()
-                                        if outputs and len(outputs) > 0:
-                                            output = outputs[0]
-                                            device_name = output.portName() if hasattr(output, 'portName') else "unknown"
-                                            port_type = output.portType() if hasattr(output, 'portType') else "unknown"
-                                            logger.info(
-                                                f"🔊 [AVF_PLAYER] Output device: {device_name} (type: {port_type})"
-                                            )
-                                except Exception as device_e:
-                                    logger.debug(f"⚠️ [AVF_PLAYER] Could not get output device info: {device_e}")
-                        except Exception as format_e:
-                            logger.warning(f"⚠️ [AVF_PLAYER] Could not get output format: {format_e}")
                     else:
                         logger.error(f"❌ Failed to start AVAudioEngine: {error}")
                         return False
                 else:
                     logger.debug("🔊 AVAudioEngine already running")
+
+                # Route snapshot on every playback start to diagnose "audio scheduled but not audible".
+                self._log_output_route_snapshot()
                 
                 # Start the player node
                 player_node.play()
@@ -294,14 +276,47 @@ class AVFoundationPlayer:
                 logger.info("▶️ Playback started")
                 
                 # Start playback thread
-                self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True, name="AVFPlaybackLoop")
-                self._playback_thread.start()
-                logger.info(f"▶️ Playback thread started: {self._playback_thread.name}, is_alive={self._playback_thread.is_alive()}")
+                if not thread_alive:
+                    self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True, name="AVFPlaybackLoop")
+                    self._playback_thread.start()
+                    logger.info(f"▶️ Playback thread started: {self._playback_thread.name}, is_alive={self._playback_thread.is_alive()}")
+                else:
+                    logger.debug("▶️ Playback thread already alive, skipping thread restart")
                 
                 return True
             except Exception as e:
                 logger.error(f"❌ Start playback failed: {e}")
                 return False
+
+    def _log_output_route_snapshot(self) -> None:
+        """Log current output format/device each time playback starts."""
+        try:
+            engine = self._engine
+            if engine is None:
+                return
+            output_node = engine.outputNode()
+            output_format = output_node.outputFormatForBus_(0)
+            logger.info(
+                f"🔊 [AVF_PLAYER] Output snapshot: {output_format.sampleRate()}Hz, "
+                f"{output_format.channelCount()}ch, format={output_format.commonFormat()}"
+            )
+            if AVAudioSession:
+                try:
+                    session = AVAudioSession.sharedInstance()
+                    current_route = session.currentRoute()
+                    if current_route:
+                        outputs = current_route.outputs()
+                        if outputs and len(outputs) > 0:
+                            output = outputs[0]
+                            device_name = output.portName() if hasattr(output, "portName") else "unknown"
+                            port_type = output.portType() if hasattr(output, "portType") else "unknown"
+                            logger.info(
+                                f"🔊 [AVF_PLAYER] Output route snapshot: {device_name} (type: {port_type})"
+                            )
+                except Exception as device_e:
+                    logger.debug(f"⚠️ [AVF_PLAYER] Could not get output route snapshot: {device_e}")
+        except Exception as format_e:
+            logger.warning(f"⚠️ [AVF_PLAYER] Could not get output snapshot: {format_e}")
 
     def _ensure_engine_running(self) -> bool:
         """
@@ -385,15 +400,30 @@ class AVFoundationPlayer:
 
     def stop_playback(self) -> None:
         """Stop playback."""
+        playback_thread: threading.Thread | None = None
         with self._lock:
             self._playing = False
             self._scheduled_audio_until = 0.0
+            playback_thread = self._playback_thread
             try:
                 if self._player_node:
                     self._player_node.stop()
             except Exception as e:
                 logger.warning(f"⚠️ Stop error: {e}")
+            # Wake playback loop promptly so it does not linger across next start_playback.
+            try:
+                self._audio_queue.put_nowait(None)
+            except Exception:
+                pass
             logger.info("⏹️ Playback stopped")
+        # Avoid long blocking in caller thread, but give worker a short window to exit.
+        try:
+            if playback_thread and playback_thread.is_alive():
+                playback_thread.join(timeout=0.25)
+                if playback_thread.is_alive():
+                    logger.debug("⏹️ Playback thread still stopping in background")
+        except Exception:
+            pass
 
     def is_playing(self) -> bool:
         """Check if currently playing."""
@@ -453,7 +483,11 @@ class AVFoundationPlayer:
                 continue
             
             if chunk is None:
-                break
+                # Stop sentinel from previous stop can be observed after a new start.
+                # Exit only when playback is actually stopped; otherwise ignore stale sentinel.
+                if not self._playing:
+                    break
+                continue
             
             try:
                 audio_data = chunk["data"]

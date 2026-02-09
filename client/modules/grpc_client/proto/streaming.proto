@@ -105,7 +105,7 @@ message WelcomeResponse {
 
 // Action message for MCP/OpenApp
 message ActionMessage {
-  string action_json = 1;      // e.g. {"type":"open_app","app_name":"Safari"}
+  string action_json = 1;      // Canonical JSON: {"command":"open_app","args":{"app_name":"Safari"}}
   string session_id = 2;
   optional string feature_id = 3;
 }

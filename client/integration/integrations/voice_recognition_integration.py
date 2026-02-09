@@ -77,6 +77,11 @@ class VoiceRecognitionIntegration:
         # NOTE: _first_run_in_progress cache removed - use selectors.is_first_run_in_progress() instead
         # Если распознавание завершилось при активном PTT — публикацию откладываем до RELEASE
         self._defer_result_until_stop: bool = False
+        # Guard: гарантируем один terminal STT-сигнал на session_id.
+        self._terminal_recognition_ts: dict[str, float] = {}
+        # Fallback задача после recording_stop, если от Google не пришел terminal callback.
+        self._pending_stop_terminal_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._stop_terminal_fallback_sec: float = 1.2
 
     @classmethod
     def run_dependency_check(cls) -> bool:
@@ -365,8 +370,12 @@ class VoiceRecognitionIntegration:
             if self._google_sr_controller and not self.config.simulate:
                 logger.debug(f"🎤 Calling stop_listening for session {resolved_session_id}")
                 # stop_listening() теперь мгновенный — просто устанавливает флаги
-                self._google_sr_controller.stop_listening()
-                # Результаты придут через _on_sr_v2_completed/_on_sr_v2_failed
+                result = self._google_sr_controller.stop_listening()
+                # Пробуем зафиксировать terminal результат сразу из snapshot состояния.
+                await self._publish_stop_snapshot_terminal(resolved_session_id, result)
+                # Если snapshot пустой — ставим fallback, чтобы PROCESSING не зависал.
+                if resolved_session_id is not None:
+                    self._schedule_stop_terminal_fallback(resolved_session_id)
                 
         except Exception as e:
             logger.error(f"VOICE: error in recording_stop handler: {e}")
@@ -380,6 +389,9 @@ class VoiceRecognitionIntegration:
             if self._google_sr_controller:
                 self._google_sr_controller.cancel_listening()
                 
+            active_sid = self._get_active_session_id()
+            if active_sid is not None:
+                self._cancel_stop_terminal_fallback(active_sid)
             self._set_session_id(None, reason="cancel_requested")
             self._recording_active = False
         except Exception as e:
@@ -406,6 +418,8 @@ class VoiceRecognitionIntegration:
                 if self._recording_active or (not self.config.simulate and self._google_sr_controller):
                     logger.debug(f"VOICE: mode changed to {new_mode}, ensuring listening stopped")
                     await self._cancel_recognition(reason="mode_changed")
+                    if active_session_id is not None:
+                        self._cancel_stop_terminal_fallback(active_session_id)
                     
                     if not self.config.simulate and self._google_sr_controller:
                         # Пытаемся мягко отменить прослушивание
@@ -573,6 +587,9 @@ class VoiceRecognitionIntegration:
             ts_ms = int(time.monotonic() * 1000)
             
             if result.text:
+                if not self._try_mark_terminal_recognition(session_id, "completed"):
+                    return
+                self._cancel_stop_terminal_fallback(session_id)
                 # TRACE: распознавание завершено успешно
                 logger.info(f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(result.text)}, confidence={result.confidence:.2f}, still_listening={is_still_listening}}}")
                 await self.event_bus.publish("voice.recognition_completed", {
@@ -588,6 +605,9 @@ class VoiceRecognitionIntegration:
                 if is_still_listening:
                     logger.debug(f"⏳ Empty result while listening, continuing... (session={session_id})")
                 else:
+                    if not self._try_mark_terminal_recognition(session_id, "failed_empty"):
+                        return
+                    self._cancel_stop_terminal_fallback(session_id)
                     logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={result.error or 'empty_result'}}}")
                     await self.event_bus.publish("voice.recognition_failed", {
                         "session_id": session_id,
@@ -645,6 +665,9 @@ class VoiceRecognitionIntegration:
                 # Google не понял кусок аудио — это нормально, продолжаем
                 logger.debug(f"⏳ Recognition failed ({error}) while listening, continuing... (session={session_id})")
             else:
+                if not self._try_mark_terminal_recognition(session_id, "failed"):
+                    return
+                self._cancel_stop_terminal_fallback(session_id)
                 # PTT отпущен — публикуем ошибку и закрываем микрофон
                 self._recording_active = False
                 await self._publish_mic_closed(session_id, source="v2_failed")
@@ -694,3 +717,79 @@ class VoiceRecognitionIntegration:
             "voice.mic_closed",
             {"session_id": session_id, "source": source},
         )
+
+    async def _publish_stop_snapshot_terminal(self, session_id: str | None, result: Any) -> None:  # type: ignore[type-arg]
+        """Публикует terminal STT из мгновенного snapshot stop_listening()."""
+        if session_id is None or result is None:
+            return
+        text = str(getattr(result, "text", "") or "").strip()
+        if text:
+            if not self._try_mark_terminal_recognition(session_id, "snapshot_completed"):
+                return
+            await self.event_bus.publish("voice.recognition_completed", {
+                "session_id": session_id,
+                "text": text,
+                "confidence": float(getattr(result, "confidence", 0.0) or 0.0),
+                "language": getattr(result, "language", self.config.language),
+                "interim": False,
+            })
+            return
+        error = str(getattr(result, "error", "") or "").strip()
+        if error:
+            if not self._try_mark_terminal_recognition(session_id, "snapshot_failed"):
+                return
+            await self.event_bus.publish("voice.recognition_failed", {
+                "session_id": session_id,
+                "error": error,
+                "reason": "stop_snapshot_error",
+            })
+
+    def _schedule_stop_terminal_fallback(self, session_id: str) -> None:
+        if session_id in self._pending_stop_terminal_tasks:
+            return
+
+        async def _emit_if_missing() -> None:
+            try:
+                await asyncio.sleep(self._stop_terminal_fallback_sec)
+                # Если сессия уже не активна, ничего не публикуем.
+                if self._get_active_session_id() != session_id:
+                    return
+                if not self._try_mark_terminal_recognition(session_id, "fallback_no_speech"):
+                    return
+                logger.info(
+                    "VOICE: fallback terminal for recording_stop (session=%s, reason=no_speech_after_release)",
+                    session_id,
+                )
+                await self.event_bus.publish("voice.recognition_failed", {
+                    "session_id": session_id,
+                    "error": "no_speech",
+                    "reason": "no_speech_after_release",
+                })
+            except asyncio.CancelledError:
+                return
+            finally:
+                self._pending_stop_terminal_tasks.pop(session_id, None)
+
+        self._pending_stop_terminal_tasks[session_id] = asyncio.create_task(_emit_if_missing())
+
+    def _cancel_stop_terminal_fallback(self, session_id: str | None) -> None:
+        if session_id is None:
+            return
+        task = self._pending_stop_terminal_tasks.pop(session_id, None)
+        if task and not task.done():
+            task.cancel()
+
+    def _try_mark_terminal_recognition(self, session_id: str | None, source: str) -> bool:
+        if session_id is None:
+            return False
+        now = time.monotonic()
+        cutoff = now - 120.0
+        stale = [sid for sid, ts in self._terminal_recognition_ts.items() if ts < cutoff]
+        for sid in stale:
+            self._terminal_recognition_ts.pop(sid, None)
+
+        if session_id in self._terminal_recognition_ts:
+            logger.debug("VOICE: terminal STT dedup (session=%s, source=%s)", session_id, source)
+            return False
+        self._terminal_recognition_ts[session_id] = now
+        return True

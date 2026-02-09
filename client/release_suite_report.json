@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-02-09T12:07:10.397530",
+  "version": "1.6.0.54",
+  "checks": {
+    "pre_build_gate": {
+      "status": "PASS",
+      "duration_sec": 24.03,
+      "error": null
+    },
+    "problem_scan_gate": {
+      "status": "PASS",
+      "duration_sec": 26.15,
+      "error": null
+    },
+    "build_dev_build": {
+      "status": "SKIPPED",
+      "duration_sec": 0,
+      "error": "Skipped in smoke mode"
+    },
+    "check_logs_specs": {
+      "status": "SKIPPED",
+      "duration_sec": 0,
+      "error": "Skipped in smoke mode"
+    },
+    "integration_tests": {
+      "status": "PASS",
+      "duration_sec": 4.4,
+      "error": null
+    },
+    "grpc_health": {
+      "status": "SKIPPED",
+      "duration_sec": 0,
+      "error": "Skipped in smoke mode"
+    },
+    "appcast": {
+      "status": "SKIPPED",
+      "duration_sec": 0,
+      "error": "Skipped in smoke mode"
+    },
+    "requirements_coverage": {
+      "status": "PASS",
+      "duration_sec": 0.0,
+      "error": null
+    },
+    "metrics_monitoring": {
+      "status": "SKIPPED",
+      "duration_sec": 0,
+      "error": "Skipped in smoke mode"
+    }
+  },
+  "summary": {
+    "total": 9,
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 5,
+    "success": true
+  }
+}

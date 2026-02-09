@@ -257,9 +257,9 @@ class InputProcessingIntegration:
             "source": source,
             "timestamp": timestamp,
             "session_id": session_id,
+            "press_id": self._active_press_id,
+            "state": self._state.value,
         })
-        if session_id:
-            await self.event_bus.publish("grpc.request_cancel", {"session_id": session_id})
 
     async def _wait_for_mic_closed(self):
         if not self._mic_active:
@@ -291,7 +291,23 @@ class InputProcessingIntegration:
     async def _force_stop(self, reason: str):
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
         session_id = self._get_active_session_id() or self._active_grpc_session_id
-        await self._publish_interrupt_and_cancel(session_id, "keyboard.secure_input", time.time())
+        # Secure Input may flap without user press. Avoid cancelling assistant response
+        # unless user input capture is actually active.
+        should_interrupt = self._recording_started or self._mic_active or self._state in {
+            PTTState.ARMED,
+            PTTState.RECORDING,
+            PTTState.STOPPING,
+        }
+        if should_interrupt:
+            await self._publish_interrupt_and_cancel(session_id, "keyboard.secure_input", time.time())
+        else:
+            logger.info(
+                "SECURE_INPUT force_stop: skip interrupt (no active input cycle), "
+                "state=%s session=%s playback_active=%s",
+                self._state.value,
+                session_id,
+                self._playback_active,
+            )
         await self._terminal_stop(
             press_id=self._active_press_id,
             session_id=session_id,
@@ -299,12 +315,15 @@ class InputProcessingIntegration:
             timestamp=time.time(),
             reason=reason,
         )
-        await self.event_bus.publish("mode.request", {
-            "target": AppMode.SLEEPING,
-            "source": "keyboard.secure_input",
-            "reason": reason,
-            "session_id": session_id,
-        })
+        # Centralization: when interrupt.request was published, mode transition to SLEEPING
+        # is owned by InterruptManagementIntegration.
+        if not should_interrupt:
+            await self.event_bus.publish("mode.request", {
+                "target": AppMode.SLEEPING,
+                "source": "keyboard.secure_input",
+                "reason": reason,
+                "session_id": session_id,
+            })
         self._reset(reason)
 
     async def _finalize_grpc_failed(self, session_id: Optional[str]):
@@ -438,12 +457,7 @@ class InputProcessingIntegration:
             "key": getattr(event, "key", None),
             "reason": reason,
         })
-        await self.event_bus.publish("mode.request", {
-            "target": AppMode.SLEEPING,
-            "source": "keyboard.short_press",
-            "reason": reason,
-            "session_id": session_id,
-        })
+        # Centralization: SLEEPING for short-tap cancel is handled via interrupt.request owner.
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
         self._reset(reason)
 
@@ -516,6 +530,13 @@ class InputProcessingIntegration:
             await self._finalize_grpc_failed(sid)
 
     async def _on_playback_started(self, event):
+        data = (event or {}).get("data", {}) if isinstance(event, dict) else {}
+        # UX cues (playback.signal -> playback.started with signal=True) are short beeps
+        # and must not mark assistant playback as active, otherwise next press triggers
+        # unnecessary preempt/cancel and can cut cues.
+        if bool(data.get("signal")):
+            logger.debug("INPUT: ignore playback.started for signal cue")
+            return
         self._playback_active = True
 
     async def _on_playback_finished(self, event):

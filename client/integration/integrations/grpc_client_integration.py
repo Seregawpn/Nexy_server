@@ -21,6 +21,7 @@ import grpc
 import numpy as np
 
 from config.unified_config_loader import UnifiedConfigLoader
+from integration.core import selectors
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_keys import StateKeys
@@ -31,7 +32,6 @@ from integration.utils.env_detection import is_production_env
 from modules.grpc_client.core.grpc_client import GrpcClient
 
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
-MCP_PREFIX = "__MCP__"
 
 from integration.utils.logging_setup import get_logger
 
@@ -140,6 +140,16 @@ class GrpcClientIntegration:
 
         # Сеть
         self._network_connected: bool | None = None
+        # Минимальная амплитуда int16, которую считаем слышимым сигналом.
+        # Защищает от "псевдо-аудио" (единичные шумовые семплы с пиковой амплитудой 1-2).
+        # 512 ~= 1.56% FS (int16). Ниже обычно микрошум/денормалы и не слышимо как речь.
+        self._min_audible_peak_int16 = 512
+        # RMS-порог дополнительно отсекает одиночные пики/щелчки.
+        self._min_audible_rms_int16 = 64.0
+        # Технический шумовой пол (денормалы/квант. дрожание), не несущий речи.
+        # Централизованный ingress-gate: такие чанки считаем "silent tail".
+        self._noise_floor_peak_int16 = 3
+        self._noise_floor_rms_int16 = 1.0
 
         # ПРИМЕЧАНИЕ: Жёсткий контракт протокола
         # sample_rate и channels теперь ОБЯЗАТЕЛЬНЫ в audio_chunk (добавлены в protobuf).
@@ -482,7 +492,7 @@ class GrpcClientIntegration:
     def _hydrate_network_from_state(self) -> None:
         """Read initial network axis from state to avoid startup race."""
         try:
-            raw = self.state_manager.get_state_data(StateKeys.NETWORK_STATUS, None)
+            raw = selectors.get_state_value(self.state_manager, StateKeys.NETWORK_STATUS, None)
             self._network_connected = self._to_network_connected(raw)
             logger.debug("Hydrated initial network state: raw=%s connected=%s", raw, self._network_connected)
         except Exception as e:
@@ -721,11 +731,112 @@ class GrpcClientIntegration:
         got_terminal = False
         chunk_count = 0
         audio_chunk_count = 0
+        silent_audio_chunk_count = 0
+        non_silent_audio_chunk_count = 0
         text_chunk_count = 0
+        action_chunk_count = 0
         exit_reason = None
         first_chunk_ts = None
         full_response_text = []
-        action_message_sessions = set()
+        action_dispatched = False
+        action_like_text_seen = False
+        def _normalize_action_payload(parsed: Any) -> dict[str, Any] | None:
+            if not isinstance(parsed, dict):
+                return None
+
+            # Accept canonical + legacy wrappers without adding a second parsing path.
+            candidates: list[dict[str, Any]] = [parsed]
+            seen: set[int] = set()
+
+            while candidates:
+                candidate = candidates.pop(0)
+                if not isinstance(candidate, dict):
+                    continue
+                marker = id(candidate)
+                if marker in seen:
+                    continue
+                seen.add(marker)
+
+                if candidate.get("event") == "mcp.command_request":
+                    nested = candidate.get("payload")
+                    if isinstance(nested, dict):
+                        candidates.append(nested)
+
+                for key in ("command_payload", "payload", "action", "data", "result"):
+                    nested = candidate.get(key)
+                    if isinstance(nested, dict):
+                        candidates.append(nested)
+
+                command = candidate.get("command")
+                if not isinstance(command, str) or not command.strip():
+                    command = candidate.get("type")
+                if isinstance(command, str) and command.strip():
+                    args = candidate.get("args")
+                    if not isinstance(args, dict):
+                        args = {}
+                    if not args:
+                        params = candidate.get("params")
+                        if isinstance(params, dict):
+                            args = params
+                        else:
+                            arguments = candidate.get("arguments")
+                            if isinstance(arguments, dict):
+                                args = arguments
+                    return {
+                        "command": command.strip(),
+                        "args": args,
+                    }
+            return None
+
+        def _looks_like_action_intent(raw_text: str) -> bool:
+            if not isinstance(raw_text, str):
+                return False
+            text_l = raw_text.lower()
+            markers = (
+                "send_message",
+                "read_messages",
+                "find_contact",
+                "open_app",
+                "close_app",
+                "browser_use",
+                "send_whatsapp_message",
+                "command",
+                "args",
+                "отправ",
+                "сообщени",
+                "команд",
+            )
+            return any(marker in text_l for marker in markers)
+
+        def _extract_action_from_legacy_text(raw_text: str) -> dict[str, Any] | None:
+            if not isinstance(raw_text, str):
+                return None
+            candidate = raw_text.strip()
+            if not candidate:
+                return None
+
+            # Step 1: Strip optional __MCP__ prefix
+            if candidate.startswith("__MCP__"):
+                candidate = candidate[len("__MCP__"):].strip()
+
+            # Step 2: Strip optional markdown fences (checking candidate AGAIN)
+            if candidate.startswith("```") and candidate.endswith("```"):
+                candidate = candidate[3:-3].strip()
+                if candidate.lower().startswith("json"):
+                    candidate = candidate[4:].strip()
+
+            # Step 3: Heuristic check (must look like a JSON object)
+            if not (candidate.startswith("{") and candidate.endswith("}")):
+                return None
+
+            try:
+                parsed = json.loads(candidate)
+            except Exception:
+                return None
+
+            if isinstance(parsed, dict) and parsed.get("event") == "mcp.command_request":
+                parsed = parsed.get("payload")
+            return _normalize_action_payload(parsed)
         
         try:
             # КРИТИЧНО: Преобразуем session_id в строку (может быть float или другой тип)
@@ -741,6 +852,18 @@ class GrpcClientIntegration:
                 session_id=session_id_str,
                 timeout=rpc_timeout,
             ):
+                # Cancel ownership is centralized in this integration.
+                # If request was cancelled, stop consuming/publishing this stream immediately.
+                if session_id in self._cancel_notified:
+                    exit_reason = "cancelled_by_request"
+                    logger.debug(
+                        "🛑 [GRPC_STREAM] stop stream loop for cancelled session=%s (chunks=%s)",
+                        session_id,
+                        chunk_count,
+                    )
+                    got_terminal = True
+                    break
+
                 chunk_count += 1
                 
                 # TRACE: первый ответ от gRPC
@@ -762,47 +885,102 @@ class GrpcClientIntegration:
                 which_oneof = resp.WhichOneof('content') if hasattr(resp, 'WhichOneof') else None
 
                 # Диагностика: логируем только важные события
-                if chunk_count == 1 or chunk_count % 10 == 0 or which_oneof in ('end_message', 'error_message'):
+                if chunk_count == 1 or chunk_count % 10 == 0 or which_oneof in ('end_message', 'error_message', 'action_message'):
                     logger.info(f"🔍 gRPC response #{chunk_count}: WhichOneof('content')={which_oneof}")
 
                 # Обрабатываем СТРОГО по типу oneof
                 if which_oneof == 'text_chunk':
                     text = resp.text_chunk
+                    preview = text.replace("\n", "\\n")[:220]
+                    logger.info(
+                        "gRPC received text_chunk len=%s session=%s preview=%s",
+                        len(text),
+                        session_id,
+                        preview,
+                    )
+
+                    # Compatibility path: accept legacy action payload sent via text_chunk.
+                    legacy_action = _extract_action_from_legacy_text(text)
+                    if legacy_action is not None:
+                        if action_dispatched:
+                            logger.debug(
+                                "[%s] Legacy text action ignored (already dispatched), session=%s",
+                                FEATURE_ID,
+                                session_id,
+                            )
+                            continue
+                        action_dispatched = True
+                        action_chunk_count += 1
+                        logger.warning(
+                            "[%s] Legacy action payload received via text_chunk, session=%s, command=%s",
+                            FEATURE_ID,
+                            session_id,
+                            legacy_action.get("command", "unknown"),
+                        )
+                        await self.event_bus.publish("grpc.response.action", {
+                            "session_id": str(session_id),
+                            "action_json": json.dumps(legacy_action, ensure_ascii=False),
+                            "feature_id": FEATURE_ID,
+                            "source": "text_chunk_legacy",
+                        })
+                        logger.info(
+                            "[ACTION_PIPELINE] stage=publish session=%s source=text_chunk_legacy command=%s",
+                            session_id,
+                            legacy_action.get("command", "unknown"),
+                        )
+                        # Do not forward control payload to text/TTS path.
+                        continue
+                    if _looks_like_action_intent(text):
+                        action_like_text_seen = True
+                        logger.warning(
+                            "[%s] text_chunk looks action-like but action payload was not extracted: session=%s preview=%s",
+                            FEATURE_ID,
+                            session_id,
+                            preview,
+                        )
+
                     text_chunk_count += 1
-                    logger.info(f"gRPC received text_chunk len={len(text)} for session {session_id}")
-                    
+                    logger.info(f"[{FEATURE_ID}] Text chunk received from gRPC: '{text[:200]}...'")
                     # Accumulate text for potential fallback
                     full_response_text.append(text)
-                    
-                    # Проверяем префикс __MCP__ для MCP команд (Legacy Fallback)
-                    if text.startswith(MCP_PREFIX):
-                        # Legacy MCP text-tunneling disabled: ActionMessage is the single source of truth
-                        logger.info(
-                            "[%s] Legacy MCP text tunneling ignored (ActionMessage only): session_id=%s",
-                            FEATURE_ID,
-                            session_id
-                        )
-                    else:
-                        # Обычный текст - публикуем как обычно
-                        await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
+                    await self.event_bus.publish("grpc.response.text", {"session_id": session_id, "text": text})
 
                 elif which_oneof == 'action_message':
                     # ПРАВИЛЬНЫЙ ПРОТОКОЛ gRPC
                     act_msg = resp.action_message
                     action_json_str = act_msg.action_json
                     sid = act_msg.session_id or str(session_id)
-                    action_message_sessions.add(sid)
-                    
                     logger.info(f"gRPC received ActionMessage for session {sid}")
                     
                     try:
-                        # Валидируем JSON (опционально, для логирования)
-                        payload_obj = json.loads(action_json_str)
+                        parsed_payload = json.loads(action_json_str)
+                        # _normalize_action_payload now handles unwrapping internally
+                        payload_obj = _normalize_action_payload(parsed_payload)
+                        if payload_obj is None:
+                            raise ValueError(f"missing command/type in payload: {parsed_payload}")
                         cmd_name = payload_obj.get("command", "unknown")
-                        logger.info(f"[%s] ActionMessage received: command={cmd_name}, session={sid}", FEATURE_ID)
+                        logger.info(f"[{FEATURE_ID}] ActionMessage received: command={cmd_name}, session={sid}")
+                        action_json_str = json.dumps(payload_obj, ensure_ascii=False)
                     except Exception as e:
-                        logger.warning(f"[%s] ActionMessage has invalid JSON: {e}", FEATURE_ID)
-                        # Все равно пробуем отправить, пусть интеграция разбирается
+                        logger.warning(
+                            "[%s] ActionMessage invalid payload: %s, session=%s raw=%s",
+                            FEATURE_ID,
+                            e,
+                            sid,
+                            action_json_str[:220],
+                        )
+                        continue
+
+                    if action_dispatched:
+                        logger.debug(
+                            "[%s] ActionMessage ignored (already dispatched), session=%s, command=%s",
+                            FEATURE_ID,
+                            sid,
+                            payload_obj.get("command", "unknown"),
+                        )
+                        continue
+                    action_dispatched = True
+                    action_chunk_count += 1
                     
                     await self.event_bus.publish("grpc.response.action", {
                         "session_id": sid,
@@ -810,6 +988,12 @@ class GrpcClientIntegration:
                         "feature_id": act_msg.feature_id or FEATURE_ID,
                         "source": "action_message",
                     })
+                    logger.info(
+                        "[ACTION_PIPELINE] stage=publish session=%s source=action_message command=%s feature=%s",
+                        sid,
+                        payload_obj.get("command", "unknown"),
+                        act_msg.feature_id or FEATURE_ID,
+                    )
 
                 elif which_oneof == 'audio_chunk':
                     ch = resp.audio_chunk
@@ -848,16 +1032,62 @@ class GrpcClientIntegration:
                         f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {session_id}"
                     )
 
-                    # DIAGNOSTIC: Check raw bytes at gRPC layer
-                    if len(data) >= 8:
-                        first_bytes = data[:8].hex()
-                        # Check if all bytes are zeros
-                        arr_check = np.frombuffer(data[:min(len(data), 1024)], dtype=np.int16)
-                        is_zeros = np.all(arr_check == 0) if arr_check.size > 0 else True
-                        peak_raw = float(np.max(np.abs(arr_check))) if arr_check.size > 0 else 0.0
-                        logger.info(
-                            f"🔬 [GRPC_AUDIO_RAW] session={session_id} chunk#{audio_chunk_count} "
-                            f"bytes={len(data)} first_bytes={first_bytes} peak_int16={peak_raw:.1f} all_zeros={is_zeros}"
+                    # DIAGNOSTIC: оцениваем амплитуду по полному чанку (не только head),
+                    # чтобы корректно различать тишину и "микрошум".
+                    first_bytes = data[:8].hex() if len(data) >= 8 else ""
+                    arr_full = np.frombuffer(data, dtype=np.int16)
+                    peak_raw = float(np.max(np.abs(arr_full))) if arr_full.size > 0 else 0.0
+                    rms_raw = float(np.sqrt(np.mean(np.square(arr_full.astype(np.float32))))) if arr_full.size > 0 else 0.0
+                    is_zeros = bool(arr_full.size == 0 or np.all(arr_full == 0))
+                    is_audible = (
+                        peak_raw >= float(self._min_audible_peak_int16)
+                        or rms_raw >= float(self._min_audible_rms_int16)
+                    )
+                    logger.info(
+                        f"🔬 [GRPC_AUDIO_RAW] session={session_id} chunk#{audio_chunk_count} "
+                        f"bytes={len(data)} first_bytes={first_bytes} peak_int16={peak_raw:.1f} "
+                        f"rms_int16={rms_raw:.1f} all_zeros={is_zeros} audible={is_audible} "
+                        f"threshold_peak={self._min_audible_peak_int16} threshold_rms={self._min_audible_rms_int16}"
+                    )
+                    if is_zeros:
+                        silent_audio_chunk_count += 1
+                        logger.debug(
+                            "🔇 [AUDIO_DIAG] Skip silent grpc.response.audio chunk #%s "
+                            "(bytes=%s, session=%s)",
+                            audio_chunk_count,
+                            len(data),
+                            session_id,
+                        )
+                        continue
+                    is_micro_noise = (
+                        peak_raw <= float(self._noise_floor_peak_int16)
+                        and rms_raw < float(self._noise_floor_rms_int16)
+                    )
+                    if is_micro_noise:
+                        silent_audio_chunk_count += 1
+                        logger.debug(
+                            "🔇 [AUDIO_DIAG] Skip noise-floor grpc.response.audio chunk #%s "
+                            "(bytes=%s, peak=%s, rms=%.2f, session=%s, floor_peak=%s, floor_rms=%.1f)",
+                            audio_chunk_count,
+                            len(data),
+                            int(peak_raw),
+                            rms_raw,
+                            session_id,
+                            self._noise_floor_peak_int16,
+                            self._noise_floor_rms_int16,
+                        )
+                        continue
+                    # Non-zero audio is published to avoid dropping quiet speech segments.
+                    non_silent_audio_chunk_count += 1
+                    if not is_audible:
+                        logger.debug(
+                            "🔉 [AUDIO_DIAG] Low-amplitude grpc.response.audio chunk #%s "
+                            "(bytes=%s, peak=%s, rms=%.1f, session=%s) published",
+                            audio_chunk_count,
+                            len(data),
+                            int(peak_raw),
+                            rms_raw,
+                            session_id,
                         )
 
                     logger.info(f"🔊 [AUDIO_DIAG] Publishing grpc.response.audio: stream chunk #{audio_chunk_count}, bytes={len(data)}, sr={effective_sr}, ch={effective_ch}, session={session_id}")
@@ -936,9 +1166,15 @@ class GrpcClientIntegration:
                     logger.warning(f"⚠️ Unknown response type: which_oneof={which_oneof}")
             
             # Логируем финальный summary для диагностики
-            had_audio = audio_chunk_count > 0
+            had_audio = non_silent_audio_chunk_count > 0
             had_text = text_chunk_count > 0
-            
+            if audio_chunk_count > 0 and non_silent_audio_chunk_count == 0:
+                logger.error(
+                    "❌ [SILENT_AUDIO_STREAM] Session %s received %s audio chunks, all are zero PCM",
+                    session_id,
+                    audio_chunk_count,
+                )
+
             # GLOBAL FALLBACK: Если есть текст, но НЕТ аудио (и это не отмена) - читаем текст локально
             # Это покрывает случай, когда сервер вернул текст, но генерация аудио упала или формат не поддерживается,
             # или если стрим разорвался после передачи текста но до аудио.
@@ -957,9 +1193,15 @@ class GrpcClientIntegration:
             # Логируем exit-reason и summary
             logger.info(
                 f"🔍 [GRPC_END] session={session_id} exit_reason={exit_reason} "
-                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
-                f"had_audio={had_audio}, had_text={had_text}}}"
+                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, silent_audio_chunks={silent_audio_chunk_count}, non_silent_audio_chunks={non_silent_audio_chunk_count}, text_chunks={text_chunk_count}, action_chunks={action_chunk_count}, "
+                f"had_audio={had_audio}, had_text={had_text}, action_like_text={action_like_text_seen}}}"
             )
+            if had_text and action_chunk_count == 0 and action_like_text_seen:
+                logger.warning(
+                    "[%s] Session %s finished with action-like text but no action chunks. Check server parser/output format.",
+                    FEATURE_ID,
+                    session_id,
+                )
         except asyncio.CancelledError:
             # Тихо выходим при отмене; событие могло быть опубликовано ранее
             exit_reason = "cancelled"
@@ -968,11 +1210,11 @@ class GrpcClientIntegration:
                 await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "cancelled"})
             
             # Логируем summary даже при отмене
-            had_audio = audio_chunk_count > 0
+            had_audio = non_silent_audio_chunk_count > 0
             had_text = text_chunk_count > 0
             logger.info(
                 f"🔍 [GRPC_END] session={session_id} exit_reason={exit_reason} "
-                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
+                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, silent_audio_chunks={silent_audio_chunk_count}, non_silent_audio_chunks={non_silent_audio_chunk_count}, text_chunks={text_chunk_count}, action_chunks={action_chunk_count}, "
                 f"had_audio={had_audio}, had_text={had_text}}}"
             )
         except grpc.aio.AioRpcError as e:
@@ -998,7 +1240,7 @@ class GrpcClientIntegration:
                 await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": details})
 
             # Log summary
-            had_audio = audio_chunk_count > 0
+            had_audio = non_silent_audio_chunk_count > 0
             had_text = text_chunk_count > 0
             
             # GLOBAL FALLBACK ON ERROR: Если получили текст до ошибки, но не аудио
@@ -1010,13 +1252,13 @@ class GrpcClientIntegration:
             
             logger.info(
                 f"🔍 [GRPC_END] session={session_id} exit_reason={exit_reason} error={details} "
-                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
+                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, non_silent_audio_chunks={non_silent_audio_chunk_count}, text_chunks={text_chunk_count}, action_chunks={action_chunk_count}, "
                 f"had_audio={had_audio}, had_text={had_text}}}"
             )
 
         except Exception as e:
             exit_reason = "exception"
-            had_audio = audio_chunk_count > 0
+            had_audio = non_silent_audio_chunk_count > 0
             had_text = text_chunk_count > 0
             await self._handle_error(e, where="grpc.stream_audio", severity="warning")
             await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": str(e)})
@@ -1024,7 +1266,7 @@ class GrpcClientIntegration:
             # Логируем summary даже при исключении
             logger.info(
                 f"🔍 [GRPC_END] session={session_id} exit_reason={exit_reason} error={str(e)} "
-                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, text_chunks={text_chunk_count}, "
+                f"summary={{chunks={chunk_count}, audio_chunks={audio_chunk_count}, non_silent_audio_chunks={non_silent_audio_chunk_count}, text_chunks={text_chunk_count}, action_chunks={action_chunk_count}, "
                 f"had_audio={had_audio}, had_text={had_text}}}"
             )
 

@@ -12,6 +12,7 @@ ModeManagementIntegration — центральная точка управлен
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from integration.core.error_handler import ErrorHandler
@@ -91,6 +92,17 @@ class ModeManagementIntegration:
         self._active_playback_sessions: set[str] = set()
         # Сессии, для которых уже был отложен переход в SLEEPING до завершения playback.
         self._deferred_sleep_sessions: set[str] = set()
+        # Сессии с активным browser task.
+        self._active_browser_sessions: set[str] = set()
+        # Сессии с активными actions (open_app/close_app).
+        self._active_action_sessions: dict[str, int] = {}
+        # Сессии, для которых уже пришло намерение action (grpc.response.action),
+        # но lifecycle.started может прийти немного позже (гонка между потоками событий).
+        self._pending_action_intents: dict[str, float] = {}
+        self._action_intent_ttl_sec = 3.0
+        # Короткое окно дедупликации mode.request по (target_mode, session_id).
+        self._mode_request_dedup_window_sec: float = 0.5
+        self._last_mode_request_ts: dict[tuple[str, str], float] = {}
 
     # ---------------- Lifecycle ----------------
     async def initialize(self) -> bool:
@@ -150,6 +162,16 @@ class ModeManagementIntegration:
             await self.event_bus.subscribe("playback.cancelled", self._on_playback_finished, EventPriority.MEDIUM)
             await self.event_bus.subscribe("playback.completed", self._on_playback_finished, EventPriority.MEDIUM)
             await self.event_bus.subscribe("playback.failed", self._on_playback_finished, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("browser.started", self._on_browser_started, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("browser.completed", self._on_browser_finished, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("browser.failed", self._on_browser_finished, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("browser.cancelled", self._on_browser_finished, EventPriority.MEDIUM)
+            # Единый источник истины для активности actions: lifecycle-события.
+            # Не подписываемся на actions.open_app/close_app.* дополнительно, чтобы
+            # не учитывать одно действие дважды.
+            await self.event_bus.subscribe("actions.lifecycle.started", self._on_action_started, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("actions.lifecycle.finished", self._on_action_finished, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("grpc.response.action", self._on_action_intent, EventPriority.MEDIUM)
 
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
 
@@ -217,6 +239,43 @@ class ModeManagementIntegration:
             source = str(data.get("source", "unknown"))
             session_id = data.get("session_id")
             normalized_session_id = self._normalize_session_id(session_id)
+            dedup_sid = normalized_session_id or "__none__"
+            dedup_key = (target.value if hasattr(target, "value") else str(target), dedup_sid)
+            now = time.monotonic()
+
+            # Lightweight cleanup to keep map bounded.
+            cutoff = now - (self._mode_request_dedup_window_sec * 4.0)
+            stale_keys = [k for k, ts in self._last_mode_request_ts.items() if ts < cutoff]
+            for k in stale_keys:
+                self._last_mode_request_ts.pop(k, None)
+
+            # Важно: для финализаторов deferred-сессии не применяем ранний dedup.
+            # Иначе request "processing_completed" (deferred) может "съесть"
+            # следующий "playback.finished" и оставить PROCESSING залипшим.
+            dedup_bypass = (
+                source in {"playback.finished", "browser.finished", "actions.finished"}
+                and normalized_session_id is not None
+                and normalized_session_id in self._deferred_sleep_sessions
+            )
+            if not dedup_bypass:
+                last_ts = self._last_mode_request_ts.get(dedup_key, 0.0)
+                if (now - last_ts) < self._mode_request_dedup_window_sec:
+                    logger.debug(
+                        "MODE_REQUEST dedup: target=%s session_id=%s source=%s dt=%.3fs",
+                        target,
+                        normalized_session_id,
+                        source,
+                        now - last_ts,
+                    )
+                    return
+                self._last_mode_request_ts[dedup_key] = now
+            else:
+                logger.debug(
+                    "MODE_REQUEST dedup bypass: target=%s session_id=%s source=%s (deferred finalize)",
+                    target,
+                    normalized_session_id,
+                    source,
+                )
 
             # Фильтрация по сессии (в PROCESSING принимаем только текущую либо interrupt)
             current_mode = selectors.get_current_mode(self.state_manager)
@@ -254,21 +313,32 @@ class ModeManagementIntegration:
                 logger.debug(f"Mode request ignored (same mode): {target}")
                 return
 
-            # Guard: не уходим в SLEEPING из processing_completed, пока еще играет ответ текущей сессии.
+            # Guard: не уходим в SLEEPING по "штатному завершению", пока у сессии
+            # есть активное воспроизведение/браузер/действия.
             if (
                 target == AppMode.SLEEPING
-                and source == "ProcessingWorkflow.processing_completed"
-                and normalized_session_id is not None
-                and normalized_session_id in self._active_playback_sessions
+                and source in {
+                    "ProcessingWorkflow.processing_completed",
+                    "playback",
+                    "playback.finished",
+                    "browser.finished",
+                    "actions.finished",
+                }
             ):
-                self._deferred_sleep_sessions.add(normalized_session_id)
-                logger.info(
-                    "MODE_REQUEST deferred: keep PROCESSING while playback is active "
-                    "(session=%s, source=%s)",
-                    normalized_session_id,
-                    source,
-                )
-                return
+                guard_session_id = normalized_session_id or self._get_current_processing_session_id()
+                blockers = self._collect_blockers_for_sleep_guard(guard_session_id)
+                if blockers:
+                    if guard_session_id is not None:
+                        self._deferred_sleep_sessions.add(guard_session_id)
+                    logger.info(
+                        "MODE_REQUEST deferred: keep PROCESSING while work is active "
+                        "(request_session=%s, guard_session=%s, source=%s, blockers=%s)",
+                        normalized_session_id,
+                        guard_session_id,
+                        source,
+                        ",".join(blockers),
+                    )
+                    return
             
             if current_mode == AppMode.PROCESSING and source != 'interrupt':
                 current_session_id = selectors.get_current_session_id(self.state_manager)
@@ -412,12 +482,26 @@ class ModeManagementIntegration:
                 )
                 return
 
-            self._deferred_sleep_sessions.discard(session_id)
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "playback",
-                "session_id": session_id,
-            })
+            # Если browser/actions ещё идут, откладываем sleep до их завершения.
+            if (
+                session_id in self._active_browser_sessions
+                or self._active_action_sessions.get(session_id, 0) > 0
+                or self._has_pending_action_intent(session_id)
+            ):
+                self._deferred_sleep_sessions.add(session_id)
+                logger.info(
+                    "MODE_REQUEST deferred on playback_done: non-playback work still active "
+                    "(session=%s, browser=%s, actions=%s, action_intent=%s)",
+                    session_id,
+                    session_id in self._active_browser_sessions,
+                    self._active_action_sessions.get(session_id, 0),
+                    self._has_pending_action_intent(session_id),
+                )
+                return
+
+            # Единый путь публикации sleep после playback — через _on_playback_finished,
+            # когда playback-сессия гарантированно снята из active_playback_sessions.
+            self._deferred_sleep_sessions.add(session_id)
         except Exception:
             pass
 
@@ -441,6 +525,9 @@ class ModeManagementIntegration:
                 if (
                     session_id in self._deferred_sleep_sessions
                     and selectors.get_current_mode(self.state_manager) == AppMode.PROCESSING
+                    and session_id not in self._active_browser_sessions
+                    and self._active_action_sessions.get(session_id, 0) == 0
+                    and not self._has_pending_action_intent(session_id)
                 ):
                     self._deferred_sleep_sessions.discard(session_id)
                     await self.event_bus.publish("mode.request", {
@@ -448,6 +535,93 @@ class ModeManagementIntegration:
                         "source": "playback.finished",
                         "session_id": session_id,
                     })
+        except Exception:
+            pass
+
+    async def _on_browser_started(self, event):
+        try:
+            data = (event or {}).get("data", {}) or {}
+            session_id = self._normalize_session_id(data.get("session_id"))
+            if session_id:
+                self._active_browser_sessions.add(session_id)
+        except Exception:
+            pass
+
+    async def _on_browser_finished(self, event):
+        try:
+            data = (event or {}).get("data", {}) or {}
+            session_id = self._normalize_session_id(data.get("session_id"))
+            if not session_id:
+                return
+            self._active_browser_sessions.discard(session_id)
+            if (
+                session_id in self._deferred_sleep_sessions
+                and selectors.get_current_mode(self.state_manager) == AppMode.PROCESSING
+                and session_id not in self._active_playback_sessions
+                and self._active_action_sessions.get(session_id, 0) == 0
+                and not self._has_pending_action_intent(session_id)
+            ):
+                self._deferred_sleep_sessions.discard(session_id)
+                await self.event_bus.publish("mode.request", {
+                    "target": AppMode.SLEEPING,
+                    "source": "browser.finished",
+                    "session_id": session_id,
+                })
+        except Exception:
+            pass
+
+    async def _on_action_started(self, event):
+        try:
+            data = (event or {}).get("data", {}) or {}
+            session_id = self._resolve_action_session_id(data.get("session_id"), source="action_started")
+            if session_id:
+                self._pending_action_intents.pop(session_id, None)
+                self._active_action_sessions[session_id] = self._active_action_sessions.get(session_id, 0) + 1
+        except Exception:
+            pass
+
+    async def _on_action_finished(self, event):
+        try:
+            data = (event or {}).get("data", {}) or {}
+            session_id = self._resolve_action_session_id(data.get("session_id"), source="action_finished")
+            if not session_id:
+                return
+            self._pending_action_intents.pop(session_id, None)
+            current = self._active_action_sessions.get(session_id, 0)
+            if current <= 1:
+                self._active_action_sessions.pop(session_id, None)
+            else:
+                self._active_action_sessions[session_id] = current - 1
+
+            if (
+                session_id in self._deferred_sleep_sessions
+                and selectors.get_current_mode(self.state_manager) == AppMode.PROCESSING
+                and session_id not in self._active_playback_sessions
+                and session_id not in self._active_browser_sessions
+                and self._active_action_sessions.get(session_id, 0) == 0
+                and not self._has_pending_action_intent(session_id)
+            ):
+                self._deferred_sleep_sessions.discard(session_id)
+                await self.event_bus.publish("mode.request", {
+                    "target": AppMode.SLEEPING,
+                    "source": "actions.finished",
+                    "session_id": session_id,
+                })
+        except Exception:
+            pass
+
+    async def _on_action_intent(self, event):
+        try:
+            data = (event or {}).get("data", {}) or {}
+            session_id = self._resolve_action_session_id(data.get("session_id"), source="grpc.response.action")
+            if session_id:
+                self._pending_action_intents[session_id] = time.monotonic()
+                logger.info(
+                    "ACTION_INTENT received: session=%s source=%s command_preview=%s",
+                    session_id,
+                    data.get("source"),
+                    str(data.get("action_json", ""))[:80],
+                )
         except Exception:
             pass
 
@@ -511,8 +685,72 @@ class ModeManagementIntegration:
             "listening_timeout_sec": self._listening_timeout_sec,
             "active_session_id": selectors.get_current_session_id(self.state_manager),
             "active_playback_sessions": sorted(self._active_playback_sessions),
+            "active_browser_sessions": sorted(self._active_browser_sessions),
+            "active_action_sessions": dict(self._active_action_sessions),
+            "pending_action_intents": sorted(self._pending_action_intents.keys()),
             "deferred_sleep_sessions": sorted(self._deferred_sleep_sessions),
         }
+
+    def _has_pending_action_intent(self, session_id: str) -> bool:
+        ts = self._pending_action_intents.get(session_id)
+        if ts is None:
+            return False
+        if (time.monotonic() - ts) <= self._action_intent_ttl_sec:
+            return True
+        self._pending_action_intents.pop(session_id, None)
+        return False
+
+    def _has_any_pending_action_intent(self) -> bool:
+        now = time.monotonic()
+        for sid, ts in list(self._pending_action_intents.items()):
+            if (now - ts) <= self._action_intent_ttl_sec:
+                return True
+            self._pending_action_intents.pop(sid, None)
+        return False
+
+    def _get_current_processing_session_id(self) -> str | None:
+        if selectors.get_current_mode(self.state_manager) != AppMode.PROCESSING:
+            return None
+        return self._normalize_session_id(selectors.get_current_session_id(self.state_manager))
+
+    def _resolve_action_session_id(self, incoming_session_id: Any, *, source: str) -> str | None:
+        normalized = self._normalize_session_id(incoming_session_id)
+        if normalized is not None:
+            return normalized
+
+        fallback = self._get_current_processing_session_id()
+        if fallback is not None:
+            logger.warning(
+                "ACTION_SESSION_FALLBACK: source=%s missing session_id, "
+                "using active processing session=%s",
+                source,
+                fallback,
+            )
+        return fallback
+
+    def _collect_blockers_for_sleep_guard(self, session_id: str | None) -> list[str]:
+        blockers: list[str] = []
+        if session_id is not None:
+            if session_id in self._active_playback_sessions:
+                blockers.append("playback")
+            if session_id in self._active_browser_sessions:
+                blockers.append("browser")
+            if self._active_action_sessions.get(session_id, 0) > 0:
+                blockers.append("actions")
+            if self._has_pending_action_intent(session_id):
+                blockers.append("action_intent")
+
+        # Global fallback guard: защищает от раннего sleep при рассинхроне session_id.
+        if not blockers:
+            if self._active_playback_sessions:
+                blockers.append("playback_any")
+            elif self._active_browser_sessions:
+                blockers.append("browser_any")
+            elif self._active_action_sessions:
+                blockers.append("actions_any")
+            elif self._has_any_pending_action_intent():
+                blockers.append("action_intent_any")
+        return blockers
 
     @staticmethod
     def _normalize_session_id(session_id: Any) -> str | None:

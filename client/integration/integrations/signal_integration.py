@@ -13,6 +13,7 @@ import logging
 import time
 from typing import Any
 
+from integration.core import selectors
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
@@ -109,7 +110,7 @@ class SignalIntegration:
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
             await self.event_bus.subscribe("grpc.request_failed", self._on_error_like, EventPriority.MEDIUM)
             await self.event_bus.subscribe("voice.recognition_failed", self._on_error_like, EventPriority.MEDIUM)
-            self._last_mode = self.state_manager.get_current_mode()
+            self._last_mode = selectors.get_current_mode(self.state_manager)
             self._initialized = True
             logger.info("SignalIntegration initialized")
             return True
@@ -221,7 +222,7 @@ class SignalIntegration:
 
     async def _on_error_like(self, event: dict[str, Any]):
         try:
-            current_mode = self.state_manager.get_current_mode()
+            current_mode = selectors.get_current_mode(self.state_manager)
             if current_mode == AppMode.SLEEPING:
                 logger.debug("Signals: ERROR skipped (already sleeping)")
                 return

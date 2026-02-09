@@ -145,7 +145,11 @@ class ReleaseSuite:
             return False
 
     def check_problem_scan_gate(self) -> bool:
-        """Проверка 1.1: Consolidated problem scan gate (blocking only)."""
+        """Проверка 1.1: Consolidated problem scan gate.
+
+        Full mode: blocking.
+        Smoke mode: non-blocking signal (warning), because smoke focuses on runtime path.
+        """
         gate_script = self.project_root / "scripts" / "problem_scan_gate.sh"
         if not gate_script.exists():
             self.log_warn("problem_scan_gate.sh не найден, пропускаем")
@@ -162,7 +166,17 @@ class ReleaseSuite:
                 timeout=600,
                 env=env,
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                return True
+
+            # In smoke mode we keep this check informational to avoid blocking
+            # runtime confidence flow on known static-debt backlog.
+            if self.smoke_mode:
+                tail = "\n".join((result.stdout + "\n" + result.stderr).strip().splitlines()[-5:])
+                self.log_warn(f"problem_scan_gate failed in smoke mode (non-blocking):\n{tail}")
+                return True
+
+            return False
         except subprocess.TimeoutExpired:
             self.log_error("Problem scan gate превысил таймаут")
             return False

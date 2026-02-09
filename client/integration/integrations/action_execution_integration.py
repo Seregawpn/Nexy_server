@@ -37,6 +37,7 @@ FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
 from integration.utils.logging_setup import get_logger
 
 logger = get_logger(__name__)
+ACTION_PIPELINE_TAG = "ACTION_PIPELINE"
 
 
 class ActionExecutionIntegration(BaseIntegration):
@@ -131,6 +132,41 @@ class ActionExecutionIntegration(BaseIntegration):
             self._on_mode_changed,
             EventPriority.HIGH,
         )
+        await self.event_bus.subscribe(
+            "browser.completed",
+            self._on_browser_use_terminal_event,
+            EventPriority.HIGH,
+        )
+        await self.event_bus.subscribe(
+            "browser.failed",
+            self._on_browser_use_terminal_event,
+            EventPriority.HIGH,
+        )
+        await self.event_bus.subscribe(
+            "browser.cancelled",
+            self._on_browser_use_terminal_event,
+            EventPriority.HIGH,
+        )
+        await self.event_bus.subscribe(
+            "actions.send_whatsapp_message.completed",
+            self._on_whatsapp_terminal_event,
+            EventPriority.HIGH,
+        )
+        await self.event_bus.subscribe(
+            "actions.send_whatsapp_message.failed",
+            self._on_whatsapp_terminal_event,
+            EventPriority.HIGH,
+        )
+        await self.event_bus.subscribe(
+            "actions.read_whatsapp_messages.completed",
+            self._on_whatsapp_terminal_event,
+            EventPriority.HIGH,
+        )
+        await self.event_bus.subscribe(
+            "actions.read_whatsapp_messages.failed",
+            self._on_whatsapp_terminal_event,
+            EventPriority.HIGH,
+        )
         logger.info("[%s] ActionExecutionIntegration started", FEATURE_ID)
         return True
 
@@ -144,6 +180,13 @@ class ActionExecutionIntegration(BaseIntegration):
         await self.event_bus.unsubscribe("interrupt.request", self._on_interrupt)
         await self.event_bus.unsubscribe("keyboard.short_press", self._on_keyboard_short_press)
         await self.event_bus.unsubscribe("app.mode_changed", self._on_mode_changed)
+        await self.event_bus.unsubscribe("browser.completed", self._on_browser_use_terminal_event)
+        await self.event_bus.unsubscribe("browser.failed", self._on_browser_use_terminal_event)
+        await self.event_bus.unsubscribe("browser.cancelled", self._on_browser_use_terminal_event)
+        await self.event_bus.unsubscribe("actions.send_whatsapp_message.completed", self._on_whatsapp_terminal_event)
+        await self.event_bus.unsubscribe("actions.send_whatsapp_message.failed", self._on_whatsapp_terminal_event)
+        await self.event_bus.unsubscribe("actions.read_whatsapp_messages.completed", self._on_whatsapp_terminal_event)
+        await self.event_bus.unsubscribe("actions.read_whatsapp_messages.failed", self._on_whatsapp_terminal_event)
         logger.info("[%s] ActionExecutionIntegration stopped", FEATURE_ID)
         return True
 
@@ -163,6 +206,16 @@ class ActionExecutionIntegration(BaseIntegration):
         session_id = data.get("session_id")
         action_json = data.get("action_json")
         feature_id = data.get("feature_id") or FEATURE_ID
+        source = data.get("source")
+
+        logger.info(
+            "[%s] stage=received session=%s source=%s has_action_json=%s feature=%s",
+            ACTION_PIPELINE_TAG,
+            session_id,
+            source,
+            bool(action_json),
+            feature_id,
+        )
         
         if not self._mcp_executor.config.enabled:
             logger.info("[%s] MCP actions disabled, ignoring payload", feature_id)
@@ -184,6 +237,14 @@ class ActionExecutionIntegration(BaseIntegration):
             action_data = json.loads(action_json)
         except json.JSONDecodeError as exc:
             logger.error("[%s] Invalid action JSON: %s", feature_id, exc)
+            logger.warning(
+                "[%s] stage=invalid_json session=%s source=%s error=%s raw=%s",
+                ACTION_PIPELINE_TAG,
+                session_id,
+                source,
+                exc,
+                str(action_json)[:220],
+            )
             await self._publish_failure(
                 session_id=session_id,
                 feature_id=feature_id,
@@ -205,6 +266,14 @@ class ActionExecutionIntegration(BaseIntegration):
         command = action_data.get("command")
         action_type = command  # "open_app" или "close_app"
         args = action_data.get("args", {})
+        logger.info(
+            "[%s] stage=parsed session=%s command=%s args_keys=%s source=%s",
+            ACTION_PIPELINE_TAG,
+            session_id,
+            command,
+            sorted(args.keys()) if isinstance(args, dict) else [],
+            source,
+        )
         
         # Строим список допустимых команд динамически на основе feature flags
         loader = UnifiedConfigLoader.get_instance()
@@ -223,6 +292,13 @@ class ActionExecutionIntegration(BaseIntegration):
                 "[%s] Unsupported command: %s",
                 feature_id,
                 command
+            )
+            logger.warning(
+                "[%s] stage=rejected session=%s reason=unsupported_command command=%s source=%s",
+                ACTION_PIPELINE_TAG,
+                session_id,
+                command,
+                source,
             )
             await self._publish_failure(
                 session_id=session_id,
@@ -274,6 +350,13 @@ class ActionExecutionIntegration(BaseIntegration):
             if not feature_config.get("enabled", True):
                 msg = f"Feature '{feature_name}' is disabled in configuration."
                 logger.warning("[%s] %s Ignoring command: %s", action_feature_id, msg, command)
+                logger.warning(
+                    "[%s] stage=rejected session=%s reason=feature_disabled feature=%s command=%s",
+                    ACTION_PIPELINE_TAG,
+                    session_id,
+                    feature_name,
+                    command,
+                )
                 
                 # Для payment просто игнорируем (так как PaymentIntegration не запущена)
                 if feature_name == "payment":
@@ -336,6 +419,13 @@ class ActionExecutionIntegration(BaseIntegration):
         elif command == "send_message":
             # contact and message required
             if not args.get("contact") or not args.get("message"):
+                logger.warning(
+                    "[%s] stage=rejected session=%s reason=missing_parameter command=send_message contact=%s message_len=%s",
+                    ACTION_PIPELINE_TAG,
+                    session_id,
+                    bool(args.get("contact")),
+                    len(str(args.get("message", ""))),
+                )
                 await self._publish_failure(
                     session_id=session_id,
                     feature_id=action_feature_id,
@@ -363,6 +453,13 @@ class ActionExecutionIntegration(BaseIntegration):
         # Специальная обработка для Messages
         if command in ["read_messages", "send_message", "find_contact"]:
             dedupe_key = self._make_action_dedupe_key(session_id, command, args)
+            logger.info(
+                "[%s] stage=dispatch session=%s target=messages command=%s dedupe_key=%s",
+                ACTION_PIPELINE_TAG,
+                session_id,
+                command,
+                dedupe_key,
+            )
             if not await self._register_action_dedupe(dedupe_key, session_id, command):
                 return
             await self._execute_messages_action(
@@ -377,6 +474,13 @@ class ActionExecutionIntegration(BaseIntegration):
         # Специальная обработка для Browser Use
         if command == "browser_use":
             dedupe_key = self._make_action_dedupe_key(session_id, command, args)
+            logger.info(
+                "[%s] stage=dispatch session=%s target=browser_use command=%s dedupe_key=%s",
+                ACTION_PIPELINE_TAG,
+                session_id,
+                command,
+                dedupe_key,
+            )
             if not await self._register_action_dedupe(dedupe_key, session_id, command):
                 logger.info("[%s] Duplicate browser_use action ignored (session=%s)", action_feature_id, session_id)
                 return
@@ -388,32 +492,98 @@ class ActionExecutionIntegration(BaseIntegration):
             return
 
         if command == "close_browser":
+            logger.info(
+                "[%s] stage=dispatch session=%s target=browser command=close_browser",
+                ACTION_PIPELINE_TAG,
+                session_id,
+            )
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="started",
+                source="dispatch",
+            )
             await self.event_bus.publish("browser.close.request", {
                 "session_id": session_id
             })
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="finished",
+                source="dispatch",
+                status="success",
+            )
             return
 
         # Специальная обработка для Payment commands
         if command == "buy_subscription":
+            logger.info(
+                "[%s] stage=dispatch session=%s target=payment command=buy_subscription",
+                ACTION_PIPELINE_TAG,
+                session_id,
+            )
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="started",
+                source="dispatch",
+            )
             logger.info("[%s] Dispatching buy_subscription to PaymentIntegration", action_feature_id)
             await self.event_bus.publish("ui.action.buy_subscription", {
                 "session_id": session_id,
                 "source": "llm_command",
                 "feature_id": action_feature_id
             })
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="finished",
+                source="dispatch",
+                status="success",
+            )
             return
 
         if command == "manage_subscription":
+            logger.info(
+                "[%s] stage=dispatch session=%s target=payment command=manage_subscription",
+                ACTION_PIPELINE_TAG,
+                session_id,
+            )
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="started",
+                source="dispatch",
+            )
             logger.info("[%s] Dispatching manage_subscription to PaymentIntegration", action_feature_id)
             await self.event_bus.publish("ui.action.manage_subscription", {
                 "session_id": session_id,
                 "source": "llm_command",
                 "feature_id": action_feature_id
             })
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="finished",
+                source="dispatch",
+                status="success",
+            )
             return
 
         # Специальная обработка для Whatsapp commands
         if command in ["send_whatsapp_message", "read_whatsapp_messages"]:
+            logger.info(
+                "[%s] stage=dispatch session=%s target=whatsapp command=%s",
+                ACTION_PIPELINE_TAG,
+                session_id,
+                command,
+            )
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="started",
+                source="dispatch",
+            )
             logger.info("[%s] Dispatching %s to WhatsappIntegration", action_feature_id, command)
             await self.event_bus.publish("whatsapp.request", {
                 "session_id": session_id,
@@ -515,6 +685,12 @@ class ActionExecutionIntegration(BaseIntegration):
                 "action": action_data,
             },
         )
+        await self._publish_action_lifecycle(
+            session_id=session_id,
+            command=action_type,
+            phase="started",
+            source="executor",
+        )
         self._spoken_error_sessions.discard(session_id)
         
         try:
@@ -601,6 +777,13 @@ class ActionExecutionIntegration(BaseIntegration):
                     feature_id,
                     result.app_name or "unknown"
                 )
+                await self._publish_action_lifecycle(
+                    session_id=session_id,
+                    command=action_type,
+                    phase="finished",
+                    source="executor",
+                    status="success",
+                )
             else:
                 # Ошибка выполнения
                 await self._publish_failure(
@@ -616,6 +799,13 @@ class ActionExecutionIntegration(BaseIntegration):
                     result.error,
                     result.message
                 )
+                await self._publish_action_lifecycle(
+                    session_id=session_id,
+                    command=action_type,
+                    phase="finished",
+                    source="executor",
+                    status="failed",
+                )
                 
         except asyncio.CancelledError:
             # Действие было отменено
@@ -627,10 +817,24 @@ class ActionExecutionIntegration(BaseIntegration):
                 app_name=action_data.get("app_name"),
             )
             logger.info("[%s] Action cancelled for session=%s", feature_id, session_id)
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=action_type,
+                phase="finished",
+                source="executor",
+                status="cancelled",
+            )
             
         except Exception as exc:
             # Неожиданная ошибка
             await self._handle_error(exc, where="_execute_action")
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=action_type,
+                phase="finished",
+                source="executor",
+                status="failed",
+            )
 
     async def _execute_open_app_fallback(
         self,
@@ -817,6 +1021,62 @@ class ActionExecutionIntegration(BaseIntegration):
         except Exception as e:
             logger.warning("[%s] Error in _on_mode_changed: %s", FEATURE_ID, e)
 
+    async def _on_browser_use_terminal_event(self, event: dict[str, Any]):
+        """Завершает lifecycle browser_use только по фактическому завершению browser task."""
+        try:
+            data = event.get("data", event) if isinstance(event, dict) and "data" in event else event
+            session_id = data.get("session_id")
+            if not session_id:
+                return
+
+            event_type = data.get("type", "")
+            if "FAILED" in str(event_type):
+                status = "failed"
+            elif "CANCELLED" in str(event_type):
+                status = "cancelled"
+            else:
+                status = "success"
+
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command="browser_use",
+                phase="finished",
+                source="browser",
+                status=status,
+            )
+        except Exception as e:
+            logger.debug("[%s] _on_browser_use_terminal_event failed: %s", FEATURE_ID, e)
+
+    async def _on_whatsapp_terminal_event(self, event: dict[str, Any]):
+        """Завершает lifecycle WhatsApp-команд только по фактическим terminal-событиям."""
+        try:
+            data = event.get("data", event) if isinstance(event, dict) and "data" in event else event
+            session_id = data.get("session_id")
+            if not session_id:
+                return
+
+            command = data.get("command")
+            if not command:
+                event_type = str(data.get("type", ""))
+                if "send_whatsapp_message" in event_type:
+                    command = "send_whatsapp_message"
+                elif "read_whatsapp_messages" in event_type:
+                    command = "read_whatsapp_messages"
+                else:
+                    return
+
+            event_type = str(data.get("type", ""))
+            status = "failed" if "failed" in event_type.lower() else "success"
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="finished",
+                source="whatsapp",
+                status=status,
+            )
+        except Exception as e:
+            logger.debug("[%s] _on_whatsapp_terminal_event failed: %s", FEATURE_ID, e)
+
     async def _cancel_all_actions(self, *, reason: str):
         """
         Отменяет все активные действия.
@@ -966,6 +1226,12 @@ class ActionExecutionIntegration(BaseIntegration):
                 "args": args,
             },
         )
+        await self._publish_action_lifecycle(
+            session_id=session_id,
+            command=command,
+            phase="started",
+            source="messages",
+        )
         self._spoken_error_sessions.discard(session_id)
         
         try:
@@ -990,6 +1256,13 @@ class ActionExecutionIntegration(BaseIntegration):
                     },
                 )
                 logger.info("[%s] %s completed successfully", feature_id, command)
+                await self._publish_action_lifecycle(
+                    session_id=session_id,
+                    command=command,
+                    phase="finished",
+                    source="messages",
+                    status="success",
+                )
                 
                 # 4. Озвучиваем результат пользователю
                 await self._handle_messages_success_feedback(session_id, command, result)
@@ -1036,6 +1309,13 @@ class ActionExecutionIntegration(BaseIntegration):
                     app_name="Messages",
                 )
                 logger.warning("[%s] %s failed: %s", feature_id, command, error_msg)
+                await self._publish_action_lifecycle(
+                    session_id=session_id,
+                    command=command,
+                    phase="finished",
+                    source="messages",
+                    status="failed",
+                )
                 
         except Exception as exc:
             if dedupe_key:
@@ -1047,6 +1327,13 @@ class ActionExecutionIntegration(BaseIntegration):
                 error_code="exception",
                 message=str(exc),
                 app_name="Messages",
+            )
+            await self._publish_action_lifecycle(
+                session_id=session_id,
+                command=command,
+                phase="finished",
+                source="messages",
+                status="failed",
             )
 
     async def _handle_messages_success_feedback(self, session_id: str, command: str, result: dict[str, Any]):
@@ -1160,6 +1447,12 @@ class ActionExecutionIntegration(BaseIntegration):
                 "args": args,
             },
         )
+        await self._publish_action_lifecycle(
+            session_id=session_id,
+            command="browser_use",
+            phase="started",
+            source="dispatch",
+        )
         self._spoken_error_sessions.discard(session_id)
         
         # 2. Перенаправляем запрос в BrowserUseIntegration
@@ -1188,6 +1481,27 @@ class ActionExecutionIntegration(BaseIntegration):
                 "status": "dispatched"
             }
         )
+
+    async def _publish_action_lifecycle(
+        self,
+        *,
+        session_id: str | None,
+        command: str,
+        phase: str,
+        source: str,
+        status: str | None = None,
+    ) -> None:
+        if not session_id:
+            return
+        payload: dict[str, Any] = {
+            "session_id": session_id,
+            "command": command,
+            "phase": phase,
+            "source": source,
+        }
+        if status is not None:
+            payload["status"] = status
+        await self.event_bus.publish(f"actions.lifecycle.{phase}", payload)
 
     def _handle_read_messages(self, args: dict[str, Any]) -> dict[str, Any]:
         """Обработчик read_messages (синхронный)."""
