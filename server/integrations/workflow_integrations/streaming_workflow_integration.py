@@ -1529,11 +1529,31 @@ class StreamingWorkflowIntegration:
                 import json
                 if isinstance(response, dict):
                     # FIXED: Use json.dumps to ensure valid JSON string (double quotes)
-                    return self._assistant_parser.parse(response.get('text', json.dumps(response, ensure_ascii=False)))
-                return self._assistant_parser.parse(response)
+                    parsed = self._assistant_parser.parse(response.get('text', json.dumps(response, ensure_ascii=False)))
+                else:
+                    parsed = self._assistant_parser.parse(response)
+                logger.info(
+                    "[ACTION_PIPELINE][SERVER] stage=workflow_parse_bypassed session=%s has_command=%s text_len=%s",
+                    session_id,
+                    bool(parsed.command_payload),
+                    len(parsed.text_response or ""),
+                )
+                return parsed
             
             # Парсим ответ, передавая session_id для подстановки в action-ответы
-            return self._assistant_parser.parse(response, session_id=session_id)
+            parsed = self._assistant_parser.parse(response, session_id=session_id)
+            command_name = (
+                parsed.command_payload.get('payload', {}).get('command')
+                if parsed.command_payload else None
+            )
+            logger.info(
+                "[ACTION_PIPELINE][SERVER] stage=workflow_parse session=%s has_command=%s command=%s text_len=%s",
+                session_id,
+                bool(parsed.command_payload),
+                command_name,
+                len(parsed.text_response or ""),
+            )
+            return parsed
         except Exception as e:
             logger.warning(f"⚠️ Ошибка парсинга ответа ассистента: {e}, возвращаем как обычный текст")
             # Fallback на обычный текст
@@ -1543,7 +1563,14 @@ class StreamingWorkflowIntegration:
                 text = response.get('text', json.dumps(response, ensure_ascii=False))
             else:
                 text = str(response)
-            return self._assistant_parser.parse(text)
+            parsed = self._assistant_parser.parse(text)
+            logger.warning(
+                "[ACTION_PIPELINE][SERVER] stage=workflow_parse_exception session=%s error=%s has_command=%s",
+                session_id,
+                e,
+                bool(parsed.command_payload),
+            )
+            return parsed
     
     def _log_command_detected(self, parsed, session_id: str):
         """

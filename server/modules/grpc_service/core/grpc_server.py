@@ -424,6 +424,27 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
 
                 # Фаза 3: MCP command_payload (отправляем как ActionMessage) — после text/audio
                 cmd_payload = item.get('command_payload')
+                if txt and not cmd_payload:
+                    txt_l = str(txt).lower()
+                    markers = (
+                        "send_message",
+                        "read_messages",
+                        "find_contact",
+                        "open_app",
+                        "close_app",
+                        "browser_use",
+                        "send_whatsapp_message",
+                        "отправ",
+                        "сообщен",
+                        "откро",
+                        "закро",
+                    )
+                    if any(marker in txt_l for marker in markers):
+                        logger.warning(
+                            "[ACTION_PIPELINE][SERVER] stage=stream_text_without_action session=%s text_preview=%s",
+                            session_id,
+                            str(txt).replace("\n", "\\n")[:220],
+                        )
                 if cmd_payload:
                     import json
                     try:
@@ -455,6 +476,12 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                             action_msg.feature_id = str(feature_id)
 
                         logger.info(f"→ StreamAudio: sending ActionMessage session={session_id}, command={final_payload.get('command', 'unknown')}")
+                        logger.info(
+                            "[ACTION_PIPELINE][SERVER] stage=stream_action_message session=%s command=%s feature=%s",
+                            session_id,
+                            final_payload.get('command', 'unknown'),
+                            feature_id or "",
+                        )
                         yield streaming_pb2.StreamResponse(action_message=action_msg)  # type: ignore
                         sent_any = True
                     except Exception as mcp_error:
