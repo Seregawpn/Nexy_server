@@ -61,6 +61,8 @@ class ProcessingWorkflow(BaseWorkflow):
         self.playback_completed = False
         self.interrupted = False
         self.browser_active = False  # Browser automation in progress
+        self._terminal_outcome_session_id: str | None = None
+        self._terminal_outcome_reason: str | None = None
         
         # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager
         # EventBus уже обеспечивает последовательную обработку событий, блокировки не нужны
@@ -192,6 +194,17 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.debug(f"⚙️ ProcessingWorkflow: режим изменен на {mode_value}")
             
             if mode_value == "processing":
+                # Source-of-truth guard: processing chain requires session_id.
+                # Mode transitions without session_id (e.g. welcome playback) must not start
+                # the capture->grpc workflow path.
+                if session_id is None:
+                    logger.info(
+                        "⚙️ ProcessingWorkflow: mode=processing без session_id — "
+                        "пропускаем запуск цепочки (source=%s)",
+                        data.get("source"),
+                    )
+                    return
+
                 # КРИТИЧНО: Нормализуем session_id для сравнения (может быть str или float)
                 normalized_session_id = str(session_id) if session_id is not None else None
                 normalized_current = str(self.current_session_id) if self.current_session_id is not None else None
@@ -231,6 +244,8 @@ class ProcessingWorkflow(BaseWorkflow):
             
             # Инициализация состояния
             self.current_session_id = session_id
+            self._terminal_outcome_session_id = None
+            self._terminal_outcome_reason = None
             self.current_stage = ProcessingStage.STARTING
             self.processing_start_time = datetime.now()
             self.stage_start_time = datetime.now()
@@ -564,6 +579,7 @@ class ProcessingWorkflow(BaseWorkflow):
             data = event.get("data", {})
             reason = data.get("reason", "user_interrupt")
             session_id = data.get("session_id")
+            normalized_interrupt_sid = str(session_id) if session_id is not None else None
             
             # КРИТИЧНО: Проверяем, что прерывание относится к текущей активной сессии
             # Если workflow активен с другой сессией, игнорируем прерывание
@@ -587,6 +603,17 @@ class ProcessingWorkflow(BaseWorkflow):
                 await self._return_to_sleeping("interrupted")
             else:
                 # Если workflow не активен, просто публикуем запрос на SLEEPING
+                if (
+                    normalized_interrupt_sid is not None
+                    and self._terminal_outcome_session_id == normalized_interrupt_sid
+                ):
+                    logger.debug(
+                        "⚙️ ProcessingWorkflow: interrupt duplicate after terminal outcome, "
+                        "skip mode.request (session=%s, reason=%s)",
+                        normalized_interrupt_sid,
+                        reason,
+                    )
+                    return
                 logger.info(f"⚙️ ProcessingWorkflow: workflow не активен, публикуем прямой запрос на SLEEPING")
                 await self.event_bus.publish("mode.request", {
                     "target": AppMode.SLEEPING,
@@ -663,6 +690,23 @@ class ProcessingWorkflow(BaseWorkflow):
     async def _return_to_sleeping(self, reason: str):
         """Координированный возврат в SLEEPING"""
         try:
+            normalized_current_sid = str(self.current_session_id) if self.current_session_id is not None else None
+            if (
+                normalized_current_sid is not None
+                and self._terminal_outcome_session_id == normalized_current_sid
+            ):
+                logger.debug(
+                    "⚙️ ProcessingWorkflow: terminal outcome duplicate ignored "
+                    "(session=%s, reason=%s, first_reason=%s)",
+                    normalized_current_sid,
+                    reason,
+                    self._terminal_outcome_reason,
+                )
+                return
+            if normalized_current_sid is not None:
+                self._terminal_outcome_session_id = normalized_current_sid
+                self._terminal_outcome_reason = reason
+
             logger.info(f"⚙️ ProcessingWorkflow: возврат в SLEEPING, reason={reason}")
             
             await self._publish_mode_request(

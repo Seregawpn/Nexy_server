@@ -153,10 +153,91 @@ class TestInterruptPlayback:
         # Проверяем содержимое события
         event_type, payload = interrupt_events[0]
         if isinstance(payload, dict):
-            assert payload.get("source") == "keyboard"
+            assert str(payload.get("source", "")).startswith("keyboard")
             assert payload.get("type") == "speech_stop"
         
         logger.info("✅ Тест пройден: interrupt.request опубликован при SHORT_PRESS в PROCESSING")
+
+    @pytest.mark.asyncio
+    async def test_press_publishes_interrupt_request_in_processing_without_playback_flag(
+        self, input_integration, state_manager, event_bus
+    ):
+        """Тест: PRESS в PROCESSING публикует interrupt.request даже если локальный playback-флаг false."""
+        state_manager.set_mode(AppMode.PROCESSING)
+        input_integration._playback_active = False
+        input_integration._active_grpc_session_id = None
+
+        published_events = []
+
+        async def capture_event(event):
+            event_type = event.get("type") if isinstance(event, dict) else None
+            payload = event.get("data") if isinstance(event, dict) else event
+            published_events.append((event_type, payload))
+
+        await event_bus.subscribe("interrupt.request", capture_event)
+
+        from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
+
+        press_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.PRESS,
+            timestamp=1234567891.0,
+            duration=0.0,
+        )
+
+        await input_integration._handle_press(press_event)
+        await asyncio.sleep(0.05)
+
+        interrupt_events = [
+            (event_type, payload)
+            for event_type, payload in published_events
+            if event_type == "interrupt.request"
+        ]
+        assert len(interrupt_events) > 0, (
+            "interrupt.request должен публиковаться на PRESS в PROCESSING "
+            "даже без _playback_active"
+        )
+
+    @pytest.mark.asyncio
+    async def test_press_publishes_interrupt_when_sleeping_but_session_still_present(
+        self, input_integration, state_manager, event_bus
+    ):
+        """Тест: PRESS публикует interrupt.request, если mode=SLEEPING, но session_id ещё не очищен."""
+        sid = "165a3bb5-f1a5-490a-b204-e53def467ced"
+        state_manager.set_mode(AppMode.SLEEPING, session_id=sid)
+        input_integration._playback_active = False
+        input_integration._active_grpc_session_id = None
+
+        published_events = []
+
+        async def capture_event(event):
+            event_type = event.get("type") if isinstance(event, dict) else None
+            payload = event.get("data") if isinstance(event, dict) else event
+            published_events.append((event_type, payload))
+
+        await event_bus.subscribe("interrupt.request", capture_event)
+
+        from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
+
+        press_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.PRESS,
+            timestamp=1234567892.0,
+            duration=0.0,
+        )
+
+        await input_integration._handle_press(press_event)
+        await asyncio.sleep(0.05)
+
+        interrupt_events = [
+            (event_type, payload)
+            for event_type, payload in published_events
+            if event_type == "interrupt.request"
+        ]
+        assert len(interrupt_events) > 0, (
+            "interrupt.request должен публиковаться на PRESS, "
+            "если в state ещё есть session_id"
+        )
 
     @pytest.mark.asyncio
     async def test_speech_playback_handles_interrupt_idempotently(

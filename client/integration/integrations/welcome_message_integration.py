@@ -17,7 +17,6 @@ import numpy as np
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
-from integration.core import selectors
 
 # Импорт модуля приветствия
 from modules.welcome_message.core.welcome_player import WelcomePlayer
@@ -91,7 +90,6 @@ class WelcomeMessageIntegration:
         self._permission_recheck_task: Optional[asyncio.Task] = None
         self._welcome_played = False
         self._welcome_lock = asyncio.Lock()
-        self._deferred_until_first_run = False
         self._playback_ready = False
         self._playback_ready_event = asyncio.Event()
 
@@ -101,6 +99,28 @@ class WelcomeMessageIntegration:
         )
         if self._enforce_permissions:
             logger.info("🎙️ [WELCOME_INTEGRATION] Принудительная проверка микрофона включена конфигурацией")
+
+    def _schedule_on_event_loop(self, coro: "asyncio.Future[Any] | Any") -> None:
+        """Планирует корутину в loop EventBus (SoT для фоновой async-работы)."""
+        try:
+            target_loop = self.event_bus.get_loop()
+        except Exception:
+            target_loop = None
+
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if target_loop and target_loop.is_running() and target_loop != current_loop:
+            fut = asyncio.run_coroutine_threadsafe(coro, target_loop)
+            fut.add_done_callback(
+                lambda f: logger.error("❌ [WELCOME_INTEGRATION] background task failed: %s", f.exception())
+                if f.exception() else None
+            )
+            return
+
+        asyncio.create_task(coro)
     
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -119,7 +139,7 @@ class WelcomeMessageIntegration:
             self._initialized = True
             logger.info("✅ [WELCOME_INTEGRATION] Инициализирован")
             # Запрашиваем актуальный статус разрешений (не блокируем initialize)
-            asyncio.create_task(self._request_initial_permission_status())
+            self._schedule_on_event_loop(self._request_initial_permission_status())
             return True
             
         except Exception as e:
@@ -136,7 +156,9 @@ class WelcomeMessageIntegration:
         self._running = True
         logger.info("✅ [WELCOME_INTEGRATION] Запущен")
         if self._pending_welcome and self._playback_ready:
-            asyncio.create_task(self._request_welcome_play("playback_ready", allow_pending=True))
+            self._schedule_on_event_loop(
+                self._request_welcome_play("playback_ready", allow_pending=True)
+            )
         return True
     
     async def stop(self) -> bool:
@@ -158,13 +180,6 @@ class WelcomeMessageIntegration:
                 logger.info("🔇 [WELCOME_INTEGRATION] Приветствие отключено в конфигурации")
                 return
 
-            # Ждём завершения first-run, чтобы приветствие воспроизводилось после разрешений
-            snapshot = selectors.create_snapshot_from_state(self.state_manager)
-            if snapshot.first_run:
-                self._deferred_until_first_run = True
-                logger.info("⏳ [WELCOME_INTEGRATION] First-run in progress — откладываем приветствие до permissions.first_run_completed")
-                return
-            
             await self._request_welcome_play("system_ready")
 
             # 🎙️ Разрешения будут запрошены через PermissionsIntegration автоматически
@@ -175,12 +190,11 @@ class WelcomeMessageIntegration:
             await self._handle_error(e, where="welcome.on_ready_to_greet", severity="warning")
 
     async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
-        """Запускаем приветствие после завершения first-run."""
-        if not self._deferred_until_first_run:
-            return
-        self._deferred_until_first_run = False
+        """Legacy fallback: поддерживаем completion-триггер без локального defer-state."""
         try:
-            await self._on_ready_to_greet({"data": {"source": "permissions.first_run_completed"}})
+            if not self.config.enabled:
+                return
+            await self._request_welcome_play("permissions_first_run_completed")
         except Exception as e:
             await self._handle_error(e, where="welcome.on_first_run_completed", severity="warning")
 
@@ -192,7 +206,9 @@ class WelcomeMessageIntegration:
         self._playback_ready_event.set()
         logger.info("✅ [WELCOME_INTEGRATION] Playback ready")
         if self._pending_welcome and not self._welcome_played:
-            asyncio.create_task(self._request_welcome_play("playback_ready", allow_pending=True))
+            self._schedule_on_event_loop(
+                self._request_welcome_play("playback_ready", allow_pending=True)
+            )
 
     async def _request_welcome_play(self, trigger: str, allow_pending: bool = False) -> None:
         """Единая точка запуска приветствия с gate по playback."""
@@ -251,19 +267,29 @@ class WelcomeMessageIntegration:
             
             if result.success:
                 logger.info(f"✅ [WELCOME_INTEGRATION] Приветствие воспроизведено: {result.method}, {result.duration_sec:.1f}s")
-                
-                # ИСПРАВЛЕНО: Отправляем аудио ЗДЕСЬ в async контексте, а не из callback
-                if result.method == "server":
-                    audio_data = self.welcome_player.get_audio_data()
-                    if audio_data is not None:
-                        logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration (async context)")
-                        await self._send_audio_to_playback(audio_data)
-                        
-                        # Ждём завершения воспроизведения
-                        logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
-                        await self._wait_for_playback_completion()
-                    else:
-                        logger.error("❌ [WELCOME_INTEGRATION] audio_data is None - не могу отправить в playback")
+
+                # Централизованное правило:
+                # если сервер подготовил аудио (независимо от method), проигрываем через общий playback.
+                # локальный fallback уже проигрывается командой `say`, дублировать не нужно.
+                audio_data = self.welcome_player.get_audio_data()
+                should_send_to_playback = audio_data is not None and result.method != "local_fallback"
+                if should_send_to_playback:
+                    logger.info(
+                        "🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration "
+                        "(method=%s, async context)",
+                        result.method,
+                    )
+                    await self._send_audio_to_playback(audio_data)
+
+                    # Ждём завершения воспроизведения
+                    logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
+                    await self._wait_for_playback_completion()
+                elif audio_data is None:
+                    logger.warning(
+                        "⚠️ [WELCOME_INTEGRATION] Приветствие success, но audio_data отсутствует "
+                        "(method=%s) — playback пропущен",
+                        result.method,
+                    )
             else:
                 logger.warning(f"⚠️ [WELCOME_INTEGRATION] Приветствие не удалось: {result.error}")
             
@@ -304,7 +330,7 @@ class WelcomeMessageIntegration:
         """Коллбек завершения воспроизведения приветствия"""
         try:
             logger.info(f"🎵 [WELCOME_INTEGRATION] Приветствие завершено: {result.method}, success={result.success}")
-            self._welcome_played = True
+            self._welcome_played = bool(result.success)
 
             # 🔍 ДИАГНОСТИКА: Подробное логирование результата
             logger.info(f"🔍 [WELCOME_INTEGRATION] result.success={result.success}, result.method={result.method}")
@@ -517,10 +543,12 @@ class WelcomeMessageIntegration:
         if status_normalized == "granted":
             self._pending_welcome = False
             self._permission_prompted = False
-            asyncio.create_task(self._cancel_permission_recheck_task())
+            self._schedule_on_event_loop(self._cancel_permission_recheck_task())
             # Если ожидали приветствие, запускаем его после получения разрешения
             if self.config.enabled and self.welcome_player:
-                asyncio.create_task(self._request_welcome_play("permissions", allow_pending=True))
+                self._schedule_on_event_loop(
+                    self._request_welcome_play("permissions", allow_pending=True)
+                )
         else:
             # Любой статус кроме granted означает, что приветствие пока нельзя воспроизвести
             self._pending_welcome = True

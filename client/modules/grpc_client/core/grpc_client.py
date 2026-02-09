@@ -344,6 +344,9 @@ class GrpcClient:
 
         Returns dict c numpy массивом аудио и метаданными.
         """
+        call_timeout = timeout or self.config.get('welcome_timeout_sec', 30.0)
+        bridge_timeout = float(call_timeout) + 5.0
+
         # КРИТИЧНО: gRPC aio channel привязан к loop, в котором создан.
         # Если вызываем из другого loop — проксируем в loop канала.
         channel_loop = self.connection_manager.get_channel_loop()
@@ -352,19 +355,32 @@ class GrpcClient:
         except RuntimeError:
             current_loop = None
         if channel_loop and current_loop and channel_loop != current_loop:
-            return await asyncio.wrap_future(
-                asyncio.run_coroutine_threadsafe(
-                    self._generate_welcome_audio_in_loop(
-                        text=text,
-                        voice=voice,
-                        language=language,
-                        session_id=session_id,
-                        timeout=timeout,
-                        server_name=server_name,
-                    ),
-                    channel_loop,
-                )
+            logger.info(
+                "🔌 [WELCOME_BRIDGE] cross-loop call: current_loop=%s channel_loop=%s timeout=%.1fs",
+                id(current_loop),
+                id(channel_loop),
+                bridge_timeout,
             )
+            future = asyncio.run_coroutine_threadsafe(
+                self._generate_welcome_audio_in_loop(
+                    text=text,
+                    voice=voice,
+                    language=language,
+                    session_id=session_id,
+                    timeout=timeout,
+                    server_name=server_name,
+                ),
+                channel_loop,
+            )
+            try:
+                return await asyncio.wait_for(asyncio.wrap_future(future), timeout=bridge_timeout)
+            except asyncio.TimeoutError:
+                future.cancel()
+                logger.error(
+                    "❌ [WELCOME_BRIDGE] timeout waiting cross-loop result (%.1fs)",
+                    bridge_timeout,
+                )
+                raise
 
         return await self._generate_welcome_audio_in_loop(
             text=text,

@@ -35,3 +35,6 @@ class StateKeys:
     
     # Whatsapp keys
     WHATSAPP_STATUS = "whatsapp.status"
+
+    # Network keys
+    NETWORK_STATUS = "network.status"

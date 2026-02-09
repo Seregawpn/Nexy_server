@@ -20,10 +20,10 @@ from integration.core.state_manager import ApplicationStateManager
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
     # Preferred: top-level import (packaged or PYTHONPATH includes modules)
-    pass  # type: ignore[reportMissingImports]
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
 except Exception:
     # Fallback: explicit modules path if repository layout is used
-    pass  # type: ignore[reportMissingImports]
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 from integration.adapters.signals_event_sink import EventBusAudioSink
 from modules.signals.channels.audio_tone import AudioToneChannel
@@ -74,12 +74,12 @@ class SignalIntegration:
                     # Ignore unknown names to keep robust
                     pass
         else:
-            # sensible defaults (чуть больший cooldown для LISTEN_START, чтобы гасить дребезг)
+            # sensible defaults tuned for deterministic UX cues on mode transitions
             cooldowns = {
-                SignalPattern.LISTEN_START: CooldownPolicy(600),
-                SignalPattern.DONE: CooldownPolicy(2000),  # Увеличиваем cooldown для DONE до 2 секунд
+                SignalPattern.LISTEN_START: CooldownPolicy(250),
+                SignalPattern.DONE: CooldownPolicy(400),
                 SignalPattern.ERROR: CooldownPolicy(150),
-                SignalPattern.CANCEL: CooldownPolicy(150),
+                SignalPattern.CANCEL: CooldownPolicy(200),
             }
 
         self._service = SimpleSignalService(
@@ -94,17 +94,22 @@ class SignalIntegration:
         # Это предотвращает ложные подавления сигнала при одинаковых session_id между активациями
         self._last_cancel_ts: float = 0.0
         self._cancel_cooldown_sec: float = 0.5
+        self._last_mode: AppMode | None = None
+        self._last_error_ts: float = 0.0
+        self._error_to_done_suppress_sec: float = 1.0
 
     async def initialize(self) -> bool:
         try:
-            # Subscriptions: map app/audio/grpc events to signal requests
-            # Для LISTEN_START используем только voice.mic_opened (исключаем дубли с app.mode_changed)
-            await self.event_bus.subscribe("voice.mic_opened", self._on_voice_mic_opened, EventPriority.MEDIUM)
+            # Source of truth for UX cues is app.mode_changed (centralized mode coordinator).
+            await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed, EventPriority.HIGH)
+            # Short-press reset should always produce cancel cue.
+            await self.event_bus.subscribe("keyboard.short_press", self._on_interrupt, EventPriority.CRITICAL)
             await self.event_bus.subscribe("playback.completed", self._on_playback_completed, EventPriority.MEDIUM)
             await self.event_bus.subscribe("playback.cancelled", self._on_playback_cancelled, EventPriority.MEDIUM)
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
             await self.event_bus.subscribe("grpc.request_failed", self._on_error_like, EventPriority.MEDIUM)
             await self.event_bus.subscribe("voice.recognition_failed", self._on_error_like, EventPriority.MEDIUM)
+            self._last_mode = self.state_manager.get_current_mode()
             self._initialized = True
             logger.info("SignalIntegration initialized")
             return True
@@ -124,11 +129,39 @@ class SignalIntegration:
 
     # Handlers
     async def _on_mode_changed(self, event: dict[str, Any]):
-        # Игнорируем LISTEN_START здесь, чтобы не дублировать с voice.mic_opened
         try:
-            pass
+            data = (event or {}).get("data", {})
+            mode_raw = data.get("mode")
+            mode = self._normalize_mode(mode_raw)
+            prev_mode = self._last_mode
+            self._last_mode = mode
+            if mode is None:
+                return
+
+            if mode == AppMode.LISTENING:
+                logger.info("Signals: LISTEN_START (app.mode_changed)")
+                await self._service.emit(
+                    SignalRequest(pattern=SignalPattern.LISTEN_START, kind=SignalKind.AUDIO)
+                )
+                return
+
+            if mode == AppMode.SLEEPING and prev_mode is not None and prev_mode != AppMode.SLEEPING:
+                # DONE-паттерн на переходе в sleeping отключен:
+                # иначе получается рассинхрон "режим sleeping, но еще звучит done-сигнал".
+                logger.debug("Signals: DONE skipped (mode_changed -> sleeping disabled)")
         except Exception:
             pass
+
+    @staticmethod
+    def _normalize_mode(mode_raw: Any) -> AppMode | None:
+        if isinstance(mode_raw, AppMode):
+            return mode_raw
+        if mode_raw is None:
+            return None
+        try:
+            return AppMode(str(mode_raw))
+        except Exception:
+            return None
 
     async def _on_voice_mic_opened(self, event: dict[str, Any]):
         try:
@@ -162,20 +195,6 @@ class SignalIntegration:
             if not isinstance(payload, dict):
                 payload = raw_event if isinstance(raw_event, dict) else {}
 
-            reason = payload.get("reason") or payload.get("source")
-
-            if reason and str(reason).lower() in {
-                "grpc_cancel",
-                "short_press",
-                "keyboard",
-                "interrupt",
-                "interrupt_request",
-                "interrupt_manager",
-                "speech_stop",
-            }:
-                logger.debug("Signals: CANCEL skipped (reason=%s)", reason)
-                return
-
             logger.info("Signals: CANCEL (playback.cancelled)")
             await self._service.emit(SignalRequest(pattern=SignalPattern.CANCEL, kind=SignalKind.AUDIO))
             self._last_cancel_ts = now
@@ -184,15 +203,25 @@ class SignalIntegration:
 
     async def _on_interrupt(self, event: dict[str, Any]):
         try:
-            logger.info("Signals: CANCEL (interrupt.request)")
+            now = time.monotonic()
+            if (now - self._last_cancel_ts) < self._cancel_cooldown_sec:
+                logger.debug("Signals: CANCEL skipped (interrupt cooldown)")
+                return
+            logger.info("Signals: CANCEL (keyboard.short_press)")
             await self._service.emit(SignalRequest(pattern=SignalPattern.CANCEL, kind=SignalKind.AUDIO))
+            self._last_cancel_ts = now
         except Exception as e:
             logger.debug(f"SignalIntegration _on_interrupt error: {e}")
 
     async def _on_error_like(self, event: dict[str, Any]):
         try:
+            current_mode = self.state_manager.get_current_mode()
+            if current_mode == AppMode.SLEEPING:
+                logger.debug("Signals: ERROR skipped (already sleeping)")
+                return
             logger.info("Signals: ERROR (failure event)")
             await self._service.emit(SignalRequest(pattern=SignalPattern.ERROR, kind=SignalKind.AUDIO))
+            self._last_error_ts = time.monotonic()
         except Exception as e:
             logger.debug(f"SignalIntegration _on_error_like error: {e}")
 

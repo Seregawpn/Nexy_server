@@ -23,6 +23,7 @@ import numpy as np
 from config.unified_config_loader import UnifiedConfigLoader
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_keys import StateKeys
 from integration.core.state_manager import ApplicationStateManager
 from integration.utils.env_detection import is_production_env
 
@@ -229,10 +230,12 @@ class GrpcClientIntegration:
             except Exception:
                 pass
             await self.event_bus.subscribe("network.status_changed", self._on_network_status_changed, EventPriority.MEDIUM)
+            await self.event_bus.subscribe("network.status_snapshot", self._on_network_status_changed, EventPriority.MEDIUM)
             await self.event_bus.subscribe("grpc.tts_request", self._on_tts_request, EventPriority.HIGH)
             await self.event_bus.subscribe("grpc.report_usage", self._on_report_usage, EventPriority.LOW)
             await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
 
+            self._hydrate_network_from_state()
             self._initialized = True
             logger.info("GrpcClientIntegration initialized")
             return True
@@ -471,10 +474,29 @@ class GrpcClientIntegration:
     async def _on_network_status_changed(self, event):
         try:
             data = (event or {}).get("data", {})
-            new = data.get("new") or data.get("status") or "unknown"
-            self._network_connected = (str(new).lower() == 'connected')
+            new = data.get("new") or data.get("status")
+            self._network_connected = self._to_network_connected(new)
         except Exception:
             pass
+
+    def _hydrate_network_from_state(self) -> None:
+        """Read initial network axis from state to avoid startup race."""
+        try:
+            raw = self.state_manager.get_state_data(StateKeys.NETWORK_STATUS, None)
+            self._network_connected = self._to_network_connected(raw)
+            logger.debug("Hydrated initial network state: raw=%s connected=%s", raw, self._network_connected)
+        except Exception as e:
+            logger.debug("Failed to hydrate network state from state manager: %s", e)
+
+    @staticmethod
+    def _to_network_connected(raw_status: Any) -> bool | None:
+        """Map status payload to bool gate: True/False, None for unknown."""
+        value = str(raw_status or "").lower()
+        if value in {"connected", "online"}:
+            return True
+        if value in {"disconnected", "offline", "failed"}:
+            return False
+        return None
 
     async def _on_tts_request(self, event):
         """Handle TTS request via server GenerateWelcomeAudio (EdgeTTS).
@@ -562,10 +584,16 @@ class GrpcClientIntegration:
         if session_id in self._inflight:
             return
 
-        # Сеть: если явно оффлайн и включена сет.защелка — не отправляем
+        # Сеть: если локальный status говорит "offline", пробуем single-flight reconnect,
+        # чтобы не блокировать отправку из-за stale network state.
         if self.config.use_network_gate and self._network_connected is False:
-            await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "offline"})
-            return
+            logger.warning("Network gate is offline for session %s: attempting reconnect probe", session_id)
+            can_reconnect = await self._ensure_connected()
+            if not can_reconnect:
+                await self.event_bus.publish("grpc.request_failed", {"session_id": session_id, "error": "offline"})
+                return
+            self._network_connected = True
+            logger.info("Network gate recovered by reconnect probe for session %s", session_id)
 
         async def _delayed_send():
             try:

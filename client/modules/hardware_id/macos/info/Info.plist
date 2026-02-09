@@ -22,9 +22,9 @@
 	<key>CFBundleName</key>
 	<string>NexyHardwareID</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.6.1.23</string>
+	<string>1.6.1.24</string>
 	<key>CFBundleVersion</key>
-	<string>1.6.1.23</string>
+	<string>1.6.1.24</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSArchitectureFlags</key>

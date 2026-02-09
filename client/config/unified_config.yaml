@@ -29,7 +29,7 @@ app:
   debug: false
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.1.23
+  version: 1.6.1.24
 default_audio:
   target_sample_rate: 16000
   target_channels: 1
@@ -146,7 +146,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: local
+    server: production
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 0.0
     max_retries: 3

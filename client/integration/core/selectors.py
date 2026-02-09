@@ -409,6 +409,22 @@ def create_snapshot_from_state(
     
     # TODO: Get actual permission statuses from PermissionsIntegration if available
     
+    # Get network status (single state axis owned by NetworkManagerIntegration).
+    try:
+        raw_network = state_manager.get_state_data(StateKeys.NETWORK_STATUS, None)
+        if raw_network is None:
+            network_status = default_network
+        else:
+            value = str(raw_network).lower()
+            if value in ("online", "connected"):
+                network_status = NetworkStatus.ONLINE
+            elif value in ("offline", "disconnected", "failed"):
+                network_status = NetworkStatus.OFFLINE
+            else:
+                network_status = default_network
+    except Exception:
+        network_status = default_network
+
     # Get update_in_progress status
     update_in_progress = is_update_in_progress(state_manager)
     
@@ -424,7 +440,7 @@ def create_snapshot_from_state(
         perm_screen=perm_screen,
         perm_accessibility=perm_accessibility,
         device_input=default_device,
-        network=default_network,
+        network=network_status,
         first_run=first_run,
         app_mode=current_mode,
         restart_pending=restart_pending,

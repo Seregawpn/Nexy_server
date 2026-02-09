@@ -1,47 +1,53 @@
 """
-Нативный монитор клавиатуры для macOS через Quartz CGEventTap.
+Minimal Quartz keyboard monitor for macOS.
 
-API совместим с KeyboardMonitor: register_callback, set_loop, start_monitoring, stop_monitoring, get_status.
+Responsibilities:
+- low-level key edge detection (PRESS / LONG_PRESS / RELEASE)
+- optional SHORT_PRESS for non-combo key
+- event suppression for combo hotkey (Ctrl+N)
+- tap health status exposure
+
+Business lifecycle decisions are owned by InputProcessingIntegration.
 """
 
-# pyright: reportAttributeAccessIssue=false, reportPossiblyUnboundVariable=false
-# PyObjC imports are dynamically loaded and cannot be statically analyzed
+from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 import threading
 import time
-from typing import Optional, Callable, Dict, Any
+import uuid
+from typing import Any, Callable, Dict, Optional
 
 try:
     from Quartz import (  # type: ignore
+        CFMachPortCreateRunLoopSource,
+        CFRunLoopAddSource,
+        CFRunLoopGetMain,
+        CFRunLoopSourceInvalidate,
+        CGEventGetFlags,
+        CGEventGetIntegerValueField,
         CGEventTapCreate,
         CGEventTapEnable,
-        CFRunLoopAddSource,
-        CFRunLoopGetCurrent,
-        CFRunLoopGetMain,
-        CFRunLoopRunInMode,
-        CFRunLoopSourceInvalidate,
-        CFMachPortCreateRunLoopSource,
-        kCGHIDEventTap,
-        kCGHeadInsertEventTap,
-        kCGEventTapOptionListenOnly,
-        kCGEventTapOptionDefault,
+        CGEventTapIsEnabled,
+        kCFRunLoopCommonModes,
+        kCGEventFlagMaskControl,
+        kCGEventFlagMaskShift,
+        kCGEventFlagsChanged,
         kCGEventKeyDown,
         kCGEventKeyUp,
-        kCGEventFlagsChanged,
-        kCFRunLoopCommonModes,
-        kCFRunLoopDefaultMode,
-        CGEventGetIntegerValueField,
-        CGEventGetFlags,
-        kCGKeyboardEventKeycode,
-        kCGEventFlagMaskShift,
-        kCGEventFlagMaskControl,
         kCGEventTapDisabledByTimeout,
         kCGEventTapDisabledByUserInput,
+        kCGEventTapOptionDefault,
+        kCGEventTapOptionListenOnly,
+        kCGHIDEventTap,
+        kCGHeadInsertEventTap,
+        kCGKeyboardEventKeycode,
     )
+
     QUARTZ_AVAILABLE = True
-except Exception as e:  # pragma: no cover
+except Exception:
     QUARTZ_AVAILABLE = False
 
 from ..types import KeyEvent, KeyEventType, KeyboardConfig
@@ -50,17 +56,13 @@ logger = logging.getLogger(__name__)
 
 
 class QuartzKeyboardMonitor:
-    """Глобальный монитор клавиатуры на macOS через Quartz Event Tap."""
+    """Thin Quartz adapter."""
 
-    # Keycodes для macOS (US layout)
     KEYCODES = {
-        "left_shift": 56,  # Левый Shift
-        # При необходимости можно расширить: space(49), enter(36), esc(53), right_shift(60), alt(58/61)
+        "left_shift": 56,
     }
-    
-    # Keycodes для комбинации Control+N
-    CONTROL_KEYCODES = {59, 62}  # Левый и правый Control (по умолчанию используем оба)
-    N_KEYCODE = 45  # Клавиша N (US layout)
+    CONTROL_KEYCODES = {59, 62}
+    N_KEYCODE = 45
 
     def __init__(self, config: KeyboardConfig):
         self.config = config
@@ -69,661 +71,85 @@ class QuartzKeyboardMonitor:
         self.long_press_threshold = config.long_press_threshold
         self.event_cooldown = config.event_cooldown
         self.hold_check_interval = config.hold_check_interval
-        # Защита от залипания: таймауты для сброса состояния
-        self.combo_timeout_sec = config.combo_timeout_sec
-        self.key_state_timeout_sec = config.key_state_timeout_sec
 
-        # Состояние
         self.is_monitoring = False
+        self.keyboard_available = QUARTZ_AVAILABLE
+        self.fallback_mode = False
+
+        self._is_combo = self.key_to_monitor == "ctrl_n"
+        self._target_keycode = None if self._is_combo else self.KEYCODES.get(self.key_to_monitor)
+        if not self._is_combo and self._target_keycode is None:
+            self.keyboard_available = False
+
         self.key_pressed = False
         self.press_start_time: Optional[float] = None
         self.last_event_time = 0.0
         self._long_sent = False
-        # КРИТИЧНО: Флаг для предотвращения двойной обработки между flagsChanged и keyUp
-        self._event_processed = False
-        self._last_event_timestamp = 0.0
 
-        # Потоки
-        self.hold_monitor_thread: Optional[threading.Thread] = None
-        self.stop_event = threading.Event()
-        self.state_lock = threading.RLock()
-
-        # Callbacks
-        self.event_callbacks: Dict[KeyEventType, Callable] = {}
-
-        # Async loop для async-колбэков
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-
-        # Quartz объекты
-        self._tap = None
-        self._tap_source = None
-        
-        # Watchdog для восстановления CGEventTap (если система его отключила)
-        self._last_tap_check_time: float = 0.0
-        self._tap_check_interval: float = 2.0  # Проверка каждые 2 секунды
-        self._tap_recovery_count: int = 0  # Счётчик восстановлений
-        
-        # Отслеживание предыдущего состояния модификаторов (для kCGEventFlagsChanged)
-        self._previous_left_shift_pressed = False
-        
-        # Состояние для комбинации Control+N
         self._control_pressed = False
         self._n_pressed = False
         self._combo_active = False
         self._combo_start_time: Optional[float] = None
-        # Время последнего события для каждой клавиши (для защиты от залипания)
-        self._control_last_event_time: Optional[float] = None
-        self._n_last_event_time: Optional[float] = None
-        # Защита от случайной реактивации комбинации после деактивации
-        # (когда пользователь отпускает Ctrl, но N ещё нажат, и случайно снова нажимает Ctrl)
-        self._combo_deactivation_time: Optional[float] = None
-        self._combo_reactivation_cooldown: float = 0.3  # 0.3s cooldown (защита от случайных двойных нажатий)
+        self._combo_press_id: Optional[str] = None
+        self._pending_release_deadline: Optional[float] = None
+        self._pending_release_reason: Optional[str] = None
+        self._release_confirm_delay_sec: float = 0.09
 
-        # Доступность
-        self.keyboard_available = QUARTZ_AVAILABLE
-        if not QUARTZ_AVAILABLE:
-            logger.warning("⚠️ Quartz недоступен — нативный монитор клавиатуры отключен")
+        self._previous_left_shift_pressed = False
 
-        # Целевой keycode или комбинация
-        if self.key_to_monitor == "ctrl_n":
-            # Для комбинации не нужен одиночный keycode
-            self._target_keycode = None
-            self._is_combo = True
-        else:
-            self._target_keycode = self.KEYCODES.get(self.key_to_monitor, None)
-            self._is_combo = False
-            if self._target_keycode is None:
-                logger.warning(f"⚠️ Неподдерживаемая клавиша для Quartz: {self.key_to_monitor}")
-                self.keyboard_available = False
+        self._tap = None
+        self._tap_source = None
+        self._tap_recovery_count = 0
 
-    def _reconcile_combo_state(self):
-        """
-        Синхронизирует локальное состояние комбинации с реальным системным состоянием клавиш.
-        Это единственный источник истины для проверки залипания.
-        
-        ВАЖНО: Вызывается только из watchdog (_check_and_reset_stuck_state), не из event-path,
-        чтобы избежать ложных сбросов во время активного удержания.
-        """
-        if not self._is_combo:
-            return
-        
-        try:
-            from Quartz import (
-                CGEventSourceFlagsState,
-                CGEventSourceKeyState,
-                kCGEventSourceStateHIDSystemState,
-                kCGEventFlagMaskControl,
-            )  # type: ignore
-            
-            # Проверяем реальное состояние Control через флаги
-            actual_flags = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
-            actual_control_pressed = bool(actual_flags & kCGEventFlagMaskControl)
-            
-            # Проверяем реальное состояние клавиши N
-            actual_n_pressed = bool(CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, self.N_KEYCODE))
-            
-            # Синхронизируем локальное состояние с реальным
-            state_changed = False
-            now = time.time()
-            
-            # Grace window для N: не синхронизируем если последнее событие было недавно
-            # Это защищает от ложных сбросов во время активного удержания, когда
-            # CGEventSourceKeyState может вернуть False из-за подавления системных событий
-            # КРИТИЧНО: Увеличен до 1.5s т.к. автоповторы могут приходить с интервалом до ~100ms,
-            # и между последним автоповтором и проверкой watchdog может пройти значительное время
-            GRACE_WINDOW_SEC = 1.5  # 1.5s grace window для защиты активного удержания
-            
-            with self.state_lock:
-                # Проверяем рассинхронизацию Control с grace window
-                # Grace window защищает от ложных сбросов когда Control только что был нажат/отпущен
-                # и системное событие ещё не было обработано (race condition с watchdog)
-                if self._control_pressed != actual_control_pressed:
-                    # Grace window: не синхронизируем Control если последнее событие было недавно
-                    # Это защищает от ложных сбросов во время активного удержания
-                    if self._control_last_event_time is not None:
-                        time_since_event = now - self._control_last_event_time
-                        if time_since_event < GRACE_WINDOW_SEC:
-                            logger.debug(
-                                f"🔒 Grace window для Control: пропускаем синхронизацию "
-                                f"(time_since_event={time_since_event:.3f}s < {GRACE_WINDOW_SEC}s, "
-                                f"local={self._control_pressed}, actual={actual_control_pressed})"
-                            )
-                            # Не синхронизируем Control, продолжаем проверку N
-                        else:
-                            # Grace window истек, синхронизируем
-                            logger.warning(
-                                f"⚠️ РАССИНХРОНИЗАЦИЯ Control: local={self._control_pressed}, actual={actual_control_pressed}. "
-                                f"Синхронизируем с системным состоянием (grace window истек: {time_since_event:.3f}s)."
-                            )
-                            self._control_pressed = actual_control_pressed
-                            self._control_last_event_time = now if actual_control_pressed else None
-                            state_changed = True
-                    else:
-                        # Нет последнего события, синхронизируем сразу
-                        logger.warning(
-                            f"⚠️ РАССИНХРОНИЗАЦИЯ Control: local={self._control_pressed}, actual={actual_control_pressed}. "
-                            f"Синхронизируем с системным состоянием (нет последнего события)."
-                        )
-                        self._control_pressed = actual_control_pressed
-                        self._control_last_event_time = now if actual_control_pressed else None
-                        state_changed = True
-                
-                # Проверяем рассинхронизацию N с grace window
-                # КРИТИЧНО: Если комбинация активна, ПОЛНОСТЬЮ пропускаем синхронизацию N
-                # через CGEventSourceKeyState, т.к. мы подавляем события N (return None),
-                # и CGEventSourceKeyState возвращает ненадежный результат.
-                # Вместо этого доверяем автоповторам keyDown N, которые обновляют _n_last_event_time.
-                if self._combo_active and self._n_pressed:
-                    # Комбинация активна и N считается зажатой - НЕ синхронизируем с системой
-                    # Доверяем только таймаутам (combo_timeout_sec, key_state_timeout_sec)
-                    if self._n_pressed != actual_n_pressed:
-                        logger.debug(
-                            f"🔒 Комбинация активна: пропускаем синхронизацию N "
-                            f"(local={self._n_pressed}, actual={actual_n_pressed}, "
-                            f"CGEventSourceKeyState ненадежен из-за подавления событий)"
-                        )
-                elif self._n_pressed != actual_n_pressed:
-                    # Grace window: не синхронизируем N если последнее событие было недавно
-                    # Это защищает от ложных сбросов во время активного удержания
-                    if self._n_last_event_time is not None:
-                        time_since_event = now - self._n_last_event_time
-                        if time_since_event < GRACE_WINDOW_SEC:
-                            logger.debug(
-                                f"🔒 Grace window для N: пропускаем синхронизацию "
-                                f"(time_since_event={time_since_event:.3f}s < {GRACE_WINDOW_SEC}s, "
-                                f"local={self._n_pressed}, actual={actual_n_pressed})"
-                            )
-                            # Не синхронизируем N, но продолжаем проверку Control
-                        else:
-                            # Grace window истек, синхронизируем
-                            logger.warning(
-                                f"⚠️ РАССИНХРОНИЗАЦИЯ N: local={self._n_pressed}, actual={actual_n_pressed}. "
-                                f"Синхронизируем с системным состоянием (grace window истек: {time_since_event:.3f}s)."
-                            )
-                            self._n_pressed = actual_n_pressed
-                            self._n_last_event_time = now if actual_n_pressed else None
-                            state_changed = True
-                    else:
-                        # Нет последнего события, синхронизируем сразу
-                        logger.warning(
-                            f"⚠️ РАССИНХРОНИЗАЦИЯ N: local={self._n_pressed}, actual={actual_n_pressed}. "
-                            f"Синхронизируем с системным состоянием (нет последнего события)."
-                        )
-                        self._n_pressed = actual_n_pressed
-                        self._n_last_event_time = now if actual_n_pressed else None
-                        state_changed = True
-                
-                # Если состояние изменилось, обновляем комбинацию
-                if state_changed:
-                    self._update_combo_state()
-                    
-        except Exception as e:
-            logger.debug(f"⚠️ Не удалось синхронизировать состояние комбинации: {e}")
-    
-    def _handle_combo_event(self, event_type, event):
-        """Обрабатывает события для комбинации Control+N"""
-        try:
-            # КРИТИЧНО: НЕ синхронизируем состояние в event-path, чтобы избежать ложных сбросов
-            # во время активного удержания. Синхронизация выполняется только в watchdog
-            # (_check_and_reset_stuck_state), что безопасно и не конфликтует с реальными событиями.
-            
-            now = time.time()
-            
-            # Обработка flagsChanged для Control
-            if event_type == kCGEventFlagsChanged:
-                keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-                flags = CGEventGetFlags(event)
-                control_pressed = bool(flags & kCGEventFlagMaskControl)
-                
-                # Проверяем, что это событие для Control (keycode 59 или 62)
-                if keycode in self.CONTROL_KEYCODES:
-                    with self.state_lock:
-                        # Сохраняем предыдущее состояние для принятия решения о подавлении
-                        was_combo_active = self._combo_active
-                        was_n_pressed = self._n_pressed
-                        
-                        # КРИТИЧНО: Если комбинация активна и событие говорит "Control отпущен",
-                        # NOTE: Логика игнорирования "ложных" Control release УДАЛЕНА.
-                        # CGEventSourceFlagsState возвращает некорректные данные из-за
-                        # подавления событий, что вызывало залипание клавиш.
-                        
-                        self._control_pressed = control_pressed
-                        # Обновляем время последнего события для защиты от залипания
-                        # КРИТИЧНО: Устанавливаем время при ЛЮБОМ событии (нажатие или отпускание)
-                        # чтобы grace window в _reconcile_combo_state() работал корректно
-                        self._control_last_event_time = now
-                        
-                        # Обновляем состояние комбинации
-                        self._update_combo_state()
-                        
-                        # КРИТИЧНО: Подавляем flagsChanged для Control если:
-                        # 1. Комбинация была/стала активна, ИЛИ
-                        # 2. Клавиша N зажата (даже если комбинация формально неактивна)
-                        # Это предотвращает системные щелчки macOS (NSBeep)
-                        should_suppress = was_combo_active or self._combo_active or was_n_pressed or self._n_pressed
-                        if should_suppress:
-                            logger.debug(
-                                f"🔒 Quartz: подавляем flagsChanged Control "
-                                f"(was_combo={was_combo_active}, combo={self._combo_active}, "
-                                f"was_n={was_n_pressed}, n={self._n_pressed})"
-                            )
-                            return None
-                
-                return event
-            
-            # Обработка keyDown/keyUp для N
-            if event_type in (kCGEventKeyDown, kCGEventKeyUp):
-                keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-                
-                if keycode != self.N_KEYCODE:
-                    return event
-                
-                with self.state_lock:
-                    if event_type == kCGEventKeyDown:
-                        # Игнорируем автоповтор N, но обновляем время для защиты от залипания
-                        if self._n_pressed:
-                            logger.debug("🔒 Quartz: игнорируем автоповтор N")
-                            # КРИТИЧНО: Обновляем время последнего события при автоповторе,
-                            # чтобы показать, что клавиша реально зажата (не залипла)
-                            self._n_last_event_time = now
-                            # Подавляем событие - возвращаем None для блокировки keyDown N
-                            # Подавляем если комбинация активна ИЛИ Control зажат (для надежности)
-                            if self._combo_active or self._control_pressed:
-                                return None
-                            return event
-                        
-                        # Cooldown только для keyDown N
-                        if (now - self.last_event_time) < self.event_cooldown:
-                            logger.debug("🔒 Quartz: keyDown N пропущен из-за cooldown")
-                            # КРИТИЧНО: Подавляем событие даже при cooldown если Control зажат
-                            # Это предотвращает системные щелчки macOS
-                            if self._control_pressed:
-                                return None
-                            return event
-                        
-                        self._n_pressed = True
-                        self.last_event_time = now
-                        # Обновляем время последнего события для защиты от залипания
-                        self._n_last_event_time = now
-                        
-                        # Обновляем состояние комбинации
-                        self._update_combo_state()
-                        
-                        # КРИТИЧНО: Подавляем keyDown N если:
-                        # 1. Комбинация уже активна, ИЛИ
-                        # 2. Control уже зажат (даже если комбинация еще не активирована из-за race condition)
-                        # Это предотвращает системные щелчки macOS
-                        if self._combo_active or self._control_pressed:
-                            logger.debug(f"🔒 Quartz: подавляем keyDown N (combo_active={self._combo_active}, control_pressed={self._control_pressed}, предотвращаем системные щелчки)")
-                            return None
-                        
-                    else:  # kCGEventKeyUp
-                        if not self._n_pressed:
-                            return event
-                        
-                        # КРИТИЧНО: Сохраняем состояние комбинации ДО обновления,
-                        # чтобы знать, была ли она активна в момент keyUp
-                        was_combo_active = self._combo_active
-                        was_control_pressed = self._control_pressed
-                        
-                        # NOTE: Логика игнорирования "ложных" keyUp УДАЛЕНА.
-                        # Она вызывала залипание клавиш: когда реальный keyUp
-                        # приходил близко к автоповтору, он игнорировался,
-                        # и система бесконечно ждала следующего keyUp который никогда не придёт.
-                        
-                        self._n_pressed = False
-                        # Обновляем время последнего события для защиты от залипания
-                        # КРИТИЧНО: Устанавливаем время при ЛЮБОМ событии (keyDown или keyUp)
-                        # чтобы grace window в _reconcile_combo_state() работал корректно
-                        self._n_last_event_time = now
-                        
-                        # Обновляем состояние комбинации
-                        self._update_combo_state()
-                        
-                        # КРИТИЧНО: Подавляем keyUp N если:
-                        # 1. Комбинация БЫЛА активна в момент keyUp, ИЛИ
-                        # 2. Control БЫЛ зажат в момент keyUp (даже если комбинация не была активна из-за race condition)
-                        # Это предотвращает системные щелчки macOS
-                        if was_combo_active or was_control_pressed:
-                            logger.debug(f"🔒 Quartz: подавляем keyUp N (was_combo_active={was_combo_active}, was_control_pressed={was_control_pressed}, предотвращаем системные щелчки)")
-                            return None
-                
-                return event
-            
-            return event
-        except Exception as e:
-            logger.error(f"❌ Ошибка обработки combo события: {e}")
-            return event
-    
-    def _update_combo_state(self):
-        """Обновляет состояние комбинации Control+N и генерирует события при изменениях"""
-        now = time.time()
-        was_active = self._combo_active
-        should_be_active = self._control_pressed and self._n_pressed
-        
-        if should_be_active and not was_active:
-            # ЗАЩИТА: Проверяем cooldown после последней деактивации
-            # Это предотвращает случайную реактивацию, когда пользователь:
-            # 1. Отпускает Control (деактивация)
-            # 2. Случайно снова нажимает Control пока N ещё нажат
-            if self._combo_deactivation_time is not None:
-                time_since_deactivation = now - self._combo_deactivation_time
-                if time_since_deactivation < self._combo_reactivation_cooldown:
-                    logger.info(
-                        f"🔒 Combo реактивация заблокирована (cooldown): "
-                        f"прошло {time_since_deactivation:.3f}s < {self._combo_reactivation_cooldown}s"
-                    )
-                    return  # Не активируем комбинацию - ещё cooldown
-            
-            # Активация комбинации: обе клавиши зажаты
-            self._combo_active = True
-            self._combo_start_time = now
-            self._combo_deactivation_time = None  # Сброс времени деактивации
-            self._long_sent = False
-            self._event_processed = False
-            self._last_event_timestamp = 0.0
-            self.key_pressed = True  # Для совместимости с hold_monitor
-            self.press_start_time = now
-            
-            logger.info("✅ Control+N комбинация активирована")
-            ev = KeyEvent(
-                key=self.key_to_monitor,
-                event_type=KeyEventType.PRESS,
-                timestamp=now,
-            )
-            self._trigger_event(KeyEventType.PRESS, 0.0, ev)
-            
-        elif not should_be_active and was_active:
-            # Деактивация комбинации: одна из клавиш отпущена
-            # КРИТИЧНО: Для комбинации ctrl_n всегда генерируем только RELEASE
-            # "Short tap" вычисляется в input_processing_integration по длительности PRESS→RELEASE
-            
-            # 🔍 ДИАГНОСТИКА: Откуда вызвали деактивацию?
-            import traceback
-            caller_info = ''.join(traceback.format_stack()[-5:-1])
-            logger.warning(
-                f"⚠️ DEACTIVATION TRIGGERED!\n"
-                f"   control_pressed={self._control_pressed}, n_pressed={self._n_pressed}\n"
-                f"   n_last_event_time={self._n_last_event_time}, control_last_event_time={self._control_last_event_time}\n"
-                f"   Caller stack:\n{caller_info}"
-            )
-            
-            self._combo_active = False
-            duration = now - (self._combo_start_time or now)
-            self._combo_start_time = None
-            self._combo_deactivation_time = now  # Засекаем время деактивации для cooldown
-            
-            # Защита от двойной обработки
-            if self._event_processed and (now - self._last_event_timestamp) < 0.1:
-                logger.debug("🔒 Combo deactivation: событие уже обработано, пропускаем")
-                return
-            
-            long_sent_snapshot = self._long_sent
-            self.key_pressed = False
-            self.press_start_time = None
-            self.last_event_time = now
-            self._event_processed = True
-            self._last_event_timestamp = now
-            
-            # КРИТИЧНО: Для комбинации ctrl_n всегда генерируем только RELEASE
-            # Это устраняет гонку между SHORT_PRESS и RELEASE
-            # "Short tap" будет вычисляться в input_processing_integration._handle_key_release
-            # по длительности PRESS→RELEASE
-            logger.debug(f"🔑 Combo deactivation: генерируем RELEASE (long_sent={long_sent_snapshot}, duration={duration:.3f}s)")
-            ev = KeyEvent(
-                key=self.key_to_monitor,
-                event_type=KeyEventType.RELEASE,
-                timestamp=now,
-                duration=duration,
-            )
-            self._trigger_event(KeyEventType.RELEASE, duration, ev)
-    
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self.event_callbacks: Dict[KeyEventType, Callable] = {}
+
+        self.state_lock = threading.RLock()
+        self.stop_event = threading.Event()
+        self.hold_monitor_thread: Optional[threading.Thread] = None
+        self.callback_dispatch_thread: Optional[threading.Thread] = None
+        self._callback_queue: "queue.Queue[Optional[tuple[Callable, KeyEvent]]]" = queue.Queue()
+
+    # ---------- Public API ----------
     def register_callback(self, event_type, callback: Callable):
         if isinstance(event_type, str):
             try:
                 event_type = KeyEventType(event_type)
             except ValueError:
-                logger.warning(f"⚠️ Неизвестный тип события: {event_type}")
+                logger.warning("Unknown event_type: %s", event_type)
                 return
         self.event_callbacks[event_type] = callback
-        logger.info(f"🔑 QuartzMonitor: callback зарегистрирован для {event_type.value}")
-        print(f"🔑 QuartzMonitor: callback зарегистрирован для {event_type.value}")  # Для отладки
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
-        logger.info(f"🔑 QuartzMonitor: установлен event loop для async-колбэков (loop={id(loop)}, running={loop.is_running() if loop else False})")
-        print(f"🔑 QuartzMonitor: установлен event loop (loop={id(loop)}, running={loop.is_running() if loop else False})")
 
     def start_monitoring(self) -> bool:
         if not self.keyboard_available:
-            logger.warning("⚠️ Клавиатурный Quartz-монитор недоступен")
-            print("⚠️ Клавиатурный Quartz-монитор недоступен")
+            logger.warning("Quartz unavailable")
             return False
         if self.is_monitoring:
-            logger.warning("⚠️ Мониторинг уже запущен")
-            return False
-
-        # БЕЗОПАСНЫЙ РЕЖИМ: НЕ вызываем AXIsProcessTrustedWithOptions здесь!
-        # Любой вызов AX API может вызвать crash при первом запуске после сброса разрешений.
-        # Вместо этого полагаемся на CGEventTapCreate - он вернёт None если разрешений нет.
-        logger.info("🔐 Quartz: пропускаем проверку AX API (может вызвать crash)")
-        print("🔐 Quartz: пропускаем проверку AX API, полагаемся на CGEventTapCreate")
-        has_accessibility = None  # Unknown - проверим через CGEventTapCreate
+            return True
 
         try:
-            # Создаем Event Tap
+            event_mask = (1 << kCGEventKeyDown) | (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged)
+            tap_option = kCGEventTapOptionDefault if self._is_combo else kCGEventTapOptionListenOnly
+
             def _tap_callback(proxy, event_type, event, refcon):
                 try:
-                    # Обработка отключения event tap (Secure Input или таймаут)
-                    if event_type == kCGEventTapDisabledByTimeout:
+                    if event_type in (kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput):
                         self._tap_recovery_count += 1
-                        logger.warning(f"⚠️ Quartz tap disabled by timeout! Attempting recovery #{self._tap_recovery_count}...")
+                        logger.warning("Quartz tap disabled, recovery #%s", self._tap_recovery_count)
+                        self._force_release_if_active(reason="tap_disabled")
                         CGEventTapEnable(self._tap, True)
                         return None
-                    elif event_type == kCGEventTapDisabledByUserInput:
-                        self._tap_recovery_count += 1
-                        logger.warning(f"⚠️ Quartz tap disabled by user input (Secure Input)! Attempting recovery #{self._tap_recovery_count}...")
-                        CGEventTapEnable(self._tap, True)
-                        return None
-                        
-                    # Обработка комбинации Control+N
+
                     if self._is_combo:
                         return self._handle_combo_event(event_type, event)
-                    
-                    # Обработка одиночной клавиши (left_shift для обратной совместимости)
-                    # Логируем только события flagsChanged (для модификаторов) - это наша целевая клавиша
-                    # Остальные события (keyDown/keyUp для обычных клавиш) обрабатываем без логирования
-
-                    # Для модификаторов (Shift, Ctrl, Alt) может использоваться kCGEventFlagsChanged
-                    # В kCGEventFlagsChanged можно получить keycode события, чтобы определить, какой модификатор изменился
-                    if event_type == kCGEventFlagsChanged:
-                        # Получаем keycode события - это указывает, какой именно модификатор изменился
-                        keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-                        flags = CGEventGetFlags(event)
-                        shift_pressed = bool(flags & kCGEventFlagMaskShift)
-                        
-                        # Обрабатываем только Левый Shift (keycode=56), если это целевая клавиша
-                        # Игнорируем все остальные модификаторы (Right Shift, Ctrl, Alt и т.д.)
-                        if keycode == 56 and self._target_keycode == 56:
-                            logger.debug(f"🔍 FlagsChanged: Left Shift, shift_pressed={shift_pressed} (было {self._previous_left_shift_pressed})")
-                            # Отслеживаем изменение состояния: нажатие (False → True) или отпускание (True → False)
-                            if shift_pressed and not self._previous_left_shift_pressed:
-                                # Это keyDown для Левого Shift (состояние изменилось с False на True)
-                                logger.info(f"✅ Найден Левый Shift через FlagsChanged (keyDown)")
-                                with self.state_lock:
-                                    if not self.key_pressed:  # Защита от повторных событий
-                                        self.key_pressed = True
-                                        self.press_start_time = time.time()
-                                        self._long_sent = False  # Сбрасываем флаг для нового нажатия
-                                        self._event_processed = False  # Сбрасываем флаг обработки для нового нажатия
-                                        self._last_event_timestamp = 0.0
-                                        
-                                        # PRESS
-                                        ev = KeyEvent(
-                                            key=self.key_to_monitor,
-                                            event_type=KeyEventType.PRESS,
-                                            timestamp=self.press_start_time,
-                                        )
-                                        self._trigger_event(KeyEventType.PRESS, 0.0, ev)
-                            elif not shift_pressed and self._previous_left_shift_pressed:
-                                # Это keyUp для Левого Shift (состояние изменилось с True на False)
-                                logger.info(f"✅ Отпущен Левый Shift через FlagsChanged (keyUp)")
-                                with self.state_lock:
-                                    # КРИТИЧНО: Защита от двойной обработки - проверяем, что событие не было обработано через keyUp
-                                    now = time.time()
-                                    if self._event_processed and (now - self._last_event_timestamp) < 0.1:
-                                        logger.debug(f"🔒 FlagsChanged keyUp: событие уже обработано через keyUp, пропускаем")
-                                        # Обновляем состояние, но не генерируем события
-                                        if keycode == 56:
-                                            self._previous_left_shift_pressed = shift_pressed
-                                        return event
-                                    
-                                    if self.key_pressed:  # Защита от повторных событий
-                                        duration = now - (self.press_start_time or now)
-                                        
-                                        # КРИТИЧНО: Сбрасываем состояние ПОСЛЕ определения типа события,
-                                        # но ДО вызова _trigger_event, чтобы hold_monitor прекратил работу
-                                        long_sent_snapshot = self._long_sent
-                                        self.key_pressed = False
-                                        self.press_start_time = None
-                                        self.last_event_time = now
-                                        self._event_processed = True
-                                        self._last_event_timestamp = now
-                                        
-                                        # КРИТИЧНО: LONG_PRESS генерируется ТОЛЬКО из hold_monitor (во время удержания)
-                                        # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE
-                                        if long_sent_snapshot:
-                                            # LONG_PRESS уже был отправлен из hold_monitor - генерируем только RELEASE
-                                            logger.info(f"🔑 keyUp: short suppressed (long_sent=true) - генерируем только RELEASE")
-                                            event_type_out = KeyEventType.RELEASE
-                                        else:
-                                            # Если LONG_PRESS не был отправлен из hold_monitor, значит это было короткое нажатие
-                                            # Генерируем SHORT_PRESS (LONG_PRESS генерируется ТОЛЬКО из hold_monitor)
-                                            event_type_out = KeyEventType.SHORT_PRESS
-                                        
-                                        # Создаем событие
-                                        ev = KeyEvent(
-                                            key=self.key_to_monitor,
-                                            event_type=event_type_out,
-                                            timestamp=now,
-                                            duration=duration,
-                                        )
-                                        
-                                        # Отправляем событие (SHORT_PRESS или RELEASE)
-                                        # LONG_PRESS генерируется ТОЛЬКО из hold_monitor, не при keyUp
-                                        self._trigger_event(event_type_out, duration, ev)
-                                        
-                                        # RELEASE всегда отправляется после SHORT_PRESS
-                                        # НО: если event_type_out уже RELEASE, не отправляем его повторно
-                                        if event_type_out != KeyEventType.RELEASE:
-                                            ev_release = KeyEvent(
-                                                key=self.key_to_monitor,
-                                                event_type=KeyEventType.RELEASE,
-                                                timestamp=now,
-                                                duration=duration,
-                                            )
-                                            self._trigger_event(KeyEventType.RELEASE, duration, ev_release)
-                            
-                            # Обновляем предыдущее состояние только для Левого Shift
-                            if keycode == 56:
-                                self._previous_left_shift_pressed = shift_pressed
-                        return event
-
-                    if event_type not in (kCGEventKeyDown, kCGEventKeyUp):
-                        # Игнорируем все события, кроме keyDown/keyUp/flagsChanged (для модификаторов)
-                        return event
-
-                    keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-                    
-                    # Игнорируем все клавиши, кроме целевой (left_shift = 56)
-                    # Не логируем игнорируемые клавиши, чтобы не засорять логи
-                    if keycode != self._target_keycode:
-                        return event
-                    
-                    # Только для целевой клавиши (left_shift) логируем
-                    logger.debug(f"🔑 Целевая клавиша обнаружена через keyDown/keyUp: keycode={keycode}")
-
-                    now = time.time()
-
-                    # cooldown работает только для повторных keyDown, keyUp обрабатываем всегда
-                    if event_type == kCGEventKeyDown and (now - self.last_event_time) < self.event_cooldown:
-                        logger.debug("🔒 Quartz: keyDown пропущен из-за cooldown")
-                        return event
-
-                    if event_type == kCGEventKeyDown:
-                        logger.info("🔽 Quartz tap: keyDown detected for target key")
-                        with self.state_lock:
-                            if self.key_pressed:
-                                # игнорируем авто-повтор
-                                logger.debug("🔒 Quartz: игнорируем авто-повтор keyDown")
-                                return event
-                            self.key_pressed = True
-                            self.press_start_time = now
-                            self._long_sent = False  # Сбрасываем флаг для нового нажатия
-                            self._event_processed = False  # Сбрасываем флаг обработки для нового нажатия
-                            self._last_event_timestamp = 0.0
-                            self.last_event_time = now  # Обновляем время последнего события
-
-                        # PRESS
-                        ev = KeyEvent(
-                            key=self.key_to_monitor,
-                            event_type=KeyEventType.PRESS,
-                            timestamp=now,
-                        )
-                        self._trigger_event(KeyEventType.PRESS, 0.0, ev)
-                    else:  # kCGEventKeyUp
-                        logger.debug("Quartz tap: keyUp detected for target key")
-                        with self.state_lock:
-                            # КРИТИЧНО: Защита от двойной обработки - проверяем, что событие не было обработано через flagsChanged
-                            if self._event_processed and (now - self._last_event_timestamp) < 0.1:
-                                logger.debug(f"🔒 keyUp: событие уже обработано через flagsChanged, пропускаем")
-                                return event
-                            
-                            if not self.key_pressed:
-                                return event
-                            duration = now - (self.press_start_time or now)
-
-                            # КРИТИЧНО: Сбрасываем состояние ПОСЛЕ определения типа события,
-                            # но ДО вызова _trigger_event, чтобы hold_monitor прекратил работу
-                            long_sent_snapshot = self._long_sent
-                            self.key_pressed = False
-                            self.press_start_time = None
-                            self.last_event_time = now
-                            self._event_processed = True
-                            self._last_event_timestamp = now
-
-                            # КРИТИЧНО: LONG_PRESS генерируется ТОЛЬКО из hold_monitor (во время удержания)
-                            # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE
-                            # Если уже отправили LONG_PRESS из hold_monitor — это RELEASE
-                            # Иначе (короткое нажатие) — это SHORT_PRESS
-                            if long_sent_snapshot:
-                                logger.info(f"🔑 keyUp: short suppressed (long_sent=true) - генерируем только RELEASE")
-                            event_type_out = (
-                                KeyEventType.RELEASE if long_sent_snapshot
-                                else KeyEventType.SHORT_PRESS
-                            )
-                            import threading
-                            thread_name = threading.current_thread().name
-                            logger.info(f"🔑 PTT: keyUp → {event_type_out.value}, duration={duration:.3f}s, _long_sent={long_sent_snapshot}, thread={thread_name}")
-                            logger.debug(f"Quartz keyUp: duration={duration:.3f}s, _long_sent={long_sent_snapshot} → {event_type_out.value}")
-
-                        ev = KeyEvent(
-                            key=self.key_to_monitor,
-                            event_type=event_type_out,
-                            timestamp=now,
-                            duration=duration,
-                        )
-                        self._trigger_event(event_type_out, duration, ev)
-
-                    return event
+                    return self._handle_single_key_event(event_type, event)
                 except Exception as e:
-                    logger.error(f"❌ Ошибка в tap callback: {e}")
+                    logger.error("tap callback error: %s", e)
                     return event
 
-            # Маска событий: keyDown, keyUp для обычных клавиш, flagsChanged для модификаторов (Shift, Ctrl, Alt)
-            event_mask = (1 << kCGEventKeyDown) | (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged)
-            
-            tap_option = kCGEventTapOptionDefault if self._is_combo else kCGEventTapOptionListenOnly
             self._tap = CGEventTapCreate(
                 kCGHIDEventTap,
                 kCGHeadInsertEventTap,
@@ -732,343 +158,420 @@ class QuartzKeyboardMonitor:
                 _tap_callback,
                 None,
             )
-
             if not self._tap:
-                logger.error("❌ Не удалось создать CGEventTap — проверьте Accessibility/Input Monitoring")
-                logger.error("❌ КРИТИЧНО: CGEventTap вернул None!")
-                logger.error("❌ Это означает, что приложению НЕ выданы разрешения:")
-                logger.error("❌   1. System Settings > Privacy & Security > Accessibility")
-                logger.error("❌   2. System Settings > Privacy & Security > Input Monitoring")
-                logger.error("❌ Добавьте 'Nexy' в оба списка и перезапустите приложение")
-                print("❌ Не удалось создать CGEventTap — проверьте Accessibility/Input Monitoring")
-                print("❌ КРИТИЧНО: CGEventTap вернул None!")
-                print("❌ Это означает, что приложению НЕ выданы разрешения:")
-                print("❌   1. System Settings > Privacy & Security > Accessibility")
-                print("❌   2. System Settings > Privacy & Security > Input Monitoring")
-                print("❌ Добавьте 'Nexy' в оба списка и перезапустите приложение")
+                logger.error("CGEventTapCreate failed")
                 self.keyboard_available = False
                 return False
 
-            print(f"✅ CGEventTap создан успешно: {self._tap}")  # Для отладки
-            logger.info(f"✅ CGEventTap создан успешно: {self._tap}")
-
             self._tap_source = CFMachPortCreateRunLoopSource(None, self._tap, 0)
-            print(f"✅ CFRunLoopSource создан: {self._tap_source}")  # Для отладки
-            logger.info(f"✅ CFRunLoopSource создан: {self._tap_source}")
-
-            # Добавляем в главный run loop (AppKit)
-            # Важно: сохранить ссылку на callback, иначе он может быть собран GC
-            # КРИТИЧНО: Используем kCFRunLoopCommonModes вместо kCFRunLoopDefaultMode
-            # для обработки событий даже когда приложение неактивно (не frontmost)
-            self._tap_callback = _tap_callback  # type: ignore[attr-defined]
-            main_loop = CFRunLoopGetMain()
-            print(f"✅ Добавляем source в главный run loop: {main_loop}")  # Для отладки
-            CFRunLoopAddSource(main_loop, self._tap_source, kCFRunLoopCommonModes)
-            print(f"✅ Source добавлен в run loop (kCFRunLoopCommonModes)")  # Для отладки
+            CFRunLoopAddSource(CFRunLoopGetMain(), self._tap_source, kCFRunLoopCommonModes)
             CGEventTapEnable(self._tap, True)
-            print(f"✅ CGEventTap включен для keycode={self._target_keycode}")  # Для отладки
-            logger.info(f"QuartzMonitor: CGEventTap включен для keycode={self._target_keycode}")
 
-            # КРИТИЧНО: Очищаем старое состояние комбинации после включения tap
-            # Это предотвращает залипание при перезапуске мониторинга
-            if self._is_combo:
-                self._reconcile_combo_state()
-
-            # Запускаем поток мониторинга удержания (для long press)
             self.stop_event.clear()
-            self.hold_monitor_thread = threading.Thread(
-                target=self._run_hold_monitor,
-                name="QuartzHoldMonitor",
-                daemon=True,
-            )
+            self._start_callback_dispatcher()
+            self.hold_monitor_thread = threading.Thread(target=self._run_hold_monitor, name="QuartzHoldMonitor", daemon=True)
             self.hold_monitor_thread.start()
 
             self.is_monitoring = True
-            logger.info("🎹 Quartz-монитор клавиатуры запущен")
             return True
         except Exception as e:
-            logger.error(f"❌ Ошибка запуска Quartz-монитора: {e}")
+            logger.error("start_monitoring failed: %s", e)
             self.is_monitoring = False
             return False
 
     def stop_monitoring(self):
         if not self.is_monitoring:
             return
-        try:
-            self.is_monitoring = False
-            self.stop_event.set()
-            if self.hold_monitor_thread and self.hold_monitor_thread.is_alive():
-                self.hold_monitor_thread.join(timeout=2.0)
+        self.is_monitoring = False
+        self.stop_event.set()
 
-            if self._tap_source:
-                try:
-                    CFRunLoopSourceInvalidate(self._tap_source)
-                except Exception:
-                    pass
-                self._tap_source = None
+        self._force_release_if_active(reason="stop_monitoring")
 
-            if self._tap:
-                try:
-                    CGEventTapEnable(self._tap, False)
-                except Exception:
-                    pass
-                self._tap = None
+        self._stop_callback_dispatcher()
+        if self.hold_monitor_thread and self.hold_monitor_thread.is_alive():
+            self.hold_monitor_thread.join(timeout=1.5)
 
-            logger.info("🛑 Quartz-монитор клавиатуры остановлен")
-        except Exception as e:
-            logger.error(f"❌ Ошибка остановки Quartz-монитора: {e}")
-
-    def _run_hold_monitor(self):
-        while not self.stop_event.is_set():
+        if self._tap_source:
             try:
-                # WATCHDOG: Проверяем и восстанавливаем CGEventTap если система его отключила
-                self._check_and_recover_tap()
-                
-                with self.state_lock:
-                    # ЗАЩИТА ОТ ЗАЛИПАНИЯ: Проверка таймаутов для сброса состояния
-                    self._check_and_reset_stuck_state()
-                    
-                    # Для комбинации используем combo_active, для одиночной клавиши - key_pressed
-                    is_active = self._combo_active if self._is_combo else self.key_pressed
-                    start_time = self._combo_start_time if self._is_combo else self.press_start_time
-                    
-                    if is_active and start_time:
-                        duration = time.time() - start_time
-                        if not self._long_sent and duration >= self.long_press_threshold:
-                            # КРИТИЧНО: Проверяем еще раз, что комбинация/клавиша все еще активна
-                            is_still_active = self._combo_active if self._is_combo else self.key_pressed
-                            if not is_still_active or not start_time:
-                                logger.debug(f"HOLD_MONITOR: комбинация/клавиша была отпущена во время проверки, пропускаем LONG_PRESS")
-                                continue
+                CFRunLoopSourceInvalidate(self._tap_source)
+            except Exception:
+                pass
+            self._tap_source = None
 
-                            import threading
-                            thread_name = threading.current_thread().name
-                            logger.info(f"🔑 PTT: LONG_PRESS triggered! duration={duration:.3f}s, threshold={self.long_press_threshold}, thread={thread_name}")
-                            logger.debug(f"HOLD_MONITOR: _long_sent={self._long_sent} → True, event_type=LONG_PRESS")
-                            ev = KeyEvent(
-                                key=self.key_to_monitor,
-                                event_type=KeyEventType.LONG_PRESS,
-                                timestamp=time.time(),
-                                duration=duration,
-                            )
-                            self._trigger_event(KeyEventType.LONG_PRESS, duration, ev)
-                            self._long_sent = True
-                time.sleep(self.hold_check_interval)
-            except Exception as e:
-                logger.error(f"❌ Ошибка в мониторе удержания: {e}")
-                time.sleep(0.1)
-    
-    def _check_and_recover_tap(self):
-        """Проверяет и восстанавливает CGEventTap если система его отключила."""
-        now = time.time()
-        
-        # Проверяем не чаще чем раз в 2 секунды
-        if now - self._last_tap_check_time < self._tap_check_interval:
-            return
-        self._last_tap_check_time = now
-        
-        if not self._tap:
-            return
-        
-        try:
-            from Quartz import CGEventTapIsEnabled, CGEventTapEnable  # type: ignore
-            
-            is_enabled = CGEventTapIsEnabled(self._tap)
-            
-            if not is_enabled:
-                self._tap_recovery_count += 1
-                logger.warning(
-                    f"⚠️ WATCHDOG: CGEventTap отключен системой! "
-                    f"Попытка восстановления #{self._tap_recovery_count}..."
-                )
-                
-                # Включаем tap заново
-                CGEventTapEnable(self._tap, True)
-                
-                # Проверяем, удалось ли восстановить
-                if CGEventTapIsEnabled(self._tap):
-                    logger.info(f"✅ WATCHDOG: CGEventTap восстановлен успешно!")
-                else:
-                    logger.error(
-                        f"❌ WATCHDOG: Не удалось восстановить CGEventTap! "
-                        f"Возможно, требуется перезапуск приложения или проверка Accessibility разрешений."
-                    )
-        except Exception as e:
-            logger.debug(f"⚠️ WATCHDOG: Ошибка проверки CGEventTap: {e}")
-    
-    def _check_and_reset_stuck_state(self):
-        """Проверяет и сбрасывает залипшее состояние на основе реального состояния клавиш и таймаутов (fallback)."""
-        if not self._is_combo:
-            return  # Для одиночных клавиш проверка не нужна (уже есть в hold_monitor)
-        
-        # КРИТИЧНО: Сначала синхронизируем с системным состоянием (основной механизм)
-        # Это единственный источник истины для проверки залипания
-        self._reconcile_combo_state()
-        
-        now = time.time()
-        
-        # Таймауты остаются как fallback механизм (на случай если системная проверка недоступна)
-        # Проверка таймаута для комбинации
-        if self._combo_active and self._combo_start_time:
-            combo_duration = now - self._combo_start_time
-            if combo_duration > self.combo_timeout_sec:
-                logger.warning(
-                    f"⚠️ ЗАЛИПАНИЕ: Комбинация активна слишком долго ({combo_duration:.1f}s > {self.combo_timeout_sec}s), "
-                    f"принудительно сбрасываем состояние"
-                )
-                self._reset_stuck_combo_state("combo_timeout")
-                return
-        
-        # Проверка таймаута для Control (если зажат без событий)
-        # КРИТИЧНО: Control использует flagsChanged, который НЕ генерирует повторные события при удержании
-        # Поэтому проверяем таймаут только если комбинация НЕ активна
-        # Если комбинация активна и N получает автоповтор - это означает, что Control реально зажат
-        # Увеличиваем таймаут до 10 секунд для Control (в 2 раза), т.к. модификаторы не генерируют повторные события
-        if self._control_pressed and self._control_last_event_time and not self._combo_active:
-            time_since_event = now - self._control_last_event_time
-            # Увеличиваем таймаут для Control до 10 секунд (модификаторы не генерируют автоповтор)
-            timeout = self.key_state_timeout_sec * 2  # 10 секунд вместо 5
-            if time_since_event > timeout:
-                logger.warning(
-                    f"⚠️ ЗАЛИПАНИЕ: Control зажат без событий слишком долго ({time_since_event:.1f}s > {timeout}s), "
-                    f"combo_active={self._combo_active}, принудительно сбрасываем"
-                )
-                self._control_pressed = False
-                self._control_last_event_time = None
-                self._update_combo_state()
-        
-        # Проверка таймаута для N (если зажата без событий)
-        # КРИТИЧНО: Проверяем только если комбинация НЕ активна или нет автоповтора
-        # Если комбинация активна, автоповтор N обновляет _n_last_event_time, поэтому залипания быть не должно
-        if self._n_pressed and self._n_last_event_time:
-            time_since_event = now - self._n_last_event_time
-            # Увеличиваем таймаут для активной комбинации (автоповтор может быть реже)
-            timeout = self.key_state_timeout_sec * 2 if self._combo_active else self.key_state_timeout_sec
-            if time_since_event > timeout:
-                logger.warning(
-                    f"⚠️ ЗАЛИПАНИЕ: N зажата без событий слишком долго ({time_since_event:.1f}s > {timeout}s), "
-                    f"combo_active={self._combo_active}, принудительно сбрасываем"
-                )
-                self._n_pressed = False
-                self._n_last_event_time = None
-                self._update_combo_state()
-    
-    def _reset_stuck_combo_state(self, reason: str):
-        """Сбрасывает залипшее состояние комбинации"""
-        logger.info(f"🔄 Сброс залипшего состояния комбинации (причина: {reason})")
-        
-        was_active = self._combo_active
-        self._combo_active = False
-        self._combo_start_time = None
-        self._control_pressed = False
-        self._n_pressed = False
-        self._control_last_event_time = None
-        self._n_last_event_time = None
-        self.key_pressed = False
-        self.press_start_time = None
-        self._long_sent = False
-        self._event_processed = False
-        self._last_event_timestamp = 0.0
-        
-        # Если комбинация была активна, генерируем RELEASE событие
-        if was_active:
-            ev = KeyEvent(
-                key=self.key_to_monitor,
-                event_type=KeyEventType.RELEASE,
-                timestamp=time.time(),
-                duration=0.0,
-            )
-            self._trigger_event(KeyEventType.RELEASE, 0.0, ev)
-
-    def _trigger_event(self, event_type: KeyEventType, duration: float, event: Optional[KeyEvent] = None):
-        try:
-            callback = self.event_callbacks.get(event_type)
-            if not callback:
-                return
-            if event is None:
-                event = KeyEvent(
-                    key=self.key_to_monitor,
-                    event_type=event_type,
-                    timestamp=time.time(),
-                    duration=duration,
-                )
-
-            import threading
-            thread_name = threading.current_thread().name
-            logger.debug(f"🔑 _trigger_event: type={event_type.value}, duration={duration:.3f}s, thread={thread_name}")
-            threading.Thread(target=lambda: self._run_callback(callback, event), daemon=True).start()
-        except Exception as e:
-            logger.error(f"❌ Ошибка запуска события: {e}")
-
-    def _run_callback(self, callback: Callable, event: KeyEvent):
-        try:
-            logger.info(f"🔑 _run_callback: {event.event_type.value}, callback={callback.__name__ if hasattr(callback, '__name__') else 'unknown'}")
-            print(f"🔑 _run_callback: {event.event_type.value}, callback={callback.__name__ if hasattr(callback, '__name__') else 'unknown'}")  # Для отладки
-            
-            import inspect
-            if inspect.iscoroutinefunction(callback):
-                # ИСПРАВЛЕНО: Всегда используем основной loop через run_coroutine_threadsafe
-                # Это гарантирует, что события попадут в правильный EventBus
-                if self._loop:
-                    try:
-                        logger.info(f"🔑 Выполняем async callback в loop: {event.event_type.value} (loop={id(self._loop)}, running={self._loop.is_running()})")
-                        print(f"🔑 Выполняем async callback в loop: {event.event_type.value} (loop={id(self._loop)}, running={self._loop.is_running()})")
-                        future = asyncio.run_coroutine_threadsafe(callback(event), self._loop)
-                        # Fire-and-forget: не блокируем поток клавиатуры
-                        # Добавляем callback для логирования завершения/ошибок
-                        def _on_done(f):
-                            try:
-                                f.result()  # Проверяем на исключения
-                                logger.info(f"✅ Async callback {event.event_type.value} completed successfully")
-                                print(f"✅ Async callback {event.event_type.value} completed successfully")
-                            except Exception as e:
-                                logger.error(f"❌ Async callback {event.event_type.value} failed: {e}", exc_info=True)
-                                print(f"❌ Async callback {event.event_type.value} failed: {e}")
-                        future.add_done_callback(_on_done)
-                    except Exception as e:
-                        logger.error(f"❌ Ошибка постинга async callback в loop: {e}", exc_info=True)
-                        print(f"❌ Ошибка постинга async callback в loop: {e}")
-                else:
-                    # Fallback: если loop не установлен, пытаемся выполнить в новом loop
-                    logger.warning("⚠️ Loop не установлен, создаем временный (события могут не дойти до EventBus)")
-                    asyncio.run(callback(event))
-            else:
-                logger.info(f"🔑 Выполняем sync callback: {event.event_type.value}")
-                print(f"🔑 Выполняем sync callback: {event.event_type.value}")  # Для отладки
-                callback(event)
-        except Exception as e:
-            logger.error(f"❌ Ошибка выполнения callback: {e}")
+        if self._tap:
+            try:
+                CGEventTapEnable(self._tap, False)
+            except Exception:
+                pass
+            self._tap = None
 
     def get_status(self) -> Dict[str, Any]:
         with self.state_lock:
-            status = {
+            status: Dict[str, Any] = {
                 "is_monitoring": self.is_monitoring,
                 "keyboard_available": self.keyboard_available,
-                "fallback_mode": False,
+                "fallback_mode": self.fallback_mode,
+                "callbacks_registered": len(self.event_callbacks),
+                "backend": "quartz",
                 "config": {
                     "key": self.key_to_monitor,
                     "short_press_threshold": self.short_press_threshold,
                     "long_press_threshold": self.long_press_threshold,
                 },
-                "callbacks_registered": len(self.event_callbacks),
-                "backend": "quartz",
+                "last_event_ts": self.last_event_time,
+                "tap_recovery_count": self._tap_recovery_count,
             }
-            
             if self._is_combo:
                 status["combo_active"] = self._combo_active
                 status["control_pressed"] = self._control_pressed
                 status["n_pressed"] = self._n_pressed
             else:
                 status["key_pressed"] = self.key_pressed
-            
-            # Добавляем расширенную диагностику для input_processing_integration
-            from Quartz import CGEventTapIsEnabled  # type: ignore
+
             try:
                 status["tap_enabled"] = bool(CGEventTapIsEnabled(self._tap)) if self._tap else False
             except Exception:
                 status["tap_enabled"] = False
-                
-            status["last_event_ts"] = self.last_event_time
-            status["tap_recovery_count"] = self._tap_recovery_count
-            
             return status
+
+    # ---------- Internal: combo ----------
+    def _clear_pending_release_locked(self):
+        self._pending_release_deadline = None
+        self._pending_release_reason = None
+
+    def _schedule_pending_release_locked(self, now: float, reason: str):
+        self._pending_release_deadline = now + self._release_confirm_delay_sec
+        self._pending_release_reason = reason
+        logger.debug("combo pending release (%s), confirm_delay=%.3fs", reason, self._release_confirm_delay_sec)
+
+    def _finalize_pending_release_if_due_locked(self, now: float):
+        if self._pending_release_deadline is None:
+            return
+        if now < self._pending_release_deadline:
+            return
+        reason = self._pending_release_reason or "pending_release"
+        self._clear_pending_release_locked()
+        # Подтверждаем отпускание только если combo все еще "разорвана"
+        # (любой из ключей физически отпущен по текущему локальному состоянию).
+        if self._combo_active and ((not self._control_pressed) or (not self._n_pressed)):
+            self._deactivate_combo_locked(now, reason=reason)
+
+    def _activate_combo_locked(self, now: float):
+        if self._combo_active:
+            return
+        self._clear_pending_release_locked()
+        self._combo_active = True
+        self._combo_start_time = now
+        self._combo_press_id = str(uuid.uuid4())
+        self.key_pressed = True
+        self.press_start_time = now
+        self._long_sent = False
+        self.last_event_time = now
+
+        ev = KeyEvent(
+            key=self.key_to_monitor,
+            event_type=KeyEventType.PRESS,
+            timestamp=now,
+            data={"press_id": self._combo_press_id},
+        )
+        self._trigger_event(KeyEventType.PRESS, 0.0, ev)
+
+    def _deactivate_combo_locked(self, now: float, reason: str):
+        if not self._combo_active:
+            return
+        duration = now - (self._combo_start_time or now)
+        press_id = self._combo_press_id
+
+        self._combo_active = False
+        self._combo_start_time = None
+        self._combo_press_id = None
+        self._clear_pending_release_locked()
+        self._control_pressed = False
+        self._n_pressed = False
+        self.key_pressed = False
+        self.press_start_time = None
+        self.last_event_time = now
+
+        ev = KeyEvent(
+            key=self.key_to_monitor,
+            event_type=KeyEventType.RELEASE,
+            timestamp=now,
+            duration=max(0.0, duration),
+            data={"press_id": press_id} if press_id else None,
+        )
+        logger.debug("combo release (%s), duration=%.3f", reason, duration)
+        self._trigger_event(KeyEventType.RELEASE, duration, ev)
+
+    def _handle_combo_event(self, event_type, event):
+        now = time.time()
+
+        if event_type == kCGEventFlagsChanged:
+            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            if keycode in self.CONTROL_KEYCODES:
+                flags = CGEventGetFlags(event)
+                control_pressed = bool(flags & kCGEventFlagMaskControl)
+                with self.state_lock:
+                    self._control_pressed = control_pressed
+                    self.last_event_time = now
+                    if self._control_pressed:
+                        self._clear_pending_release_locked()
+                    if self._control_pressed and self._n_pressed:
+                        self._activate_combo_locked(now)
+                    elif self._combo_active and (not self._control_pressed or not self._n_pressed):
+                        # flagsChanged может прислать ложный "up" при подавлении событий.
+                        # Подтверждаем release с задержкой.
+                        self._schedule_pending_release_locked(now, reason="control_flags_changed_confirmed")
+                # Control сам по себе не блокируем: это ломает обычные shortcuts/input.
+                # Combo suppression делаем только на N key events ниже.
+                return event
+            return event
+
+        if event_type in (kCGEventKeyDown, kCGEventKeyUp):
+            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            if keycode != self.N_KEYCODE:
+                return event
+
+            with self.state_lock:
+                if event_type == kCGEventKeyDown:
+                    if (now - self.last_event_time) < self.event_cooldown and self._n_pressed:
+                        # Debounce только внутри активной combo; иначе не блокируем ввод N.
+                        return None if (self._combo_active or self._control_pressed) else event
+                    self._n_pressed = True
+                    self._clear_pending_release_locked()
+                    self.last_event_time = now
+                    if self._control_pressed and self._n_pressed:
+                        self._activate_combo_locked(now)
+                        return None
+                    # Одиночная N должна проходить в систему.
+                    return event
+                else:
+                    self._n_pressed = False
+                    self.last_event_time = now
+                    if self._combo_active:
+                        # Даже если Control сейчас "не нажат", n_keyup тоже может быть ложным.
+                        # Подтверждаем с задержкой в любом случае.
+                        self._schedule_pending_release_locked(now, reason="n_keyup_confirmed")
+                        return None
+            # N keyup без активной combo не блокируем.
+            return event
+
+        return event
+
+    # ---------- Internal: single key ----------
+    def _handle_single_key_event(self, event_type, event):
+        now = time.time()
+
+        if event_type == kCGEventFlagsChanged and self._target_keycode == 56:
+            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            if keycode != 56:
+                return event
+            flags = CGEventGetFlags(event)
+            shift_pressed = bool(flags & kCGEventFlagMaskShift)
+            with self.state_lock:
+                if shift_pressed and not self._previous_left_shift_pressed:
+                    self.key_pressed = True
+                    self.press_start_time = now
+                    self._long_sent = False
+                    self.last_event_time = now
+                    self._trigger_event(
+                        KeyEventType.PRESS,
+                        0.0,
+                        KeyEvent(
+                            key=self.key_to_monitor,
+                            event_type=KeyEventType.PRESS,
+                            timestamp=now,
+                        ),
+                    )
+                elif (not shift_pressed) and self._previous_left_shift_pressed and self.key_pressed:
+                    duration = now - (self.press_start_time or now)
+                    self.key_pressed = False
+                    self.press_start_time = None
+                    self.last_event_time = now
+                    out_type = KeyEventType.RELEASE if self._long_sent else KeyEventType.SHORT_PRESS
+                    self._trigger_event(
+                        out_type,
+                        duration,
+                        KeyEvent(
+                            key=self.key_to_monitor,
+                            event_type=out_type,
+                            timestamp=now,
+                            duration=duration,
+                        ),
+                    )
+                    if out_type != KeyEventType.RELEASE:
+                        self._trigger_event(
+                            KeyEventType.RELEASE,
+                            duration,
+                            KeyEvent(
+                                key=self.key_to_monitor,
+                                event_type=KeyEventType.RELEASE,
+                                timestamp=now,
+                                duration=duration,
+                            ),
+                        )
+                self._previous_left_shift_pressed = shift_pressed
+            return event
+
+        if event_type not in (kCGEventKeyDown, kCGEventKeyUp):
+            return event
+
+        keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+        if keycode != self._target_keycode:
+            return event
+
+        with self.state_lock:
+            if event_type == kCGEventKeyDown:
+                if self.key_pressed:
+                    return event
+                if (now - self.last_event_time) < self.event_cooldown:
+                    return event
+                self.key_pressed = True
+                self.press_start_time = now
+                self._long_sent = False
+                self.last_event_time = now
+                self._trigger_event(
+                    KeyEventType.PRESS,
+                    0.0,
+                    KeyEvent(
+                        key=self.key_to_monitor,
+                        event_type=KeyEventType.PRESS,
+                        timestamp=now,
+                    ),
+                )
+            else:
+                if not self.key_pressed:
+                    return event
+                duration = now - (self.press_start_time or now)
+                self.key_pressed = False
+                self.press_start_time = None
+                self.last_event_time = now
+                out_type = KeyEventType.RELEASE if self._long_sent else KeyEventType.SHORT_PRESS
+                self._trigger_event(
+                    out_type,
+                    duration,
+                    KeyEvent(
+                        key=self.key_to_monitor,
+                        event_type=out_type,
+                        timestamp=now,
+                        duration=duration,
+                    ),
+                )
+                if out_type != KeyEventType.RELEASE:
+                    self._trigger_event(
+                        KeyEventType.RELEASE,
+                        duration,
+                        KeyEvent(
+                            key=self.key_to_monitor,
+                            event_type=KeyEventType.RELEASE,
+                            timestamp=now,
+                            duration=duration,
+                        ),
+                    )
+        return event
+
+    # ---------- Internal: hold / callbacks ----------
+    def _run_hold_monitor(self):
+        while not self.stop_event.is_set():
+            try:
+                with self.state_lock:
+                    if self._is_combo:
+                        self._finalize_pending_release_if_due_locked(time.time())
+                    active = self._combo_active if self._is_combo else self.key_pressed
+                    start_time = self._combo_start_time if self._is_combo else self.press_start_time
+                    if active and start_time and not self._long_sent:
+                        duration = time.time() - start_time
+                        if duration >= self.long_press_threshold:
+                            self._long_sent = True
+                            ev = KeyEvent(
+                                key=self.key_to_monitor,
+                                event_type=KeyEventType.LONG_PRESS,
+                                timestamp=time.time(),
+                                duration=duration,
+                                data={"press_id": self._combo_press_id} if self._is_combo and self._combo_press_id else None,
+                            )
+                            self._trigger_event(KeyEventType.LONG_PRESS, duration, ev)
+            except Exception as e:
+                logger.error("hold monitor error: %s", e)
+            time.sleep(self.hold_check_interval)
+
+    def _force_release_if_active(self, reason: str):
+        now = time.time()
+        with self.state_lock:
+            if self._is_combo:
+                if self._combo_active or self._control_pressed or self._n_pressed:
+                    self._deactivate_combo_locked(now, reason=reason)
+            else:
+                if self.key_pressed:
+                    duration = now - (self.press_start_time or now)
+                    self.key_pressed = False
+                    self.press_start_time = None
+                    self.last_event_time = now
+                    self._trigger_event(
+                        KeyEventType.RELEASE,
+                        duration,
+                        KeyEvent(
+                            key=self.key_to_monitor,
+                            event_type=KeyEventType.RELEASE,
+                            timestamp=now,
+                            duration=duration,
+                        ),
+                    )
+
+    def _start_callback_dispatcher(self):
+        if self.callback_dispatch_thread and self.callback_dispatch_thread.is_alive():
+            return
+        try:
+            while True:
+                self._callback_queue.get_nowait()
+        except queue.Empty:
+            pass
+        self.callback_dispatch_thread = threading.Thread(
+            target=self._run_callback_dispatcher,
+            name="QuartzCallbackDispatcher",
+            daemon=True,
+        )
+        self.callback_dispatch_thread.start()
+
+    def _stop_callback_dispatcher(self):
+        try:
+            self._callback_queue.put(None)
+        except Exception:
+            pass
+        if self.callback_dispatch_thread and self.callback_dispatch_thread.is_alive():
+            self.callback_dispatch_thread.join(timeout=1.5)
+
+    def _run_callback_dispatcher(self):
+        while not self.stop_event.is_set():
+            try:
+                item = self._callback_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+            callback, event = item
+            self._run_callback(callback, event)
+
+    def _trigger_event(self, event_type: KeyEventType, duration: float, event: Optional[KeyEvent] = None):
+        callback = self.event_callbacks.get(event_type)
+        if not callback:
+            return
+        if event is None:
+            event = KeyEvent(
+                key=self.key_to_monitor,
+                event_type=event_type,
+                timestamp=time.time(),
+                duration=duration,
+            )
+        self._callback_queue.put((callback, event))
+
+    def _run_callback(self, callback: Callable, event: KeyEvent):
+        try:
+            if asyncio.iscoroutinefunction(callback):
+                if self._loop and self._loop.is_running():
+                    asyncio.run_coroutine_threadsafe(callback(event), self._loop)
+                else:
+                    asyncio.run(callback(event))
+            else:
+                callback(event)
+        except Exception as e:
+            logger.error("callback error: %s", e)

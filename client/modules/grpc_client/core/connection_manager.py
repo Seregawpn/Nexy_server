@@ -53,9 +53,26 @@ class ConnectionManager:
         """Подключается к серверу"""
         try:
             async with self._connection_lock:
+                requested_server = self.current_server
                 if server_name and server_name in self.servers:
-                    self.current_server = server_name
-                
+                    requested_server = server_name
+
+                # Idempotent connect:
+                # если уже подключены к нужному серверу и канал жив — не пересоздаем канал.
+                if (
+                    self.connection_state == ConnectionState.CONNECTED
+                    and self.channel is not None
+                    and requested_server == self.current_server
+                ):
+                    logger.debug(
+                        "🔌 [CONNECT_GUARD] already connected to '%s' — skip reconnect",
+                        self.current_server,
+                    )
+                    return True
+
+                if requested_server:
+                    self.current_server = requested_server
+
                 return await self._connect()
         except Exception as e:
             logger.error(f"❌ Ошибка подключения: {e}")

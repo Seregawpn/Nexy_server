@@ -69,6 +69,10 @@ class VoiceRecognitionIntegration:
 
         # Thread-safe lock для защиты shared state от concurrent callbacks GoogleSRController
         self._state_lock = threading.Lock()
+        # Idempotency для mic_closed, чтобы избежать дублей из конкурентных путей stop/fail.
+        self._last_mic_closed_key: tuple[str | None, str] | None = None
+        self._last_mic_closed_ts: float = 0.0
+        self._mic_closed_dedup_window_sec: float = 0.5
         
         # NOTE: _first_run_in_progress cache removed - use selectors.is_first_run_in_progress() instead
         # Если распознавание завершилось при активном PTT — публикацию откладываем до RELEASE
@@ -318,26 +322,48 @@ class VoiceRecognitionIntegration:
             session_id = data.get("session_id")
             logger.debug(f"VOICE: recording_stop, session={session_id}")
 
-            # Проверяем, наша ли сессия
             active_session_id = self._get_active_session_id()
-            if session_id is None or active_session_id != session_id:
-                logger.debug(f"VOICE: recording_stop ignored (session mismatch: event={session_id}, active={active_session_id})")
+            resolved_session_id = session_id
+
+            # Если event пришел без session_id, но активная сессия есть — используем ее.
+            if resolved_session_id is None and active_session_id is not None:
+                resolved_session_id = active_session_id
+                logger.warning(
+                    "VOICE: recording_stop без session_id, используем active session=%s",
+                    resolved_session_id,
+                )
+
+            # Если session mismatch при явно заданном session_id — игнорируем.
+            if (
+                session_id is not None
+                and active_session_id is not None
+                and session_id != active_session_id
+            ):
+                logger.debug(
+                    "VOICE: recording_stop ignored (session mismatch: event=%s, active=%s)",
+                    session_id,
+                    active_session_id,
+                )
+                return
+
+            # Fail-safe: даже без session_id надо закрыть микрофон, если запись активна.
+            if resolved_session_id is None and not self._recording_active:
+                logger.debug(
+                    "VOICE: recording_stop ignored (no session and recording already inactive)"
+                )
                 return
 
             self._recording_active = False
             
             # ✅ КРИТИЧНО: Публикуем voice.mic_closed СРАЗУ, не дожидаясь завершения распознавания
             # Это устраняет задержку 5-10 секунд после отпускания клавиши
-            await self.event_bus.publish("voice.mic_closed", {
-                "session_id": session_id,
-                "source": "recording_stop"
-            })
-            logger.info(f"🎤 VOICE: microphone closed immediately for session {session_id}")
+            await self._publish_mic_closed(resolved_session_id, source="recording_stop")
+            logger.info(f"🎤 VOICE: microphone closed immediately for session {resolved_session_id}")
             
             # Stop GoogleSRController — МГНОВЕННО, без ожидания
             # Результаты придут через callback'и асинхронно
             if self._google_sr_controller and not self.config.simulate:
-                logger.debug(f"🎤 Calling stop_listening for session {session_id}")
+                logger.debug(f"🎤 Calling stop_listening for session {resolved_session_id}")
                 # stop_listening() теперь мгновенный — просто устанавливает флаги
                 self._google_sr_controller.stop_listening()
                 # Результаты придут через _on_sr_v2_completed/_on_sr_v2_failed
@@ -572,7 +598,7 @@ class VoiceRecognitionIntegration:
             # Если PTT отпущен — закрываем микрофон и сбрасываем состояние
             if not is_still_listening:
                 self._recording_active = False
-                await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+                await self._publish_mic_closed(session_id, source="v2_completed")
                 
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error publishing completed: {e}")
@@ -621,7 +647,7 @@ class VoiceRecognitionIntegration:
             else:
                 # PTT отпущен — публикуем ошибку и закрываем микрофон
                 self._recording_active = False
-                await self.event_bus.publish("voice.mic_closed", {"session_id": session_id})
+                await self._publish_mic_closed(session_id, source="v2_failed")
                 logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={error}}}")
                 await self.event_bus.publish("voice.recognition_failed", {
                     "session_id": session_id,
@@ -645,3 +671,26 @@ class VoiceRecognitionIntegration:
             self.config.simulate = True
             logger.info("🔄 Switching to simulation mode due to microphone probe failure")
             return False
+
+    async def _publish_mic_closed(self, session_id: str | None, *, source: str) -> None:
+        """Единая idempotent-публикация voice.mic_closed."""
+        now = time.monotonic()
+        key = (session_id, source)
+        if (
+            self._last_mic_closed_key == key
+            and (now - self._last_mic_closed_ts) < self._mic_closed_dedup_window_sec
+        ):
+            logger.debug(
+                "VOICE: mic_closed dedup skipped (session=%s, source=%s, dt=%.3fs)",
+                session_id,
+                source,
+                now - self._last_mic_closed_ts,
+            )
+            return
+
+        self._last_mic_closed_key = key
+        self._last_mic_closed_ts = now
+        await self.event_bus.publish(
+            "voice.mic_closed",
+            {"session_id": session_id, "source": source},
+        )

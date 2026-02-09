@@ -1,6 +1,7 @@
 # ruff: noqa: I001
 """Welcome Audio Generator — серверный источник приветствия."""
 
+import asyncio
 import logging
 from typing import Any
 
@@ -62,12 +63,18 @@ class WelcomeAudioGenerator:
 
         try:
             logger.info(f"TRACE [WELCOME_GEN] calling client.generate_welcome_audio(timeout={self._grpc_timeout})")
-            result = await client.generate_welcome_audio(
-                text=text,
-                voice=self.config.voice,
-                language=None,
-                server_name=self._grpc_server_name,
-                timeout=self._grpc_timeout,
+            # Hard timeout на уровне интеграции: защищаемся от подвисаний cross-loop/future bridge.
+            # Небольшой запас поверх RPC timeout оставляем на десериализацию/переключение loop.
+            bridge_timeout = float(self._grpc_timeout) + 5.0
+            result = await asyncio.wait_for(
+                client.generate_welcome_audio(
+                    text=text,
+                    voice=self.config.voice,
+                    language=None,
+                    server_name=self._grpc_server_name,
+                    timeout=self._grpc_timeout,
+                ),
+                timeout=bridge_timeout,
             )
             logger.info("TRACE [WELCOME_GEN] client.generate_welcome_audio returned")
             
@@ -112,6 +119,12 @@ class WelcomeAudioGenerator:
             logger.info("TRACE [WELCOME_GEN] _generate_with_server: SUCCESS")
             return audio_array
             
+        except asyncio.TimeoutError:
+            logger.error(
+                "❌ [WELCOME_AUDIO] Таймаут ожидания generate_welcome_audio (%.1fs)",
+                float(self._grpc_timeout) + 5.0,
+            )
+            return None
         except ImportError as e:
             logger.error(f"❌ [WELCOME_AUDIO] ImportError (missing deps?): {e}")
             return None

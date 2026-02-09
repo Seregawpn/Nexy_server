@@ -525,12 +525,14 @@ class SpeechPlaybackIntegration:
             # Сброс локальных флагов воспроизведения
             if sid:
                 self._had_audio_for_session.pop(sid, None)
-                self._finalized_sessions.pop(sid, None)
+                # Отмена — терминальное состояние, помечаем finalized чтобы не допустить completed позже.
+                self._finalized_sessions[sid] = True
                 # Reset current session on cancel
                 if self._current_session_id == sid:
                     self._current_session_id = None
             
-            # КРИТИЧНО: Публикуем playback.completed только при наличии session_id (чтобы не завершить чужую цепочку)
+            # КРИТИЧНО: На cancel НЕ публикуем playback.completed.
+            # Terminal событие уже playback.cancelled (source of truth для cancel-ветки).
             if sid is not None:
                 # TRACE: завершение воспроизведения (отмена)
                 ts_ms = int(time.monotonic() * 1000)
@@ -539,10 +541,8 @@ class SpeechPlaybackIntegration:
                     f"🔍 [PLAYBACK_END] session={sid} exit_reason=cancelled "
                     f"summary={{had_audio={had_audio_before_cleanup}}}"
                 )
-                await self.event_bus.publish("playback.completed", {"session_id": sid})
-                logger.info(f"🛑 SpeechPlayback: playback.completed опубликовано (session_id={sid})")
             else:
-                logger.debug("🛑 SpeechPlayback: playback.completed не опубликовано (session_id=None, cancel только останавливает плеер)")
+                logger.debug("🛑 SpeechPlayback: cancel завершен без session_id (только остановка плеера)")
                 
         except Exception as e:
             await self._handle_error(e, where="speech.unified_interrupt", severity="warning")

@@ -12,6 +12,7 @@ from integration.core.error_handler import ErrorHandler
 
 # Пути уже добавлены в main.py - не дублируем
 from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_keys import StateKeys
 from integration.core.state_manager import ApplicationStateManager
 from integration.utils.logging_setup import get_logger
 from modules.network_manager.core.config import NetworkManagerConfig
@@ -179,6 +180,7 @@ class NetworkManagerIntegration:
             if self._manager:
                 # Получаем текущий статус сети
                 status = self._manager.get_status()
+                self._sync_network_axis(status.get("status"))
                 
                 # Публикуем снапшот статуса сети
                 await self.event_bus.publish("network.status_snapshot", status)
@@ -233,6 +235,7 @@ class NetworkManagerIntegration:
             logger.debug(f"Network event received: {event.event_type}")
             
             if event.event_type == "network.status_changed":
+                self._sync_network_axis(event.new_status.value)
                 # Публикуем событие изменения статуса
                 await self.event_bus.publish("network.status_changed", {
                     "old": event.old_status.value,
@@ -270,6 +273,23 @@ class NetworkManagerIntegration:
                 )
             else:
                 logger.error(f"Error in NetworkManagerIntegration.event_handler: {e}")
+
+    def _sync_network_axis(self, raw_status: str | None) -> None:
+        """Синхронизировать network axis в state-manager (single source for readers)."""
+        axis_status = self._to_axis_status(raw_status)
+        self.state_manager.set_state_data(StateKeys.NETWORK_STATUS, axis_status)
+        logger.debug("Network axis updated: %s", axis_status)
+
+    @staticmethod
+    def _to_axis_status(raw_status: str | None) -> str:
+        """Normalize module-specific statuses to axis values: online/offline."""
+        value = str(raw_status or "").lower()
+        if value in {"connected", "online"}:
+            return "online"
+        if value in {"disconnected", "offline", "failed"}:
+            return "offline"
+        # Preserve previous default behavior for unknown/connecting.
+        return "online"
     
     async def _update_tray_tooltip(self, status: dict[str, Any]):
         """Обновление tooltip в трее с информацией о сети"""
