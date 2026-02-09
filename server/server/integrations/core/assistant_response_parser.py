@@ -72,6 +72,29 @@ class AssistantResponseParser:
         normalized_data = data.copy()
         normalized_data['command'] = normalized
         return normalized_data
+
+    def _looks_like_action_intent(self, text: Any) -> bool:
+        """Быстрый эвристический детектор action-like текста для диагностики."""
+        if not isinstance(text, str):
+            return False
+        text_l = text.lower()
+        markers = (
+            "send_message",
+            "read_messages",
+            "find_contact",
+            "open_app",
+            "close_app",
+            "browser_use",
+            "send_whatsapp_message",
+            "buy_subscription",
+            "manage_subscription",
+            "отправ",
+            "сообщен",
+            "откро",
+            "закро",
+            "команд",
+        )
+        return any(marker in text_l for marker in markers)
     
     def parse(self, response: Union[str, Dict[str, Any]], session_id: Optional[str] = None) -> ParsedResponse:
         """
@@ -321,6 +344,12 @@ class AssistantResponseParser:
         command = normalized_data.get('command')
         if command is None or command == '':
             # Обычный текстовый ответ без команды
+            if self._looks_like_action_intent(text_response):
+                self.logger.warning(
+                    "[ACTION_PIPELINE][SERVER] stage=parse_no_command session=%s text_preview=%s",
+                    normalized_data.get('session_id'),
+                    text_response.replace("\n", "\\n")[:220],
+                )
             return ParsedResponse(
                 text_response=text_response,
                 command_payload=None,
@@ -394,6 +423,13 @@ class AssistantResponseParser:
                 f"Ошибки валидации action-ответа (command={command}, session_id={action_session_id}): "
                 f"{'; '.join(validation_errors)}"
             )
+            self.logger.warning(
+                "[ACTION_PIPELINE][SERVER] stage=parse_validation_failed session=%s command=%s args=%s errors=%s",
+                action_session_id,
+                command,
+                args,
+                validation_errors,
+            )
             # Возвращаем только текст, без команды (fallback)
             return ParsedResponse(
                 text_response=text_response,
@@ -415,6 +451,12 @@ class AssistantResponseParser:
         self.logger.info(
             f"Распознан action-ответ: command={command}, session_id={action_session_id}, "
             f"text_len={len(text_response)}"
+        )
+        self.logger.info(
+            "[ACTION_PIPELINE][SERVER] stage=parse_success session=%s command=%s args=%s",
+            action_session_id,
+            command,
+            args,
         )
         
         return ParsedResponse(
