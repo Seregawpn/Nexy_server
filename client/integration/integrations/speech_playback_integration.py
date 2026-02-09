@@ -652,33 +652,41 @@ class SpeechPlaybackIntegration:
         """
         try:
             start_wait = time.time()
-            # Wait for queue to drain
+            stable_idle_checks = 0
+            # Wait until queue is drained AND scheduled audio tail is actually played out.
             while True:
                 if not self._avf_player:
                     break
                     
                 try:
-                    is_playing = self._avf_player.is_playing()
                     is_queue_empty = self._avf_player.is_queue_empty()
+                    buffered_sec = self._avf_player.get_buffered_audio_seconds()
                 except Exception:
-                    is_queue_empty = True # Assume empty if error
+                    is_queue_empty = True  # Assume empty if error
+                    buffered_sec = 0.0
                 
                 # If filtered/cancelled
                 if session_id in self._cancelled_sessions:
                     logger.debug(f"Finalize cancelled for {session_id}")
                     return
 
-                # If done (queue empty)
-                if is_queue_empty:
-                    # Give a small buffer for the last chunk to actually play out from buffer
-                    await asyncio.sleep(0.5) 
+                # Consider playback done only when both queue and scheduled tail are empty
+                if is_queue_empty and buffered_sec <= 0.05:
+                    stable_idle_checks += 1
+                else:
+                    stable_idle_checks = 0
+
+                if stable_idle_checks >= 3:
                     break
                 
                 if time.time() - start_wait > (timeout * 5): # Safety break
-                    logger.warning(f"Finalize timeout waiting for queue empty {session_id}")
+                    logger.warning(
+                        f"Finalize timeout waiting idle {session_id} "
+                        f"(queue_empty={is_queue_empty}, buffered_sec={buffered_sec:.3f})"
+                    )
                     break
                 
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.1)
 
             # Переход в SLEEPING (или LISTENING если это был вопрос, но здесь мы просто заканчиваем playback)
             if session_id not in self._cancelled_sessions:

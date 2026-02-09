@@ -62,6 +62,8 @@ class AVFoundationPlayer:
         self._audio_queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
         self._playing = False
         self._initialized = False
+        # Approximate "audio still scheduled in AVAudioPlayerNode" horizon.
+        self._scheduled_audio_until = 0.0
         
         self._current_output_device: str | None = None
         self._obs_token = None
@@ -385,6 +387,7 @@ class AVFoundationPlayer:
         """Stop playback."""
         with self._lock:
             self._playing = False
+            self._scheduled_audio_until = 0.0
             try:
                 if self._player_node:
                     self._player_node.stop()
@@ -395,19 +398,29 @@ class AVFoundationPlayer:
     def is_playing(self) -> bool:
         """Check if currently playing."""
         thread_alive = self._playback_thread.is_alive() if self._playback_thread else False
-        engine_running = self._engine.isRunning() if self._engine else False
         player_playing = False
         try:
             player_playing = self._player_node.isPlaying() if self._player_node else False
         except Exception:
             pass
+        buffered_sec = self.get_buffered_audio_seconds()
+        queue_non_empty = not self._audio_queue.empty()
+        engine_running = self._engine.isRunning() if self._engine else False
         logger.debug(f"🔍 is_playing check: _playing={self._playing}, thread_alive={thread_alive}, engine_running={engine_running}, player_playing={player_playing}")
-        # Возвращаем True только если флаг True И поток жив
-        return self._playing and thread_alive
+        # Consider active only when there is queued/scheduled audio.
+        return self._playing and thread_alive and (queue_non_empty or buffered_sec > 0.02)
 
     def is_queue_empty(self) -> bool:
         """Check if audio queue is empty."""
         return self._audio_queue.empty()
+
+    def get_buffered_audio_seconds(self) -> float:
+        """
+        Approximate amount of audio already scheduled to AVAudioPlayerNode.
+        """
+        with self._lock:
+            remaining = self._scheduled_audio_until - time.monotonic()
+        return remaining if remaining > 0.0 else 0.0
 
     def clear_queue(self) -> None:
         """Clear playback queue."""
@@ -456,6 +469,13 @@ class AVFoundationPlayer:
                 
                 if frame_count == 0:
                     continue
+
+                # Track approximate "scheduled but not yet rendered" duration.
+                chunk_duration_sec = frame_count / float(self.config.sample_rate)
+                with self._lock:
+                    now = time.monotonic()
+                    base = self._scheduled_audio_until if self._scheduled_audio_until > now else now
+                    self._scheduled_audio_until = base + chunk_duration_sec
 
                 # Create buffer
                 buffer = AVAudioPCMBuffer.alloc().initWithPCMFormat_frameCapacity_(fmt, frame_count)

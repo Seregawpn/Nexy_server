@@ -146,9 +146,16 @@ class SignalIntegration:
                 return
 
             if mode == AppMode.SLEEPING and prev_mode is not None and prev_mode != AppMode.SLEEPING:
-                # DONE-паттерн на переходе в sleeping отключен:
-                # иначе получается рассинхрон "режим sleeping, но еще звучит done-сигнал".
-                logger.debug("Signals: DONE skipped (mode_changed -> sleeping disabled)")
+                # Emit DONE on real transition to sleeping.
+                # Protect from false "DONE right after ERROR".
+                now = time.monotonic()
+                if (now - self._last_error_ts) < self._error_to_done_suppress_sec:
+                    logger.debug("Signals: DONE skipped (recent error)")
+                    return
+                logger.info("Signals: DONE (app.mode_changed -> sleeping)")
+                await self._service.emit(
+                    SignalRequest(pattern=SignalPattern.DONE, kind=SignalKind.AUDIO)
+                )
         except Exception:
             pass
 
@@ -177,9 +184,8 @@ class SignalIntegration:
 
     async def _on_playback_completed(self, event: dict[str, Any]):
         try:
-            # Отключаем сигнал DONE при завершении воспроизведения
-            logger.debug("Signals: DONE (playback.completed) - сигнал отключен")
-            # await self._service.emit(SignalRequest(pattern=SignalPattern.DONE, kind=SignalKind.AUDIO))
+            # DONE is emitted from app.mode_changed -> sleeping to keep a single source.
+            logger.debug("Signals: DONE skipped (playback.completed; source=mode_changed)")
         except Exception as e:
             logger.debug(f"SignalIntegration _on_playback_completed error: {e}")
 

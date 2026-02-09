@@ -1,0 +1,33 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Darwin",
+  "executionEnvironments": [
+    {
+      "root": "server",
+      "pythonVersion": "3.13",
+      "pythonPlatform": "Darwin",
+      "extraPaths": [
+        ".venv/lib/python3.13/site-packages"
+      ]
+    }
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": false,
+  "reportAttributeAccessIssue": "none",
+  "include": [
+    "server"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/node_modules",
+    "**/.venv",
+    "server/scripts/**",
+    "**/*_pb2.py",
+    "**/*_pb2_grpc.py",
+    "server/modules/grpc_service/streaming_pb2.py",
+    "server/modules/grpc_service/streaming_pb2_grpc.py"
+  ]
+}

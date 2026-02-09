@@ -45,6 +45,6 @@ __all__ = [
 ]
 
 # Версия модуля
-__version__ = "1.6.1.24"
+__version__ = "1.6.1.25"
 __author__ = "Nexy Development Team"
 __description__ = "Модуль захвата скриншотов для macOS с поддержкой JPEG"
