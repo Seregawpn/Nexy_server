@@ -84,6 +84,8 @@ class InputProcessingIntegration:
         self._secure_input_active = False
         self._last_secure_input_force_stop_ts = 0.0
         self._secure_input_force_stop_cooldown_sec = 1.5
+        self._last_interrupt_event_id: Optional[str] = None
+        self._preempt_sent_press_id: Optional[str] = None
 
     async def initialize(self) -> bool:
         try:
@@ -264,13 +266,24 @@ class InputProcessingIntegration:
         self._terminal_stop_press_id = effective
         return True
 
-    async def _publish_interrupt_and_cancel(self, session_id: Optional[str], source: str, timestamp: float):
+    async def _publish_interrupt_and_cancel(
+        self,
+        session_id: Optional[str],
+        source: str,
+        timestamp: float,
+        press_id: Optional[str] = None,
+    ):
+        event_id = str(uuid.uuid4())
+        self._last_interrupt_event_id = event_id
+        effective_press_id = press_id or self._active_press_id
         await self.event_bus.publish("interrupt.request", {
             "type": "speech_stop",
             "source": source,
             "timestamp": timestamp,
             "session_id": session_id,
-            "press_id": self._active_press_id,
+            "press_id": effective_press_id,
+            "event_id": event_id,
+            "contract_version": 1,
             "state": self._state.value,
         })
 
@@ -428,6 +441,7 @@ class InputProcessingIntegration:
         self._active_grpc_session_id = None
         self._session_waiting_grpc = False
         self._active_press_id = None
+        self._preempt_sent_press_id = None
         self._terminal_stop_press_id = None
         self._pending_session_id = None
         self._recording_started = False
@@ -440,6 +454,7 @@ class InputProcessingIntegration:
         logger.debug("INPUT RESET (%s)", reason)
         self._set_state(PTTState.IDLE, f"reset:{reason}")
         self._active_press_id = None
+        self._preempt_sent_press_id = None
         self._terminal_stop_press_id = None
         self._pending_session_id = None
         self._session_waiting_grpc = False
@@ -451,13 +466,20 @@ class InputProcessingIntegration:
     async def _handle_press(self, event: KeyEvent):
         if not self.ptt_available:
             return
+        press_id = self._extract_press_id(event) or str(uuid.uuid4())
         preempt_session_id = self._get_active_session_id() or self._active_grpc_session_id
         current_mode = selectors.get_current_mode(self.state_manager)
+        has_pending_grpc = preempt_session_id is not None and self._session_waiting_grpc
         should_preempt = (
             self._playback_active
             or current_mode == AppMode.PROCESSING
-            or preempt_session_id is not None
+            or has_pending_grpc
         )
+        if not should_preempt and self._state == PTTState.IDLE and preempt_session_id is not None:
+            # New press-cycle in idle context must not inherit stale session id from
+            # previous completed/failed cycle.
+            self._set_session_id(None, "press_stale_session_clear")
+            preempt_session_id = None
         logger.debug(
             "PRESS_PREEMPT decision: should=%s playback_active=%s mode=%s sid=%s state=%s",
             should_preempt,
@@ -466,11 +488,20 @@ class InputProcessingIntegration:
             preempt_session_id,
             self._state.value,
         )
-        if should_preempt:
+        if should_preempt and self._preempt_sent_press_id != press_id:
             # Priority rule: press during assistant speech must interrupt first, then arm mic.
             # session_id can already be None during playback tail; interruption must still happen.
-            await self._publish_interrupt_and_cancel(preempt_session_id, "keyboard.press_preempt", event.timestamp)
-        press_id = self._extract_press_id(event) or str(uuid.uuid4())
+            await self._publish_interrupt_and_cancel(
+                preempt_session_id,
+                "keyboard.press_preempt",
+                event.timestamp,
+                press_id=press_id,
+            )
+            self._preempt_sent_press_id = press_id
+        # New press always starts a new input cycle. Previous grpc-wait context becomes stale
+        # and must not trigger an extra preempt on subsequent long_press.
+        self._session_waiting_grpc = False
+        self._active_grpc_session_id = None
         self._active_press_id = press_id
         self._terminal_stop_press_id = None
         self._pending_session_id = str(uuid.uuid4())
@@ -499,19 +530,31 @@ class InputProcessingIntegration:
 
         preempt_session_id = self._active_grpc_session_id or self._get_active_session_id()
         current_mode = selectors.get_current_mode(self.state_manager)
+        has_pending_grpc = preempt_session_id is not None and self._session_waiting_grpc
         should_preempt = (
             self._playback_active
             or current_mode == AppMode.PROCESSING
-            or preempt_session_id is not None
+            or has_pending_grpc
         )
         if should_preempt:
+            effective_press_id = press_id or self._active_press_id
+            if effective_press_id and self._preempt_sent_press_id == effective_press_id:
+                logger.debug(
+                    "INPUT: skip duplicate preempt on long_press (press_id=%s, session=%s)",
+                    effective_press_id,
+                    preempt_session_id,
+                )
+            else:
             # Long-press starts a new capture session, but interrupt must target
             # currently active assistant processing/playback session.
-            await self._publish_interrupt_and_cancel(
-                preempt_session_id,
-                "keyboard.long_press",
-                event.timestamp,
-            )
+                await self._publish_interrupt_and_cancel(
+                    preempt_session_id,
+                    "keyboard.long_press",
+                    event.timestamp,
+                    press_id=effective_press_id,
+                )
+                if effective_press_id:
+                    self._preempt_sent_press_id = effective_press_id
             await self._wait_for_playback_finished()
             await self._wait_for_mic_closed()
 
@@ -573,14 +616,23 @@ class InputProcessingIntegration:
 
     async def _cancel_short_tap(self, event: KeyEvent, reason: str):
         session_id = self._get_active_session_id() or self._active_grpc_session_id
+        press_id = self._extract_press_id(event) or self._active_press_id
         current_mode = selectors.get_current_mode(self.state_manager)
+        has_pending_grpc = session_id is not None and self._session_waiting_grpc
         should_interrupt = (
             self._playback_active
             or current_mode == AppMode.PROCESSING
-            or session_id is not None
+            or has_pending_grpc
         )
-        if should_interrupt:
-            await self._publish_interrupt_and_cancel(session_id, "keyboard.short_tap", event.timestamp)
+        if should_interrupt and (not press_id or self._preempt_sent_press_id != press_id):
+            await self._publish_interrupt_and_cancel(
+                session_id,
+                "keyboard.short_tap",
+                event.timestamp,
+                press_id=press_id,
+            )
+            if press_id:
+                self._preempt_sent_press_id = press_id
         else:
             logger.debug(
                 "SHORT_TAP: interrupt suppressed (idle context), mode=%s session=%s playback_active=%s state=%s",
@@ -650,17 +702,46 @@ class InputProcessingIntegration:
     async def _on_recognition_failed(self, event):
         if self._state in {PTTState.RECORDING, PTTState.STOPPING}:
             return
-        if not self._session_waiting_grpc:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "input_processing",
-                "reason": "recognition_failed",
-            })
-            self._reset("recognition_failed")
+        data = (event or {}).get("data", {}) if isinstance(event, dict) else {}
+        failed_sid = data.get("session_id")
+        active_sid = self._active_grpc_session_id or self._get_active_session_id()
+
+        if self._session_waiting_grpc:
+            # Owner rule: waiting_grpc must be terminally cleared on STT failure
+            # for the same (or unspecified) session to avoid stale preempt context.
+            if failed_sid is None or active_sid is None or str(failed_sid) == str(active_sid):
+                self._reset("recognition_failed_waiting_grpc")
+            else:
+                logger.debug(
+                    "INPUT: recognition_failed sid mismatch skipped (failed_sid=%s, active_sid=%s)",
+                    failed_sid,
+                    active_sid,
+                )
+            return
+
+        await self.event_bus.publish("mode.request", {
+            "target": AppMode.SLEEPING,
+            "source": "input_processing",
+            "reason": "recognition_failed",
+        })
+        self._reset("recognition_failed")
 
     async def _on_grpc_completed(self, event):
         sid = (event or {}).get("data", {}).get("session_id")
         if sid and sid in {self._active_grpc_session_id, self._get_active_session_id()}:
+            if self._playback_active:
+                # Keep session context for a short playback tail window.
+                # This allows immediate interrupt/preempt to carry session_id.
+                self._set_state(PTTState.IDLE, "grpc_completed_playback_tail")
+                self._active_press_id = None
+                self._preempt_sent_press_id = None
+                self._terminal_stop_press_id = None
+                self._pending_session_id = None
+                self._session_waiting_grpc = False
+                self._recording_started = False
+                self._session_recognized = False
+                self._active_grpc_session_id = sid
+                return
             self._reset("grpc_completed")
 
     async def _on_grpc_failed(self, event):
@@ -680,6 +761,12 @@ class InputProcessingIntegration:
 
     async def _on_playback_finished(self, event):
         self._playback_active = False
+        data = (event or {}).get("data", {}) if isinstance(event, dict) else {}
+        sid = data.get("session_id")
+        if sid and sid == self._active_grpc_session_id and not self._session_waiting_grpc:
+            self._active_grpc_session_id = None
+            if self._get_active_session_id() == sid:
+                self._set_session_id(None, "playback_terminal")
         while self._playback_waiters:
             fut = self._playback_waiters.pop(0)
             if not fut.done():

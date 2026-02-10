@@ -72,6 +72,8 @@ class InterruptManagementIntegration:
         self._running = False
         self._interrupt_dedup_window_sec: float = 0.5
         self._last_interrupt_publish_ts: dict[tuple[str, str], float] = {}
+        self._interrupt_event_ttl_sec: float = 5.0
+        self._seen_interrupt_events: dict[str, float] = {}
         
         logger.info("InterruptManagementIntegration created")
     
@@ -317,8 +319,10 @@ class InterruptManagementIntegration:
             data = event.get("data", {})
             interrupt_type = data.get("type") or event.get("type")
             session_id = data.get("session_id") or event.get("session_id")
-            priority = event.get("priority", InterruptPriority.NORMAL)
-            source = event.get("source", "unknown")
+            priority = data.get("priority") or event.get("priority", InterruptPriority.NORMAL)
+            source = data.get("source") or event.get("source", "unknown")
+            press_id = data.get("press_id")
+            event_id = data.get("event_id")
             
             # REQ-004: use selector to get session_id as fallback
             if session_id is None:
@@ -329,17 +333,38 @@ class InterruptManagementIntegration:
             if not interrupt_type:
                 logger.warning("Interrupt request without type, event=%s", event)
                 return
+
+            now = time.monotonic()
+
+            # Contract guard: strict idempotency by event_id.
+            if isinstance(event_id, str) and event_id:
+                expired_ids = [
+                    key
+                    for key, ts in self._seen_interrupt_events.items()
+                    if (now - ts) > self._interrupt_event_ttl_sec
+                ]
+                for key in expired_ids:
+                    self._seen_interrupt_events.pop(key, None)
+                if event_id in self._seen_interrupt_events:
+                    logger.debug(
+                        "🛑 InterruptManager: dedup by event_id (event_id=%s, session_id=%s)",
+                        event_id,
+                        session_id,
+                    )
+                    return
+                self._seen_interrupt_events[event_id] = now
             
             # КРИТИЧНО: Централизованная остановка речи для type == "speech_stop"
             if interrupt_type == "speech_stop":
                 sid_key = str(session_id) if session_id is not None else "__none__"
-                dedup_key = (interrupt_type, sid_key)
-                now = time.monotonic()
+                pid_key = str(press_id) if press_id is not None else "__no_press__"
+                dedup_key = (interrupt_type, f"{sid_key}:{pid_key}")
                 last_ts = self._last_interrupt_publish_ts.get(dedup_key, 0.0)
                 if (now - last_ts) < self._interrupt_dedup_window_sec:
                     logger.debug(
-                        "🛑 InterruptManager: speech_stop dedup (session_id=%s, dt=%.3fs)",
+                        "🛑 InterruptManager: speech_stop dedup (session_id=%s, press_id=%s, dt=%.3fs)",
                         session_id,
+                        press_id,
                         now - last_ts,
                     )
                     return
@@ -349,7 +374,9 @@ class InterruptManagementIntegration:
                     # Publish cancel even when session_id is None.
                     # Downstream owners (gRPC/playback) implement fallback semantics for sessionless cancel.
                     await self.event_bus.publish("grpc.request_cancel", {
-                        "session_id": session_id
+                        "session_id": session_id,
+                        "press_id": press_id,
+                        "event_id": event_id,
                     })
                     logger.info(
                         "🛑 InterruptManager: grpc.request_cancel опубликован (session_id=%s)",

@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import logging
 import sys
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
 import numpy as np
@@ -92,6 +93,7 @@ class WelcomeMessageIntegration:
         self._welcome_lock = asyncio.Lock()
         self._playback_ready = False
         self._playback_ready_event = asyncio.Event()
+        self._welcome_playback_session_id: Optional[str] = None
 
         # Блокировки по разрешениям отключены по умолчанию
         self._enforce_permissions = bool(
@@ -279,11 +281,11 @@ class WelcomeMessageIntegration:
                         "(method=%s, async context)",
                         result.method,
                     )
-                    await self._send_audio_to_playback(audio_data)
+                    playback_session_id = await self._send_audio_to_playback(audio_data)
 
                     # Ждём завершения воспроизведения
                     logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
-                    await self._wait_for_playback_completion()
+                    await self._wait_for_playback_completion(playback_session_id)
                 elif audio_data is None:
                     logger.warning(
                         "⚠️ [WELCOME_INTEGRATION] Приветствие success, но audio_data отсутствует "
@@ -347,33 +349,48 @@ class WelcomeMessageIntegration:
         """Коллбек ошибки воспроизведения приветствия (вызывается из sync контекста)"""
         logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка приветствия: {error}")
             
-    async def _wait_for_playback_completion(self):
+    async def _wait_for_playback_completion(self, session_id: Optional[str]):
         """Ожидает завершения воспроизведения приветствия"""
         try:
+            if not session_id:
+                logger.warning("⚠️ [WELCOME_INTEGRATION] Нет session_id для ожидания playback — пропускаю ожидание")
+                return
             # Создаем Future для ожидания события
             playback_completed = asyncio.Future()
             
-            async def on_playback_event(event):
-                # Проверяем session_id или pattern
-                session_id = event.get("data", {}).get("session_id", "")
-                pattern = event.get("data", {}).get("pattern", "")
-                if "welcome" in session_id.lower() or "welcome" in pattern.lower():
-                    logger.info("🎵 [WELCOME_INTEGRATION] Получено событие завершения воспроизведения")
+            async def on_playback_terminal(event):
+                data = event.get("data", {}) if isinstance(event, dict) else {}
+                event_session_id = data.get("session_id")
+                if event_session_id == session_id:
+                    logger.info(
+                        "🎵 [WELCOME_INTEGRATION] Получено terminal-событие воспроизведения "
+                        "(session_id=%s, event=%s)",
+                        session_id,
+                        event.get("type"),
+                    )
                     if not playback_completed.done():
                         playback_completed.set_result(True)
             
-            # Подписываемся на событие завершения воспроизведения
-            await self.event_bus.subscribe("playback.completed", on_playback_event)
+            # Подписываемся на все terminal-события playback
+            await self.event_bus.subscribe("playback.completed", on_playback_terminal)
+            await self.event_bus.subscribe("playback.cancelled", on_playback_terminal)
+            await self.event_bus.subscribe("playback.failed", on_playback_terminal)
             
             try:
                 # Ждем завершения воспроизведения с таймаутом 10 секунд
                 await asyncio.wait_for(playback_completed, timeout=10.0)
                 logger.info("✅ [WELCOME_INTEGRATION] Воспроизведение завершено")
             except asyncio.TimeoutError:
-                logger.warning("⏱️ [WELCOME_INTEGRATION] Timeout ожидания завершения воспроизведения (10 секунд)")
+                logger.warning(
+                    "⏱️ [WELCOME_INTEGRATION] Timeout ожидания завершения воспроизведения "
+                    "(10 секунд, session_id=%s)",
+                    session_id,
+                )
             finally:
                 # Отписываемся от события
-                await self.event_bus.unsubscribe("playback.completed", on_playback_event)
+                await self.event_bus.unsubscribe("playback.completed", on_playback_terminal)
+                await self.event_bus.unsubscribe("playback.cancelled", on_playback_terminal)
+                await self.event_bus.unsubscribe("playback.failed", on_playback_terminal)
             
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _wait_for_playback_completion: {e}")
@@ -418,7 +435,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _return_to_sleeping_after_playback: {e}")
     
-    async def _send_audio_to_playback(self, audio_data: np.ndarray):
+    async def _send_audio_to_playback(self, audio_data: np.ndarray) -> str:
         """Отправляет аудио данные в SpeechPlaybackIntegration для воспроизведения"""
         try:
             audio_samples = audio_data.size if hasattr(audio_data, 'size') else len(audio_data)
@@ -446,6 +463,9 @@ class WelcomeMessageIntegration:
                     f"speed_factor={speed_factor:.2f}x, expected_duration={expected_duration:.3f}s, "
                     f"config_duration={config_duration:.3f}s"
                 )
+
+            welcome_session_id = str(uuid.uuid4())
+            self._welcome_playback_session_id = welcome_session_id
             
             # ✅ ПРАВИЛЬНО: Передаем numpy массив напрямую в плеер
             # БЕЗ конвертации в bytes - плеер сам разберется с форматом
@@ -456,14 +476,17 @@ class WelcomeMessageIntegration:
                 "dtype": "int16",  # для информации
                 "priority": 5,  # Высокий приоритет для приветствия
                 "pattern": "welcome_message",
+                "session_id": welcome_session_id,
                 "metadata": metadata,
                 "method": method,
             })
             
             logger.info("✅ [WELCOME_INTEGRATION] Аудио отправлено в SpeechPlaybackIntegration")
+            return welcome_session_id
             
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка отправки аудио: {e}")
+            return ""
 
     async def _on_permission_event(self, event: Dict[str, Any]):
         """Обработка событий статуса разрешений"""

@@ -663,13 +663,17 @@ class ProcessingWorkflow(BaseWorkflow):
             
             duration = (datetime.now() - self.processing_start_time).total_seconds() if self.processing_start_time else 0
             
-            logger.info(f"✅ ProcessingWorkflow: цепочка ЗАВЕРШЕНА успешно за {duration:.2f}с")
+            if self.recognition_failed:
+                logger.info(f"✅ ProcessingWorkflow: цепочка ЗАВЕРШЕНА (failed path) за {duration:.2f}с")
+            else:
+                logger.info(f"✅ ProcessingWorkflow: цепочка ЗАВЕРШЕНА успешно за {duration:.2f}с")
             logger.info(f"📊 ProcessingWorkflow: скриншот={self.screenshot_captured}, gRPC={self.grpc_completed}, воспроизведение={self.playback_completed}, browser={not self.browser_active}")
             
             await self._transition_to_stage(ProcessingStage.COMPLETING)
             
             # Возвращаемся в SLEEPING
-            await self._return_to_sleeping("completed")
+            terminal_reason = "failed_recognition" if self.recognition_failed else "completed"
+            await self._return_to_sleeping(terminal_reason)
             
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка завершения цепочки - {e}")
@@ -707,6 +711,16 @@ class ProcessingWorkflow(BaseWorkflow):
             if normalized_current_sid is not None:
                 self._terminal_outcome_session_id = normalized_current_sid
                 self._terminal_outcome_reason = reason
+                terminal_result = "failed" if reason.startswith("failed") or reason.startswith("error_") else "success"
+                await self.event_bus.publish(
+                    "processing.terminal",
+                    {
+                        "session_id": normalized_current_sid,
+                        "result": terminal_result,
+                        "reason": reason,
+                        "source": "ProcessingWorkflow",
+                    },
+                )
 
             logger.info(f"⚙️ ProcessingWorkflow: возврат в SLEEPING, reason={reason}")
             

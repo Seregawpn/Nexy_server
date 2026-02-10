@@ -20,6 +20,7 @@ from config.unified_config_loader import UnifiedConfigLoader
 # Импорты интеграции
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.event_types import EventTypes
+from integration.core.state_keys import StateKeys
 from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[reportAttributeAccessIssue]
 from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
 from integration.core import selectors
@@ -122,6 +123,12 @@ class TrayControllerIntegration:
 
             # Создаем TrayController (обертываем существующий модуль)
             self.tray_controller = TrayController()
+            # КРИТИЧНО: dispatch из rumps callback должен идти в EventBus loop (bg loop),
+            # а не в случайный loop инициализации.
+            try:
+                self.tray_controller.set_dispatch_loop(self.event_bus.get_loop())
+            except Exception:
+                pass
 
             # Инициализируем с повторами и бэк-оффом
             max_retries = 3
@@ -313,6 +320,12 @@ class TrayControllerIntegration:
 
     async def _on_tray_quit(self, event_type: str, data: Dict[str, Any]):
         """Корректное завершение приложения по пункту меню Quit."""
+        # КРИТИЧНО: фиксируем quit-intent синхронно в SoT до любых async публикаций.
+        # Это защищает от гонки между завершением UI-процесса и обработкой EventBus.
+        try:
+            self.state_manager.set_state_data(StateKeys.USER_QUIT_INTENT, True)
+        except Exception:
+            pass
         try:
             # Публикуем событие пользовательского завершения
             await self.event_bus.publish("tray.quit_clicked", {"source": "tray.quit"})

@@ -194,6 +194,7 @@ class GoogleSRController:
                         # Проверяем _stop перед блокирующим вызовом
                         if self._stop.is_set():
                             logger.info("🛑 Stop flag detected, breaking loop")
+                            self._emit_no_speech_terminal()
                             break
                         
                         current_limit = self._phrase_limit  # None is allowed
@@ -235,6 +236,7 @@ class GoogleSRController:
                     except sr.WaitTimeoutError:
                         if self._stop.is_set():
                             logger.info("🛑 Stop requested while waiting for speech")
+                            self._emit_no_speech_terminal()
                             break
                         # Timeout ожидания речи — продолжаем слушать
                         logger.debug("⏳ No speech detected, continuing...")
@@ -265,6 +267,13 @@ class GoogleSRController:
         finally:
             # Разрешаем последующий start_listening после завершения сессии
             self._listening.clear()
+
+    def _emit_no_speech_terminal(self) -> None:
+        """Emit terminal 'no_speech' when stop happens before any captured chunk."""
+        self.last_error = "no_speech"
+        self.failed += 1
+        if self._on_failed:
+            self._on_failed("no_speech")
     
     def _recognize_audio_chunk(self, audio) -> None:
         """

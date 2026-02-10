@@ -102,7 +102,8 @@ class ModeManagementIntegration:
         self._action_intent_ttl_sec = 3.0
         # Короткое окно дедупликации mode.request по (target_mode, session_id).
         self._mode_request_dedup_window_sec: float = 0.5
-        self._last_mode_request_ts: dict[tuple[str, str], float] = {}
+        self._last_mode_request_ts: dict[tuple[str, str, str], float] = {}
+        self._last_mode_request_id_ts: dict[str, float] = {}
 
     # ---------------- Lifecycle ----------------
     async def initialize(self) -> bool:
@@ -236,8 +237,27 @@ class ModeManagementIntegration:
             source = str(data.get("source", "unknown"))
             session_id = data.get("session_id")
             normalized_session_id = self._normalize_session_id(session_id)
+
+            # PROCESSING без session_id запрещён: иначе появляется "пустой" processing-контур
+            # (лишние app.mode_changed/screenshot/tray без request context).
+            if target == AppMode.PROCESSING and normalized_session_id is None:
+                logger.warning(
+                    "MODE_REQUEST rejected: target=PROCESSING requires session_id (source=%s)",
+                    source,
+                )
+                logger.info(
+                    "CUE_TRACE phase=mode_request.rejected target=%s source=%s session_id=%s reason=processing_requires_session",
+                    target,
+                    source,
+                    normalized_session_id,
+                )
+                return
+
             dedup_sid = normalized_session_id or "__none__"
-            dedup_key = (target.value if hasattr(target, "value") else str(target), dedup_sid)
+            dedup_source = source or "__unknown__"
+            dedup_key = (target.value if hasattr(target, "value") else str(target), dedup_sid, dedup_source)
+            request_id = data.get("request_id")
+            dedup_request_id = str(request_id) if request_id is not None else None
             now = time.monotonic()
 
             # Lightweight cleanup to keep map bounded.
@@ -245,6 +265,9 @@ class ModeManagementIntegration:
             stale_keys = [k for k, ts in self._last_mode_request_ts.items() if ts < cutoff]
             for k in stale_keys:
                 self._last_mode_request_ts.pop(k, None)
+            stale_request_ids = [rid for rid, ts in self._last_mode_request_id_ts.items() if ts < cutoff]
+            for rid in stale_request_ids:
+                self._last_mode_request_id_ts.pop(rid, None)
 
             # Важно: для финализаторов deferred-сессии не применяем ранний dedup.
             # Иначе request "processing_completed" (deferred) может "съесть"
@@ -255,17 +278,45 @@ class ModeManagementIntegration:
                 and normalized_session_id in self._deferred_sleep_sessions
             )
             if not dedup_bypass:
-                last_ts = self._last_mode_request_ts.get(dedup_key, 0.0)
-                if (now - last_ts) < self._mode_request_dedup_window_sec:
-                    logger.debug(
-                        "MODE_REQUEST dedup: target=%s session_id=%s source=%s dt=%.3fs",
-                        target,
-                        normalized_session_id,
-                        source,
-                        now - last_ts,
-                    )
-                    return
-                self._last_mode_request_ts[dedup_key] = now
+                # Primary dedup: request_id (if provided by publisher).
+                if dedup_request_id:
+                    last_ts = self._last_mode_request_id_ts.get(dedup_request_id, 0.0)
+                    if (now - last_ts) < self._mode_request_dedup_window_sec:
+                        logger.debug(
+                            "MODE_REQUEST dedup by request_id: request_id=%s target=%s session_id=%s source=%s dt=%.3fs",
+                            dedup_request_id,
+                            target,
+                            normalized_session_id,
+                            source,
+                            now - last_ts,
+                        )
+                        logger.info(
+                            "CUE_TRACE phase=mode_request.dedup target=%s source=%s session_id=%s reason=request_id",
+                            target,
+                            source,
+                            normalized_session_id,
+                        )
+                        return
+                    self._last_mode_request_id_ts[dedup_request_id] = now
+                else:
+                    # Backward-compatible dedup for publishers without request_id.
+                    last_ts = self._last_mode_request_ts.get(dedup_key, 0.0)
+                    if (now - last_ts) < self._mode_request_dedup_window_sec:
+                        logger.debug(
+                            "MODE_REQUEST dedup: target=%s session_id=%s source=%s dt=%.3fs",
+                            target,
+                            normalized_session_id,
+                            source,
+                            now - last_ts,
+                        )
+                        logger.info(
+                            "CUE_TRACE phase=mode_request.dedup target=%s source=%s session_id=%s reason=key_window",
+                            target,
+                            source,
+                            normalized_session_id,
+                        )
+                        return
+                    self._last_mode_request_ts[dedup_key] = now
             else:
                 logger.debug(
                     "MODE_REQUEST dedup bypass: target=%s session_id=%s source=%s (deferred finalize)",
@@ -308,6 +359,12 @@ class ModeManagementIntegration:
             # Идемпотентность: если запрашивают тот же режим — игнорируем (для других режимов)
             if target == current_mode:
                 logger.debug(f"Mode request ignored (same mode): {target}")
+                logger.info(
+                    "CUE_TRACE phase=mode_request.ignored target=%s source=%s session_id=%s reason=same_mode",
+                    target,
+                    source,
+                    normalized_session_id,
+                )
                 return
 
             # Guard: не уходим в SLEEPING по "штатному завершению", пока у сессии

@@ -466,6 +466,10 @@ class UnifiedConfigLoader:
         config = self._load_config()
         audio_config = self.get_audio_config()
         speech_playback_config = audio_config.get('speech_playback', {})
+        # Canonical location is top-level `speech_playback`.
+        # Keep legacy fallback for older configs where it lived under `audio`.
+        if not speech_playback_config:
+            speech_playback_config = config.get('speech_playback', {})
         
         # Получаем формат аудио от сервера (централизованный источник истины)
         server_audio_format = config.get('server_audio_format', {
@@ -517,6 +521,7 @@ class UnifiedConfigLoader:
                 True,
             ),
             'enable_resampling': speech_playback_config.get('enable_resampling', True),
+            'signal_max_age_ms': speech_playback_config.get('signal_max_age_ms', 2500),
             # Добавляем формат сервера для справки (используется как fallback при получении данных)
             'server_audio_format': server_audio_format
         }

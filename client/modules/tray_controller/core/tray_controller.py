@@ -33,11 +33,15 @@ class TrayController:
         # Поток для macOS приложения
         self._menu_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        # Loop для dispatch событий из rumps callback (должен совпадать с EventBus loop)
+        self._dispatch_loop: Optional[asyncio.AbstractEventLoop] = None
     
     async def initialize(self) -> bool:
         """Инициализация контроллера трея"""
         try:
             logger.info("🔧 Инициализация TrayController")
+            # Fallback loop (может быть переопределён через set_dispatch_loop из интеграции).
+            self._dispatch_loop = asyncio.get_running_loop()
             
             # Создаем компоненты
             self.tray_icon = MacOSTrayIcon(
@@ -186,6 +190,10 @@ class TrayController:
     def set_event_callback(self, event_type: str, callback: Callable):
         """Установить обработчик событий"""
         self.event_callbacks[event_type] = callback
+
+    def set_dispatch_loop(self, loop: asyncio.AbstractEventLoop | None):
+        """Установить loop для thread-safe dispatch из UI callback."""
+        self._dispatch_loop = loop
     
     async def _create_default_menu(self):
         """Создать меню по умолчанию"""
@@ -268,10 +276,29 @@ class TrayController:
     
     def _on_quit_clicked(self, sender):
         """Обработчик клика по выходу"""
-        # 1) Сообщаем слушателям (например, интеграции), что пользователь инициировал выход
+        # 1) Сообщаем слушателям (например, интеграции), что пользователь инициировал выход.
+        # КРИТИЧНО: rumps callback может выполняться вне asyncio loop.
+        # Доставляем событие в dispatch-loop без блокирующего ожидания UI callback.
         try:
             logger.info("🔚 Quit requested via tray menu (user action)")
-            asyncio.create_task(self._publish_event("quit_clicked", {}))
+            if self._dispatch_loop and self._dispatch_loop.is_running():
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._publish_event("quit_clicked", {}),
+                    self._dispatch_loop,
+                )
+                def _log_quit_dispatch_result(done_fut):
+                    try:
+                        done_fut.result()
+                    except Exception as exc:
+                        logger.warning("⚠️ quit_clicked dispatch failed: %s", exc)
+
+                fut.add_done_callback(_log_quit_dispatch_result)
+            else:
+                try:
+                    asyncio.create_task(self._publish_event("quit_clicked", {}))
+                except RuntimeError as exc:
+                    logger.warning("⚠️ quit_clicked event was not dispatched (no running loop): %s", exc)
+
             # 2) Завершаем приложение через rumps
             if self.tray_menu:
                 self.tray_menu.quit()

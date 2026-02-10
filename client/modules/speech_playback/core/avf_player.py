@@ -46,6 +46,8 @@ class AVFPlayerConfig:
     channels: int = 1
     buffer_size: int = 512
     volume: float = 0.8
+    audio_diag_verbose: bool = False
+    audio_diag_log_every: int = 50
 
 
 class AVFoundationPlayer:
@@ -55,6 +57,9 @@ class AVFoundationPlayer:
     
     def __init__(self, config: AVFPlayerConfig | None = None):
         self.config = config or AVFPlayerConfig()
+        self._audio_diag_verbose = bool(self.config.audio_diag_verbose)
+        self._audio_diag_log_every = max(1, int(self.config.audio_diag_log_every))
+        self._diag_chunk_counter = 0
         
         self._engine = None
         self._player_node = None
@@ -178,45 +183,62 @@ class AVFoundationPlayer:
         Returns:
             Chunk ID
         """
-        # CRITICAL DIAGNOSTIC: Log ALL details about incoming data
-        logger.info(f"📊 [ADD_AUDIO] Incoming: shape={audio_data.shape}, dtype={audio_data.dtype}, size={audio_data.size}")
+        if self._audio_diag_verbose:
+            logger.info(f"📊 [ADD_AUDIO] Incoming: shape={audio_data.shape}, dtype={audio_data.dtype}, size={audio_data.size}")
         
         # Diagnostic: check for silent audio on INPUT
         if audio_data.size > 0:
             peak = float(np.max(np.abs(audio_data)))
             min_val = float(np.min(audio_data))
             max_val = float(np.max(audio_data))
-            logger.info(f"📊 [ADD_AUDIO] INPUT peak={peak:.4f}, min={min_val:.4f}, max={max_val:.4f}")
+            if self._audio_diag_verbose:
+                logger.info(f"📊 [ADD_AUDIO] INPUT peak={peak:.4f}, min={min_val:.4f}, max={max_val:.4f}")
             if peak == 0:
-                logger.warning("⚠️ [ADD_AUDIO] Incoming audio is TOTALLY SILENT")
+                if self._audio_diag_verbose:
+                    logger.warning("⚠️ [ADD_AUDIO] Incoming audio is TOTALLY SILENT")
             elif peak < 0.0001:
-                logger.warning(f"⚠️ [ADD_AUDIO] Incoming audio is very quiet (peak: {peak:.6f})")
+                if self._audio_diag_verbose:
+                    logger.warning(f"⚠️ [ADD_AUDIO] Incoming audio is very quiet (peak: {peak:.6f})")
 
         chunk_id = f"chunk_{id(audio_data)}"
         
         # Convert int16 to float32 if needed
         if audio_data.dtype == np.int16:
-            logger.info(f"📊 [ADD_AUDIO] Converting int16 -> float32 (dividing by 32768.0)")
+            if self._audio_diag_verbose:
+                logger.info(f"📊 [ADD_AUDIO] Converting int16 -> float32 (dividing by 32768.0)")
             audio_float = audio_data.astype(np.float32) / 32768.0
             float_peak = float(np.max(np.abs(audio_float)))
-            logger.info(f"📊 [ADD_AUDIO] AFTER conversion: peak={float_peak:.6f}")
+            if self._audio_diag_verbose:
+                logger.info(f"📊 [ADD_AUDIO] AFTER conversion: peak={float_peak:.6f}")
         else:
             audio_float = audio_data.astype(np.float32)
             float_peak = float(np.max(np.abs(audio_float)))
-            logger.info(f"📊 [ADD_AUDIO] Already float: peak={float_peak:.6f}")
+            if self._audio_diag_verbose:
+                logger.info(f"📊 [ADD_AUDIO] Already float: peak={float_peak:.6f}")
         
         # CRITICAL FIX: Make an explicit copy to prevent race condition
         # The original numpy array might be reused/modified by the caller
         audio_copy = np.ascontiguousarray(audio_float, dtype=np.float32).copy()
-        logger.debug(f"📊 [ADD_AUDIO] Made copy: peak after copy={float(np.max(np.abs(audio_copy))):.6f}")
+        if self._audio_diag_verbose:
+            logger.debug(f"📊 [ADD_AUDIO] Made copy: peak after copy={float(np.max(np.abs(audio_copy))):.6f}")
         
         self._audio_queue.put({
             "id": chunk_id,
             "data": audio_copy,
             "metadata": metadata
         })
+        if isinstance(metadata, dict) and metadata.get("kind") == "signal":
+            logger.info(
+                "CUE_TRACE phase=avf.queue_push cue_id=%s pattern=%s chunk_id=%s samples=%s queue_size=%s",
+                metadata.get("cue_id"),
+                metadata.get("pattern"),
+                chunk_id,
+                len(audio_data),
+                self._audio_queue.qsize(),
+            )
         
-        logger.info(f"📊 [ADD_AUDIO] Queued chunk {chunk_id}: {len(audio_data)} samples, queue_size={self._audio_queue.qsize()}")
+        if self._audio_diag_verbose:
+            logger.info(f"📊 [ADD_AUDIO] Queued chunk {chunk_id}: {len(audio_data)} samples, queue_size={self._audio_queue.qsize()}")
         return chunk_id
 
 
@@ -436,7 +458,8 @@ class AVFoundationPlayer:
         buffered_sec = self.get_buffered_audio_seconds()
         queue_non_empty = not self._audio_queue.empty()
         engine_running = self._engine.isRunning() if self._engine else False
-        logger.debug(f"🔍 is_playing check: _playing={self._playing}, thread_alive={thread_alive}, engine_running={engine_running}, player_playing={player_playing}")
+        if self._audio_diag_verbose:
+            logger.debug(f"🔍 is_playing check: _playing={self._playing}, thread_alive={thread_alive}, engine_running={engine_running}, player_playing={player_playing}")
         # Consider active only when there is queued/scheduled audio.
         return self._playing and thread_alive and (queue_non_empty or buffered_sec > 0.02)
 
@@ -492,9 +515,13 @@ class AVFoundationPlayer:
             try:
                 audio_data = chunk["data"]
                 frame_count = len(audio_data)
+                metadata = chunk.get("metadata") if isinstance(chunk, dict) else None
+                cue_id = metadata.get("cue_id") if isinstance(metadata, dict) else None
+                cue_pattern = metadata.get("pattern") if isinstance(metadata, dict) else None
+                self._diag_chunk_counter += 1
                 
                 # CRITICAL DIAGNOSTIC: Check data immediately after extracting from queue
-                if audio_data.size > 0:
+                if self._audio_diag_verbose and audio_data.size > 0:
                     queue_peak = float(np.max(np.abs(audio_data)))
                     first_10 = audio_data[:min(10, len(audio_data))]
                     logger.info(f"📊 [QUEUE_EXTRACT] peak={queue_peak:.6f}, first_10={first_10[:5]}")
@@ -525,7 +552,8 @@ class AVFoundationPlayer:
                 
                 # Log pre-copy peak for diagnostics (use full array, not just first 100)
                 pre_peak = float(np.max(np.abs(audio_data)))
-                logger.debug(f"📊 Pre-copy peak (FULL): {pre_peak:.4f}, samples={frame_count}")
+                if self._audio_diag_verbose:
+                    logger.debug(f"📊 Pre-copy peak (FULL): {pre_peak:.4f}, samples={frame_count}")
                 
                 # CRITICAL FIX: Copy audio data to buffer
                 # PyObjC objc.varlist indexed assignment doesn't actually write to memory
@@ -578,13 +606,15 @@ class AVFoundationPlayer:
                             
                             # Check if it actually wrote
                             read_back = float(ptr[test_idx])
-                            logger.debug(f"📊 Test write: idx={test_idx}, wrote {test_value:.6f}, read back {read_back:.6f}")
+                            if self._audio_diag_verbose:
+                                logger.debug(f"📊 Test write: idx={test_idx}, wrote {test_value:.6f}, read back {read_back:.6f}")
                             
                             if abs(read_back - test_value) < 0.0001:
                                 # It works! Do full copy
                                 for i in range(frame_count):
                                     ptr[i] = float(audio_contiguous[i])
-                                logger.info(f"✅ PyObjC indexed assignment worked for {frame_count} samples")
+                                if self._audio_diag_verbose:
+                                    logger.info(f"✅ PyObjC indexed assignment worked for {frame_count} samples")
                             else:
                                 # Indexed assignment doesn't work, try struct pack
                                 logger.warning(f"⚠️ Indexed assignment failed - read back {test_val}, expected {float(audio_contiguous[0])}")
@@ -620,6 +650,13 @@ class AVFoundationPlayer:
                 
                 # Schedule buffer for playback
                 player_node.scheduleBuffer_completionHandler_(buffer, None)
+                if cue_id is not None:
+                    logger.info(
+                        "CUE_TRACE phase=avf.render_start cue_id=%s pattern=%s frames=%s",
+                        cue_id,
+                        cue_pattern,
+                        frame_count,
+                    )
                 
                 # ДИАГНОСТИКА: проверяем состояние engine и player
                 try:
@@ -643,9 +680,18 @@ class AVFoundationPlayer:
                         except Exception:
                             pass
                     
-                    logger.debug(f"▶️ Scheduled chunk: {frame_count} frames | peak={peak:.4f} | engine={engine_running}, player={player_playing}")
+                    if self._audio_diag_verbose:
+                        logger.debug(f"▶️ Scheduled chunk: {frame_count} frames | peak={peak:.4f} | engine={engine_running}, player={player_playing}")
+                    elif (self._diag_chunk_counter % self._audio_diag_log_every) == 0:
+                        logger.debug(
+                            "▶️ Scheduled chunk progress: chunks=%s engine=%s player=%s",
+                            self._diag_chunk_counter,
+                            engine_running,
+                            player_playing,
+                        )
                 except Exception as diag_e:
-                    logger.debug(f"▶️ Scheduled chunk: {frame_count} frames | diag_error={diag_e}")
+                    if self._audio_diag_verbose:
+                        logger.debug(f"▶️ Scheduled chunk: {frame_count} frames | diag_error={diag_e}")
                 
             except Exception as e:
                 logger.error(f"❌ Playback loop error: {e}")

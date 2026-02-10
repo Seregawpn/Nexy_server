@@ -8,8 +8,13 @@ decoupled from playback internals and improves reliability.
 
 from __future__ import annotations
 
+import time
+import logging
+
 from integration.core.event_bus import EventBus
 from modules.signals.core.interfaces import AudioSink
+
+logger = logging.getLogger(__name__)
 
 
 class EventBusAudioSink(AudioSink):
@@ -24,7 +29,17 @@ class EventBusAudioSink(AudioSink):
         gain: float = 1.0,
         priority: int = 10,
         pattern: str | None = None,
+        cue_id: str | None = None,
     ) -> None:
+        emitted_at_ms = int(time.monotonic() * 1000)
+        logger.info(
+            "CUE_TRACE phase=sink.publish cue_id=%s pattern=%s sr=%s ch=%s bytes=%s",
+            cue_id,
+            pattern,
+            sample_rate,
+            channels,
+            len(pcm_s16le_mono),
+        )
         # publish non-blocking; consumers must handle buffer sizes/priorities
         await self._bus.publish(
             "playback.signal",
@@ -35,5 +50,7 @@ class EventBusAudioSink(AudioSink):
                 "gain": gain,
                 "priority": priority,
                 "pattern": pattern,
+                "emitted_at_ms": emitted_at_ms,
+                "cue_id": cue_id,
             },
         )

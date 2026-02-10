@@ -10,14 +10,21 @@ import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING, Any
+import uuid
 
 import numpy as np
 
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
+from integration.core import selectors
+from integration.core.state_keys import StateKeys
 from integration.core.state_manager import (  # type: ignore[attr-defined]
     ApplicationStateManager,
 )
+try:
+    from mode_management import AppMode  # type: ignore[reportMissingImports]
+except Exception:
+    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
 
 # NEW: AVFoundationPlayer (Standard)
 if TYPE_CHECKING:
@@ -64,6 +71,9 @@ class SpeechPlaybackIntegration:
         
         # ЦЕНТРАЛИЗОВАННАЯ КОНФИГУРАЦИЯ
         self.config = unified_config.get_speech_playback_config()
+        self._audio_diag_verbose = bool(self.config.get("audio_diag_verbose", False))
+        self._audio_diag_log_every = max(1, int(self.config.get("audio_diag_log_every", 50)))
+        self._signal_max_age_ms = max(0, int(self.config.get("signal_max_age_ms", 1200)))
 
         self._avf_player: Any | None = None  # type: ignore[type-arg]
         
@@ -77,6 +87,7 @@ class SpeechPlaybackIntegration:
         self._grpc_done_sessions: dict[Any, bool] = {}
         self._cancelled_sessions: set[Any] = set()
         self._wav_header_skipped: dict[Any, bool] = {}
+        self._raw_sessions: set[str] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._needs_output_resync: bool = False
         self._pending_resync_task: asyncio.Task[Any] | None = None
@@ -88,6 +99,9 @@ class SpeechPlaybackIntegration:
         self._cancel_guard_window_sec: float = 0.5
         self._signal_block_until_ts: float = 0.0
         self._cancel_guard_task: asyncio.Task[Any] | None = None
+        self._shutdown_requested: bool = False
+        # Single source of serialization for player operations (start/stop/queue).
+        self._playback_op_lock = asyncio.Lock()
         
         # Session switch detection - prevents audio overlap
         self._current_session_id: str | None = None
@@ -140,7 +154,9 @@ class SpeechPlaybackIntegration:
                 avf_config = AVFPlayerConfig(
                     sample_rate=self.config.get('sample_rate', 48000),
                     channels=self.config.get('channels', 1),
-                    volume=self.config.get('volume', 0.8)
+                    volume=self.config.get('volume', 0.8),
+                    audio_diag_verbose=self._audio_diag_verbose,
+                    audio_diag_log_every=self._audio_diag_log_every,
                 )
                 self._avf_player = AVFoundationPlayer(avf_config)
                 if self._avf_player is not None and self._avf_player.initialize():
@@ -239,7 +255,8 @@ class SpeechPlaybackIntegration:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             audio_bytes_len = len(data.get("bytes", b""))
-            logger.info(f"🔊 [AUDIO_RECV] _on_audio_chunk received: session={sid}, bytes={audio_bytes_len}")
+            if self._audio_diag_verbose:
+                logger.info(f"🔊 [AUDIO_RECV] _on_audio_chunk received: session={sid}, bytes={audio_bytes_len}")
             
             # Фильтрация поздних чанков после отмены
             if sid is not None and (sid in self._cancelled_sessions):
@@ -301,21 +318,9 @@ class SpeechPlaybackIntegration:
                 )
                 return  # Drop chunk - избегаем воспроизведения с неверным количеством каналов
 
-            if not await self._ensure_player_ready():
-                return
-
-            # Session boundary hardening:
-            # ensure fresh playback node state for the first streamed chunk of a new gRPC session.
-            is_first_session_chunk = sid is not None and not self._had_audio_for_session.get(sid, False)
-            if is_first_session_chunk and self._avf_player:
-                try:
-                    self._avf_player.stop_playback()
-                    if not self._avf_player.start_playback():
-                        logger.warning(f"⚠️ [AUDIO] failed to restart playback node for first chunk, session={sid}")
-                    else:
-                        logger.info(f"🔄 [AUDIO] playback node restarted for new session, session={sid}")
-                except Exception as restart_e:
-                    logger.warning(f"⚠️ [AUDIO] playback restart failed for session={sid}: {restart_e}")
+            async with self._playback_op_lock:
+                if not await self._ensure_player_ready():
+                    return
 
             # Декодирование в numpy (сохраняем логику, так как gRPC шлет байты)
             try:
@@ -348,7 +353,7 @@ class SpeechPlaybackIntegration:
                 arr = np.frombuffer(audio_bytes_in, dtype=dt)
                 
                 # DIAGNOSTIC: Check raw bytes for debugging silence issue
-                if len(audio_bytes_in) >= 8:
+                if self._audio_diag_verbose and len(audio_bytes_in) >= 8:
                     first_bytes = audio_bytes_in[:8].hex()
                     peak_int16 = float(np.max(np.abs(arr))) if arr.size > 0 else 0.0
                     # Check if data is all zeros
@@ -425,11 +430,9 @@ class SpeechPlaybackIntegration:
             pattern = data.get("pattern", "raw_audio")
             session_id = data.get("session_id")
             
-            # Setup session
-            raw_session = False
-            if session_id is None:
-                session_id = f"raw:{pattern}:{int(time.time() * 1000)}"
-                raw_session = True
+            # Setup session: use UUID format to keep Session SoT/validators consistent.
+            session_id, raw_session = self._ensure_raw_session_id(session_id)
+            self._raw_sessions.add(session_id)
 
             self.state_manager.update_session_id(str(session_id))
             self._had_audio_for_session[session_id] = True
@@ -475,23 +478,86 @@ class SpeechPlaybackIntegration:
             await self._handle_error(e, where="speech.on_raw_audio", severity="warning")
 
     async def _on_app_shutdown(self, event):
+        self._shutdown_requested = True
         await self.stop()
 
     async def _on_playback_signal(self, event: dict[str, Any]):
         try:
             data = (event or {}).get("data", {})
             pattern = data.get("pattern")
+            cue_id = data.get("cue_id")
             now = time.monotonic()
+            emitted_at_ms = data.get("emitted_at_ms")
+            logger.info(
+                "CUE_TRACE phase=playback_signal.received cue_id=%s pattern=%s emitted_at_ms=%s",
+                cue_id,
+                pattern,
+                emitted_at_ms,
+            )
+            if self._shutdown_requested:
+                logger.info(
+                    "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=shutdown",
+                    cue_id,
+                    pattern,
+                )
+                return
+            if bool(self.state_manager.get_state_data(StateKeys.USER_QUIT_INTENT, False)):
+                logger.info(
+                    "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=user_quit_intent",
+                    cue_id,
+                    pattern,
+                )
+                return
+            if isinstance(emitted_at_ms, (int, float)) and self._signal_max_age_ms > 0:
+                age_ms = int(now * 1000) - int(emitted_at_ms)
+                if age_ms > self._signal_max_age_ms:
+                    logger.info(
+                        "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=stale age_ms=%s max_age_ms=%s",
+                        cue_id,
+                        pattern,
+                        age_ms,
+                        self._signal_max_age_ms,
+                    )
+                    return
+
+            current_mode = selectors.get_current_mode(self.state_manager)
+            pattern_name = str(pattern or "")
+            if pattern_name == "listen_start" and current_mode != AppMode.LISTENING:
+                logger.info(
+                    "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=stale_listen_start mode=%s",
+                    cue_id,
+                    pattern,
+                    current_mode,
+                )
+                return
+            # Terminal cues are decided by SignalIntegration (single owner).
+            # Do not re-decide them here based on current mode, otherwise
+            # quick LISTENING re-entry can suppress legitimate SLEEPING/error cues.
+
             # Anti-race guard: block only duplicate/late CANCEL cue in cancel window.
             # Do not suppress mode cues (listen_start/done/error), otherwise UX signal
             # becomes flaky right after interrupts.
             if self._cancel_in_flight and now < self._signal_block_until_ts and pattern == "cancel":
-                logger.debug("PLAYBACK_SIGNAL: cancel skipped due to cancel_in_flight")
+                logger.info(
+                    "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=cancel_in_flight",
+                    cue_id,
+                    pattern,
+                )
                 return
             if not self._avf_player:
+                logger.info(
+                    "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=player_unavailable",
+                    cue_id,
+                    pattern,
+                )
                 return
             pcm = data.get("pcm")
             if not pcm:
+                logger.info(
+                    "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=no_pcm",
+                    cue_id,
+                    pattern,
+                )
                 return
             gain = float(data.get("gain", 1.0))
             
@@ -509,15 +575,28 @@ class SpeechPlaybackIntegration:
                  except Exception:
                     pass
 
-            if not await self._ensure_player_ready():
-                return
+            async with self._playback_op_lock:
+                if not await self._ensure_player_ready():
+                    logger.info(
+                        "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=player_not_ready",
+                        cue_id,
+                        pattern,
+                    )
+                    return
 
-            meta = {"kind": "signal", "pattern": pattern}
-            # TRACE: начало воспроизведения (signal)
-            ts_ms = int(time.monotonic() * 1000)
-            logger.info(f"TRACE phase=playback.start ts={ts_ms} session=None extra={{pattern={pattern}, signal=true}}")
-            await self.event_bus.publish("playback.started", {"signal": True})
-            self._avf_player.add_audio_data(arr, metadata=meta)
+                meta = {"kind": "signal", "pattern": pattern, "cue_id": cue_id}
+                # TRACE: начало воспроизведения (signal)
+                ts_ms = int(time.monotonic() * 1000)
+                logger.info(f"TRACE phase=playback.start ts={ts_ms} session=None extra={{pattern={pattern}, signal=true}}")
+                logger.info(
+                    "CUE_TRACE phase=playback_signal.queued cue_id=%s pattern=%s samples=%s gain=%.3f",
+                    cue_id,
+                    pattern,
+                    len(arr),
+                    gain,
+                )
+                await self.event_bus.publish("playback.started", {"signal": True})
+                self._avf_player.add_audio_data(arr, metadata=meta)
             
         except Exception as e:
             await self._handle_error(e, where="speech.on_playback_signal", severity="warning")
@@ -533,13 +612,14 @@ class SpeechPlaybackIntegration:
             now = time.monotonic()
             
             # Немедленная остановка плеера
-            if self._avf_player:
-                try:
-                    self._avf_player.clear_queue()
-                    self._avf_player.stop_playback()
-                    logger.info("🛑 SpeechPlayback: плеер остановлен синхронно")
-                except Exception as e:
-                    logger.error(f"❌ SpeechPlayback: ошибка остановки плеера: {e}")
+            async with self._playback_op_lock:
+                if self._avf_player:
+                    try:
+                        self._avf_player.clear_queue()
+                        self._avf_player.stop_playback()
+                        logger.info("🛑 SpeechPlayback: плеер остановлен синхронно")
+                    except Exception as e:
+                        logger.error(f"❌ SpeechPlayback: ошибка остановки плеера: {e}")
 
             # Guard: дедуп отмены для одного sid в коротком окне
             if sid is not None and self._last_cancel_sid == sid and (now - self._last_cancel_ts) < self._cancel_guard_window_sec:
@@ -580,6 +660,7 @@ class SpeechPlaybackIntegration:
                 self._had_audio_for_session.pop(sid, None)
                 # Отмена — терминальное состояние, помечаем finalized чтобы не допустить completed позже.
                 self._finalized_sessions[sid] = True
+                self._raw_sessions.discard(str(sid))
                 # Reset current session on cancel
                 if self._current_session_id == sid:
                     self._current_session_id = None
@@ -611,12 +692,13 @@ class SpeechPlaybackIntegration:
     async def _on_grpc_cancel(self, event: dict[str, Any]):
         """Отмена активного воспроизведения по запросу gRPC."""
         try:
-            if self._avf_player:
-                 try:
-                     self._avf_player.clear_queue()
-                     self._avf_player.stop_playback()
-                 except Exception:
-                     pass
+            async with self._playback_op_lock:
+                if self._avf_player:
+                     try:
+                         self._avf_player.clear_queue()
+                         self._avf_player.stop_playback()
+                     except Exception:
+                         pass
 
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
@@ -729,6 +811,8 @@ class SpeechPlaybackIntegration:
                     "reason": "grpc_failed",
                 },
             )
+            if sid is not None:
+                self._raw_sessions.discard(str(sid))
         except Exception as e:
             await self._handle_error(e, where="speech.grpc_failed", severity="warning")
 
@@ -772,10 +856,18 @@ class SpeechPlaybackIntegration:
                     break
                 
                 if time.time() - start_wait > (timeout * 5): # Safety break
-                    logger.warning(
-                        f"Finalize timeout waiting idle {session_id} "
-                        f"(queue_empty={is_queue_empty}, buffered_sec={buffered_sec:.3f})"
-                    )
+                    # Raw cue/welcome sessions can keep a small device tail buffer even when queue is drained.
+                    # Treat this as expected and avoid warning noise.
+                    if session_id in self._raw_sessions and is_queue_empty and buffered_sec <= 0.35:
+                        logger.info(
+                            f"Finalize reached tail-buffer threshold {session_id} "
+                            f"(queue_empty={is_queue_empty}, buffered_sec={buffered_sec:.3f})"
+                        )
+                    else:
+                        logger.warning(
+                            f"Finalize timeout waiting idle {session_id} "
+                            f"(queue_empty={is_queue_empty}, buffered_sec={buffered_sec:.3f})"
+                        )
                     break
                 
                 await asyncio.sleep(0.1)
@@ -801,11 +893,24 @@ class SpeechPlaybackIntegration:
                 )
                 if published:
                     logger.info(f"SpeechPlayback: finalized session {session_id}")
+                self._raw_sessions.discard(session_id)
 
         except asyncio.CancelledError:
             return
         except Exception as e:
             await self._handle_error(e, where="speech.finalize_on_silence", severity="warning")
+
+    @staticmethod
+    def _ensure_raw_session_id(session_id: Any) -> tuple[str, bool]:
+        """Return a valid UUID session_id for raw playback path."""
+        if isinstance(session_id, str):
+            try:
+                parsed = uuid.UUID(session_id, version=4)
+                if str(parsed) == session_id:
+                    return session_id, False
+            except Exception:
+                pass
+        return str(uuid.uuid4()), True
 
     async def _handle_error(self, e: Exception, *, where: str, severity: str = "error"):
         if hasattr(self.error_handler, 'handle'):

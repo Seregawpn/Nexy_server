@@ -47,6 +47,7 @@ class SignalRequest:
     tone_hz: int = 880
     duration_ms: int = 120
     priority: int = 0
+    cue_id: str | None = None
 
 
 @runtime_checkable
@@ -84,5 +85,6 @@ class AudioSink(Protocol):
         gain: float = 1.0,
         priority: int = 10,
         pattern: str | None = None,
+        cue_id: str | None = None,
     ) -> None:
         ...

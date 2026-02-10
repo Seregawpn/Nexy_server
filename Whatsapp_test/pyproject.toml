@@ -1,0 +1,12 @@
+[project]
+name = "whatsapp-test"
+version = "0.1.0"
+description = "Mini WhatsApp automation project without MCP"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

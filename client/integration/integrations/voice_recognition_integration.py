@@ -325,11 +325,11 @@ class VoiceRecognitionIntegration:
                             # Fallback to simulation
                             self._recording_active = False
                             self._set_session_id(None, reason="start_failed")
-                            await self.event_bus.publish("voice.recognition_failed", {
-                                "session_id": session_id,
-                                "error": "start_failed",
-                                "reason": "GoogleSRController failed to start"
-                            })
+                            await self._publish_recognition_failed(
+                                session_id,
+                                error="start_failed",
+                                reason="GoogleSRController failed to start",
+                            )
                     except Exception as e:
                         logger.error(f"❌ [AUDIO] Error starting controller: {e}")
                         import traceback
@@ -337,11 +337,11 @@ class VoiceRecognitionIntegration:
                         
                         self._recording_active = False
                         self._set_session_id(None, reason="start_error")
-                        await self.event_bus.publish("voice.recognition_failed", {
-                            "session_id": session_id,
-                            "error": "start_error",
-                            "reason": str(e)
-                        })
+                        await self._publish_recognition_failed(
+                            session_id,
+                            error="start_error",
+                            reason=str(e),
+                        )
                 else:
                     # Simulation mode
                     logger.info(f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})")
@@ -486,11 +486,11 @@ class VoiceRecognitionIntegration:
                     else:
                         # TRACE: распознавание завершено с ошибкой (симуляция)
                         logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error=no_speech, simulated=true}}")
-                        await self.event_bus.publish("voice.recognition_failed", {
-                            "session_id": session_id,
-                            "error": "no_speech",
-                            "reason": "silence_or_noise"
-                        })
+                        await self._publish_recognition_failed(
+                            session_id,
+                            error="no_speech",
+                            reason="silence_or_noise",
+                        )
                         # Не переводим режим здесь — финализацию режима делает воспроизведение
                         # (SpeechPlaybackIntegration по playback.completed/failed)
 
@@ -629,11 +629,11 @@ class VoiceRecognitionIntegration:
                         return
                     self._cancel_stop_terminal_fallback(session_id)
                     logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={result.error or 'empty_result'}}}")
-                    await self.event_bus.publish("voice.recognition_failed", {
-                        "session_id": session_id,
-                        "error": result.error or "empty_result",
-                        "reason": "no_text"
-                    })
+                    await self._publish_recognition_failed(
+                        session_id,
+                        error=result.error or "empty_result",
+                        reason="no_text",
+                    )
             
             # Если PTT отпущен — закрываем микрофон и сбрасываем состояние
             if not is_still_listening:
@@ -692,11 +692,11 @@ class VoiceRecognitionIntegration:
                 self._recording_active = False
                 await self._publish_mic_closed(session_id, source="v2_failed")
                 logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={error}}}")
-                await self.event_bus.publish("voice.recognition_failed", {
-                    "session_id": session_id,
-                    "error": error,
-                    "reason": error
-                })
+                await self._publish_recognition_failed(
+                    session_id,
+                    error=error,
+                    reason=error,
+                )
                 
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error publishing failed: {e}")
@@ -773,11 +773,11 @@ class VoiceRecognitionIntegration:
         if error:
             if not self._try_mark_terminal_recognition(session_id, "snapshot_failed"):
                 return
-            await self.event_bus.publish("voice.recognition_failed", {
-                "session_id": session_id,
-                "error": error,
-                "reason": "stop_snapshot_error",
-            })
+            await self._publish_recognition_failed(
+                session_id,
+                error=error,
+                reason="stop_snapshot_error",
+            )
 
     def _schedule_stop_terminal_fallback(self, session_id: str) -> None:
         if session_id in self._pending_stop_terminal_tasks:
@@ -795,11 +795,11 @@ class VoiceRecognitionIntegration:
                     "VOICE: fallback terminal for recording_stop (session=%s, reason=no_speech_after_release)",
                     session_id,
                 )
-                await self.event_bus.publish("voice.recognition_failed", {
-                    "session_id": session_id,
-                    "error": "no_speech",
-                    "reason": "no_speech_after_release",
-                })
+                await self._publish_recognition_failed(
+                    session_id,
+                    error="no_speech",
+                    reason="no_speech_after_release",
+                )
             except asyncio.CancelledError:
                 return
             finally:
@@ -828,3 +828,20 @@ class VoiceRecognitionIntegration:
             return False
         self._terminal_recognition_ts[session_id] = now
         return True
+
+    async def _publish_recognition_failed(
+        self,
+        session_id: str | None,
+        *,
+        error: str,
+        reason: str,
+    ) -> None:
+        """Единая публикация voice.recognition_failed."""
+        await self.event_bus.publish(
+            "voice.recognition_failed",
+            {
+                "session_id": session_id,
+                "error": error,
+                "reason": reason,
+            },
+        )

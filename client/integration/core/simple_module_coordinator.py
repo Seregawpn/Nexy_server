@@ -125,6 +125,7 @@ class SimpleModuleCoordinator:
         self._idle_metrics_task: Optional[asyncio.Task] = None  # Задача периодического сбора idle метрик
         self._launch_activity_token = None
         self._xpc_transaction_active = False
+        self._user_quit_task: Optional[asyncio.Task] = None
 
         # NSApplication activator callback (устанавливается из main.py)
         self.nsapp_activator: Optional[Callable[..., bool]] = None
@@ -849,18 +850,32 @@ class SimpleModuleCoordinator:
         """Обработка пользовательского завершения через Quit в меню"""
         global _user_initiated_shutdown
         try:
+            if bool(self._ensure_state_manager().get_state_data(StateKeys.USER_QUIT_INTENT, False)):
+                logger.info("👤 User quit already acknowledged - skip duplicate handling")
+                return
+
             logger.info("👤 Пользователь инициировал завершение приложения через Quit")
             _user_initiated_shutdown = True
             self._ensure_state_manager().set_state_data(StateKeys.USER_QUIT_INTENT, True)
-            
-            # Публикуем событие завершения
-            await self._ensure_event_bus().publish("app.shutdown", {
-                "source": "user.quit",
-                "user_initiated": True
-            })
-            
-            # Останавливаем приложение
-            await self.stop()
+            logger.info("✅ [QUIT_ACK] USER_QUIT_INTENT set=True")
+
+            # Best-effort уведомление о пользовательском shutdown без блокировки quit callback.
+            # Полный stop выполняется в run().finally после выхода из app.run().
+            if self._user_quit_task is None or self._user_quit_task.done():
+                self._user_quit_task = asyncio.create_task(
+                    self._ensure_event_bus().publish("app.shutdown", {
+                        "source": "user.quit",
+                        "user_initiated": True
+                    })
+                )
+
+                def _log_quit_task_result(task: asyncio.Task) -> None:
+                    try:
+                        task.result()
+                    except Exception as exc:
+                        logger.warning("⚠️ [QUIT_ACK] Failed to publish app.shutdown from user quit: %s", exc)
+
+                self._user_quit_task.add_done_callback(_log_quit_task_result)
             
         except Exception as e:
             logger.error(f"❌ Ошибка обработки пользовательского завершения: {e}")

@@ -105,6 +105,7 @@ class AudioToneChannel(SignalChannel):
                 gain=1.0,
                 priority=max(0, req.priority),
                 pattern=req.pattern.value,
+                cue_id=req.cue_id,
             )
         except Exception as e:
             logger.warning(f"AudioToneChannel sink playback failed: {e}")

@@ -935,8 +935,9 @@ class ActionExecutionIntegration(BaseIntegration):
             # Special handling for closing "Nexy" (self)
             if app_name.lower().strip() in ["nexy", "nexy app", "nexy.app"]:
                 logger.info("[%s] Self-close requested (fallback)", FEATURE_ID)
-                # Publish shutdown event first
-                await self.event_bus.publish("app.shutdown", {"reason": "user_command"})
+                # Centralized shutdown path:
+                # publish quit intent, coordinator emits app.shutdown.
+                await self.event_bus.publish("tray.quit_clicked", {"source": "action_execution"})
                 
                 # Use osascript to quit gently
                 script = 'tell application "Nexy" to quit'

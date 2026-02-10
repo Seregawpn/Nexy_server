@@ -5,6 +5,7 @@ EventBus - Система событий для интеграции модул�
 import asyncio
 from enum import Enum
 import logging
+import time
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,32 @@ class EventBus:
         # Events to exclude from history (high-frequency)
         self._exclude_from_history = {"grpc.response.audio", "grpc.response.text"}
         self._background_tasks = set()  # Set to track fire-and-forget tasks
+        # High-frequency events: sample debug logs to avoid log flood.
+        self._debug_sample_events = {"grpc.response.audio"}
+        self._debug_sample_interval_sec = 1.0
+        self._debug_sample_state: dict[tuple[str, str], dict[str, float | int]] = {}
+
+    def _debug_log_event(self, event_type: str, key: str, message: str):
+        """Debug logging with sampling for high-frequency events."""
+        if event_type not in self._debug_sample_events:
+            logger.debug(message)
+            return
+
+        now = time.monotonic()
+        state_key = (event_type, key)
+        state = self._debug_sample_state.setdefault(state_key, {"last": 0.0, "suppressed": 0})
+        last = float(state["last"])
+        if (now - last) >= self._debug_sample_interval_sec:
+            suppressed = int(state["suppressed"])
+            state["last"] = now
+            state["suppressed"] = 0
+            if suppressed > 0:
+                logger.debug(f"{message} [suppressed={suppressed}]")
+            else:
+                logger.debug(message)
+            return
+
+        state["suppressed"] = int(state["suppressed"]) + 1
     
     def _log_future_exception(self, fut, event_type: str, callback_name: str):
         """Callback to log exceptions from fire-and-forget futures."""
@@ -119,7 +146,11 @@ class EventBus:
             subs_cnt = len(self.subscribers.get(event_type, []))
             if event_type == "app.mode_changed":
                 logger.info(f"EventBus: '{event_type}' → subscribers={subs_cnt}, data={data}")
-            logger.debug(f"EventBus: dispatch '{event_type}' to {subs_cnt} subscriber(s)")
+            self._debug_log_event(
+                event_type,
+                "dispatch",
+                f"EventBus: dispatch '{event_type}' to {subs_cnt} subscriber(s)",
+            )
             if event_type in self.subscribers:
                 for subscriber in self.subscribers[event_type]:
                     cb = subscriber["callback"]
@@ -133,12 +164,20 @@ class EventBus:
                                         fut.add_done_callback(
                                             lambda f, et=event_type, cn=str(cb): self._log_future_exception(f, et, cn)
                                         )
-                                        logger.debug(f"EventBus: scheduled (fast) async on main loop '{event_type}': {cb}")
+                                        self._debug_log_event(
+                                            event_type,
+                                            "schedule_fast",
+                                            f"EventBus: scheduled (fast) async on main loop '{event_type}': {cb}",
+                                        )
                                     else:
                                         task = asyncio.create_task(cb(event))
                                         self._background_tasks.add(task)
                                         task.add_done_callback(self._background_tasks.discard)
-                                        logger.debug(f"EventBus: create_task (fast) for '{event_type}': {cb}")
+                                        self._debug_log_event(
+                                            event_type,
+                                            "create_task_fast",
+                                            f"EventBus: create_task (fast) for '{event_type}': {cb}",
+                                        )
                                 except Exception:
                                     # last resort — выполнить inline, чтобы не терять событие
                                     await cb(event)
@@ -149,18 +188,30 @@ class EventBus:
                                     fut.add_done_callback(
                                         lambda f, et=event_type, cn=str(cb): self._log_future_exception(f, et, cn)
                                     )
-                                    logger.debug(f"EventBus: scheduled async callback on main loop for '{event_type}': {cb}")
+                                    self._debug_log_event(
+                                        event_type,
+                                        "schedule",
+                                        f"EventBus: scheduled async callback on main loop for '{event_type}': {cb}",
+                                    )
                                 else:
-                                    logger.debug(f"EventBus: awaiting async callback inline for '{event_type}': {cb}")
+                                    self._debug_log_event(
+                                        event_type,
+                                        "await_inline",
+                                        f"EventBus: awaiting async callback inline for '{event_type}': {cb}",
+                                    )
                                     await cb(event)
                         else:
                             # Синхронные колбэки вызываем напрямую (быстро и неблокирующе)
-                            logger.debug(f"EventBus: calling sync callback for '{event_type}': {cb}")
+                            self._debug_log_event(
+                                event_type,
+                                "call_sync",
+                                f"EventBus: calling sync callback for '{event_type}': {cb}",
+                            )
                             cb(event)
                     except Exception as e:
                         logger.error(f"❌ Ошибка в обработчике события {event_type}: {e}")
 
-            logger.debug(f"📢 Событие опубликовано: {event_type}")
+            self._debug_log_event(event_type, "published", f"📢 Событие опубликовано: {event_type}")
             
         except Exception as e:
             logger.error(f"❌ Ошибка публикации события {event_type}: {e}")

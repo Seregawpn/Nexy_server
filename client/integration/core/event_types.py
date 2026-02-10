@@ -26,6 +26,7 @@ class EventTypes:
     
     # ==================== Mode Management ====================
     MODE_REQUEST = "mode.request"
+    PROCESSING_TERMINAL = "processing.terminal"
     
     # ==================== Voice & Recording ====================
     VOICE_RECORDING_START = "voice.recording_start"

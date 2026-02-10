@@ -66,6 +66,8 @@ class GrpcClientIntegration:
         self.error_handler = error_handler
         self.provides = set(self.__class__.provides)
         self.requires = set(self.__class__.requires)
+        self._audio_diag_verbose: bool = False
+        self._audio_diag_log_every: int = 50
 
         # Конфиг интеграции
         if config is None:
@@ -73,9 +75,14 @@ class GrpcClientIntegration:
                 uc = UnifiedConfigLoader.get_instance()
                 cfg = (uc._load_config().get('integrations', {}) or {}).get('grpc_client', {})
                 server_name = str(cfg.get('server', 'production'))
+                self._audio_diag_verbose = bool(cfg.get("audio_diag_verbose", False))
+                self._audio_diag_log_every = max(1, int(cfg.get("audio_diag_log_every", 50)))
                 
                 # Переопределение через переменную окружения (для отладки)
                 env_server = os.environ.get('NEXY_GRPC_SERVER')
+                env_audio_diag = os.environ.get("NEXY_AUDIO_DIAG_VERBOSE")
+                if env_audio_diag is not None:
+                    self._audio_diag_verbose = str(env_audio_diag).strip().lower() in {"1", "true", "yes", "on"}
                 if env_server:
                     server_name = env_server
                     if is_production_env():
@@ -100,6 +107,9 @@ class GrpcClientIntegration:
                 config = GrpcClientIntegrationConfig()
                 # Проверяем переменную окружения даже при ошибке загрузки конфига
                 env_server = os.environ.get('NEXY_GRPC_SERVER')
+                env_audio_diag = os.environ.get("NEXY_AUDIO_DIAG_VERBOSE")
+                if env_audio_diag is not None:
+                    self._audio_diag_verbose = str(env_audio_diag).strip().lower() in {"1", "true", "yes", "on"}
                 if env_server:
                     config.server = env_server
                     if is_production_env():
@@ -122,6 +132,11 @@ class GrpcClientIntegration:
             logger.info(f"🔌 [CONFIG] Итоговый выбранный сервер для gRPC: '{self.config.server}' (local={local_addr}, production={prod_addr})")
         except Exception:
             logger.info(f"🔌 [CONFIG] Итоговый выбранный сервер для gRPC: '{self.config.server}'")
+        logger.info(
+            "🔊 [CONFIG] audio_diag_verbose=%s, audio_diag_log_every=%s",
+            self._audio_diag_verbose,
+            self._audio_diag_log_every,
+        )
 
         # gRPC клиент
         self._client: GrpcClient | None = None
@@ -1028,10 +1043,11 @@ class GrpcClientIntegration:
                     # Используем значения из чанка
                     effective_sr = chunk_sr
                     effective_ch = chunk_ch
-                    logger.debug(
-                        f"🔍 [GRPC_CHUNK_DIAG] audio_chunk: bytes={len(data)}, dtype={dtype}, "
-                        f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {session_id}"
-                    )
+                    if self._audio_diag_verbose:
+                        logger.debug(
+                            f"🔍 [GRPC_CHUNK_DIAG] audio_chunk: bytes={len(data)}, dtype={dtype}, "
+                            f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {session_id}"
+                        )
 
                     # DIAGNOSTIC: оцениваем амплитуду по полному чанку (не только head),
                     # чтобы корректно различать тишину и "микрошум".
@@ -1044,21 +1060,23 @@ class GrpcClientIntegration:
                         peak_raw >= float(self._min_audible_peak_int16)
                         or rms_raw >= float(self._min_audible_rms_int16)
                     )
-                    logger.info(
-                        f"🔬 [GRPC_AUDIO_RAW] session={session_id} chunk#{audio_chunk_count} "
-                        f"bytes={len(data)} first_bytes={first_bytes} peak_int16={peak_raw:.1f} "
-                        f"rms_int16={rms_raw:.1f} all_zeros={is_zeros} audible={is_audible} "
-                        f"threshold_peak={self._min_audible_peak_int16} threshold_rms={self._min_audible_rms_int16}"
-                    )
+                    if self._audio_diag_verbose:
+                        logger.info(
+                            f"🔬 [GRPC_AUDIO_RAW] session={session_id} chunk#{audio_chunk_count} "
+                            f"bytes={len(data)} first_bytes={first_bytes} peak_int16={peak_raw:.1f} "
+                            f"rms_int16={rms_raw:.1f} all_zeros={is_zeros} audible={is_audible} "
+                            f"threshold_peak={self._min_audible_peak_int16} threshold_rms={self._min_audible_rms_int16}"
+                        )
                     if is_zeros:
                         silent_audio_chunk_count += 1
-                        logger.debug(
-                            "🔇 [AUDIO_DIAG] Skip silent grpc.response.audio chunk #%s "
-                            "(bytes=%s, session=%s)",
-                            audio_chunk_count,
-                            len(data),
-                            session_id,
-                        )
+                        if self._audio_diag_verbose:
+                            logger.debug(
+                                "🔇 [AUDIO_DIAG] Skip silent grpc.response.audio chunk #%s "
+                                "(bytes=%s, session=%s)",
+                                audio_chunk_count,
+                                len(data),
+                                session_id,
+                            )
                         continue
                     is_micro_noise = (
                         peak_raw <= float(self._noise_floor_peak_int16)
@@ -1066,21 +1084,22 @@ class GrpcClientIntegration:
                     )
                     if is_micro_noise:
                         silent_audio_chunk_count += 1
-                        logger.debug(
-                            "🔇 [AUDIO_DIAG] Skip noise-floor grpc.response.audio chunk #%s "
-                            "(bytes=%s, peak=%s, rms=%.2f, session=%s, floor_peak=%s, floor_rms=%.1f)",
-                            audio_chunk_count,
-                            len(data),
-                            int(peak_raw),
-                            rms_raw,
-                            session_id,
-                            self._noise_floor_peak_int16,
-                            self._noise_floor_rms_int16,
-                        )
+                        if self._audio_diag_verbose:
+                            logger.debug(
+                                "🔇 [AUDIO_DIAG] Skip noise-floor grpc.response.audio chunk #%s "
+                                "(bytes=%s, peak=%s, rms=%.2f, session=%s, floor_peak=%s, floor_rms=%.1f)",
+                                audio_chunk_count,
+                                len(data),
+                                int(peak_raw),
+                                rms_raw,
+                                session_id,
+                                self._noise_floor_peak_int16,
+                                self._noise_floor_rms_int16,
+                            )
                         continue
                     # Non-zero audio is published to avoid dropping quiet speech segments.
                     non_silent_audio_chunk_count += 1
-                    if not is_audible:
+                    if not is_audible and self._audio_diag_verbose:
                         logger.debug(
                             "🔉 [AUDIO_DIAG] Low-amplitude grpc.response.audio chunk #%s "
                             "(bytes=%s, peak=%s, rms=%.1f, session=%s) published",
@@ -1091,7 +1110,21 @@ class GrpcClientIntegration:
                             session_id,
                         )
 
-                    logger.info(f"🔊 [AUDIO_DIAG] Publishing grpc.response.audio: stream chunk #{audio_chunk_count}, bytes={len(data)}, sr={effective_sr}, ch={effective_ch}, session={session_id}")
+                    if self._audio_diag_verbose:
+                        logger.info(
+                            f"🔊 [AUDIO_DIAG] Publishing grpc.response.audio: stream chunk #{audio_chunk_count}, "
+                            f"bytes={len(data)}, sr={effective_sr}, ch={effective_ch}, session={session_id}"
+                        )
+                    elif (audio_chunk_count % self._audio_diag_log_every) == 0:
+                        logger.debug(
+                            "🔊 [AUDIO_DIAG] Stream progress session=%s chunk#%s "
+                            "(audio=%s silent=%s non_silent=%s)",
+                            session_id,
+                            audio_chunk_count,
+                            audio_chunk_count,
+                            silent_audio_chunk_count,
+                            non_silent_audio_chunk_count,
+                        )
                     await self.event_bus.publish("grpc.response.audio", {
                         "session_id": session_id,
                         "dtype": dtype,
