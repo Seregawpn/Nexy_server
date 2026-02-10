@@ -70,8 +70,7 @@ class MacOSTrayMenu:
                 if nsapp.activationPolicy() != AppKit.NSApplicationActivationPolicyAccessory:
                     logger.warning("⚠️ NSApplication activation policy не установлен, устанавливаем...")
                     nsapp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
-                    nsapp.activateIgnoringOtherApps_(True)
-                    logger.info("✅ NSApplication активирован перед созданием rumps.App")
+                    logger.info("✅ NSApplication activation policy установлен перед созданием rumps.App")
             except Exception as e:
                 logger.warning(f"⚠️ Не удалось проверить/активировать NSApplication: {e}")
 

@@ -46,7 +46,7 @@
 | `actions.browser_use` | feature | mcp | true | both | - | Включить веб-автоматизацию через голосовые команды (Feature ID: F-2025-015) |
 | `actions.close_browser` | feature | mcp | true | both | - | Включить явное закрытие браузера через голосовые команды |
 | `actions.messages` | feature | mcp | true | client | - | Работа с iMessage/SMS (F-2025-016) |
-| `features.payment` | feature | payment | true | client | `ks_payment` | Включить систему оплаты и подписок (Tray menu + Integration) |
+| `features.payment` | feature | payment | false | client | `ks_payment` | Включить систему оплаты и подписок (Tray menu + Integration) |
 | `features.messages` | feature | messages | true | client | - | Включить команды iMessage (read_messages, send_message, find_contact) |
 | `features.browser` | feature | browser | true | client | - | Включить browser automation интеграции (BrowserUseIntegration, BrowserProgressIntegration) |
 | `features.actions` | feature | mcp | true | client | - | Включить набор действий MCP (open_app/close_app и др.) |

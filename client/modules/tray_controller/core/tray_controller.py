@@ -348,9 +348,8 @@ class TrayController:
                 logger.info(f"✅ setActivationPolicy вернул: {result}")
                 logger.info(f"✅ Новый activation policy: {nsapp.activationPolicy()}")
             
-            # Активируем приложение
-            nsapp.activateIgnoringOtherApps_(True)
-            logger.info("✅ NSApplication активирован перед app.run()")
+            # Не форсируем фокус здесь: startup-активация централизована в main/coordinator path.
+            logger.info("✅ NSApplication policy проверен перед app.run() (без forced activate)")
         except Exception as e:
             logger.warning(f"⚠️ Не удалось проверить/активировать NSApplication перед app.run(): {e}")
             # Продолжаем выполнение - возможно, NSApplication уже активирован

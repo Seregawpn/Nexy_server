@@ -77,9 +77,13 @@ class InputProcessingIntegration:
         self._mic_active = False
         self._mic_waiters: List[asyncio.Future] = []
         self._mic_wait_timeout = max(0.5, float(self.config.playback_wait_timeout_sec))
+        self._lifecycle_lock = asyncio.Lock()
+        self._start_in_flight = False
 
         self._health_check_task: Optional[asyncio.Task] = None
         self._secure_input_active = False
+        self._last_secure_input_force_stop_ts = 0.0
+        self._secure_input_force_stop_cooldown_sec = 1.5
 
     async def initialize(self) -> bool:
         try:
@@ -99,6 +103,7 @@ class InputProcessingIntegration:
         await self.event_bus.subscribe("voice.recognition_completed", self._on_recognition_completed, EventPriority.HIGH)
         await self.event_bus.subscribe("voice.recognition_failed", self._on_recognition_failed, EventPriority.HIGH)
         await self.event_bus.subscribe("voice.recognition_timeout", self._on_recognition_failed, EventPriority.HIGH)
+        await self.event_bus.subscribe("interrupt.request", self._on_interrupt_request, EventPriority.HIGH)
         await self.event_bus.subscribe("grpc.request_completed", self._on_grpc_completed, EventPriority.HIGH)
         await self.event_bus.subscribe("grpc.request_failed", self._on_grpc_failed, EventPriority.HIGH)
         await self.event_bus.subscribe("playback.started", self._on_playback_started, EventPriority.MEDIUM)
@@ -143,7 +148,7 @@ class InputProcessingIntegration:
             if not self.is_initialized:
                 return False
 
-            if self.state_manager.get_state_data(StateKeys.FIRST_RUN_IN_PROGRESS, False):
+            if selectors.is_first_run_in_progress(self.state_manager):
                 logger.warning("[INPUT] first-run in progress, skip start")
                 return True
 
@@ -211,8 +216,16 @@ class InputProcessingIntegration:
             if not tap_enabled and not self._secure_input_active:
                 self._secure_input_active = True
                 self.ptt_available = False
-                logger.warning("SECURE INPUT: tap disabled -> force stop")
-                await self._force_stop("secure_input_tap_disabled")
+                now = time.monotonic()
+                if (now - self._last_secure_input_force_stop_ts) < self._secure_input_force_stop_cooldown_sec:
+                    logger.warning(
+                        "SECURE INPUT: tap disabled -> force stop suppressed (cooldown, dt=%.3fs)",
+                        now - self._last_secure_input_force_stop_ts,
+                    )
+                else:
+                    self._last_secure_input_force_stop_ts = now
+                    logger.warning("SECURE INPUT: tap disabled -> force stop")
+                    await self._force_stop("secure_input_tap_disabled")
             elif tap_enabled and self._secure_input_active:
                 self._secure_input_active = False
                 self.ptt_available = True
@@ -261,6 +274,49 @@ class InputProcessingIntegration:
             "state": self._state.value,
         })
 
+    async def _on_interrupt_request(self, event):
+        """Owner path для внешних speech_stop: публикуем terminal recording_stop централизованно."""
+        data = (event or {}).get("data", {}) if isinstance(event, dict) else {}
+        interrupt_type = data.get("type") or (event or {}).get("type")
+        source = str(data.get("source") or (event or {}).get("source") or "")
+        session_id = data.get("session_id") or self._get_active_session_id() or self._active_grpc_session_id
+
+        if interrupt_type != "speech_stop":
+            return
+
+        # Собственные keyboard-ветки уже вызывают terminal stop локально.
+        if source.startswith("keyboard.") or source.startswith("input_processing."):
+            return
+
+        if not (
+            self._recording_started
+            or self._mic_active
+            or self._state in {PTTState.ARMED, PTTState.RECORDING, PTTState.STOPPING}
+        ):
+            return
+
+        logger.info(
+            "INPUT: external interrupt.request -> terminal stop (source=%s, session=%s, state=%s)",
+            source or "unknown",
+            session_id,
+            self._state.value,
+        )
+
+        await self._request_terminal_stop(
+            press_id=data.get("press_id") if isinstance(data.get("press_id"), str) else self._active_press_id,
+            session_id=session_id,
+            source="input_processing.external_interrupt",
+            timestamp=float(data.get("timestamp") or time.time()),
+            reason=str(data.get("reason") or "external_interrupt_request"),
+        )
+        await self.event_bus.publish("mode.request", {
+            "target": AppMode.SLEEPING,
+            "source": "input_processing.external_interrupt",
+            "reason": str(data.get("reason") or "external_interrupt_request"),
+            "session_id": session_id,
+        })
+        self._reset("external_interrupt_request")
+
     async def _wait_for_mic_closed(self):
         if not self._mic_active:
             return
@@ -275,10 +331,24 @@ class InputProcessingIntegration:
             if waiter in self._mic_waiters:
                 self._mic_waiters.remove(waiter)
 
+    async def _wait_for_playback_finished(self):
+        if not self._playback_active:
+            return
+        loop = asyncio.get_running_loop()
+        waiter = loop.create_future()
+        self._playback_waiters.append(waiter)
+        try:
+            await asyncio.wait_for(waiter, self._playback_wait_timeout)
+        except asyncio.TimeoutError:
+            logger.warning("playback finish timeout")
+        finally:
+            if waiter in self._playback_waiters:
+                self._playback_waiters.remove(waiter)
+
     async def _terminal_stop(self, *, press_id: Optional[str], session_id: Optional[str], source: str, timestamp: float, reason: str):
         self._set_state(PTTState.STOPPING, reason)
         if not self._try_mark_terminal_stop(press_id):
-            return
+            return False
         await self.event_bus.publish("voice.recording_stop", {
             "source": source,
             "timestamp": timestamp,
@@ -287,6 +357,31 @@ class InputProcessingIntegration:
         })
         self._recording_started = False
         await self._wait_for_mic_closed()
+        return True
+
+    async def _request_terminal_stop(
+        self,
+        *,
+        press_id: Optional[str],
+        session_id: Optional[str],
+        source: str,
+        timestamp: float,
+        reason: str,
+    ) -> bool:
+        async with self._lifecycle_lock:
+            if not (
+                self._recording_started
+                or self._mic_active
+                or self._state in {PTTState.ARMED, PTTState.RECORDING, PTTState.STOPPING}
+            ):
+                return False
+            return await self._terminal_stop(
+                press_id=press_id,
+                session_id=session_id,
+                source=source,
+                timestamp=timestamp,
+                reason=reason,
+            )
 
     async def _force_stop(self, reason: str):
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
@@ -308,7 +403,7 @@ class InputProcessingIntegration:
                 session_id,
                 self._playback_active,
             )
-        await self._terminal_stop(
+        await self._request_terminal_stop(
             press_id=self._active_press_id,
             session_id=session_id,
             source="input_processing.force_stop",
@@ -402,33 +497,62 @@ class InputProcessingIntegration:
         if self._state not in {PTTState.ARMED, PTTState.IDLE}:
             return
 
-        session_id = self._pending_session_id or str(uuid.uuid4())
-        self._pending_session_id = None
-        self._set_session_id(session_id, "long_press")
-        self._recording_started = True
-        self._recording_start_time = time.time()
-        self._set_state(PTTState.RECORDING, "long_press")
+        preempt_session_id = self._active_grpc_session_id or self._get_active_session_id()
+        current_mode = selectors.get_current_mode(self.state_manager)
+        should_preempt = (
+            self._playback_active
+            or current_mode == AppMode.PROCESSING
+            or preempt_session_id is not None
+        )
+        if should_preempt:
+            # Long-press starts a new capture session, but interrupt must target
+            # currently active assistant processing/playback session.
+            await self._publish_interrupt_and_cancel(
+                preempt_session_id,
+                "keyboard.long_press",
+                event.timestamp,
+            )
+            await self._wait_for_playback_finished()
+            await self._wait_for_mic_closed()
 
-        if self._playback_active:
-            await self._publish_interrupt_and_cancel(session_id, "keyboard.long_press", event.timestamp)
+        async with self._lifecycle_lock:
+            if self._start_in_flight or self._recording_started or self._state in {PTTState.RECORDING, PTTState.STOPPING}:
+                logger.debug(
+                    "INPUT: dedup voice.recording_start skipped (state=%s, start_in_flight=%s, recording_started=%s)",
+                    self._state.value,
+                    self._start_in_flight,
+                    self._recording_started,
+                )
+                return
 
-        await self.event_bus.publish("voice.recording_start", {
-            "source": "keyboard",
-            "timestamp": event.timestamp,
-            "session_id": session_id,
-            "press_id": self._active_press_id,
-        })
-        await self.event_bus.publish("mode.request", {
-            "target": AppMode.LISTENING,
-            "source": "input_processing",
-            "session_id": session_id,
-        })
+            session_id = self._pending_session_id or str(uuid.uuid4())
+            self._pending_session_id = None
+            self._set_session_id(session_id, "long_press")
+            self._recording_started = True
+            self._recording_start_time = time.time()
+            self._set_state(PTTState.RECORDING, "long_press")
+            self._start_in_flight = True
+
+        try:
+            await self.event_bus.publish("voice.recording_start", {
+                "source": "keyboard",
+                "timestamp": event.timestamp,
+                "session_id": session_id,
+                "press_id": self._active_press_id,
+            })
+            await self.event_bus.publish("mode.request", {
+                "target": AppMode.LISTENING,
+                "source": "input_processing",
+                "session_id": session_id,
+            })
+        finally:
+            self._start_in_flight = False
 
     async def _handle_short_press(self, event: KeyEvent):
         # Non-combo backends могут присылать short_press вместо release.
         if self._recording_started:
             session_id = self._get_active_session_id()
-            await self._terminal_stop(
+            await self._request_terminal_stop(
                 press_id=self._extract_press_id(event),
                 session_id=session_id,
                 source="keyboard",
@@ -449,7 +573,22 @@ class InputProcessingIntegration:
 
     async def _cancel_short_tap(self, event: KeyEvent, reason: str):
         session_id = self._get_active_session_id() or self._active_grpc_session_id
-        await self._publish_interrupt_and_cancel(session_id, "keyboard.short_tap", event.timestamp)
+        current_mode = selectors.get_current_mode(self.state_manager)
+        should_interrupt = (
+            self._playback_active
+            or current_mode == AppMode.PROCESSING
+            or session_id is not None
+        )
+        if should_interrupt:
+            await self._publish_interrupt_and_cancel(session_id, "keyboard.short_tap", event.timestamp)
+        else:
+            logger.debug(
+                "SHORT_TAP: interrupt suppressed (idle context), mode=%s session=%s playback_active=%s state=%s",
+                current_mode,
+                session_id,
+                self._playback_active,
+                self._state.value,
+            )
         await self.event_bus.publish("keyboard.short_press", {
             "source": "keyboard",
             "timestamp": event.timestamp,
@@ -475,7 +614,7 @@ class InputProcessingIntegration:
 
         if self._recording_started or self._mic_active or self._get_active_session_id() is not None:
             session_id = self._get_active_session_id()
-            await self._terminal_stop(
+            await self._request_terminal_stop(
                 press_id=press_id,
                 session_id=session_id,
                 source="keyboard",

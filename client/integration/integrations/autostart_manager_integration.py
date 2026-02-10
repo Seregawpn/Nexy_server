@@ -170,7 +170,7 @@ class AutostartManagerIntegration:
             # Проверяем LaunchAgent
             launch_agent_path = os.path.expanduser(self.config.launch_agent_path)
             launch_agent_exists = os.path.exists(launch_agent_path)
-            legacy_launch_agent_path = "/Library/LaunchAgents/com.sergiyzasorin.nexy.voiceassistant.plist"
+            legacy_launch_agent_path = os.path.expanduser(self.config.legacy_launch_agent_path)
             legacy_launch_agent_exists = os.path.exists(legacy_launch_agent_path)
             
             # Публикуем статус

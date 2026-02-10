@@ -73,6 +73,8 @@ class VoiceRecognitionIntegration:
         self._last_mic_closed_key: tuple[str | None, str] | None = None
         self._last_mic_closed_ts: float = 0.0
         self._mic_closed_dedup_window_sec: float = 0.5
+        # Single-flight guard для сериализации start/stop переходов аудио.
+        self._audio_transition_lock = asyncio.Lock()
         
         # NOTE: _first_run_in_progress cache removed - use selectors.is_first_run_in_progress() instead
         # Если распознавание завершилось при активном PTT — публикацию откладываем до RELEASE
@@ -82,6 +84,8 @@ class VoiceRecognitionIntegration:
         # Fallback задача после recording_stop, если от Google не пришел terminal callback.
         self._pending_stop_terminal_tasks: dict[str, asyncio.Task[Any]] = {}
         self._stop_terminal_fallback_sec: float = 1.2
+        # Runtime metric: сколько дублей start было отфильтровано guard'ом.
+        self._dedup_start_skips: int = 0
 
     @classmethod
     def run_dependency_check(cls) -> bool:
@@ -98,7 +102,6 @@ class VoiceRecognitionIntegration:
             # Подписки на события записи/прерывания
             await self.event_bus.subscribe("voice.recording_start", self._on_recording_start, EventPriority.HIGH)
             await self.event_bus.subscribe("voice.recording_stop", self._on_recording_stop, EventPriority.HIGH)
-            await self.event_bus.subscribe("keyboard.short_press", self._on_cancel_request, EventPriority.CRITICAL)
             await self.event_bus.subscribe("app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM)
 
             # NOTE: Больше не подписываемся на события first_run
@@ -237,82 +240,115 @@ class VoiceRecognitionIntegration:
     # События записи
     async def _on_recording_start(self, event: dict[str, Any]):
         try:
-            logger.debug(f"🎤 [VOICE_DEBUG] _on_recording_start event received: {event}")
-            
-            # REQ-004: use selector for first_run check (single source of truth)
-            if selectors.is_first_run_in_progress(self.state_manager):
-                logger.warning("⚠️ [VOICE] Blocked - first_run in progress")
-                return
+            async with self._audio_transition_lock:
+                logger.debug(f"🎤 [VOICE_DEBUG] _on_recording_start event received: {event}")
+                
+                # REQ-004: use selector for first_run check (single source of truth)
+                if selectors.is_first_run_in_progress(self.state_manager):
+                    logger.warning("⚠️ [VOICE] Blocked - first_run in progress")
+                    return
 
-            if "data" in event:
-                data = event.get("data", {})
-            else:
-                data = event
-            session_id = data.get("session_id")
-            # Началась запись — фиксируем сессию
-            self._set_session_id(session_id, reason="recording_start")
-            self._recording_active = True
-            
-            # Любое предыдущие распознавание отменяем
-            await self._cancel_recognition(reason="new_recording_start")
-            logger.debug(f"VOICE: recording_start, session={session_id}")
+                if "data" in event:
+                    data = event.get("data", {})
+                else:
+                    data = event
+                session_id = data.get("session_id")
+                previous_active_session_id = self._get_active_session_id()
 
-            # Публикуем voice.mic_opened СРАЗУ
-            await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
-            logger.info(f"🎤 VOICE: microphone opened (pending) для session {session_id}")
+                # Idempotent guard: повторный start в уже активной сессии не запускаем.
+                if (
+                    self._recording_active
+                    and session_id is not None
+                    and previous_active_session_id == session_id
+                ):
+                    self._dedup_start_skips += 1
+                    logger.info(
+                        "🎤 VOICE: dedup recording_start skipped (session=%s already active, total_skips=%s)",
+                        session_id,
+                        self._dedup_start_skips,
+                    )
+                    return
+                # Началась запись — фиксируем сессию
+                self._set_session_id(session_id, reason="recording_start")
+                self._recording_active = True
+                
+                # Любое предыдущие распознавание отменяем
+                await self._cancel_recognition(reason="new_recording_start")
+                logger.debug(f"VOICE: recording_start, session={session_id}")
 
-            # Start GoogleSRController
-            # Note: We rely on _GOOGLE_SR_AVAILABLE check done in init
-            
-            # Lazy initialize if needed (e.g. if start() was skipped due to permissions gate)
-            if not self._google_sr_controller and not self.config.simulate:
-                logger.info("🔄 [AUDIO] Lazy initializing GoogleSRController on first recording request...")
-                await self._initialize_controller()
+                # Публикуем voice.mic_opened СРАЗУ
+                await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
+                logger.info(f"🎤 VOICE: microphone opened (pending) для session {session_id}")
 
-            if self._google_sr_controller and not self.config.simulate:
-                try:
-                    # КРИТИЧНО: Останавливаем предыдущее слушание ПЕРЕД стартом нового
-                    # Это гарантирует что при interrupt старый поток будет остановлен
-                    self._google_sr_controller.cancel_listening()
-                    
-                    logger.info(f"🚀 [AUDIO] Starting GoogleSRController for session {session_id}")
-                    # session_id уже установлен в state_manager через _set_session_id выше
-                    success = self._google_sr_controller.start_listening()
-                    if success:
-                        await self.event_bus.publish("voice.recognition_started", {
-                            "session_id": session_id,
-                            "language": self.config.language
-                        })
-                        logger.info(f"✅ [AUDIO] GoogleSRController started for session {session_id}")
-                    else:
-                        logger.error(f"❌ [AUDIO] GoogleSRController failed to start (returned False)")
-                        # Fallback to simulation
+                # Start GoogleSRController
+                # Note: We rely on _GOOGLE_SR_AVAILABLE check done in init
+                
+                # Lazy initialize if needed (e.g. if start() was skipped due to permissions gate)
+                if not self._google_sr_controller and not self.config.simulate:
+                    logger.info("🔄 [AUDIO] Lazy initializing GoogleSRController on first recording request...")
+                    await self._initialize_controller()
+
+                if self._google_sr_controller and not self.config.simulate:
+                    try:
+                        if self._controller_is_listening():
+                            if (
+                                previous_active_session_id is not None
+                                and session_id is not None
+                                and previous_active_session_id != session_id
+                            ):
+                                logger.warning(
+                                    "⚠️ [AUDIO] Controller still listening for previous session=%s, forcing cancel before new session=%s",
+                                    previous_active_session_id,
+                                    session_id,
+                                )
+                                self._google_sr_controller.cancel_listening()
+                            else:
+                                self._dedup_start_skips += 1
+                                logger.info(
+                                    "🎤 VOICE: dedup start_listening skipped (already listening, session=%s, total_skips=%s)",
+                                    session_id,
+                                    self._dedup_start_skips,
+                                )
+                                return
+                        
+                        logger.info(f"🚀 [AUDIO] Starting GoogleSRController for session {session_id}")
+                        # session_id уже установлен в state_manager через _set_session_id выше
+                        success = self._google_sr_controller.start_listening()
+                        if success:
+                            await self.event_bus.publish("voice.recognition_started", {
+                                "session_id": session_id,
+                                "language": self.config.language
+                            })
+                            logger.info(f"✅ [AUDIO] GoogleSRController started for session {session_id}")
+                        else:
+                            logger.error(f"❌ [AUDIO] GoogleSRController failed to start (returned False)")
+                            # Fallback to simulation
+                            self._recording_active = False
+                            self._set_session_id(None, reason="start_failed")
+                            await self.event_bus.publish("voice.recognition_failed", {
+                                "session_id": session_id,
+                                "error": "start_failed",
+                                "reason": "GoogleSRController failed to start"
+                            })
+                    except Exception as e:
+                        logger.error(f"❌ [AUDIO] Error starting controller: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        
                         self._recording_active = False
-                        self._set_session_id(None, reason="start_failed")
+                        self._set_session_id(None, reason="start_error")
                         await self.event_bus.publish("voice.recognition_failed", {
                             "session_id": session_id,
-                            "error": "start_failed",
-                            "reason": "GoogleSRController failed to start"
+                            "error": "start_error",
+                            "reason": str(e)
                         })
-                except Exception as e:
-                    logger.error(f"❌ [AUDIO] Error starting controller: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-                    
-                    self._recording_active = False
-                    self._set_session_id(None, reason="start_error")
-                    await self.event_bus.publish("voice.recognition_failed", {
-                        "session_id": session_id,
-                        "error": "start_error",
-                        "reason": str(e)
-                    })
-            else:
-                # Simulation mode
-                logger.info(f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})")
-                if session_id is not None:
-                    await self._start_recognition(session_id)
                 else:
-                    logger.warning("VOICE: session_id is None, cannot start recognition")
+                    # Simulation mode
+                    logger.info(f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})")
+                    if session_id is not None:
+                        await self._start_recognition(session_id)
+                    else:
+                        logger.warning("VOICE: session_id is None, cannot start recognition")
         except Exception as e:
             logger.error(f"VOICE: error in recording_start handler: {e}")
             import traceback
@@ -320,82 +356,66 @@ class VoiceRecognitionIntegration:
 
     async def _on_recording_stop(self, event: dict[str, Any]):
         try:
-            if "data" in event:
-                data = event.get("data", {})
-            else:
-                data = event
-            session_id = data.get("session_id")
-            logger.debug(f"VOICE: recording_stop, session={session_id}")
+            async with self._audio_transition_lock:
+                if "data" in event:
+                    data = event.get("data", {})
+                else:
+                    data = event
+                session_id = data.get("session_id")
+                logger.debug(f"VOICE: recording_stop, session={session_id}")
 
-            active_session_id = self._get_active_session_id()
-            resolved_session_id = session_id
+                active_session_id = self._get_active_session_id()
+                resolved_session_id = session_id
 
-            # Если event пришел без session_id, но активная сессия есть — используем ее.
-            if resolved_session_id is None and active_session_id is not None:
-                resolved_session_id = active_session_id
-                logger.warning(
-                    "VOICE: recording_stop без session_id, используем active session=%s",
-                    resolved_session_id,
-                )
+                # Если event пришел без session_id, но активная сессия есть — используем ее.
+                if resolved_session_id is None and active_session_id is not None:
+                    resolved_session_id = active_session_id
+                    logger.warning(
+                        "VOICE: recording_stop без session_id, используем active session=%s",
+                        resolved_session_id,
+                    )
 
-            # Если session mismatch при явно заданном session_id — игнорируем.
-            if (
-                session_id is not None
-                and active_session_id is not None
-                and session_id != active_session_id
-            ):
-                logger.debug(
-                    "VOICE: recording_stop ignored (session mismatch: event=%s, active=%s)",
-                    session_id,
-                    active_session_id,
-                )
-                return
+                # Если session mismatch при явно заданном session_id — игнорируем.
+                if (
+                    session_id is not None
+                    and active_session_id is not None
+                    and session_id != active_session_id
+                ):
+                    logger.debug(
+                        "VOICE: recording_stop ignored (session mismatch: event=%s, active=%s)",
+                        session_id,
+                        active_session_id,
+                    )
+                    return
 
-            # Fail-safe: даже без session_id надо закрыть микрофон, если запись активна.
-            if resolved_session_id is None and not self._recording_active:
-                logger.debug(
-                    "VOICE: recording_stop ignored (no session and recording already inactive)"
-                )
-                return
+                # Fail-safe: даже без session_id надо закрыть микрофон, если запись активна.
+                if resolved_session_id is None and not self._recording_active:
+                    logger.debug(
+                        "VOICE: recording_stop ignored (no session and recording already inactive)"
+                    )
+                    return
 
-            self._recording_active = False
-            
-            # ✅ КРИТИЧНО: Публикуем voice.mic_closed СРАЗУ, не дожидаясь завершения распознавания
-            # Это устраняет задержку 5-10 секунд после отпускания клавиши
-            await self._publish_mic_closed(resolved_session_id, source="recording_stop")
-            logger.info(f"🎤 VOICE: microphone closed immediately for session {resolved_session_id}")
-            
-            # Stop GoogleSRController — МГНОВЕННО, без ожидания
-            # Результаты придут через callback'и асинхронно
-            if self._google_sr_controller and not self.config.simulate:
-                logger.debug(f"🎤 Calling stop_listening for session {resolved_session_id}")
-                # stop_listening() теперь мгновенный — просто устанавливает флаги
-                result = self._google_sr_controller.stop_listening()
-                # Пробуем зафиксировать terminal результат сразу из snapshot состояния.
-                await self._publish_stop_snapshot_terminal(resolved_session_id, result)
-                # Если snapshot пустой — ставим fallback, чтобы PROCESSING не зависал.
-                if resolved_session_id is not None:
-                    self._schedule_stop_terminal_fallback(resolved_session_id)
+                self._recording_active = False
+                
+                # ✅ КРИТИЧНО: Публикуем voice.mic_closed СРАЗУ, не дожидаясь завершения распознавания
+                # Это устраняет задержку 5-10 секунд после отпускания клавиши
+                await self._publish_mic_closed(resolved_session_id, source="recording_stop")
+                logger.info(f"🎤 VOICE: microphone closed immediately for session {resolved_session_id}")
+                
+                # Stop GoogleSRController — МГНОВЕННО, без ожидания
+                # Результаты придут через callback'и асинхронно
+                if self._google_sr_controller and not self.config.simulate:
+                    logger.debug(f"🎤 Calling stop_listening for session {resolved_session_id}")
+                    # stop_listening() теперь мгновенный — просто устанавливает флаги
+                    result = self._google_sr_controller.stop_listening()
+                    # Пробуем зафиксировать terminal результат сразу из snapshot состояния.
+                    await self._publish_stop_snapshot_terminal(resolved_session_id, result)
+                    # Если snapshot пустой — ставим fallback, чтобы PROCESSING не зависал.
+                    if resolved_session_id is not None:
+                        self._schedule_stop_terminal_fallback(resolved_session_id)
                 
         except Exception as e:
             logger.error(f"VOICE: error in recording_stop handler: {e}")
-
-    async def _on_cancel_request(self, event: dict[str, Any]):
-        try:
-            logger.debug("VOICE: cancel requested")
-            await self._cancel_recognition(reason="cancel_requested")
-            
-            # Cancel GoogleSRController
-            if self._google_sr_controller:
-                self._google_sr_controller.cancel_listening()
-                
-            active_sid = self._get_active_session_id()
-            if active_sid is not None:
-                self._cancel_stop_terminal_fallback(active_sid)
-            self._set_session_id(None, reason="cancel_requested")
-            self._recording_active = False
-        except Exception as e:
-            logger.error(f"VOICE: error in cancel handler: {e}")
 
     async def _on_app_mode_changed(self, event: dict[str, Any]):
         """Страховка: при выходе из LISTENING закрываем любое активное прослушивание"""
@@ -693,6 +713,21 @@ class VoiceRecognitionIntegration:
             # В случае ошибки/отказа доступа — мягко переходим в симуляцию
             self.config.simulate = True
             logger.info("🔄 Switching to simulation mode due to microphone probe failure")
+            return False
+
+    def _controller_is_listening(self) -> bool:
+        """Проверка активного listening в контроллере (best-effort, без нового API)."""
+        controller = self._google_sr_controller
+        if not controller:
+            return False
+        try:
+            is_listening = getattr(controller, "is_listening", None)
+            if callable(is_listening):
+                return bool(is_listening())
+            # Backward-compatible fallback for old controller implementations.
+            listening_flag = getattr(controller, "_listening", None)
+            return bool(listening_flag is not None and listening_flag.is_set())
+        except Exception:
             return False
 
     async def _publish_mic_closed(self, session_id: str | None, *, source: str) -> None:

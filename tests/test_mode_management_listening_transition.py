@@ -1,81 +1,85 @@
 """
-Изолированные тесты для проверки исправлений перехода в LISTENING из PROCESSING.
-
-Тестирует:
-1. Разрешение перехода в LISTENING из PROCESSING (прерывание текущей обработки)
-2. Нормализация session_id для сравнения (float vs str)
-3. Отсутствие дублирования логики проверки session_id
+Поведенческие тесты ModeManagementIntegration для переходов в LISTENING/PROCESSING.
 """
 
-import inspect
+from unittest.mock import AsyncMock
+
 import pytest
 
+from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus
+from integration.core.state_manager import ApplicationStateManager
 from integration.integrations.mode_management_integration import ModeManagementIntegration
-from integration.core.state_manager import AppMode
+from modules.mode_management import AppMode
 
 
-class TestModeManagementListeningTransition:
-    """Изолированные тесты для перехода в LISTENING из PROCESSING."""
-    
-    def test_listening_transition_logic_isolated(self):
-        """Тест: Логика разрешения перехода в LISTENING изолирована."""
-        # Читаем исходный код _on_mode_request
-        source = inspect.getsource(ModeManagementIntegration._on_mode_request)
-        
-        # Проверяем наличие логики разрешения перехода в LISTENING
-        assert 'target == AppMode.LISTENING' in source, \
-            "Должна быть проверка target == AppMode.LISTENING"
-        
-        # Проверяем, что переход разрешён даже с другим session_id
-        assert 'разрешаем переход в LISTENING' in source or 'allow LISTENING transition' in source.lower(), \
-            "Должна быть логика разрешения перехода в LISTENING"
-    
-    def test_session_id_normalization_logic(self):
-        """Тест: Логика нормализации session_id изолирована."""
-        # Читаем исходный код _on_mode_request
-        source = inspect.getsource(ModeManagementIntegration._on_mode_request)
-        
-        # Проверяем наличие нормализации session_id
-        assert 'session_id_str = str(session_id)' in source, \
-            "Должна быть нормализация session_id к строке"
-        
-        assert 'current_session_id_str = str(current_session_id)' in source, \
-            "Должна быть нормализация current_session_id к строке"
-    
-    def test_no_duplicate_session_id_checks(self):
-        """Тест: Нет дублирования логики проверки session_id."""
-        # Читаем исходный код _on_mode_request
-        source = inspect.getsource(ModeManagementIntegration._on_mode_request)
-        
-        # Подсчитываем количество нормализаций session_id
-        session_id_normalizations = source.count('session_id_str = str(')
-        
-        # Должна быть только одна нормализация для request и одна для current
-        assert session_id_normalizations == 2, \
-            f"Должна быть нормализация session_id (2 места: current и request), найдено: {session_id_normalizations}"
-    
-    def test_no_conflicting_mode_checks(self):
-        """Тест: Нет конфликтующих проверок режима."""
-        # Читаем исходный код _on_mode_request
-        source = inspect.getsource(ModeManagementIntegration._on_mode_request)
-        
-        # Подсчитываем количество проверок target == AppMode.LISTENING
-        listening_checks = source.count('target == AppMode.LISTENING')
-        
-        # Должна быть только одна проверка для разрешения перехода в LISTENING
-        assert listening_checks == 1, \
-            f"Должна быть только одна проверка target == AppMode.LISTENING, найдено: {listening_checks}"
-    
-    def test_no_duplicate_listening_transition_logic(self):
-        """Тест: Нет дублирования логики перехода в LISTENING."""
-        # Читаем исходный код _on_mode_request
-        source = inspect.getsource(ModeManagementIntegration._on_mode_request)
-        
-        # Проверяем, что логика разрешения перехода в LISTENING есть только в одном месте
-        # Ищем все места, где упоминается LISTENING в контексте разрешения перехода
-        listening_allows = source.count('разрешаем переход в LISTENING')
-        
-        # Должна быть только одна логика разрешения
-        assert listening_allows == 1, \
-            f"Должна быть только одна логика разрешения перехода в LISTENING, найдено: {listening_allows}"
+@pytest.mark.asyncio
+async def test_listening_request_from_processing_without_session_is_applied():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    integration = ModeManagementIntegration(event_bus, state_manager, ErrorHandler(event_bus))
+    integration._apply_mode = AsyncMock()
 
+    state_manager.set_mode(AppMode.PROCESSING, session_id="11111111-1111-4111-8111-111111111111")
+
+    await integration._on_mode_request(
+        {
+            "data": {
+                "target": AppMode.LISTENING,
+                "source": "input_processing",
+                "session_id": None,
+            }
+        }
+    )
+
+    integration._apply_mode.assert_awaited_once()
+    args, kwargs = integration._apply_mode.await_args
+    assert args[0] == AppMode.LISTENING
+
+
+@pytest.mark.asyncio
+async def test_request_with_mismatched_session_in_processing_is_ignored():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    integration = ModeManagementIntegration(event_bus, state_manager, ErrorHandler(event_bus))
+    integration._apply_mode = AsyncMock()
+
+    state_manager.set_mode(AppMode.PROCESSING, session_id="22222222-2222-4222-8222-222222222222")
+
+    await integration._on_mode_request(
+        {
+            "data": {
+                "target": AppMode.SLEEPING,
+                "source": "playback.finished",
+                "session_id": "33333333-3333-4333-8333-333333333333",
+            }
+        }
+    )
+
+    integration._apply_mode.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_request_bypasses_session_guard():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    integration = ModeManagementIntegration(event_bus, state_manager, ErrorHandler(event_bus))
+    integration._apply_mode = AsyncMock()
+
+    state_manager.set_mode(AppMode.PROCESSING, session_id="44444444-4444-4444-8444-444444444444")
+
+    await integration._on_mode_request(
+        {
+            "data": {
+                "target": AppMode.SLEEPING,
+                "source": "interrupt",
+                "priority": 100,
+                "session_id": "55555555-5555-4555-8555-555555555555",
+            }
+        }
+    )
+
+    integration._apply_mode.assert_awaited_once()
+    args, kwargs = integration._apply_mode.await_args
+    assert args[0] == AppMode.SLEEPING
+    assert kwargs.get("source") == "interrupt"

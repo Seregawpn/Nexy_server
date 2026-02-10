@@ -52,6 +52,7 @@ class KeyboardMonitor:
         self._n_pressed = False
         self._combo_active = False
         self._combo_start_time: float | None = None
+        self._other_modifier_pressed = False
         
         # pynput будет импортирован лениво в start_monitoring()
         # чтобы не триггерить проверку Accessibility при создании объекта
@@ -223,6 +224,9 @@ class KeyboardMonitor:
                         if self._control_pressed:
                             return  # Игнорируем повторные нажатия
                         self._control_pressed = True
+                    elif self._is_other_modifier_key(key):
+                        self._other_modifier_pressed = True
+                        return
                     elif is_n:
                         # Cooldown только для keyDown N
                         if current_time - self.last_event_time < self.event_cooldown:
@@ -237,7 +241,7 @@ class KeyboardMonitor:
                     # Обновляем состояние комбинации
                     self._update_combo_state()
             else:
-                # Обработка одиночной клавиши (left_shift)
+                # Обработка одиночной клавиши (left_control)
                 # Проверяем cooldown
                 if current_time - self.last_event_time < self.event_cooldown:
                     return
@@ -284,6 +288,9 @@ class KeyboardMonitor:
                         if not self._control_pressed:
                             return
                         self._control_pressed = False
+                    elif self._is_other_modifier_key(key):
+                        self._other_modifier_pressed = False
+                        return
                     elif is_n:
                         if not self._n_pressed:
                             return
@@ -294,7 +301,7 @@ class KeyboardMonitor:
                     # Обновляем состояние комбинации
                     self._update_combo_state()
             else:
-                # Обработка одиночной клавиши (left_shift)
+                # Обработка одиночной клавиши (left_control)
                 # Проверяем, что это наша клавиша
                 if not self._is_target_key(key):
                     return
@@ -337,7 +344,7 @@ class KeyboardMonitor:
         """Обновляет состояние комбинации Control+N и генерирует события при изменениях"""
         now = time.time()
         was_active = self._combo_active
-        should_be_active = self._control_pressed and self._n_pressed
+        should_be_active = self._control_pressed and self._n_pressed and (not self._other_modifier_pressed)
         
         if should_be_active and not was_active:
             # Активация комбинации: обе клавиши зажаты
@@ -395,13 +402,11 @@ class KeyboardMonitor:
                     return True
                 return False
                 
-            if self.key_to_monitor == 'left_shift':
-                # pynput не различает левый/правый Shift, используем общий shift
-                logger.warning("⚠️ pynput не различает левый/правый Shift, используем общий shift")
+            if self.key_to_monitor == 'left_control':
                 keyboard = self.keyboard
                 if keyboard is None:
                     return False
-                return key == keyboard.Key.shift
+                return key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l)
             else:
                 logger.warning(f"⚠️ Неподдерживаемая клавиша для pynput: {self.key_to_monitor}")
                 return False
@@ -485,6 +490,21 @@ class KeyboardMonitor:
             return True
         key_name = getattr(key, "name", None)
         return isinstance(key_name, str) and key_name.lower() == "n"
+
+    def _is_other_modifier_key(self, key: Any) -> bool:
+        """Проверяет, что нажат модификатор кроме Control."""
+        keyboard = self.keyboard
+        if keyboard is None:
+            return False
+        candidates = [
+            getattr(keyboard.Key, "alt", None),
+            getattr(keyboard.Key, "alt_l", None),
+            getattr(keyboard.Key, "alt_r", None),
+            getattr(keyboard.Key, "cmd", None),
+            getattr(keyboard.Key, "cmd_l", None),
+            getattr(keyboard.Key, "cmd_r", None),
+        ]
+        return any(c is not None and key == c for c in candidates)
     
     def get_status(self) -> dict[str, Any]:
         """Возвращает статус мониторинга"""

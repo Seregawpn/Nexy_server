@@ -118,6 +118,7 @@ class SimpleModuleCoordinator:
         # Состояние tray (gate-механизм для блокирующих операций)
         self._tray_ready = False
         self._tray_start_time = None
+        self._focus_fallback_done = False
         self._tal_hold_start: Optional[float] = None  # Время начала TAL удержания
         self._tal_hold_active: bool = False  # Флаг активного TAL hold (для идемпотентности)
         self._tal_refresh_task: Optional[asyncio.Task] = None  # Задача периодического обновления
@@ -126,7 +127,7 @@ class SimpleModuleCoordinator:
         self._xpc_transaction_active = False
 
         # NSApplication activator callback (устанавливается из main.py)
-        self.nsapp_activator: Optional[Callable[[], bool]] = None
+        self.nsapp_activator: Optional[Callable[..., bool]] = None
     
     def _ensure_event_bus(self) -> EventBus:
         """Гарантирует, что event_bus инициализирован"""
@@ -151,6 +152,48 @@ class SimpleModuleCoordinator:
         if self._bg_loop is None:
             raise RuntimeError("Фоновый event loop не инициализирован. Вызовите initialize() сначала.")
         return self._bg_loop
+
+    def _get_focus_config(self) -> dict[str, Any]:
+        """Возвращает конфиг управления фокусом с дефолтами."""
+        try:
+            raw = self.config._load_config()
+            cfg = raw.get("focus", {}) if isinstance(raw, dict) else {}
+        except Exception:
+            cfg = {}
+        return {
+            "force_activate_on_startup": bool(cfg.get("force_activate_on_startup", False)),
+            "allow_tray_startup_fallback": bool(cfg.get("allow_tray_startup_fallback", True)),
+            "tray_fallback_timeout_sec": float(cfg.get("tray_fallback_timeout_sec", 6.0)),
+        }
+
+    def _force_focus_activation_for_tray_once(self, reason: str) -> bool:
+        """Однократный fallback: форс-активация NSApplication при задержке tray."""
+        if self._focus_fallback_done:
+            logger.info("[FOCUS] Fallback already used once - skip (reason=%s)", reason)
+            return False
+        self._focus_fallback_done = True
+        logger.warning("[FOCUS] Triggering one-shot tray startup fallback (reason=%s)", reason)
+        try:
+            if self.nsapp_activator:
+                # main.py callback supports force_activate kwarg.
+                self.nsapp_activator(force_activate=True)
+                logger.info("[FOCUS] One-shot fallback activation executed via nsapp_activator")
+                return True
+        except TypeError:
+            logger.warning("[FOCUS] nsapp_activator does not support force_activate kwarg, using direct fallback")
+        except Exception as e:
+            logger.warning("[FOCUS] nsapp_activator fallback failed: %s", e)
+
+        try:
+            import AppKit
+
+            app = AppKit.NSApplication.sharedApplication()
+            app.activateIgnoringOtherApps_(True)
+            logger.info("[FOCUS] One-shot fallback activation executed directly via AppKit")
+            return True
+        except Exception as e:
+            logger.error("[FOCUS] Failed to execute tray startup fallback activation: %s", e)
+            return False
         
     async def initialize(self) -> bool:
         """Инициализация всех компонентов и интеграций"""
@@ -166,6 +209,7 @@ class SimpleModuleCoordinator:
             self.event_bus = EventBus()
             self.state_manager = ApplicationStateManager()
             self.error_handler = ErrorHandler(self.event_bus)
+            self.state_manager.set_state_data(StateKeys.USER_QUIT_INTENT, False)
             print("✅ Core компоненты созданы")
 
             # Sync StateManager from V2 ledger (SoT)
@@ -407,47 +451,11 @@ class SimpleModuleCoordinator:
                 print("⛔ [PERMISSIONS] First-run не завершён — запускаем только permissions flow")
 
 
-            # Запускаем интеграции в правильном порядке (с учетом зависимостей)
-            # КРИТИЧНО: tray должен быть ВТОРЫМ (сразу после instance_manager)
-            # чтобы иконка появилась ДО блокирующих операций (first_run_permissions)
-            startup_order = [
-                'instance_manager',        # 1. Управление экземплярами (ПЕРВЫЙ - блокирующий)
-                'tray',                    # 2. GUI и меню-бар (ВТОРОЙ - неблокирующий, критично для UX)
-                'hardware_id',             # 3. Получить уникальный ID
-                'first_run_permissions',   # 4. Запрос разрешений при первом запуске (блокирующий - ПОСЛЕ tray!)
-                'permission_restart',      # 5. Автоматический перезапуск после выдачи критических разрешений
-                'mode_management',         # 6. Управление режимами
-                'input',                   # 7. Обработка ввода (использует accessibility)
-                'voice_recognition',       # 8. Распознавание речи (использует microphone)
-                'network',                 # 9. Сетевая система
-                'interrupt',               # 10. Управление прерываниями
-                'screenshot_capture',      # 11. Захват экрана (использует screen_capture)
-                'grpc',                    # 12. gRPC клиент (зависит от hardware_id)
-                'action_execution',        # 13. Выполнение MCP команд (зависит от grpc)
-                'whatsapp',                # 14. WhatsApp (F-2025-019)
-                'browser_use',             # 15. Browser automation (F-2025-015)
-                'browser_progress',        # 16. Browser progress events (F-2025-015)
-                'tts',                     # 17. Локальный TTS (fallback если сервер недоступен)
-                'speech_playback',         # 18. Воспроизведение речи (зависит от grpc)
-                'signals',                 # 19. Аудио сигналы (должны быть до update_notification)
-                'update_notification',     # 20. Голосовые уведомления об обновлениях (ПЕРЕД updater!)
-                'updater',                 # 21. Система обновлений (после update_notification)
-                'welcome_message',         # 22. Приветственное сообщение (зависит от speech_playback)
-                'voiceover_ducking',       # 23. VoiceOver Ducking
-                'payment',                 # 24. Payment System (client side)
-                'autostart_manager',       # 25. Автозапуск (ПОСЛЕДНИЙ - не блокирующий)
-            ]
-            if restrict_to_permissions:
-                startup_order = [
-                    'instance_manager',
-                    'tray',
-                    'hardware_id',
-                    'first_run_permissions',
-                    'permission_restart',
-                    'grpc',             # Нужен для welcome_message (генерация речи)
-                    'speech_playback',  # Нужен для воспроизведения приветствия
-                    'welcome_message',  # Приветствие после получения разрешений
-                ]
+            # Single source of startup order lives in IntegrationFactory.
+            startup_order = IntegrationFactory.get_startup_order(
+                restrict_to_permissions=restrict_to_permissions,
+                available=set(self.integrations.keys()),
+            )
             
             # Запускаем в правильном порядке
             import time
@@ -488,7 +496,8 @@ class SimpleModuleCoordinator:
 
                     # GATE: Блокирующие операции ждут готовности tray (но не дольше 10 сек)
                     if name in ["first_run_permissions", "permission_restart"] and not self._tray_ready:
-                        max_wait_sec = 10.0
+                        focus_cfg = self._get_focus_config()
+                        max_wait_sec = max(1.0, float(focus_cfg.get("tray_fallback_timeout_sec", 6.0)))
                         wait_start = time.time()
                         logger.info(f"⏳ [TRAY_GATE] Waiting for tray before starting {name} (max {max_wait_sec}s)...")
                         print(f"⏳ [TRAY_GATE] Ожидание tray перед запуском {name} (максимум {max_wait_sec}s)...")
@@ -501,8 +510,23 @@ class SimpleModuleCoordinator:
                             logger.info(f"✅ [TRAY_GATE] Tray ready after {waited_ms}ms wait - proceeding with {name}")
                             print(f"✅ [TRAY_GATE] Tray готов после {waited_ms}ms ожидания - продолжаем с {name}")
                         else:
-                            logger.warning(f"⚠️ [TRAY_GATE] Tray not ready after {waited_ms}ms - proceeding anyway with {name}")
-                            print(f"⚠️ [TRAY_GATE] Tray не готов после {waited_ms}ms - продолжаем с {name}")
+                            allow_fallback = bool(focus_cfg.get("allow_tray_startup_fallback", True))
+                            if allow_fallback:
+                                forced = self._force_focus_activation_for_tray_once(reason=f"tray_not_ready_before_{name}")
+                                if forced:
+                                    # Даем окну короткий слот для публикации tray.ready после fallback.
+                                    retry_start = time.time()
+                                    retry_window_sec = 2.0
+                                    while not self._tray_ready and (time.time() - retry_start) < retry_window_sec:
+                                        await asyncio.sleep(0.1)
+                            if self._tray_ready:
+                                logger.info(
+                                    "✅ [TRAY_GATE] Tray became ready after focus fallback - proceeding with %s",
+                                    name,
+                                )
+                            else:
+                                logger.warning(f"⚠️ [TRAY_GATE] Tray not ready after {waited_ms}ms - proceeding anyway with {name}")
+                                print(f"⚠️ [TRAY_GATE] Tray не готов после {waited_ms}ms - продолжаем с {name}")
 
                     print(f"🚀 Запуск {name}...")
                     success = await self.integrations[name].start()
@@ -827,6 +851,7 @@ class SimpleModuleCoordinator:
         try:
             logger.info("👤 Пользователь инициировал завершение приложения через Quit")
             _user_initiated_shutdown = True
+            self._ensure_state_manager().set_state_data(StateKeys.USER_QUIT_INTENT, True)
             
             # Публикуем событие завершения
             await self._ensure_event_bus().publish("app.shutdown", {

@@ -11,6 +11,25 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _classify_send_error(error_text: str) -> str:
+    """Classify AppleScript send failures into stable error codes."""
+    text = (error_text or "").lower()
+    invalid_markers = [
+        "can't get",
+        "can’t get",
+        "not found",
+        "not a valid",
+        "invalid",
+        "participant",
+        "buddy",
+    ]
+    if any(marker in text for marker in invalid_markers):
+        return "invalid_recipient"
+    if "timeout" in text:
+        return "timeout"
+    return "send_failed"
+
+
 def _find_similar_contacts(query: str) -> list[dict]:
     """
     Поиск похожих контактов по частичному совпадению имени.
@@ -284,8 +303,9 @@ def send_message_to_contact(contact_name: str, message_text: str) -> dict[str, A
     
     # Шаг 5: Отправить сообщение
     result = send_message_alternative(phone_number, message_text)
+    if not result.get("success", False):
+        result["error_code"] = _classify_send_error(str(result.get("message", "")))
     result["contact_name"] = contact_name
     result["phone_numbers_found"] = phone_numbers
     
     return result
-

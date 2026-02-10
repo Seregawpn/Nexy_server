@@ -32,6 +32,9 @@ class StateKeys:
     
     # Update keys
     UPDATE_IN_PROGRESS = "update_in_progress"
+
+    # App lifecycle keys
+    USER_QUIT_INTENT = "user_quit_intent"
     
     # Whatsapp keys
     WHATSAPP_STATUS = "whatsapp.status"

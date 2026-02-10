@@ -64,12 +64,12 @@ class IntegrationFactory:
     making both easier to test and maintain.
     """
     STARTUP_ORDER = [
-        # REQ-006: fixed order (core lifecycle)
+        # REQ-006: fixed order (single owner).
         "instance_manager",
+        "tray",
         "hardware_id",
         "first_run_permissions",
         "permission_restart",
-        "tray",
         "mode_management",
         "input",
         "voice_recognition",
@@ -77,27 +77,29 @@ class IntegrationFactory:
         "interrupt",
         "screenshot_capture",
         "grpc",
-        "speech_playback",
-        "signals",
-        "updater",
-        "autostart_manager",
-        "welcome_message",
-        "voiceover_ducking",
-        # Extended integrations (non-REQ-006, keep after core order)
         "action_execution",
         "whatsapp",
         "browser_use",
         "browser_progress",
+        "speech_playback",
+        "signals",
         "update_notification",
+        "updater",
+        "welcome_message",
+        "voiceover_ducking",
         "payment",
+        "autostart_manager",
     ]
 
     PERMISSIONS_ONLY_ORDER = [
         "instance_manager",
+        "tray",
         "hardware_id",
         "first_run_permissions",
         "permission_restart",
-        "tray",
+        "grpc",
+        "speech_playback",
+        "welcome_message",
     ]
 
     @classmethod
@@ -294,8 +296,7 @@ class IntegrationFactory:
 
         # === Browser Automation (F-2025-015) ===
         
-        browser_config = self.config.get_feature_config('browser_use')
-        if browser_config.get('enabled', True):
+        if self.config.is_feature_enabled("browser", default=False):
             integrations['browser_use'] = BrowserUseIntegration(
                 event_bus=self.event_bus,
             )
@@ -348,7 +349,7 @@ class IntegrationFactory:
 
         # === System Integrations ===
         
-        autostart_config = config_data.get('autostart', {})
+        autostart_config = (config_data.get('integrations') or {}).get('autostart_manager', {})
         integrations['autostart_manager'] = AutostartManagerIntegration(
             event_bus=self.event_bus,
             state_manager=self.state_manager,
@@ -372,8 +373,7 @@ class IntegrationFactory:
         )
 
         # Payment system - config-driven feature (typically disabled in packaged builds)
-        payment_config = self.config.get_feature_config('payment')
-        if payment_config.get('enabled', False):
+        if self.config.is_feature_enabled("payment", default=False):
             integrations['payment'] = PaymentIntegration(
                 event_bus=self.event_bus,
                 state_manager=self.state_manager,

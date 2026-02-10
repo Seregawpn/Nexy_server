@@ -81,6 +81,12 @@ class ActionErrorMessageResolver:
             "similar_contacts_found": ActionErrorMessageTemplate(
                 "Contact not found. Did you mean one of the similar names?"
             ),
+            "invalid_recipient": ActionErrorMessageTemplate(
+                "I couldn't send the message because this contact has an invalid or unavailable number in Messages."
+            ),
+            "send_failed": ActionErrorMessageTemplate(
+                "I couldn't send the message. Please check the contact and try again."
+            ),
         }
 
     def resolve(self, error_code: str | None, app_name: str | None, message: str | None = None) -> str:

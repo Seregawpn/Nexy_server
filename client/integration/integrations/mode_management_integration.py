@@ -126,17 +126,14 @@ class ModeManagementIntegration:
 
             # Мост: при смене режима контроллером — обновляем StateManager,
             # который централизованно публикует события (app.mode_changed/app.state_changed)
-            # КРИТИЧНО: Храним session_id для передачи в set_mode через callback
-            self._pending_session_id_for_callback: str | None = None
-            
             async def _on_controller_mode_changed(event):
                 try:
-                    # event.mode — это AppMode из централизованного модуля
-                    # Используем сохраненный session_id из последнего mode.request
-                    session_id = getattr(self, '_pending_session_id_for_callback', None)
+                    # event.mode — это AppMode из централизованного модуля.
+                    # session_id передаётся request-scoped через event.data, чтобы
+                    # не было гонки на shared mutable поле между concurrent mode.request.
+                    payload = getattr(event, "data", None)
+                    session_id = payload.get("session_id") if isinstance(payload, dict) else None
                     self.state_manager.set_mode(event.mode, session_id=session_id)
-                    # Сбрасываем после использования
-                    self._pending_session_id_for_callback = None
                 except Exception as e:
                     logger.error(f"StateManager bridging failed: {e}")
             self.controller.register_mode_change_callback(_on_controller_mode_changed)
@@ -638,15 +635,17 @@ class ModeManagementIntegration:
     # ---------------- Internals ----------------
     async def _apply_mode(self, target: AppMode, *, source: str, session_id: str | None = None):
         try:
-            # КРИТИЧНО: Сохраняем session_id для передачи в set_mode через callback
-            self._pending_session_id_for_callback = session_id
             # Поручаем переход контроллеру; он сам проверит доступность перехода
             # и при успехе через callback обновит StateManager (публикация событий сохранится централизованной)
-            await self.controller.switch_mode(target)
+            await self.controller.switch_mode(
+                target,
+                data={
+                    "source": source,
+                    "session_id": session_id,
+                },
+            )
         except Exception as e:
             logger.error(f"Apply mode error: {e}")
-            # Сбрасываем session_id при ошибке
-            self._pending_session_id_for_callback = None
 
     async def _processing_timeout_guard(self):
         try:
@@ -655,12 +654,8 @@ class ModeManagementIntegration:
                 logger.warning("PROCESSING timeout — forcing SLEEPING via controller")
                 try:
                     await self.controller.switch_mode(AppMode.SLEEPING)
-                except Exception:
-                    # Fallback to direct state update if controller failed
-                    try:
-                        self.state_manager.set_mode(AppMode.SLEEPING)
-                    except Exception:
-                        pass
+                except Exception as exc:
+                    logger.error("PROCESSING timeout switch failed via controller: %s", exc)
         except asyncio.CancelledError:
             return
         except Exception:

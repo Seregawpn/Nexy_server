@@ -33,7 +33,8 @@ try:
         CGEventTapIsEnabled,
         kCFRunLoopCommonModes,
         kCGEventFlagMaskControl,
-        kCGEventFlagMaskShift,
+        kCGEventFlagMaskAlternate,
+        kCGEventFlagMaskCommand,
         kCGEventFlagsChanged,
         kCGEventKeyDown,
         kCGEventKeyUp,
@@ -59,7 +60,7 @@ class QuartzKeyboardMonitor:
     """Thin Quartz adapter."""
 
     KEYCODES = {
-        "left_shift": 56,
+        "left_control": 59,
     }
     CONTROL_KEYCODES = {59, 62}
     N_KEYCODE = 45
@@ -94,8 +95,11 @@ class QuartzKeyboardMonitor:
         self._pending_release_deadline: Optional[float] = None
         self._pending_release_reason: Optional[str] = None
         self._release_confirm_delay_sec: float = 0.09
+        self._last_n_keydown_ts: Optional[float] = None
+        self._stale_n_pressed_reset_sec: float = 0.8
 
-        self._previous_left_shift_pressed = False
+        self._previous_modifier_pressed = False
+        self._combo_blocked_by_modifiers = False
 
         self._tap = None
         self._tap_source = None
@@ -225,6 +229,7 @@ class QuartzKeyboardMonitor:
                 status["combo_active"] = self._combo_active
                 status["control_pressed"] = self._control_pressed
                 status["n_pressed"] = self._n_pressed
+                status["combo_blocked_by_modifiers"] = self._combo_blocked_by_modifiers
             else:
                 status["key_pressed"] = self.key_pressed
 
@@ -306,24 +311,44 @@ class QuartzKeyboardMonitor:
         now = time.time()
 
         if event_type == kCGEventFlagsChanged:
+            flags = CGEventGetFlags(event)
+            blocked_by_modifiers = bool(flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand))
             keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
             if keycode in self.CONTROL_KEYCODES:
-                flags = CGEventGetFlags(event)
                 control_pressed = bool(flags & kCGEventFlagMaskControl)
                 with self.state_lock:
+                    self._combo_blocked_by_modifiers = blocked_by_modifiers
                     self._control_pressed = control_pressed
                     self.last_event_time = now
+                    # Healing for lost N keyup: stale n_pressed must not re-activate combo
+                    # on control flagsChanged without a recent real N keydown edge.
+                    if (
+                        self._control_pressed
+                        and self._n_pressed
+                        and (not self._combo_active)
+                    ):
+                        n_age = now - self._last_n_keydown_ts if self._last_n_keydown_ts else None
+                        if n_age is None or n_age > self._stale_n_pressed_reset_sec:
+                            logger.debug(
+                                "combo stale n_pressed reset (n_age=%s)",
+                                f"{n_age:.3f}s" if n_age is not None else "unknown",
+                            )
+                            self._n_pressed = False
                     if self._control_pressed:
                         self._clear_pending_release_locked()
-                    if self._control_pressed and self._n_pressed:
-                        self._activate_combo_locked(now)
-                    elif self._combo_active and (not self._control_pressed or not self._n_pressed):
+                    if self._combo_active and self._combo_blocked_by_modifiers:
+                        self._deactivate_combo_locked(now, reason="blocked_modifiers")
+                    if self._combo_active and (not self._control_pressed or not self._n_pressed):
                         # flagsChanged может прислать ложный "up" при подавлении событий.
                         # Подтверждаем release с задержкой.
                         self._schedule_pending_release_locked(now, reason="control_flags_changed_confirmed")
                 # Control сам по себе не блокируем: это ломает обычные shortcuts/input.
                 # Combo suppression делаем только на N key events ниже.
                 return event
+            with self.state_lock:
+                self._combo_blocked_by_modifiers = blocked_by_modifiers
+                if self._combo_active and self._combo_blocked_by_modifiers:
+                    self._deactivate_combo_locked(now, reason="blocked_modifiers")
             return event
 
         if event_type in (kCGEventKeyDown, kCGEventKeyUp):
@@ -331,15 +356,26 @@ class QuartzKeyboardMonitor:
             if keycode != self.N_KEYCODE:
                 return event
 
+            flags = CGEventGetFlags(event)
+            blocked_by_modifiers = bool(flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand))
             with self.state_lock:
+                self._combo_blocked_by_modifiers = blocked_by_modifiers
                 if event_type == kCGEventKeyDown:
                     if (now - self.last_event_time) < self.event_cooldown and self._n_pressed:
                         # Debounce только внутри активной combo; иначе не блокируем ввод N.
-                        return None if (self._combo_active or self._control_pressed) else event
+                        return None if (self._combo_active or (self._control_pressed and not self._combo_blocked_by_modifiers)) else event
                     self._n_pressed = True
+                    self._last_n_keydown_ts = now
                     self._clear_pending_release_locked()
                     self.last_event_time = now
-                    if self._control_pressed and self._n_pressed:
+                    control_in_event = bool(flags & kCGEventFlagMaskControl)
+                    if self._control_pressed and (not control_in_event):
+                        logger.debug(
+                            "combo activation blocked: stale control state (control_in_event=%s, control_state=%s)",
+                            control_in_event,
+                            self._control_pressed,
+                        )
+                    if self._control_pressed and control_in_event and self._n_pressed and not self._combo_blocked_by_modifiers:
                         self._activate_combo_locked(now)
                         return None
                     # Одиночная N должна проходить в систему.
@@ -361,14 +397,14 @@ class QuartzKeyboardMonitor:
     def _handle_single_key_event(self, event_type, event):
         now = time.time()
 
-        if event_type == kCGEventFlagsChanged and self._target_keycode == 56:
+        if event_type == kCGEventFlagsChanged and self._target_keycode == 59:
             keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-            if keycode != 56:
+            if keycode != self._target_keycode:
                 return event
             flags = CGEventGetFlags(event)
-            shift_pressed = bool(flags & kCGEventFlagMaskShift)
+            modifier_pressed = bool(flags & kCGEventFlagMaskControl)
             with self.state_lock:
-                if shift_pressed and not self._previous_left_shift_pressed:
+                if modifier_pressed and not self._previous_modifier_pressed:
                     self.key_pressed = True
                     self.press_start_time = now
                     self._long_sent = False
@@ -382,7 +418,7 @@ class QuartzKeyboardMonitor:
                             timestamp=now,
                         ),
                     )
-                elif (not shift_pressed) and self._previous_left_shift_pressed and self.key_pressed:
+                elif (not modifier_pressed) and self._previous_modifier_pressed and self.key_pressed:
                     duration = now - (self.press_start_time or now)
                     self.key_pressed = False
                     self.press_start_time = None
@@ -409,7 +445,7 @@ class QuartzKeyboardMonitor:
                                 duration=duration,
                             ),
                         )
-                self._previous_left_shift_pressed = shift_pressed
+                self._previous_modifier_pressed = modifier_pressed
             return event
 
         if event_type not in (kCGEventKeyDown, kCGEventKeyUp):

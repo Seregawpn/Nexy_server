@@ -14,13 +14,7 @@ TARGET_DIRS = [
 ]
 
 # Known exceptions that still use direct access (legacy/needs refactor).
-ALLOWLIST = {
-    ROOT / "integration" / "integrations" / "input_processing_integration.py",
-    ROOT / "integration" / "integrations" / "permission_restart_integration.py",
-    ROOT / "integration" / "integrations" / "updater_integration.py",
-    ROOT / "integration" / "integrations" / "voice_recognition_integration.py",
-    ROOT / "integration" / "integrations" / "mode_management_integration.py",
-}
+ALLOWLIST: set[Path] = set()
 
 PATTERNS = [
     re.compile(r"\bstate_manager\.get_[a-zA-Z_]+\b"),

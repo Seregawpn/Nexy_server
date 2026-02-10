@@ -156,6 +156,10 @@ class GoogleSRController:
         self._stop.set()
         logger.info("❌ Listening cancelled")
 
+    def is_listening(self) -> bool:
+        """Public read-only state for listening lifecycle."""
+        return self._listening.is_set()
+
     def _on_device_change(self, new_device_name: str) -> None:
         """Callback when audio device changes."""
         logger.info("🎧 Device changed to: %s", new_device_name)

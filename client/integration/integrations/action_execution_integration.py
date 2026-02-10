@@ -225,6 +225,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 error_code="disabled",
                 message="MCP action executor disabled",
                 app_name=None,
+                command=None,
             )
             return
 
@@ -251,6 +252,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 error_code="invalid_json",
                 message=str(exc),
                 app_name=None,
+                command=None,
             )
             return
 
@@ -279,13 +281,13 @@ class ActionExecutionIntegration(BaseIntegration):
         loader = UnifiedConfigLoader.get_instance()
         valid_commands = ["open_app", "close_app"]  # Всегда доступны
         
-        if loader.get_feature_config('messages').get('enabled', True):
+        if loader.is_feature_enabled("messages", default=False):
             valid_commands.extend(["read_messages", "send_message", "find_contact"])
-        if loader.get_feature_config('browser').get('enabled', True):
+        if loader.is_feature_enabled("browser", default=False):
             valid_commands.extend(["browser_use", "close_browser"])
-        if loader.get_feature_config('payment').get('enabled', True):
+        if loader.is_feature_enabled("payment", default=False):
             valid_commands.extend(["buy_subscription", "manage_subscription"])
-        if loader.get_whatsapp_config().get('enabled', True):
+        if loader.is_feature_enabled("whatsapp", default=False):
             valid_commands.extend(["send_whatsapp_message", "read_whatsapp_messages"])
         if command not in valid_commands:
             logger.warning(
@@ -306,6 +308,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 error_code="unsupported_command",
                 message=f"Unsupported command: {command}",
                 app_name=None,
+                command=command,
             )
             return
         
@@ -343,11 +346,7 @@ class ActionExecutionIntegration(BaseIntegration):
         
         feature_name = feature_check_map.get(command)
         if feature_name:
-            if feature_name == "whatsapp":
-                feature_config = loader.get_whatsapp_config()
-            else:
-                feature_config = loader.get_feature_config(feature_name)
-            if not feature_config.get("enabled", True):
+            if not loader.is_feature_enabled(feature_name, default=False):
                 msg = f"Feature '{feature_name}' is disabled in configuration."
                 logger.warning("[%s] %s Ignoring command: %s", action_feature_id, msg, command)
                 logger.warning(
@@ -370,6 +369,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     error_code="feature_disabled",
                     message=f"Feature '{feature_name}' is currently disabled.",
                     app_name=None,
+                    command=command,
                 )
                 
                 # Speak the error for WhatsApp specifically (as per diagnosis)
@@ -396,6 +396,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     error_code="missing_parameter",
                     message="Missing app_name or app_path for open_app",
                     app_name=None,
+                    command=command,
                 )
                 return
         elif command == "close_app":
@@ -411,6 +412,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     error_code="missing_parameter",
                     message="Missing app_name for close_app",
                     app_name=None,
+                    command=command,
                 )
                 return
         elif command == "read_messages":
@@ -432,6 +434,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     error_code="missing_parameter",
                     message="Missing contact or message for send_message",
                     app_name=None,
+                    command=command,
                 )
                 return
         elif command == "find_contact":
@@ -443,6 +446,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     error_code="missing_parameter",
                     message="Missing query for find_contact",
                     app_name=None,
+                    command=command,
                 )
                 return
         elif command == "browser_use":
@@ -642,6 +646,7 @@ class ActionExecutionIntegration(BaseIntegration):
                             error_code="already_running",
                             message=f"close_app already running for {app_name} (session={existing_session})",
                             app_name=app_name,
+                            command=action_type,
                         )
                         return
                 # Регистрируем приложение как активное (используем нормализованный ключ)
@@ -792,6 +797,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     error_code=result.error or "unknown",
                     message=result.message,
                     app_name=result.app_name or action_data.get("app_name"),
+                    command=action_type,
                 )
                 logger.warning(
                     "[%s] Action failed: %s - %s",
@@ -815,6 +821,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 error_code="cancelled",
                 message="Action cancelled",
                 app_name=action_data.get("app_name"),
+                command=action_type,
             )
             logger.info("[%s] Action cancelled for session=%s", feature_id, session_id)
             await self._publish_action_lifecycle(
@@ -1111,6 +1118,8 @@ class ActionExecutionIntegration(BaseIntegration):
         error_code: str | None,
         message: str,
         app_name: str | None,
+        command: str | None = None,
+        suppress_playback_cancel: bool = False,
     ) -> None:
         """Публикует событие failure и голосовой фидбек."""
         if session_id:
@@ -1126,32 +1135,49 @@ class ActionExecutionIntegration(BaseIntegration):
                 "error": error_code or "unknown",
                 "message": message,
             }
-        # Определяем префикс события в зависимости от feature_id
-        if "close-app" in feature_id:
-            event_name = "actions.close_app.failed"
-        else:
-            event_name = "actions.open_app.failed"
+        event_name = self._resolve_failure_event_name(command=command, feature_id=feature_id)
         await self.event_bus.publish(event_name, payload)
-        await self._cancel_active_playback(session_id=session_id, reason=error_code or "action_failed")
+        if not suppress_playback_cancel:
+            await self._cancel_active_playback(
+                session_id=session_id,
+                reason=error_code or "action_failed",
+                command=command,
+            )
         await self._publish_speech_feedback(
             session_id=session_id,
             error_code=error_code,
             app_name=app_name,
             error_message=message,
             feature_id=feature_id,
+            command=command,
         )
 
-    async def _cancel_active_playback(self, *, session_id: str | None, reason: str) -> None:
+    @staticmethod
+    def _resolve_failure_event_name(*, command: str | None, feature_id: str) -> str:
+        if command:
+            return f"actions.{command}.failed"
+        if "close-app" in feature_id:
+            return "actions.close_app.failed"
+        return "actions.open_app.failed"
+
+    async def _cancel_active_playback(
+        self,
+        *,
+        session_id: str | None,
+        reason: str,
+        command: str | None = None,
+    ) -> None:
         """Останавливает текущее воспроизведение, чтобы не звучала старая реплика."""
         if not session_id:
             return
+        source = f"actions.{command}" if command else "actions.open_app"
         try:
             await self.event_bus.publish(
                 "interrupt.request",
                 {
                     "type": "speech_stop",
                     "session_id": session_id,
-                    "source": "actions.open_app",
+                    "source": source,
                     "reason": reason or "action_failed",
                     "feature_id": FEATURE_ID,
                 },
@@ -1167,6 +1193,7 @@ class ActionExecutionIntegration(BaseIntegration):
         app_name: str | None,
         error_message: str | None = None,
         feature_id: str = FEATURE_ID,
+        command: str | None = None,
     ) -> None:
         """Публикует speech.playback.request с описанием ошибки."""
         if not self._open_app_config.speak_errors or not session_id:
@@ -1174,12 +1201,12 @@ class ActionExecutionIntegration(BaseIntegration):
         if session_id in self._spoken_error_sessions:
             return
 
+        if command:
+            source = f"actions.{command}"
         # Используем переданный feature_id или FEATURE_ID по умолчанию
-        used_feature_id = feature_id or FEATURE_ID
-        
-        # Определяем source в зависимости от feature_id
-        if "close-app" in used_feature_id:
+        elif feature_id and "close-app" in feature_id:
             source = "actions.close_app"
+        # Используем переданный feature_id или FEATURE_ID по умолчанию
         else:
             source = "actions.open_app"
 
@@ -1307,6 +1334,8 @@ class ActionExecutionIntegration(BaseIntegration):
                     error_code=error_code_res or "execution_failed",
                     message=error_msg,
                     app_name="Messages",
+                    command=command,
+                    suppress_playback_cancel=error_code_res in {"ambiguous_contact", "similar_contacts_found"},
                 )
                 logger.warning("[%s] %s failed: %s", feature_id, command, error_msg)
                 await self._publish_action_lifecycle(
@@ -1327,6 +1356,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 error_code="exception",
                 message=str(exc),
                 app_name="Messages",
+                command=command,
             )
             await self._publish_action_lifecycle(
                 session_id=session_id,

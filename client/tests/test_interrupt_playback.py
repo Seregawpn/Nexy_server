@@ -274,8 +274,9 @@ class TestInterruptPlayback:
         # Проверяем, что stop_playback был вызван
         assert mock_player.stop_playback.call_count >= 1, "stop_playback должен быть вызван"
         
-        # Проверяем, что сессия помечена как отмененная (state_manager хранит строки)
-        assert str(test_session_id) in speech_playback_integration._cancelled_sessions
+        # Текущий guard-контракт: session помечается cancelled только если до cancel
+        # уже был получен аудио-чанк (had_audio=True).
+        assert str(test_session_id) not in speech_playback_integration._cancelled_sessions
         
         logger.info("✅ Тест пройден: прерывание обрабатывается идемпотентно")
 

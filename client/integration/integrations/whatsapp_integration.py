@@ -60,8 +60,6 @@ class WhatsappIntegration(BaseIntegration):
             self.config.enabled = whatsapp_cfg['enabled']
         if 'node_path' in whatsapp_cfg:
             self.config.node_path = whatsapp_cfg['node_path']
-        if 'node_path' in whatsapp_cfg:
-            self.config.node_path = whatsapp_cfg['node_path']
             
         self.service_manager = WhatsappServiceManager(self.config)
         self.mcp_client = WhatsappMCPClient(self.service_manager)
@@ -71,6 +69,7 @@ class WhatsappIntegration(BaseIntegration):
         
         # Track background monitor task
         self._qr_monitor_task: asyncio.Task | None = None
+        self._reset_session_task: asyncio.Task[None] | None = None
         self._last_qr_url: str | None = None  # Cache for QR URL
 
     async def _do_initialize(self) -> bool:
@@ -186,7 +185,16 @@ class WhatsappIntegration(BaseIntegration):
     def _on_auth_failure(self):
         """Callback when auth failure is detected in logs."""
         logger.warning("🚫 Auth Failure detected via callback! Triggering immediate reset...")
-        asyncio.create_task(self._reset_session_and_restart())
+        self._schedule_reset_session_and_restart("auth_failure_callback")
+
+    def _schedule_reset_session_and_restart(self, source: str) -> None:
+        """Run reset+restart as single-flight task to avoid parallel restarts."""
+        task = self._reset_session_task
+        if task and not task.done():
+            logger.info("↩️ Reset already in progress, skip duplicate request (source=%s)", source)
+            return
+        logger.info("🛡️ Scheduling WhatsApp reset (source=%s)", source)
+        self._reset_session_task = asyncio.create_task(self._reset_session_and_restart())
         
     async def _reset_session_and_restart(self):
         """Reset session cache and restart service."""
@@ -534,7 +542,7 @@ class WhatsappIntegration(BaseIntegration):
             # FORCE RECOVERY: If we are not authenticated, existing process might be stale.
             # Don't just wait for QR, force a restart to generate one immediately.
             logger.warning("☠️ Auth Error caught during command. Forcing service restart to generate fresh QR.")
-            asyncio.create_task(self._reset_session_and_restart())
+            self._schedule_reset_session_and_restart("auth_error_command")
             
             await self.event_bus.publish(f"actions.{command}.failed", {
                 "session_id": session_id,

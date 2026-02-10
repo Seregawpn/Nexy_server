@@ -233,7 +233,8 @@
 - `**/gateways.py` — чтение для принятия решений
 - `**/gateways/**/*.py` — специализированные gateways
 
-**Линтер**: `pyproject.toml` настроен на проверку паттернов доступа к состоянию и фейлит, если файл не в списке исключений.
+**Machine check**: `scripts/verify_no_direct_state_access.py` проверяет паттерны прямого чтения состояния в `integration/integrations` и `modules`.
+Runtime allowlist для интеграций: `0` (разрешены только `selectors/gateways` как архитектурные исключения).
 
 ### Метрики и наблюдаемость
 

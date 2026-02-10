@@ -232,7 +232,8 @@ class GrpcClientIntegration:
             await self.event_bus.subscribe("voice.recording_stop", self._on_recording_stop, EventPriority.HIGH)
             await self.event_bus.subscribe("hardware.id_obtained", self._on_hardware_id, EventPriority.HIGH)
             await self.event_bus.subscribe("hardware.id_response", self._on_hardware_id_response, EventPriority.HIGH)
-            await self.event_bus.subscribe("keyboard.short_press", self._on_interrupt, EventPriority.CRITICAL)
+            # keyboard.short_press path removed:
+            # cancel flow is centralized via interrupt.request -> grpc.request_cancel.
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
             # Адресная отмена активного запроса по session_id (или последний активный)
             try:

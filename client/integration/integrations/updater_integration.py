@@ -215,8 +215,6 @@ class UpdaterIntegration:
         await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
         await self.event_bus.subscribe("updater.check_manual", self._on_manual_check, EventPriority.HIGH)
         await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed, EventPriority.LOW)
-        # Subscribe to mode changes to track current mode (replaces direct get_current_mode access)
-        await self.event_bus.subscribe("mode.changed", self._on_mode_changed_via_gateway, EventPriority.LOW)
     
     async def _on_app_startup(self, event_data):
         """Обработка запуска приложения"""
@@ -245,23 +243,6 @@ class UpdaterIntegration:
             except Exception:
                 pass
         logger.info(f"Режим приложения изменен на: {new_mode}")
-    
-    async def _on_mode_changed_via_gateway(self, event_data):
-        """Обработка изменения режима через gateway (mode.changed event).
-        
-        Используется вместо прямого чтения state_manager.get_current_mode(), через selectors.
-        Это соответствует правилу 21.3: запрет прямого доступа к состоянию.
-        """
-        data = (event_data or {}).get("data", event_data or {})
-        new_mode = data.get("mode") or data.get("new_mode")
-        if new_mode:
-            try:
-                if not isinstance(new_mode, AppMode):
-                    new_mode = AppMode(new_mode)
-                self._current_mode = new_mode
-                logger.debug(f"[UPDATER] Tracked mode updated to: {new_mode}")
-            except Exception as e:
-                logger.debug(f"[UPDATER] Failed to update tracked mode: {e}")
     
     async def _execute_update(self, trigger: str) -> bool:
         """

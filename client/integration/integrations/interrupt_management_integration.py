@@ -342,14 +342,19 @@ class InterruptManagementIntegration:
                         session_id,
                         now - last_ts,
                     )
+                    return
                 else:
                     self._last_interrupt_publish_ts[dedup_key] = now
                     logger.info(f"🛑 InterruptManager: останавливаем речь (session_id={session_id})")
-                    if session_id is not None:
-                        await self.event_bus.publish("grpc.request_cancel", {
-                            "session_id": session_id
-                        })
-                    logger.info("🛑 InterruptManager: grpc.request_cancel опубликован")
+                    # Publish cancel even when session_id is None.
+                    # Downstream owners (gRPC/playback) implement fallback semantics for sessionless cancel.
+                    await self.event_bus.publish("grpc.request_cancel", {
+                        "session_id": session_id
+                    })
+                    logger.info(
+                        "🛑 InterruptManager: grpc.request_cancel опубликован (session_id=%s)",
+                        session_id,
+                    )
             
             # Создаем событие прерывания
             interrupt_event = InterruptEvent(

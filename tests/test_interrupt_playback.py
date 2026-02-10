@@ -9,8 +9,8 @@
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from typing import Dict, Any
+from unittest.mock import Mock
+import uuid
 
 import pytest
 import pytest_asyncio
@@ -21,7 +21,6 @@ from integration.core.error_handler import ErrorHandler
 from integration.integrations.input_processing_integration import InputProcessingIntegration
 from integration.integrations.speech_playback_integration import SpeechPlaybackIntegration
 from integration.core.state_manager import AppMode
-from modules.speech_playback.core.state import PlaybackState
 
 
 logger = logging.getLogger(__name__)
@@ -99,13 +98,11 @@ class TestInterruptPlayback:
     async def test_short_press_publishes_playback_cancelled_in_processing(
         self, input_integration, state_manager, event_bus, error_handler
     ):
-        """Тест: SHORT_PRESS в PROCESSING режиме публикует interrupt.request, который обрабатывается через InterruptManagementIntegration"""
-        # ✅ ИЗМЕНЕНО: Тест проверяет новую логику через interrupt.request
+        """Тест: SHORT_PRESS в PROCESSING режиме публикует interrupt.request и grpc.request_cancel."""
         
         # Устанавливаем PROCESSING режим
-        # КРИТИЧНО: Используем числовой session_id (timestamp), так как _get_active_session_id() конвертирует в float
-        test_session_id = 1234567890.0
-        state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
+        test_session_id = str(uuid.uuid4())
+        state_manager.set_mode(AppMode.PROCESSING, session_id=test_session_id)
         
         # Устанавливаем pending_session_id для имитации состояния
         input_integration._pending_session_id = test_session_id
@@ -143,9 +140,9 @@ class TestInterruptPlayback:
             payload = event.get("data") if isinstance(event, dict) else event
             published_events.append((event_type, payload))
         
-        # Подписываемся на interrupt.request и playback.cancelled для проверки
+        # Подписываемся на interrupt.request и grpc.request_cancel для проверки
         await event_bus.subscribe("interrupt.request", capture_event)
-        await event_bus.subscribe("playback.cancelled", capture_event)
+        await event_bus.subscribe("grpc.request_cancel", capture_event)
         
         # Создаем событие SHORT_PRESS
         from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
@@ -172,22 +169,20 @@ class TestInterruptPlayback:
         
         assert len(interrupt_request_events) > 0, f"interrupt.request должен быть опубликован. Полученные события: {published_events}"
         
-        # Проверяем, что playback.cancelled был опубликован через InterruptManagementIntegration
-        playback_cancelled_events = [
+        # Проверяем, что grpc.request_cancel был опубликован через InterruptManagementIntegration
+        grpc_cancel_events = [
             (event_type, payload)
             for event_type, payload in published_events
-            if event_type == "playback.cancelled"
+            if event_type == "grpc.request_cancel"
         ]
         
-        assert len(playback_cancelled_events) > 0, f"playback.cancelled должен быть опубликован через InterruptManagementIntegration. Полученные события: {published_events}"
+        assert len(grpc_cancel_events) > 0, f"grpc.request_cancel должен быть опубликован через InterruptManagementIntegration. Полученные события: {published_events}"
         
-        # Проверяем содержимое события playback.cancelled
-        event_type, payload = playback_cancelled_events[0]
+        # Проверяем содержимое события grpc.request_cancel
+        event_type, payload = grpc_cancel_events[0]
         if isinstance(payload, dict):
-            assert payload.get("reason") == "user_interrupt" or payload.get("source") == "interrupt_management", f"playback.cancelled должен быть опубликован через InterruptManagementIntegration. Получен: {payload}"
-            # КРИТИЧНО: Проверяем как числовой, так и строковый формат
             session_id = payload.get("session_id")
-            assert session_id == test_session_id or session_id == str(test_session_id), f"session_id должен быть {test_session_id} или {str(test_session_id)}, получен {session_id}"
+            assert session_id == test_session_id, f"session_id должен быть {test_session_id}, получен {session_id}"
         
         # Cleanup
         try:
@@ -195,7 +190,7 @@ class TestInterruptPlayback:
         except Exception:
             pass
         
-        logger.info("✅ Тест пройден: interrupt.request опубликован, playback.cancelled опубликован через InterruptManagementIntegration")
+        logger.info("✅ Тест пройден: interrupt.request и grpc.request_cancel опубликованы")
 
     @pytest.mark.asyncio
     async def test_speech_playback_handles_interrupt_idempotently(
@@ -204,15 +199,12 @@ class TestInterruptPlayback:
         """Тест: SpeechPlaybackIntegration обрабатывает прерывание идемпотентно"""
         # Мокируем плеер
         mock_player = Mock()
-        mock_player.state_manager = Mock()
-        mock_player.state_manager.current_state = PlaybackState.PLAYING
+        mock_player.clear_queue = Mock(return_value=None)
         mock_player.stop_playback = Mock(return_value=True)
         
-        speech_playback_integration._player = mock_player
-        # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
-        # Используем числовой session_id (timestamp), так как state_manager хранит строки
-        test_session_id = 1234567890.0
-        state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
+        speech_playback_integration._avf_player = mock_player
+        test_session_id = str(uuid.uuid4())
+        state_manager.set_mode(AppMode.PROCESSING, session_id=test_session_id)
         speech_playback_integration._cancelled_sessions = set()
         
         # Создаем событие playback.cancelled
@@ -229,11 +221,13 @@ class TestInterruptPlayback:
         await speech_playback_integration._on_unified_interrupt(interrupt_event)
         await speech_playback_integration._on_unified_interrupt(interrupt_event)
         
-        # Проверяем, что stop_playback был вызван
+        # Проверяем, что clear_queue и stop_playback были вызваны
+        assert mock_player.clear_queue.call_count >= 1, "clear_queue должен быть вызван"
         assert mock_player.stop_playback.call_count >= 1, "stop_playback должен быть вызван"
         
-        # Проверяем, что сессия помечена как отмененная (state_manager хранит строки)
-        assert str(test_session_id) in speech_playback_integration._cancelled_sessions
+        # Текущий guard-контракт: session помечается cancelled только если до cancel
+        # уже был получен аудио-чанк (had_audio=True).
+        assert test_session_id not in speech_playback_integration._cancelled_sessions
         
         logger.info("✅ Тест пройден: прерывание обрабатывается идемпотентно")
 
@@ -242,24 +236,21 @@ class TestInterruptPlayback:
         self, speech_playback_integration, event_bus, state_manager
     ):
         """Тест: прерывание корректно обрабатывает состояние IDLE"""
-        # Мокируем плеер в состоянии IDLE
+        # Мокируем плеер
         mock_player = Mock()
-        mock_player.state_manager = Mock()
-        mock_player.state_manager.current_state = PlaybackState.IDLE
+        mock_player.clear_queue = Mock(return_value=None)
         mock_player.stop_playback = Mock(return_value=False)
         
-        speech_playback_integration._player = mock_player
-        # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
-        # Используем числовой session_id (timestamp), так как state_manager хранит строки
-        test_session_id = 1234567890.0
-        state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
+        speech_playback_integration._avf_player = mock_player
+        test_session_id = str(uuid.uuid4())
+        state_manager.set_mode(AppMode.PROCESSING, session_id=test_session_id)
         speech_playback_integration._cancelled_sessions = set()
         
         # Создаем событие playback.cancelled
         interrupt_event = {
             "type": "playback.cancelled",
             "data": {
-                "session_id": "test_session_123",
+                "session_id": test_session_id,
                 "reason": "keyboard",
                 "source": "input_processing",
             },
@@ -268,10 +259,8 @@ class TestInterruptPlayback:
         # Вызываем обработчик прерывания
         await speech_playback_integration._on_unified_interrupt(interrupt_event)
         
-        # Проверяем, что stop_playback НЕ был вызван (состояние IDLE)
-        # В нашей реализации мы все равно вызываем stop_playback, но он вернет False
-        # Это безопасно, так как метод идемпотентный
-        assert mock_player.stop_playback.call_count == 0 or mock_player.stop_playback.return_value == False
+        # В текущей реализации stop_playback вызывается независимо от состояния.
+        assert mock_player.stop_playback.call_count >= 1
         
         logger.info("✅ Тест пройден: прерывание корректно обрабатывает состояние IDLE")
 
@@ -282,15 +271,12 @@ class TestInterruptPlayback:
         """Тест: прерывание корректно обрабатывает ошибки"""
         # Мокируем плеер, который выбрасывает исключение
         mock_player = Mock()
-        mock_player.state_manager = Mock()
-        mock_player.state_manager.current_state = PlaybackState.PLAYING
+        mock_player.clear_queue = Mock(return_value=None)
         mock_player.stop_playback = Mock(side_effect=Exception("Test error"))
         
-        speech_playback_integration._player = mock_player
-        # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
-        # Используем числовой session_id (timestamp), так как state_manager хранит строки
-        test_session_id = 1234567890.0
-        state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
+        speech_playback_integration._avf_player = mock_player
+        test_session_id = str(uuid.uuid4())
+        state_manager.set_mode(AppMode.PROCESSING, session_id=test_session_id)
         speech_playback_integration._cancelled_sessions = set()
         
         # Создаем событие playback.cancelled
@@ -314,4 +300,3 @@ class TestInterruptPlayback:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

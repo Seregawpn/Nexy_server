@@ -150,6 +150,13 @@ class PermissionRestartIntegration(BaseIntegration):
             logger.error("[PERMISSION_RESTART] Failed to start: %s", exc)
             return False
 
+    def _is_user_quit_intent(self) -> bool:
+        """True when shutdown was explicitly initiated by user quit."""
+        try:
+            return bool(get_state_value(self.state_manager, StateKeys.USER_QUIT_INTENT, False))
+        except Exception:
+            return False
+
     async def _do_stop(self) -> bool:
         try:
             await self._unsubscribe_all()
@@ -207,6 +214,9 @@ class PermissionRestartIntegration(BaseIntegration):
         if self._v2_enabled:
             logger.debug("[PERMISSION_RESTART] V2 enabled - ignoring first_run_restart_pending")
             return
+        if self._is_user_quit_intent():
+            logger.info("[PERMISSION_RESTART] User quit intent active - skip first_run restart_pending")
+            return
 
         data = (event or {}).get("data") or {}
         session_id = data.get("session_id")
@@ -241,12 +251,7 @@ class PermissionRestartIntegration(BaseIntegration):
             is_last_batch,
         )
 
-        # Обновляем состояние restart_pending через state_manager
-        # first_run состояние обновляет координатор (single writer).
-        try:
-            self.state_manager.set_restart_pending(True)
-        except Exception as e:
-            logger.debug("[PERMISSION_RESTART] Failed to update restart_pending state: %s", e)
+        # restart_pending state is owned by coordinator event path (single writer).
 
         # КРИТИЧНО: Для продолжения батчей напрямую вызываем restart
         # Не используем детектор/переходы, т.к. они имеют guards которые блокируют restart
@@ -412,6 +417,12 @@ class PermissionRestartIntegration(BaseIntegration):
                 transition.permission.value,
             )
             return
+        if self._is_user_quit_intent():
+            logger.info(
+                "[PERMISSION_RESTART] User quit intent active - skip transition restart (permission=%s)",
+                transition.permission.value,
+            )
+            return
         # GUARD: Блокируем перезапуск во время first_run
         # Если first_run активен и restart_pending еще не true (т.е. first_run_restart_pending не публиковался),
         # значит flow разрешений еще не завершён — не планируем рестарт, чтобы не прервать flow
@@ -488,6 +499,13 @@ class PermissionRestartIntegration(BaseIntegration):
     async def _execute_scheduled_restart(self, reason: str, permissions: list[str]) -> None:
         try:
             await asyncio.sleep(self._config.restart_delay_sec)
+            if self._is_user_quit_intent():
+                logger.info(
+                    "[PERMISSION_RESTART] Restart aborted: user quit intent active (reason=%s, permissions=%s)",
+                    reason,
+                    permissions,
+                )
+                return
 
             # Updater is the owner of relaunch while update is active.
             # Avoid competing relaunch paths.

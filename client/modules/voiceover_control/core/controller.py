@@ -57,6 +57,7 @@ class VoiceOverControlSettings:
     stop_repeat_delay: float = 0.05
     use_apple_script_fallback: bool = True
     mode: Literal["stop", "mute_speech"] = "stop"
+    hard_toggle_enabled: bool = False
     engage_on_keyboard_events: bool = True
     # Настройки детального логирования для диагностики
     debug_logging: bool = False
@@ -84,6 +85,7 @@ class VoiceOverController:
         self._last_duck_ts = 0.0
         self._platform_supported = platform.system() == "Darwin"
         self._speech_muted_by_us = False
+        self._hard_toggled_by_us = False
         self._speech_muted_supported = True
         self._voiceover_was_running = False  # Был ли VoiceOver запущен изначально
         self._voiceover_currently_running = False  # Текущее состояние VoiceOver
@@ -208,20 +210,24 @@ class VoiceOverController:
             self._ducked = False
             self._log_voiceover_state("release:start")
 
-            # Восстанавливаем VoiceOver через Command+F5
-            # Это единственный рабочий метод на основе тестирования
-            if self._speech_muted_by_us:
+            if self._hard_toggled_by_us:
                 success = await asyncio.to_thread(self._toggle_voiceover_with_command_f5)
                 if success:
-                    self._speech_muted_by_us = False
-                    # Обновляем текущее состояние VoiceOver (переключили с выключенного на включенный)
+                    self._hard_toggled_by_us = False
                     self._voiceover_currently_running = True
-                    self._log_voiceover_state("release:restored")
-                    logger.info("VoiceOverController: VoiceOver restored via Command+F5")
+                    logger.info("VoiceOverController: VoiceOver restored via Command+F5 (hard_toggle_enabled=true)")
                 else:
                     logger.warning("VoiceOverController: failed to restore VoiceOver via Command+F5")
+            elif self._speech_muted_by_us:
+                success = await asyncio.to_thread(self._set_voiceover_speech_muted, False)
+                if success:
+                    self._speech_muted_by_us = False
+                    self._log_voiceover_state("release:unmuted")
+                    logger.info("VoiceOverController: VoiceOver speech restored")
+                else:
+                    logger.warning("VoiceOverController: failed to restore VoiceOver speech state")
             else:
-                logger.debug("VoiceOverController: VoiceOver was not disabled by us, no restoration needed")
+                logger.debug("VoiceOverController: nothing to restore on release")
 
     async def update_voiceover_status(self) -> None:
         """Обновить текущее состояние VoiceOver."""
@@ -245,14 +251,14 @@ class VoiceOverController:
             context = reason or "unknown"
             logger.info("VoiceOverController: duck requested (mode=%s, reason=%s)", self.settings.mode, context)
 
-            success = await asyncio.to_thread(self._send_duck_command_sync, context)
+            success, muted_by_us, hard_toggled_by_us = await asyncio.to_thread(self._send_duck_command_sync, context)
             if success:
                 self._ducked = True
                 self._last_duck_ts = time.monotonic()
-                # Обновляем текущее состояние VoiceOver (переключили с включенного на выключенный)
-                self._voiceover_currently_running = False
-                # Устанавливаем флаг, что мы отключили VoiceOver
-                self._speech_muted_by_us = True
+                self._speech_muted_by_us = muted_by_us
+                self._hard_toggled_by_us = hard_toggled_by_us
+                if hard_toggled_by_us:
+                    self._voiceover_currently_running = False
                 logger.info("VoiceOverController: VoiceOver speech paused (reason=%s)", context)
                 self._log_voiceover_state(f"duck:{context}")
                 return True
@@ -260,11 +266,29 @@ class VoiceOverController:
             logger.warning("VoiceOverController: failed to pause VoiceOver speech (reason=%s)", context)
             return False
 
-    def _send_duck_command_sync(self, context: str) -> bool:
-        # Используем Command+F5 для полного отключения VoiceOver
-        # Это единственный рабочий метод на основе тестирования
-        logger.info(f"VoiceOverController: Using Command+F5 to disable VoiceOver (reason={context})")
-        return self._toggle_voiceover_with_command_f5()
+    def _send_duck_command_sync(self, context: str) -> tuple[bool, bool, bool]:
+        """Pause VoiceOver speech without disabling the VoiceOver service.
+
+        Returns:
+            (success, muted_by_us, hard_toggled_by_us)
+        """
+        if self.settings.hard_toggle_enabled:
+            logger.info("VoiceOverController: hard toggle enabled, using Command+F5 (reason=%s)", context)
+            success = self._toggle_voiceover_with_command_f5()
+            return success, False, bool(success)
+
+        if self.settings.mode == "mute_speech":
+            success = self._set_voiceover_speech_muted(True)
+            return success, bool(success and self._speech_muted_by_us), False
+
+        # mode=stop: best-effort stop speaking bursts; no persistent mute state.
+        success = False
+        for _ in range(self.settings.stop_repeats):
+            success = self._stop_voiceover_speaking(context) or success
+            if self.settings.stop_repeat_delay > 0:
+                time.sleep(self.settings.stop_repeat_delay)
+        self._speech_muted_by_us = False
+        return success, False, False
 
     def _toggle_voiceover_with_command_f5(self) -> bool:
         """Переключить VoiceOver через Command+F5 (единственный рабочий метод)"""
@@ -321,7 +345,7 @@ class VoiceOverController:
             logger.warning("VoiceOverController: AppleScript control key failed: %s", stderr.strip())
         return False
 
-    def _stop_voiceover_speaking(self, context: str) -> None:
+    def _stop_voiceover_speaking(self, context: str) -> bool:
         success, _, stderr = self._run_osascript('tell application "VoiceOver" to stop speaking')
         if not success:
             logger.warning(
@@ -329,11 +353,14 @@ class VoiceOverController:
                 (stderr or "no error").strip(),
                 context,
             )
+            fallback_ok = False
             if self.settings.mode != "stop":
                 # Fallback to control key tap when AppleScript fails
-                self._press_control_key()
+                fallback_ok = self._press_control_key()
+            return fallback_ok
         else:
             logger.debug("VoiceOverController: stop speaking succeeded (context=%s)", context)
+            return True
 
     def _run_osascript(self, script: str, capture_output: bool = False) -> tuple[bool, str | None, str | None]:
         """Run a short AppleScript command."""

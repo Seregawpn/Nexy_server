@@ -123,7 +123,7 @@ BOOT_NOTES.append(f"init_ffmpeg_for_pydub: path={(str(_ffmpeg_path) if _ffmpeg_p
 BOOT_NOTES.append(f"pyobjc_fix: {_pyobjc_fix_result_early}")
 
 # Функция активации NSApplication - вызывается при каждом запуске
-def activate_nsapplication_for_menu_bar():
+def activate_nsapplication_for_menu_bar(force_activate: bool = False):
     """
     CRITICAL: Activate NSApplication for LSUIElement applications.
     Without this, menu bar icon doesn't appear when launched from .app on macOS Sequoia.
@@ -169,9 +169,23 @@ def activate_nsapplication_for_menu_bar():
         print(f"[NEXY_INIT] setActivationPolicy(Accessory) returned: {result}")
         print(f"[NEXY_INIT] New activation policy: {app.activationPolicy()}")
 
-        # Активируем приложение - ВАЖНО: True заставляет приложение стать активным
-        app.activateIgnoringOtherApps_(True)
-        print("[NEXY_INIT] Called activateIgnoringOtherApps_(True)")
+        # Управляем forced-activate через конфиг + явный fallback-флаг.
+        force_activate_cfg = False
+        try:
+            from config.unified_config_loader import UnifiedConfigLoader
+
+            raw_config = UnifiedConfigLoader.get_instance()._load_config()
+            focus_cfg = raw_config.get("focus", {}) if isinstance(raw_config, dict) else {}
+            force_activate_cfg = bool(focus_cfg.get("force_activate_on_startup", False))
+        except Exception as cfg_err:
+            print(f"[NEXY_INIT] ⚠️  WARNING: focus config unavailable, default force_activate=False ({cfg_err})")
+
+        should_force_activate = bool(force_activate or force_activate_cfg)
+        if should_force_activate:
+            app.activateIgnoringOtherApps_(True)
+            print(f"[NEXY_INIT] Called activateIgnoringOtherApps_(True) (force={force_activate}, cfg={force_activate_cfg})")
+        else:
+            print("[NEXY_INIT] Skipped activateIgnoringOtherApps_(True) by focus config")
 
         print("[NEXY_INIT] SUCCESS: NSApplication activated for menu bar app")
         return True

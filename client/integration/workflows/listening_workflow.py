@@ -55,13 +55,7 @@ class ListeningWorkflow(BaseWorkflow):
             EventPriority.HIGH
         )
         
-        # Прерывания
-        await self.event_bus.subscribe(
-            "keyboard.short_press", 
-            self._on_interrupt_request, 
-            EventPriority.CRITICAL
-        )
-        
+        # Прерывания (централизованный owner: InterruptManagementIntegration)
         await self.event_bus.subscribe(
             "interrupt.request", 
             self._on_interrupt_request, 
@@ -238,10 +232,13 @@ class ListeningWorkflow(BaseWorkflow):
                 
             logger.warning(f"🎤 ListeningWorkflow: достигнут максимальный таймаут ({self.max_listening_duration}с)")
             
-            # Принудительно завершаем запись
-            await self.event_bus.publish("voice.recording_stop", {
+            # Централизация: прямой terminal recording_stop не публикуем.
+            # Публикуем interrupt.request, owner input lifecycle выполнит terminal stop.
+            await self.event_bus.publish("interrupt.request", {
+                "type": "speech_stop",
+                "source": "listening_workflow.timeout_monitor",
                 "session_id": session_id,
-                "reason": "max_duration_timeout"
+                "reason": "max_duration_timeout",
             })
             
         except asyncio.CancelledError:

@@ -313,7 +313,7 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
   1) Создать модуль в `client/modules/<name>` без знания EventBus
   2) Создать интеграцию в `client/integration/integrations/<name>_integration.py`
   3) Подписаться/публиковать нужные события, запросы режимов только через `mode.request`
-  4) Добавить инициализацию/запуск в `SimpleModuleCoordinator`
+  4) Добавить создание в `IntegrationFactory` (порядок запуска задаётся `IntegrationFactory.STARTUP_ORDER`)
 
 - Расширение правил переходов:
   - Зарегистрировать новые `ModeTransition` в ModeManagementIntegration (или в конфиге)
@@ -326,14 +326,15 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
 ## 7.1) Feature Flags & Conditional Loading (Оптимизация)
 
 Клиент использует Factory-pattern для условной загрузки тяжелых интеграций (`integration_factory.py`).
+Единая проверка доступности фич: `UnifiedConfigLoader.is_feature_enabled(...)`.
 
 **1. Память и производительность:**
-- `browser.enabled=false` → `BrowserUseIntegration` не создаётся. Процесс Playwright/Chrome не запускается (экономия ~200MB RAM).
-- `payment.enabled=false` → `PaymentIntegration` не создаётся.
+- `features.browser.enabled=false` (или алиас `browser_use.enabled=false`) → `BrowserUseIntegration` не создаётся. Процесс Playwright/Chrome не запускается (экономия ~200MB RAM).
+- `features.payment.enabled=false` (или алиас `payment_use.enabled=false`) → `PaymentIntegration` не создаётся.
 
 **2. UI & Tray:**
 - Меню трея строится динамически.
-- `payment.enabled=false` → Пункт "Manage Subscription" скрыт.
+- `features.payment.enabled=false` → Пункт "Manage Subscription" скрыт.
 
 **3. Execution Guards:**
 - `ActionExecutionIntegration` проверяет флаги перед выполнением.
@@ -581,11 +582,9 @@ _macOS автоматически управляет активными ауди
   - Публикует: `tray.status_updated`.
 
 - `tts_integration.py`
-  - Назначение: **фоллбэк** локальной генерации речи через macOS `say` команду.
-  - Используется как резервный механизм: если сервер EdgeTTS недоступен или возвращает ошибку, клиент переключается на локальный TTS.
-  - Подписки: `speech.playback.request` (при фоллбэке).
-  - Публикует: `tts.completed|failed`, аудио воспроизводится через системный `say`.
-  - Поток: `grpc.tts_request` → `GrpcClientIntegration` пытается сервер EdgeTTS → при ошибке публикует `speech.playback.request` → `TTSIntegration` воспроизводит локально.
+  - Назначение: legacy-совместимость для события `speech.playback.request`.
+  - Локальный `say` fallback **отключён**; в runtime событие логируется и игнорируется.
+  - Канонический путь TTS: `grpc.tts_request` → `GrpcClientIntegration` → серверный TTS (`grpc.response.audio`).
 
 - `update_notification_integration.py`
   - Назначение: уведомления о доступных обновлениях.

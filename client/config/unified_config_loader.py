@@ -629,7 +629,7 @@ class UnifiedConfigLoader:
         
         # Валидация поддерживаемых клавиш
         key_to_monitor = kbd_cfg['key_to_monitor']
-        supported_keys = {'left_shift', 'ctrl_n'}
+        supported_keys = {'left_control', 'ctrl_n'}
         if key_to_monitor not in supported_keys:
             import logging
             logger = logging.getLogger(__name__)
@@ -801,6 +801,44 @@ class UnifiedConfigLoader:
             feature_config['enabled'] = False
             
         return feature_config
+
+    def is_feature_enabled(self, feature_name: str, *, default: bool = False) -> bool:
+        """Single source for feature availability checks.
+
+        Resolution order:
+        1) features.<name>.enabled (+ ks_<name>)
+        2) alias sections in root config (<name>/browser_use/payment_use/messages/whatsapp)
+        3) default
+        """
+        config = self._load_config()
+        features = config.get("features", {})
+
+        def _feature_enabled(name: str) -> bool | None:
+            raw = features.get(name)
+            if not isinstance(raw, dict) or "enabled" not in raw:
+                return None
+            ks_name = f"ks_{name}"
+            ks_cfg = features.get(ks_name, {})
+            if isinstance(ks_cfg, dict) and ks_cfg.get("enabled", False):
+                return False
+            return bool(raw.get("enabled", False))
+
+        resolved = _feature_enabled(feature_name)
+        if resolved is not None:
+            return resolved
+
+        aliases: list[str] = [feature_name]
+        if feature_name == "browser":
+            aliases.append("browser_use")
+        if feature_name == "payment":
+            aliases.append("payment_use")
+
+        for alias in aliases:
+            section = config.get(alias)
+            if isinstance(section, dict) and "enabled" in section:
+                return bool(section.get("enabled", False))
+
+        return default
 
 # Глобальный экземпляр загрузчика
 unified_config = UnifiedConfigLoader()
