@@ -146,7 +146,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: local
+    server: production
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 0.0
     max_retries: 3
