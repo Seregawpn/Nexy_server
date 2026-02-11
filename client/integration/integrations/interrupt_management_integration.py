@@ -377,8 +377,10 @@ class InterruptManagementIntegration:
                 else:
                     self._last_interrupt_publish_ts[dedup_key] = now
                     logger.info(f"🛑 InterruptManager: останавливаем речь (session_id={session_id})")
-                    # Publish cancel even when session_id is None.
-                    # Downstream owners (gRPC/playback) implement fallback semantics for sessionless cancel.
+                    # Enforce session-scoped cancel contract.
+                    if session_id is None:
+                        logger.warning("🛑 InterruptManager: grpc.request_cancel skipped (missing session_id)")
+                        return
                     await self.event_bus.publish("grpc.request_cancel", {
                         "session_id": session_id,
                         "press_id": press_id,
@@ -444,13 +446,16 @@ class InterruptManagementIntegration:
         """Обработка остановки речи"""
         try:
             logger.info("Handling speech stop interrupt")
+            payload = interrupt_event.data if isinstance(interrupt_event.data, dict) else {}
+            session_id = payload.get("session_id")
 
             # Переводим в режим SLEEPING централизованно
             if self.event_bus:
                 try:
                     await self.event_bus.publish("mode.request", {
                         "target": AppMode.SLEEPING,
-                        "source": "interrupt_management"
+                        "source": "interrupt_management",
+                        "session_id": session_id,
                     })
                 except Exception as e:
                     logger.error(f"Error publishing mode.request SLEEPING: {e}")

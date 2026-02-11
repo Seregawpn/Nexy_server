@@ -477,7 +477,7 @@ class GrpcClientIntegration:
             sid = data.get("session_id")
             target_sid = sid
             if not target_sid:
-                logger.warning("grpc.request_cancel rejected: missing session_id (session-scoped contract)")
+                logger.warning("grpc.request_cancel rejected: missing session_id")
                 return
             task_or_future = self._inflight.pop(target_sid, None)
             # Поддерживаем как Task, так и Future (от run_coroutine_threadsafe)
