@@ -52,6 +52,7 @@ class PaymentIntegration(BaseIntegration):
             'limits': None
         }
         self._hardware_id: str | None = None
+        self._hardware_id_event: asyncio.Event = asyncio.Event()
         self._poll_task: asyncio.Task[Any] | None = None
         self._payment_success_announced_at: float | None = None
         self._checkout_in_flight: bool = False
@@ -259,9 +260,27 @@ class PaymentIntegration(BaseIntegration):
         logger.info(f"[{self.feature_id}] _on_hardware_id_received: uuid={uuid[:8] if uuid else 'None'}...")
         if uuid:
             self._hardware_id = uuid
+            self._hardware_id_event.set()
             logger.info(f"[{self.feature_id}] Hardware ID SET: {uuid[:8]}...")
         else:
             logger.warning(f"[{self.feature_id}] Hardware ID NOT SET - uuid missing. payload keys: {list(payload.keys())}")
+
+    async def _ensure_hardware_id_ready(self, timeout_sec: float = 5.0) -> bool:
+        """Event-driven wait for hardware_id without local polling loops."""
+        if self._hardware_id:
+            return True
+
+        self._hardware_id_event.clear()
+        await self.event_bus.publish("hardware.id_request", {"wait_ready": True})
+        if self._hardware_id:
+            return True
+
+        try:
+            await asyncio.wait_for(self._hardware_id_event.wait(), timeout=timeout_sec)
+        except asyncio.TimeoutError:
+            return False
+
+        return self._hardware_id is not None
     
     # --- Public API (for other client modules) ---
     
@@ -318,23 +337,13 @@ class PaymentIntegration(BaseIntegration):
                     return
             self._checkout_in_flight = True
 
-            # If hardware ID not ready, request and wait for it
+            # If hardware ID not ready, request and wait via single event-driven path.
             if not self._hardware_id:
                 logger.info(f"[{self.feature_id}] Hardware ID not ready, requesting...")
-                await self.event_bus.publish("hardware.id_request", {'wait_ready': True})
-                
-                # Wait up to 5 seconds for the ID to arrive (50 * 0.1s)
-                for i in range(50):
-                    await asyncio.sleep(0.1)
-                    if self._hardware_id:
-                        logger.info(f"[{self.feature_id}] Hardware ID received after {i*0.1:.1f}s")
-                        break
-                
-                if not self._hardware_id:
-                    logger.error(f"[{self.feature_id}] Timeout: Hardware ID still not ready after 5s waiting")
-                    # Try one last fetch request before giving up
+                ready = await self._ensure_hardware_id_ready(timeout_sec=5.0)
+                if not ready:
+                    logger.error(f"[{self.feature_id}] Timeout: Hardware ID still not ready after event wait")
                     await self.event_bus.publish("hardware.id_request", {'wait_ready': False})
-                    
                     await self.event_bus.publish("system.notification", {
                         'type': 'error',
                         'title': 'Payment Error',
@@ -408,16 +417,17 @@ class PaymentIntegration(BaseIntegration):
         """
         try:
             if not self._hardware_id:
-                logger.warning(f"[{self.feature_id}] Hardware ID not ready, cannot open portal")
-                # Запрашиваем ID и пробуем снова через паузу? Нет, просто уведомляем
-                await self.event_bus.publish("system.notification", {
-                    'type': 'error',
-                    'title': 'Payment Error',
-                    'message': 'System not ready (ID missing). Please try again in 5 seconds.'
-                })
-                # Trigger refresh
-                await self.event_bus.publish("hardware.id_request", {'wait_ready': False})
-                return
+                logger.info(f"[{self.feature_id}] Hardware ID not ready for portal, requesting...")
+                ready = await self._ensure_hardware_id_ready(timeout_sec=5.0)
+                if not ready:
+                    logger.warning(f"[{self.feature_id}] Hardware ID not ready, cannot open portal")
+                    await self.event_bus.publish("system.notification", {
+                        'type': 'error',
+                        'title': 'Payment Error',
+                        'message': 'System not ready (ID missing). Please try again in 5 seconds.'
+                    })
+                    await self.event_bus.publish("hardware.id_request", {'wait_ready': False})
+                    return
 
             # Определяем URL API
             from config.unified_config_loader import get_grpc_host
