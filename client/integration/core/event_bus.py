@@ -25,9 +25,9 @@ class EventBus:
         self.event_history: list[dict[str, Any]] = []
         self.max_history = 1000
         self._loop: asyncio.AbstractEventLoop | None = None
-        # События, обработка которых должна быть быстрой (не блокирующей):
-        # публикуем обработчики как задачи и не await'им их последовательно
-        self._fast_events = {"app.mode_changed", "app.state_changed"}
+        # Fast-path событий по умолчанию отключён:
+        # для mode/state критична детерминированная последовательность доставки.
+        self._fast_events: set[str] = set()
         # Events to exclude from history (high-frequency)
         self._exclude_from_history = {"grpc.response.audio", "grpc.response.text"}
         self._background_tasks = set()  # Set to track fire-and-forget tasks

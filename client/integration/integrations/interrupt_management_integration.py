@@ -275,8 +275,9 @@ class InterruptManagementIntegration:
     async def _on_app_state_changed(self, event):
         """Обработка изменения режима приложения"""
         try:
-            old_mode = event.get("old_mode")
-            new_mode = event.get("new_mode")
+            data = event.get("data", {}) if isinstance(event, dict) else {}
+            old_mode = data.get("old_mode")
+            new_mode = data.get("new_mode")
             
             if old_mode and new_mode:
                 await self._handle_mode_change(old_mode, new_mode)
@@ -315,12 +316,12 @@ class InterruptManagementIntegration:
     async def _on_interrupt_request(self, event):
         """Обработка запроса на прерывание"""
         try:
-            # КРИТИЧНО: Читаем type и session_id сначала из data, затем с верхнего уровня
-            data = event.get("data", {})
-            interrupt_type = data.get("type") or event.get("type")
-            session_id = data.get("session_id") or event.get("session_id")
-            priority = data.get("priority") or event.get("priority", InterruptPriority.NORMAL)
-            source = data.get("source") or event.get("source", "unknown")
+            # Contract: payload interrupt.request хранится только в event.data.
+            data = event.get("data", {}) if isinstance(event, dict) else {}
+            interrupt_type = data.get("type")
+            session_id = data.get("session_id")
+            priority = data.get("priority", InterruptPriority.NORMAL)
+            source = data.get("source", "unknown")
             press_id = data.get("press_id")
             event_id = data.get("event_id")
             
@@ -328,7 +329,12 @@ class InterruptManagementIntegration:
             if session_id is None:
                 session_id = selectors.get_current_session_id(self.state_manager)
             
-            logger.debug(f"🛑 InterruptManager: interrupt.request - type={interrupt_type}, data.session_id={data.get('session_id')}, event.session_id={event.get('session_id')}, final.session_id={session_id}")
+            logger.debug(
+                "🛑 InterruptManager: interrupt.request - type=%s, data.session_id=%s, final.session_id=%s",
+                interrupt_type,
+                data.get("session_id"),
+                session_id,
+            )
             
             if not interrupt_type:
                 logger.warning("Interrupt request without type, event=%s", event)
@@ -377,6 +383,9 @@ class InterruptManagementIntegration:
                         "session_id": session_id,
                         "press_id": press_id,
                         "event_id": event_id,
+                        "source": source,
+                        "reason": str(data.get("reason") or "user_interrupt"),
+                        "initiator": "keyboard" if str(source).startswith("keyboard.") else "system",
                     })
                     logger.info(
                         "🛑 InterruptManager: grpc.request_cancel опубликован (session_id=%s)",
@@ -435,15 +444,7 @@ class InterruptManagementIntegration:
         """Обработка остановки речи"""
         try:
             logger.info("Handling speech stop interrupt")
-            
-            # Публикуем событие остановки речи
-            if self.event_bus:
-                await self.event_bus.publish("speech.stop_requested", {
-                    "interrupt_id": id(interrupt_event),
-                    "source": interrupt_event.source,
-                    "timestamp": interrupt_event.timestamp
-                })
-            
+
             # Переводим в режим SLEEPING централизованно
             if self.event_bus:
                 try:
@@ -491,21 +492,16 @@ class InterruptManagementIntegration:
         """Обработка остановки записи"""
         try:
             logger.info("Handling recording stop interrupt")
-            
-            # Публикуем событие остановки записи
-            if self.event_bus:
-                await self.event_bus.publish("recording.stop_requested", {
-                    "interrupt_id": id(interrupt_event),
-                    "source": interrupt_event.source,
-                    "timestamp": interrupt_event.timestamp
-                })
-            
+            data = interrupt_event.data or {}
+            session_id = data.get("session_id")
+
             # Переводим в режим PROCESSING централизованно
             if self.event_bus:
                 try:
                     await self.event_bus.publish("mode.request", {
                         "target": AppMode.PROCESSING,
-                        "source": "interrupt_management"
+                        "source": "interrupt_management",
+                        "session_id": session_id,
                     })
                 except Exception as e:
                     logger.error(f"Error publishing mode.request PROCESSING: {e}")
@@ -524,15 +520,7 @@ class InterruptManagementIntegration:
         """Обработка очистки сессии"""
         try:
             logger.info("Handling session clear interrupt")
-            
-            # Публикуем событие очистки сессии
-            if self.event_bus:
-                await self.event_bus.publish("session.clear_requested", {
-                    "interrupt_id": id(interrupt_event),
-                    "source": interrupt_event.source,
-                    "timestamp": interrupt_event.timestamp
-                })
-            
+
             # Переводим в режим SLEEPING централизованно
             if self.event_bus:
                 try:
@@ -590,15 +578,10 @@ class InterruptManagementIntegration:
     async def _cancel_all_interrupts(self):
         """Отмена всех активных прерываний"""
         try:
-            if self._coordinator and hasattr(self._coordinator, 'cancel_all_interrupts'):
-                await self._coordinator.cancel_all_interrupts()  # type: ignore[attr-defined]
-                logger.info("All active interrupts cancelled")
-            elif self._coordinator and hasattr(self._coordinator, 'active_interrupts'):
-                # Отменяем все активные прерывания вручную
-                for interrupt in self._coordinator.active_interrupts:
-                    interrupt.status = InterruptStatus.CANCELLED
-                self._coordinator.active_interrupts.clear()
-                logger.info("All active interrupts cancelled manually")
+            if self._coordinator:
+                cancelled = await self._coordinator.cancel_all_interrupts()
+                if cancelled > 0:
+                    logger.info("All active interrupts cancelled")
         except Exception as e:
             logger.error(f"Error cancelling all interrupts: {e}")
     

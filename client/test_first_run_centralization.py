@@ -13,6 +13,10 @@ import logging
 from pathlib import Path
 import sys
 
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Manual verification script, excluded from pytest suite")
+
 # Add client to path
 client_dir = Path(__file__).parent
 sys.path.insert(0, str(client_dir))

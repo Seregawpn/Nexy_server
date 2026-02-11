@@ -7,17 +7,22 @@ Feature ID: F-2025-014-close-app
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest  # type: ignore
+from mcp.types import TextContent
 
 from modules.mcp_action.core.mcp_action_executor import McpActionExecutor
 from modules.mcp_action.core.types import McpActionConfig
 
 
 @pytest.fixture
-def config():
+def config(tmp_path):
     """Создает конфигурацию для тестов."""
+    open_server = tmp_path / "open_app_server.py"
+    close_server = tmp_path / "close_app_server.py"
+    open_server.write_text("# stub server\n")
+    close_server.write_text("# stub server\n")
     return McpActionConfig(
-        open_app_server_path="/path/to/app_launcher_server.py",
-        close_app_server_path="/path/to/close_app_server.py",
+        open_app_server_path=str(open_server),
+        close_app_server_path=str(close_server),
         timeout_sec=5.0,
         enabled=True,
     )
@@ -36,7 +41,7 @@ async def test_close_app_success(executor):
 
     # Мокируем MCP клиент
     mock_result = MagicMock()
-    mock_result.content = [MagicMock(text="Application 'Calculator' closed successfully")]
+    mock_result.content = [TextContent(type="text", text="Application 'Calculator' closed successfully")]
 
     with patch("modules.mcp_action.core.mcp_action_executor.stdio_client") as mock_client:
         mock_session = AsyncMock()
@@ -79,7 +84,7 @@ async def test_open_app_success(executor):
     action_data = {"type": "open_app", "app_name": "Safari"}
 
     mock_result = MagicMock()
-    mock_result.content = [MagicMock(text="Application 'Safari' opened successfully")]
+    mock_result.content = [TextContent(type="text", text="Application 'Safari' opened successfully")]
 
     with patch("modules.mcp_action.core.mcp_action_executor.stdio_client") as mock_client:
         mock_session = AsyncMock()
@@ -149,7 +154,7 @@ async def test_mcp_error_response(executor):
     action_data = {"type": "close_app", "app_name": "NonExistentApp"}
 
     mock_result = MagicMock()
-    mock_result.content = [MagicMock(text="❌ Application 'NonExistentApp' not found")]
+    mock_result.content = [TextContent(type="text", text="❌ Application 'NonExistentApp' not found")]
 
     with patch("modules.mcp_action.core.mcp_action_executor.stdio_client") as mock_client:
         mock_session = AsyncMock()
@@ -171,4 +176,3 @@ async def test_mcp_error_response(executor):
     assert result.success is False
     assert "not found" in result.message
     assert result.error == "mcp_error"
-

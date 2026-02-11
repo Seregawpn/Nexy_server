@@ -3,6 +3,10 @@ import os
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
 
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Manual verification script, excluded from pytest suite")
+
 # Add client to path so imports work
 current_dir = os.getcwd()
 client_dir = os.path.join(current_dir, 'client')

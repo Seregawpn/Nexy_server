@@ -471,19 +471,13 @@ class GrpcClientIntegration:
             await self._handle_error(e, where="grpc.on_interrupt", severity="warning")
 
     async def _on_request_cancel(self, event):
-        """Адресная отмена активного запроса по session_id (или последний активный)."""
+        """Адресная отмена активного запроса строго по session_id."""
         try:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             target_sid = sid
             if not target_sid:
-                # последний активный inflight
-                try:
-                    target_sid = next(reversed(self._inflight)) if self._inflight else None
-                except Exception:
-                    target_sid = None
-            if not target_sid:
-                logger.info("grpc.request_cancel: no inflight request to cancel (noop)")
+                logger.warning("grpc.request_cancel rejected: missing session_id (session-scoped contract)")
                 return
             task_or_future = self._inflight.pop(target_sid, None)
             # Поддерживаем как Task, так и Future (от run_coroutine_threadsafe)
@@ -543,9 +537,16 @@ class GrpcClientIntegration:
             return
         
         logger.info(f"[TTS] Request from {source}: '{text[:50]}...' (session={tts_session_id}) -> Routing to SERVER TTS")
-        
-        # Direct call to server TTS logic
-        await self._play_server_tts(text, tts_session_id)
+
+        # TTS must follow the same terminal contract as regular gRPC requests.
+        # SpeechPlaybackIntegration is single owner of playback.* terminal events;
+        # here we only emit grpc.request_completed/failed as upstream source events.
+        ok, chunk_count = await self._play_server_tts(text, tts_session_id)
+        if ok:
+            await self.event_bus.publish("grpc.request_completed", {"session_id": tts_session_id})
+        else:
+            error = "tts_no_audio" if chunk_count == 0 else "tts_stream_failed"
+            await self.event_bus.publish("grpc.request_failed", {"session_id": tts_session_id, "error": error})
 
     async def _on_app_shutdown(self, event):
         await self.stop()
@@ -804,56 +805,6 @@ class GrpcClientIntegration:
                     }
             return None
 
-        def _looks_like_action_intent(raw_text: str) -> bool:
-            if not isinstance(raw_text, str):
-                return False
-            text_l = raw_text.lower()
-            markers = (
-                "send_message",
-                "read_messages",
-                "find_contact",
-                "open_app",
-                "close_app",
-                "browser_use",
-                "send_whatsapp_message",
-                "command",
-                "args",
-                "отправ",
-                "сообщени",
-                "команд",
-            )
-            return any(marker in text_l for marker in markers)
-
-        def _extract_action_from_legacy_text(raw_text: str) -> dict[str, Any] | None:
-            if not isinstance(raw_text, str):
-                return None
-            candidate = raw_text.strip()
-            if not candidate:
-                return None
-
-            # Step 1: Strip optional __MCP__ prefix
-            if candidate.startswith("__MCP__"):
-                candidate = candidate[len("__MCP__"):].strip()
-
-            # Step 2: Strip optional markdown fences (checking candidate AGAIN)
-            if candidate.startswith("```") and candidate.endswith("```"):
-                candidate = candidate[3:-3].strip()
-                if candidate.lower().startswith("json"):
-                    candidate = candidate[4:].strip()
-
-            # Step 3: Heuristic check (must look like a JSON object)
-            if not (candidate.startswith("{") and candidate.endswith("}")):
-                return None
-
-            try:
-                parsed = json.loads(candidate)
-            except Exception:
-                return None
-
-            if isinstance(parsed, dict) and parsed.get("event") == "mcp.command_request":
-                parsed = parsed.get("payload")
-            return _normalize_action_payload(parsed)
-        
         try:
             # КРИТИЧНО: Преобразуем session_id в строку (может быть float или другой тип)
             session_id_str = str(session_id) if session_id is not None else ""
@@ -915,41 +866,21 @@ class GrpcClientIntegration:
                         preview,
                     )
 
-                    # Compatibility path: accept legacy action payload sent via text_chunk.
-                    legacy_action = _extract_action_from_legacy_text(text)
-                    if legacy_action is not None:
-                        if action_dispatched:
-                            logger.debug(
-                                "[%s] Legacy text action ignored (already dispatched), session=%s",
-                                FEATURE_ID,
-                                session_id,
-                            )
-                            continue
-                        action_dispatched = True
-                        action_chunk_count += 1
-                        logger.warning(
-                            "[%s] Legacy action payload received via text_chunk, session=%s, command=%s",
-                            FEATURE_ID,
-                            session_id,
-                            legacy_action.get("command", "unknown"),
-                        )
-                        await self.event_bus.publish("grpc.response.action", {
-                            "session_id": str(session_id),
-                            "action_json": json.dumps(legacy_action, ensure_ascii=False),
-                            "feature_id": FEATURE_ID,
-                            "source": "text_chunk_legacy",
-                        })
-                        logger.info(
-                            "[ACTION_PIPELINE] stage=publish session=%s source=text_chunk_legacy command=%s",
-                            session_id,
-                            legacy_action.get("command", "unknown"),
-                        )
-                        # Do not forward control payload to text/TTS path.
-                        continue
-                    if _looks_like_action_intent(text):
+                    # Contract: action transport is supported only via action_message.
+                    # text_chunk is treated as plain text payload.
+                    action_markers = (
+                        "send_message",
+                        "read_messages",
+                        "find_contact",
+                        "open_app",
+                        "close_app",
+                        "browser_use",
+                        "send_whatsapp_message",
+                    )
+                    if any(marker in text.lower() for marker in action_markers):
                         action_like_text_seen = True
                         logger.warning(
-                            "[%s] text_chunk looks action-like but action payload was not extracted: session=%s preview=%s",
+                            "[%s] text_chunk looks action-like but ignored by contract (action_message only): session=%s preview=%s",
                             FEATURE_ID,
                             session_id,
                             preview,
@@ -1360,25 +1291,19 @@ class GrpcClientIntegration:
             "action_json": json.dumps(payload),
             "feature_id": FEATURE_ID,
         })
-    async def _play_server_tts(self, text: str, session_id: str):
+    async def _play_server_tts(self, text: str, session_id: str) -> tuple[bool, int]:
         """Executes SERVER-SIDE TTS for a session (replaces local fallback)."""
+        chunk_count = 0
         try:
              logger.info(f"🗣️ [SERVER_TTS] Requesting TTS for session {session_id}: '{text[:50]}...'")
-             
-             # Signal playback started
-             await self.event_bus.publish("playback.started", {
-                 "session_id": session_id,
-                 "pattern": "server_tts"
-             })
-             
+
              # Call gRPC streaming method
              if self._client is None:
                 logger.error("gRPC client not initialized")
-                return
+                return False, 0
 
              # hwid = await self._await_hardware_id(timeout_ms=1000) # Unused for TTS
-             
-             chunk_count = 0
+
              async for resp in self._client.stream_tts_audio(
                  text=text,
                  session_id=str(session_id),
@@ -1406,10 +1331,10 @@ class GrpcClientIntegration:
                      break
                      
              logger.info(f"✅ [SERVER_TTS] Completed: {chunk_count} chunks")
-
-             
+             return chunk_count > 0, chunk_count
         except Exception as e:
              logger.error(f"❌ [SERVER_TTS] Failed: {e}") 
+             return False, chunk_count
     async def _ensure_connected(self) -> bool:
         """Single-flight connection: ensures only one connect attempt runs at a time.
         КРИТИЧНО: выполняется в _grpc_loop для создания канала в правильном loop.

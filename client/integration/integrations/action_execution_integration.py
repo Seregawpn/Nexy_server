@@ -123,11 +123,6 @@ class ActionExecutionIntegration(BaseIntegration):
             EventPriority.HIGH,
         )
         await self.event_bus.subscribe(
-            "keyboard.short_press",
-            self._on_keyboard_short_press,
-            EventPriority.HIGH,
-        )
-        await self.event_bus.subscribe(
             "app.mode_changed",
             self._on_mode_changed,
             EventPriority.HIGH,
@@ -178,7 +173,6 @@ class ActionExecutionIntegration(BaseIntegration):
         await self._cancel_all_actions(reason="integration_stop")
         await self.event_bus.unsubscribe("grpc.response.action", self._on_action_received)
         await self.event_bus.unsubscribe("interrupt.request", self._on_interrupt)
-        await self.event_bus.unsubscribe("keyboard.short_press", self._on_keyboard_short_press)
         await self.event_bus.unsubscribe("app.mode_changed", self._on_mode_changed)
         await self.event_bus.unsubscribe("browser.completed", self._on_browser_use_terminal_event)
         await self.event_bus.unsubscribe("browser.failed", self._on_browser_use_terminal_event)
@@ -1005,10 +999,6 @@ class ActionExecutionIntegration(BaseIntegration):
         """Обработка прерывания - отмена всех действий."""
         await self._cancel_all_actions(reason="interrupt")
 
-    async def _on_keyboard_short_press(self, event: dict[str, Any]):
-        """Обработка короткого нажатия клавиши - отмена всех действий."""
-        await self._cancel_all_actions(reason="keyboard_short_press")
-
     async def _on_mode_changed(self, event: dict[str, Any]):
         """Обработка изменения режима приложения - отмена при переходе в спящий режим."""
         try:
@@ -1196,7 +1186,7 @@ class ActionExecutionIntegration(BaseIntegration):
         feature_id: str = FEATURE_ID,
         command: str | None = None,
     ) -> None:
-        """Публикует speech.playback.request с описанием ошибки."""
+        """Публикует grpc.tts_request с описанием ошибки."""
         if not self._open_app_config.speak_errors or not session_id:
             return
         if session_id in self._spoken_error_sessions:
