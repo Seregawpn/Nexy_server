@@ -7,10 +7,14 @@ Integration layer that wires the orchestrator to the event bus and restart handl
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
+import time
 from typing import Any, cast
 
+from integration.core import selectors
 from integration.core.event_bus import EventBus
+from integration.core.state_keys import StateKeys
 
 from .classifiers import get_classifier
 from .config_loader import load_v2_config
@@ -27,7 +31,7 @@ from .probers import (
     ScreenCaptureProber,
 )
 from .settings_nav import SettingsNavigator
-from .types import PermissionId, Phase, StepConfig, StepState
+from .types import PermissionId, Phase, StepConfig
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +52,7 @@ class PermissionOrchestratorIntegration:
         event_bus: EventBus,
         config: dict[str, Any],
         ledger_path: str,
+        state_manager: Any | None = None,
         restart_handler: Any | None = None,
         is_gui_process: bool = True,
         advance_on_timeout: bool = False,
@@ -55,18 +60,18 @@ class PermissionOrchestratorIntegration:
         self.event_bus = event_bus
         self.config = config
         self.ledger_path = ledger_path
+        self.state_manager = state_manager
         self.restart_handler = restart_handler
         self.is_gui_process = is_gui_process
         self._advance_on_timeout = advance_on_timeout
         
         self._orchestrator: PermissionOrchestrator | None = None
-        self._task: asyncio.Task[Any] | None = None
+        self._task: asyncio.Task[Any] | concurrent.futures.Future[Any] | None = None
         self._enabled = False
         self._ledger_store: LedgerStore | None = None
         self._hard_permissions: list[PermissionId] = []
         
         # Completion tracking for blocking start
-        self._completion_event: asyncio.Event = asyncio.Event()
         self._completed = False
         self._all_hard_granted = False
         self._missing_hard: list[str] = []
@@ -154,17 +159,9 @@ class PermissionOrchestratorIntegration:
         ledger = self._load_ledger()
         if not ledger:
             return False, []
-        if not self._hard_permissions:
-            return True, []
-        missing: list[str] = []
-        for perm in self._hard_permissions:
-            entry = ledger.steps.get(perm)
-            if not entry:
-                missing.append(perm.value)
-                continue
-            if entry.state not in (StepState.PASS_, StepState.SKIPPED):
-                missing.append(perm.value)
-        return (len(missing) == 0), missing
+        # Centralized contract: completion of orchestrator flow is the only
+        # criterion for "all granted" in startup gating.
+        return (ledger.phase == Phase.COMPLETED), []
     
     def _create_probers(self, step_configs: dict[PermissionId, StepConfig]) -> dict[PermissionId, Any]:
         """Create prober instances for each permission."""
@@ -190,8 +187,21 @@ class PermissionOrchestratorIntegration:
     
     def _emit_event_sync(self, event: UIEvent) -> None:
         """Synchronous wrapper for async _emit_event (for orchestrator compatibility)."""
-        # Schedule async emit as a task (fire-and-forget)
-        asyncio.create_task(self._emit_event(event))
+        target_loop = self.event_bus.get_loop()
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if target_loop and target_loop.is_running() and target_loop is not running_loop:
+            asyncio.run_coroutine_threadsafe(self._emit_event(event), target_loop)
+            return
+
+        if running_loop is not None:
+            running_loop.create_task(self._emit_event(event))
+            return
+
+        logger.error("[V2_INTEGRATION] No running loop to emit event: %s", event.type.value)
     
     async def _emit_event(self, event: UIEvent) -> None:
         """Emit UI event to event bus, including legacy compatibility."""
@@ -206,11 +216,10 @@ class PermissionOrchestratorIntegration:
 
         # CRITICAL FIX: Unblock startup if restart is scheduled
         if event.type == UIEventType.RESTART_SCHEDULED:
-             if not self._completion_signaled:
-                 logger.info("[V2_INTEGRATION] Restart scheduled - signaling completion to unblock startup waiters")
-                 self._completed = True
-                 self._completion_event.set()
-                 self._completion_signaled = True
+            if not self._completion_signaled:
+                logger.info("[V2_INTEGRATION] Restart scheduled - signaling completion to unblock startup waiters")
+                self._completed = True
+                self._completion_signaled = True
 
         # 1.1 Notification logic removed per user request
 
@@ -220,13 +229,15 @@ class PermissionOrchestratorIntegration:
         legacy_result = self._map_to_legacy_event(event)
         if legacy_result:
             (legacy_name, legacy_payload), publish_ready_to_greet = legacy_result
-            if publish_ready_to_greet:
-                await self._publish_ready_to_greet(event)
             logger.info("🔄 [V2_INTEGRATION] Mapping to legacy event: %s", legacy_name)
             try:
                 await self.event_bus.publish(legacy_name, legacy_payload)
             except Exception as e:
                 logger.error("[V2_INTEGRATION] Failed to emit legacy event: %s", e)
+            if publish_ready_to_greet:
+                # ВАЖНО: сначала публикуем legacy completion/failure, чтобы централизованный
+                # рестарт (через PermissionRestartIntegration) не блокировался приветствием.
+                await self._publish_ready_to_greet(event)
 
     def _map_to_legacy_event(
         self, event: UIEvent
@@ -239,9 +250,18 @@ class PermissionOrchestratorIntegration:
                 return ("permissions.first_run_started", {"session_id": "v2_session"}), False
 
         elif event.type == UIEventType.COMPLETED:
-            if self._advance_on_timeout:
-                return None
             all_granted, missing = self._summarize_hard_permissions()
+            if self._advance_on_timeout:
+                # Timeout policy: step timeout is treated as assumed grant.
+                # Expose this explicitly in legacy payload for observability.
+                legacy = ("permissions.first_run_completed", {
+                    "session_id": "v2_session",
+                    "source": "v2_integration_timeout_assumed",
+                    "all_granted": all_granted,
+                    "missing": missing,
+                    "assumed_by_timeout": True,
+                })
+                return legacy, True
             if all_granted:
                 legacy = ("permissions.first_run_completed", {
                     "session_id": "v2_session",
@@ -284,16 +304,7 @@ class PermissionOrchestratorIntegration:
         """Build summary for legacy events."""
         if not self._orchestrator or not self._orchestrator.ledger:
             return False, []
-        ledger = self._orchestrator.ledger
-        hard_permissions = self._orchestrator.hard_permissions
-        if not hard_permissions:
-            return True, []
-        missing = []
-        for perm in hard_permissions:
-            entry = ledger.steps.get(perm)
-            if not entry or getattr(entry.state, "value", None) != "pass":
-                missing.append(perm.value)
-        return (len(missing) == 0), missing
+        return (self._orchestrator.ledger.phase == Phase.COMPLETED), []
     
     async def start(self) -> None:
         """Start the permission wizard."""
@@ -302,7 +313,12 @@ class PermissionOrchestratorIntegration:
             return
             
         logger.info("[V2_INTEGRATION] Starting permission wizard")
-        self._task = asyncio.create_task(self._run_orchestrator())
+        target_loop = self.event_bus.get_loop()
+        current_loop = asyncio.get_running_loop()
+        if target_loop and target_loop.is_running() and target_loop is not current_loop:
+            self._task = asyncio.run_coroutine_threadsafe(self._run_orchestrator(), target_loop)
+        else:
+            self._task = asyncio.create_task(self._run_orchestrator())
     
     async def _run_orchestrator(self) -> None:
         """Run the orchestrator."""
@@ -314,16 +330,11 @@ class PermissionOrchestratorIntegration:
             
             await self._orchestrator.start()
             
-            # Check if all hard permissions are granted
+            # Determine first-run completion result for startup gating.
             if self._orchestrator.ledger:
                 ledger = self._orchestrator.ledger
-                hard_perms = self._orchestrator.hard_permissions
                 self._missing_hard = []
-                for perm in hard_perms:
-                    entry = ledger.steps.get(perm)
-                    if not entry or entry.state.value not in ("pass", "needs_restart"):
-                        self._missing_hard.append(perm.value)
-                self._all_hard_granted = len(self._missing_hard) == 0
+                self._all_hard_granted = ledger.phase == Phase.COMPLETED
             else:
                 self._all_hard_granted = True  # Fallback
                 
@@ -338,7 +349,6 @@ class PermissionOrchestratorIntegration:
         finally:
             # Signal completion regardless of outcome
             self._completed = True
-            self._completion_event.set()
             self._completion_signaled = True
             logger.info("[V2_INTEGRATION] Pipeline completed, signaling completion event")
     
@@ -361,14 +371,15 @@ class PermissionOrchestratorIntegration:
             return self._all_hard_granted
         
         logger.info("[V2_INTEGRATION] ⏳ Waiting for V2 pipeline to complete (timeout=%ss)...", timeout)
-        
-        try:
-            await asyncio.wait_for(self._completion_event.wait(), timeout=timeout)
-            logger.info("[V2_INTEGRATION] ✅ Pipeline completed, all_hard_granted=%s", self._all_hard_granted)
-            return self._all_hard_granted
-        except asyncio.TimeoutError:
-            logger.warning("[V2_INTEGRATION] ⚠️ Timeout waiting for pipeline completion")
-            return False
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._completed:
+                logger.info("[V2_INTEGRATION] ✅ Pipeline completed, all_hard_granted=%s", self._all_hard_granted)
+                return self._all_hard_granted
+            await asyncio.sleep(0.2)
+
+        logger.warning("[V2_INTEGRATION] ⚠️ Timeout waiting for pipeline completion")
+        return False
     
     async def resume_after_restart(self) -> None:
         """Resume after application restart."""
@@ -376,7 +387,12 @@ class PermissionOrchestratorIntegration:
             return
         
         logger.info("[V2_INTEGRATION] Resuming after restart")
-        self._task = asyncio.create_task(self._run_resume())
+        target_loop = self.event_bus.get_loop()
+        current_loop = asyncio.get_running_loop()
+        if target_loop and target_loop.is_running() and target_loop is not current_loop:
+            self._task = asyncio.run_coroutine_threadsafe(self._run_resume(), target_loop)
+        else:
+            self._task = asyncio.create_task(self._run_resume())
     
     async def _run_resume(self) -> None:
         """Run resume logic."""
@@ -392,6 +408,22 @@ class PermissionOrchestratorIntegration:
     async def _publish_ready_to_greet(self, event: UIEvent) -> None:
         """Publish system.ready_to_greet after wizard completion."""
         try:
+            if self.state_manager is not None:
+                restart_scheduled = bool(
+                    selectors.get_state_value(
+                        self.state_manager,
+                        StateKeys.FIRST_RUN_RESTART_SCHEDULED,
+                        False,
+                    )
+                )
+                if restart_scheduled:
+                    logger.info(
+                        "[V2_INTEGRATION] Skipping system.ready_to_greet: first-run restart is already scheduled"
+                    )
+                    # Treat as consumed in this process: greeting should happen after restart only.
+                    self._ready_published = True
+                    return
+
             phase = event.payload.get("phase", "completed")
             summary = event.payload.get("summary", {})
             
@@ -418,10 +450,16 @@ class PermissionOrchestratorIntegration:
         
         if self._task:
             self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+            if isinstance(self._task, asyncio.Task):
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+            elif isinstance(self._task, concurrent.futures.Future):
+                try:
+                    self._task.result(timeout=1)
+                except Exception:
+                    pass
         
         logger.info("[V2_INTEGRATION] Stopped")
     
