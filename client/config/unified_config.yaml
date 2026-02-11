@@ -30,7 +30,7 @@ app:
   debug: true
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.1.27
+  version: 1.6.1.28
 focus:
   force_activate_on_startup: false
   allow_tray_startup_fallback: true
@@ -230,14 +230,15 @@ integrations:
   # Permission System V2 - Pipeline Mode
   permissions_v2:
     enabled: true
-    advance_on_timeout: false
-    default_step_timeout_s: 20.0
+    advance_on_timeout: true
+    default_step_timeout_s: 15.0
     
     # No batching - single pipeline
     batching:
       enabled: false
     
-    # Restart only if: all HARD pass + any needs_restart
+    # Restart policy: single restart after full pipeline completion.
+    # require_needs_restart=false keeps restart deterministic for first-run.
     restart:
       delay_sec: 1.0
       require_all_hard_pass: true
@@ -255,49 +256,49 @@ integrations:
       - accessibility
       - full_disk_access
 
-    # Pause between steps to avoid TCC prompt overlap
-    inter_step_pause_s: 3.0
+    # No artificial pause between steps
+    inter_step_pause_s: 0.0
     
     # Per-step configuration
     steps:
       microphone:
         mode: auto_dialog
-        grace_s: 13.0
+        grace_s: 15.0
         poll_s: 1.0
         supports_needs_restart: false
         criticality: hard
         
       screen_capture:
         mode: auto_dialog
-        grace_s: 13.0
+        grace_s: 15.0
         poll_s: 2.0
         supports_needs_restart: false
         criticality: hard
         
       network:
         mode: auto_dialog
-        grace_s: 13.0
+        grace_s: 15.0
         poll_s: 2.0
         supports_needs_restart: false
         criticality: hard
 
       contacts:
         mode: auto_dialog
-        grace_s: 13.0
+        grace_s: 15.0
         poll_s: 2.0
         supports_needs_restart: false
         criticality: hard
         
       messages:
         mode: auto_dialog
-        grace_s: 13.0
+        grace_s: 15.0
         poll_s: 2.0
         supports_needs_restart: false
         criticality: hard
         
       input_monitoring:
         mode: auto_dialog
-        grace_s: 13.0
+        grace_s: 15.0
         poll_s: 2.0
         supports_needs_restart: true
         post_restart_verify_window_s: 20.0
@@ -307,7 +308,7 @@ integrations:
       accessibility:
         mode: auto_dialog
         # settings_target: accessibility  <-- disabled to prevent auto-open
-        grace_s: 13.0
+        grace_s: 15.0
         poll_s: 2.0
         waiting_long_after_s: 300.0
         waiting_long_poll_s: 15.0
@@ -317,7 +318,7 @@ integrations:
       full_disk_access:
         mode: open_settings
         settings_target: full_disk_access
-        grace_s: 13.0
+        grace_s: 15.0
         poll_s: 10.0
         waiting_long_after_s: 600.0
         waiting_long_poll_s: 30.0
