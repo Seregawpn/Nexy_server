@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -9,6 +10,7 @@ from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager
 from integration.integrations.action_execution_integration import ActionExecutionIntegration
 from integration.integrations.grpc_client_integration import GrpcClientIntegration
+from integration.integrations.messages_integration import MessagesIntegration
 
 
 class _FakeStreamResponse:
@@ -150,3 +152,82 @@ async def test_action_execution_cancel_trigger_is_interrupt_only():
     reasons = [call.kwargs.get("reason") for call in integration._cancel_all_actions.await_args_list]
     assert "interrupt" in reasons
     assert "keyboard_short_press" not in reasons
+
+
+@pytest.mark.asyncio
+async def test_action_execution_routes_messages_to_canonical_events():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    integration = ActionExecutionIntegration(event_bus, state_manager, ErrorHandler())
+
+    published: list[tuple[str, dict]] = []
+
+    async def _capture_publish(event_type: str, data=None):
+        payload = data if isinstance(data, dict) else {}
+        published.append((event_type, payload))
+
+    integration.event_bus.publish = _capture_publish  # type: ignore[assignment]
+
+    await integration._on_action_received(
+        {
+            "data": {
+                "session_id": "sid-msg-route",
+                "action_json": json.dumps(
+                    {"command": "send_message", "args": {"contact": "Alice", "message": "Hi"}}
+                ),
+                "feature_id": "F-2025-016-messages",
+                "source": "action_message",
+            }
+        }
+    )
+
+    event_types = [event_type for event_type, _ in published]
+    assert "messages.send_request" in event_types
+    assert "actions.send_message.started" not in event_types
+
+    msg_event = next(payload for event_type, payload in published if event_type == "messages.send_request")
+    assert msg_event["session_id"] == "sid-msg-route"
+    assert msg_event["contact_name"] == "Alice"
+    assert msg_event["message_content"] == "Hi"
+
+
+@pytest.mark.asyncio
+async def test_messages_integration_executes_read_request_and_publishes_lifecycle():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    integration = MessagesIntegration(event_bus, state_manager, ErrorHandler())
+    integration._handle_read_messages = lambda args: {  # type: ignore[method-assign]
+        "success": True,
+        "messages": [{"text": "hello"}],
+        "count": 1,
+        "target": "Alice",
+    }
+
+    published: list[tuple[str, dict]] = []
+
+    async def _capture_publish(event_type: str, data=None):
+        payload = data if isinstance(data, dict) else {}
+        published.append((event_type, payload))
+
+    event_bus.publish = _capture_publish  # type: ignore[assignment]
+
+    await integration._do_start()
+    try:
+        await integration._on_read_request(
+            {
+                "data": {
+                    "session_id": "sid-msg-owner",
+                    "contact_name": "Alice",
+                    "limit": 1,
+                    "feature_id": "F-2025-016-messages",
+                }
+            }
+        )
+    finally:
+        await integration._do_stop()
+
+    event_types = [event_type for event_type, _ in published]
+    assert "actions.read_messages.started" in event_types
+    assert "actions.read_messages.completed" in event_types
+    assert "actions.lifecycle.started" in event_types
+    assert "actions.lifecycle.finished" in event_types

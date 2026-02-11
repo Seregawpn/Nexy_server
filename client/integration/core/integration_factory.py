@@ -32,6 +32,7 @@ from integration.integrations.interrupt_management_integration import (
     InterruptManagementIntegrationConfig,
 )
 from integration.integrations.mode_management_integration import ModeManagementIntegration
+from integration.integrations.messages_integration import MessagesIntegration
 from integration.integrations.network_manager_integration import NetworkManagerIntegration
 from integration.integrations.payment_integration import PaymentIntegration
 from integration.integrations.permission_restart_integration import PermissionRestartIntegration
@@ -78,6 +79,7 @@ class IntegrationFactory:
         "screenshot_capture",
         "grpc",
         "action_execution",
+        "messages",
         "whatsapp",
         "browser_use",
         "browser_progress",
@@ -293,6 +295,14 @@ class IntegrationFactory:
                 error_handler=self.error_handler,
             )
             logger.info(f"[F-2025-016] ActionExecutionIntegration registered (env={env})")
+
+        if self.config.is_feature_enabled("messages", default=False):
+            integrations["messages"] = MessagesIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler,
+            )
+            logger.info("✅ [F-2025-016] MessagesIntegration registered")
 
         # === Browser Automation (F-2025-015) ===
         

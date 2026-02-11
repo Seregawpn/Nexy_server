@@ -47,6 +47,7 @@ class EventTypes:
     GRPC_REQUEST_FAILED = "grpc.request_failed"
     GRPC_REQUEST_CANCEL = "grpc.request_cancel"
     GRPC_TTS_REQUEST = "grpc.tts_request"
+    GRPC_RESPONSE_ACTION = "grpc.response.action"
     
     # ==================== Audio Playback ====================
     PLAYBACK_STARTED = "playback.started"
@@ -114,6 +115,11 @@ class EventTypes:
     BROWSER_COMPLETED = "browser.completed"
     BROWSER_FAILED = "browser.failed"
     BROWSER_CANCELLED = "browser.cancelled"
+
+    # ==================== Messages ====================
+    MESSAGES_READ_REQUEST = "messages.read_request"
+    MESSAGES_SEND_REQUEST = "messages.send_request"
+    MESSAGES_CONTACT_SEARCH = "messages.contact_search"
     
     # ==================== Navigation ====================
     NAVIGATION_DEEP_LINK = "navigation.deep_link"

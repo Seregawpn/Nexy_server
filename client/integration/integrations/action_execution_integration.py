@@ -21,17 +21,6 @@ from integration.core.state_manager import ApplicationStateManager
 from modules.action_errors.messages import resolver as action_error_resolver
 from modules.mcp_action import McpActionConfig, McpActionExecutor
 
-# Messages integration
-from modules.messages import (
-    connect_db,
-    find_contacts_by_name,
-    format_message_date,
-    get_last_message,
-    get_messages_by_contact,
-    resolve_contact,
-    send_message_to_contact,
-)
-
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
 
 from integration.utils.logging_setup import get_logger
@@ -450,22 +439,17 @@ class ActionExecutionIntegration(BaseIntegration):
 
         # Специальная обработка для Messages
         if command in ["read_messages", "send_message", "find_contact"]:
-            dedupe_key = self._make_action_dedupe_key(session_id, command, args)
             logger.info(
-                "[%s] stage=dispatch session=%s target=messages command=%s dedupe_key=%s",
+                "[%s] stage=dispatch session=%s target=messages command=%s",
                 ACTION_PIPELINE_TAG,
                 session_id,
                 command,
-                dedupe_key,
             )
-            if not await self._register_action_dedupe(dedupe_key, session_id, command):
-                return
-            await self._execute_messages_action(
+            await self._publish_messages_request(
                 session_id=session_id,
                 command=command,
                 args=args,
                 feature_id=action_feature_id,
-                dedupe_key=dedupe_key
             )
             return
 
@@ -1219,202 +1203,36 @@ class ActionExecutionIntegration(BaseIntegration):
             error_code,
         )
 
-    async def _execute_messages_action(
+    async def _publish_messages_request(
         self,
         *,
         session_id: str,
         command: str,
         args: dict[str, Any],
         feature_id: str,
-        dedupe_key: str | None = None
-    ):
-        """
-        Выполняет команду Messages (read_messages, send_message, find_contact).
-        Запускает синхронный код в отдельном потоке.
-        """
-        event_prefix = f"actions.{command}"
-        
-        # 1. Публикуем событие о начале
-        await self.event_bus.publish(
-            f"{event_prefix}.started",
-            {
-                "session_id": session_id,
-                "feature_id": feature_id,
-                "command": command,
-                "args": args,
-            },
-        )
-        await self._publish_action_lifecycle(
-            session_id=session_id,
-            command=command,
-            phase="started",
-            source="messages",
-        )
-        self._spoken_error_sessions.discard(session_id)
-        
-        try:
-            # 2. Выполняем в потоке
-            if command == "read_messages":
-                result = await asyncio.to_thread(self._handle_read_messages, args)
-            elif command == "send_message":
-                result = await asyncio.to_thread(self._handle_send_message, args)
-            elif command == "find_contact":
-                result = await asyncio.to_thread(self._handle_find_contact, args)
-            else:
-                result = {"success": False, "message": f"Unknown command: {command}"}
-            
-            # 3. Обрабатываем результат
-            if result.get("success", False):
-                await self.event_bus.publish(
-                    f"{event_prefix}.completed",
-                    {
-                        "session_id": session_id,
-                        "feature_id": feature_id,
-                        "result": result,
-                    },
-                )
-                logger.info("[%s] %s completed successfully", feature_id, command)
-                await self._publish_action_lifecycle(
-                    session_id=session_id,
-                    command=command,
-                    phase="finished",
-                    source="messages",
-                    status="success",
-                )
-                
-                # 4. Озвучиваем результат пользователю
-                await self._handle_messages_success_feedback(session_id, command, result)
-            else:
-                if dedupe_key:
-                    await self._clear_action_dedupe(dedupe_key)
-                error_code_res = result.get("error_code")
-                error_msg = result.get("message", "Unknown error")
-                
-                if error_code_res == "ambiguous_contact":
-                     choices = result.get("choices", [])
-                     choices_str = ", ".join(choices[:3])
-                     text_to_speak = f"I found multiple contacts: {choices_str}. Please say the full name."
-                     
-                     # Speak specific feedback
-                     await self.event_bus.publish("grpc.tts_request", {
-                         "session_id": session_id,
-                         "text": text_to_speak,
-                         "source": f"actions.{command}"
-                     })
-                     self._spoken_error_sessions.add(session_id) # Prevent generic error speech
-                
-                elif error_code_res == "similar_contacts_found":
-                     suggestions = result.get("suggestions", [])
-                     if suggestions:
-                         suggestions_str = ", ".join(suggestions[:3])
-                         text_to_speak = f"Contact not found. Did you mean: {suggestions_str}?"
-                     else:
-                         text_to_speak = "Contact not found. Please check the name and try again."
-                     
-                     # Speak specific feedback
-                     await self.event_bus.publish("grpc.tts_request", {
-                         "session_id": session_id,
-                         "text": text_to_speak,
-                         "source": f"actions.{command}"
-                     })
-                     self._spoken_error_sessions.add(session_id) # Prevent generic error speech
-                
-                await self._publish_failure(
-                    session_id=session_id,
-                    feature_id=feature_id,
-                    error_code=error_code_res or "execution_failed",
-                    message=error_msg,
-                    app_name="Messages",
-                    command=command,
-                    suppress_playback_cancel=error_code_res in {"ambiguous_contact", "similar_contacts_found"},
-                )
-                logger.warning("[%s] %s failed: %s", feature_id, command, error_msg)
-                await self._publish_action_lifecycle(
-                    session_id=session_id,
-                    command=command,
-                    phase="finished",
-                    source="messages",
-                    status="failed",
-                )
-                
-        except Exception as exc:
-            if dedupe_key:
-                await self._clear_action_dedupe(dedupe_key)
-            await self._handle_error(exc, where=f"_execute_messages_action({command})")
-            await self._publish_failure(
-                session_id=session_id,
-                feature_id=feature_id,
-                error_code="exception",
-                message=str(exc),
-                app_name="Messages",
-                command=command,
-            )
-            await self._publish_action_lifecycle(
-                session_id=session_id,
-                command=command,
-                phase="finished",
-                source="messages",
-                status="failed",
-            )
-
-    async def _handle_messages_success_feedback(self, session_id: str, command: str, result: dict[str, Any]):
-        """Формирует и озвучивает результат успешного выполнения команды Messages."""
-        text_to_speak = ""
-        
+    ) -> None:
+        event_map = {
+            "read_messages": "messages.read_request",
+            "send_message": "messages.send_request",
+            "find_contact": "messages.contact_search",
+        }
+        event_type = event_map[command]
+        payload: dict[str, Any] = {
+            "session_id": session_id,
+            "feature_id": feature_id,
+            "command": command,
+            "args": dict(args or {}),
+            "source": "action_execution",
+        }
         if command == "read_messages":
-            count = result.get("count", 0)
-            target = result.get("target", "Unknown")
-            messages = result.get("messages", [])
-            
-            if count == 0:
-                text_to_speak = f"No messages found from {target}."
-            elif count == 1:
-                msg = messages[0]
-                text = msg.get('text', '')
-                # Убираем лишние метаданные из текста для озвучки если они есть
-                text_to_speak = f"Last message from {target}: {text}"
-            else:
-                text_to_speak = f"Last {count} messages from {target}. "
-                for i, msg in enumerate(messages):
-                    text = msg.get('text', '')
-                    if i > 0:
-                        text_to_speak += " Next message: "
-                    text_to_speak += text
-                    
+            payload["contact_name"] = args.get("contact")
+            payload["limit"] = int(args.get("limit", 10))
         elif command == "send_message":
-            # Include message content and recipient in the feedback
-            contact_name = result.get("contact_name", "recipient")
-            message_content = result.get("message_content", "")
-            if message_content:
-                text_to_speak = f"Message to {contact_name}: '{message_content}'. Sent successfully."
-
-
-            else:
-                text_to_speak = f"Message to {contact_name} sent successfully."
-            
-        elif command == "find_contact":
-            count = result.get("count", 0)
-            contacts = result.get("contacts", [])
-            if count == 0:
-                text_to_speak = "No contacts found."
-            elif count == 1:
-                c = contacts[0]
-                name = c.get("display_label") or c.get("first_name") or "Unknown"
-                phones = ", ".join(c.get("phones", []))
-                text_to_speak = f"Found contact {name}, phone {phones}."
-            else:
-                text_to_speak = f"Found {count} contacts."
-                
-        if text_to_speak:
-            # Use server EdgeTTS via grpc.tts_request (not local macOS say)
-            await self.event_bus.publish(
-                "grpc.tts_request",
-                {
-                    "session_id": session_id,
-                    "text": text_to_speak,
-                    "source": f"actions.{command}",
-                },
-            )
+            payload["contact_name"] = args.get("contact")
+            payload["message_content"] = args.get("message")
+        else:
+            payload["query"] = args.get("query")
+        await self.event_bus.publish(event_type, payload)
 
     def _make_action_dedupe_key(self, session_id: str, command: str, args: dict[str, Any]) -> str:
         stable_args = json.dumps(args or {}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
@@ -1523,100 +1341,3 @@ class ActionExecutionIntegration(BaseIntegration):
         if status is not None:
             payload["status"] = status
         await self.event_bus.publish(f"actions.lifecycle.{phase}", payload)
-
-    def _handle_read_messages(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Обработчик read_messages (синхронный)."""
-        contact_id = args.get("contact")
-        limit = int(args.get("limit", 10))
-        
-        # Подключаемся к БД
-        conn = connect_db()
-        if not conn:
-            return {"success": False, "message": "Failed to connect to Messages DB (Check Full Disk Access)"}
-        
-        try:
-            messages = []
-            target_name = "Unknown"
-            
-            if not contact_id or contact_id.lower() == "all":
-                # Получаем последнее сообщение вообще
-                last_msg = get_last_message(conn)
-                if last_msg:
-                    messages = [last_msg]
-                    raw_target = last_msg.get("display_name") or last_msg.get("contact_id")
-                    if raw_target:
-                        resolved = resolve_contact(raw_target, messages_conn=conn)
-                        target_name = resolved.get("display_label") or raw_target
-                    else:
-                        target_name = "Unknown"
-            else:
-                # Резолвим контакт
-                resolved = resolve_contact(contact_id, messages_conn=conn)
-                resolved_id = resolved.get("raw_identifier") or contact_id
-                target_name = resolved.get("display_label") or contact_id
-                
-                # Если это имя, ищем номера
-                if not any(c.isdigit() for c in resolved_id):
-                    contacts_found = find_contacts_by_name(contact_id)
-                    if contacts_found:
-                         # Берем первый номер первого найденного
-                        phones = contacts_found[0].get("phones", [])
-                        if phones:
-                            resolved_id = phones[0]
-                
-                messages = get_messages_by_contact(conn, resolved_id, limit=limit)
-            
-            # Форматируем для ответа
-            formatted_messages = []
-            for msg in messages:
-                sender_label = msg.get("display_name") or msg.get("contact_id") or "Unknown"
-                if not msg.get("is_from_me") and sender_label:
-                    resolved_sender = resolve_contact(sender_label, messages_conn=conn)
-                    sender_label = resolved_sender.get("display_label") or sender_label
-                formatted_messages.append({
-                    "text": msg.get("text", "[No text]"),
-                    "from_me": msg.get("is_from_me", False),
-                    "date": format_message_date(msg.get("date", 0)),
-                    "sender": "Me" if msg.get("is_from_me") else sender_label
-                })
-            
-            return {
-                "success": True,
-                "messages": formatted_messages,
-                "count": len(formatted_messages),
-                "target": target_name
-            }
-        finally:
-            conn.close()
-
-    def _handle_send_message(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Обработчик send_message (синхронный)."""
-        contact = args.get("contact")
-        message = args.get("message")
-        
-        if not contact or not message:
-             return {"success": False, "message": "Missing contact or message"}
-             
-        result = send_message_to_contact(contact, message)
-        # Add message content to result for TTS feedback
-        result["message_content"] = message
-        return result
-
-    def _handle_find_contact(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Обработчик find_contact (синхронный)."""
-        query = args.get("query")
-        if not query:
-            return {"success": False, "message": "Missing query"}
-            
-        contacts = find_contacts_by_name(query)
-        
-        if not contacts and any(c.isdigit() for c in query):
-            resolved = resolve_contact(query)
-            if resolved and resolved.get("source") != "fallback":
-                contacts = [resolved]
-                
-        return {
-            "success": True,
-            "contacts": contacts,
-            "count": len(contacts)
-        }
