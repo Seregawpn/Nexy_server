@@ -12,16 +12,16 @@ from .updater import Updater
 from .verify import sha256_checksum, verify_app_signature, verify_ed25519_signature
 
 __all__ = [
-    'UpdaterConfig',
-    'UpdateHTTPClient', 
-    'sha256_checksum',
-    'verify_ed25519_signature',
-    'verify_app_signature',
-    'mount_dmg',
-    'unmount_dmg',
-    'find_app_in_dmg',
-    'install_pkg',
-    'verify_pkg_signature',
-    'atomic_replace_app',
-    'Updater'
+    "UpdaterConfig",
+    "UpdateHTTPClient",
+    "sha256_checksum",
+    "verify_ed25519_signature",
+    "verify_app_signature",
+    "mount_dmg",
+    "unmount_dmg",
+    "find_app_in_dmg",
+    "install_pkg",
+    "verify_pkg_signature",
+    "atomic_replace_app",
+    "Updater",
 ]

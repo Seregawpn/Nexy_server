@@ -14,6 +14,7 @@ from integration.utils.resource_path import get_resource_path
 @dataclass
 class ServerInfo:
     """Информация о сервере"""
+
     name: str
     host: str
     port: int
@@ -27,17 +28,17 @@ class ServerInfo:
 
 class ServerManager:
     """Централизованный менеджер серверов"""
-    
+
     def __init__(self, config_path: str = "config/unified_config.yaml"):
         resource_path = get_resource_path(config_path)
         self.config_path = resource_path
         self._config: dict[str, Any] | None = None
         self._load_config()
-    
+
     def _load_config(self):
         """Загружает конфигурацию из файла"""
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
+            with open(self.config_path, "r", encoding="utf-8") as f:
                 self._config = yaml.safe_load(f)
                 if self._config is None:
                     self._config = {}
@@ -45,78 +46,78 @@ class ServerManager:
             raise RuntimeError(
                 f"Не удалось загрузить конфигурацию из {self.config_path}: {e}"
             ) from e
-    
+
     def _ensure_config(self) -> dict[str, Any]:
         """Гарантирует, что конфигурация загружена"""
         if self._config is None:
             raise RuntimeError("Конфигурация не загружена")
         return self._config
-    
+
     def _save_config(self):
         """Сохраняет конфигурацию в файл"""
         config = self._config
         if config is None:
             raise RuntimeError("Конфигурация не загружена, невозможно сохранить")
-        
+
         try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            with open(self.config_path, "w", encoding="utf-8") as f:
                 yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
         except Exception as e:
             raise RuntimeError(
                 f"Не удалось сохранить конфигурацию в {self.config_path}: {e}"
             ) from e
-    
+
     def get_all_servers(self) -> dict[str, ServerInfo]:
         """Получает информацию о всех серверах"""
         config = self._config
         if config is None:
             return {}
-        
+
         servers = {}
-        grpc_data = config.get('grpc', {})
-        servers_config = grpc_data.get('servers', {}) if isinstance(grpc_data, dict) else {}
-        
+        grpc_data = config.get("grpc", {})
+        servers_config = grpc_data.get("servers", {}) if isinstance(grpc_data, dict) else {}
+
         for server_name, server_config in servers_config.items():
             servers[server_name] = ServerInfo(
                 name=server_name,
-                host=server_config.get('host', '127.0.0.1'),
-                port=server_config.get('port', 50051),
-                ssl=server_config.get('ssl', False),
-                timeout=server_config.get('timeout', 30),
-                retry_attempts=server_config.get('retry_attempts', 3),
-                retry_delay=server_config.get('retry_delay', 1.0),
-                description=server_config.get('description', ''),
-                enabled=server_config.get('enabled', True)
+                host=server_config.get("host", "127.0.0.1"),
+                port=server_config.get("port", 50051),
+                ssl=server_config.get("ssl", False),
+                timeout=server_config.get("timeout", 30),
+                retry_attempts=server_config.get("retry_attempts", 3),
+                retry_delay=server_config.get("retry_delay", 1.0),
+                description=server_config.get("description", ""),
+                enabled=server_config.get("enabled", True),
             )
-        
+
         return servers
-    
+
     def get_server(self, server_name: str) -> ServerInfo | None:
         """Получает информацию о конкретном сервере"""
         servers = self.get_all_servers()
         return servers.get(server_name)
-    
+
     def update_server(self, server_name: str, **kwargs) -> bool:
         """Обновляет настройки сервера"""
         try:
             config = self._ensure_config()
-            if 'grpc' not in config:
-                config['grpc'] = {}
-            grpc_config = config['grpc']
+            if "grpc" not in config:
+                config["grpc"] = {}
+            grpc_config = config["grpc"]
             if not isinstance(grpc_config, dict):
                 grpc_config = {}
-                config['grpc'] = grpc_config
-            
-            if 'servers' not in grpc_config:
-                grpc_config['servers'] = {}
-            servers = grpc_config['servers']
+                config["grpc"] = grpc_config
+
+            if "servers" not in grpc_config:
+                grpc_config["servers"] = {}
+            servers = grpc_config["servers"]
             if not isinstance(servers, dict):
                 servers = {}
-                grpc_config['servers'] = servers
-            
+                grpc_config["servers"] = servers
+
             if server_name not in servers:
                 servers[server_name] = {}
-            
+
             # Обновляем только переданные параметры
             allowed_keys = {
                 "host",
@@ -131,40 +132,40 @@ class ServerManager:
             for key, value in kwargs.items():
                 if key in allowed_keys:
                     servers[server_name][key] = value
-            
+
             self._save_config()
             return True
-            
+
         except Exception as e:
             print(f"Ошибка обновления сервера {server_name}: {e}")
             return False
-    
+
     def add_server(self, server_name: str, host: str, port: int, **kwargs) -> bool:
         """Добавляет новый сервер"""
         default_config = {
-            'ssl': False,
-            'timeout': 30,
-            'retry_attempts': 3,
-            'retry_delay': 1.0,
-            'description': f'Сервер {server_name}',
-            'enabled': True
+            "ssl": False,
+            "timeout": 30,
+            "retry_attempts": 3,
+            "retry_delay": 1.0,
+            "description": f"Сервер {server_name}",
+            "enabled": True,
         }
         default_config.update(kwargs)
-        
+
         return self.update_server(server_name, host=host, port=port, **default_config)
-    
+
     def remove_server(self, server_name: str) -> bool:
         """Удаляет сервер"""
         try:
             config = self._ensure_config()
-            grpc_config = config.get('grpc')
+            grpc_config = config.get("grpc")
             if not isinstance(grpc_config, dict):
                 return False
-            
-            servers = grpc_config.get('servers')
+
+            servers = grpc_config.get("servers")
             if not isinstance(servers, dict):
                 return False
-            
+
             if server_name in servers:
                 del servers[server_name]
                 self._save_config()
@@ -173,69 +174,69 @@ class ServerManager:
         except Exception as e:
             print(f"Ошибка удаления сервера {server_name}: {e}")
             return False
-    
+
     def set_default_server(self, server_name: str) -> bool:
         """Устанавливает сервер по умолчанию"""
         config = self._config
         if config is None:
             return False
-        
+
         try:
             # Обновляем настройку в секции integrations.grpc_client
-            if 'integrations' not in config:
-                config['integrations'] = {}
-            integrations = config['integrations']
+            if "integrations" not in config:
+                config["integrations"] = {}
+            integrations = config["integrations"]
             if not isinstance(integrations, dict):
                 integrations = {}
-                config['integrations'] = integrations
-            
-            if 'grpc_client' not in integrations:
-                integrations['grpc_client'] = {}
-            grpc_client = integrations['grpc_client']
+                config["integrations"] = integrations
+
+            if "grpc_client" not in integrations:
+                integrations["grpc_client"] = {}
+            grpc_client = integrations["grpc_client"]
             if not isinstance(grpc_client, dict):
                 grpc_client = {}
-                integrations['grpc_client'] = grpc_client
-            
-            grpc_client['server'] = server_name
+                integrations["grpc_client"] = grpc_client
+
+            grpc_client["server"] = server_name
             self._save_config()
             return True
-            
+
         except Exception as e:
             print(f"Ошибка установки сервера по умолчанию {server_name}: {e}")
             return False
-    
+
     def get_default_server(self) -> str | None:
         """Получает сервер по умолчанию"""
         try:
             config = self._ensure_config()
-            integrations = config.get('integrations')
+            integrations = config.get("integrations")
             if not isinstance(integrations, dict):
                 return None
-            
-            grpc_client = integrations.get('grpc_client')
+
+            grpc_client = integrations.get("grpc_client")
             if not isinstance(grpc_client, dict):
                 return None
-            
-            return grpc_client.get('server')
+
+            return grpc_client.get("server")
         except Exception:
             return None
-    
+
     def list_servers(self) -> list[str]:
         """Возвращает список всех серверов"""
         return list(self.get_all_servers().keys())
-    
+
     def validate_server(self, server_name: str) -> bool:
         """Проверяет, что сервер существует и настроен корректно"""
         server = self.get_server(server_name)
         if not server:
             return False
-        
+
         # Проверяем обязательные поля
-        required_fields = ['host', 'port']
+        required_fields = ["host", "port"]
         for field in required_fields:
             if not hasattr(server, field) or getattr(server, field) is None:
                 return False
-        
+
         return True
 
 
@@ -277,14 +278,14 @@ def get_default_server() -> str | None:
 if __name__ == "__main__":
     # Пример использования
     manager = ServerManager()
-    
+
     print("=== ВСЕ СЕРВЕРЫ ===")
     for name, server in manager.get_all_servers().items():
         print(f"{name}: {server.host}:{server.port} (SSL: {server.ssl}) - {server.description}")
-    
+
     print(f"\n=== СЕРВЕР ПО УМОЛЧАНИЮ ===")
     default = manager.get_default_server()
     print(f"По умолчанию: {default}")
-    
+
     print(f"\n=== ДОСТУПНЫЕ СЕРВЕРЫ ===")
     print(f"Список: {manager.list_servers()}")

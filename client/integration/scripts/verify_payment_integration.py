@@ -5,6 +5,7 @@ Verifies:
 1. Deep link handling -> payment.sync_requested
 2. Subscription status update -> local cache update
 """
+
 import asyncio
 from pathlib import Path
 import sys
@@ -13,6 +14,7 @@ from typing import Any, Callable
 # Add project root and client directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
 sys.path.append(str(Path(__file__).parent.parent.parent.parent / "client"))
+
 
 # Mock EventBus
 class MockEventBus:
@@ -33,19 +35,22 @@ class MockEventBus:
             for handler in self.subscribers[topic]:
                 await handler(data)
 
+
 # Mock components
 class MockStateManager:
     pass
 
+
 class MockErrorHandler:
     pass
 
+
 async def main():
     print("🚀 Verifying PaymentIntegration...")
-    
+
     # Import direct to avoid package init scaling issues
     import importlib.util
-    
+
     # Calculate relative path to payment_integration.py
     # From scripts/ to integration/integrations/payment_integration.py
     file_path = Path(__file__).parent.parent / "integrations" / "payment_integration.py"
@@ -62,9 +67,7 @@ async def main():
     error_handler = MockErrorHandler()
 
     integration = PaymentIntegration(
-        event_bus=event_bus,
-        state_manager=state_manager,
-        error_handler=error_handler
+        event_bus=event_bus, state_manager=state_manager, error_handler=error_handler
     )
 
     # 1. Initialize
@@ -77,12 +80,12 @@ async def main():
     # 2. Start
     print("\n[2] Starting...")
     await integration.start()
-    
+
     # 3. Verify Deep Link Handling
     print("\n[3] Testing Deep Link (Success)...")
     deep_link_payload = {
-        'url': 'nexy://payment/success?session_id=cs_test_123',
-        'timestamp': 1234567890
+        "url": "nexy://payment/success?session_id=cs_test_123",
+        "timestamp": 1234567890,
     }
     await event_bus.publish("navigation.deep_link", deep_link_payload)
 
@@ -97,21 +100,22 @@ async def main():
     # 4. Verify Status Update
     print("\n[4] Testing Status Update...")
     status_payload = {
-        'status': 'active',
-        'limits': {'daily_requests': 100},
-        'reason': 'payment_success'
+        "status": "active",
+        "limits": {"daily_requests": 100},
+        "reason": "payment_success",
     }
     await event_bus.publish("subscription.status_updated", status_payload)
 
     # Check local cache
     local_status = integration.get_local_status()
-    if local_status.get('status') == 'active':
+    if local_status.get("status") == "active":
         print("✅ Local cache updated:", local_status)
     else:
         print("❌ Local cache NOT updated:", local_status)
         sys.exit(1)
 
     print("\n✅ Verification Successful!")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -19,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 class AccessibilityProber(BaseProber):
     """Prober for Accessibility permission."""
-    
+
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.ACCESSIBILITY
         self._last_result: bool | None = None
-    
+
     async def trigger(self) -> None:
         """
         No reliable dialog API for Accessibility.
@@ -33,44 +33,42 @@ class AccessibilityProber(BaseProber):
         """
         try:
             from Quartz import CGRequestPostEventAccess  # type: ignore[reportMissingImports]
+
             CGRequestPostEventAccess()
             logger.debug("[AX_PROBER] Called CGRequestPostEventAccess()")
         except ImportError:
             logger.debug("[AX_PROBER] Quartz not available, skipping trigger")
         except Exception as e:
             logger.warning("[AX_PROBER] Trigger failed: %s", e)
-    
+
     async def probe(self, probe_kind: Literal["light", "heavy"]) -> ProbeResult:
         """Probe AX capability."""
         ts = self._now()
-        
+
         # Light probe: use cached result
         if probe_kind == "light" and self._last_result is not None:
             ax_ok = self._last_result
         else:
             ax_ok = await self._capability_ax_ok()
             self._last_result = ax_ok
-        
+
         ev = ProbeEvidence(
             ax_action_ok=ax_ok,
             error_domain=None,
             error_code=None,
             error_message=None,
         )
-        
+
         # If ax_ok is False, that means AXIsProcessTrusted() returned False
         # This is a "needs user action" state, not transient
         if ax_ok is False:
             ev = replace(ev, permission_denied_hint=True, transient_hint=False)
-        
+
         ev = apply_normalization_to_evidence(self.permission, ev)
         return ProbeResult(
-            permission=self.permission,
-            timestamp=ts,
-            probe_kind=probe_kind,
-            evidence=ev
+            permission=self.permission, timestamp=ts, probe_kind=probe_kind, evidence=ev
         )
-    
+
     async def _capability_ax_ok(self) -> bool | None:
         """
         Check if Accessibility is enabled.
@@ -78,6 +76,7 @@ class AccessibilityProber(BaseProber):
         """
         try:
             from ApplicationServices import AXIsProcessTrusted  # type: ignore[reportMissingImports]
+
             result = AXIsProcessTrusted()
             logger.debug("[AX_PROBER] AXIsProcessTrusted() = %s", result)
             return bool(result)
@@ -87,6 +86,6 @@ class AccessibilityProber(BaseProber):
         except Exception as e:
             logger.error("[AX_PROBER] AXIsProcessTrusted() failed: %s", e)
             return None
-    
+
     def supports_light_probe(self) -> bool:
         return True

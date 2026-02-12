@@ -92,7 +92,9 @@ async def test_listen_start_still_emitted_on_mode_changed():
 
     integration._service.emit = AsyncMock(return_value=True)
 
-    await integration._on_mode_changed({"data": {"mode": AppMode.LISTENING, "session_id": "sid-listen"}})
+    await integration._on_mode_changed(
+        {"data": {"mode": AppMode.LISTENING, "session_id": "sid-listen"}}
+    )
 
     patterns = [call.args[0].pattern for call in integration._service.emit.await_args_list]
     assert SignalPattern.LISTEN_START in patterns

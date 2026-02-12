@@ -55,50 +55,52 @@ class ActionExecutionIntegration(BaseIntegration):
             error_handler=error_handler,
             name="ActionExecutionIntegration",
         )
-        
+
         # Загружаем конфигурацию из unified_config
         loader = UnifiedConfigLoader.get_instance()
         actions_cfg = loader.get_actions_config().get("open_app") or OpenAppActionConfig()
-        
+
         # Сохраняем конфигурацию open_app для совместимости
         self._open_app_config = actions_cfg
-        
+
         # McpActionExecutor для open_app и close_app (через MCP)
         # Загружаем конфигурацию MCP серверов из unified_config
         mcp_configs = loader.get_mcp_config()
-        open_app_mcp = mcp_configs.get('open_app', {})
-        close_app_mcp = mcp_configs.get('close_app', {})
-        
-        open_app_server_path = open_app_mcp.get('server_path', '')
-        close_app_server_path = close_app_mcp.get('server_path', '')
+        open_app_mcp = mcp_configs.get("open_app", {})
+        close_app_mcp = mcp_configs.get("close_app", {})
+
+        open_app_server_path = open_app_mcp.get("server_path", "")
+        close_app_server_path = close_app_mcp.get("server_path", "")
 
         # Fallback на канонические пути, если конфигурация не найдена
         if not open_app_server_path:
             open_app_server_path = "mcp_servers/open_app/server.py"
         if not close_app_server_path:
             close_app_server_path = "mcp_servers/close_app/server.py"
-        
+
         mcp_config = McpActionConfig(
             open_app_server_path=open_app_server_path,
             close_app_server_path=close_app_server_path,
-            timeout_sec=float(close_app_mcp.get('timeout_sec', actions_cfg.timeout_sec)),
-            enabled=bool(close_app_mcp.get('enabled', actions_cfg.enabled)),
+            timeout_sec=float(close_app_mcp.get("timeout_sec", actions_cfg.timeout_sec)),
+            enabled=bool(close_app_mcp.get("enabled", actions_cfg.enabled)),
         )
         self._mcp_executor = McpActionExecutor(mcp_config)
         self._actions_lock = asyncio.Lock()
         self._active_actions: dict[str, asyncio.Task[Any]] = {}  # session_id -> task
-        self._active_apps: dict[str, str] = {}  # app_name -> session_id (для идемпотентности close_app)
+        self._active_apps: dict[
+            str, str
+        ] = {}  # app_name -> session_id (для идемпотентности close_app)
         self._spoken_error_sessions: set[str] = set()
         self._action_dedupe: dict[str, float] = {}
         self._action_dedupe_ttl_sec = 90.0
-        
+
         logger.info(
             "[%s] ActionExecutionIntegration initialized: enabled=%s, timeout=%.1fs, open_app_server=%s, close_app_server=%s",
             FEATURE_ID,
             mcp_config.enabled,
             mcp_config.timeout_sec,
             open_app_server_path,
-            close_app_server_path
+            close_app_server_path,
         )
 
     async def _do_initialize(self) -> bool:
@@ -111,7 +113,10 @@ class ActionExecutionIntegration(BaseIntegration):
             logger.info("[%s] MCP action executor disabled, skipping start", FEATURE_ID)
             return True
 
-        logger.info("[%s] Starting ActionExecutionIntegration (subscribing to grpc.response.action)", FEATURE_ID)
+        logger.info(
+            "[%s] Starting ActionExecutionIntegration (subscribing to grpc.response.action)",
+            FEATURE_ID,
+        )
         await self.event_bus.subscribe(
             "grpc.response.action",
             self._on_action_received,
@@ -174,7 +179,7 @@ class ActionExecutionIntegration(BaseIntegration):
         """Остановка интеграции - отмена всех действий и отписка от событий."""
         if not self._mcp_executor.config.enabled:
             return True
-        
+
         await self._cancel_all_actions(reason="integration_stop")
         await self.event_bus.unsubscribe("grpc.response.action", self._on_action_received)
         await self.event_bus.unsubscribe("interrupt.request", self._on_interrupt)
@@ -183,17 +188,25 @@ class ActionExecutionIntegration(BaseIntegration):
         await self.event_bus.unsubscribe("browser.completed", self._on_browser_use_terminal_event)
         await self.event_bus.unsubscribe("browser.failed", self._on_browser_use_terminal_event)
         await self.event_bus.unsubscribe("browser.cancelled", self._on_browser_use_terminal_event)
-        await self.event_bus.unsubscribe("actions.send_whatsapp_message.completed", self._on_whatsapp_terminal_event)
-        await self.event_bus.unsubscribe("actions.send_whatsapp_message.failed", self._on_whatsapp_terminal_event)
-        await self.event_bus.unsubscribe("actions.read_whatsapp_messages.completed", self._on_whatsapp_terminal_event)
-        await self.event_bus.unsubscribe("actions.read_whatsapp_messages.failed", self._on_whatsapp_terminal_event)
+        await self.event_bus.unsubscribe(
+            "actions.send_whatsapp_message.completed", self._on_whatsapp_terminal_event
+        )
+        await self.event_bus.unsubscribe(
+            "actions.send_whatsapp_message.failed", self._on_whatsapp_terminal_event
+        )
+        await self.event_bus.unsubscribe(
+            "actions.read_whatsapp_messages.completed", self._on_whatsapp_terminal_event
+        )
+        await self.event_bus.unsubscribe(
+            "actions.read_whatsapp_messages.failed", self._on_whatsapp_terminal_event
+        )
         logger.info("[%s] ActionExecutionIntegration stopped", FEATURE_ID)
         return True
 
     async def _on_action_received(self, event: dict[str, Any]):
         """
         Получает JSON действия из grpc.response.action.
-        
+
         Ожидаемый формат события:
         {
             "session_id": "...",
@@ -216,7 +229,7 @@ class ActionExecutionIntegration(BaseIntegration):
             bool(action_json),
             feature_id,
         )
-        
+
         if not self._mcp_executor.config.enabled:
             logger.info("[%s] MCP actions disabled, ignoring payload", feature_id)
             await self._publish_failure(
@@ -276,11 +289,11 @@ class ActionExecutionIntegration(BaseIntegration):
             sorted(args.keys()) if isinstance(args, dict) else [],
             source,
         )
-        
+
         # Строим список допустимых команд динамически на основе feature flags
         loader = UnifiedConfigLoader.get_instance()
         valid_commands = ["open_app", "close_app"]  # Всегда доступны
-        
+
         if loader.is_feature_enabled("messages", default=False):
             valid_commands.extend(["read_messages", "send_message", "find_contact"])
         if loader.is_feature_enabled("browser", default=False):
@@ -290,11 +303,7 @@ class ActionExecutionIntegration(BaseIntegration):
         if loader.is_feature_enabled("whatsapp", default=False):
             valid_commands.extend(["send_whatsapp_message", "read_whatsapp_messages"])
         if command not in valid_commands:
-            logger.warning(
-                "[%s] Unsupported command: %s",
-                feature_id,
-                command
-            )
+            logger.warning("[%s] Unsupported command: %s", feature_id, command)
             logger.warning(
                 "[%s] stage=rejected session=%s reason=unsupported_command command=%s source=%s",
                 ACTION_PIPELINE_TAG,
@@ -311,7 +320,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 command=command,
             )
             return
-        
+
         # Обновляем feature_id в зависимости от типа действия
         if command == "open_app":
             action_feature_id = "F-2025-013-open-app"
@@ -341,9 +350,9 @@ class ActionExecutionIntegration(BaseIntegration):
             "buy_subscription": "payment",
             "manage_subscription": "payment",
             "send_whatsapp_message": "whatsapp",
-            "read_whatsapp_messages": "whatsapp"
+            "read_whatsapp_messages": "whatsapp",
         }
-        
+
         feature_name = feature_check_map.get(command)
         if feature_name:
             if not loader.is_feature_enabled(feature_name, default=False):
@@ -356,7 +365,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     feature_name,
                     command,
                 )
-                
+
                 # Для payment просто игнорируем (так как PaymentIntegration не запущена)
                 if feature_name == "payment":
                     return
@@ -371,25 +380,25 @@ class ActionExecutionIntegration(BaseIntegration):
                     app_name=None,
                     command=command,
                 )
-                
+
                 # Speak the error for WhatsApp specifically (as per diagnosis)
                 if feature_name == "whatsapp":
-                     await self.event_bus.publish("grpc.tts_request", {
-                         "session_id": session_id,
-                         "text": "WhatsApp integration is currently disabled.",
-                         "source": "whatsapp"
-                     })
-                
+                    await self.event_bus.publish(
+                        "grpc.tts_request",
+                        {
+                            "session_id": session_id,
+                            "text": "WhatsApp integration is currently disabled.",
+                            "source": "whatsapp",
+                        },
+                    )
+
                 return
-        
+
         # Валидация параметров в зависимости от типа действия
         if command == "open_app":
             # Для open_app требуется app_name или app_path
             if not args.get("app_name") and not args.get("app_path"):
-                logger.error(
-                    "[%s] Missing app_name or app_path for open_app",
-                    action_feature_id
-                )
+                logger.error("[%s] Missing app_name or app_path for open_app", action_feature_id)
                 await self._publish_failure(
                     session_id=session_id,
                     feature_id=action_feature_id,
@@ -402,10 +411,7 @@ class ActionExecutionIntegration(BaseIntegration):
         elif command == "close_app":
             # Для close_app требуется только app_name
             if not args.get("app_name"):
-                logger.error(
-                    "[%s] Missing app_name for close_app",
-                    action_feature_id
-                )
+                logger.error("[%s] Missing app_name for close_app", action_feature_id)
                 await self._publish_failure(
                     session_id=session_id,
                     feature_id=action_feature_id,
@@ -453,7 +459,6 @@ class ActionExecutionIntegration(BaseIntegration):
             # browser_use may have optional args like task, url, model
             pass
 
-
         # Специальная обработка для Messages
         if command in ["read_messages", "send_message", "find_contact"]:
             dedupe_key = self._make_action_dedupe_key(session_id, command, args)
@@ -471,7 +476,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 command=command,
                 args=args,
                 feature_id=action_feature_id,
-                dedupe_key=dedupe_key
+                dedupe_key=dedupe_key,
             )
             return
 
@@ -486,12 +491,14 @@ class ActionExecutionIntegration(BaseIntegration):
                 dedupe_key,
             )
             if not await self._register_action_dedupe(dedupe_key, session_id, command):
-                logger.info("[%s] Duplicate browser_use action ignored (session=%s)", action_feature_id, session_id)
+                logger.info(
+                    "[%s] Duplicate browser_use action ignored (session=%s)",
+                    action_feature_id,
+                    session_id,
+                )
                 return
             await self._execute_browser_use_action(
-                session_id=session_id,
-                args=args,
-                feature_id=action_feature_id
+                session_id=session_id, args=args, feature_id=action_feature_id
             )
             return
 
@@ -507,9 +514,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 phase="started",
                 source="dispatch",
             )
-            await self.event_bus.publish("browser.close.request", {
-                "session_id": session_id
-            })
+            await self.event_bus.publish("browser.close.request", {"session_id": session_id})
             await self._publish_action_lifecycle(
                 session_id=session_id,
                 command=command,
@@ -532,12 +537,17 @@ class ActionExecutionIntegration(BaseIntegration):
                 phase="started",
                 source="dispatch",
             )
-            logger.info("[%s] Dispatching buy_subscription to PaymentIntegration", action_feature_id)
-            await self.event_bus.publish("ui.action.buy_subscription", {
-                "session_id": session_id,
-                "source": "llm_command",
-                "feature_id": action_feature_id
-            })
+            logger.info(
+                "[%s] Dispatching buy_subscription to PaymentIntegration", action_feature_id
+            )
+            await self.event_bus.publish(
+                "ui.action.buy_subscription",
+                {
+                    "session_id": session_id,
+                    "source": "llm_command",
+                    "feature_id": action_feature_id,
+                },
+            )
             await self._publish_action_lifecycle(
                 session_id=session_id,
                 command=command,
@@ -559,12 +569,17 @@ class ActionExecutionIntegration(BaseIntegration):
                 phase="started",
                 source="dispatch",
             )
-            logger.info("[%s] Dispatching manage_subscription to PaymentIntegration", action_feature_id)
-            await self.event_bus.publish("ui.action.manage_subscription", {
-                "session_id": session_id,
-                "source": "llm_command",
-                "feature_id": action_feature_id
-            })
+            logger.info(
+                "[%s] Dispatching manage_subscription to PaymentIntegration", action_feature_id
+            )
+            await self.event_bus.publish(
+                "ui.action.manage_subscription",
+                {
+                    "session_id": session_id,
+                    "source": "llm_command",
+                    "feature_id": action_feature_id,
+                },
+            )
             await self._publish_action_lifecycle(
                 session_id=session_id,
                 command=command,
@@ -589,12 +604,15 @@ class ActionExecutionIntegration(BaseIntegration):
                 source="dispatch",
             )
             logger.info("[%s] Dispatching %s to WhatsappIntegration", action_feature_id, command)
-            await self.event_bus.publish("whatsapp.request", {
-                "session_id": session_id,
-                "command": command,
-                "args": args,
-                "feature_id": action_feature_id
-            })
+            await self.event_bus.publish(
+                "whatsapp.request",
+                {
+                    "session_id": session_id,
+                    "command": command,
+                    "args": args,
+                    "feature_id": action_feature_id,
+                },
+            )
             return
 
         # Преобразуем формат для McpActionExecutor
@@ -610,7 +628,7 @@ class ActionExecutionIntegration(BaseIntegration):
             if session_id in self._active_actions:
                 logger.info("[%s] Action already running for session=%s", feature_id, session_id)
                 return
-            
+
             # Идемпотентность для close_app: проверяем, не закрывается ли уже это приложение
             action_type = executor_action_data.get("type")
             app_name = executor_action_data.get("app_name")
@@ -637,7 +655,7 @@ class ActionExecutionIntegration(BaseIntegration):
                             feature_id,
                             app_name,
                             existing_session,
-                            session_id
+                            session_id,
                         )
                         # Публикуем событие failure для второй сессии, чтобы клиент/сервер получили ответ
                         await self._publish_failure(
@@ -651,27 +669,23 @@ class ActionExecutionIntegration(BaseIntegration):
                         return
                 # Регистрируем приложение как активное (используем нормализованный ключ)
                 self._active_apps[app_name_normalized] = session_id
-            
+
             # Создаем задачу для выполнения действия
             task = asyncio.create_task(
                 self._execute_action(
                     session_id=session_id,
                     action_data=executor_action_data,
-                    feature_id=action_feature_id
+                    feature_id=action_feature_id,
                 )
             )
             self._active_actions[session_id] = task
 
     async def _execute_action(
-        self,
-        *,
-        session_id: str,
-        action_data: dict[str, Any],
-        feature_id: str
+        self, *, session_id: str, action_data: dict[str, Any], feature_id: str
     ):
         """
         Выполняет действие через McpActionExecutor.
-        
+
         Args:
             session_id: ID сессии
             action_data: Данные действия для McpActionExecutor
@@ -680,7 +694,7 @@ class ActionExecutionIntegration(BaseIntegration):
         # Определяем тип действия для событий
         action_type = action_data.get("type", "open_app")
         event_prefix = f"actions.{action_type}"
-        
+
         # Публикуем событие о начале выполнения
         await self.event_bus.publish(
             f"{event_prefix}.started",
@@ -697,7 +711,7 @@ class ActionExecutionIntegration(BaseIntegration):
             source="executor",
         )
         self._spoken_error_sessions.discard(session_id)
-        
+
         try:
             # Выполняем действие в зависимости от типа
             if action_type == "open_app":
@@ -715,56 +729,55 @@ class ActionExecutionIntegration(BaseIntegration):
                 else:
                     # Используем McpActionExecutor для open_app (через MCP)
                     result = await self._mcp_executor.execute_action(
-                        action_data,
-                        session_id=session_id
+                        action_data, session_id=session_id
                     )
             elif action_type == "close_app":
                 # Check server existence first
                 server_path = Path(self._mcp_executor.config.close_app_server_path)
                 use_fallback = not server_path.exists()
-                
+
                 result = None
                 if not use_fallback:
                     # Try MCP first
                     try:
                         result = await self._mcp_executor.execute_action(
-                            action_data,
-                            session_id=session_id
+                            action_data, session_id=session_id
                         )
                         if not result.success:
                             logger.warning(
-                                "[%s] MCP close_app failed, trying fallback. Error: %s", 
-                                feature_id, 
-                                result.error
+                                "[%s] MCP close_app failed, trying fallback. Error: %s",
+                                feature_id,
+                                result.error,
                             )
                             use_fallback = True
                     except Exception as e:
                         logger.warning(
-                            "[%s] MCP close_app exception: %s, trying fallback", 
-                            feature_id, 
-                            e
+                            "[%s] MCP close_app exception: %s, trying fallback", feature_id, e
                         )
                         use_fallback = True
 
                 if use_fallback:
-                     logger.info("[%s] Using fallback for close_app", feature_id)
-                     result = await self._execute_close_app_fallback(
-                        action_data=action_data,
-                        session_id=session_id
-                     )
+                    logger.info("[%s] Using fallback for close_app", feature_id)
+                    result = await self._execute_close_app_fallback(
+                        action_data=action_data, session_id=session_id
+                    )
             else:
                 # Неизвестный тип действия
                 from modules.mcp_action import McpActionResult
+
                 result = McpActionResult(
                     success=False,
                     message=f"Unsupported action type: {action_type}",
                     error="unsupported_action",
                 )
-            
+
             if result is None:
                 # Should not happen given logic above, but satisfies type checker
                 from modules.mcp_action import McpActionResult
-                result = McpActionResult(success=False, error="internal_error", message="Result is None")
+
+                result = McpActionResult(
+                    success=False, error="internal_error", message="Result is None"
+                )
 
             if result.success:
                 # Успешное выполнение
@@ -780,7 +793,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 logger.info(
                     "[%s] Action completed successfully: %s",
                     feature_id,
-                    result.app_name or "unknown"
+                    result.app_name or "unknown",
                 )
                 await self._publish_action_lifecycle(
                     session_id=session_id,
@@ -800,10 +813,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     command=action_type,
                 )
                 logger.warning(
-                    "[%s] Action failed: %s - %s",
-                    feature_id,
-                    result.error,
-                    result.message
+                    "[%s] Action failed: %s - %s", feature_id, result.error, result.message
                 )
                 await self._publish_action_lifecycle(
                     session_id=session_id,
@@ -812,7 +822,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     source="executor",
                     status="failed",
                 )
-                
+
         except asyncio.CancelledError:
             # Действие было отменено
             await self._publish_failure(
@@ -831,7 +841,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 source="executor",
                 status="cancelled",
             )
-            
+
         except Exception as exc:
             # Неожиданная ошибка
             await self._handle_error(exc, where="_execute_action")
@@ -911,7 +921,7 @@ class ActionExecutionIntegration(BaseIntegration):
                                 "[%s] Removed app from active_apps: %s (session=%s)",
                                 FEATURE_ID,
                                 app_name,
-                                session_id
+                                session_id,
                             )
 
     async def _execute_close_app_fallback(
@@ -938,11 +948,11 @@ class ActionExecutionIntegration(BaseIntegration):
                 # Centralized shutdown path:
                 # publish quit intent, coordinator emits app.shutdown.
                 await self.event_bus.publish("tray.quit_clicked", {"source": "action_execution"})
-                
+
                 # Use osascript to quit gently
                 script = 'tell application "Nexy" to quit'
                 subprocess.run(["/usr/bin/osascript", "-e", script], check=False)
-                
+
                 return McpActionResult(
                     success=True,
                     message="Nexy is shutting down...",
@@ -952,7 +962,7 @@ class ActionExecutionIntegration(BaseIntegration):
             # Normal app closing via AppleScript
             script = f'tell application "{app_name}" to quit'
             subprocess.run(["/usr/bin/osascript", "-e", script], check=True, capture_output=True)
-            
+
             return McpActionResult(
                 success=True,
                 message=f"Closed {app_name}",
@@ -991,15 +1001,15 @@ class ActionExecutionIntegration(BaseIntegration):
             # Cleanup active actions
             async with self._actions_lock:
                 if session_id:
-                     # Remove task
-                     task = self._active_actions.pop(session_id, None)
-                     if task and not task.done():
-                         task.cancel()
-                     
-                     # Remove from active apps
-                     app_name_normalized = app_name.strip().lower()
-                     if self._active_apps.get(app_name_normalized) == session_id:
-                         self._active_apps.pop(app_name_normalized, None)
+                    # Remove task
+                    task = self._active_actions.pop(session_id, None)
+                    if task and not task.done():
+                        task.cancel()
+
+                    # Remove from active apps
+                    app_name_normalized = app_name.strip().lower()
+                    if self._active_apps.get(app_name_normalized) == session_id:
+                        self._active_apps.pop(app_name_normalized, None)
 
     async def _on_interrupt(self, event: dict[str, Any]):
         """Обработка прерывания - отмена всех действий."""
@@ -1013,16 +1023,19 @@ class ActionExecutionIntegration(BaseIntegration):
         """Обработка изменения режима приложения - отмена при переходе в спящий режим."""
         try:
             from modules.mode_management import AppMode
-            data = event.get("data", event) if isinstance(event, dict) and "data" in event else event
+
+            data = (
+                event.get("data", event) if isinstance(event, dict) and "data" in event else event
+            )
             new_mode = data.get("mode")
-            
+
             # Если передана строка, пытаемся конвертировать в AppMode для надежности
             if isinstance(new_mode, str):
                 try:
                     new_mode = AppMode(new_mode)
                 except ValueError:
                     pass
-            
+
             if new_mode == AppMode.SLEEPING:
                 logger.debug("[%s] Mode changed to SLEEPING, cancelling all actions", FEATURE_ID)
                 await self._cancel_all_actions(reason="mode_change_to_sleeping")
@@ -1032,7 +1045,9 @@ class ActionExecutionIntegration(BaseIntegration):
     async def _on_browser_use_terminal_event(self, event: dict[str, Any]):
         """Завершает lifecycle browser_use только по фактическому завершению browser task."""
         try:
-            data = event.get("data", event) if isinstance(event, dict) and "data" in event else event
+            data = (
+                event.get("data", event) if isinstance(event, dict) and "data" in event else event
+            )
             session_id = data.get("session_id")
             if not session_id:
                 return
@@ -1058,7 +1073,9 @@ class ActionExecutionIntegration(BaseIntegration):
     async def _on_whatsapp_terminal_event(self, event: dict[str, Any]):
         """Завершает lifecycle WhatsApp-команд только по фактическим terminal-событиям."""
         try:
-            data = event.get("data", event) if isinstance(event, dict) and "data" in event else event
+            data = (
+                event.get("data", event) if isinstance(event, dict) and "data" in event else event
+            )
             session_id = data.get("session_id")
             if not session_id:
                 return
@@ -1088,7 +1105,7 @@ class ActionExecutionIntegration(BaseIntegration):
     async def _cancel_all_actions(self, *, reason: str):
         """
         Отменяет все активные действия.
-        
+
         Args:
             reason: Причина отмены (для логирования)
         """
@@ -1100,10 +1117,7 @@ class ActionExecutionIntegration(BaseIntegration):
             if task.done():
                 continue
             logger.info(
-                "[%s] Cancelling action for session=%s reason=%s",
-                FEATURE_ID,
-                session_id,
-                reason
+                "[%s] Cancelling action for session=%s reason=%s", FEATURE_ID, session_id, reason
             )
             task.cancel()
             try:
@@ -1236,14 +1250,14 @@ class ActionExecutionIntegration(BaseIntegration):
         command: str,
         args: dict[str, Any],
         feature_id: str,
-        dedupe_key: str | None = None
+        dedupe_key: str | None = None,
     ):
         """
         Выполняет команду Messages (read_messages, send_message, find_contact).
         Запускает синхронный код в отдельном потоке.
         """
         event_prefix = f"actions.{command}"
-        
+
         # 1. Публикуем событие о начале
         await self.event_bus.publish(
             f"{event_prefix}.started",
@@ -1261,7 +1275,7 @@ class ActionExecutionIntegration(BaseIntegration):
             source="messages",
         )
         self._spoken_error_sessions.discard(session_id)
-        
+
         try:
             # 2. Выполняем в потоке
             if command == "read_messages":
@@ -1272,7 +1286,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 result = await asyncio.to_thread(self._handle_find_contact, args)
             else:
                 result = {"success": False, "message": f"Unknown command: {command}"}
-            
+
             # 3. Обрабатываем результат
             if result.get("success", False):
                 await self.event_bus.publish(
@@ -1291,7 +1305,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     source="messages",
                     status="success",
                 )
-                
+
                 # 4. Озвучиваем результат пользователю
                 await self._handle_messages_success_feedback(session_id, command, result)
             else:
@@ -1299,36 +1313,44 @@ class ActionExecutionIntegration(BaseIntegration):
                     await self._clear_action_dedupe(dedupe_key)
                 error_code_res = result.get("error_code")
                 error_msg = result.get("message", "Unknown error")
-                
+
                 if error_code_res == "ambiguous_contact":
-                     choices = result.get("choices", [])
-                     choices_str = ", ".join(choices[:3])
-                     text_to_speak = f"I found multiple contacts: {choices_str}. Please say the full name."
-                     
-                     # Speak specific feedback
-                     await self.event_bus.publish("grpc.tts_request", {
-                         "session_id": session_id,
-                         "text": text_to_speak,
-                         "source": f"actions.{command}"
-                     })
-                     self._spoken_error_sessions.add(session_id) # Prevent generic error speech
-                
+                    choices = result.get("choices", [])
+                    choices_str = ", ".join(choices[:3])
+                    text_to_speak = (
+                        f"I found multiple contacts: {choices_str}. Please say the full name."
+                    )
+
+                    # Speak specific feedback
+                    await self.event_bus.publish(
+                        "grpc.tts_request",
+                        {
+                            "session_id": session_id,
+                            "text": text_to_speak,
+                            "source": f"actions.{command}",
+                        },
+                    )
+                    self._spoken_error_sessions.add(session_id)  # Prevent generic error speech
+
                 elif error_code_res == "similar_contacts_found":
-                     suggestions = result.get("suggestions", [])
-                     if suggestions:
-                         suggestions_str = ", ".join(suggestions[:3])
-                         text_to_speak = f"Contact not found. Did you mean: {suggestions_str}?"
-                     else:
-                         text_to_speak = "Contact not found. Please check the name and try again."
-                     
-                     # Speak specific feedback
-                     await self.event_bus.publish("grpc.tts_request", {
-                         "session_id": session_id,
-                         "text": text_to_speak,
-                         "source": f"actions.{command}"
-                     })
-                     self._spoken_error_sessions.add(session_id) # Prevent generic error speech
-                
+                    suggestions = result.get("suggestions", [])
+                    if suggestions:
+                        suggestions_str = ", ".join(suggestions[:3])
+                        text_to_speak = f"Contact not found. Did you mean: {suggestions_str}?"
+                    else:
+                        text_to_speak = "Contact not found. Please check the name and try again."
+
+                    # Speak specific feedback
+                    await self.event_bus.publish(
+                        "grpc.tts_request",
+                        {
+                            "session_id": session_id,
+                            "text": text_to_speak,
+                            "source": f"actions.{command}",
+                        },
+                    )
+                    self._spoken_error_sessions.add(session_id)  # Prevent generic error speech
+
                 await self._publish_failure(
                     session_id=session_id,
                     feature_id=feature_id,
@@ -1336,7 +1358,8 @@ class ActionExecutionIntegration(BaseIntegration):
                     message=error_msg,
                     app_name="Messages",
                     command=command,
-                    suppress_playback_cancel=error_code_res in {"ambiguous_contact", "similar_contacts_found"},
+                    suppress_playback_cancel=error_code_res
+                    in {"ambiguous_contact", "similar_contacts_found"},
                 )
                 logger.warning("[%s] %s failed: %s", feature_id, command, error_msg)
                 await self._publish_action_lifecycle(
@@ -1346,7 +1369,7 @@ class ActionExecutionIntegration(BaseIntegration):
                     source="messages",
                     status="failed",
                 )
-                
+
         except Exception as exc:
             if dedupe_key:
                 await self._clear_action_dedupe(dedupe_key)
@@ -1367,41 +1390,44 @@ class ActionExecutionIntegration(BaseIntegration):
                 status="failed",
             )
 
-    async def _handle_messages_success_feedback(self, session_id: str, command: str, result: dict[str, Any]):
+    async def _handle_messages_success_feedback(
+        self, session_id: str, command: str, result: dict[str, Any]
+    ):
         """Формирует и озвучивает результат успешного выполнения команды Messages."""
         text_to_speak = ""
-        
+
         if command == "read_messages":
             count = result.get("count", 0)
             target = result.get("target", "Unknown")
             messages = result.get("messages", [])
-            
+
             if count == 0:
                 text_to_speak = f"No messages found from {target}."
             elif count == 1:
                 msg = messages[0]
-                text = msg.get('text', '')
+                text = msg.get("text", "")
                 # Убираем лишние метаданные из текста для озвучки если они есть
                 text_to_speak = f"Last message from {target}: {text}"
             else:
                 text_to_speak = f"Last {count} messages from {target}. "
                 for i, msg in enumerate(messages):
-                    text = msg.get('text', '')
+                    text = msg.get("text", "")
                     if i > 0:
                         text_to_speak += " Next message: "
                     text_to_speak += text
-                    
+
         elif command == "send_message":
             # Include message content and recipient in the feedback
             contact_name = result.get("contact_name", "recipient")
             message_content = result.get("message_content", "")
             if message_content:
-                text_to_speak = f"Message to {contact_name}: '{message_content}'. Sent successfully."
-
+                text_to_speak = (
+                    f"Message to {contact_name}: '{message_content}'. Sent successfully."
+                )
 
             else:
                 text_to_speak = f"Message to {contact_name} sent successfully."
-            
+
         elif command == "find_contact":
             count = result.get("count", 0)
             contacts = result.get("contacts", [])
@@ -1414,7 +1440,7 @@ class ActionExecutionIntegration(BaseIntegration):
                 text_to_speak = f"Found contact {name}, phone {phones}."
             else:
                 text_to_speak = f"Found {count} contacts."
-                
+
         if text_to_speak:
             # Use server EdgeTTS via grpc.tts_request (not local macOS say)
             await self.event_bus.publish(
@@ -1427,7 +1453,9 @@ class ActionExecutionIntegration(BaseIntegration):
             )
 
     def _make_action_dedupe_key(self, session_id: str, command: str, args: dict[str, Any]) -> str:
-        stable_args = json.dumps(args or {}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        stable_args = json.dumps(
+            args or {}, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        )
         raw = f"{session_id}|{command}|{stable_args}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -1459,11 +1487,7 @@ class ActionExecutionIntegration(BaseIntegration):
             self._action_dedupe.pop(k, None)
 
     async def _execute_browser_use_action(
-        self,
-        *,
-        session_id: str,
-        args: dict[str, Any],
-        feature_id: str
+        self, *, session_id: str, args: dict[str, Any], feature_id: str
     ):
         """
         Перенаправляет команду browser_use в BrowserUseIntegration через событие browser.use.request.
@@ -1485,7 +1509,7 @@ class ActionExecutionIntegration(BaseIntegration):
             source="dispatch",
         )
         self._spoken_error_sessions.discard(session_id)
-        
+
         # 2. Перенаправляем запрос в BrowserUseIntegration
         # BrowserUseIntegration ожидает событие "browser.use.request" с данными в поле 'data' или напрямую
         # Параметры: task, url (опционально), model (опционально)
@@ -1494,23 +1518,23 @@ class ActionExecutionIntegration(BaseIntegration):
             "task": args.get("task", ""),
             "url": args.get("url"),
             "model": args.get("model"),
-             # Можно передать исходные args полностью
-            **args
+            # Можно передать исходные args полностью
+            **args,
         }
-        
-        logger.info("[%s] Routing browser_use command to BrowserUseIntegration (session=%s)", feature_id, session_id)
-        
+
+        logger.info(
+            "[%s] Routing browser_use command to BrowserUseIntegration (session=%s)",
+            feature_id,
+            session_id,
+        )
+
         await self.event_bus.publish("browser.use.request", payload)
-        
+
         # Мы не ждем завершения здесь, так как BrowserUseIntegration асинхронен и сам публикует прогресс
         # Но мы можем сразу подтвердить перенаправление
         await self.event_bus.publish(
             "actions.browser_use.dispatched",
-             {
-                "session_id": session_id,
-                "feature_id": feature_id,
-                "status": "dispatched"
-            }
+            {"session_id": session_id, "feature_id": feature_id, "status": "dispatched"},
         )
 
     async def _publish_action_lifecycle(
@@ -1538,16 +1562,19 @@ class ActionExecutionIntegration(BaseIntegration):
         """Обработчик read_messages (синхронный)."""
         contact_id = args.get("contact")
         limit = int(args.get("limit", 10))
-        
+
         # Подключаемся к БД
         conn = connect_db()
         if not conn:
-            return {"success": False, "message": "Failed to connect to Messages DB (Check Full Disk Access)"}
-        
+            return {
+                "success": False,
+                "message": "Failed to connect to Messages DB (Check Full Disk Access)",
+            }
+
         try:
             messages = []
             target_name = "Unknown"
-            
+
             if not contact_id or contact_id.lower() == "all":
                 # Получаем последнее сообщение вообще
                 last_msg = get_last_message(conn)
@@ -1564,18 +1591,18 @@ class ActionExecutionIntegration(BaseIntegration):
                 resolved = resolve_contact(contact_id, messages_conn=conn)
                 resolved_id = resolved.get("raw_identifier") or contact_id
                 target_name = resolved.get("display_label") or contact_id
-                
+
                 # Если это имя, ищем номера
                 if not any(c.isdigit() for c in resolved_id):
                     contacts_found = find_contacts_by_name(contact_id)
                     if contacts_found:
-                         # Берем первый номер первого найденного
+                        # Берем первый номер первого найденного
                         phones = contacts_found[0].get("phones", [])
                         if phones:
                             resolved_id = phones[0]
-                
+
                 messages = get_messages_by_contact(conn, resolved_id, limit=limit)
-            
+
             # Форматируем для ответа
             formatted_messages = []
             for msg in messages:
@@ -1583,18 +1610,20 @@ class ActionExecutionIntegration(BaseIntegration):
                 if not msg.get("is_from_me") and sender_label:
                     resolved_sender = resolve_contact(sender_label, messages_conn=conn)
                     sender_label = resolved_sender.get("display_label") or sender_label
-                formatted_messages.append({
-                    "text": msg.get("text", "[No text]"),
-                    "from_me": msg.get("is_from_me", False),
-                    "date": format_message_date(msg.get("date", 0)),
-                    "sender": "Me" if msg.get("is_from_me") else sender_label
-                })
-            
+                formatted_messages.append(
+                    {
+                        "text": msg.get("text", "[No text]"),
+                        "from_me": msg.get("is_from_me", False),
+                        "date": format_message_date(msg.get("date", 0)),
+                        "sender": "Me" if msg.get("is_from_me") else sender_label,
+                    }
+                )
+
             return {
                 "success": True,
                 "messages": formatted_messages,
                 "count": len(formatted_messages),
-                "target": target_name
+                "target": target_name,
             }
         finally:
             conn.close()
@@ -1603,10 +1632,10 @@ class ActionExecutionIntegration(BaseIntegration):
         """Обработчик send_message (синхронный)."""
         contact = args.get("contact")
         message = args.get("message")
-        
+
         if not contact or not message:
-             return {"success": False, "message": "Missing contact or message"}
-             
+            return {"success": False, "message": "Missing contact or message"}
+
         result = send_message_to_contact(contact, message)
         # Add message content to result for TTS feedback
         result["message_content"] = message
@@ -1617,16 +1646,12 @@ class ActionExecutionIntegration(BaseIntegration):
         query = args.get("query")
         if not query:
             return {"success": False, "message": "Missing query"}
-            
+
         contacts = find_contacts_by_name(query)
-        
+
         if not contacts and any(c.isdigit() for c in query):
             resolved = resolve_contact(query)
             if resolved and resolved.get("source") != "fallback":
                 contacts = [resolved]
-                
-        return {
-            "success": True,
-            "contacts": contacts,
-            "count": len(contacts)
-        }
+
+        return {"success": True, "contacts": contacts, "count": len(contacts)}

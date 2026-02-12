@@ -1,13 +1,14 @@
-from qrcode.main import QRCode
-from qrcode.main import make  # noqa
+from qrcode import image  # noqa
 from qrcode.constants import (  # noqa
+    ERROR_CORRECT_H,
     ERROR_CORRECT_L,
     ERROR_CORRECT_M,
     ERROR_CORRECT_Q,
-    ERROR_CORRECT_H,
 )
-
-from qrcode import image  # noqa
+from qrcode.main import (
+    QRCode,
+    make,  # noqa
+)
 
 
 def run_example(data="http://www.lincolnloop.com", *args, **kwargs):

@@ -7,6 +7,7 @@ This script performs a lightweight consistency check between:
 
 It reports missing axes or Snapshot fields that are not documented.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

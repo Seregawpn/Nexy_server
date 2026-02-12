@@ -16,18 +16,18 @@ from .handlers.recording_interrupt import RecordingInterruptHandler
 from .handlers.speech_interrupt import SpeechInterruptHandler
 
 __all__ = [
-    'InterruptCoordinator',
-    'InterruptDependencies',
-    'InterruptEvent',
-    'InterruptType',
-    'InterruptPriority',
-    'InterruptStatus',
-    'InterruptConfig',
-    'InterruptMetrics',
-    'SpeechInterruptHandler',
-    'RecordingInterruptHandler',
-    'InterruptModuleConfig',
-    'DEFAULT_INTERRUPT_CONFIG'
+    "InterruptCoordinator",
+    "InterruptDependencies",
+    "InterruptEvent",
+    "InterruptType",
+    "InterruptPriority",
+    "InterruptStatus",
+    "InterruptConfig",
+    "InterruptMetrics",
+    "SpeechInterruptHandler",
+    "RecordingInterruptHandler",
+    "InterruptModuleConfig",
+    "DEFAULT_INTERRUPT_CONFIG",
 ]
 
 __version__ = "1.6.1.28"

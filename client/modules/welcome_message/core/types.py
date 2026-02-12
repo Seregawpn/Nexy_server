@@ -9,6 +9,7 @@ from typing import Any
 
 class WelcomeState(Enum):
     """Состояния плеера приветствия"""
+
     IDLE = "idle"
     LOADING = "loading"
     PLAYING = "playing"
@@ -19,6 +20,7 @@ class WelcomeState(Enum):
 @dataclass
 class WelcomeConfig:
     """Конфигурация модуля приветствия"""
+
     enabled: bool = True
     text: str = "Hi! Nexy is here. How can I help you?"
     delay_sec: float = 1.0
@@ -31,18 +33,18 @@ class WelcomeConfig:
     server_timeout_sec: float = 30.0
     ignore_microphone_permission: bool = False
     force_permission_checks: bool = False
-    
 
 
 @dataclass
 class WelcomeResult:
     """Результат воспроизведения приветствия"""
+
     success: bool
     method: str  # "server" | "none" | "error"
     duration_sec: float
     error: str | None = None
     metadata: dict[str, Any] | None = None
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Конвертировать в словарь для EventBus"""
         return {
@@ -50,5 +52,5 @@ class WelcomeResult:
             "method": self.method,
             "duration_sec": self.duration_sec,
             "error": self.error,
-            "metadata": self.metadata or {}
+            "metadata": self.metadata or {},
         }

@@ -8,11 +8,11 @@ from .types import AutostartConfig, AutostartStatus
 
 class AutostartManager:
     """Менеджер автозапуска приложения."""
-    
+
     def __init__(self, config: AutostartConfig):
         self.config = config
         self.launch_agent_manager = LaunchAgentManager(config)
-        
+
     async def enable_autostart(self) -> AutostartStatus:
         """Включение автозапуска."""
         try:
@@ -27,11 +27,11 @@ class AutostartManager:
             else:
                 print("❌ Неподдерживаемый метод автозапуска")
                 return AutostartStatus.ERROR
-                
+
         except Exception as e:
             print(f"❌ Ошибка включения автозапуска: {e}")
             return AutostartStatus.ERROR
-    
+
     async def disable_autostart(self) -> AutostartStatus:
         """Отключение автозапуска."""
         try:
@@ -46,11 +46,11 @@ class AutostartManager:
             else:
                 print("❌ Неподдерживаемый метод автозапуска")
                 return AutostartStatus.ERROR
-                
+
         except Exception as e:
             print(f"❌ Ошибка отключения автозапуска: {e}")
             return AutostartStatus.ERROR
-    
+
     async def get_autostart_status(self) -> AutostartStatus:
         """Получение статуса автозапуска."""
         try:
@@ -59,7 +59,7 @@ class AutostartManager:
                 return AutostartStatus.ENABLED if is_installed else AutostartStatus.DISABLED
             else:
                 return AutostartStatus.DISABLED
-                
+
         except Exception as e:
             print(f"❌ Ошибка получения статуса автозапуска: {e}")
             return AutostartStatus.ERROR

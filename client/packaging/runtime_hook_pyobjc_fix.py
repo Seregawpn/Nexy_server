@@ -19,9 +19,10 @@ import tempfile
 def _log_to_file(message: str):
     """Логирует сообщение в файл для подтверждения выполнения hook."""
     try:
-        log_file = os.path.join(tempfile.gettempdir(), 'nexy_pyobjc_fix.log')
-        with open(log_file, 'a', encoding='utf-8') as f:
+        log_file = os.path.join(tempfile.gettempdir(), "nexy_pyobjc_fix.log")
+        with open(log_file, "a", encoding="utf-8") as f:
             from datetime import datetime
+
             f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}\n")
     except Exception:
         pass  # Игнорируем ошибки логирования
@@ -30,37 +31,37 @@ def _log_to_file(message: str):
 def _apply_fix():
     """
     Применяет PyObjC fix для упакованных приложений.
-    
+
     КРИТИЧНО: Выполняется ДО всех импортов rumps через PyInstaller runtime hook.
     Это единственный источник истины для PyObjC-fix в упакованном .app.
-    
+
     Применяет фикс НАПРЯМУЮ, без зависимости от других модулей.
     """
     try:
         # Проверяем, что мы на macOS
         if sys.platform != "darwin":
             return
-        
+
         msg = "[NEXY_INIT] Applying PyObjC Foundation fix (runtime hook)..."
         sys.stderr.write(f"{msg}\n")
         sys.stderr.flush()
         _log_to_file(msg)
-        
+
         # Импортируем AppKit первым (здесь находится настоящий NSMakeRect)
         import AppKit
-        
+
         # Импортируем Foundation
         import Foundation
-        
+
         # Применяем фикс для всех проблемных символов
         symbols_to_fix = ["NSMakeRect", "NSMakePoint", "NSMakeSize", "NSMakeRange"]
         fixed_symbols: list[str] = []
-        
+
         for symbol in symbols_to_fix:
             if not hasattr(Foundation, symbol) and hasattr(AppKit, symbol):
                 setattr(Foundation, symbol, getattr(AppKit, symbol))
                 fixed_symbols.append(symbol)
-        
+
         if fixed_symbols:
             success_msg = f"[NEXY_INIT] SUCCESS: Fixed symbols: {', '.join(fixed_symbols)}"
             sys.stderr.write(f"{success_msg}\n")
@@ -71,7 +72,7 @@ def _apply_fix():
             sys.stderr.write(f"{info_msg}\n")
             sys.stderr.flush()
             _log_to_file("INFO: symbols_already_present")
-            
+
     except ImportError as e:
         error_msg = f"[NEXY_INIT] ERROR: PyObjC not available: {e}"
         sys.stderr.write(f"{error_msg}\n")
@@ -82,6 +83,7 @@ def _apply_fix():
         sys.stderr.write(f"{error_msg}\n")
         sys.stderr.flush()
         _log_to_file(f"ERROR: error:{exc}")
+
 
 def _activate_nsapplication():
     """
@@ -94,10 +96,12 @@ def _activate_nsapplication():
     перед app.run(). Здесь мы только создаем NSApplication и устанавливаем policy.
     """
     import sys
+
     try:
         sys.stderr.write("[NEXY_INIT] Activating NSApplication for menu bar app...\n")
         sys.stderr.flush()
         import AppKit
+
         app = AppKit.NSApplication.sharedApplication()  # type: ignore[reportAttributeAccessIssue]
         # NSApplicationActivationPolicyAccessory (hide from Dock, show in menu bar)
         app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)  # type: ignore[reportAttributeAccessIssue]
@@ -109,6 +113,6 @@ def _activate_nsapplication():
         sys.stderr.write(f"[NEXY_INIT] ERROR: NSApplication activation failed: {e}\n")
         sys.stderr.flush()
 
+
 _apply_fix()
 _activate_nsapplication()
-

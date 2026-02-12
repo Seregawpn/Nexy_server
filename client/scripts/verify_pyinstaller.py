@@ -119,29 +119,27 @@ def parse_spec_file() -> dict[str, Any]:
     """Парсит Nexy.spec и извлекает конфигурацию."""
     if not SPEC_FILE.exists():
         raise CheckError(f"Файл {SPEC_FILE} не найден")
-    
+
     with open(SPEC_FILE, "r", encoding="utf-8") as f:
         content = f.read()
-    
+
     # Извлекаем hiddenimports
-    hiddenimports_match = re.search(
-        r'hiddenimports=\[(.*?)\]', content, re.DOTALL
-    )
+    hiddenimports_match = re.search(r"hiddenimports=\[(.*?)\]", content, re.DOTALL)
     hiddenimports = []
     if hiddenimports_match:
         imports_text = hiddenimports_match.group(1)
         # Извлекаем строки в кавычках
         imports = re.findall(r'["\']([^"\']+)["\']', imports_text)
         hiddenimports = imports
-    
+
     # Извлекаем datas
-    datas_match = re.search(r'datas=\[(.*?)\]', content, re.DOTALL)
+    datas_match = re.search(r"datas=\[(.*?)\]", content, re.DOTALL)
     datas = []
     if datas_match:
         datas_text = datas_match.group(1)
         # Извлекаем кортежи (source, dest) - учитываем многострочные кортежи
         # Ищем паттерн (str(...), "dest")
-        tuple_pattern = r'\([^)]*(?:\([^)]*\)[^)]*)*\)'
+        tuple_pattern = r"\([^)]*(?:\([^)]*\)[^)]*)*\)"
         datas_tuples = re.findall(tuple_pattern, datas_text, re.DOTALL)
         for tuple_str in datas_tuples:
             # Извлекаем пути из кортежа
@@ -159,23 +157,19 @@ def parse_spec_file() -> dict[str, Any]:
                     if pattern in tuple_str.lower():
                         datas.append((pattern, paths[0]))
                         break
-    
+
     # Извлекаем runtime_hooks
-    runtime_hooks_match = re.search(
-        r'runtime_hooks=\[(.*?)\]', content, re.DOTALL
-    )
+    runtime_hooks_match = re.search(r"runtime_hooks=\[(.*?)\]", content, re.DOTALL)
     runtime_hooks = []
     if runtime_hooks_match:
         hooks_text = runtime_hooks_match.group(1)
         hooks = re.findall(r'["\']([^"\']+)["\']', hooks_text)
         runtime_hooks = hooks
-    
+
     # Извлекаем info_plist
     # Ищем info_plist={...} - может быть многострочным, нужно найти закрывающую скобку
     # Используем более сложный паттерн для поиска вложенных словарей
-    info_plist_match = re.search(
-        r'info_plist=\{(.*?)\n\s*\}', content, re.DOTALL
-    )
+    info_plist_match = re.search(r"info_plist=\{(.*?)\n\s*\}", content, re.DOTALL)
     info_plist = {}
     if info_plist_match:
         plist_text = info_plist_match.group(1)
@@ -186,14 +180,12 @@ def parse_spec_file() -> dict[str, Any]:
             pattern = rf'["\']{re.escape(key)}["\']\s*:'
             if re.search(pattern, plist_text):
                 info_plist[key] = True
-    
+
     # Проверяем bundle_identifier в BUNDLE
-    bundle_identifier_match = re.search(
-        r'bundle_identifier\s*=\s*["\']([^"\']+)["\']', content
-    )
+    bundle_identifier_match = re.search(r'bundle_identifier\s*=\s*["\']([^"\']+)["\']', content)
     if bundle_identifier_match:
         info_plist["CFBundleIdentifier"] = True  # Считаем, что есть через bundle_identifier
-    
+
     return {
         "hiddenimports": hiddenimports,
         "datas": datas,
@@ -207,29 +199,29 @@ def check_hidden_imports(config: dict[str, Any]) -> list[str]:
     """Проверяет полноту hiddenimports."""
     errors = []
     hiddenimports = set(config["hiddenimports"])
-    
+
     # Проверка интеграций
     for integration in EXPECTED_INTEGRATIONS:
         if integration not in hiddenimports:
             errors.append(f"Отсутствует интеграция в hiddenimports: {integration}")
-    
+
     # Проверка core модулей
     for core in EXPECTED_CORE:
         if core not in hiddenimports:
             errors.append(f"Отсутствует core модуль в hiddenimports: {core}")
-    
+
     # Проверка PyObjC (хотя бы базовые)
     found_pyobjc = sum(1 for pyobjc in EXPECTED_PYOBJC if pyobjc in hiddenimports)
     if found_pyobjc < len(EXPECTED_PYOBJC):
         missing = [p for p in EXPECTED_PYOBJC if p not in hiddenimports]
         errors.append(f"Отсутствуют PyObjC модули в hiddenimports: {', '.join(missing)}")
-    
+
     # Проверка gRPC (хотя бы базовые)
     found_grpc = sum(1 for grpc in EXPECTED_GRPC if grpc in hiddenimports)
     if found_grpc < 2:  # Минимум grpc и grpc.aio
         missing = [g for g in EXPECTED_GRPC[:2] if g not in hiddenimports]
         errors.append(f"Отсутствуют gRPC модули в hiddenimports: {', '.join(missing)}")
-    
+
     return errors
 
 
@@ -237,7 +229,7 @@ def check_data_files(config: dict[str, Any]) -> list[str]:
     """Проверяет наличие необходимых ресурсов в datas."""
     errors = []
     datas = config["datas"]
-    
+
     # Проверяем наличие ожидаемых паттернов
     for source_pattern, dest_pattern in EXPECTED_DATA_PATTERNS:
         found = False
@@ -246,10 +238,8 @@ def check_data_files(config: dict[str, Any]) -> list[str]:
                 found = True
                 break
         if not found:
-            errors.append(
-                f"Отсутствует ресурс в datas: {source_pattern} -> {dest_pattern}"
-            )
-    
+            errors.append(f"Отсутствует ресурс в datas: {source_pattern} -> {dest_pattern}")
+
     return errors
 
 
@@ -257,13 +247,15 @@ def check_runtime_hooks(config: dict[str, Any]) -> list[str]:
     """Проверяет наличие runtime hooks."""
     errors = []
     runtime_hooks = config["runtime_hooks"]
-    
+
     if EXPECTED_RUNTIME_HOOK not in runtime_hooks:
         # Проверяем, есть ли хотя бы часть пути
-        found = any(EXPECTED_RUNTIME_HOOK.split("/")[-1] in hook for hook in runtime_hooks)
+        found = any(
+            EXPECTED_RUNTIME_HOOK.rsplit("/", maxsplit=1)[-1] in hook for hook in runtime_hooks
+        )
         if not found:
             errors.append(f"Отсутствует runtime hook: {EXPECTED_RUNTIME_HOOK}")
-    
+
     return errors
 
 
@@ -271,11 +263,11 @@ def check_info_plist(config: dict[str, Any]) -> list[str]:
     """Проверяет наличие обязательных ключей в Info.plist."""
     errors = []
     info_plist = config["info_plist"]
-    
+
     for key in REQUIRED_INFO_PLIST_KEYS:
         if key not in info_plist:
             errors.append(f"Отсутствует обязательный ключ в info_plist: {key}")
-    
+
     return errors
 
 
@@ -283,7 +275,7 @@ def main() -> int:
     """Главная функция."""
     print("🔍 Валидация Nexy.spec...")
     print()
-    
+
     try:
         config = parse_spec_file()
     except CheckError as e:
@@ -292,10 +284,10 @@ def main() -> int:
     except Exception as e:
         print(f"❌ Неожиданная ошибка: {type(e).__name__}: {e}")
         return 1
-    
+
     all_errors = []
     all_warnings = []
-    
+
     # 1. Проверка hiddenimports
     print("1. Проверка hiddenimports...")
     import_errors = check_hidden_imports(config)
@@ -304,9 +296,11 @@ def main() -> int:
         for err in import_errors:
             print(f"   ❌ {err}")
     else:
-        print(f"   ✅ Все необходимые модули присутствуют в hiddenimports ({len(config['hiddenimports'])} модулей)")
+        print(
+            f"   ✅ Все необходимые модули присутствуют в hiddenimports ({len(config['hiddenimports'])} модулей)"
+        )
     print()
-    
+
     # 2. Проверка datas
     print("2. Проверка datas...")
     data_errors = check_data_files(config)
@@ -315,9 +309,11 @@ def main() -> int:
         for err in data_errors:
             print(f"   ❌ {err}")
     else:
-        print(f"   ✅ Все необходимые ресурсы присутствуют в datas ({len(config['datas'])} ресурсов)")
+        print(
+            f"   ✅ Все необходимые ресурсы присутствуют в datas ({len(config['datas'])} ресурсов)"
+        )
     print()
-    
+
     # 3. Проверка runtime_hooks
     print("3. Проверка runtime_hooks...")
     hook_errors = check_runtime_hooks(config)
@@ -328,7 +324,7 @@ def main() -> int:
     else:
         print(f"   ✅ Runtime hooks настроены корректно ({len(config['runtime_hooks'])} hooks)")
     print()
-    
+
     # 4. Проверка info_plist
     print("4. Проверка info_plist...")
     plist_errors = check_info_plist(config)
@@ -337,7 +333,9 @@ def main() -> int:
         for err in plist_errors:
             print(f"   ❌ {err}")
     else:
-        print(f"   ✅ Все обязательные ключи присутствуют в info_plist ({len(config['info_plist'])} ключей)")
+        print(
+            f"   ✅ Все обязательные ключи присутствуют в info_plist ({len(config['info_plist'])} ключей)"
+        )
     print()
 
     # 5. Playwright driver hints (warning-only)
@@ -349,7 +347,7 @@ def main() -> int:
     else:
         print("   ✅ Nexy.spec содержит упоминание playwright/driver")
     print()
-    
+
     # Итоги
     if all_errors:
         print("❌ Валидация завершена с ошибками:")

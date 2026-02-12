@@ -10,11 +10,11 @@ No external dependencies. Safe for macOS packaging, signing and notarization.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 
-class SignalPattern(str, Enum):
+class SignalPattern(StrEnum):
     """Logical signal patterns to standardize user cues.
 
     - LISTEN_START: play when app enters LISTENING (user can speak now)
@@ -31,7 +31,7 @@ class SignalPattern(str, Enum):
     CANCEL = "cancel"
 
 
-class SignalKind(str, Enum):
+class SignalKind(StrEnum):
     AUDIO = "audio"
     VISUAL = "visual"
 
@@ -54,19 +54,16 @@ class SignalRequest:
 class SignalChannel(Protocol):
     """Channel is responsible for actual signal emission for a given kind."""
 
-    def can_handle(self, kind: SignalKind) -> bool:
-        ...
+    def can_handle(self, kind: SignalKind) -> bool: ...
 
-    async def emit(self, req: SignalRequest) -> None:
-        ...
+    async def emit(self, req: SignalRequest) -> None: ...
 
 
 @runtime_checkable
 class SignalService(Protocol):
     """Service accepts requests, applies policies (cooldown/priority), and dispatches to channels."""
 
-    async def emit(self, req: SignalRequest) -> None:
-        ...
+    async def emit(self, req: SignalRequest) -> None: ...
 
 
 @runtime_checkable
@@ -86,5 +83,4 @@ class AudioSink(Protocol):
         priority: int = 10,
         pattern: str | None = None,
         cue_id: str | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...

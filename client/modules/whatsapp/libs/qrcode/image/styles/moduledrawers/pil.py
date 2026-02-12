@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageDraw
+
 from qrcode.image.styles.moduledrawers.base import QRModuleDrawer
 
 if TYPE_CHECKING:
@@ -81,9 +82,7 @@ class CircleModuleDrawer(StyledPilQRModuleDrawer):
             (fake_size, fake_size),
             self.img.color_mask.back_color,
         )
-        ImageDraw.Draw(self.circle).ellipse(
-            (0, 0, fake_size, fake_size), fill=self.img.paint_color
-        )
+        ImageDraw.Draw(self.circle).ellipse((0, 0, fake_size, fake_size), fill=self.img.paint_color)
         self.circle = self.circle.resize((box_size, box_size), Image.Resampling.LANCZOS)
 
     def drawrect(self, box, is_active: bool):
@@ -115,9 +114,7 @@ class RoundedModuleDrawer(StyledPilQRModuleDrawer):
         mode = self.img.mode
         back_color = self.img.color_mask.back_color
         front_color = self.img.paint_color
-        self.SQUARE = Image.new(
-            mode, (self.corner_width, self.corner_width), front_color
-        )
+        self.SQUARE = Image.new(mode, (self.corner_width, self.corner_width), front_color)
 
         fake_width = self.corner_width * ANTIALIASING_FACTOR
         radius = self.radius_ratio * fake_width
@@ -151,9 +148,7 @@ class RoundedModuleDrawer(StyledPilQRModuleDrawer):
         sw = self.SW_ROUND if sw_rounded else self.SQUARE
         self.img._img.paste(nw, (box[0][0], box[0][1]))
         self.img._img.paste(ne, (box[0][0] + self.corner_width, box[0][1]))
-        self.img._img.paste(
-            se, (box[0][0] + self.corner_width, box[0][1] + self.corner_width)
-        )
+        self.img._img.paste(se, (box[0][0] + self.corner_width, box[0][1] + self.corner_width))
         self.img._img.paste(sw, (box[0][0], box[0][1] + self.corner_width))
 
 
@@ -205,9 +200,7 @@ class VerticalBarsDrawer(StyledPilQRModuleDrawer):
             top = self.ROUND_TOP if top_rounded else self.SQUARE
             bottom = self.ROUND_BOTTOM if bottom_rounded else self.SQUARE
             self.img._img.paste(top, (box[0][0] + self.delta, box[0][1]))
-            self.img._img.paste(
-                bottom, (box[0][0] + self.delta, box[0][1] + self.half_height)
-            )
+            self.img._img.paste(bottom, (box[0][0] + self.delta, box[0][1] + self.half_height))
 
 
 class HorizontalBarsDrawer(StyledPilQRModuleDrawer):
@@ -246,9 +239,7 @@ class HorizontalBarsDrawer(StyledPilQRModuleDrawer):
         base_draw = ImageDraw.Draw(base)
         base_draw.ellipse((0, 0, fake_width * 2, fake_height), fill=front_color)
 
-        self.ROUND_LEFT = base.resize(
-            (width, shrunken_height), Image.Resampling.LANCZOS
-        )
+        self.ROUND_LEFT = base.resize((width, shrunken_height), Image.Resampling.LANCZOS)
         self.ROUND_RIGHT = self.ROUND_LEFT.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
 
     def drawrect(self, box, is_active: "ActiveWithNeighbors"):
@@ -260,6 +251,4 @@ class HorizontalBarsDrawer(StyledPilQRModuleDrawer):
             left = self.ROUND_LEFT if left_rounded else self.SQUARE
             right = self.ROUND_RIGHT if right_rounded else self.SQUARE
             self.img._img.paste(left, (box[0][0], box[0][1] + self.delta))
-            self.img._img.paste(
-                right, (box[0][0] + self.half_width, box[0][1] + self.delta)
-            )
+            self.img._img.paste(right, (box[0][0] + self.half_width, box[0][1] + self.delta))

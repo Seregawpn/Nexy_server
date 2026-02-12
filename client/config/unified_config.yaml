@@ -230,7 +230,7 @@ integrations:
   # Permission System V2 - Pipeline Mode
   permissions_v2:
     enabled: true
-    advance_on_timeout: true
+    advance_on_timeout: false
     default_step_timeout_s: 15.0
     
     # No batching - single pipeline
@@ -469,12 +469,18 @@ speech_playback:
   channels: 1
   dtype: int16
   signal_max_age_ms: 2500
+  audio_diag_verbose: true
+  audio_diag_log_every: 50
   buffer_size: 512
   fade_in_duration: 0.1
   fade_out_duration: 0.1
   max_queue_size: 5
   playback_speed: 1.0
   volume: 0.8
+  tts_auto_gain_enabled: true
+  tts_target_peak: 0.35
+  tts_max_gain: 6.0
+  tts_min_peak_for_gain: 0.01
   auto_output_device_switch: true
 tray:
   icon_active: assets/icons/active.png

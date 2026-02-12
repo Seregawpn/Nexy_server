@@ -51,6 +51,7 @@ class TestInterruptPlayback:
     def input_integration(self, event_bus, state_manager, error_handler):
         """Создает InputProcessingIntegration для тестов"""
         from config.unified_config_loader import InputProcessingConfig, KeyboardConfig
+
         keyboard_config = KeyboardConfig(
             key_to_monitor="left_shift",
             short_press_threshold=0.1,
@@ -102,7 +103,7 @@ class TestInterruptPlayback:
         """Тест: SHORT_PRESS в PROCESSING режиме публикует interrupt.request"""
         # Устанавливаем PROCESSING режим
         state_manager.set_mode(AppMode.PROCESSING)
-        
+
         # Устанавливаем pending_session_id для имитации состояния
         # КРИТИЧНО: Используем числовой session_id (timestamp), так как _get_active_session_id() конвертирует в float
         test_session_id = 1234567890.0
@@ -110,55 +111,57 @@ class TestInterruptPlayback:
         input_integration._recording_started = False
         # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
         state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
-        
+
         # Мокируем keyboard_monitor, чтобы избежать реальной инициализации
         input_integration.keyboard_monitor = Mock()
-        
+
         # Инициализируем необходимые атрибуты
         input_integration._min_recording_duration = 0.1
-        
+
         # Собираем опубликованные события
         published_events = []
-        
+
         async def capture_event(event):
             event_type = event.get("type") if isinstance(event, dict) else None
             payload = event.get("data") if isinstance(event, dict) else event
             published_events.append((event_type, payload))
-        
+
         # Подписываемся на interrupt.request для проверки
         await event_bus.subscribe("interrupt.request", capture_event)
-        
+
         # Создаем событие SHORT_PRESS
         from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
-        
+
         short_press_event = KeyEvent(
             key="left_shift",
             event_type=KeyEventType.SHORT_PRESS,
             timestamp=1234567890.0,
             duration=0.133,
         )
-        
+
         # Вызываем обработчик SHORT_PRESS
         await input_integration._handle_short_press(short_press_event)
-        
+
         # Даем время на обработку асинхронных событий
         await asyncio.sleep(0.1)
-        
+
         # Проверяем, что interrupt.request был опубликован
         interrupt_events = [
             (event_type, payload)
             for event_type, payload in published_events
             if event_type == "interrupt.request"
         ]
-        
-        assert len(interrupt_events) > 0, f"interrupt.request должен быть опубликован. Полученные события: {published_events}"
-        
+
+        assert len(interrupt_events) > 0, (
+            f"interrupt.request должен быть опубликован. Полученные события: {published_events}"
+        )
+
         # Проверяем содержимое события
         event_type, payload = interrupt_events[0]
         if isinstance(payload, dict):
             assert str(payload.get("source", "")).startswith("keyboard")
             assert payload.get("type") == "speech_stop"
-        
+
         logger.info("✅ Тест пройден: interrupt.request опубликован при SHORT_PRESS в PROCESSING")
 
     @pytest.mark.asyncio
@@ -197,8 +200,7 @@ class TestInterruptPlayback:
             if event_type == "interrupt.request"
         ]
         assert len(interrupt_events) > 0, (
-            "interrupt.request должен публиковаться на PRESS в PROCESSING "
-            "даже без _playback_active"
+            "interrupt.request должен публиковаться на PRESS в PROCESSING даже без _playback_active"
         )
 
     @pytest.mark.asyncio
@@ -289,9 +291,7 @@ class TestInterruptPlayback:
         await asyncio.sleep(0.05)
 
         interrupt_events = [
-            payload
-            for event_type, payload in published_events
-            if event_type == "interrupt.request"
+            payload for event_type, payload in published_events if event_type == "interrupt.request"
         ]
 
         assert len(interrupt_events) == 1, (
@@ -346,14 +346,14 @@ class TestInterruptPlayback:
         mock_player.state_manager = Mock()
         mock_player.state_manager.current_state = PlaybackState.PLAYING
         mock_player.stop_playback = Mock(return_value=True)
-        
+
         speech_playback_integration._avf_player = mock_player
         # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
         # Используем числовой session_id (timestamp), так как state_manager хранит строки
         test_session_id = 1234567890.0
         state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
         speech_playback_integration._cancelled_sessions = set()
-        
+
         # Создаем событие playback.cancelled
         interrupt_event = {
             "type": "playback.cancelled",
@@ -363,18 +363,18 @@ class TestInterruptPlayback:
                 "source": "input_processing",
             },
         }
-        
+
         # Вызываем обработчик прерывания дважды (имитация дублирования)
         await speech_playback_integration._on_unified_interrupt(interrupt_event)
         await speech_playback_integration._on_unified_interrupt(interrupt_event)
-        
+
         # Проверяем, что stop_playback был вызван
         assert mock_player.stop_playback.call_count >= 1, "stop_playback должен быть вызван"
-        
+
         # Текущий guard-контракт: session помечается cancelled только если до cancel
         # уже был получен аудио-чанк (had_audio=True).
         assert str(test_session_id) not in speech_playback_integration._cancelled_sessions
-        
+
         logger.info("✅ Тест пройден: прерывание обрабатывается идемпотентно")
 
     @pytest.mark.asyncio
@@ -387,14 +387,14 @@ class TestInterruptPlayback:
         mock_player.state_manager = Mock()
         mock_player.state_manager.current_state = PlaybackState.IDLE
         mock_player.stop_playback = Mock(return_value=False)
-        
+
         speech_playback_integration._avf_player = mock_player
         # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
         # Используем числовой session_id (timestamp), так как state_manager хранит строки
         test_session_id = 1234567890.0
         state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
         speech_playback_integration._cancelled_sessions = set()
-        
+
         # Создаем событие playback.cancelled
         interrupt_event = {
             "type": "playback.cancelled",
@@ -404,15 +404,18 @@ class TestInterruptPlayback:
                 "source": "input_processing",
             },
         }
-        
+
         # Вызываем обработчик прерывания
         await speech_playback_integration._on_unified_interrupt(interrupt_event)
-        
+
         # Проверяем, что stop_playback НЕ был вызван (состояние IDLE)
         # В нашей реализации мы все равно вызываем stop_playback, но он вернет False
         # Это безопасно, так как метод идемпотентный
-        assert mock_player.stop_playback.call_count == 0 or mock_player.stop_playback.return_value == False
-        
+        assert (
+            mock_player.stop_playback.call_count == 0
+            or mock_player.stop_playback.return_value == False
+        )
+
         logger.info("✅ Тест пройден: прерывание корректно обрабатывает состояние IDLE")
 
     @pytest.mark.asyncio
@@ -425,14 +428,14 @@ class TestInterruptPlayback:
         mock_player.state_manager = Mock()
         mock_player.state_manager.current_state = PlaybackState.PLAYING
         mock_player.stop_playback = Mock(side_effect=Exception("Test error"))
-        
+
         speech_playback_integration._avf_player = mock_player
         # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
         # Используем числовой session_id (timestamp), так как state_manager хранит строки
         test_session_id = 1234567890.0
         state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
         speech_playback_integration._cancelled_sessions = set()
-        
+
         # Создаем событие playback.cancelled
         interrupt_event = {
             "type": "playback.cancelled",
@@ -442,13 +445,13 @@ class TestInterruptPlayback:
                 "source": "input_processing",
             },
         }
-        
+
         # Вызываем обработчик прерывания (не должно упасть)
         try:
             await speech_playback_integration._on_unified_interrupt(interrupt_event)
         except Exception as e:
             pytest.fail(f"Обработчик прерывания не должен выбрасывать исключения: {e}")
-        
+
         logger.info("✅ Тест пройден: прерывание корректно обрабатывает ошибки")
 
     @pytest.mark.asyncio

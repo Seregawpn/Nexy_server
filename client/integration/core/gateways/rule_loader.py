@@ -1,6 +1,7 @@
 """
 Load rules from interaction_matrix.yaml for specific gateways.
 """
+
 from __future__ import annotations
 
 from pathlib import Path as PathType
@@ -20,9 +21,12 @@ try:
 except ImportError:
     # Fallback: direct import if config is in PYTHONPATH
     import yaml
+
     def load_interaction_matrix(dev_only: bool = False) -> dict[str, Any]:
         """Fallback loader if interaction_matrix_loader not available."""
-        matrix_path = PathType(__file__).parent.parent.parent.parent / "config" / "interaction_matrix.yaml"
+        matrix_path = (
+            PathType(__file__).parent.parent.parent.parent / "config" / "interaction_matrix.yaml"
+        )
         if not matrix_path.exists():
             return {}
         try:
@@ -68,16 +72,16 @@ def _to_decision(raw: str) -> Decision:
 def load_rules_for_gateway(gateway_name: str) -> list[Rule]:
     """
     Load rules for a specific gateway from interaction_matrix.yaml.
-    
+
     Args:
         gateway_name: Name of the gateway (e.g., "decide_start_listening", "decide_permission_restart_safety")
-    
+
     Returns:
         List of Rule objects for the gateway
     """
     matrix = load_interaction_matrix(dev_only=False)  # Load in all environments
     raw_rules = matrix.get("rules", [])
-    
+
     out: list[Rule] = []
     for rr in raw_rules:
         # Match gateway name (exact or partial match)
@@ -86,12 +90,14 @@ def load_rules_for_gateway(gateway_name: str) -> list[Rule]:
             # Try partial match for gateway names like "decide_start_listening"
             if gateway_name not in rule_gateway and rule_gateway not in gateway_name:
                 continue
-        
-        out.append(Rule(
-            when=rr.get("when", {}) or {},
-            decision=_to_decision(rr.get("decision", "degrade")),
-            priority=_to_priority(rr.get("priority", "preference")),
-            gateway=gateway_name,
-        ))
-    
+
+        out.append(
+            Rule(
+                when=rr.get("when", {}) or {},
+                decision=_to_decision(rr.get("decision", "degrade")),
+                priority=_to_priority(rr.get("priority", "preference")),
+                gateway=gateway_name,
+            )
+        )
+
     return out

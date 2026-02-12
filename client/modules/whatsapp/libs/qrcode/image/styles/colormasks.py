@@ -39,9 +39,7 @@ class QRColorMask:
                 if use_cache and current_color in fg_color_cache:
                     pixels[x, y] = fg_color_cache[current_color]
                     continue
-                norm = self.extrap_color(
-                    self.back_color, self.paint_color, current_color
-                )
+                norm = self.extrap_color(self.back_color, self.paint_color, current_color)
                 if norm is not None:
                     new_color = self.interp_color(
                         self.get_bg_pixel(image, x, y),
@@ -81,7 +79,7 @@ class QRColorMask:
     # find the interpolation coefficient between two numbers
     def extrap_color(self, col1, col2, interped_color):
         normed = []
-        for c1, c2, ci in zip(col1, col2, interped_color):
+        for c1, c2, ci in zip(col1, col2, interped_color, strict=False):
             extrap = self.extrap_num(c1, c2, ci)
             if extrap is not None:
                 normed.append(extrap)
@@ -123,9 +121,7 @@ class RadialGradiantColorMask(QRColorMask):
     Fills in the foreground with a radial gradient from the center to the edge
     """
 
-    def __init__(
-        self, back_color=(255, 255, 255), center_color=(0, 0, 0), edge_color=(0, 0, 255)
-    ):
+    def __init__(self, back_color=(255, 255, 255), center_color=(0, 0, 0), edge_color=(0, 0, 255)):
         self.back_color = back_color
         self.center_color = center_color
         self.edge_color = edge_color
@@ -133,12 +129,10 @@ class RadialGradiantColorMask(QRColorMask):
 
     def get_fg_pixel(self, image, x, y):
         width, _ = image.size
-        normedDistanceToCenter = math.sqrt(
-            (x - width / 2) ** 2 + (y - width / 2) ** 2
-        ) / (math.sqrt(2) * width / 2)
-        return self.interp_color(
-            self.center_color, self.edge_color, normedDistanceToCenter
+        normedDistanceToCenter = math.sqrt((x - width / 2) ** 2 + (y - width / 2) ** 2) / (
+            math.sqrt(2) * width / 2
         )
+        return self.interp_color(self.center_color, self.edge_color, normedDistanceToCenter)
 
 
 class SquareGradiantColorMask(QRColorMask):
@@ -146,9 +140,7 @@ class SquareGradiantColorMask(QRColorMask):
     Fills in the foreground with a square gradient from the center to the edge
     """
 
-    def __init__(
-        self, back_color=(255, 255, 255), center_color=(0, 0, 0), edge_color=(0, 0, 255)
-    ):
+    def __init__(self, back_color=(255, 255, 255), center_color=(0, 0, 0), edge_color=(0, 0, 255)):
         self.back_color = back_color
         self.center_color = center_color
         self.edge_color = edge_color
@@ -156,12 +148,8 @@ class SquareGradiantColorMask(QRColorMask):
 
     def get_fg_pixel(self, image, x, y):
         width, _ = image.size
-        normedDistanceToCenter = max(abs(x - width / 2), abs(y - width / 2)) / (
-            width / 2
-        )
-        return self.interp_color(
-            self.center_color, self.edge_color, normedDistanceToCenter
-        )
+        normedDistanceToCenter = max(abs(x - width / 2), abs(y - width / 2)) / (width / 2)
+        return self.interp_color(self.center_color, self.edge_color, normedDistanceToCenter)
 
 
 class HorizontalGradiantColorMask(QRColorMask):
@@ -169,9 +157,7 @@ class HorizontalGradiantColorMask(QRColorMask):
     Fills in the foreground with a gradient sweeping from the left to the right
     """
 
-    def __init__(
-        self, back_color=(255, 255, 255), left_color=(0, 0, 0), right_color=(0, 0, 255)
-    ):
+    def __init__(self, back_color=(255, 255, 255), left_color=(0, 0, 0), right_color=(0, 0, 255)):
         self.back_color = back_color
         self.left_color = left_color
         self.right_color = right_color
@@ -187,9 +173,7 @@ class VerticalGradiantColorMask(QRColorMask):
     Fills in the forefround with a gradient sweeping from the top to the bottom
     """
 
-    def __init__(
-        self, back_color=(255, 255, 255), top_color=(0, 0, 0), bottom_color=(0, 0, 255)
-    ):
+    def __init__(self, back_color=(255, 255, 255), top_color=(0, 0, 0), bottom_color=(0, 0, 255)):
         self.back_color = back_color
         self.top_color = top_color
         self.bottom_color = bottom_color
@@ -206,9 +190,7 @@ class ImageColorMask(QRColorMask):
     path or passed by image object.
     """
 
-    def __init__(
-        self, back_color=(255, 255, 255), color_mask_path=None, color_mask_image=None
-    ):
+    def __init__(self, back_color=(255, 255, 255), color_mask_path=None, color_mask_image=None):
         self.back_color = back_color
         if color_mask_image:
             self.color_img = color_mask_image

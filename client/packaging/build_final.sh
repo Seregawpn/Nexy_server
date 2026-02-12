@@ -82,6 +82,7 @@ trap 'handle_error $LINENO' ERR
 
 # Включаем остановку при ошибках ПОСЛЕ установки trap
 set -e
+set -o pipefail
 
 # Записываем начало сборки
 log_to_file "=========================================="
@@ -247,6 +248,10 @@ fi
 
 # Read version from unified_config.yaml (single source of truth)
 VERSION=$("$BUILD_PYTHON" -c "import yaml; print(yaml.safe_load(open('$CLIENT_DIR/config/unified_config.yaml'))['app']['version'])")
+
+# Стейджинг Universal 2 бинарников до preflight (single source for resources/* binaries)
+echo -e "${YELLOW}🔨 Стейджинг Universal 2 бинарников (preflight)...${NC}"
+"$BUILD_PYTHON" "$CLIENT_DIR/scripts/stage_universal_binaries.py" || error "Стейджинг бинарников не удался"
 
 # ============================================================================
 # PREFLIGHT ПРОВЕРКИ (обязательные перед сборкой)
@@ -526,10 +531,6 @@ if ! bash "$CLIENT_DIR/scripts/regenerate_proto.sh" --check; then
     exit 1
 fi
 echo -e "${GREEN}✅ pb2 файлы актуальны${NC}"
-
-# Стейджинг Universal 2 бинарников из vendor_binaries
-echo -e "${YELLOW}🔨 Стейджинг Universal 2 бинарников...${NC}"
-"$BUILD_PYTHON" "$CLIENT_DIR/scripts/stage_universal_binaries.py" || error "Стейджинг бинарников не удался"
 
 # Проверяем зависимости и бинарники до сборки
 echo -e "${YELLOW}🔍 Проверяем окружение и универсальные бинарники...${NC}"

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """
 Minimal Quartz keyboard monitor for macOS.
 
@@ -17,8 +18,8 @@ import logging
 import queue
 import threading
 import time
+from typing import Any, Callable
 import uuid
-from typing import Any, Callable, Dict, Optional
 
 try:
     from Quartz import (  # type: ignore
@@ -32,9 +33,10 @@ try:
         CGEventTapEnable,
         CGEventTapIsEnabled,
         kCFRunLoopCommonModes,
-        kCGEventFlagMaskControl,
         kCGEventFlagMaskAlternate,
         kCGEventFlagMaskCommand,
+        kCGEventFlagMaskControl,
+        kCGEventFlagMaskShift,
         kCGEventFlagsChanged,
         kCGEventKeyDown,
         kCGEventKeyUp,
@@ -42,16 +44,18 @@ try:
         kCGEventTapDisabledByUserInput,
         kCGEventTapOptionDefault,
         kCGEventTapOptionListenOnly,
-        kCGHIDEventTap,
         kCGHeadInsertEventTap,
+        kCGHIDEventTap,
         kCGKeyboardEventKeycode,
     )
 
     QUARTZ_AVAILABLE = True
 except Exception:
     QUARTZ_AVAILABLE = False
+    # Define fallback constants to avoid ReferenceError if import fails but code is parsed
+    kCGEventFlagMaskShift = 1 << 17
 
-from ..types import KeyEvent, KeyEventType, KeyboardConfig
+from ..types import KeyboardConfig, KeyEvent, KeyEventType
 
 logger = logging.getLogger(__name__)
 
@@ -83,19 +87,19 @@ class QuartzKeyboardMonitor:
             self.keyboard_available = False
 
         self.key_pressed = False
-        self.press_start_time: Optional[float] = None
+        self.press_start_time: float | None = None
         self.last_event_time = 0.0
         self._long_sent = False
 
         self._control_pressed = False
         self._n_pressed = False
         self._combo_active = False
-        self._combo_start_time: Optional[float] = None
-        self._combo_press_id: Optional[str] = None
-        self._pending_release_deadline: Optional[float] = None
-        self._pending_release_reason: Optional[str] = None
+        self._combo_start_time: float | None = None
+        self._combo_press_id: str | None = None
+        self._pending_release_deadline: float | None = None
+        self._pending_release_reason: str | None = None
         self._release_confirm_delay_sec: float = 0.09
-        self._last_n_keydown_ts: Optional[float] = None
+        self._last_n_keydown_ts: float | None = None
         self._stale_n_pressed_reset_sec: float = 0.8
 
         self._previous_modifier_pressed = False
@@ -105,17 +109,17 @@ class QuartzKeyboardMonitor:
         self._tap_source = None
         self._tap_recovery_count = 0
 
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self.event_callbacks: Dict[KeyEventType, Callable] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.event_callbacks: dict[KeyEventType, Callable[..., Any]] = {}
 
         self.state_lock = threading.RLock()
         self.stop_event = threading.Event()
-        self.hold_monitor_thread: Optional[threading.Thread] = None
-        self.callback_dispatch_thread: Optional[threading.Thread] = None
-        self._callback_queue: "queue.Queue[Optional[tuple[Callable, KeyEvent]]]" = queue.Queue()
+        self.hold_monitor_thread: threading.Thread | None = None
+        self.callback_dispatch_thread: threading.Thread | None = None
+        self._callback_queue: "queue.Queue[tuple[Callable[..., Any], KeyEvent] | None]" = queue.Queue()
 
     # ---------- Public API ----------
-    def register_callback(self, event_type, callback: Callable):
+    def register_callback(self, event_type, callback: Callable[..., Any]):
         if isinstance(event_type, str):
             try:
                 event_type = KeyEventType(event_type)
@@ -142,7 +146,9 @@ class QuartzKeyboardMonitor:
                 try:
                     if event_type in (kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput):
                         self._tap_recovery_count += 1
-                        logger.warning("Quartz tap disabled, recovery #%s", self._tap_recovery_count)
+                        logger.warning(
+                            "Quartz tap disabled, recovery #%s", self._tap_recovery_count
+                        )
                         self._force_release_if_active(reason="tap_disabled")
                         CGEventTapEnable(self._tap, True)
                         return None
@@ -173,7 +179,9 @@ class QuartzKeyboardMonitor:
 
             self.stop_event.clear()
             self._start_callback_dispatcher()
-            self.hold_monitor_thread = threading.Thread(target=self._run_hold_monitor, name="QuartzHoldMonitor", daemon=True)
+            self.hold_monitor_thread = threading.Thread(
+                target=self._run_hold_monitor, name="QuartzHoldMonitor", daemon=True
+            )
             self.hold_monitor_thread.start()
 
             self.is_monitoring = True
@@ -209,9 +217,9 @@ class QuartzKeyboardMonitor:
                 pass
             self._tap = None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         with self.state_lock:
-            status: Dict[str, Any] = {
+            status: dict[str, Any] = {
                 "is_monitoring": self.is_monitoring,
                 "keyboard_available": self.keyboard_available,
                 "fallback_mode": self.fallback_mode,
@@ -247,7 +255,11 @@ class QuartzKeyboardMonitor:
     def _schedule_pending_release_locked(self, now: float, reason: str):
         self._pending_release_deadline = now + self._release_confirm_delay_sec
         self._pending_release_reason = reason
-        logger.debug("combo pending release (%s), confirm_delay=%.3fs", reason, self._release_confirm_delay_sec)
+        logger.debug(
+            "combo pending release (%s), confirm_delay=%.3fs",
+            reason,
+            self._release_confirm_delay_sec,
+        )
 
     def _finalize_pending_release_if_due_locked(self, now: float):
         if self._pending_release_deadline is None:
@@ -312,7 +324,11 @@ class QuartzKeyboardMonitor:
 
         if event_type == kCGEventFlagsChanged:
             flags = CGEventGetFlags(event)
-            blocked_by_modifiers = bool(flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand))
+            # Strict chord policy: ANY non-control modifier (Shift, Command, Option/Alt) blocks the combo.
+            blocked_by_modifiers = bool(
+                flags
+                & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
+            )
             keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
             if keycode in self.CONTROL_KEYCODES:
                 control_pressed = bool(flags & kCGEventFlagMaskControl)
@@ -322,11 +338,7 @@ class QuartzKeyboardMonitor:
                     self.last_event_time = now
                     # Healing for lost N keyup: stale n_pressed must not re-activate combo
                     # on control flagsChanged without a recent real N keydown edge.
-                    if (
-                        self._control_pressed
-                        and self._n_pressed
-                        and (not self._combo_active)
-                    ):
+                    if self._control_pressed and self._n_pressed and (not self._combo_active):
                         n_age = now - self._last_n_keydown_ts if self._last_n_keydown_ts else None
                         if n_age is None or n_age > self._stale_n_pressed_reset_sec:
                             logger.debug(
@@ -341,7 +353,9 @@ class QuartzKeyboardMonitor:
                     if self._combo_active and (not self._control_pressed or not self._n_pressed):
                         # flagsChanged может прислать ложный "up" при подавлении событий.
                         # Подтверждаем release с задержкой.
-                        self._schedule_pending_release_locked(now, reason="control_flags_changed_confirmed")
+                        self._schedule_pending_release_locked(
+                            now, reason="control_flags_changed_confirmed"
+                        )
                 # Control сам по себе не блокируем: это ломает обычные shortcuts/input.
                 # Combo suppression делаем только на N key events ниже.
                 return event
@@ -357,38 +371,64 @@ class QuartzKeyboardMonitor:
                 return event
 
             flags = CGEventGetFlags(event)
-            blocked_by_modifiers = bool(flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand))
+            # Strict chord policy again on key event to be safe against race conditions
+            blocked_by_modifiers = bool(
+                flags
+                & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
+            )
             with self.state_lock:
                 self._combo_blocked_by_modifiers = blocked_by_modifiers
+                control_in_event = bool(flags & kCGEventFlagMaskControl)
                 if event_type == kCGEventKeyDown:
                     if (now - self.last_event_time) < self.event_cooldown and self._n_pressed:
-                        # Debounce только внутри активной combo; иначе не блокируем ввод N.
-                        return None if (self._combo_active or (self._control_pressed and not self._combo_blocked_by_modifiers)) else event
+                        # Debounce only if active; otherwise pass-through.
+                        should_suppress = self._combo_active or (
+                            control_in_event and not self._combo_blocked_by_modifiers
+                        )
+                        if should_suppress:
+                            logger.debug(
+                                "combo suppress: reason=debounce active=%s control_in_event=%s blocked=%s",
+                                self._combo_active,
+                                control_in_event,
+                                self._combo_blocked_by_modifiers,
+                            )
+                            return None
+                        return event
                     self._n_pressed = True
                     self._last_n_keydown_ts = now
                     self._clear_pending_release_locked()
                     self.last_event_time = now
-                    control_in_event = bool(flags & kCGEventFlagMaskControl)
                     if self._control_pressed and (not control_in_event):
                         logger.debug(
                             "combo activation blocked: stale control state (control_in_event=%s, control_state=%s)",
                             control_in_event,
                             self._control_pressed,
                         )
-                    if self._control_pressed and control_in_event and self._n_pressed and not self._combo_blocked_by_modifiers:
+                    if (
+                        control_in_event
+                        and self._n_pressed
+                        and not self._combo_blocked_by_modifiers
+                    ):
+                        self._control_pressed = True
                         self._activate_combo_locked(now)
+                        logger.debug(
+                            "combo suppress: reason=strict_ctrl_n control_in_event=%s blocked=%s",
+                            control_in_event,
+                            self._combo_blocked_by_modifiers,
+                        )
                         return None
-                    # Одиночная N должна проходить в систему.
+                    # Single N press pass-through.
                     return event
                 else:
                     self._n_pressed = False
                     self.last_event_time = now
                     if self._combo_active:
-                        # Даже если Control сейчас "не нажат", n_keyup тоже может быть ложным.
-                        # Подтверждаем с задержкой в любом случае.
+                        # Even if Control is "up", n_keyup might be transient or fake if suppressed.
+                        # Confirm release with delay.
                         self._schedule_pending_release_locked(now, reason="n_keyup_confirmed")
+                        logger.debug("combo suppress: reason=n_keyup_confirm combo_active=true")
                         return None
-            # N keyup без активной combo не блокируем.
+            # N keyup without active combo pass-through.
             return event
 
         return event
@@ -418,7 +458,9 @@ class QuartzKeyboardMonitor:
                             timestamp=now,
                         ),
                     )
-                elif (not modifier_pressed) and self._previous_modifier_pressed and self.key_pressed:
+                elif (
+                    (not modifier_pressed) and self._previous_modifier_pressed and self.key_pressed
+                ):
                     duration = now - (self.press_start_time or now)
                     self.key_pressed = False
                     self.press_start_time = None
@@ -523,7 +565,9 @@ class QuartzKeyboardMonitor:
                                 event_type=KeyEventType.LONG_PRESS,
                                 timestamp=time.time(),
                                 duration=duration,
-                                data={"press_id": self._combo_press_id} if self._is_combo and self._combo_press_id else None,
+                                data={"press_id": self._combo_press_id}
+                                if self._is_combo and self._combo_press_id
+                                else None,
                             )
                             self._trigger_event(KeyEventType.LONG_PRESS, duration, ev)
             except Exception as e:
@@ -587,7 +631,9 @@ class QuartzKeyboardMonitor:
             callback, event = item
             self._run_callback(callback, event)
 
-    def _trigger_event(self, event_type: KeyEventType, duration: float, event: Optional[KeyEvent] = None):
+    def _trigger_event(
+        self, event_type: KeyEventType, duration: float, event: KeyEvent | None = None
+    ):
         callback = self.event_callbacks.get(event_type)
         if not callback:
             return
@@ -600,7 +646,7 @@ class QuartzKeyboardMonitor:
             )
         self._callback_queue.put((callback, event))
 
-    def _run_callback(self, callback: Callable, event: KeyEvent):
+    def _run_callback(self, callback: Callable[..., Any], event: KeyEvent):
         try:
             if asyncio.iscoroutinefunction(callback):
                 if self._loop and self._loop.is_running():

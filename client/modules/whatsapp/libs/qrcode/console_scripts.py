@@ -6,12 +6,12 @@ When stdout is a tty the QR Code is printed to the terminal and when stdout is
 a pipe to a file an image is written. The default image format is PNG.
 """
 
+from collections.abc import Iterable
+from importlib import metadata
 import optparse
 import os
 import sys
-from typing import NoReturn, Optional
-from collections.abc import Iterable
-from importlib import metadata
+from typing import NoReturn
 
 import qrcode
 from qrcode.image.base import BaseImage, DrawerAliases
@@ -82,8 +82,7 @@ def main(args=None):
     )
     parser.add_option(
         "--output",
-        help="The output file. If not specified, the image is sent to "
-        "the standard output.",
+        help="The output file. If not specified, the image is sent to the standard output.",
     )
 
     opts, args = parser.parse_args(args)
@@ -122,16 +121,13 @@ def main(args=None):
             return
 
         kwargs = {}
-        aliases: Optional[DrawerAliases] = getattr(
-            qr.image_factory, "drawer_aliases", None
-        )
+        aliases: DrawerAliases | None = getattr(qr.image_factory, "drawer_aliases", None)
         if opts.factory_drawer:
             if not aliases:
                 raise_error("The selected factory has no drawer aliases.")
             if opts.factory_drawer not in aliases:
                 raise_error(
-                    f"{opts.factory_drawer} factory drawer not found."
-                    f" Expected {commas(aliases)}"
+                    f"{opts.factory_drawer} factory drawer not found. Expected {commas(aliases)}"
                 )
             drawer_cls, drawer_kwargs = aliases[opts.factory_drawer]
             kwargs["module_drawer"] = drawer_cls(**drawer_kwargs)
@@ -156,15 +152,14 @@ def get_drawer_help() -> str:
             image = get_factory(module)
         except ImportError:  # pragma: no cover
             continue
-        aliases: Optional[DrawerAliases] = getattr(image, "drawer_aliases", None)
+        aliases: DrawerAliases | None = getattr(image, "drawer_aliases", None)
         if not aliases:
             continue
         factories = help.setdefault(commas(aliases), set())
         factories.add(alias)
 
     return ". ".join(
-        f"For {commas(factories, 'and')}, use: {aliases}"
-        for aliases, factories in help.items()
+        f"For {commas(factories, 'and')}, use: {aliases}" for aliases, factories in help.items()
     )
 
 

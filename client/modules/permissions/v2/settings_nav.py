@@ -30,15 +30,15 @@ class SettingsNavigator:
     def open(self, target: str) -> bool:
         """
         Open System Settings to the specified target page.
-        
+
         Args:
             target: One of the SETTINGS_URLS keys
-            
+
         Returns:
             True if the open command succeeded
         """
         url = SETTINGS_URLS.get(target, SETTINGS_URLS["privacy_and_security"])
-        
+
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -60,12 +60,17 @@ class SettingsNavigator:
                         result.returncode,
                     )
             except subprocess.TimeoutExpired:
-                logger.warning("[SETTINGS_NAV] Timeout opening Settings: %s (attempt %d/%d)", target, attempt + 1, max_retries)
+                logger.warning(
+                    "[SETTINGS_NAV] Timeout opening Settings: %s (attempt %d/%d)",
+                    target,
+                    attempt + 1,
+                    max_retries,
+                )
             except Exception as e:
                 logger.error("[SETTINGS_NAV] Error opening Settings: %s - %s", target, e)
-            
+
             # Wait before retry, but not after the last attempt
             if attempt < max_retries - 1:
                 time.sleep(0.5)
-                
+
         return False

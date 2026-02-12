@@ -19,8 +19,12 @@
 
 | name | type | owner | default | scope | kill_switch | description |
 |------|------|-------|---------|-------|-------------|-------------|
-| `NEXY_FEATURE_FIRST_RUN_V2` | feature | permissions | true | client | - | Включить систему первого запуска (v2) |
-| `NEXY_FEATURE_PERMISSION_RESTART_V2` | feature | permissions | true | client | - | Включить автоматический перезапуск после разрешений (v2) |
+| `NEXY_FEATURE_FIRST_RUN_V2` | feature | permissions | true | client | - | DEPRECATED: legacy env feature, runtime decision не используется (owner: `integrations.permissions_v2.enabled`) |
+| `NEXY_FEATURE_PERMISSION_RESTART_V2` | feature | permissions | true | client | - | DEPRECATED: legacy env feature, runtime decision не используется (owner: `integrations.permissions_v2.restart.*`) |
+| `integrations.permissions_v2.enabled` | feature | permissions | true | client | - | Канонический флаг включения first-run pipeline v2 (единственный owner restart decision) |
+| `integrations.permissions_v2.advance_on_timeout` | feature | permissions | true | client | - | Timebox-проход шагов first-run (15s на шаг, pipeline не блокируется) |
+| `integrations.permissions_v2.restart.require_needs_restart` | feature | permissions | false | client | - | Политика single restart после pipeline (false = restart не зависит от per-step needs_restart) |
+| `integrations.permission_restart.enabled` | feature | permissions | true | client | - | Legacy integration switch; при `permissions_v2.enabled=true` runtime restart path заморожен |
 | `NEXY_DISABLE_AUTO_RESTART` | kill_switch | permissions | false | client | - | Dry-run mode (перезапуск не выполняется, env переменная) |
 | `NEXY_FEATURE_AVFOUNDATION_AUDIO_V2` | feature | audio | false | client | `NEXY_KS_AVFOUNDATION_AUDIO_V2` | Включить AVFoundation аудиосистему (master switch) |
 | `NEXY_FEATURE_AVFOUNDATION_INPUT_MONITOR_V2` | feature | audio | false | client | `NEXY_KS_AVFOUNDATION_INPUT_MONITOR_V2` | Включить AVFoundation мониторинг input устройств |

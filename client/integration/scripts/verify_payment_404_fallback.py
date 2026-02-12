@@ -2,6 +2,7 @@
 """
 Verification script for PaymentIntegration 404 Fallback.
 """
+
 import asyncio
 from pathlib import Path
 import sys
@@ -11,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # Add project root and client directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
 sys.path.append(str(Path(__file__).parent.parent.parent.parent / "client"))
+
 
 # Mock EventBus
 class MockEventBus:
@@ -28,16 +30,20 @@ class MockEventBus:
         print(f"[MockEventBus] Publishing {topic}: {data}")
         self.published_events.append((topic, data))
 
+
 class MockStateManager:
     pass
+
 
 class MockErrorHandler:
     pass
 
+
 async def main():
     print("🚀 Verifying PaymentIntegration 404 Fallback...")
-    
+
     import importlib.util
+
     file_path = Path(__file__).parent.parent / "integrations" / "payment_integration.py"
     spec = importlib.util.spec_from_file_location("payment_integration", file_path)
     if spec is None or spec.loader is None:
@@ -52,22 +58,20 @@ async def main():
     error_handler = MockErrorHandler()
 
     integration = PaymentIntegration(
-        event_bus=event_bus,
-        state_manager=state_manager,
-        error_handler=error_handler
+        event_bus=event_bus, state_manager=state_manager, error_handler=error_handler
     )
-    
+
     # Inject Hardware ID
     integration._hardware_id = "test-hardware-id"
 
     # Mock open_buy_subscription to verify/intercept the call
     integration.open_buy_subscription = AsyncMock()
-    
+
     # Mock aiohttp
-    with patch('aiohttp.ClientSession') as MockSession:
+    with patch("aiohttp.ClientSession") as MockSession:
         mock_session_instance = MagicMock()
         MockSession.return_value.__aenter__.return_value = mock_session_instance
-        
+
         # Mock Response
         mock_resp = AsyncMock()
         # SIMULATE 404
@@ -76,27 +80,28 @@ async def main():
 
         print("\n[1] Calling open_manage_subscription (expecting 404)...")
         await integration.open_manage_subscription()
-        
+
         # Check if open_buy_subscription was called
         if integration.open_buy_subscription.called:
-             print("✅ Success: open_buy_subscription was called via fallback!")
+            print("✅ Success: open_buy_subscription was called via fallback!")
         else:
-             print("❌ Failure: open_buy_subscription was NOT called.")
-             sys.exit(1)
-             
+            print("❌ Failure: open_buy_subscription was NOT called.")
+            sys.exit(1)
+
         # Check notification
         has_notification = False
         for topic, data in event_bus.published_events:
-            if topic == "system.notification" and "Redirecting" in data.get('message', ''):
+            if topic == "system.notification" and "Redirecting" in data.get("message", ""):
                 has_notification = True
                 print("✅ Success: Redirect notification published.")
                 break
-        
+
         if not has_notification:
             print("❌ Failure: Notification not found.")
             sys.exit(1)
 
     print("\n✅ Verification Passed!")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

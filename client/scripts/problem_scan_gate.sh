@@ -31,7 +31,7 @@ if [ "$TOTAL_ISSUES" -lt 0 ] || [ "$BLOCKING_ISSUES" -lt 0 ]; then
   exit 1
 fi
 
-REQUIRE_BASEDPYRIGHT_IN_SCAN="${REQUIRE_BASEDPYRIGHT_IN_SCAN:-false}"
+REQUIRE_BASEDPYRIGHT_IN_SCAN="${REQUIRE_BASEDPYRIGHT_IN_SCAN:-true}"
 if [ "$REQUIRE_BASEDPYRIGHT_IN_SCAN" = "true" ] && [ "$BASEDPYRIGHT_STATUS" != "ok" ]; then
   echo "[ERROR] basedpyright scan is required but status is '$BASEDPYRIGHT_STATUS'"
   exit 1

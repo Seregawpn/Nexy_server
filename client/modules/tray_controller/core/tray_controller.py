@@ -5,89 +5,97 @@
 import asyncio
 import logging
 import threading
-from typing import Optional, Callable, Dict, Any
-from .tray_types import TrayStatus, TrayConfig, TrayMenu, TrayMenuItem, TrayEvent
-from .config import TrayConfigManager
-from ..macos.tray_icon import MacOSTrayIcon
-from ..macos.menu_handler import MacOSTrayMenu
+from typing import Any, Callable
+
 from config.unified_config_loader import UnifiedConfigLoader
+
+from ..macos.menu_handler import MacOSTrayMenu
+from ..macos.tray_icon import MacOSTrayIcon
+from .config import TrayConfigManager
+from .tray_types import TrayMenu, TrayMenuItem, TrayStatus
 
 logger = logging.getLogger(__name__)
 
+
 class TrayController:
     """Основной контроллер трея"""
-    
-    def __init__(self, config_manager: Optional[TrayConfigManager] = None):
+
+    def __init__(self, config_manager: TrayConfigManager | None = None):
         self.config_manager = config_manager or TrayConfigManager()
         self.config = self.config_manager.get_config()
-        
+
         # Компоненты
-        self.tray_icon: Optional[MacOSTrayIcon] = None
-        self.tray_menu: Optional[MacOSTrayMenu] = None
-        
+        self.tray_icon: MacOSTrayIcon | None = None
+        self.tray_menu: MacOSTrayMenu | None = None
+
         # Состояние
         self.current_status = TrayStatus.SLEEPING
         self.is_running = False
-        self.event_callbacks: Dict[str, Callable] = {}
-        
+        self.event_callbacks: dict[str, Callable[..., Any]] = {}
+
         # Поток для macOS приложения
-        self._menu_thread: Optional[threading.Thread] = None
+        self._menu_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         # Loop для dispatch событий из rumps callback (должен совпадать с EventBus loop)
-        self._dispatch_loop: Optional[asyncio.AbstractEventLoop] = None
-    
+        self._dispatch_loop: asyncio.AbstractEventLoop | None = None
+
     async def initialize(self) -> bool:
         """Инициализация контроллера трея"""
         try:
             logger.info("🔧 Инициализация TrayController")
             # Fallback loop (может быть переопределён через set_dispatch_loop из интеграции).
             self._dispatch_loop = asyncio.get_running_loop()
-            
+
             # Создаем компоненты
-            self.tray_icon = MacOSTrayIcon(
-                status=self.current_status,
-                size=self.config.icon_size
-            )
-            
+            self.tray_icon = MacOSTrayIcon(status=self.current_status, size=self.config.icon_size)
+
             self.tray_menu = MacOSTrayMenu("")
-            
+
             # Создаем базовое меню
             await self._create_default_menu()
-            
+
             # Настраиваем обработчики событий
             self._setup_event_handlers()
-            
+
             logger.info("✅ TrayController инициализирован")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации TrayController: {e}")
             return False
-    
+
     async def start(self) -> bool:
         """Запуск контроллера трея"""
         try:
             if self.is_running:
                 logger.warning("TrayController уже запущен")
                 return True
-            
+
             logger.info("🚀 Запуск TrayController")
-            
+
             # Создаем иконку
-            icon_path = self.tray_icon.create_icon_file(self.current_status)
-            if not icon_path:
-                logger.error("❌ Не удалось создать иконку")
+            if self.tray_icon:
+                icon_path = self.tray_icon.create_icon_file(self.current_status)
+                if not icon_path:
+                    logger.error("❌ Не удалось создать иконку")
+                    return False
+            else:
+                logger.error("❌ tray_icon is None")
                 return False
-            
+
             # Создаем приложение
-            app = self.tray_menu.create_app(icon_path)
-            if not app:
-                logger.error("❌ Не удалось создать приложение трея")
+            if self.tray_menu:
+                app = self.tray_menu.create_app(icon_path)
+                if not app:
+                    logger.error("❌ Не удалось создать приложение трея")
+                    return False
+                
+                # Сохраняем приложение для использования в главном потоке
+                self.tray_menu.app = app
+            else:
+                logger.error("❌ tray_menu is None")
                 return False
-            
-            # Сохраняем приложение для использования в главном потоке
-            self.tray_menu.app = app
-            
+
             # После создания rumps.App меню было очищено внутри create_app();
             # пересоздаём дефолтное меню (Status/Output/Quit)
             try:
@@ -99,70 +107,70 @@ class TrayController:
             logger.info("✅ TrayController готов к запуску")
             logger.info("ℹ️ Для отображения иконки запустите app.run() в главном потоке")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка запуска TrayController: {e}")
             return False
-    
+
     async def stop(self) -> bool:
         """Остановка контроллера трея"""
         try:
             if not self.is_running:
                 logger.warning("TrayController не запущен")
                 return True
-            
+
             logger.info("⏹️ Остановка TrayController")
-            
+
             # Останавливаем меню
             if self.tray_menu:
                 self.tray_menu.quit()
-            
+
             # Останавливаем поток
             self._stop_event.set()
             if self._menu_thread and self._menu_thread.is_alive():
                 self._menu_thread.join(timeout=2.0)
-            
+
             # Очищаем ресурсы
             if self.tray_icon:
                 self.tray_icon.cleanup()
-            
+
             self.is_running = False
             logger.info("✅ TrayController остановлен")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка остановки TrayController: {e}")
             return False
-    
+
     async def update_status(self, status: TrayStatus) -> bool:
         """Обновить статус трея"""
         try:
             if not self.is_running:
                 logger.warning("TrayController не запущен")
                 return False
-            
+
             logger.info(f"🔄 Обновление статуса трея: {self.current_status.value} → {status.value}")
-            
+
             # Обновляем иконку
             if self.tray_icon:
                 icon_path = self.tray_icon.create_icon_file(status)
                 if icon_path and self.tray_menu:
                     self.tray_menu.update_icon(icon_path)
-            
+
             self.current_status = status
-            
+
             # Публикуем событие
-            await self._publish_event("status_changed", {
-                "status": status.value,
-                "previous_status": self.current_status.value
-            })
-            
+            await self._publish_event(
+                "status_changed",
+                {"status": status.value, "previous_status": self.current_status.value},
+            )
+
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка обновления статуса трея: {e}")
             return False
-    
+
     async def show_notification(self, title: str, message: str, subtitle: str = ""):
         """Показать уведомление"""
         try:
@@ -186,94 +194,84 @@ class TrayController:
                 self.tray_menu.update_output_device(device_name)
         except Exception as e:
             logger.error(f"❌ Ошибка обновления пункта меню Output: {e}")
-    
-    def set_event_callback(self, event_type: str, callback: Callable):
+
+    def set_event_callback(self, event_type: str, callback: Callable[..., Any]):
         """Установить обработчик событий"""
         self.event_callbacks[event_type] = callback
 
     def set_dispatch_loop(self, loop: asyncio.AbstractEventLoop | None):
         """Установить loop для thread-safe dispatch из UI callback."""
         self._dispatch_loop = loop
-    
+
     async def _create_default_menu(self):
         """Создать меню по умолчанию"""
         try:
             menu_items = [
-                TrayMenuItem(
-                    title="Nexy AI Assistant",
-                    enabled=False
-                ),
+                TrayMenuItem(title="Nexy AI Assistant", enabled=False),
                 TrayMenuItem(title="", separator=True),
-                TrayMenuItem(
-                    title="Status: Waiting",
-                    enabled=False
-                ),
-                TrayMenuItem(
-                    title="Output: Unknown",
-                    enabled=False
-                ),
+                TrayMenuItem(title="Status: Waiting", enabled=False),
+                TrayMenuItem(title="Output: Unknown", enabled=False),
                 TrayMenuItem(title="", separator=True),
             ]
-            
+
             # Add Manage Subscription only if payment feature is enabled
             loader = UnifiedConfigLoader.get_instance()
-            payment_config = loader.get_feature_config('payment')
-            if payment_config.get('enabled', True):
-                menu_items.append(TrayMenuItem(
-                    title="Manage Subscription...",
-                    action=self._on_manage_subscription_clicked
-                ))
-            
-            menu_items.extend([
-                TrayMenuItem(
-                    title="Check for Updates...",
-                    action=self._on_check_updates_clicked
-                ),
-                TrayMenuItem(title="", separator=True),
-                TrayMenuItem(
-                    title="Quit",
-                    action=self._on_quit_clicked
+            payment_config = loader.get_feature_config("payment")
+            if payment_config.get("enabled", True):
+                menu_items.append(
+                    TrayMenuItem(
+                        title="Manage Subscription...", action=self._on_manage_subscription_clicked
+                    )
                 )
-            ])
-            
+
+            menu_items.extend(
+                [
+                    TrayMenuItem(
+                        title="Check for Updates...", action=self._on_check_updates_clicked
+                    ),
+                    TrayMenuItem(title="", separator=True),
+                    TrayMenuItem(title="Quit", action=self._on_quit_clicked),
+                ]
+            )
+
             menu = TrayMenu(items=menu_items)
-            
+
             if self.tray_menu:
                 self.tray_menu.update_menu(menu)
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка создания меню по умолчанию: {e}")
-    
+
     def _setup_event_handlers(self):
         """Настроить обработчики событий"""
         if self.tray_menu:
             self.tray_menu.set_status_callback("icon_click", self._on_icon_clicked)
             self.tray_menu.set_status_callback("icon_right_click", self._on_icon_right_clicked)
-    
+
     def _on_icon_clicked(self, sender):
         """Обработчик клика по иконке"""
         asyncio.create_task(self._publish_event("icon_clicked", {}))
-    
+
     def _on_icon_right_clicked(self, sender):
         """Обработчик правого клика по иконке"""
         asyncio.create_task(self._publish_event("icon_right_clicked", {}))
-    
+
     def _on_settings_clicked(self, sender):
         """Обработчик клика по настройкам"""
         asyncio.create_task(self._publish_event("settings_clicked", {}))
-    
+
     def _on_check_updates_clicked(self, sender):
         """Обработчик клика по проверке обновлений"""
         asyncio.create_task(self._publish_event("updater.check_manual", {}))
-        
+
     def _on_manage_subscription_clicked(self, sender):
         """Обработчик клика по управлению подпиской"""
         asyncio.create_task(self._publish_event("ui.action.manage_subscription", {}))
-    
+
     def _on_about_clicked(self, sender):
         """Обработчик клика по 'О программе'"""
         asyncio.create_task(self._publish_event("about_clicked", {}))
-    
+
     def _on_quit_clicked(self, sender):
         """Обработчик клика по выходу"""
         # 1) Сообщаем слушателям (например, интеграции), что пользователь инициировал выход.
@@ -286,6 +284,7 @@ class TrayController:
                     self._publish_event("quit_clicked", {}),
                     self._dispatch_loop,
                 )
+
                 def _log_quit_dispatch_result(done_fut):
                     try:
                         done_fut.result()
@@ -297,15 +296,17 @@ class TrayController:
                 try:
                     asyncio.create_task(self._publish_event("quit_clicked", {}))
                 except RuntimeError as exc:
-                    logger.warning("⚠️ quit_clicked event was not dispatched (no running loop): %s", exc)
+                    logger.warning(
+                        "⚠️ quit_clicked event was not dispatched (no running loop): %s", exc
+                    )
 
             # 2) Завершаем приложение через rumps
             if self.tray_menu:
                 self.tray_menu.quit()
         except Exception as e:
             logger.debug(f"⚠️ Error in _on_quit_clicked: {e}")
-    
-    async def _publish_event(self, event_type: str, data: Dict[str, Any]):
+
+    async def _publish_event(self, event_type: str, data: dict[str, Any]):
         """Публиковать событие"""
         try:
             if event_type in self.event_callbacks:
@@ -316,7 +317,7 @@ class TrayController:
                     callback(event_type, data)
         except Exception as e:
             logger.error(f"❌ Ошибка публикации события {event_type}: {e}")
-    
+
     def _run_menu_thread(self):
         """Запустить меню в отдельном потоке"""
         try:
@@ -324,24 +325,24 @@ class TrayController:
                 # rumps должен запускаться в главном потоке
                 # Здесь мы только подготавливаем приложение
                 logger.info("ℹ️ Приложение rumps подготовлено для запуска в главном потоке")
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка в потоке меню: {e}")
-    
+
     def get_status(self) -> TrayStatus:
         """Получить текущий статус"""
         return self.current_status
-    
+
     def is_initialized(self) -> bool:
         """Проверить, инициализирован ли контроллер"""
         return self.tray_icon is not None and self.tray_menu is not None
-    
+
     def get_app(self):
         """Получить приложение rumps для запуска в главном потоке"""
         if self.tray_menu and self.tray_menu.app:
             return self.tray_menu.app
         return None
-    
+
     def run_app(self):
         """Запустить приложение в главном потоке.
 
@@ -349,23 +350,24 @@ class TrayController:
         1. activate_nsapplication_for_menu_bar()
         2. asyncio.sleep(2.0) для готовности ControlCenter
         3. setup_delayed_icon_setting() для отложенной установки иконки
-        
+
         КРИТИЧНО: После перезапуска NSApplication может быть не активирован,
         поэтому проверяем и активируем его непосредственно перед app.run().
         """
         if not self.tray_menu or not self.tray_menu.app:
             logger.error("❌ КРИТИЧНО: tray_menu или app не готовы для запуска")
             return
-        
+
         # КРИТИЧНО: Проверяем и активируем NSApplication перед app.run()
         # После перезапуска NSApplication может быть не активирован,
         # что приводит к падению при создании NSStatusItem внутри app.run()
         try:
-            import AppKit
-            nsapp = AppKit.NSApplication.sharedApplication()
+            import AppKit  # type: ignore
+
+            nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[reportAttributeAccessIssue]
             current_policy = nsapp.activationPolicy()
-            target_policy = AppKit.NSApplicationActivationPolicyAccessory
-            
+            target_policy = AppKit.NSApplicationActivationPolicyAccessory  # type: ignore[reportAttributeAccessIssue]
+
             if current_policy != target_policy:
                 logger.warning(
                     f"⚠️ NSApplication activation policy не установлен перед app.run() "
@@ -374,16 +376,18 @@ class TrayController:
                 result = nsapp.setActivationPolicy_(target_policy)
                 logger.info(f"✅ setActivationPolicy вернул: {result}")
                 logger.info(f"✅ Новый activation policy: {nsapp.activationPolicy()}")
-            
+
             # Не форсируем фокус здесь: startup-активация централизована в main/coordinator path.
             logger.info("✅ NSApplication policy проверен перед app.run() (без forced activate)")
         except Exception as e:
-            logger.warning(f"⚠️ Не удалось проверить/активировать NSApplication перед app.run(): {e}")
+            logger.warning(
+                f"⚠️ Не удалось проверить/активировать NSApplication перед app.run(): {e}"
+            )
             # Продолжаем выполнение - возможно, NSApplication уже активирован
-        
+
         # Настраиваем отложенную установку иконки (таймер запустится после app.run())
         self.tray_menu.setup_delayed_icon_setting()
-        
+
         # Запускаем приложение (блокирующий вызов)
         logger.info("🚀 КРИТИЧНО: Запуск app.run()...")
         print("🚀 КРИТИЧНО: Запуск app.run()...")
@@ -391,11 +395,14 @@ class TrayController:
         print(f"🔍 DEBUG: app type: {type(self.tray_menu.app)}")
         try:
             # Дополнительная диагностика перед запуском
-            import AppKit
-            nsapp = AppKit.NSApplication.sharedApplication()
-            print(f"🔍 DEBUG: NSApplication activation policy before app.run(): {nsapp.activationPolicy()}")
+            import AppKit  # type: ignore
+
+            nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[reportAttributeAccessIssue]
+            print(
+                f"🔍 DEBUG: NSApplication activation policy before app.run(): {nsapp.activationPolicy()}"
+            )
             print(f"🔍 DEBUG: NSApplication is active: {nsapp.isActive()}")
-            
+
             self.tray_menu.app.run()
             logger.info("✅ app.run() завершился нормально")
             print("✅ app.run() завершился нормально")
@@ -406,6 +413,7 @@ class TrayController:
         except Exception as e:
             logger.error(f"❌ КРИТИЧНО: Ошибка при запуске app.run(): {e}")
             import traceback
+
             logger.error(f"Stacktrace:\n{traceback.format_exc()}")
             print(f"❌ КРИТИЧНО: Ошибка при запуске app.run(): {e}")
             print(f"Stacktrace:\n{traceback.format_exc()}")

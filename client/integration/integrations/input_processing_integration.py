@@ -10,25 +10,28 @@ InputProcessingIntegration V2
 from __future__ import annotations
 
 import asyncio
+from enum import StrEnum
 import logging
 import time
+from typing import Any
 import uuid
-from enum import Enum
-from typing import Any, Dict, List, Optional
 
 from config.unified_config_loader import InputProcessingConfig
 from integration.core import selectors
 from integration.core.error_handler import ErrorCategory, ErrorHandler, ErrorSeverity
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_keys import StateKeys
-from integration.core.state_manager import AppMode, ApplicationStateManager  # type: ignore[attr-defined]
+from integration.core.state_manager import (  # type: ignore[attr-defined]
+    ApplicationStateManager,
+    AppMode,  # type: ignore
+)
 from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
 from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
 
 logger = logging.getLogger(__name__)
 
 
-class PTTState(str, Enum):
+class PTTState(StrEnum):
     IDLE = "idle"
     ARMED = "armed"
     RECORDING = "recording"
@@ -55,15 +58,15 @@ class InputProcessingIntegration:
         self.is_running = False
         self.ptt_available = True
 
-        self.keyboard_monitor: Optional[Any] = None
+        self.keyboard_monitor: Any | None = None
         self._using_quartz = False
 
         self._state: PTTState = PTTState.IDLE
-        self._active_press_id: Optional[str] = None
-        self._terminal_stop_press_id: Optional[str] = None
+        self._active_press_id: str | None = None
+        self._terminal_stop_press_id: str | None = None
 
-        self._pending_session_id: Optional[str] = None
-        self._active_grpc_session_id: Optional[str] = None
+        self._pending_session_id: str | None = None
+        self._active_grpc_session_id: str | None = None
         self._session_waiting_grpc = False
 
         self._recording_started = False
@@ -71,21 +74,21 @@ class InputProcessingIntegration:
         self._session_recognized = False
 
         self._playback_active = False
-        self._playback_waiters: List[asyncio.Future] = []
+        self._playback_waiters: list[asyncio.Future[Any]] = []
         self._playback_wait_timeout = max(0.5, float(self.config.playback_wait_timeout_sec))
 
         self._mic_active = False
-        self._mic_waiters: List[asyncio.Future] = []
+        self._mic_waiters: list[asyncio.Future[Any]] = []
         self._mic_wait_timeout = max(0.5, float(self.config.playback_wait_timeout_sec))
         self._lifecycle_lock = asyncio.Lock()
         self._start_in_flight = False
 
-        self._health_check_task: Optional[asyncio.Task] = None
+        self._health_check_task: asyncio.Task[Any] | None = None
         self._secure_input_active = False
         self._last_secure_input_force_stop_ts = 0.0
         self._secure_input_force_stop_cooldown_sec = 1.5
-        self._last_interrupt_event_id: Optional[str] = None
-        self._preempt_sent_press_id: Optional[str] = None
+        self._last_interrupt_event_id: str | None = None
+        self._preempt_sent_press_id: str | None = None
 
     async def initialize(self) -> bool:
         try:
@@ -102,21 +105,44 @@ class InputProcessingIntegration:
             return False
 
     async def _setup_event_handlers(self):
-        await self.event_bus.subscribe("voice.recognition_completed", self._on_recognition_completed, EventPriority.HIGH)
-        await self.event_bus.subscribe("voice.recognition_failed", self._on_recognition_failed, EventPriority.HIGH)
-        await self.event_bus.subscribe("voice.recognition_timeout", self._on_recognition_failed, EventPriority.HIGH)
-        await self.event_bus.subscribe("interrupt.request", self._on_interrupt_request, EventPriority.HIGH)
-        await self.event_bus.subscribe("grpc.request_completed", self._on_grpc_completed, EventPriority.HIGH)
-        await self.event_bus.subscribe("grpc.request_failed", self._on_grpc_failed, EventPriority.HIGH)
-        await self.event_bus.subscribe("playback.started", self._on_playback_started, EventPriority.MEDIUM)
-        await self.event_bus.subscribe("playback.completed", self._on_playback_finished, EventPriority.MEDIUM)
-        await self.event_bus.subscribe("playback.failed", self._on_playback_finished, EventPriority.MEDIUM)
-        await self.event_bus.subscribe("playback.cancelled", self._on_playback_finished, EventPriority.MEDIUM)
+        await self.event_bus.subscribe(
+            "voice.recognition_completed", self._on_recognition_completed, EventPriority.HIGH
+        )
+        await self.event_bus.subscribe(
+            "voice.recognition_failed", self._on_recognition_failed, EventPriority.HIGH
+        )
+        await self.event_bus.subscribe(
+            "voice.recognition_timeout", self._on_recognition_failed, EventPriority.HIGH
+        )
+        await self.event_bus.subscribe(
+            "interrupt.request", self._on_interrupt_request, EventPriority.HIGH
+        )
+        await self.event_bus.subscribe(
+            "grpc.request_completed", self._on_grpc_completed, EventPriority.HIGH
+        )
+        await self.event_bus.subscribe(
+            "grpc.request_failed", self._on_grpc_failed, EventPriority.HIGH
+        )
+        await self.event_bus.subscribe(
+            "playback.started", self._on_playback_started, EventPriority.MEDIUM
+        )
+        await self.event_bus.subscribe(
+            "playback.completed", self._on_playback_finished, EventPriority.MEDIUM
+        )
+        await self.event_bus.subscribe(
+            "playback.failed", self._on_playback_finished, EventPriority.MEDIUM
+        )
+        await self.event_bus.subscribe(
+            "playback.cancelled", self._on_playback_finished, EventPriority.MEDIUM
+        )
         await self.event_bus.subscribe("voice.mic_opened", self._on_mic_opened, EventPriority.HIGH)
         await self.event_bus.subscribe("voice.mic_closed", self._on_mic_closed, EventPriority.HIGH)
 
     async def _initialize_keyboard_monitor(self):
         backend = (self.config.keyboard_backend or "auto").lower()
+        if backend not in {"auto", "quartz", "pynput"}:
+            logger.warning("INPUT: unsupported keyboard backend '%s', fallback to 'auto'", backend)
+            backend = "auto"
         use_quartz = False
         try:
             import platform
@@ -127,22 +153,39 @@ class InputProcessingIntegration:
 
         if is_macos and backend in ("auto", "quartz"):
             try:
-                from modules.input_processing.keyboard.mac.quartz_monitor import QuartzKeyboardMonitor
+                from modules.input_processing.keyboard.mac.quartz_monitor import (
+                    QuartzKeyboardMonitor,
+                )
 
                 self.keyboard_monitor = QuartzKeyboardMonitor(self.config.keyboard)  # type: ignore[assignment]
                 use_quartz = True
                 self._using_quartz = True
             except Exception as e:
-                logger.warning("Quartz init failed, fallback to pynput: %s", e)
+                logger.warning("Quartz init failed: %s", e)
+
+        if not use_quartz and backend == "quartz":
+            # Explicit quartz-only mode: do not silently switch to another owner path.
+            self.keyboard_monitor = None
+            self._using_quartz = False
+            self.ptt_available = False
+            logger.error("INPUT: quartz backend requested but unavailable; PTT hotkey disabled")
+            return
 
         if not use_quartz:
             self.keyboard_monitor = KeyboardMonitor(self.config.keyboard)  # type: ignore[assignment]
             self._using_quartz = False
+            logger.info(
+                "INPUT: using pynput fallback keyboard monitor (no extra suppression paths)"
+            )
 
         if self.keyboard_monitor is not None:
             self.keyboard_monitor.register_callback(KeyEventType.PRESS, self._handle_press)
-            self.keyboard_monitor.register_callback(KeyEventType.LONG_PRESS, self._handle_long_press)
-            self.keyboard_monitor.register_callback(KeyEventType.SHORT_PRESS, self._handle_short_press)
+            self.keyboard_monitor.register_callback(
+                KeyEventType.LONG_PRESS, self._handle_long_press
+            )
+            self.keyboard_monitor.register_callback(
+                KeyEventType.SHORT_PRESS, self._handle_short_press
+            )
             self.keyboard_monitor.register_callback(KeyEventType.RELEASE, self._handle_release)
 
     async def start(self) -> bool:
@@ -219,7 +262,9 @@ class InputProcessingIntegration:
                 self._secure_input_active = True
                 self.ptt_available = False
                 now = time.monotonic()
-                if (now - self._last_secure_input_force_stop_ts) < self._secure_input_force_stop_cooldown_sec:
+                if (
+                    now - self._last_secure_input_force_stop_ts
+                ) < self._secure_input_force_stop_cooldown_sec:
                     logger.warning(
                         "SECURE INPUT: tap disabled -> force stop suppressed (cooldown, dt=%.3fs)",
                         now - self._last_secure_input_force_stop_ts,
@@ -238,9 +283,16 @@ class InputProcessingIntegration:
         if old == new_state:
             return
         self._state = new_state
-        logger.info("PTT_STATE: %s -> %s (reason=%s, press_id=%s, session=%s)", old.value, new_state.value, reason, self._active_press_id, self._get_active_session_id())
+        logger.info(
+            "PTT_STATE: %s -> %s (reason=%s, press_id=%s, session=%s)",
+            old.value,
+            new_state.value,
+            reason,
+            self._active_press_id,
+            self._get_active_session_id(),
+        )
 
-    def _extract_press_id(self, event: KeyEvent) -> Optional[str]:
+    def _extract_press_id(self, event: KeyEvent) -> str | None:
         data = getattr(event, "data", None)
         if isinstance(data, dict):
             pid = data.get("press_id")
@@ -248,16 +300,16 @@ class InputProcessingIntegration:
                 return pid
         return None
 
-    def _get_active_session_id(self) -> Optional[str]:
+    def _get_active_session_id(self) -> str | None:
         return selectors.get_current_session_id(self.state_manager)
 
-    def _set_session_id(self, session_id: Optional[str], reason: str):
+    def _set_session_id(self, session_id: str | None, reason: str):
         current = selectors.get_current_session_id(self.state_manager)
         if current != session_id:
             self.state_manager.update_session_id(session_id)
             logger.debug("Session id update: %s -> %s (%s)", current, session_id, reason)
 
-    def _try_mark_terminal_stop(self, press_id: Optional[str]) -> bool:
+    def _try_mark_terminal_stop(self, press_id: str | None) -> bool:
         effective = press_id or self._active_press_id
         if not effective:
             return True
@@ -268,31 +320,36 @@ class InputProcessingIntegration:
 
     async def _publish_interrupt_and_cancel(
         self,
-        session_id: Optional[str],
+        session_id: str | None,
         source: str,
         timestamp: float,
-        press_id: Optional[str] = None,
+        press_id: str | None = None,
     ):
         event_id = str(uuid.uuid4())
         self._last_interrupt_event_id = event_id
         effective_press_id = press_id or self._active_press_id
-        await self.event_bus.publish("interrupt.request", {
-            "type": "speech_stop",
-            "source": source,
-            "timestamp": timestamp,
-            "session_id": session_id,
-            "press_id": effective_press_id,
-            "event_id": event_id,
-            "contract_version": 1,
-            "state": self._state.value,
-        })
+        await self.event_bus.publish(
+            "interrupt.request",
+            {
+                "type": "speech_stop",
+                "source": source,
+                "timestamp": timestamp,
+                "session_id": session_id,
+                "press_id": effective_press_id,
+                "event_id": event_id,
+                "contract_version": 1,
+                "state": self._state.value,
+            },
+        )
 
     async def _on_interrupt_request(self, event):
         """Owner path для внешних speech_stop: публикуем terminal recording_stop централизованно."""
         data = (event or {}).get("data", {}) if isinstance(event, dict) else {}
         interrupt_type = data.get("type") or (event or {}).get("type")
         source = str(data.get("source") or (event or {}).get("source") or "")
-        session_id = data.get("session_id") or self._get_active_session_id() or self._active_grpc_session_id
+        session_id = (
+            data.get("session_id") or self._get_active_session_id() or self._active_grpc_session_id
+        )
 
         if interrupt_type != "speech_stop":
             return
@@ -316,18 +373,23 @@ class InputProcessingIntegration:
         )
 
         await self._request_terminal_stop(
-            press_id=data.get("press_id") if isinstance(data.get("press_id"), str) else self._active_press_id,
+            press_id=data.get("press_id")
+            if isinstance(data.get("press_id"), str)
+            else self._active_press_id,
             session_id=session_id,
             source="input_processing.external_interrupt",
             timestamp=float(data.get("timestamp") or time.time()),
             reason=str(data.get("reason") or "external_interrupt_request"),
         )
-        await self.event_bus.publish("mode.request", {
-            "target": AppMode.SLEEPING,
-            "source": "input_processing.external_interrupt",
-            "reason": str(data.get("reason") or "external_interrupt_request"),
-            "session_id": session_id,
-        })
+        await self.event_bus.publish(
+            "mode.request",
+            {
+                "target": AppMode.SLEEPING,
+                "source": "input_processing.external_interrupt",
+                "reason": str(data.get("reason") or "external_interrupt_request"),
+                "session_id": session_id,
+            },
+        )
         self._reset("external_interrupt_request")
 
     async def _wait_for_mic_closed(self):
@@ -358,16 +420,27 @@ class InputProcessingIntegration:
             if waiter in self._playback_waiters:
                 self._playback_waiters.remove(waiter)
 
-    async def _terminal_stop(self, *, press_id: Optional[str], session_id: Optional[str], source: str, timestamp: float, reason: str):
+    async def _terminal_stop(
+        self,
+        *,
+        press_id: str | None,
+        session_id: str | None,
+        source: str,
+        timestamp: float,
+        reason: str,
+    ):
         self._set_state(PTTState.STOPPING, reason)
         if not self._try_mark_terminal_stop(press_id):
             return False
-        await self.event_bus.publish("voice.recording_stop", {
-            "source": source,
-            "timestamp": timestamp,
-            "session_id": session_id,
-            "reason": reason,
-        })
+        await self.event_bus.publish(
+            "voice.recording_stop",
+            {
+                "source": source,
+                "timestamp": timestamp,
+                "session_id": session_id,
+                "reason": reason,
+            },
+        )
         self._recording_started = False
         await self._wait_for_mic_closed()
         return True
@@ -375,8 +448,8 @@ class InputProcessingIntegration:
     async def _request_terminal_stop(
         self,
         *,
-        press_id: Optional[str],
-        session_id: Optional[str],
+        press_id: str | None,
+        session_id: str | None,
         source: str,
         timestamp: float,
         reason: str,
@@ -401,13 +474,20 @@ class InputProcessingIntegration:
         session_id = self._get_active_session_id() or self._active_grpc_session_id
         # Secure Input may flap without user press. Avoid cancelling assistant response
         # unless user input capture is actually active.
-        should_interrupt = self._recording_started or self._mic_active or self._state in {
-            PTTState.ARMED,
-            PTTState.RECORDING,
-            PTTState.STOPPING,
-        }
+        should_interrupt = (
+            self._recording_started
+            or self._mic_active
+            or self._state
+            in {
+                PTTState.ARMED,
+                PTTState.RECORDING,
+                PTTState.STOPPING,
+            }
+        )
         if should_interrupt:
-            await self._publish_interrupt_and_cancel(session_id, "keyboard.secure_input", time.time())
+            await self._publish_interrupt_and_cancel(
+                session_id, "keyboard.secure_input", time.time()
+            )
         else:
             logger.info(
                 "SECURE_INPUT force_stop: skip interrupt (no active input cycle), "
@@ -426,15 +506,18 @@ class InputProcessingIntegration:
         # Centralization: when interrupt.request was published, mode transition to SLEEPING
         # is owned by InterruptManagementIntegration.
         if not should_interrupt:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "keyboard.secure_input",
-                "reason": reason,
-                "session_id": session_id,
-            })
+            await self.event_bus.publish(
+                "mode.request",
+                {
+                    "target": AppMode.SLEEPING,
+                    "source": "keyboard.secure_input",
+                    "reason": reason,
+                    "session_id": session_id,
+                },
+            )
         self._reset(reason)
 
-    async def _finalize_grpc_failed(self, session_id: Optional[str]):
+    async def _finalize_grpc_failed(self, session_id: str | None):
         """Terminal path для grpc_failed: только финализация input state без force-stop side effects."""
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
         self._set_state(PTTState.IDLE, "grpc_failed_terminal")
@@ -471,9 +554,7 @@ class InputProcessingIntegration:
         current_mode = selectors.get_current_mode(self.state_manager)
         has_pending_grpc = preempt_session_id is not None and self._session_waiting_grpc
         should_preempt = (
-            self._playback_active
-            or current_mode == AppMode.PROCESSING
-            or has_pending_grpc
+            self._playback_active or current_mode == AppMode.PROCESSING or has_pending_grpc
         )
         if not should_preempt and self._state == PTTState.IDLE and preempt_session_id is not None:
             # New press-cycle in idle context must not inherit stale session id from
@@ -507,17 +588,20 @@ class InputProcessingIntegration:
         self._pending_session_id = str(uuid.uuid4())
         self._set_state(PTTState.ARMED, "press")
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, True)
-        await self.event_bus.publish("keyboard.press", {
-            "type": "keyboard.press",
-            "data": {
+        await self.event_bus.publish(
+            "keyboard.press",
+            {
+                "type": "keyboard.press",
+                "data": {
+                    "timestamp": event.timestamp,
+                    "key": event.key,
+                    "source": "keyboard",
+                    "session_id": self._pending_session_id,
+                    "press_id": press_id,
+                },
                 "timestamp": event.timestamp,
-                "key": event.key,
-                "source": "keyboard",
-                "session_id": self._pending_session_id,
-                "press_id": press_id,
             },
-            "timestamp": event.timestamp,
-        })
+        )
 
     async def _handle_long_press(self, event: KeyEvent):
         if not self.ptt_available:
@@ -532,9 +616,7 @@ class InputProcessingIntegration:
         current_mode = selectors.get_current_mode(self.state_manager)
         has_pending_grpc = preempt_session_id is not None and self._session_waiting_grpc
         should_preempt = (
-            self._playback_active
-            or current_mode == AppMode.PROCESSING
-            or has_pending_grpc
+            self._playback_active or current_mode == AppMode.PROCESSING or has_pending_grpc
         )
         if should_preempt:
             effective_press_id = press_id or self._active_press_id
@@ -545,8 +627,8 @@ class InputProcessingIntegration:
                     preempt_session_id,
                 )
             else:
-            # Long-press starts a new capture session, but interrupt must target
-            # currently active assistant processing/playback session.
+                # Long-press starts a new capture session, but interrupt must target
+                # currently active assistant processing/playback session.
                 await self._publish_interrupt_and_cancel(
                     preempt_session_id,
                     "keyboard.long_press",
@@ -559,7 +641,11 @@ class InputProcessingIntegration:
             await self._wait_for_mic_closed()
 
         async with self._lifecycle_lock:
-            if self._start_in_flight or self._recording_started or self._state in {PTTState.RECORDING, PTTState.STOPPING}:
+            if (
+                self._start_in_flight
+                or self._recording_started
+                or self._state in {PTTState.RECORDING, PTTState.STOPPING}
+            ):
                 logger.debug(
                     "INPUT: dedup voice.recording_start skipped (state=%s, start_in_flight=%s, recording_started=%s)",
                     self._state.value,
@@ -577,17 +663,23 @@ class InputProcessingIntegration:
             self._start_in_flight = True
 
         try:
-            await self.event_bus.publish("voice.recording_start", {
-                "source": "keyboard",
-                "timestamp": event.timestamp,
-                "session_id": session_id,
-                "press_id": self._active_press_id,
-            })
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.LISTENING,
-                "source": "input_processing",
-                "session_id": session_id,
-            })
+            await self.event_bus.publish(
+                "voice.recording_start",
+                {
+                    "source": "keyboard",
+                    "timestamp": event.timestamp,
+                    "session_id": session_id,
+                    "press_id": self._active_press_id,
+                },
+            )
+            await self.event_bus.publish(
+                "mode.request",
+                {
+                    "target": AppMode.LISTENING,
+                    "source": "input_processing",
+                    "session_id": session_id,
+                },
+            )
         finally:
             self._start_in_flight = False
 
@@ -602,11 +694,14 @@ class InputProcessingIntegration:
                 timestamp=event.timestamp,
                 reason="short_press_stop",
             )
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.PROCESSING,
-                "source": "input_processing",
-                "session_id": session_id,
-            })
+            await self.event_bus.publish(
+                "mode.request",
+                {
+                    "target": AppMode.PROCESSING,
+                    "source": "input_processing",
+                    "session_id": session_id,
+                },
+            )
             self._active_grpc_session_id = session_id
             self._session_waiting_grpc = True
             self._set_state(PTTState.WAITING_GRPC, "short_press_to_processing")
@@ -620,9 +715,7 @@ class InputProcessingIntegration:
         current_mode = selectors.get_current_mode(self.state_manager)
         has_pending_grpc = session_id is not None and self._session_waiting_grpc
         should_interrupt = (
-            self._playback_active
-            or current_mode == AppMode.PROCESSING
-            or has_pending_grpc
+            self._playback_active or current_mode == AppMode.PROCESSING or has_pending_grpc
         )
         if should_interrupt and (not press_id or self._preempt_sent_press_id != press_id):
             await self._publish_interrupt_and_cancel(
@@ -641,13 +734,16 @@ class InputProcessingIntegration:
                 self._playback_active,
                 self._state.value,
             )
-        await self.event_bus.publish("keyboard.short_press", {
-            "source": "keyboard",
-            "timestamp": event.timestamp,
-            "duration": event.duration,
-            "key": getattr(event, "key", None),
-            "reason": reason,
-        })
+        await self.event_bus.publish(
+            "keyboard.short_press",
+            {
+                "source": "keyboard",
+                "timestamp": event.timestamp,
+                "duration": event.duration,
+                "key": getattr(event, "key", None),
+                "reason": reason,
+            },
+        )
         # Centralization: SLEEPING for short-tap cancel is handled via interrupt.request owner.
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
         self._reset(reason)
@@ -660,7 +756,9 @@ class InputProcessingIntegration:
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
 
         # short tap: long press не был отправлен
-        if (not self._recording_started) and (event.duration or 0.0) < float(self.config.keyboard.long_press_threshold):
+        if (not self._recording_started) and (event.duration or 0.0) < float(
+            self.config.keyboard.long_press_threshold
+        ):
             await self._cancel_short_tap(event, "release_short_tap")
             return
 
@@ -674,20 +772,26 @@ class InputProcessingIntegration:
                 reason="release",
             )
             if self._secure_input_active:
-                await self.event_bus.publish("mode.request", {
-                    "target": AppMode.SLEEPING,
-                    "source": "keyboard.release",
-                    "reason": "secure_input_active",
-                    "session_id": session_id,
-                })
+                await self.event_bus.publish(
+                    "mode.request",
+                    {
+                        "target": AppMode.SLEEPING,
+                        "source": "keyboard.release",
+                        "reason": "secure_input_active",
+                        "session_id": session_id,
+                    },
+                )
                 self._reset("release_secure_input")
                 return
 
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.PROCESSING,
-                "source": "input_processing",
-                "session_id": session_id,
-            })
+            await self.event_bus.publish(
+                "mode.request",
+                {
+                    "target": AppMode.PROCESSING,
+                    "source": "input_processing",
+                    "session_id": session_id,
+                },
+            )
             self._active_grpc_session_id = session_id
             self._session_waiting_grpc = True
             self._set_state(PTTState.WAITING_GRPC, "release_to_processing")
@@ -719,11 +823,14 @@ class InputProcessingIntegration:
                 )
             return
 
-        await self.event_bus.publish("mode.request", {
-            "target": AppMode.SLEEPING,
-            "source": "input_processing",
-            "reason": "recognition_failed",
-        })
+        await self.event_bus.publish(
+            "mode.request",
+            {
+                "target": AppMode.SLEEPING,
+                "source": "input_processing",
+                "reason": "recognition_failed",
+            },
+        )
         self._reset("recognition_failed")
 
     async def _on_grpc_completed(self, event):
@@ -782,7 +889,7 @@ class InputProcessingIntegration:
             if not fut.done():
                 fut.set_result(True)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "is_initialized": self.is_initialized,
             "is_running": self.is_running,
@@ -793,7 +900,9 @@ class InputProcessingIntegration:
             "waiting_grpc": self._session_waiting_grpc,
             "keyboard_monitor": {
                 "enabled": self.keyboard_monitor is not None,
-                "monitoring": self.keyboard_monitor.is_monitoring if self.keyboard_monitor else False,
+                "monitoring": self.keyboard_monitor.is_monitoring
+                if self.keyboard_monitor
+                else False,
                 "status": self.keyboard_monitor.get_status() if self.keyboard_monitor else None,
             },
         }

@@ -17,15 +17,13 @@ from .base import BaseProber
 logger = logging.getLogger(__name__)
 
 
-import subprocess
-
 class NetworkProber(BaseProber):
     """Prober for Network permission (Firewall/Local Network)."""
-    
+
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.NETWORK
-    
+
     async def trigger(self) -> None:
         """
         Trigger Network permission request.
@@ -33,7 +31,7 @@ class NetworkProber(BaseProber):
         Also shows a simulated dialog to provide a consistent UX.
         """
         logger.debug("[NETWORK_PROBER] Triggering network requests...")
-        
+
         # 0. Trigger Local Network Permission (Native System Dialog)
         # Attempting to access a local network address triggers the "Local Network" privacy prompt on macOS.
         try:
@@ -42,10 +40,10 @@ class NetworkProber(BaseProber):
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.settimeout(0.1)
             try:
-                # 255.255.255.255 is the global broadcast address, but often local broadcast 
+                # 255.255.255.255 is the global broadcast address, but often local broadcast
                 # or a specific local IP is needed to trigger the specific prompt.
                 # We try a common local IP pattern.
-                s.connect(("192.168.1.1", 80)) 
+                s.connect(("192.168.1.1", 80))
                 s.send(b"trigger_permission")
             except Exception:
                 # Connection might fail if the IP doesn't exist, which is fine.
@@ -56,7 +54,7 @@ class NetworkProber(BaseProber):
             logger.debug("[NETWORK_PROBER] Local Network trigger attempted")
         except Exception as e:
             logger.warning("[NETWORK_PROBER] Failed to trigger Local Network prompt: %s", e)
-        
+
         # 1. Trigger Outgoing Connection (DNS usually safe)
         # This might trigger "Nexy would like to access the local network" or similar check
         try:
@@ -79,16 +77,16 @@ class NetworkProber(BaseProber):
             s_in.close()
         except Exception as e:
             logger.warning("[NETWORK_PROBER] Bind failed: %s", e)
-    
+
     async def probe(self, probe_kind: Literal["light", "heavy"]) -> ProbeResult:
         """Probe Network capability."""
         ts = self._now()
-        
-        # We can't easily check if "permission is granted" because network access 
+
+        # We can't easily check if "permission is granted" because network access
         # is usually allowed by default unless blocked by Firewall/Little Snitch.
-        # So we assume it works if we can make a call, OR we just assume pass 
+        # So we assume it works if we can make a call, OR we just assume pass
         # because we only want to show the dialog during first run.
-        
+
         is_connected = False
         try:
             # Simple check
@@ -96,19 +94,16 @@ class NetworkProber(BaseProber):
             is_connected = True
         except:
             pass
-        
+
         # We always return "Ok" because failure to connect might just mean offline,
         # not permission denied. And we don't want to block the wizard for offline users.
         # The goal is to ensure the DIALOG was triggered if applicable.
-        
+
         ev = ProbeEvidence(
-            network_conn_ok=True, # Always consider "ok" to pass the step
-            misconfig_hint=False
+            network_conn_ok=True,  # Always consider "ok" to pass the step
+            misconfig_hint=False,
         )
-        
+
         return ProbeResult(
-            permission=self.permission,
-            timestamp=ts,
-            probe_kind=probe_kind,
-            evidence=ev
+            permission=self.permission, timestamp=ts, probe_kind=probe_kind, evidence=ev
         )

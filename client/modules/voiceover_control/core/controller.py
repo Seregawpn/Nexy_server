@@ -71,7 +71,9 @@ class VoiceOverControlSettings:
         self.stop_repeats = max(1, int(self.stop_repeats))
         self.stop_repeat_delay = max(0.0, float(self.stop_repeat_delay))
         if self.mode not in {"stop", "mute_speech"}:
-            logger.warning("VoiceOverControlSettings: unknown mode %s, fallback to 'stop'", self.mode)
+            logger.warning(
+                "VoiceOverControlSettings: unknown mode %s, fallback to 'stop'", self.mode
+            )
             self.mode = "stop"
 
 
@@ -109,21 +111,23 @@ class VoiceOverController:
             if not self._platform_supported:
                 logger.warning("macOS frameworks not available - VoiceOver control disabled")
                 return False
-                
+
             if not self.settings.enabled:
                 logger.info("VoiceOver control disabled via config")
                 return True
 
             if not self._has_accessibility_permission():
-                logger.warning("VoiceOverController: Accessibility permission not granted, skipping initialization")
+                logger.warning(
+                    "VoiceOverController: Accessibility permission not granted, skipping initialization"
+                )
                 return False
-            
+
             # ПРОВЕРЯЕМ СТАТУС VOICEOVER
             if self.settings.debug_logging:
                 logger.info("🔍 VoiceOver: Начинаем диагностику...")
                 status = await asyncio.to_thread(self._check_voiceover_status)
                 logger.info(f"🔍 VoiceOver: Статус при инициализации: {status}")
-                
+
                 # Устанавливаем флаги состояния VoiceOver
                 self._voiceover_was_running = status.get("voiceover_running", False)
                 self._voiceover_currently_running = self._voiceover_was_running
@@ -133,22 +137,24 @@ class VoiceOverController:
                 status = await asyncio.to_thread(self._check_voiceover_status)
                 self._voiceover_was_running = status.get("voiceover_running", False)
                 self._voiceover_currently_running = self._voiceover_was_running
-            
-            logger.info(f"VoiceOverController initialized successfully (VoiceOver was running: {self._voiceover_was_running})")
+
+            logger.info(
+                f"VoiceOverController initialized successfully (VoiceOver was running: {self._voiceover_was_running})"
+            )
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize VoiceOverController: {e}")
             return False
 
     def _has_accessibility_permission(self) -> bool:
         """Проверяем, есть ли разрешение Accessibility.
-        
+
         ВАЖНО: НЕ вызываем AXIsProcessTrustedWithOptions напрямую!
-        Это вызывает TCC ошибку: "attempted to call TCCAccessRequest for 
-        kTCCServiceAccessibility without the recommended 
+        Это вызывает TCC ошибку: "attempted to call TCCAccessRequest for
+        kTCCServiceAccessibility without the recommended
         com.apple.private.tcc.manager.check-by-audit-token entitlement"
-        
+
         Вместо этого пропускаем проверку и полагаемся на graceful failure
         osascript/CGEventPost если разрешения нет.
         """
@@ -172,9 +178,13 @@ class VoiceOverController:
                 logger.info(f"VoiceOverController: Ducking VoiceOver for mode {mode_value}")
             else:
                 if not self._voiceover_currently_running:
-                    logger.debug(f"VoiceOverController: VoiceOver is not currently running, skipping duck for mode {mode_value}")
+                    logger.debug(
+                        f"VoiceOverController: VoiceOver is not currently running, skipping duck for mode {mode_value}"
+                    )
                 else:
-                    logger.debug(f"VoiceOverController: VoiceOver already ducked, staying in mode {mode_value}")
+                    logger.debug(
+                        f"VoiceOverController: VoiceOver already ducked, staying in mode {mode_value}"
+                    )
         elif mode_value in self.settings.release_modes:
             # Включаем VoiceOver только если он был отключен нами и изначально был запущен
             if self._ducked and self._voiceover_was_running:
@@ -182,20 +192,26 @@ class VoiceOverController:
                 logger.info(f"VoiceOverController: Releasing VoiceOver for mode {mode_value}")
             else:
                 if not self._voiceover_was_running:
-                    logger.debug(f"VoiceOverController: VoiceOver was not running initially, skipping release for mode {mode_value}")
+                    logger.debug(
+                        f"VoiceOverController: VoiceOver was not running initially, skipping release for mode {mode_value}"
+                    )
                 else:
-                    logger.debug(f"VoiceOverController: VoiceOver not ducked, staying in mode {mode_value}")
+                    logger.debug(
+                        f"VoiceOverController: VoiceOver not ducked, staying in mode {mode_value}"
+                    )
 
     async def duck(self, reason: str | None = None) -> bool:
         """Explicitly request VoiceOver ducking."""
         if not self.settings.enabled or not self._platform_supported:
             return False
-        
+
         # Не отключаем VoiceOver, если он сейчас не запущен
         if not self._voiceover_currently_running:
-            logger.debug(f"VoiceOverController: VoiceOver is not currently running, skipping duck (reason={reason})")
+            logger.debug(
+                f"VoiceOverController: VoiceOver is not currently running, skipping duck (reason={reason})"
+            )
             return False
-            
+
         return await self._ensure_ducked(reason=reason or "manual")
 
     async def release(self, force: bool = False) -> None:
@@ -215,9 +231,13 @@ class VoiceOverController:
                 if success:
                     self._hard_toggled_by_us = False
                     self._voiceover_currently_running = True
-                    logger.info("VoiceOverController: VoiceOver restored via Command+F5 (hard_toggle_enabled=true)")
+                    logger.info(
+                        "VoiceOverController: VoiceOver restored via Command+F5 (hard_toggle_enabled=true)"
+                    )
                 else:
-                    logger.warning("VoiceOverController: failed to restore VoiceOver via Command+F5")
+                    logger.warning(
+                        "VoiceOverController: failed to restore VoiceOver via Command+F5"
+                    )
             elif self._speech_muted_by_us:
                 success = await asyncio.to_thread(self._set_voiceover_speech_muted, False)
                 if success:
@@ -234,7 +254,9 @@ class VoiceOverController:
         try:
             status = await asyncio.to_thread(self._check_voiceover_status)
             self._voiceover_currently_running = status.get("voiceover_running", False)
-            logger.debug(f"VoiceOverController: Updated status - currently running: {self._voiceover_currently_running}")
+            logger.debug(
+                f"VoiceOverController: Updated status - currently running: {self._voiceover_currently_running}"
+            )
         except Exception as exc:
             logger.warning(f"VoiceOverController: Failed to update VoiceOver status: {exc}")
 
@@ -249,9 +271,15 @@ class VoiceOverController:
                 return True
 
             context = reason or "unknown"
-            logger.info("VoiceOverController: duck requested (mode=%s, reason=%s)", self.settings.mode, context)
+            logger.info(
+                "VoiceOverController: duck requested (mode=%s, reason=%s)",
+                self.settings.mode,
+                context,
+            )
 
-            success, muted_by_us, hard_toggled_by_us = await asyncio.to_thread(self._send_duck_command_sync, context)
+            success, muted_by_us, hard_toggled_by_us = await asyncio.to_thread(
+                self._send_duck_command_sync, context
+            )
             if success:
                 self._ducked = True
                 self._last_duck_ts = time.monotonic()
@@ -263,7 +291,9 @@ class VoiceOverController:
                 self._log_voiceover_state(f"duck:{context}")
                 return True
 
-            logger.warning("VoiceOverController: failed to pause VoiceOver speech (reason=%s)", context)
+            logger.warning(
+                "VoiceOverController: failed to pause VoiceOver speech (reason=%s)", context
+            )
             return False
 
     def _send_duck_command_sync(self, context: str) -> tuple[bool, bool, bool]:
@@ -273,7 +303,9 @@ class VoiceOverController:
             (success, muted_by_us, hard_toggled_by_us)
         """
         if self.settings.hard_toggle_enabled:
-            logger.info("VoiceOverController: hard toggle enabled, using Command+F5 (reason=%s)", context)
+            logger.info(
+                "VoiceOverController: hard toggle enabled, using Command+F5 (reason=%s)", context
+            )
             success = self._toggle_voiceover_with_command_f5()
             return success, False, bool(success)
 
@@ -296,17 +328,17 @@ class VoiceOverController:
             success, output, stderr = self._run_osascript(
                 'tell application "System Events" to key code 96 using {command down}'
             )
-            
+
             if success:
                 logger.info("VoiceOverController: Command+F5 executed successfully")
                 return True
             else:
                 logger.error(
-                    "VoiceOverController: Command+F5 failed: %s", 
-                    stderr.strip() if stderr else "Unknown error"
+                    "VoiceOverController: Command+F5 failed: %s",
+                    stderr.strip() if stderr else "Unknown error",
                 )
                 return False
-                
+
         except Exception as exc:
             logger.error("VoiceOverController: Command+F5 exception: %s", exc)
             return False
@@ -342,7 +374,9 @@ class VoiceOverController:
             logger.debug("VoiceOverController: control key sent via AppleScript fallback")
             return True
         if stderr:
-            logger.warning("VoiceOverController: AppleScript control key failed: %s", stderr.strip())
+            logger.warning(
+                "VoiceOverController: AppleScript control key failed: %s", stderr.strip()
+            )
         return False
 
     def _stop_voiceover_speaking(self, context: str) -> bool:
@@ -362,13 +396,15 @@ class VoiceOverController:
             logger.debug("VoiceOverController: stop speaking succeeded (context=%s)", context)
             return True
 
-    def _run_osascript(self, script: str, capture_output: bool = False) -> tuple[bool, str | None, str | None]:
+    def _run_osascript(
+        self, script: str, capture_output: bool = False
+    ) -> tuple[bool, str | None, str | None]:
         """Run a short AppleScript command."""
         try:
             # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ КОМАНД
             if self.settings.log_osascript_commands:
                 logger.info(f"🔍 VoiceOver: Выполняем AppleScript: {script}")
-            
+
             if capture_output:
                 completed = subprocess.run(
                     ["osascript", "-e", script],
@@ -380,15 +416,15 @@ class VoiceOverController:
                 )
                 stdout = completed.stdout.strip() if completed.stdout else None
                 stderr = completed.stderr.strip() if completed.stderr else None
-                
+
                 # ДЕТАЛЬНЫЕ ЛОГИ РЕЗУЛЬТАТОВ
                 if self.settings.log_osascript_commands:
                     logger.info(f"🔍 VoiceOver: stdout='{stdout}', stderr='{stderr}'")
-                
+
                 if stderr:
                     logger.warning(f"🔍 VoiceOver: stderr={stderr}")
                 return True, stdout, stderr
-                
+
             # Без capture_output
             result = subprocess.run(
                 ["osascript", "-e", script],
@@ -397,12 +433,14 @@ class VoiceOverController:
                 stderr=subprocess.PIPE,
                 timeout=1.0,
             )
-            
+
             if self.settings.log_osascript_commands:
-                logger.info(f"🔍 VoiceOver: Команда выполнена успешно, exit_code={result.returncode}")
-            
+                logger.info(
+                    f"🔍 VoiceOver: Команда выполнена успешно, exit_code={result.returncode}"
+                )
+
             return True, None, None
-            
+
         except subprocess.CalledProcessError as exc:
             error_msg = f"🔍 VoiceOver: CalledProcessError - exit_code={exc.returncode}, stderr='{exc.stderr}'"
             if self.settings.log_osascript_commands:
@@ -410,7 +448,7 @@ class VoiceOverController:
             else:
                 logger.warning(error_msg)
             return False, None, str(exc.stderr) if exc.stderr else str(exc)
-            
+
         except subprocess.TimeoutExpired as exc:
             error_msg = "🔍 VoiceOver: TimeoutExpired - команда превысила 1 секунду"
             if self.settings.log_osascript_commands:
@@ -418,7 +456,7 @@ class VoiceOverController:
             else:
                 logger.warning(error_msg)
             return False, None, "timeout"
-            
+
         except Exception as exc:
             error_msg = f"🔍 VoiceOver: Неожиданная ошибка: {type(exc).__name__}: {exc}"
             if self.settings.log_osascript_commands:
@@ -431,7 +469,9 @@ class VoiceOverController:
         if not self._speech_muted_supported:
             return None
 
-        success, output, stderr = self._run_osascript('tell application "VoiceOver" to return speechMuted', capture_output=True)
+        success, output, stderr = self._run_osascript(
+            'tell application "VoiceOver" to return speechMuted', capture_output=True
+        )
         if not success or output is None:
             if stderr:
                 self._handle_speech_muted_unsupported(stderr)
@@ -493,7 +533,9 @@ class VoiceOverController:
         )
         if not success:
             if stderr:
-                logger.error("VoiceOverController: speech toggle shortcut failed: %s", stderr.strip())
+                logger.error(
+                    "VoiceOverController: speech toggle shortcut failed: %s", stderr.strip()
+                )
             else:
                 logger.error("VoiceOverController: speech toggle shortcut failed")
             return False
@@ -544,7 +586,9 @@ class VoiceOverController:
 
         if stderr:
             logger.warning(
-                "VoiceOverController: fallback stop speaking failed (%s): %s", reason, stderr.strip()
+                "VoiceOverController: fallback stop speaking failed (%s): %s",
+                reason,
+                stderr.strip(),
             )
         else:
             logger.warning(
@@ -558,16 +602,16 @@ class VoiceOverController:
             "voiceover_running": False,
             "speech_muted": None,
             "accessible_apps": [],
-            "errors": []
+            "errors": [],
         }
-        
+
         try:
             # Проверим, запущен ли VoiceOver
             success, output, stderr = self._run_osascript(
                 'tell application "System Events" to get name of every application process',
-                capture_output=True
+                capture_output=True,
             )
-            
+
             if success and output:
                 processes = output.split(", ")
                 status["voiceover_running"] = "VoiceOver" in processes
@@ -576,12 +620,11 @@ class VoiceOverController:
                     logger.info(f"🔍 VoiceOver: Найденные процессы: {processes}")
             else:
                 status["errors"].append(f"Не удалось получить список процессов: {stderr}")
-                
+
             # Проверим состояние speechMuted, если платформа его поддерживает
             if self._speech_muted_supported:
                 success, output, stderr = self._run_osascript(
-                    'tell application "VoiceOver" to return speechMuted',
-                    capture_output=True
+                    'tell application "VoiceOver" to return speechMuted', capture_output=True
                 )
 
                 if success and output:
@@ -598,13 +641,13 @@ class VoiceOverController:
                     self._handle_speech_muted_unsupported(stderr)
             else:
                 status["errors"].append("speechMuted недоступен на этой системе")
-                
+
         except Exception as exc:
             status["errors"].append(f"Ошибка проверки статуса: {exc}")
-        
+
         if self.settings.log_voiceover_state:
             logger.info(f"🔍 VoiceOver Status: {status}")
-        
+
         return status
 
     def _log_voiceover_state(self, context: str) -> None:

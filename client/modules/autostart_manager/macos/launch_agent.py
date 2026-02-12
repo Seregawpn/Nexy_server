@@ -8,60 +8,65 @@ import subprocess
 
 class LaunchAgentManager:
     """Менеджер LaunchAgent для автозапуска."""
-    
+
     def __init__(self, config):
         self.config = config
         self.bundle_id = config.bundle_id
         self.plist_path = os.path.expanduser(config.launch_agent_path)
-        
+
     async def install(self) -> bool:
         """Установка LaunchAgent."""
         try:
             # Создаем директорию LaunchAgents если не существует
             plist_dir = os.path.dirname(self.plist_path)
             os.makedirs(plist_dir, exist_ok=True)
-            
+
             # Создаем plist файл
             plist_content = self._generate_plist_content()
-            with open(self.plist_path, 'w') as f:
+            with open(self.plist_path, "w") as f:
                 f.write(plist_content)
-            
+
             # Загружаем LaunchAgent
-            result = subprocess.run([
-                'launchctl', 'bootstrap', f'gui/{os.getuid()}', self.plist_path
-            ], capture_output=True, text=True)
-            
+            result = subprocess.run(
+                ["launchctl", "bootstrap", f"gui/{os.getuid()}", self.plist_path],
+                capture_output=True,
+                text=True,
+            )
+
             if result.returncode != 0:
                 print(f"⚠️ LaunchAgent уже загружен, перезагружаем...")
                 # Пытаемся выгрузить и загрузить заново
-                subprocess.run([
-                    'launchctl', 'bootout', f'gui/{os.getuid()}/{self.bundle_id}'
-                ], capture_output=True)
-                
-                result = subprocess.run([
-                    'launchctl', 'bootstrap', f'gui/{os.getuid()}', self.plist_path
-                ], capture_output=True, text=True)
-            
+                subprocess.run(
+                    ["launchctl", "bootout", f"gui/{os.getuid()}/{self.bundle_id}"],
+                    capture_output=True,
+                )
+
+                result = subprocess.run(
+                    ["launchctl", "bootstrap", f"gui/{os.getuid()}", self.plist_path],
+                    capture_output=True,
+                    text=True,
+                )
+
             return result.returncode == 0
-            
+
         except Exception as e:
             print(f"❌ Ошибка установки LaunchAgent: {e}")
             return False
-    
+
     async def uninstall(self) -> bool:
         """Удаление LaunchAgent."""
         try:
             # Выгружаем LaunchAgent
-            subprocess.run([
-                'launchctl', 'bootout', f'gui/{os.getuid()}/{self.bundle_id}'
-            ], capture_output=True)
-            
+            subprocess.run(
+                ["launchctl", "bootout", f"gui/{os.getuid()}/{self.bundle_id}"], capture_output=True
+            )
+
             # Удаляем plist файл
             if os.path.exists(self.plist_path):
                 os.remove(self.plist_path)
-            
+
             return True
-            
+
         except Exception as e:
             print(f"❌ Ошибка удаления LaunchAgent: {e}")
             return False
@@ -74,17 +79,19 @@ class LaunchAgentManager:
 
             if legacy_label:
                 # Пробуем выгрузить по label (надежнее, чем по пути)
-                result = subprocess.run([
-                    'launchctl', 'bootout', f'gui/{os.getuid()}/{legacy_label}'
-                ], capture_output=True, text=True)
+                result = subprocess.run(
+                    ["launchctl", "bootout", f"gui/{os.getuid()}/{legacy_label}"],
+                    capture_output=True,
+                    text=True,
+                )
                 if result.returncode == 0:
                     removed_any = True
 
             if os.path.exists(legacy_path):
                 # Пробуем выгрузить по пути
-                subprocess.run([
-                    'launchctl', 'bootout', f'gui/{os.getuid()}', legacy_path
-                ], capture_output=True)
+                subprocess.run(
+                    ["launchctl", "bootout", f"gui/{os.getuid()}", legacy_path], capture_output=True
+                )
                 try:
                     os.remove(legacy_path)
                     removed_any = True
@@ -96,22 +103,22 @@ class LaunchAgentManager:
 
         except Exception:
             return False
-    
+
     async def is_installed(self) -> bool:
         """Проверка установки LaunchAgent."""
         try:
-            result = subprocess.run([
-                'launchctl', 'print', f'gui/{os.getuid()}/{self.bundle_id}'
-            ], capture_output=True)
-            
+            result = subprocess.run(
+                ["launchctl", "print", f"gui/{os.getuid()}/{self.bundle_id}"], capture_output=True
+            )
+
             return result.returncode == 0
-            
+
         except Exception:
             return False
-    
+
     def _generate_plist_content(self) -> str:
         """Генерация содержимого plist файла."""
-        return f'''<?xml version="1.0" encoding="UTF-8"?>
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -146,4 +153,4 @@ class LaunchAgentManager:
         <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 </dict>
-</plist>'''
+</plist>"""

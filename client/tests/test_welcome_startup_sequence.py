@@ -45,7 +45,9 @@ def _build_integration() -> WelcomeMessageIntegration:
 def test_welcome_plays_once_when_first_run_completed_then_ready_to_greet() -> None:
     async def _case() -> None:
         integration = _build_integration()
-        await integration._on_first_run_completed({"data": {"source": "permissions.first_run_completed"}})
+        await integration._on_first_run_completed(
+            {"data": {"source": "permissions.first_run_completed"}}
+        )
         await integration._on_ready_to_greet({"data": {"source": "permissions_v2"}})
         assert integration._play_welcome_message.await_count == 1
 
@@ -56,7 +58,9 @@ def test_welcome_plays_once_when_ready_to_greet_then_first_run_completed() -> No
     async def _case() -> None:
         integration = _build_integration()
         await integration._on_ready_to_greet({"data": {"source": "permissions_v2"}})
-        await integration._on_first_run_completed({"data": {"source": "permissions.first_run_completed"}})
+        await integration._on_first_run_completed(
+            {"data": {"source": "permissions.first_run_completed"}}
+        )
         assert integration._play_welcome_message.await_count == 1
 
     asyncio.run(_case())

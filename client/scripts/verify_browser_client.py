@@ -1,4 +1,3 @@
-
 """
 Verification script for Client-Side Browser Use Module.
 
@@ -7,6 +6,7 @@ This script tests:
 2. Browser installation (ensure_browser_installed)
 3. Task execution (process)
 """
+
 import asyncio
 import logging
 import os
@@ -24,19 +24,22 @@ from modules.browser_automation.module import BrowserUseModule
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("VERIFY")
 
+
 async def main():
     logger.info("Starting BrowserUseModule verification...")
-    
+
     # 1. Initialize
     module = BrowserUseModule()
-    
+
     # Mock config if needed, or rely on global
     # We want to match real client behavior, so default to True or what's in config
     config = {
-        'keep_browser_open': global_config.get_feature_config('browser_use').get('keep_browser_open', True),
+        "keep_browser_open": global_config.get_feature_config("browser_use").get(
+            "keep_browser_open", True
+        ),
         # 'gemini_api_key': '...' # User needs to have this in env or config
     }
-    
+
     try:
         await module.initialize(config)
         logger.info("Initialization successful.")
@@ -56,19 +59,19 @@ async def main():
     # 3. Run a simple task
     task_text = "Go to https://example.com and tell me the title of the page."
     logger.info(f"Running task: {task_text}")
-    
+
     request = {
-        'args': {'task': task_text, 'config_preset': 'fast'},
-        'session_id': 'verify_session',
-        'hardware_id': 'verify_hw'
+        "args": {"task": task_text, "config_preset": "fast"},
+        "session_id": "verify_session",
+        "hardware_id": "verify_hw",
     }
-    
+
     try:
         async for event in module.process(request):
             print(f"EVENT: {event.get('type')} - {event.get('description')}")
-            if event.get('type') == 'BROWSER_TASK_FAILED':
+            if event.get("type") == "BROWSER_TASK_FAILED":
                 logger.error(f"Task failed: {event.get('error')}")
-            
+
     except Exception as e:
         logger.error(f"Task execution error: {e}")
 
@@ -82,6 +85,7 @@ async def main():
     logger.info("Verification finished.")
     if os.environ.get("VERIFY_FORCE_CLOSE") == "1":
         os._exit(0)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

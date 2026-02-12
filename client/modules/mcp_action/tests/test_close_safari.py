@@ -21,8 +21,7 @@ from modules.mcp_action.core.types import McpActionConfig
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ def get_open_app_server_path() -> str:
 async def test_close_safari():
     """Тест закрытия Safari."""
     logger.info("=== Тест закрытия Safari ===")
-    
+
     # Создаем конфигурацию
     config = McpActionConfig(
         open_app_server_path=get_open_app_server_path(),
@@ -55,37 +54,31 @@ async def test_close_safari():
         timeout_sec=10.0,
         enabled=True,
     )
-    
+
     # Создаем исполнитель
     executor = McpActionExecutor(config)
-    
+
     # Подготавливаем данные для закрытия Safari
-    action_data = {
-        "type": "close_app",
-        "app_name": "Safari"
-    }
-    
+    action_data = {"type": "close_app", "app_name": "Safari"}
+
     logger.info(f"Выполняем закрытие Safari...")
     logger.info(f"Данные действия: {action_data}")
-    
+
     # Выполняем действие
-    result = await executor.execute_action(
-        action_data,
-        session_id="test_close_safari"
-    )
-    
+    result = await executor.execute_action(action_data, session_id="test_close_safari")
+
     # Выводим результат
     logger.info("=== Результат ===")
     logger.info(f"Успех: {result.success}")
     logger.info(f"Сообщение: {result.message}")
     logger.info(f"Ошибка: {result.error}")
     logger.info(f"Имя приложения: {result.app_name}")
-    
+
     if result.success:
         print("\n✅ Safari успешно закрыт!")
     else:
         print(f"\n❌ Ошибка при закрытии Safari: {result.message}")
-    
+
     return result
 
 
@@ -99,4 +92,3 @@ if __name__ == "__main__":
     except Exception as exc:
         logger.error(f"Ошибка при выполнении теста: {exc}", exc_info=True)
         sys.exit(1)
-

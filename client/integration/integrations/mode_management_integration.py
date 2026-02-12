@@ -15,9 +15,9 @@ import logging
 import time
 from typing import Any
 
+from integration.core import selectors
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core import selectors
 from integration.core.state_manager import ApplicationStateManager
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
@@ -80,13 +80,13 @@ class ModeManagementIntegration:
 
         # Приоритеты источников (чем больше — тем важнее)
         self._priorities = {
-            'interrupt': 100,
-            'keyboard.short_press': 80,
-            'keyboard.release': 60,
-            'keyboard.long_press': 60,
-            'playback': 50,
-            'grpc': 50,
-            'fallback': 10,
+            "interrupt": 100,
+            "keyboard.short_press": 80,
+            "keyboard.release": 60,
+            "keyboard.long_press": 60,
+            "playback": 50,
+            "grpc": 50,
+            "fallback": 10,
         }
         # Сессии, в которых воспроизведение уже стартовало и еще не завершено.
         self._active_playback_sessions: set[str] = set()
@@ -109,21 +109,37 @@ class ModeManagementIntegration:
     async def initialize(self) -> bool:
         try:
             # Подписки на события заявок и системные события
-            await self.event_bus.subscribe("mode.request", self._on_mode_request, EventPriority.CRITICAL)
-            await self.event_bus.subscribe("app.mode_changed", self._on_app_mode_changed, EventPriority.HIGH)
+            await self.event_bus.subscribe(
+                "mode.request", self._on_mode_request, EventPriority.CRITICAL
+            )
+            await self.event_bus.subscribe(
+                "app.mode_changed", self._on_app_mode_changed, EventPriority.HIGH
+            )
 
             # Регистрируем допустимые переходы контроллера
             # Классический цикл: SLEEPING -> LISTENING -> PROCESSING -> SLEEPING
-            self.controller.register_transition(ModeTransition(AppMode.SLEEPING, AppMode.LISTENING, ModeTransitionType.AUTOMATIC))
-            self.controller.register_transition(ModeTransition(AppMode.LISTENING, AppMode.PROCESSING, ModeTransitionType.AUTOMATIC))
-            self.controller.register_transition(ModeTransition(AppMode.PROCESSING, AppMode.SLEEPING, ModeTransitionType.AUTOMATIC))
-            
+            self.controller.register_transition(
+                ModeTransition(AppMode.SLEEPING, AppMode.LISTENING, ModeTransitionType.AUTOMATIC)
+            )
+            self.controller.register_transition(
+                ModeTransition(AppMode.LISTENING, AppMode.PROCESSING, ModeTransitionType.AUTOMATIC)
+            )
+            self.controller.register_transition(
+                ModeTransition(AppMode.PROCESSING, AppMode.SLEEPING, ModeTransitionType.AUTOMATIC)
+            )
+
             # 🆕 Прямой переход для приветствия: SLEEPING -> PROCESSING
-            self.controller.register_transition(ModeTransition(AppMode.SLEEPING, AppMode.PROCESSING, ModeTransitionType.MANUAL))
+            self.controller.register_transition(
+                ModeTransition(AppMode.SLEEPING, AppMode.PROCESSING, ModeTransitionType.MANUAL)
+            )
             # 🆕 PTT override: разрешаем LISTENING из PROCESSING
-            self.controller.register_transition(ModeTransition(AppMode.PROCESSING, AppMode.LISTENING, ModeTransitionType.MANUAL))
+            self.controller.register_transition(
+                ModeTransition(AppMode.PROCESSING, AppMode.LISTENING, ModeTransitionType.MANUAL)
+            )
             # 🆕 Позволяем отменить слушание и вернуться в сон вручную
-            self.controller.register_transition(ModeTransition(AppMode.LISTENING, AppMode.SLEEPING, ModeTransitionType.MANUAL))
+            self.controller.register_transition(
+                ModeTransition(AppMode.LISTENING, AppMode.SLEEPING, ModeTransitionType.MANUAL)
+            )
 
             # Мост: при смене режима контроллером — обновляем StateManager,
             # который централизованно публикует события (app.mode_changed/app.state_changed)
@@ -137,6 +153,7 @@ class ModeManagementIntegration:
                     self.state_manager.set_mode(event.mode, session_id=session_id)
                 except Exception as e:
                     logger.error(f"StateManager bridging failed: {e}")
+
             self.controller.register_mode_change_callback(_on_controller_mode_changed)
 
             # Мост с существующими событиями (на время миграции)
@@ -148,28 +165,56 @@ class ModeManagementIntegration:
             # Внимание: не возвращаем SLEEPING по завершению gRPC — ждём завершения воспроизведения
             # Доп. подписки для контекста (без публикации режимов)
             try:
-                await self.event_bus.subscribe("voice.recording_start", self._on_voice_recording_start, EventPriority.MEDIUM)
+                await self.event_bus.subscribe(
+                    "voice.recording_start", self._on_voice_recording_start, EventPriority.MEDIUM
+                )
             except Exception:
                 pass
             # await self.event_bus.subscribe("grpc.request_completed", self._bridge_grpc_done, EventPriority.MEDIUM)
             # await self.event_bus.subscribe("grpc.request_failed", self._bridge_grpc_done, EventPriority.MEDIUM)
 
-            await self.event_bus.subscribe("playback.completed", self._bridge_playback_done, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("playback.failed", self._bridge_playback_done, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("playback.started", self._on_playback_started, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("playback.cancelled", self._on_playback_finished, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("playback.completed", self._on_playback_finished, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("playback.failed", self._on_playback_finished, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("browser.started", self._on_browser_started, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("browser.completed", self._on_browser_finished, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("browser.failed", self._on_browser_finished, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("browser.cancelled", self._on_browser_finished, EventPriority.MEDIUM)
+            await self.event_bus.subscribe(
+                "playback.completed", self._bridge_playback_done, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.failed", self._bridge_playback_done, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.started", self._on_playback_started, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.cancelled", self._on_playback_finished, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.completed", self._on_playback_finished, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.failed", self._on_playback_finished, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "browser.started", self._on_browser_started, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "browser.completed", self._on_browser_finished, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "browser.failed", self._on_browser_finished, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "browser.cancelled", self._on_browser_finished, EventPriority.MEDIUM
+            )
             # Единый источник истины для активности actions: lifecycle-события.
             # Не подписываемся на actions.open_app/close_app.* дополнительно, чтобы
             # не учитывать одно действие дважды.
-            await self.event_bus.subscribe("actions.lifecycle.started", self._on_action_started, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("actions.lifecycle.finished", self._on_action_finished, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("grpc.response.action", self._on_action_intent, EventPriority.MEDIUM)
+            await self.event_bus.subscribe(
+                "actions.lifecycle.started", self._on_action_started, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "actions.lifecycle.finished", self._on_action_finished, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "grpc.response.action", self._on_action_intent, EventPriority.MEDIUM
+            )
 
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
 
@@ -204,7 +249,9 @@ class ModeManagementIntegration:
             data = (event or {}).get("data", {})
             target = data.get("target")  # может быть AppMode или str
 
-            logger.info(f"🔄 MODE_REQUEST: target={target}, source={data.get('source')}, session_id={data.get('session_id')}, priority={data.get('priority')}")
+            logger.info(
+                f"🔄 MODE_REQUEST: target={target}, source={data.get('source')}, session_id={data.get('session_id')}, priority={data.get('priority')}"
+            )
 
             if isinstance(target, str):
                 try:
@@ -255,7 +302,11 @@ class ModeManagementIntegration:
 
             dedup_sid = normalized_session_id or "__none__"
             dedup_source = source or "__unknown__"
-            dedup_key = (target.value if hasattr(target, "value") else str(target), dedup_sid, dedup_source)
+            dedup_key = (
+                target.value if hasattr(target, "value") else str(target),
+                dedup_sid,
+                dedup_source,
+            )
             request_id = data.get("request_id")
             dedup_request_id = str(request_id) if request_id is not None else None
             now = time.monotonic()
@@ -265,7 +316,9 @@ class ModeManagementIntegration:
             stale_keys = [k for k, ts in self._last_mode_request_ts.items() if ts < cutoff]
             for k in stale_keys:
                 self._last_mode_request_ts.pop(k, None)
-            stale_request_ids = [rid for rid, ts in self._last_mode_request_id_ts.items() if ts < cutoff]
+            stale_request_ids = [
+                rid for rid, ts in self._last_mode_request_id_ts.items() if ts < cutoff
+            ]
             for rid in stale_request_ids:
                 self._last_mode_request_id_ts.pop(rid, None)
 
@@ -327,7 +380,9 @@ class ModeManagementIntegration:
 
             # Фильтрация по сессии (в PROCESSING принимаем только текущую либо interrupt)
             current_mode = selectors.get_current_mode(self.state_manager)
-            logger.info(f"🔄 MODE_REQUEST: current_mode={current_mode}, target={target}, source={source}")
+            logger.info(
+                f"🔄 MODE_REQUEST: current_mode={current_mode}, target={target}, source={source}"
+            )
 
             # КРИТИЧНО: Для PROCESSING разрешаем повторные запросы с новым session_id
             # Это позволяет обрабатывать новый запрос пользователя, даже если приложение
@@ -339,23 +394,29 @@ class ModeManagementIntegration:
                     if session_id != current_session_id:
                         # КРИТИЧНО: Просто вызываем set_mode() с новым session_id
                         # set_mode() сам опубликует app.mode_changed если session_id изменился
-                        logger.info(f"🔄 MODE_REQUEST: новый запрос на PROCESSING с другим session_id (active={current_session_id}, request={session_id}) - разрешаем")
+                        logger.info(
+                            f"🔄 MODE_REQUEST: новый запрос на PROCESSING с другим session_id (active={current_session_id}, request={session_id}) - разрешаем"
+                        )
                         self.state_manager.set_mode(target, session_id=session_id)
                         return
                     else:
                         # Тот же session_id - идемпотентность
-                        logger.debug(f"Mode request ignored (same mode and session): {target}, session_id={session_id}")
+                        logger.debug(
+                            f"Mode request ignored (same mode and session): {target}, session_id={session_id}"
+                        )
                         return
                 elif session_id is not None:
                     # Новый запрос без активной сессии - разрешаем
-                    logger.info(f"🔄 MODE_REQUEST: новый запрос на PROCESSING без активной сессии (request={session_id}) - разрешаем")
+                    logger.info(
+                        f"🔄 MODE_REQUEST: новый запрос на PROCESSING без активной сессии (request={session_id}) - разрешаем"
+                    )
                     self.state_manager.set_mode(target, session_id=session_id)
                     return
                 else:
                     # Нет session_id - идемпотентность
                     logger.debug(f"Mode request ignored (same mode, no session_id): {target}")
                     return
-            
+
             # Идемпотентность: если запрашивают тот же режим — игнорируем (для других режимов)
             if target == current_mode:
                 logger.debug(f"Mode request ignored (same mode): {target}")
@@ -369,17 +430,16 @@ class ModeManagementIntegration:
 
             # Guard: не уходим в SLEEPING по "штатному завершению", пока у сессии
             # есть активное воспроизведение/браузер/действия.
-            if (
-                target == AppMode.SLEEPING
-                and source in {
-                    "ProcessingWorkflow.processing_completed",
-                    "playback",
-                    "playback.finished",
-                    "browser.finished",
-                    "actions.finished",
-                }
-            ):
-                guard_session_id = normalized_session_id or self._get_current_processing_session_id()
+            if target == AppMode.SLEEPING and source in {
+                "ProcessingWorkflow.processing_completed",
+                "playback",
+                "playback.finished",
+                "browser.finished",
+                "actions.finished",
+            }:
+                guard_session_id = (
+                    normalized_session_id or self._get_current_processing_session_id()
+                )
                 blockers = self._collect_blockers_for_sleep_guard(guard_session_id)
                 if blockers:
                     if guard_session_id is not None:
@@ -393,10 +453,12 @@ class ModeManagementIntegration:
                         ",".join(blockers),
                     )
                     return
-            
-            if current_mode == AppMode.PROCESSING and source != 'interrupt':
+
+            if current_mode == AppMode.PROCESSING and source != "interrupt":
                 current_session_id = selectors.get_current_session_id(self.state_manager)
-                logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={current_session_id}, request={session_id})")
+                logger.info(
+                    f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={current_session_id}, request={session_id})"
+                )
                 if current_session_id is not None and session_id is not None:
                     if session_id != current_session_id:
                         logger.debug("Mode request ignored due to session mismatch in PROCESSING")
@@ -404,8 +466,10 @@ class ModeManagementIntegration:
 
             # Приоритеты: если заявка из более низкого приоритета — применяем только если нет конфликтов
             # Упрощённая модель: interrupt всегда применяется, остальное — напрямую
-            if source == 'interrupt' or priority >= 90:
-                logger.info(f"🔄 MODE_REQUEST: применяем как interrupt (source={source}, priority={priority}) → {target}")
+            if source == "interrupt" or priority >= 90:
+                logger.info(
+                    f"🔄 MODE_REQUEST: применяем как interrupt (source={source}, priority={priority}) → {target}"
+                )
                 # КРИТИЧНО: Все изменения идут через set_mode() - единый источник истины
                 await self._apply_mode(target, source="interrupt", session_id=session_id)
                 return
@@ -423,12 +487,14 @@ class ModeManagementIntegration:
             new_mode = data.get("mode")
             # Синхронизируем внутренний контроллер, если режим изменили в обход
             try:
-                if hasattr(self.controller, 'get_current_mode') and new_mode is not None:
+                if hasattr(self.controller, "get_current_mode") and new_mode is not None:
                     if self.controller.get_current_mode() != new_mode:
                         # Обновляем только внутреннее состояние без действий/обработчиков
-                        self.controller.previous_mode = getattr(self.controller, 'current_mode', None)
+                        self.controller.previous_mode = getattr(
+                            self.controller, "current_mode", None
+                        )
                         self.controller.current_mode = new_mode
-                        self.controller.mode_start_time = __import__('time').time()
+                        self.controller.mode_start_time = __import__("time").time()
             except Exception:
                 pass
             if new_mode == AppMode.PROCESSING:
@@ -436,7 +502,9 @@ class ModeManagementIntegration:
                 if self._processing_timeout_task and not self._processing_timeout_task.done():
                     self._processing_timeout_task.cancel()
                 if (self._processing_timeout_sec or 0) > 0:
-                    self._processing_timeout_task = asyncio.create_task(self._processing_timeout_guard())
+                    self._processing_timeout_task = asyncio.create_task(
+                        self._processing_timeout_guard()
+                    )
                 if self._listening_timeout_task and not self._listening_timeout_task.done():
                     self._listening_timeout_task.cancel()
             elif new_mode == AppMode.LISTENING:
@@ -444,7 +512,9 @@ class ModeManagementIntegration:
                 if self._listening_timeout_task and not self._listening_timeout_task.done():
                     self._listening_timeout_task.cancel()
                 if (self._listening_timeout_sec or 0) > 0:
-                    self._listening_timeout_task = asyncio.create_task(self._listening_timeout_guard())
+                    self._listening_timeout_task = asyncio.create_task(
+                        self._listening_timeout_guard()
+                    )
                 if self._processing_timeout_task and not self._processing_timeout_task.done():
                     self._processing_timeout_task.cancel()
             else:
@@ -465,39 +535,39 @@ class ModeManagementIntegration:
     # --------------- Bridges (temporary during migration) ---------------
     async def _bridge_keyboard_long(self, event):
         try:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.LISTENING,
-                "source": "keyboard.long_press"
-            })
+            await self.event_bus.publish(
+                "mode.request", {"target": AppMode.LISTENING, "source": "keyboard.long_press"}
+            )
         except Exception:
             pass
 
     async def _bridge_keyboard_release(self, event):
         try:
             data = (event or {}).get("data", {})
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.PROCESSING,
-                "source": "keyboard.release",
-                "session_id": data.get("session_id")
-            })
+            await self.event_bus.publish(
+                "mode.request",
+                {
+                    "target": AppMode.PROCESSING,
+                    "source": "keyboard.release",
+                    "session_id": data.get("session_id"),
+                },
+            )
         except Exception:
             pass
 
     async def _bridge_keyboard_short(self, event):
         try:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "keyboard.short_press"
-            })
+            await self.event_bus.publish(
+                "mode.request", {"target": AppMode.SLEEPING, "source": "keyboard.short_press"}
+            )
         except Exception:
             pass
 
     async def _bridge_grpc_done(self, event):
         try:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "grpc"
-            })
+            await self.event_bus.publish(
+                "mode.request", {"target": AppMode.SLEEPING, "source": "grpc"}
+            )
         except Exception:
             pass
 
@@ -525,9 +595,8 @@ class ModeManagementIntegration:
             # Разрешаем финализацию если:
             # 1) это явно отложенный sleeping для этой сессии, или
             # 2) это текущая активная сессия в state manager.
-            if (
-                session_id not in self._deferred_sleep_sessions
-                and (current_session_id is None or session_id != current_session_id)
+            if session_id not in self._deferred_sleep_sessions and (
+                current_session_id is None or session_id != current_session_id
             ):
                 logger.debug(
                     "MODE_REQUEST skipped (playback done): session mismatch event=%s current=%s",
@@ -584,11 +653,14 @@ class ModeManagementIntegration:
                     and not self._has_pending_action_intent(session_id)
                 ):
                     self._deferred_sleep_sessions.discard(session_id)
-                    await self.event_bus.publish("mode.request", {
-                        "target": AppMode.SLEEPING,
-                        "source": "playback.finished",
-                        "session_id": session_id,
-                    })
+                    await self.event_bus.publish(
+                        "mode.request",
+                        {
+                            "target": AppMode.SLEEPING,
+                            "source": "playback.finished",
+                            "session_id": session_id,
+                        },
+                    )
         except Exception:
             pass
 
@@ -616,28 +688,37 @@ class ModeManagementIntegration:
                 and not self._has_pending_action_intent(session_id)
             ):
                 self._deferred_sleep_sessions.discard(session_id)
-                await self.event_bus.publish("mode.request", {
-                    "target": AppMode.SLEEPING,
-                    "source": "browser.finished",
-                    "session_id": session_id,
-                })
+                await self.event_bus.publish(
+                    "mode.request",
+                    {
+                        "target": AppMode.SLEEPING,
+                        "source": "browser.finished",
+                        "session_id": session_id,
+                    },
+                )
         except Exception:
             pass
 
     async def _on_action_started(self, event):
         try:
             data = (event or {}).get("data", {}) or {}
-            session_id = self._resolve_action_session_id(data.get("session_id"), source="action_started")
+            session_id = self._resolve_action_session_id(
+                data.get("session_id"), source="action_started"
+            )
             if session_id:
                 self._pending_action_intents.pop(session_id, None)
-                self._active_action_sessions[session_id] = self._active_action_sessions.get(session_id, 0) + 1
+                self._active_action_sessions[session_id] = (
+                    self._active_action_sessions.get(session_id, 0) + 1
+                )
         except Exception:
             pass
 
     async def _on_action_finished(self, event):
         try:
             data = (event or {}).get("data", {}) or {}
-            session_id = self._resolve_action_session_id(data.get("session_id"), source="action_finished")
+            session_id = self._resolve_action_session_id(
+                data.get("session_id"), source="action_finished"
+            )
             if not session_id:
                 return
             self._pending_action_intents.pop(session_id, None)
@@ -656,18 +737,23 @@ class ModeManagementIntegration:
                 and not self._has_pending_action_intent(session_id)
             ):
                 self._deferred_sleep_sessions.discard(session_id)
-                await self.event_bus.publish("mode.request", {
-                    "target": AppMode.SLEEPING,
-                    "source": "actions.finished",
-                    "session_id": session_id,
-                })
+                await self.event_bus.publish(
+                    "mode.request",
+                    {
+                        "target": AppMode.SLEEPING,
+                        "source": "actions.finished",
+                        "session_id": session_id,
+                    },
+                )
         except Exception:
             pass
 
     async def _on_action_intent(self, event):
         try:
             data = (event or {}).get("data", {}) or {}
-            session_id = self._resolve_action_session_id(data.get("session_id"), source="grpc.response.action")
+            session_id = self._resolve_action_session_id(
+                data.get("session_id"), source="grpc.response.action"
+            )
             if session_id:
                 self._pending_action_intents[session_id] = time.monotonic()
                 logger.info(
@@ -681,11 +767,14 @@ class ModeManagementIntegration:
 
     async def _bridge_interrupt(self, event):
         try:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "interrupt",
-                "priority": self._priorities.get('interrupt', 100)
-            })
+            await self.event_bus.publish(
+                "mode.request",
+                {
+                    "target": AppMode.SLEEPING,
+                    "source": "interrupt",
+                    "priority": self._priorities.get("interrupt", 100),
+                },
+            )
         except Exception:
             pass
 

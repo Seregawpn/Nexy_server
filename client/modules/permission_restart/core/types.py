@@ -11,6 +11,7 @@ from typing import Sequence
 
 class PermissionType(Enum):
     """Типы разрешений"""
+
     MICROPHONE = "microphone"
     SCREEN_CAPTURE = "screen_capture"
     CAMERA = "camera"
@@ -24,6 +25,7 @@ class PermissionType(Enum):
 
 class PermissionStatus(Enum):
     """Статусы разрешений"""
+
     GRANTED = "granted"
     DENIED = "denied"
     NOT_DETERMINED = "not_determined"

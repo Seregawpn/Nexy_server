@@ -96,7 +96,9 @@ class ScreenshotCaptureIntegration:
                 max_width=int(cfg.get("max_width", 1920)),
                 max_height=int(cfg.get("max_height", 1080)),
                 quality=int(cfg.get("quality", 85)),
-                region=str(cfg.get("region", "full_screen")).lower() if isinstance(cfg.get("region", "full_screen"), str) else "full_screen",
+                region=str(cfg.get("region", "full_screen")).lower()
+                if isinstance(cfg.get("region", "full_screen"), str)
+                else "full_screen",
                 enforce_permissions=bool(cfg.get("enforce_permissions", False)),
             )
         except Exception:
@@ -109,19 +111,39 @@ class ScreenshotCaptureIntegration:
             # до того, как FirstRunPermissionsIntegration даст добро.
 
             # Подписки на события — даже в degraded-режиме, чтобы отдавать screenshot.error
-            await self.event_bus.subscribe(EventTypes.APP_MODE_CHANGED, self._on_mode_changed, EventPriority.HIGH)
-            await self.event_bus.subscribe(EventTypes.VOICE_RECORDING_STOP, self._on_voice_recording_stop, EventPriority.HIGH)
+            await self.event_bus.subscribe(
+                EventTypes.APP_MODE_CHANGED, self._on_mode_changed, EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                EventTypes.VOICE_RECORDING_STOP, self._on_voice_recording_stop, EventPriority.HIGH
+            )
             # Ранний захват скриншота при voice.recording_start (когда запись реально началась)
-            await self.event_bus.subscribe(EventTypes.VOICE_RECORDING_START, self._on_recording_start, EventPriority.MEDIUM)
-            
+            await self.event_bus.subscribe(
+                EventTypes.VOICE_RECORDING_START, self._on_recording_start, EventPriority.MEDIUM
+            )
+
             # Дополнительная подписка для отладки
-            logger.info("🔧 ScreenshotCapture: Подписки настроены - app.mode_changed, voice.recording_stop, voice.recording_start")
+            logger.info(
+                "🔧 ScreenshotCapture: Подписки настроены - app.mode_changed, voice.recording_stop, voice.recording_start"
+            )
             # Подписки на статусы разрешений, чтобы не пытаться снимать без Screen Recording
             try:
-                await self.event_bus.subscribe(EventTypes.PERMISSIONS_STATUS_CHECKED, self._on_permission_event, EventPriority.MEDIUM)
-                await self.event_bus.subscribe(EventTypes.PERMISSIONS_CHANGED, self._on_permission_event, EventPriority.MEDIUM)
-                await self.event_bus.subscribe(EventTypes.PERMISSIONS_REQUESTED, self._on_permission_event, EventPriority.LOW)
-                await self.event_bus.subscribe(EventTypes.PERMISSIONS_INTEGRATION_READY, self._on_permissions_ready, EventPriority.MEDIUM)
+                await self.event_bus.subscribe(
+                    EventTypes.PERMISSIONS_STATUS_CHECKED,
+                    self._on_permission_event,
+                    EventPriority.MEDIUM,
+                )
+                await self.event_bus.subscribe(
+                    EventTypes.PERMISSIONS_CHANGED, self._on_permission_event, EventPriority.MEDIUM
+                )
+                await self.event_bus.subscribe(
+                    EventTypes.PERMISSIONS_REQUESTED, self._on_permission_event, EventPriority.LOW
+                )
+                await self.event_bus.subscribe(
+                    EventTypes.PERMISSIONS_INTEGRATION_READY,
+                    self._on_permissions_ready,
+                    EventPriority.MEDIUM,
+                )
             except Exception:
                 pass
 
@@ -133,7 +155,9 @@ class ScreenshotCaptureIntegration:
             except Exception:
                 pass
             # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration
-            logger.info("📸 [SCREENSHOT_INTEGRATION] Разрешения будут запрошены через PermissionsIntegration")
+            logger.info(
+                "📸 [SCREENSHOT_INTEGRATION] Разрешения будут запрошены через PermissionsIntegration"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to initialize ScreenshotCaptureIntegration: {e}")
@@ -145,7 +169,7 @@ class ScreenshotCaptureIntegration:
             return False
         if self._running:
             return True
-        
+
         # Проверяем разрешения Screen Capture перед запуском
         await self._check_screen_capture_permissions()
         if self._enforce_permissions:
@@ -215,36 +239,44 @@ class ScreenshotCaptureIntegration:
             # Извлекаем session_id из события
             data = (event or {}).get("data", {})
             session_id = data.get("session_id")
-            
+
             if session_id is None:
                 return
-            
+
             # Сохраняем session_id для последующих событий
             self._last_session_id = session_id
-            
+
             # Проверяем idempotent: если скриншот уже захвачен для этой сессии
             if session_id == self._captured_for_session:
-                logger.debug(f"📸 ScreenshotCapture: already captured for session {session_id} (recording_start)")
+                logger.debug(
+                    f"📸 ScreenshotCapture: already captured for session {session_id} (recording_start)"
+                )
                 return
-            
+
             # Проверяем, не запущена ли уже задача захвата для этой сессии
             if session_id in self._early_capture_tasks:
                 task = self._early_capture_tasks[session_id]
                 if not task.done():
-                    logger.debug(f"📸 ScreenshotCapture: capture already in progress for session {session_id}")
+                    logger.debug(
+                        f"📸 ScreenshotCapture: capture already in progress for session {session_id}"
+                    )
                     return
-            
+
             # TRACE: начало раннего захвата скриншота
             ts_ms = int(time.monotonic() * 1000)
-            logger.info(f"TRACE phase=screenshot.start ts={ts_ms} session={session_id} extra={{trigger=recording_start}}")
-            
+            logger.info(
+                f"TRACE phase=screenshot.start ts={ts_ms} session={session_id} extra={{trigger=recording_start}}"
+            )
+
             # Запускаем асинхронный захват (не блокируем поток)
             task = asyncio.create_task(self._capture_once_early(session_id))
             self._early_capture_tasks[session_id] = task
             task.add_done_callback(lambda _: self._early_capture_tasks.pop(session_id, None))
-            
-            logger.info(f"📸 ScreenshotCapture: Ранний захват запущен для session {session_id} (voice.recording_start)")
-                
+
+            logger.info(
+                f"📸 ScreenshotCapture: Ранний захват запущен для session {session_id} (voice.recording_start)"
+            )
+
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in recording_start: {e}")
 
@@ -253,36 +285,50 @@ class ScreenshotCaptureIntegration:
             data = (event or {}).get("data", {})
             session_id = data.get("session_id")
             self._last_session_id = session_id
-            
-            logger.info(f"🎤 ScreenshotCapture: Получено voice.recording_stop, session_id={session_id}")
-            
+
+            logger.info(
+                f"🎤 ScreenshotCapture: Получено voice.recording_stop, session_id={session_id}"
+            )
+
             # Если скриншот уже захвачен (ранний захват) - используем его
             if session_id is not None:
                 if self._captured_for_session == session_id:
-                    logger.debug("ScreenshotCaptureIntegration: already captured for session (voice_stop)")
+                    logger.debug(
+                        "ScreenshotCaptureIntegration: already captured for session (voice_stop)"
+                    )
                     return
                 if session_id in self._prepared_screens:
-                    logger.info(f"📸 ScreenshotCapture: Используем подготовленный скриншот для session {session_id}")
+                    logger.info(
+                        f"📸 ScreenshotCapture: Используем подготовленный скриншот для session {session_id}"
+                    )
                     await self._publish_prepared(session_id)
                 else:
                     # Если ранний захват еще не завершился - ждем его или захватываем заново
                     if session_id in self._early_capture_tasks:
                         task = self._early_capture_tasks.get(session_id)
                         if task and not task.done():
-                            logger.info(f"📸 ScreenshotCapture: Ожидаем завершения раннего захвата для session {session_id}")
+                            logger.info(
+                                f"📸 ScreenshotCapture: Ожидаем завершения раннего захвата для session {session_id}"
+                            )
                             try:
                                 await asyncio.wait_for(task, timeout=0.5)
                             except asyncio.TimeoutError:
-                                logger.warning(f"📸 ScreenshotCapture: Таймаут ожидания раннего захвата, захватываем заново")
+                                logger.warning(
+                                    f"📸 ScreenshotCapture: Таймаут ожидания раннего захвата, захватываем заново"
+                                )
                                 await self._capture_once(session_id=session_id)
                         else:
                             # Задача завершилась, но скриншот не опубликован - захватываем заново
-                            logger.info(f"📸 ScreenshotCapture: Ранний захват завершился без результата, захватываем заново")
+                            logger.info(
+                                f"📸 ScreenshotCapture: Ранний захват завершился без результата, захватываем заново"
+                            )
                             await self._capture_once(session_id=session_id)
                     else:
-                        logger.info(f"📸 ScreenshotCapture: ПРЯМОЙ ЗАХВАТ по voice.recording_stop, session_id={session_id}")
+                        logger.info(
+                            f"📸 ScreenshotCapture: ПРЯМОЙ ЗАХВАТ по voice.recording_stop, session_id={session_id}"
+                        )
                         await self._capture_once(session_id=session_id)
-                
+
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in voice_recording_stop: {e}")
 
@@ -290,15 +336,23 @@ class ScreenshotCaptureIntegration:
         try:
             data = (event or {}).get("data", {})
             mode = data.get("mode")
-            logger.info(f"🔍 ScreenshotCapture: Получено событие app.mode_changed - mode={mode} (type: {type(mode)})")
-            
+            logger.info(
+                f"🔍 ScreenshotCapture: Получено событие app.mode_changed - mode={mode} (type: {type(mode)})"
+            )
+
             # Проверяем режим - нормализуем к enum если это строка
-            mode_enum = mode if isinstance(mode, AppMode) else (AppMode(mode) if mode in [m.value for m in AppMode] else None)
-            
+            mode_enum = (
+                mode
+                if isinstance(mode, AppMode)
+                else (AppMode(mode) if mode in [m.value for m in AppMode] else None)
+            )
+
             if mode_enum == AppMode.LISTENING:
                 session_id = self._last_session_id
                 if session_id is not None:
-                    logger.debug(f"ScreenshotCapture: LISTENING detected, preparing screenshot for session {session_id}")
+                    logger.debug(
+                        f"ScreenshotCapture: LISTENING detected, preparing screenshot for session {session_id}"
+                    )
                     await self._schedule_preparation(session_id)
                 return
 
@@ -309,16 +363,27 @@ class ScreenshotCaptureIntegration:
             sid = self._last_session_id
             # КРИТИЧНО: Если скриншот уже захвачен (ранний захват), переопубликуем событие
             # чтобы ProcessingWorkflow (теперь активный) его получил
-            if sid is not None and self._captured_for_session == sid and self._captured_screenshot_data is not None:
-                logger.info(f"📸 ScreenshotCapture: переопубликуем screenshot.captured для session {sid} (ранний захват)")
+            if (
+                sid is not None
+                and self._captured_for_session == sid
+                and self._captured_screenshot_data is not None
+            ):
+                logger.info(
+                    f"📸 ScreenshotCapture: переопубликуем screenshot.captured для session {sid} (ранний захват)"
+                )
                 await self.event_bus.publish("screenshot.captured", self._captured_screenshot_data)
                 return
-            logger.info(f"📸 ScreenshotCaptureIntegration: app entered PROCESSING, session_id={sid}")
+            logger.info(
+                f"📸 ScreenshotCaptureIntegration: app entered PROCESSING, session_id={sid}"
+            )
             if self._enforce_permissions and not self._is_screen_permission_granted():
-                await self.event_bus.publish("screenshot.error", {
-                    "session_id": sid,
-                    "error": "permissions_denied",
-                })
+                await self.event_bus.publish(
+                    "screenshot.error",
+                    {
+                        "session_id": sid,
+                        "error": "permissions_denied",
+                    },
+                )
                 await self._prompt_screen_permission()
                 logger.info("Screenshot skipped: screen recording permission denied")
                 return
@@ -336,23 +401,36 @@ class ScreenshotCaptureIntegration:
             # В старом ивенте StateManager кладёт данные без вложенного data
             if new_mode is None and isinstance(event, dict):
                 new_mode = event.get("new_mode") or ((event.get("data") or {}).get("new_mode"))
-            
-            logger.info(f"🔍 ScreenshotCapture: Получено событие app.state_changed - new_mode={new_mode} (type: {type(new_mode)})")
-            
+
+            logger.info(
+                f"🔍 ScreenshotCapture: Получено событие app.state_changed - new_mode={new_mode} (type: {type(new_mode)})"
+            )
+
             # Нормализуем режим к enum
-            mode_enum = new_mode if isinstance(new_mode, AppMode) else (AppMode(new_mode) if new_mode in [m.value for m in AppMode] else None)
-            
+            mode_enum = (
+                new_mode
+                if isinstance(new_mode, AppMode)
+                else (AppMode(new_mode) if new_mode in [m.value for m in AppMode] else None)
+            )
+
             if mode_enum != AppMode.PROCESSING:
-                logger.debug(f"ScreenshotCapture: Игнорируем режим {new_mode} в state_changed, ждем PROCESSING")
+                logger.debug(
+                    f"ScreenshotCapture: Игнорируем режим {new_mode} в state_changed, ждем PROCESSING"
+                )
                 return
-                
+
             sid = self._last_session_id
-            logger.info(f"📸 ScreenshotCaptureIntegration: state_changed→PROCESSING, session_id={sid}")
+            logger.info(
+                f"📸 ScreenshotCaptureIntegration: state_changed→PROCESSING, session_id={sid}"
+            )
             if self._enforce_permissions and not self._is_screen_permission_granted():
-                await self.event_bus.publish("screenshot.error", {
-                    "session_id": sid,
-                    "error": "permissions_denied",
-                })
+                await self.event_bus.publish(
+                    "screenshot.error",
+                    {
+                        "session_id": sid,
+                        "error": "permissions_denied",
+                    },
+                )
                 await self._prompt_screen_permission()
                 return
             await self._capture_once(session_id=sid)
@@ -362,16 +440,21 @@ class ScreenshotCaptureIntegration:
     async def _capture_once_early(self, session_id: float | None):
         """Ранний захват скриншота (не блокирует, может быть отменен)"""
         await self._capture_once(session_id, is_early=True)
-    
+
     async def _capture_once(self, session_id: float | None, is_early: bool = False):
         if not self._capture:
             fmt = (self._config.format or "jpeg").lower()
             if fmt == "webp":
-                logger.warning("ScreenshotCaptureIntegration: WebP requires capture module; fallback disabled")
-                await self.event_bus.publish("screenshot.error", {
-                    "session_id": session_id,
-                    "error": "webp_requires_module",
-                })
+                logger.warning(
+                    "ScreenshotCaptureIntegration: WebP requires capture module; fallback disabled"
+                )
+                await self.event_bus.publish(
+                    "screenshot.error",
+                    {
+                        "session_id": session_id,
+                        "error": "webp_requires_module",
+                    },
+                )
                 return
             # Fallback: используем системную утилиту screencapture (macOS)
             ok, out_path, meta = await self._fallback_capture_cli()
@@ -383,7 +466,7 @@ class ScreenshotCaptureIntegration:
                     f"TRACE phase=screenshot.ready ts={ts_ms} session={session_id} "
                     f"extra={{format={format_value}, early={is_early}}}"
                 )
-                
+
                 # Кэшируем данные для переопубликации
                 screenshot_data = {
                     "session_id": session_id,
@@ -400,11 +483,16 @@ class ScreenshotCaptureIntegration:
                 self._captured_for_session = session_id
                 logger.info(f"Screenshot (CLI) captured: {out_path}")
             else:
-                logger.info("ScreenshotCaptureIntegration: module unavailable, publishing screenshot.error(module_unavailable)")
-                await self.event_bus.publish("screenshot.error", {
-                    "session_id": session_id,
-                    "error": "module_unavailable",
-                })
+                logger.info(
+                    "ScreenshotCaptureIntegration: module unavailable, publishing screenshot.error(module_unavailable)"
+                )
+                await self.event_bus.publish(
+                    "screenshot.error",
+                    {
+                        "session_id": session_id,
+                        "error": "module_unavailable",
+                    },
+                )
             return
         try:
             await asyncio.sleep(0.05)
@@ -413,22 +501,36 @@ class ScreenshotCaptureIntegration:
             if result and result.success and result.data:
                 # TRACE: скриншот готов
                 ts_ms = int(time.monotonic() * 1000)
-                format_ext = result.data.format.value if hasattr(result.data.format, 'value') else str(result.data.format)
-                logger.info(f"TRACE phase=screenshot.ready ts={ts_ms} session={session_id} extra={{format={format_ext}, early={is_early}}}")
-                
+                format_ext = (
+                    result.data.format.value
+                    if hasattr(result.data.format, "value")
+                    else str(result.data.format)
+                )
+                logger.info(
+                    f"TRACE phase=screenshot.ready ts={ts_ms} session={session_id} extra={{format={format_ext}, early={is_early}}}"
+                )
+
                 await self._store_and_publish(session_id, result)
             else:
-                await self.event_bus.publish("screenshot.error", {
-                    "session_id": session_id,
-                    "error": (result.error if result else "unknown"),
-                })
-                logger.warning(f"Screenshot capture failed: {(result.error if result else 'unknown')}")
+                await self.event_bus.publish(
+                    "screenshot.error",
+                    {
+                        "session_id": session_id,
+                        "error": (result.error if result else "unknown"),
+                    },
+                )
+                logger.warning(
+                    f"Screenshot capture failed: {(result.error if result else 'unknown')}"
+                )
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: unexpected error: {e}")
-            await self.event_bus.publish("screenshot.error", {
-                "session_id": session_id,
-                "error": str(e),
-            })
+            await self.event_bus.publish(
+                "screenshot.error",
+                {
+                    "session_id": session_id,
+                    "error": str(e),
+                },
+            )
 
     async def _fallback_capture_cli(self) -> tuple[bool, Path | None, dict[str, Any]]:
         """Пытается сделать скриншот через системную утилиту screencapture (macOS).
@@ -456,7 +558,9 @@ class ScreenshotCaptureIntegration:
             )
             stdout, stderr = await proc.communicate()
             if proc.returncode != 0 or not out_path.exists():
-                logger.warning(f"screencapture failed rc={proc.returncode}, err={stderr.decode().strip()}")
+                logger.warning(
+                    f"screencapture failed rc={proc.returncode}, err={stderr.decode().strip()}"
+                )
                 return False, None, {}
 
             # При необходимости ограничим размер (макс. стороны) через sips
@@ -555,7 +659,9 @@ class ScreenshotCaptureIntegration:
                     status = value
                     if isinstance(value, dict):
                         status = value.get("status") or value.get("new_status")
-                    self._handle_permission_update(key, status, source="permissions.integration_ready")
+                    self._handle_permission_update(
+                        key, status, source="permissions.integration_ready"
+                    )
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: permissions_ready error: {e}")
 
@@ -568,7 +674,14 @@ class ScreenshotCaptureIntegration:
             cutoff = datetime.datetime.now().timestamp() - ttl_hours * 3600
             removed = 0
             # Очищаем все форматы: jpg, png, webp
-            for pattern in ["shot_*.jpg", "shot_*.png", "shot_*.webp", "screenshot_*.jpg", "screenshot_*.png", "screenshot_*.webp"]:
+            for pattern in [
+                "shot_*.jpg",
+                "shot_*.png",
+                "shot_*.webp",
+                "screenshot_*.jpg",
+                "screenshot_*.png",
+                "screenshot_*.webp",
+            ]:
                 for p in base.glob(pattern):
                     try:
                         if p.stat().st_mtime < cutoff:
@@ -604,7 +717,7 @@ class ScreenshotCaptureIntegration:
         if self._capture is None:
             logger.warning("ScreenshotCapture not initialized, cannot prepare screenshot")
             return
-        
+
         try:
             result = await asyncio.wait_for(self._capture.capture_screenshot(), timeout=1.0)
             if result and result.success and result.data:
@@ -627,13 +740,18 @@ class ScreenshotCaptureIntegration:
     async def _store_and_publish(self, session_id: float | None, result):
         tmp_dir = Path(tempfile.gettempdir()) / "nexy_screenshots"
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Определяем расширение файла на основе формата
-        format_ext = result.data.format.value if hasattr(result.data.format, 'value') else str(result.data.format)
-        filename = f"shot_{int(asyncio.get_event_loop().time()*1000)}.{format_ext}"
+        format_ext = (
+            result.data.format.value
+            if hasattr(result.data.format, "value")
+            else str(result.data.format)
+        )
+        filename = f"shot_{int(asyncio.get_event_loop().time() * 1000)}.{format_ext}"
         out_path = tmp_dir / filename
 
         import base64
+
         raw = base64.b64decode(result.data.base64_data)
         out_path.write_bytes(raw)
 
@@ -674,9 +792,9 @@ class ScreenshotCaptureIntegration:
         if not self._enforce_permissions:
             return
         try:
-            await self.event_bus.publish("permissions.check_required", {
-                "source": "screenshot_capture"
-            })
+            await self.event_bus.publish(
+                "permissions.check_required", {"source": "screenshot_capture"}
+            )
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: ensure permission failed: {e}")
 
@@ -732,7 +850,9 @@ class ScreenshotCaptureIntegration:
         self._screen_permission_prompted = True
 
         # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration при старте
-        logger.info("📸 [SCREENSHOT_INTEGRATION] Разрешение Screen Recording обрабатывается через PermissionsIntegration")
+        logger.info(
+            "📸 [SCREENSHOT_INTEGRATION] Разрешение Screen Recording обрабатывается через PermissionsIntegration"
+        )
 
         logger.warning(
             "📸 Screen Recording permission required. Open System Settings > Privacy & Security > Screen Recording and enable Nexy."
@@ -755,9 +875,10 @@ class ScreenshotCaptureIntegration:
                 while not self._is_screen_permission_granted() and attempts < max_attempts:
                     await asyncio.sleep(interval)
                     attempts += 1
-                    await self.event_bus.publish("permissions.check_required", {
-                        "source": f"screenshot_capture.recheck#{attempts}"
-                    })
+                    await self.event_bus.publish(
+                        "permissions.check_required",
+                        {"source": f"screenshot_capture.recheck#{attempts}"},
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -790,7 +911,7 @@ class ScreenshotCaptureIntegration:
         try:
             if not self._enforce_permissions:
                 return
-            
+
             granted = False
             # Используем только fallback проверку
             try:
@@ -799,7 +920,7 @@ class ScreenshotCaptureIntegration:
                 )
             except Exception:
                 CGPreflightScreenCaptureAccess = None
-            
+
             # Также попробуем импортировать константы для проверки
             try:
                 from Quartz.CoreGraphics import (  # type: ignore[reportMissingImports]
@@ -825,8 +946,14 @@ class ScreenshotCaptureIntegration:
                         kCGWindowImageDefault,  # type: ignore[reportAttributeAccessIssue]
                         kCGWindowListOptionOnScreenOnly,  # type: ignore[reportAttributeAccessIssue]
                     )
+
                     rect = ((0, 0), (1, 1))
-                    img = CGWindowListCreateImage(rect, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault)
+                    img = CGWindowListCreateImage(
+                        rect,
+                        kCGWindowListOptionOnScreenOnly,
+                        kCGNullWindowID,
+                        kCGWindowImageDefault,
+                    )
                     granted = bool(img)
                 except Exception:
                     granted = False
@@ -839,7 +966,7 @@ class ScreenshotCaptureIntegration:
             else:
                 logger.info("✅ Screen Capture accessible")
                 self._update_screen_permission_status("granted", source="probe")
-                
+
         except Exception as e:
             logger.warning(f"⚠️ Screen Capture probe failed: {e}")
             self._capture = None

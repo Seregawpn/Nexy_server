@@ -58,11 +58,11 @@ async def test_close_app_integration(executor):
     """Интеграционный тест закрытия приложения через реальный MCP сервер."""
     # Сначала нужно открыть приложение, чтобы его можно было закрыть
     # Для теста используем Calculator, который обычно доступен на macOS
-    
+
     action_data = {"type": "close_app", "app_name": "Calculator"}
-    
+
     result = await executor.execute_action(action_data, session_id="test_integration")
-    
+
     # Результат может быть успешным (если приложение было открыто и закрыто)
     # или неуспешным (если приложение не было открыто)
     # В любом случае, мы проверяем, что код работает без ошибок
@@ -76,11 +76,10 @@ async def test_close_app_integration(executor):
 async def test_close_app_missing_parameter(executor):
     """Тест обработки отсутствующего параметра."""
     action_data = {"type": "close_app"}
-    
+
     result = await executor.execute_action(action_data)
-    
+
     assert result is not None
     assert result.success is False
     assert "Missing app_name" in result.message
     assert result.error == "missing_parameter"
-

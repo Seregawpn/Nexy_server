@@ -92,8 +92,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--soft", action="store_true", help="Exit with 0 even if violations found")
     args = parser.parse_args()
-    
+
     sys.exit(main() if not args.soft else (main() and 0))

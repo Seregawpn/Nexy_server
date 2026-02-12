@@ -8,13 +8,16 @@ from enum import Enum
 
 class AutostartStatus(Enum):
     """Статус автозапуска."""
+
     ENABLED = "enabled"
     DISABLED = "disabled"
     ERROR = "error"
 
+
 @dataclass
 class AutostartConfig:
     """Конфигурация модуля автозапуска."""
+
     enabled: bool = False
     delay_seconds: int = 5
     method: str = "launch_agent"  # "launch_agent" или "login_item"

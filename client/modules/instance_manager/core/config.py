@@ -5,4 +5,4 @@
 from .types import InstanceManagerConfig
 
 # Экспортируем конфигурацию для совместимости
-__all__ = ['InstanceManagerConfig']
+__all__ = ["InstanceManagerConfig"]

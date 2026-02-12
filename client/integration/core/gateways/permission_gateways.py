@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover
         LISTENING = "listening"
         PROCESSING = "processing"
 
+
 from modules.permission_restart.core.config import PermissionRestartConfig
 from modules.permission_restart.core.types import PermissionType
 
@@ -144,7 +145,7 @@ class PermissionRestartGateway:
     def is_update_in_progress(self) -> bool:
         """
         Inspect updater integration or shared state to detect an ongoing update.
-        
+
         Priority order:
         1. UpdaterIntegration.is_update_in_progress() (if available) - primary source
         2. selectors.is_update_in_progress(state_manager) - fallback via selector
@@ -181,7 +182,9 @@ class PermissionRestartGateway:
                 if isinstance(accessor, bool):
                     return accessor
             except Exception:  # pragma: no cover - defensive
-                logger.debug("PermissionRestartGateway: update availability check failed", exc_info=True)
+                logger.debug(
+                    "PermissionRestartGateway: update availability check failed", exc_info=True
+                )
 
         return False
 

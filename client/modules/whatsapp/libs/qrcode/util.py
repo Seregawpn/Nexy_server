@@ -80,16 +80,7 @@ PATTERN_POSITION_TABLE = [
 ]
 
 G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0)
-G18 = (
-    (1 << 12)
-    | (1 << 11)
-    | (1 << 10)
-    | (1 << 9)
-    | (1 << 8)
-    | (1 << 5)
-    | (1 << 2)
-    | (1 << 0)
-)
+G18 = (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0)
 G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1)
 
 PAD0 = 0xEC
@@ -233,8 +224,7 @@ def _lost_point_level1(modules, modules_count):
             container[length] += 1
 
     lost_point += sum(
-        container[each_length] * (each_length - 2)
-        for each_length in range(5, modules_count + 1)
+        container[each_length] * (each_length - 2) for each_length in range(5, modules_count + 1)
     )
 
     return lost_point
@@ -451,9 +441,7 @@ class QRData:
             for i in range(0, len(self.data), 2):
                 chars = self.data[i : i + 2]
                 if len(chars) > 1:
-                    buffer.put(
-                        ALPHA_NUM.find(chars[0]) * 45 + ALPHA_NUM.find(chars[1]), 11
-                    )
+                    buffer.put(ALPHA_NUM.find(chars[0]) * 45 + ALPHA_NUM.find(chars[1]), 11)
                 else:
                     buffer.put(ALPHA_NUM.find(chars), 6)
         else:
@@ -559,8 +547,7 @@ def create_data(version, error_correction, data_list):
     bit_limit = sum(block.data_count * 8 for block in rs_blocks)
     if len(buffer) > bit_limit:
         raise exceptions.DataOverflowError(
-            "Code length overflow. Data size (%s) > size available (%s)"
-            % (len(buffer), bit_limit)
+            f"Code length overflow. Data size ({len(buffer)}) > size available ({bit_limit})"
         )
 
     # Terminate the bits (add up to four 0s).

@@ -8,22 +8,27 @@ from enum import Enum
 
 class InstanceStatus(Enum):
     """Статус экземпляра приложения."""
-    SINGLE = "single"      # Единственный экземпляр
-    DUPLICATE = "duplicate" # Обнаружено дублирование
-    ERROR = "error"        # Ошибка проверки
+
+    SINGLE = "single"  # Единственный экземпляр
+    DUPLICATE = "duplicate"  # Обнаружено дублирование
+    ERROR = "error"  # Ошибка проверки
+
 
 @dataclass
 class LockInfo:
     """Информация о блокировке экземпляра."""
+
     pid: int
     timestamp: float
     lock_file: str
     process_name: str
     bundle_id: str
 
+
 @dataclass
 class InstanceManagerConfig:
     """Конфигурация модуля управления экземплярами."""
+
     enabled: bool = True
     lock_file: str = "~/Library/Application Support/Nexy/nexy.lock"
     timeout_seconds: int = 30

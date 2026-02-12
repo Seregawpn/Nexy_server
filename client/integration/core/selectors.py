@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 from integration.utils.logging_setup import get_logger
 
@@ -26,8 +27,11 @@ try:
     from mode_management import AppMode  # type: ignore[reportMissingImports]
 except Exception as e:
     # Fallback: explicit modules path if repository layout is used
-    logger.debug(f"Failed to import AppMode from mode_management, using modules.mode_management: {e}")
+    logger.debug(
+        f"Failed to import AppMode from mode_management, using modules.mode_management: {e}"
+    )
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
+
 
 class PermissionStatus(Enum):
     """Permission status values."""
@@ -53,6 +57,7 @@ class NetworkStatus(Enum):
 
 class WhatsappStatus(Enum):
     """Whatsapp status values."""
+
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -89,7 +94,7 @@ class Snapshot:
     # Restart state axis (Phase 2 - ADR-001)
     restart_pending: bool = False  # Default False for backward compatibility
     update_in_progress: bool = False  # Default False for backward compatibility
-    
+
     # Whatsapp status axis
     whatsapp_status: WhatsappStatus = WhatsappStatus.DISCONNECTED
 
@@ -173,6 +178,7 @@ def is_processing_mode(s: Snapshot) -> bool:
 
 # Whatsapp selectors
 
+
 def is_whatsapp_qr_required(s: Snapshot) -> bool:
     """Check if WhatsApp requires QR scan."""
     return s.whatsapp_status == WhatsappStatus.QR_REQUIRED
@@ -187,10 +193,11 @@ def is_restart_pending(s: Snapshot) -> bool:
     Используйте is_first_run_in_progress() вместо этого.
     """
     import warnings
+
     warnings.warn(
         "is_restart_pending is deprecated. Use is_first_run_in_progress() instead.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     return s.restart_pending
 
@@ -201,10 +208,11 @@ def is_first_run_restart_pending(s: Snapshot) -> bool:
     Используйте is_first_run_in_progress() вместо этого.
     """
     import warnings
+
     warnings.warn(
         "is_first_run_restart_pending is deprecated. Use is_first_run_in_progress() instead.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     return s.first_run and s.restart_pending
 
@@ -228,17 +236,12 @@ def can_start_listening(s: Snapshot) -> bool:
 
 def can_process_audio(s: Snapshot) -> bool:
     """Check if audio processing can proceed (permissions + network + mode)."""
-    return (
-        mic_ready(s)
-        and network_online(s)
-        and (is_listening_mode(s) or is_processing_mode(s))
-    )
+    return mic_ready(s) and network_online(s) and (is_listening_mode(s) or is_processing_mode(s))
 
 
 def should_degrade_offline(s: Snapshot) -> bool:
     """Check if processing should degrade due to offline network."""
     return network_offline(s) and is_processing_mode(s)
-
 
 
 # Service flags (thin accessors; shadow-mode during migration)
@@ -263,10 +266,11 @@ def is_restart_completed_fallback(state_manager: ApplicationStateManager) -> boo
     Всегда возвращает False.
     """
     import warnings
+
     warnings.warn(
         "is_restart_completed_fallback is deprecated and always returns False.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     return False
 
@@ -284,6 +288,7 @@ def is_valid_session_id(session_id: object) -> bool:
         return False
     try:
         import uuid
+
         parsed = uuid.UUID(session_id, version=4)
         return str(parsed) == session_id
     except Exception as e:
@@ -293,7 +298,7 @@ def is_valid_session_id(session_id: object) -> bool:
 
 def get_current_session_id(state_manager: ApplicationStateManager) -> str | None:
     """Get current session ID.
-    
+
     Returns the active session ID or None if no session is active.
     This is the single source of truth for session tracking.
     """
@@ -307,7 +312,7 @@ def get_current_session_id(state_manager: ApplicationStateManager) -> str | None
 
 def get_current_mode(state_manager: ApplicationStateManager) -> AppMode:
     """Get current application mode.
-    
+
     Returns the current AppMode, defaulting to SLEEPING if unavailable.
     """
     try:
@@ -327,7 +332,7 @@ def get_state_value(state_manager: ApplicationStateManager, key: str, default: A
 
 def is_ptt_pressed(state_manager: ApplicationStateManager) -> bool:
     """Check if PTT (Push-To-Talk) button is currently pressed.
-    
+
     Used by input processing and voice recognition integrations.
     """
     try:
@@ -339,7 +344,7 @@ def is_ptt_pressed(state_manager: ApplicationStateManager) -> bool:
 
 def is_first_run_in_progress(state_manager: ApplicationStateManager) -> bool:
     """Check if first-run flow is currently in progress.
-    
+
     Used to block certain operations during the permission grant flow.
     """
     try:
@@ -351,7 +356,7 @@ def is_first_run_in_progress(state_manager: ApplicationStateManager) -> bool:
 
 def has_active_session(state_manager: ApplicationStateManager) -> bool:
     """Check if there is an active session.
-    
+
     Returns True if session_id is not None.
     """
     return get_current_session_id(state_manager) is not None
@@ -366,16 +371,16 @@ def create_snapshot_from_state(
 ) -> Snapshot:
     """
     Create a Snapshot from ApplicationStateManager state.
-    
+
     This helper function is allowed to read state_manager directly because
     it's in selectors.py (allowed exception per architecture rules).
-    
+
     Args:
         state_manager: ApplicationStateManager instance
         default_permissions: Whether to assume all permissions granted (default True)
         default_device: Default device status
         default_network: Default network status
-        
+
     Returns:
         Snapshot with current system state
     """
@@ -390,7 +395,7 @@ def create_snapshot_from_state(
     except Exception as e:
         logger.debug(f"Snapshot creation: failed to get app mode: {e}")
         current_mode = AppMode.SLEEPING
-    
+
     # Get first_run status (explicit state only; SoT synced from ledger)
     try:
         first_run_required = state_manager.get_state_data(StateKeys.FIRST_RUN_REQUIRED, None)
@@ -400,15 +405,19 @@ def create_snapshot_from_state(
     first_run = bool(first_run_required) if first_run_required is not None else False
 
     # Get restart_pending status
-    restart_pending = bool(state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False))
-    
+    restart_pending = bool(
+        state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False)
+    )
+
     # Permission statuses (default to GRANTED, can be overridden by actual checks)
     perm_mic = PermissionStatus.GRANTED if default_permissions else PermissionStatus.DENIED
     perm_screen = PermissionStatus.GRANTED if default_permissions else PermissionStatus.DENIED
-    perm_accessibility = PermissionStatus.GRANTED if default_permissions else PermissionStatus.DENIED
-    
+    perm_accessibility = (
+        PermissionStatus.GRANTED if default_permissions else PermissionStatus.DENIED
+    )
+
     # TODO: Get actual permission statuses from PermissionsIntegration if available
-    
+
     # Get network status (single state axis owned by NetworkManagerIntegration).
     try:
         raw_network = state_manager.get_state_data(StateKeys.NETWORK_STATUS, None)
@@ -427,14 +436,14 @@ def create_snapshot_from_state(
 
     # Get update_in_progress status
     update_in_progress = is_update_in_progress(state_manager)
-    
+
     # Get whatsapp status
     try:
         ws_val = state_manager.get_state_data(StateKeys.WHATSAPP_STATUS, "disconnected")
         whatsapp_status = WhatsappStatus(ws_val)
     except Exception:
         whatsapp_status = WhatsappStatus.DISCONNECTED
-    
+
     return Snapshot(
         perm_mic=perm_mic,
         perm_screen=perm_screen,

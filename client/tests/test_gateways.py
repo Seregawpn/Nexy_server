@@ -3,6 +3,7 @@
 These tests intentionally reference gateway names and decision strings so
 scripts/verify_rule_coverage.py can validate coverage.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

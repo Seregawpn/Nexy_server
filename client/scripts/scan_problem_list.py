@@ -18,9 +18,7 @@ import shutil
 import subprocess
 from typing import Any
 
-EXCLUDED_PATH_FRAGMENTS = (
-    "/Docs/_archive/",
-)
+EXCLUDED_PATH_FRAGMENTS = ("/Docs/_archive/",)
 
 
 def _is_excluded_issue_file(file_path: str | None) -> bool:
@@ -251,7 +249,7 @@ def _to_markdown(result: dict[str, Any]) -> str:
         code = issue.get("code") or "-"
         message = (issue.get("message") or "").replace("\n", " ").strip()
         lines.append(
-            f"| {issue.get('tool','-')} | {issue.get('severity','-')} | {file_path} | "
+            f"| {issue.get('tool', '-')} | {issue.get('severity', '-')} | {file_path} | "
             f"{line} | {code} | {message} |"
         )
     if not result["issues"]:
@@ -276,12 +274,33 @@ def main() -> int:
         action="store_true",
         help="Include pytest scan over tests/",
     )
+    parser.add_argument(
+        "--update-baseline",
+        help="Save current issues to this file as a baseline",
+    )
+    parser.add_argument(
+        "--baseline",
+        help="Load baseline from this file and suppress matching issues",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
     out_json = root / args.output_json
     out_md = root / args.output_md
     out_json.parent.mkdir(parents=True, exist_ok=True)
+
+    check_baseline: set[tuple[str, str, str, str]] = set()
+    if args.baseline:
+        bp = root / args.baseline
+        if bp.exists():
+            try:
+                base_data = json.loads(bp.read_text(encoding="utf-8"))
+                for b_item in base_data:
+                    # stored as [tool, code, file, message]
+                    if len(b_item) >= 4:
+                        check_baseline.add(tuple(b_item[:4]))
+            except Exception as e:
+                print(f"[WARN] Failed to load baseline: {e}")
 
     ruff = _scan_ruff(root)
     basedpyright = _scan_basedpyright(root)
@@ -300,13 +319,17 @@ def main() -> int:
         "check_dependency_violations",
         [str(root / ".venv" / "bin" / "python"), "scripts/check_dependency_violations.py"],
     )
-    pytest_scan = _scan_pytest(root) if args.with_tests else {
-        "status": "skipped",
-        "reason": "tests_not_requested",
-        "issues": [],
-    }
+    pytest_scan = (
+        _scan_pytest(root)
+        if args.with_tests
+        else {
+            "status": "skipped",
+            "reason": "tests_not_requested",
+            "issues": [],
+        }
+    )
 
-    issues = [
+    raw_issues = [
         *ruff["issues"],
         *basedpyright["issues"],
         *verify_imports["issues"],
@@ -314,28 +337,103 @@ def main() -> int:
         *dependency_rules["issues"],
         *pytest_scan["issues"],
     ]
-    blocking_issues = [issue for issue in issues if issue.get("severity") != "warning"]
+
+    # Process issues against baseline
+    final_issues = []
+    baseline_issues_to_save = []
+
+    for issue in raw_issues:
+        tool = str(issue.get("tool") or "-")
+        code = str(issue.get("code") or "-")
+        file_path = str(issue.get("file") or "-")
+        message = str(issue.get("message") or "")
+
+        # Signature for baseline (excluding line numbers)
+        sig = (tool, code, file_path, message)
+
+        if args.update_baseline:
+            baseline_issues_to_save.append(list(sig))
+
+        if sig in check_baseline:
+            # Downgrade to warning
+            issue["severity"] = "warning"
+            issue["baseline"] = True
+
+        final_issues.append(issue)
+
+    if args.update_baseline:
+        bp_save = root / args.update_baseline
+        bp_save.parent.mkdir(parents=True, exist_ok=True)
+        # Deduplicate before saving
+        unique_baseline = []
+        seen = set()
+        for item in baseline_issues_to_save:
+            t = tuple(item)
+            if t not in seen:
+                seen.add(t)
+                unique_baseline.append(item)
+        bp_save.write_text(json.dumps(unique_baseline, indent=2), encoding="utf-8")
+        print(f"[INFO] Saved {len(unique_baseline)} baseline issues to {bp_save}")
+
+    blocking_issues = [issue for issue in final_issues if issue.get("severity") != "warning"]
+
+    # Recompute status for each tool based on final (filtered) blocking issues
+    tool_status = {}
+    for tool_name in [
+        "ruff",
+        "basedpyright",
+        "verify_imports",
+        "verify_no_direct_state_access",
+        "check_dependency_violations",
+        "pytest",
+    ]:
+        tool_issues = [i for i in final_issues if i.get("tool") == tool_name]
+        tool_blocking = [i for i in tool_issues if i.get("severity") != "warning"]
+        # Mapping for variable names is tricky, let's just use the dicts we already have
+        if tool_name == "ruff":
+            source = ruff
+        elif tool_name == "basedpyright":
+            source = basedpyright
+        elif tool_name == "verify_imports":
+            source = verify_imports
+        elif tool_name == "verify_no_direct_state_access":
+            source = verify_state_access
+        elif tool_name == "check_dependency_violations":
+            source = dependency_rules
+        elif tool_name == "pytest":
+            source = pytest_scan
+        else:
+            source = {"status": "unknown"}
+
+        if source.get("status") == "failed" and not tool_blocking:
+            tool_status[tool_name] = "ok"
+        else:
+            tool_status[tool_name] = source.get("status", "unknown")
 
     result = {
         "summary": {
-            "total_issues": len(issues),
+            "total_issues": len(final_issues),
             "blocking_issues": len(blocking_issues),
-            "ruff_status": ruff["status"],
-            "basedpyright_status": basedpyright["status"],
-            "verify_imports_status": verify_imports["status"],
-            "verify_state_access_status": verify_state_access["status"],
-            "dependency_rules_status": dependency_rules["status"],
-            "pytest_status": pytest_scan["status"],
+            "ruff_status": tool_status["ruff"],
+            "basedpyright_status": tool_status["basedpyright"],
+            "verify_imports_status": tool_status["verify_imports"],
+            "verify_state_access_status": tool_status["verify_no_direct_state_access"],
+            "dependency_rules_status": tool_status["check_dependency_violations"],
+            "pytest_status": tool_status["pytest"],
         },
         "tools": {
             "ruff": {k: v for k, v in ruff.items() if k != "issues"},
             "basedpyright": {k: v for k, v in basedpyright.items() if k != "issues"},
             "verify_imports": {k: v for k, v in verify_imports.items() if k != "issues"},
-            "verify_no_direct_state_access": {k: v for k, v in verify_state_access.items() if k != "issues"},
-            "check_dependency_violations": {k: v for k, v in dependency_rules.items() if k != "issues"},
+            "verify_no_direct_state_access": {
+                k: v for k, v in verify_state_access.items() if k != "issues"
+            },
+            "check_dependency_violations": {
+                k: v for k, v in dependency_rules.items() if k != "issues"
+            },
             "pytest": {k: v for k, v in pytest_scan.items() if k != "issues"},
         },
-        "issues": issues,
+        "issues": final_issues,
     }
 
     out_json.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -343,7 +441,7 @@ def main() -> int:
 
     print(f"JSON: {out_json}")
     print(f"MD: {out_md}")
-    print(f"TOTAL_ISSUES={len(issues)}")
+    print(f"TOTAL_ISSUES={len(final_issues)}")
     return 0
 
 

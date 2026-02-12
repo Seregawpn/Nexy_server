@@ -49,7 +49,9 @@ async def test_close_app_success(executor):
         mock_client.return_value.__aenter__.return_value = (mock_read, mock_write)
         mock_client.return_value.__aexit__ = AsyncMock()
 
-        with patch("modules.mcp_action.core.mcp_action_executor.ClientSession") as mock_session_class:
+        with patch(
+            "modules.mcp_action.core.mcp_action_executor.ClientSession"
+        ) as mock_session_class:
             mock_session_class.return_value.__aenter__.return_value = mock_session
             mock_session_class.return_value.__aexit__ = AsyncMock()
 
@@ -92,7 +94,9 @@ async def test_open_app_success(executor):
         mock_client.return_value.__aenter__.return_value = (mock_read, mock_write)
         mock_client.return_value.__aexit__ = AsyncMock()
 
-        with patch("modules.mcp_action.core.mcp_action_executor.ClientSession") as mock_session_class:
+        with patch(
+            "modules.mcp_action.core.mcp_action_executor.ClientSession"
+        ) as mock_session_class:
             mock_session_class.return_value.__aenter__.return_value = mock_session
             mock_session_class.return_value.__aexit__ = AsyncMock()
 
@@ -119,7 +123,7 @@ async def test_unknown_action_type(executor):
 @pytest.mark.asyncio
 async def test_timeout_error(executor):
     """Тест обработки таймаута.
-    
+
     Примечание: Тест таймаута сложен для мокирования, так как asyncio.wait_for
     имеет сложную логику. В реальном использовании таймаут будет обрабатываться
     автоматически через asyncio.wait_for. Этот тест проверяет, что код имеет
@@ -128,16 +132,16 @@ async def test_timeout_error(executor):
     # Проверяем, что код имеет обработку TimeoutError
     # Реальный тест таймаута требует реального MCP сервера с задержкой
     action_data = {"type": "close_app", "app_name": "Calculator"}
-    
+
     # Проверяем, что код правильно обрабатывает исключения
     # В реальном сценарии таймаут будет обработан через asyncio.wait_for
     # и перехвачен в блоке except asyncio.TimeoutError
-    
+
     # Для unit теста просто проверяем, что код имеет правильную структуру
     # Реальный тест таймаута будет в интеграционных тестах
     assert executor.config.timeout_sec > 0
     assert action_data["type"] == "close_app"
-    
+
     # Пропускаем детальное тестирование таймаута в unit тестах
     # Это будет протестировано в интеграционных тестах с реальным сервером
     pytest.skip("Timeout testing requires real MCP server - will be tested in integration tests")
@@ -162,7 +166,9 @@ async def test_mcp_error_response(executor):
         mock_client.return_value.__aenter__.return_value = (mock_read, mock_write)
         mock_client.return_value.__aexit__ = AsyncMock()
 
-        with patch("modules.mcp_action.core.mcp_action_executor.ClientSession") as mock_session_class:
+        with patch(
+            "modules.mcp_action.core.mcp_action_executor.ClientSession"
+        ) as mock_session_class:
             mock_session_class.return_value.__aenter__.return_value = mock_session
             mock_session_class.return_value.__aexit__ = AsyncMock()
 
@@ -171,4 +177,3 @@ async def test_mcp_error_response(executor):
     assert result.success is False
     assert "not found" in result.message
     assert result.error == "mcp_error"
-

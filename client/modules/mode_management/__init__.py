@@ -16,16 +16,16 @@ from .modes.listening_mode import ListeningMode
 from .modes.sleeping_mode import SleepingMode
 
 __all__ = [
-    'ModeController',
-    'AppMode',
-    'ModeTransition',
-    'ModeTransitionType',
-    'ModeStatus',
-    'ModeEvent',
-    'ModeConfig',
-    'ModeMetrics',
-    'SleepingMode',
-    'ListeningMode'
+    "ModeController",
+    "AppMode",
+    "ModeTransition",
+    "ModeTransitionType",
+    "ModeStatus",
+    "ModeEvent",
+    "ModeConfig",
+    "ModeMetrics",
+    "SleepingMode",
+    "ListeningMode",
 ]
 
 __version__ = "1.6.1.28"

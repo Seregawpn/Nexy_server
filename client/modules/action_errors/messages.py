@@ -52,25 +52,17 @@ class ActionErrorMessageResolver:
             "invalid_payload": ActionErrorMessageTemplate(
                 "I couldn't understand which app to open. Please repeat the name."
             ),
-            "unsupported_action": ActionErrorMessageTemplate(
-                "This action isn't supported yet."
-            ),
+            "unsupported_action": ActionErrorMessageTemplate("This action isn't supported yet."),
             # MCP error codes
-            "mcp_error": ActionErrorMessageTemplate(
-                "I couldn't open {app}. Please try again."
-            ),
+            "mcp_error": ActionErrorMessageTemplate("I couldn't open {app}. Please try again."),
             "execution_error": ActionErrorMessageTemplate(
                 "I couldn't open {app} because of a system error. Please try again."
             ),
-            "unknown_action_type": ActionErrorMessageTemplate(
-                "This action isn't supported yet."
-            ),
+            "unknown_action_type": ActionErrorMessageTemplate("This action isn't supported yet."),
             "missing_parameter": ActionErrorMessageTemplate(
                 "I couldn't understand which app to open. Please repeat the name."
             ),
-            "fallback": ActionErrorMessageTemplate(
-                "I couldn't open {app}. Please try again."
-            ),
+            "fallback": ActionErrorMessageTemplate("I couldn't open {app}. Please try again."),
             # Messages / Contact errors
             "contact_not_found": ActionErrorMessageTemplate(
                 "Contact not found. Please check the name and try again."
@@ -89,17 +81,19 @@ class ActionErrorMessageResolver:
             ),
         }
 
-    def resolve(self, error_code: str | None, app_name: str | None, message: str | None = None) -> str:
+    def resolve(
+        self, error_code: str | None, app_name: str | None, message: str | None = None
+    ) -> str:
         """
         Разрешает код ошибки в пользовательский текст.
-        
+
         Args:
             error_code: Код ошибки
             app_name: Имя приложения
             message: Сообщение об ошибке (используется для уточнения mcp_error)
         """
         code = error_code or ""
-        
+
         # Специальная обработка mcp_error: пытаемся определить конкретный тип ошибки из сообщения
         if code == "mcp_error" and message:
             message_lower = message.lower()
@@ -109,11 +103,11 @@ class ActionErrorMessageResolver:
                 code = "timeout"
             elif "not allowed" in message_lower or "blocked" in message_lower:
                 code = "not_allowed"
-        
+
         # FIX: Handle specific execution failures with their valid messages
         if code == "execution_failed" and message:
-             # Just return the message directly if it's readable
-             return message
+            # Just return the message directly if it's readable
+            return message
 
         template = self._templates.get(code)
         if template is None:

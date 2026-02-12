@@ -3,6 +3,7 @@ Predicate registry for rule-based decision making.
 
 All predicates use existing selectors from integration.core.selectors to avoid duplication.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -15,13 +16,16 @@ REGISTRY: dict[str, Callable[[Snapshot, Any, dict[str, Any] | None], bool]] = {}
 
 def _register(name: str):
     """Decorator to register a predicate in the registry."""
+
     def deco(fn: Callable[[Snapshot, Any, dict[str, Any] | None], bool]):
         REGISTRY[name] = fn
         return fn
+
     return deco
 
 
 # ===== Basic permissions =====
+
 
 @_register("perm.mic")
 def perm_mic(s: Snapshot, expected: str, extra: dict[str, Any] | None) -> bool:
@@ -42,6 +46,7 @@ def perm_accessibility(s: Snapshot, expected: str, extra: dict[str, Any] | None)
 
 
 # ===== Composite selectors (using existing selectors) =====
+
 
 @_register("permissions.missing_any")
 def permissions_missing_any(s: Snapshot, expected: bool, extra: dict[str, Any] | None) -> bool:
@@ -87,6 +92,7 @@ def network_offline_predicate(s: Snapshot, expected: bool, extra: dict[str, Any]
 
 # ===== Application state =====
 
+
 @_register("app.first_run")
 def app_first_run(s: Snapshot, expected: bool, extra: dict[str, Any] | None) -> bool:
     """Check if this is first run."""
@@ -94,7 +100,9 @@ def app_first_run(s: Snapshot, expected: bool, extra: dict[str, Any] | None) -> 
 
 
 @_register("app.mode")
-def app_mode_predicate(s: Snapshot, expected: str | list[Any], extra: dict[str, Any] | None) -> bool:
+def app_mode_predicate(
+    s: Snapshot, expected: str | list[Any], extra: dict[str, Any] | None
+) -> bool:
     """Check if app mode matches expected value (string or list of modes)."""
     current_mode = s.app_mode.value.lower()
     if isinstance(expected, list):
@@ -105,7 +113,9 @@ def app_mode_predicate(s: Snapshot, expected: str | list[Any], extra: dict[str, 
 
 
 @_register("appMode")
-def app_mode_alias_predicate(s: Snapshot, expected: str | list[Any], extra: dict[str, Any] | None) -> bool:
+def app_mode_alias_predicate(
+    s: Snapshot, expected: str | list[Any], extra: dict[str, Any] | None
+) -> bool:
     """Alias for app.mode to keep rules compatible with appMode key."""
     return app_mode_predicate(s, expected, extra)
 
@@ -117,13 +127,16 @@ def app_restart_pending(s: Snapshot, expected: bool, extra: dict[str, Any] | Non
 
 
 @_register("app.first_run_restart_pending")
-def app_first_run_restart_pending(s: Snapshot, expected: bool, extra: dict[str, Any] | None) -> bool:
+def app_first_run_restart_pending(
+    s: Snapshot, expected: bool, extra: dict[str, Any] | None
+) -> bool:
     """Check if first run AND restart is pending."""
     pending = bool(s.first_run) and bool(s.restart_pending)
     return pending == bool(expected)
 
 
 # ===== Extra context (from extra dict) =====
+
 
 @_register("update.in_progress")
 def update_in_progress(_s: Snapshot, expected: bool, extra: dict[str, Any] | None) -> bool:
@@ -163,6 +176,7 @@ def permission_restart_predicate(_s: Snapshot, expected: Any, extra: dict[str, A
                 return False
 
     return True
+
 
 @_register("whatsapp.status")
 def whatsapp_status(s: Snapshot, expected: str, extra: dict[str, Any] | None) -> bool:

@@ -16,7 +16,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arm64", required=True, type=Path, help="Path to arm64 Nexy.app")
     parser.add_argument("--x86", required=True, type=Path, help="Path to x86_64 Nexy.app")
-    parser.add_argument("--output", required=True, type=Path, help="Destination for Universal Nexy.app")
+    parser.add_argument(
+        "--output", required=True, type=Path, help="Destination for Universal Nexy.app"
+    )
     parser.add_argument("--verbose", action="store_true", help="Print each merged file")
     return parser.parse_args()
 
@@ -69,7 +71,7 @@ def merge_binary(
     # Check architectures
     arm_archs = get_architectures(arm_src)
     x86_archs = get_architectures(x86_src)
-    
+
     # If both have same architectures, just copy one
     if set(arm_archs) == set(x86_archs):
         if verbose:
@@ -77,7 +79,7 @@ def merge_binary(
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(arm_src, dest)
         return
-    
+
     # If one is already universal, use it
     if "arm64" in arm_archs and "x86_64" in arm_archs:
         if verbose:
@@ -85,14 +87,14 @@ def merge_binary(
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(arm_src, dest)
         return
-    
+
     if "arm64" in x86_archs and "x86_64" in x86_archs:
         if verbose:
             print(f"✓ {display_path} (x86_64 already universal)")
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(x86_src, dest)
         return
-    
+
     # Merge different architectures
     if verbose:
         print(f"🔄 lipo {display_path}")
@@ -172,4 +174,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

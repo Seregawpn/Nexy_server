@@ -18,4 +18,3 @@ class Decision(Enum):
 
 
 __all__ = ["Decision"]
-

@@ -35,11 +35,7 @@ class PyPNGImage(BaseImage):
         for module_row in self.modules:
             row = (
                 border_col
-                + list(
-                    chain.from_iterable(
-                        ([not point] * self.box_size) for point in module_row
-                    )
-                )
+                + list(chain.from_iterable(([not point] * self.box_size) for point in module_row))
                 + border_col
             )
             for _ in range(self.box_size):

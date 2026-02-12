@@ -8,13 +8,14 @@ Maps error domains/codes/messages to categories: OK, TRANSIENT, DENIED, NEEDS_RE
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from .types import PermissionId, ProbeEvidence
 
 
-class NormCategory(str, Enum):
+class NormCategory(StrEnum):
     """Normalized error categories."""
+
     OK = "ok"
     TRANSIENT = "transient"
     DENIED = "denied"
@@ -26,6 +27,7 @@ class NormCategory(str, Enum):
 @dataclass(frozen=True)
 class MarkerSet:
     """Markers for error classification."""
+
     denied_markers: list[str]
     transient_markers: list[str]
     misconfig_markers: list[str]
@@ -155,10 +157,7 @@ def apply_normalization_to_evidence(permission: PermissionId, ev: ProbeEvidence)
         return ev
 
     cat = normalize_error(
-        permission=permission,
-        domain=ev.error_domain,
-        code=ev.error_code,
-        message=ev.error_message
+        permission=permission, domain=ev.error_domain, code=ev.error_code, message=ev.error_message
     )
 
     denied_hint = ev.permission_denied_hint
@@ -194,6 +193,7 @@ def apply_normalization_to_evidence(permission: PermissionId, ev: ProbeEvidence)
 @dataclass
 class StepCounters:
     """Counters for tracking consecutive error categories."""
+
     consecutive_denied: int = 0
     consecutive_transient: int = 0
     consecutive_needs_restart: int = 0

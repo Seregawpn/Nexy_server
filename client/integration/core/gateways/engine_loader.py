@@ -1,6 +1,7 @@
 """
 Helper for loading and caching DecisionEngine instances.
 """
+
 from __future__ import annotations
 
 from .decision_engine import DecisionEngine
@@ -13,10 +14,10 @@ _ENGINES: dict[str, DecisionEngine] = {}
 def get_engine(gateway_name: str) -> DecisionEngine:
     """
     Get or create DecisionEngine for a gateway (cached).
-    
+
     Args:
         gateway_name: Name of the gateway (e.g., "decide_start_listening")
-    
+
     Returns:
         Cached DecisionEngine instance
     """
@@ -24,7 +25,3 @@ def get_engine(gateway_name: str) -> DecisionEngine:
         rules = load_rules_for_gateway(gateway_name)
         _ENGINES[gateway_name] = DecisionEngine(gateway_name, rules)
     return _ENGINES[gateway_name]
-
-
-
-

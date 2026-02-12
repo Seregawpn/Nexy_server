@@ -7,11 +7,13 @@
 
 class MessagesError(Exception):
     """Базовый класс для всех ошибок MCP сервера Messages"""
+
     pass
 
 
 class ContactNotFoundError(MessagesError):
     """Ошибка: контакт не найден"""
+
     def __init__(self, contact: str, message: str | None = None):
         self.contact = contact
         if message is None:
@@ -21,6 +23,7 @@ class ContactNotFoundError(MessagesError):
 
 class NoPhoneNumbersError(MessagesError):
     """Ошибка: у контакта нет номеров телефонов"""
+
     def __init__(self, contact: str, message: str | None = None):
         self.contact = contact
         if message is None:
@@ -30,6 +33,7 @@ class NoPhoneNumbersError(MessagesError):
 
 class MessageSendError(MessagesError):
     """Ошибка: не удалось отправить сообщение"""
+
     def __init__(self, phone_number: str, reason: str, message: str | None = None):
         self.phone_number = phone_number
         self.reason = reason
@@ -40,6 +44,7 @@ class MessageSendError(MessagesError):
 
 class DatabaseError(MessagesError):
     """Ошибка: проблема с базой данных"""
+
     def __init__(self, operation: str, reason: str, message: str | None = None):
         self.operation = operation
         self.reason = reason
@@ -50,6 +55,7 @@ class DatabaseError(MessagesError):
 
 class PermissionError(MessagesError):
     """Ошибка: недостаточно разрешений"""
+
     def __init__(self, permission: str, message: str | None = None):
         self.permission = permission
         if message is None:
@@ -59,12 +65,10 @@ class PermissionError(MessagesError):
 
 class ContactResolverError(MessagesError):
     """Ошибка: проблема при резолвинге контакта"""
+
     def __init__(self, identifier: str, reason: str, message: str | None = None):
         self.identifier = identifier
         self.reason = reason
         if message is None:
             message = f"Failed to resolve contact '{identifier}': {reason}"
         super().__init__(message)
-
-
-

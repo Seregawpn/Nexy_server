@@ -18,12 +18,12 @@ from .listening_workflow import ListeningWorkflow
 from .processing_workflow import ProcessingStage, ProcessingWorkflow
 
 __all__ = [
-    'BaseWorkflow',
-    'WorkflowState', 
-    'ListeningWorkflow',
-    'ProcessingWorkflow',
-    'ProcessingStage'
+    "BaseWorkflow",
+    "WorkflowState",
+    "ListeningWorkflow",
+    "ProcessingWorkflow",
+    "ProcessingStage",
 ]
 
 __version__ = "1.6.1.28"
-__author__ = 'Nexy Team'
+__author__ = "Nexy Team"

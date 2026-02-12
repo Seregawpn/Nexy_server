@@ -10,6 +10,7 @@ from typing import Any
 
 class HardwareIdStatus(Enum):
     """Статус получения Hardware ID"""
+
     SUCCESS = "success"
     CACHED = "cached"
     ERROR = "error"
@@ -19,6 +20,7 @@ class HardwareIdStatus(Enum):
 @dataclass
 class HardwareIdResult:
     """Результат получения Hardware ID"""
+
     uuid: str
     status: HardwareIdStatus
     source: str  # "cache", "system_profiler", "fallback"
@@ -30,6 +32,7 @@ class HardwareIdResult:
 @dataclass
 class HardwareIdConfig:
     """Конфигурация для получения Hardware ID"""
+
     cache_enabled: bool = True
     cache_file_path: str = "~/.voice_assistant/hardware_id_cache.json"
     cache_ttl_seconds: int = 86400 * 30  # 30 дней
@@ -41,6 +44,7 @@ class HardwareIdConfig:
 @dataclass
 class CacheInfo:
     """Информация о кэше"""
+
     exists: bool
     size_bytes: int
     created_at: str
@@ -51,19 +55,23 @@ class CacheInfo:
 
 class HardwareIdError(Exception):
     """Базовое исключение для модуля hardware_id"""
+
     pass
 
 
 class HardwareIdNotFoundError(HardwareIdError):
     """Hardware ID не найден"""
+
     pass
 
 
 class HardwareIdValidationError(HardwareIdError):
     """Ошибка валидации Hardware ID"""
+
     pass
 
 
 class HardwareIdCacheError(HardwareIdError):
     """Ошибка работы с кэшем"""
+
     pass

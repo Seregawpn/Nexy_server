@@ -18,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 class ScreenCaptureProber(BaseProber):
     """Prober for Screen Capture permission."""
-    
+
     def __init__(self, config: StepConfig):
         super().__init__(config)
         self.permission = PermissionId.SCREEN_CAPTURE
         self._last_result: bool | None = None
-    
+
     async def trigger(self) -> None:
         """
         Trigger screen capture permission.
@@ -33,17 +33,18 @@ class ScreenCaptureProber(BaseProber):
             from Quartz import (
                 CGRequestScreenCaptureAccess,  # type: ignore[reportMissingImports, reportAttributeAccessIssue]
             )
+
             result = CGRequestScreenCaptureAccess()
             logger.debug("[SC_PROBER] CGRequestScreenCaptureAccess() = %s", result)
         except ImportError:
             logger.debug("[SC_PROBER] CGRequestScreenCaptureAccess not available")
         except Exception as e:
             logger.warning("[SC_PROBER] Trigger failed: %s", e)
-    
+
     async def probe(self, probe_kind: Literal["light", "heavy"]) -> ProbeResult:
         """Probe screen capture capability."""
         ts = self._now()
-        
+
         # Light probe: use cached
         if probe_kind == "light" and self._last_result is not None:
             ok = self._last_result
@@ -51,7 +52,7 @@ class ScreenCaptureProber(BaseProber):
         else:
             ok, domain, code, msg = await self._capability_screen_frame(probe_kind)
             self._last_result = ok
-        
+
         ev = ProbeEvidence(
             frames_received=ok,
             error_domain=domain,
@@ -59,15 +60,14 @@ class ScreenCaptureProber(BaseProber):
             error_message=msg,
         )
         ev = apply_normalization_to_evidence(self.permission, ev)
-        
+
         return ProbeResult(
-            permission=self.permission,
-            timestamp=ts,
-            probe_kind=probe_kind,
-            evidence=ev
+            permission=self.permission, timestamp=ts, probe_kind=probe_kind, evidence=ev
         )
-    
-    async def _capability_screen_frame(self, probe_kind: str) -> tuple[bool | None, str | None, str | None, str | None]:
+
+    async def _capability_screen_frame(
+        self, probe_kind: str
+    ) -> tuple[bool | None, str | None, str | None, str | None]:
         """
         Test screen capture capability.
         Returns (frames_received, domain, code, message).
@@ -79,15 +79,15 @@ class ScreenCaptureProber(BaseProber):
                 kCGNullWindowID,  # type: ignore[reportAttributeAccessIssue]
                 kCGWindowListOptionAll,  # type: ignore[reportAttributeAccessIssue]
             )
-            
+
             # Try to capture a screenshot
             image = CGWindowListCreateImage(  # type: ignore[reportAttributeAccessIssue]
                 CGRectNull,  # type: ignore[reportAttributeAccessIssue]
                 kCGWindowListOptionAll,  # type: ignore[reportAttributeAccessIssue]
                 kCGNullWindowID,  # type: ignore[reportAttributeAccessIssue]
-                0  # kCGWindowImageDefault
+                0,  # kCGWindowImageDefault
             )
-            
+
             if image is not None:
                 # Check if image has actual content (not just a blank/denied frame)
                 try:
@@ -95,6 +95,7 @@ class ScreenCaptureProber(BaseProber):
                         CGImageGetHeight,  # type: ignore[reportAttributeAccessIssue]
                         CGImageGetWidth,  # type: ignore[reportAttributeAccessIssue]
                     )
+
                     width = CGImageGetWidth(image)
                     height = CGImageGetHeight(image)
                     if width > 0 and height > 0:
@@ -103,16 +104,16 @@ class ScreenCaptureProber(BaseProber):
                 except:
                     # If we got an image object, consider it a pass
                     return True, None, None, None
-            
+
             logger.debug("[SC_PROBER] CGWindowListCreateImage returned None")
             return False, "ScreenCapture", None, "Screen Recording permission denied"
-            
+
         except ImportError as e:
             logger.warning("[SC_PROBER] Quartz not available: %s", e)
             return None, "import", None, str(e)
         except Exception as e:
             logger.error("[SC_PROBER] Screen capture test failed: %s", e)
             return False, "ScreenCapture", type(e).__name__, str(e)
-    
+
     def supports_light_probe(self) -> bool:
         return True

@@ -111,13 +111,25 @@ class SignalIntegration:
     async def initialize(self) -> bool:
         try:
             # Source of truth for UX cues is app.mode_changed (centralized mode coordinator).
-            await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed, EventPriority.HIGH)
-            await self.event_bus.subscribe("processing.terminal", self._on_processing_terminal, EventPriority.HIGH)
+            await self.event_bus.subscribe(
+                "app.mode_changed", self._on_mode_changed, EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "processing.terminal", self._on_processing_terminal, EventPriority.HIGH
+            )
             # Short-press reset should always produce cancel cue.
-            await self.event_bus.subscribe("keyboard.short_press", self._on_interrupt, EventPriority.CRITICAL)
-            await self.event_bus.subscribe("playback.completed", self._on_playback_completed, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("playback.cancelled", self._on_playback_cancelled, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
+            await self.event_bus.subscribe(
+                "keyboard.short_press", self._on_interrupt, EventPriority.CRITICAL
+            )
+            await self.event_bus.subscribe(
+                "playback.completed", self._on_playback_completed, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.cancelled", self._on_playback_cancelled, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "app.shutdown", self._on_app_shutdown, EventPriority.HIGH
+            )
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
             self._last_mode = selectors.get_current_mode(self.state_manager)
             self._initialized = True
@@ -186,7 +198,9 @@ class SignalIntegration:
             elif result == "success":
                 pattern = SignalPattern.DONE
             else:
-                logger.debug("Signals: terminal skipped (unknown result=%s, reason=%s)", result, reason)
+                logger.debug(
+                    "Signals: terminal skipped (unknown result=%s, reason=%s)", result, reason
+                )
                 return
 
             logger.info("Signals: TERMINAL (%s, reason=%s)", pattern.value.upper(), reason)
@@ -247,7 +261,9 @@ class SignalIntegration:
             logger.info("Signals: CANCEL (playback.cancelled)")
             await self._emit_audio_pattern(
                 SignalPattern.CANCEL,
-                session_id=str(payload.get("session_id")) if payload.get("session_id") is not None else None,
+                session_id=str(payload.get("session_id"))
+                if payload.get("session_id") is not None
+                else None,
                 reason="playback_cancelled",
             )
             self._last_cancel_ts = now

@@ -3,8 +3,8 @@ import io
 import pytest
 
 import qrcode
-import qrcode.util
 from qrcode.tests.consts import BLACK, RED, UNICODE_TEXT, WHITE
+import qrcode.util
 
 Image = pytest.importorskip("PIL.Image", reason="PIL is not installed")
 
@@ -95,18 +95,10 @@ def test_render_styled_with_drawer(drawer):
         colormasks.SolidFillColorMask(),
         colormasks.SolidFillColorMask(back_color=WHITE, front_color=RED),
         colormasks.SolidFillColorMask(back_color=(255, 0, 255, 255), front_color=RED),
-        colormasks.RadialGradiantColorMask(
-            back_color=WHITE, center_color=BLACK, edge_color=RED
-        ),
-        colormasks.SquareGradiantColorMask(
-            back_color=WHITE, center_color=BLACK, edge_color=RED
-        ),
-        colormasks.HorizontalGradiantColorMask(
-            back_color=WHITE, left_color=RED, right_color=BLACK
-        ),
-        colormasks.VerticalGradiantColorMask(
-            back_color=WHITE, top_color=RED, bottom_color=BLACK
-        ),
+        colormasks.RadialGradiantColorMask(back_color=WHITE, center_color=BLACK, edge_color=RED),
+        colormasks.SquareGradiantColorMask(back_color=WHITE, center_color=BLACK, edge_color=RED),
+        colormasks.HorizontalGradiantColorMask(back_color=WHITE, left_color=RED, right_color=BLACK),
+        colormasks.VerticalGradiantColorMask(back_color=WHITE, top_color=RED, bottom_color=BLACK),
         colormasks.ImageColorMask(
             back_color=WHITE, color_mask_image=Image.new("RGB", (10, 10), color="red")
         ),

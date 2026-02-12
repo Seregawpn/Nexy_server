@@ -7,12 +7,13 @@ All enums, dataclasses, and type definitions for the permission orchestration sy
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 
-class Phase(str, Enum):
+class Phase(StrEnum):
     """Lifecycle phases of the permission wizard."""
+
     FIRST_RUN = "first_run"
     RESTART_PENDING = "restart_pending"
     POST_RESTART_VERIFY = "post_restart_verify"
@@ -20,8 +21,9 @@ class Phase(str, Enum):
     LIMITED_MODE = "limited_mode"
 
 
-class PermissionId(str, Enum):
+class PermissionId(StrEnum):
     """Identifiers for all supported permissions."""
+
     MICROPHONE = "microphone"
     SCREEN_CAPTURE = "screen_capture"
     CONTACTS = "contacts"
@@ -32,14 +34,16 @@ class PermissionId(str, Enum):
     NETWORK = "network"
 
 
-class StepMode(str, Enum):
+class StepMode(StrEnum):
     """How a permission is requested."""
-    AUTO_DIALOG = "auto_dialog"      # System TCC dialog
+
+    AUTO_DIALOG = "auto_dialog"  # System TCC dialog
     OPEN_SETTINGS = "open_settings"  # Manual toggle in System Settings
 
 
-class StepState(str, Enum):
+class StepState(StrEnum):
     """States a permission step can be in."""
+
     UNKNOWN = "unknown"
     TRIGGERED = "triggered"
     GRACE = "grace"
@@ -53,8 +57,9 @@ class StepState(str, Enum):
     SKIPPED = "skipped"
 
 
-class OutcomeKind(str, Enum):
+class OutcomeKind(StrEnum):
     """Classification outcomes from probers."""
+
     PASS_ = "pass"
     FAIL = "fail"
     WAITING = "waiting"
@@ -64,16 +69,18 @@ class OutcomeKind(str, Enum):
     SKIP = "skip"
 
 
-class PermissionCriticality(str, Enum):
+class PermissionCriticality(StrEnum):
     """How critical a permission is to app functionality."""
-    HARD = "hard"      # App won't work without it
-    SOFT = "soft"      # Degraded but usable
+
+    HARD = "hard"  # App won't work without it
+    SOFT = "soft"  # Degraded but usable
     FEATURE = "feature"  # Nice to have
 
 
 @dataclass(frozen=True)
 class StepTiming:
     """Timing configuration for a permission step."""
+
     grace_s: float
     poll_s: float
 
@@ -90,6 +97,7 @@ class StepTiming:
 @dataclass(frozen=True)
 class StepConfig:
     """Configuration for a single permission step."""
+
     permission: PermissionId
     mode: StepMode
     timing: StepTiming
@@ -102,6 +110,7 @@ class StepConfig:
 @dataclass(frozen=True)
 class RestartConfig:
     """Configuration for restart behavior."""
+
     delay_sec: float = 1.0
     settings_safety_window_sec: float = 30.0
     require_all_hard_pass: bool = True
@@ -114,12 +123,13 @@ class ProbeEvidence:
     Observations from a capability probe.
     Hints are set by error_matrix normalization or stack-specific logic.
     """
+
     # Capability signals
-    frames_received: bool | None = None     # mic/screen
-    tap_created: bool | None = None         # input monitoring
+    frames_received: bool | None = None  # mic/screen
+    tap_created: bool | None = None  # input monitoring
     tap_enabled: bool | None = None
-    ax_action_ok: bool | None = None        # accessibility
-    file_access_ok: bool | None = None      # FDA
+    ax_action_ok: bool | None = None  # accessibility
+    file_access_ok: bool | None = None  # FDA
     messages_access_ok: bool | None = None
     contacts_fetch_ok: bool | None = None
     network_conn_ok: bool | None = None
@@ -140,6 +150,7 @@ class ProbeEvidence:
 @dataclass(frozen=True)
 class ProbeResult:
     """Result of a probe operation."""
+
     permission: PermissionId
     timestamp: float
     probe_kind: Literal["light", "heavy"]
@@ -150,6 +161,7 @@ class ProbeResult:
 @dataclass(frozen=True)
 class StepOutcome:
     """Classification outcome from a classifier."""
+
     permission: PermissionId
     kind: OutcomeKind
     reason: str

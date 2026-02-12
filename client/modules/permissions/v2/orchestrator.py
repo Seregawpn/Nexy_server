@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 import logging
 import os
 import time
@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 # UI Events
 # -----------------------------
 
-class UIEventType(str, Enum):
+
+class UIEventType(StrEnum):
     PHASE_CHANGED = "phase_changed"
     STEP_CHANGED = "step_changed"
     STEP_STATE_CHANGED = "step_state_changed"
@@ -61,17 +62,18 @@ class UIEvent:
 # Prober Protocol
 # -----------------------------
 
+
 class PermissionProber(Protocol):
     """Protocol for permission probers.
-    
+
     All methods are async. If you need to wrap a sync prober,
     use AsyncProberWrapper.
     """
-    
+
     async def trigger(self) -> None:
         """Trigger the permission request."""
         ...
-    
+
     async def probe(self, probe_kind: Literal["light", "heavy"]) -> ProbeResult:
         """Probe the permission capability."""
         ...
@@ -79,7 +81,7 @@ class PermissionProber(Protocol):
 
 class PermissionClassifier(Protocol):
     """Protocol for permission classifiers."""
-    
+
     def classify(self, probe: ProbeResult, entry: StepLedgerEntry) -> StepOutcome:
         """Classify the probe result into an outcome."""
         ...
@@ -89,9 +91,10 @@ class PermissionClassifier(Protocol):
 # Restart Handler Protocol
 # -----------------------------
 
+
 class RestartHandler(Protocol):
     """Protocol for restart handling."""
-    
+
     async def trigger_restart(self, *, reason: str, permissions: list[str]) -> bool:
         """Trigger application restart."""
         ...
@@ -101,13 +104,14 @@ class RestartHandler(Protocol):
 # Decision Helpers
 # -----------------------------
 
+
 def should_restart(
     ledger: LedgerRecord,
     hard_permissions: list[PermissionId],
     restart_cfg: RestartConfig,
 ) -> bool:
     """Check if restart is needed.
-    
+
     Returns True if:
     - Any HARD permission is in NEEDS_RESTART state (safety guard), OR
     - All HARD are PASS/NEEDS_RESTART AND any has needs_restart_marked
@@ -117,12 +121,12 @@ def should_restart(
         if p not in ledger.steps:
             return False
         hard_states.append(ledger.steps[p].state)
-    
+
     # Safety guard: any HARD in NEEDS_RESTART state => must restart
     # This catches edge cases where needs_restart_marked wasn't set
     if any(s == StepState.NEEDS_RESTART for s in hard_states):
         return True
-    
+
     if restart_cfg.require_all_hard_pass:
         # Normal path: all HARD must be PASS/NEEDS_RESTART
         if not all(s in (StepState.PASS_, StepState.NEEDS_RESTART) for s in hard_states):
@@ -149,16 +153,16 @@ def can_restart_safely(ledger: LedgerRecord, restart_cfg: RestartConfig) -> bool
     """Check if restart is safe (user not in Settings)."""
     if not ledger.current_step:
         return True
-    
+
     cur = ledger.steps.get(ledger.current_step)
     if not cur:
         return True
-    
+
     if cur.state in (StepState.WAITING_USER, StepState.WAITING_LONG) and cur.settings_opened_at:
         elapsed = time.time() - cur.settings_opened_at
         if elapsed < restart_cfg.settings_safety_window_sec:
             return False
-    
+
     return True
 
 
@@ -166,14 +170,15 @@ def can_restart_safely(ledger: LedgerRecord, restart_cfg: RestartConfig) -> bool
 # Orchestrator
 # -----------------------------
 
+
 class PermissionOrchestrator:
     """
     Async FSM orchestrator for permission wizard.
-    
+
     Pipeline mode: all permissions run sequentially.
     Restart only if: all HARD pass + any needs_restart_marked.
     """
-    
+
     def __init__(
         self,
         *,
@@ -187,6 +192,7 @@ class PermissionOrchestrator:
         ledger_store: LedgerStore,
         emit: Callable[[UIEvent], None],
         restart_handler: RestartHandler | None = None,
+        should_abort_restart: Callable[[], bool] | None = None,
         is_gui_process: bool = True,
         session_id: str | None = None,
         inter_step_pause_s: float = 0.0,
@@ -202,37 +208,40 @@ class PermissionOrchestrator:
         self.ledger_store = ledger_store
         self.emit = emit
         self.restart_handler = restart_handler
+        self.should_abort_restart = should_abort_restart
         self.is_gui_process = is_gui_process
         self.session_id = session_id or str(uuid.uuid4())
         self.inter_step_pause_s = inter_step_pause_s
         self.advance_on_timeout = advance_on_timeout
         self._restart_limit = 5  # Allow up to 5 restarts to break TCC zombie state
-        
+
         self._running = False
         self._cancelled = False
         self._idx = 0
         self.ledger: LedgerRecord | None = None
-    
+
     # ---------- Lifecycle ----------
-    
+
     async def start(self) -> None:
         """Start the permission wizard."""
         if self._running:
             logger.warning("[ORCHESTRATOR] Already running")
             return
-        
+
         self._running = True
         self._cancelled = False
-        
+
         # Check GUI process
         if not self.is_gui_process:
-            self._emit_error("NOT_GUI_PROCESS", "Permission orchestrator must run in GUI .app process.")
+            self._emit_error(
+                "NOT_GUI_PROCESS", "Permission orchestrator must run in GUI .app process."
+            )
             await self._enter_limited_mode()
             return
-        
+
         # Load or create ledger
         self.ledger = self._init_or_load_ledger()
-        
+
         # If ledger is already completed (e.g., after restart completed)
         if self.ledger.phase in (Phase.COMPLETED, Phase.LIMITED_MODE):
             logger.info(
@@ -243,20 +252,20 @@ class PermissionOrchestrator:
             # Re-emit completion event for integrations that started after restart
             await self._emit_completion_from_ledger()
             return
-        
+
         # If we're resuming after restart
         if self.ledger.phase == Phase.POST_RESTART_VERIFY:
             await self._enter_post_restart_verify()
             return
-        
+
         # Normal first run
         self.ledger.phase = Phase.FIRST_RUN
         self._save()
         self._emit_phase_changed(Phase.FIRST_RUN)
-        
+
         self._idx = 0
         await self._run_pipeline()
-    
+
     async def resume_after_restart(self) -> None:
         """Resume after application restart."""
         loaded = self.ledger_store.load()
@@ -265,47 +274,47 @@ class PermissionOrchestrator:
         else:
             logger.warning("[ORCHESTRATOR] No ledger found after restart")
             return
-        
+
         self._running = True
         self._cancelled = False
-        
+
         if self.ledger.phase != Phase.POST_RESTART_VERIFY:
             # Already completed or not in restart state
             full_mode = not should_enter_limited_mode(self.ledger, self.hard_permissions)
             await self._complete(full_mode=full_mode)
             return
-        
+
         await self._enter_post_restart_verify()
-    
+
     def stop(self) -> None:
         """Stop the wizard."""
         self._cancelled = True
         self._running = False
-    
+
     # ---------- Pipeline Execution ----------
-    
+
     async def _run_pipeline(self) -> None:
         """Run all permission steps sequentially."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot run pipeline")
             return
-        
+
         while self._idx < len(self.order) and not self._cancelled:
             perm = self.order[self._idx]
             cfg = self.step_configs[perm]
             entry = self.ledger.steps[perm]
-            
+
             self.ledger.current_step = perm
             self._save()
             self._emit_step_changed(perm)
-            
+
             # For FDA, run a pre-probe to force TCC to create an entry
             # so the app appears in the Full Disk Access list.
             if (
-                perm == PermissionId.FULL_DISK_ACCESS and
-                entry.state not in (StepState.PASS_, StepState.SKIPPED) and
-                entry.last_probe_at is None and
-                not self.advance_on_timeout
+                perm == PermissionId.FULL_DISK_ACCESS
+                and entry.state not in (StepState.PASS_, StepState.SKIPPED)
+                and entry.last_probe_at is None
+                and not self.advance_on_timeout
             ):
                 try:
                     await self.probers[perm].probe("heavy")
@@ -314,9 +323,9 @@ class PermissionOrchestrator:
 
             # Open Settings for OPEN_SETTINGS mode.
             # Retry on subsequent runs if permission is still not PASS/SKIPPED.
-            should_open_settings = (
-                cfg.mode == StepMode.OPEN_SETTINGS and
-                (entry.settings_opened_at is None or entry.state not in (StepState.PASS_, StepState.SKIPPED))
+            should_open_settings = cfg.mode == StepMode.OPEN_SETTINGS and (
+                entry.settings_opened_at is None
+                or entry.state not in (StepState.PASS_, StepState.SKIPPED)
             )
             if should_open_settings:
                 target = cfg.settings_target or "privacy_and_security"
@@ -331,12 +340,12 @@ class PermissionOrchestrator:
                         perm.value,
                         target,
                     )
-            
+
             # Trigger permission request.
             # Retry on subsequent runs if permission is still not PASS/SKIPPED.
-            should_trigger = (
-                entry.triggered_at is None or
-                entry.state not in (StepState.PASS_, StepState.SKIPPED)
+            should_trigger = entry.triggered_at is None or entry.state not in (
+                StepState.PASS_,
+                StepState.SKIPPED,
             )
             if should_trigger:
                 if entry.triggered_at is None:
@@ -347,18 +356,18 @@ class PermissionOrchestrator:
                     logger.error("[ORCHESTRATOR] Failed to trigger %s: %s", perm.value, e)
                 entry.triggered_at = time.time()
                 self._save()
-            
+
             # Grace period
             if entry.grace_started_at is None:
                 entry.grace_started_at = time.time()
                 self._set_step_state(perm, StepState.GRACE, "GRACE", f"Grace {cfg.timing.grace_s}s")
                 self._save()
-            
+
             await asyncio.sleep(cfg.timing.grace_s)
-            
+
             if self._cancelled:
                 break
-            
+
             step_deadline: float | None = None
             if self.advance_on_timeout and cfg.timing.step_timeout_s:
                 step_start = entry.grace_started_at or time.time()
@@ -383,7 +392,7 @@ class PermissionOrchestrator:
                 await asyncio.sleep(self.inter_step_pause_s)
 
             self._idx += 1
-        
+
         if not self._cancelled:
             await self._decide_after_first_run()
 
@@ -392,7 +401,7 @@ class PermissionOrchestrator:
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot probe")
             return
-        
+
         entry = self.ledger.steps[perm]
         if entry.polling_started_at is None:
             entry.polling_started_at = time.time()
@@ -409,7 +418,9 @@ class PermissionOrchestrator:
             out = self.classifiers[perm].classify(pr, entry)
         except Exception as e:
             logger.error("[ORCHESTRATOR] Classify failed for %s: %s", perm.value, e)
-            self._set_step_state(perm, StepState.WAITING_USER, "CLASSIFY_ERROR", "Classification failed")
+            self._set_step_state(
+                perm, StepState.WAITING_USER, "CLASSIFY_ERROR", "Classification failed"
+            )
             self._save()
             return
         entry.last_probe_at = time.time()
@@ -449,43 +460,54 @@ class PermissionOrchestrator:
         self._set_step_state(perm, StepState.WAITING_USER, out.reason_code, out.reason)
         self._maybe_open_settings(perm, cfg, entry)
         self._save()
-    
-    async def _poll_until_done(self, perm: PermissionId, cfg: StepConfig, deadline: float | None) -> bool:
+
+    async def _poll_until_done(
+        self, perm: PermissionId, cfg: StepConfig, deadline: float | None
+    ) -> bool:
         """Poll until step is done (PASS/FAIL/etc) or timeout."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot poll")
             return False
-        
+
         entry = self.ledger.steps[perm]
         start = entry.polling_started_at or time.time()
-        
+
         while not self._cancelled:
             now = time.time()
             elapsed = now - start
 
             if deadline is not None and now >= deadline:
-                logger.warning(f"[ORCHESTRATOR] Step {perm.value} timed out - treating as NEEDS_RESTART (fail-fast)")
+                logger.warning(
+                    f"[ORCHESTRATOR] Step {perm.value} timed out - treating as NEEDS_RESTART (fail-fast)"
+                )
                 # [FIXED BY AI] Fail-Fast: Treat timeout as a signal to restart
-                self._set_step_state(perm, StepState.NEEDS_RESTART, "TIMEOUT_RESTART", "Timeout reached - restarting")
+                self._set_step_state(
+                    perm, StepState.NEEDS_RESTART, "TIMEOUT_RESTART", "Timeout reached - restarting"
+                )
                 entry.needs_restart_marked = True
                 entry.needs_restart_marked_at = now
                 self.ledger.needs_restart = True
                 self._save()
                 return True
-            
+
             # Transition to WAITING_LONG for Settings steps
             if cfg.mode == StepMode.OPEN_SETTINGS:
-                if entry.state == StepState.WAITING_USER and elapsed >= cfg.timing.waiting_long_after_s:
+                if (
+                    entry.state == StepState.WAITING_USER
+                    and elapsed >= cfg.timing.waiting_long_after_s
+                ):
                     entry.waiting_long_entered_at = now
-                    self._set_step_state(perm, StepState.WAITING_LONG, "WAITING_LONG", "Long waiting mode")
+                    self._set_step_state(
+                        perm, StepState.WAITING_LONG, "WAITING_LONG", "Long waiting mode"
+                    )
                     self._save()
-            
+
             # Choose probe kind
             probe_kind: Literal["light", "heavy"] = "light"
             if entry.next_heavy_allowed_at is None or now >= entry.next_heavy_allowed_at:
                 probe_kind = "heavy"
                 entry.next_heavy_allowed_at = now + cfg.timing.heavy_cooldown_s
-            
+
             # Run probe
             try:
                 pr = await self.probers[perm].probe(probe_kind)
@@ -493,7 +515,7 @@ class PermissionOrchestrator:
                 logger.error("[ORCHESTRATOR] Probe failed for %s: %s", perm.value, e)
                 await asyncio.sleep(cfg.timing.poll_s)
                 continue
-            
+
             # Classify
             try:
                 out = self.classifiers[perm].classify(pr, entry)
@@ -501,19 +523,19 @@ class PermissionOrchestrator:
                 logger.error("[ORCHESTRATOR] Classify failed for %s: %s", perm.value, e)
                 await asyncio.sleep(cfg.timing.poll_s)
                 continue
-            
+
             entry.last_probe_at = now
             entry.attempts += 1
             entry.last_reason_code = out.reason_code
             entry.last_reason = out.reason
             self._save()
-            
+
             # Handle outcome
             if out.kind == OutcomeKind.PASS_:
                 self._set_step_state(perm, StepState.PASS_, out.reason_code, out.reason)
                 self._save()
                 return True
-            
+
             if out.kind == OutcomeKind.NEEDS_RESTART and cfg.supports_needs_restart:
                 self._set_step_state(perm, StepState.NEEDS_RESTART, out.reason_code, out.reason)
                 entry.needs_restart_marked = True
@@ -521,40 +543,42 @@ class PermissionOrchestrator:
                 self.ledger.needs_restart = True
                 self._save()
                 return True
-            
+
             if out.kind == OutcomeKind.FAIL:
                 self._set_step_state(perm, StepState.FAIL, out.reason_code, out.reason)
                 self._save()
                 return True
-            
+
             if out.kind == OutcomeKind.FAIL_AFTER_RESTART:
-                self._set_step_state(perm, StepState.FAIL_AFTER_RESTART, out.reason_code, out.reason)
+                self._set_step_state(
+                    perm, StepState.FAIL_AFTER_RESTART, out.reason_code, out.reason
+                )
                 self._save()
                 return True
-            
+
             if out.kind == OutcomeKind.SKIP:
                 self._set_step_state(perm, StepState.SKIPPED, out.reason_code, out.reason)
                 self._save()
                 return True
-            
+
             # WAITING_USER
             if out.kind == OutcomeKind.WAITING_USER:
                 if entry.state != StepState.WAITING_USER:
                     self._set_step_state(perm, StepState.WAITING_USER, out.reason_code, out.reason)
                     self._save()
-            
+
             # Sleep and continue polling
             poll_interval = (
-                cfg.timing.waiting_long_poll_s 
-                if entry.state == StepState.WAITING_LONG 
+                cfg.timing.waiting_long_poll_s
+                if entry.state == StepState.WAITING_LONG
                 else cfg.timing.poll_s
             )
             await asyncio.sleep(poll_interval)
-        
+
         return False
-    
+
     # ---------- Phase Decisions ----------
-    
+
     async def _decide_after_first_run(self) -> None:
         """Decide next phase after all steps complete."""
         if not self.ledger:
@@ -562,14 +586,21 @@ class PermissionOrchestrator:
             return
 
         if self.advance_on_timeout:
-            await self._complete(full_mode=True)
+            if self.ledger.restart_count >= 1:
+                await self._complete(full_mode=True)
+                return
+            if self._should_abort_restart():
+                logger.info("[ORCHESTRATOR] Restart skipped: user quit intent is active")
+                await self._complete(full_mode=True)
+                return
+            await self._enter_restart_sequence(force_restart=True)
             return
-        
+
         # Check for hard failures
         if should_enter_limited_mode(self.ledger, self.hard_permissions):
             await self._enter_limited_mode()
             return
-        
+
         # Hard guard: V2 policy allows multiple restarts to break TCC zombie state
         if self.ledger.restart_count >= self._restart_limit:
             logger.info(
@@ -584,27 +615,32 @@ class PermissionOrchestrator:
             if can_restart_safely(self.ledger, self.restart_cfg):
                 # However, to satisfy "Restart only after actual completion of first-run (all steps processed)",
                 # we are already there.
-                
-                # The issue is likely that RESTART_PENDING is not "COMPLETED". 
+
+                # The issue is likely that RESTART_PENDING is not "COMPLETED".
                 # Let's perform the restart logic but ensure we don't block.
                 # Or better: emit a "completion-like" event before restarting?
-                
+
                 await self._enter_restart_sequence()
                 return
-        
+
         # Complete immediately
         await self._complete(full_mode=True)
-    
-    async def _enter_restart_sequence(self) -> None:
+
+    async def _enter_restart_sequence(self, *, force_restart: bool = False) -> None:
         """
         Prepare for and trigger restart.
-        
+
         Changed in V2 Fix:
         We now treat this as the end of the first run. We emit restart-related events,
         but we ensure the system knows we are 'done' with the wizard steps.
         """
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot enter restart sequence")
+            return
+
+        if self._should_abort_restart():
+            logger.info("[ORCHESTRATOR] Restart sequence aborted: user quit intent is active")
+            await self._complete(full_mode=True)
             return
 
         if self.ledger.restart_count >= 1:
@@ -614,115 +650,128 @@ class PermissionOrchestrator:
             )
             await self._complete(full_mode=True)
             return
-        
+
         self.ledger.phase = Phase.RESTART_PENDING
         self._save()
         self._emit_phase_changed(Phase.RESTART_PENDING)
-        
-        self.emit(UIEvent(
-            UIEventType.RESTART_SCHEDULED,
-            time.time(),
-            {"reason": "Restart required to activate permissions"}
-        ))
-        
-        # Explicitly emit a 'completed' event for compatibility if needed, 
+
+        self.emit(
+            UIEvent(
+                UIEventType.RESTART_SCHEDULED,
+                time.time(),
+                {"reason": "Restart required to activate permissions"},
+            )
+        )
+
+        # Explicitly emit a 'completed' event for compatibility if needed,
         # or rely on the fact that we are about to restart.
         # User goal: "Restart only after actual completion of first-run".
         # We are here => all steps processed.
-        
+
         await asyncio.sleep(self.restart_cfg.delay_sec)
-        
+
         if self._cancelled:
             return
-        
+        if self._should_abort_restart():
+            logger.info(
+                "[ORCHESTRATOR] Restart cancelled before trigger: user quit intent is active"
+            )
+            await self._complete(full_mode=True)
+            return
+
         # Only proceed to restart if handler is present
         if self.restart_handler:
-            self.emit(UIEvent(
-                UIEventType.RESTART_STARTED,
-                time.time(),
-                {"restart_count": self.ledger.restart_count + 1}
-            ))
-            
+            self.emit(
+                UIEvent(
+                    UIEventType.RESTART_STARTED,
+                    time.time(),
+                    {"restart_count": self.ledger.restart_count + 1},
+                )
+            )
+
             self.ledger.restart_count += 1
             # Next boot should verify permissions
             self.ledger.phase = Phase.POST_RESTART_VERIFY
             self._save()
-            
+
             permissions = [p.value for p in self.order if self.ledger.steps[p].needs_restart_marked]
-            
+
             # Fire restart
             await self.restart_handler.trigger_restart(
-                reason="permission_activation",
-                permissions=permissions
+                reason="permission_activation", permissions=permissions
             )
         else:
             # No restart handler - cannot restart
             logger.warning("[ORCHESTRATOR] No restart handler available")
-            
+            if force_restart:
+                await self._complete(full_mode=True)
+                return
+
             # Check if any HARD permission needs restart
             hard_needs_restart = any(
                 self.ledger.steps[p].state == StepState.NEEDS_RESTART
                 for p in self.hard_permissions
                 if p in self.ledger.steps
             )
-            
+
             if hard_needs_restart:
                 # Cannot activate HARD permissions without restart → LIMITED_MODE
-                logger.warning("[ORCHESTRATOR] HARD permissions need restart but no handler - entering LIMITED_MODE")
+                logger.warning(
+                    "[ORCHESTRATOR] HARD permissions need restart but no handler - entering LIMITED_MODE"
+                )
                 self.ledger.restart_unavailable = True
                 await self._enter_limited_mode()
             else:
                 # Only SOFT/FEATURE need restart, can continue without them
                 logger.info("[ORCHESTRATOR] Only soft permissions need restart - completing anyway")
                 await self._complete(full_mode=True)
-    
+
     async def _enter_post_restart_verify(self) -> None:
         """Verify permissions after restart."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot enter post restart verify")
             return
-        
+
+        if self.advance_on_timeout:
+            # Timeout-driven flow treats each step as received by timebox,
+            # so post-restart verify should not re-open failure branches.
+            await self._complete(full_mode=True)
+            return
+
         self.ledger.phase = Phase.POST_RESTART_VERIFY
         self._save()
         self._emit_phase_changed(Phase.POST_RESTART_VERIFY)
-        
-        self.emit(UIEvent(
-            UIEventType.POST_RESTART_VERIFY_STARTED,
-            time.time(),
-            {"window_s": 20}
-        ))
-        
+
+        self.emit(UIEvent(UIEventType.POST_RESTART_VERIFY_STARTED, time.time(), {"window_s": 20}))
+
         # Verify only permissions that needed restart
-        to_verify = [
-            p for p, s in self.ledger.steps.items()
-            if s.needs_restart_marked
-        ]
-        
+        to_verify = [p for p, s in self.ledger.steps.items() if s.needs_restart_marked]
+
         for p in to_verify:
             if self._cancelled:
                 return
             cfg = self.step_configs[p]
             await self._verify_with_window(p, cfg)
-        
+
         # Decide outcome
         if should_enter_limited_mode(self.ledger, self.hard_permissions):
             await self._enter_limited_mode()
         else:
             await self._complete(full_mode=True)
-    
+
     async def _verify_with_window(self, perm: PermissionId, cfg: StepConfig) -> None:
         """Verify a permission within a time window after restart."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot verify")
             return
-        
+
         entry = self.ledger.steps[perm]
         start = time.time()
         window = cfg.timing.post_restart_verify_window_s
         tick = cfg.timing.post_restart_verify_tick_s
-        
+
         entry.next_heavy_allowed_at = None
-        
+
         while time.time() - start <= window and not self._cancelled:
             try:
                 pr = await self.probers[perm].probe("heavy")
@@ -731,74 +780,77 @@ class PermissionOrchestrator:
                 logger.error("[ORCHESTRATOR] Verify probe failed for %s: %s", perm.value, e)
                 await asyncio.sleep(tick)
                 continue
-            
+
             entry.last_probe_at = time.time()
             entry.last_reason_code = out.reason_code
             entry.last_reason = out.reason
             self._save()
-            
+
             if out.kind == OutcomeKind.PASS_:
-                self._set_step_state(perm, StepState.PASS_, out.reason_code, "Verified after restart")
+                self._set_step_state(
+                    perm, StepState.PASS_, out.reason_code, "Verified after restart"
+                )
                 entry.needs_restart_marked = False
                 self._save()
                 return
-            
+
             await asyncio.sleep(tick)
-        
+
         # Window exhausted
-        self._set_step_state(perm, StepState.FAIL_AFTER_RESTART, "VERIFY_TIMEOUT", "Not active after restart")
+        self._set_step_state(
+            perm, StepState.FAIL_AFTER_RESTART, "VERIFY_TIMEOUT", "Not active after restart"
+        )
         self._save()
-    
+
     # ---------- Completion ----------
-    
+
     async def _enter_limited_mode(self) -> None:
         """Enter limited mode due to hard failures."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot enter limited mode")
             return
-        
+
         self.ledger.phase = Phase.LIMITED_MODE
         self._save()
         self._emit_phase_changed(Phase.LIMITED_MODE)
         self._running = False
-        
+
         missing = [
-            p for p in self.hard_permissions
-            if self.ledger.steps.get(p) and self.ledger.steps[p].state in (StepState.FAIL, StepState.FAIL_AFTER_RESTART)
+            p
+            for p in self.hard_permissions
+            if self.ledger.steps.get(p)
+            and self.ledger.steps[p].state in (StepState.FAIL, StepState.FAIL_AFTER_RESTART)
         ]
-        self.emit(UIEvent(
-            UIEventType.LIMITED_MODE_ENTERED,
-            time.time(),
-            {"missing_hard": [x.value for x in missing]}
-        ))
-    
+        self.emit(
+            UIEvent(
+                UIEventType.LIMITED_MODE_ENTERED,
+                time.time(),
+                {"missing_hard": [x.value for x in missing]},
+            )
+        )
+
     async def _complete(self, *, full_mode: bool) -> None:
         """Complete the wizard."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot complete")
             return
-        
+
         self.ledger.phase = Phase.COMPLETED
         self._save()
         self._emit_phase_changed(Phase.COMPLETED)
         self._running = False
-        
-        self.emit(UIEvent(
-            UIEventType.COMPLETED,
-            time.time(),
-            {"full_mode": full_mode}
-        ))
-    
-    
+
+        self.emit(UIEvent(UIEventType.COMPLETED, time.time(), {"full_mode": full_mode}))
+
     async def _emit_completion_from_ledger(self) -> None:
         """Re-emit completion event from existing completed ledger state."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot emit completion")
             return
-        
+
         is_full_mode = self.ledger.phase == Phase.COMPLETED
         event_type = UIEventType.COMPLETED if is_full_mode else UIEventType.LIMITED_MODE_ENTERED
-        
+
         # Build summary
         summary = {}
         for perm_id, entry in self.ledger.steps.items():
@@ -806,26 +858,28 @@ class PermissionOrchestrator:
                 "state": entry.state.value,
                 "mode": entry.mode.value,
             }
-        
-        self.emit(UIEvent(
-            event_type,
-            time.time(),
-            {
-                "full_mode": is_full_mode,
-                "phase": self.ledger.phase.value,
-                "summary": summary,
-                "restart_count": self.ledger.restart_count,
-            }
-        ))
-        
+
+        self.emit(
+            UIEvent(
+                event_type,
+                time.time(),
+                {
+                    "full_mode": is_full_mode,
+                    "phase": self.ledger.phase.value,
+                    "summary": summary,
+                    "restart_count": self.ledger.restart_count,
+                },
+            )
+        )
+
         logger.info(
             "[ORCHESTRATOR] Re-emitted %s from ledger (restart_count=%d)",
             event_type.value,
             self.ledger.restart_count,
         )
-    
+
     # ---------- Helpers ----------
-    
+
     def _init_or_load_ledger(self) -> LedgerRecord:
         """Load existing ledger or create new one."""
         existing = self.ledger_store.load()
@@ -838,20 +892,22 @@ class PermissionOrchestrator:
                 if p not in existing.steps:
                     cfg = self.step_configs[p]
                     existing.steps[p] = StepLedgerEntry(permission=p, mode=cfg.mode)
-                    logger.info("[ORCHESTRATOR] Backfilled missing permission in ledger: %s", p.value)
+                    logger.info(
+                        "[ORCHESTRATOR] Backfilled missing permission in ledger: %s", p.value
+                    )
                     dirty = True
-            
+
             if dirty:
                 self.ledger_store.save(existing)
-            
+
             return existing
-        
+
         now = time.time()
         steps: dict[PermissionId, StepLedgerEntry] = {}
         for p in self.order:
             cfg = self.step_configs[p]
             steps[p] = StepLedgerEntry(permission=p, mode=cfg.mode)
-        
+
         return LedgerRecord(
             session_id=self.session_id,
             phase=Phase.FIRST_RUN,
@@ -860,37 +916,41 @@ class PermissionOrchestrator:
             steps=steps,
             gui_process_pid=os.getpid(),
         )
-    
+
     def _save(self) -> None:
         """Save ledger to disk."""
         if self.ledger:
             self.ledger_store.save(self.ledger)
-    
-    def _set_step_state(self, perm: PermissionId, state: StepState, reason_code: str, reason: str) -> None:
+
+    def _set_step_state(
+        self, perm: PermissionId, state: StepState, reason_code: str, reason: str
+    ) -> None:
         """Update step state and emit event (with dedup)."""
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot set step state")
             return
-        
+
         entry = self.ledger.steps[perm]
         if entry.state == state:
             return  # UIUpdateGate
-        
+
         entry.state = state
         entry.last_reason_code = reason_code
         entry.last_reason = reason
         self._save()
-        
-        self.emit(UIEvent(
-            UIEventType.STEP_STATE_CHANGED,
-            time.time(),
-            {
-                "permission": perm.value,
-                "state": state.value,
-                "reason_code": reason_code,
-                "reason": reason,
-            }
-        ))
+
+        self.emit(
+            UIEvent(
+                UIEventType.STEP_STATE_CHANGED,
+                time.time(),
+                {
+                    "permission": perm.value,
+                    "state": state.value,
+                    "reason_code": reason_code,
+                    "reason": reason,
+                },
+            )
+        )
 
     def _mark_timeout(self, perm: PermissionId, reason_code: str, reason: str) -> None:
         if not self.ledger:
@@ -904,7 +964,20 @@ class PermissionOrchestrator:
             StepState.SKIPPED,
         ):
             return
+        if self.advance_on_timeout:
+            self._set_step_state(
+                perm, StepState.PASS_, "TIMEBOX_RECEIVED", "Step completed by timebox"
+            )
+            return
         self._set_step_state(perm, StepState.SKIPPED, reason_code, reason)
+
+    def _should_abort_restart(self) -> bool:
+        if not self.should_abort_restart:
+            return False
+        try:
+            return bool(self.should_abort_restart())
+        except Exception:
+            return False
 
     async def _wait_until_deadline(self, perm: PermissionId, deadline: float) -> None:
         if deadline <= 0:
@@ -924,20 +997,25 @@ class PermissionOrchestrator:
         if remaining > 0:
             await asyncio.sleep(remaining)
         self._mark_timeout(perm, "TIMEOUT", "Step timeout reached")
-    
+
     def _emit_phase_changed(self, phase: Phase) -> None:
         self.emit(UIEvent(UIEventType.PHASE_CHANGED, time.time(), {"phase": phase.value}))
-    
+
     def _emit_step_changed(self, perm: PermissionId) -> None:
         self.emit(UIEvent(UIEventType.STEP_CHANGED, time.time(), {"permission": perm.value}))
-    
-    def _emit_settings_opened(self, perm: PermissionId, target: str) -> None:
-        self.emit(UIEvent(UIEventType.SETTINGS_OPENED, time.time(), {
-            "permission": perm.value,
-            "settings_target": target
-        }))
 
-    def _maybe_open_settings(self, perm: PermissionId, cfg: StepConfig, entry: StepLedgerEntry) -> None:
+    def _emit_settings_opened(self, perm: PermissionId, target: str) -> None:
+        self.emit(
+            UIEvent(
+                UIEventType.SETTINGS_OPENED,
+                time.time(),
+                {"permission": perm.value, "settings_target": target},
+            )
+        )
+
+    def _maybe_open_settings(
+        self, perm: PermissionId, cfg: StepConfig, entry: StepLedgerEntry
+    ) -> None:
         if perm == PermissionId.CONTACTS:
             return
         if cfg.mode == StepMode.OPEN_SETTINGS:

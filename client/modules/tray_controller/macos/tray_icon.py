@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from PIL import Image, ImageDraw  # type: ignore
+
     _PIL_AVAILABLE = True
 except Exception:
     _PIL_AVAILABLE = False  # type: ignore[reportConstantRedefinition]
@@ -34,22 +35,20 @@ class MacOSTrayIcon:
             "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAm0lEQVR4nO2XUQrAIAxD21x359l5HQwGY1RnbW2FLZ9q82L9UIm+Lh4pKjuVquGm82QPqCUMZsF763gGWNMNRMBbfoiAt3xByULU7mv+iIRLHFCysEyAEtT+Jw+ULPwB6A+wSgBWvmSsunigZGGpABx0DHcOWpOz4WKAaEEanNUFyReaxd7wc7yn2HJVv20EHiaWOh4x9vwbpusACbIzNnxlb+0AAAAASUVORK5CYII="
         ),
     }
-    
+
     def __init__(self, status: TrayStatus = TrayStatus.SLEEPING, size: int = 16):
         self.status = status
         self.size = size
         self.icon_generator = TrayIconGenerator()
         self._temp_files = []
         self._current_icon_path: str | None = None
-    
+
     def create_icon_file(self, status: TrayStatus) -> str:
         """Создать файл иконки для macOS (PNG)."""
         try:
             # Создаём временный PNG-файл
             temp_file = tempfile.NamedTemporaryFile(
-                suffix='.png',
-                delete=False,
-                dir=tempfile.gettempdir()
+                suffix=".png", delete=False, dir=tempfile.gettempdir()
             )
             temp_path = temp_file.name
             temp_file.close()
@@ -94,15 +93,17 @@ class MacOSTrayIcon:
             return temp_path
 
         except Exception as e:
-            logger.error(f"❌ Критическая ошибка создания иконки для status={status}: {e}", exc_info=True)
+            logger.error(
+                f"❌ Критическая ошибка создания иконки для status={status}: {e}", exc_info=True
+            )
             return ""
-    
+
     def update_status(self, status: TrayStatus) -> bool:
         """Обновить статус иконки"""
         try:
             self.status = status
             new_icon_path = self.create_icon_file(status)
-            
+
             if new_icon_path and new_icon_path != self._current_icon_path:
                 # Удаляем старую иконку
                 if self._current_icon_path and os.path.exists(self._current_icon_path):
@@ -110,20 +111,20 @@ class MacOSTrayIcon:
                         os.unlink(self._current_icon_path)
                     except Exception:
                         pass
-                
+
                 self._current_icon_path = new_icon_path
                 return True
-            
+
             return False
 
         except Exception as e:
             logger.error(f"❌ Ошибка обновления статуса иконки: {e}", exc_info=True)
             return False
-    
+
     def get_icon_path(self) -> str | None:
         """Получить путь к текущей иконке"""
         return self._current_icon_path
-    
+
     def cleanup(self):
         """Очистить временные файлы"""
         for temp_file in self._temp_files:
@@ -133,7 +134,7 @@ class MacOSTrayIcon:
             except Exception:
                 pass
         self._temp_files.clear()
-    
+
     def __del__(self):
         """Деструктор для очистки"""
         self.cleanup()
@@ -150,11 +151,3 @@ class MacOSTrayIcon:
         except Exception as e:
             logger.error(f"❌ Ошибка записи fallback иконки: {e}", exc_info=True)
             return False
-
-
-
-
-
-
-
-

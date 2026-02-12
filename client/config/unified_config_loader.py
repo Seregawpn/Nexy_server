@@ -22,15 +22,18 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AppConfig:
     """Основные настройки приложения"""
+
     name: str
     version: str
     debug: bool
     bundle_id: str
     team_id: str
 
+
 @dataclass
 class GrpcServerConfig:
     """Конфигурация gRPC сервера"""
+
     host: str
     port: int
     ssl: bool
@@ -42,9 +45,11 @@ class GrpcServerConfig:
     keepalive: bool = True  # NEW: Включить keepalive
     grpc_path: str | None = None  # NEW: Путь для Nginx reverse proxy
 
+
 @dataclass
 class NetworkConfig:
     """Сетевые настройки"""
+
     grpc_servers: dict[str, GrpcServerConfig]
     appcast: dict[str, Any]
     connection_check_interval: int
@@ -52,9 +57,11 @@ class NetworkConfig:
     ping_timeout: int
     ping_hosts: list[str]
 
+
 @dataclass
 class LoggingConfig:
     """Настройки логирования"""
+
     level: str
     file: str
     error_file: str
@@ -63,9 +70,11 @@ class LoggingConfig:
     format: str
     loggers: dict[str, str]
 
+
 @dataclass
 class KeyboardConfig:
     """Конфигурация клавиатуры - все значения загружаются из unified_config.yaml"""
+
     key_to_monitor: str
     short_press_threshold: float
     long_press_threshold: float
@@ -78,9 +87,11 @@ class KeyboardConfig:
     # Максимальное время удержания отдельной клавиши (1 мин)
     key_state_timeout_sec: float = 60.0
 
+
 @dataclass
 class InputProcessingConfig:
     """Конфигурация обработки ввода"""
+
     keyboard: KeyboardConfig
     enable_keyboard_monitoring: bool = True
     auto_start: bool = True
@@ -91,34 +102,37 @@ class InputProcessingConfig:
     recording_prestart_delay_sec: float = 0.3
     mic_reset_timeout_sec: float = 60.0
 
+
 @dataclass
 class OpenAppActionConfig:
     """Конфигурация действий открытия приложений"""
+
     enabled: bool = False  # По умолчанию выключено для безопасности
     timeout_sec: float = 10.0
     allowed_apps: list[str] | None = None  # None или пустой список = все разрешены
     binary: str = "/usr/bin/open"
     speak_errors: bool = True
     use_server_tts: bool = False
-    
+
     def __post_init__(self):
         if self.allowed_apps is None:
             self.allowed_apps = []
 
+
 class UnifiedConfigLoader:
     """
     Единый загрузчик конфигурации с автоматической синхронизацией.
-    
+
     Thread-safe Singleton Pattern:
     - Используйте UnifiedConfigLoader.get_instance() для явного получения
     - Или import unified_config из этого модуля
     - Прямой вызов UnifiedConfigLoader() также вернёт singleton
     """
-    
+
     _instance: Optional["UnifiedConfigLoader"] = None
     _lock: threading.Lock = threading.Lock()
     _initialized: bool = False
-    
+
     def __new__(cls, config_file: Union[str, Path] | None = None) -> "UnifiedConfigLoader":
         """Thread-safe singleton: возвращает единственный экземпляр."""
         if cls._instance is None:
@@ -127,32 +141,32 @@ class UnifiedConfigLoader:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     @classmethod
     def get_instance(cls, config_file: Union[str, Path] | None = None) -> "UnifiedConfigLoader":
         """
         Явный метод получения singleton экземпляра.
-        
+
         Рекомендуется использовать этот метод для clarity.
         """
         return cls(config_file)
-    
+
     @classmethod
     def reset_instance(cls) -> None:
         """
         Сбрасывает singleton (только для тестов!).
-        
+
         WARNING: Не использовать в production коде.
         """
         with cls._lock:
             cls._instance = None
             cls._initialized = False
-    
+
     def __init__(self, config_file: Union[str, Path] | None = None):
         # Предотвращаем повторную инициализацию singleton
         if UnifiedConfigLoader._initialized:
             return
-        
+
         # По умолчанию используем файл, расположенный рядом с этим модулем,
         # чтобы не зависеть от текущего рабочего каталога запуска.
         if config_file is None:
@@ -163,23 +177,23 @@ class UnifiedConfigLoader:
         self._last_modified: float | None = None
         self._environment: str = self._detect_environment()
         self._secure_credentials: dict[str, Any] | None = None
-        
+
         UnifiedConfigLoader._initialized = True
         logger.debug("UnifiedConfigLoader singleton initialized")
 
     def _get_secure_credentials_path(self) -> Path:
         """Returns path to secure credentials file in Application Support"""
         return Path.home() / "Library" / "Application Support" / "Nexy" / "credentials.yaml"
-    
+
     def _load_secure_credentials(self) -> dict[str, Any]:
         """Load credentials from secure Application Support location"""
         if self._secure_credentials is not None:
             return self._secure_credentials
-            
+
         creds_path = self._get_secure_credentials_path()
         if creds_path.exists():
             try:
-                with open(creds_path, 'r', encoding='utf-8') as f:
+                with open(creds_path, "r", encoding="utf-8") as f:
                     self._secure_credentials = yaml.safe_load(f) or {}
                 logger.info("🔐 Loaded secure credentials from %s", creds_path)
             except Exception as e:
@@ -188,9 +202,9 @@ class UnifiedConfigLoader:
         else:
             logger.debug("Secure credentials file not found at %s", creds_path)
             self._secure_credentials = {}
-        
-        return self._secure_credentials
-    
+
+        return self._secure_credentials or {}
+
     def get_api_key(self, key_name: str) -> str | None:
         """
         Get API key from secure storage.
@@ -200,92 +214,91 @@ class UnifiedConfigLoader:
         env_key = key_name.upper()
         if os.environ.get(env_key):
             return os.environ.get(env_key)
-        
+
         # 2. Check secure credentials
         creds = self._load_secure_credentials()
         if creds.get(key_name):
             return creds.get(key_name)
-        
+
         # 3. Fallback to config (legacy, will log warning)
         config = self._load_config()
-        browser_config = config.get('browser_use', {})
+        browser_config = config.get("browser_use", {})
         if browser_config.get(key_name):
             logger.warning(
                 "⚠️ API key '%s' loaded from config file. "
                 "Consider moving to ~/Library/Application Support/Nexy/credentials.yaml",
-                key_name
+                key_name,
             )
             return browser_config.get(key_name)
-        
+
         return None
 
-    
     def _load_config(self) -> dict[str, Any]:
         """Загружает конфигурацию с проверкой изменений"""
         if self._config_cache is None or self._is_config_modified():
-            with open(self.config_file, 'r', encoding='utf-8') as f:
+            with open(self.config_file, "r", encoding="utf-8") as f:
                 self._config_cache = yaml.safe_load(f) or {}
             self._last_modified = self.config_file.stat().st_mtime
         return self._config_cache or {}
-    
+
     def _is_config_modified(self) -> bool:
         """Проверяет, был ли файл конфигурации изменен"""
         if not self.config_file.exists():
             return True
         current_mtime = self.config_file.stat().st_mtime
         return self._last_modified is None or current_mtime > self._last_modified
-    
+
     def reload(self):
         """Принудительно перезагружает конфигурацию"""
         self._config_cache = None
         self._last_modified = None
-    
+
     # =====================================================
     # ОСНОВНЫЕ НАСТРОЙКИ ПРИЛОЖЕНИЯ
     # =====================================================
-    
+
     def get_app_config(self) -> AppConfig:
         """Получает основные настройки приложения"""
         config = self._load_config()
-        app_data = config['app']
+        app_data = config["app"]
         return AppConfig(
-            name=app_data['name'],
-            version=app_data['version'],
-            debug=app_data['debug'],
-            bundle_id=app_data['bundle_id'],
-            team_id=app_data['team_id']
+            name=app_data["name"],
+            version=app_data["version"],
+            debug=app_data["debug"],
+            bundle_id=app_data["bundle_id"],
+            team_id=app_data["team_id"],
         )
-    
+
     def get_version(self) -> str:
         """Получает версию приложения (используется везде)"""
         return self.get_app_config().version
-    
+
     def get_bundle_id(self) -> str:
         """Получает Bundle ID приложения"""
         return self.get_app_config().bundle_id
-    
+
     def get_team_id(self) -> str:
         """Получает Team ID для подписи"""
         return self.get_app_config().team_id
-    
+
     # =====================================================
     # СЕТЕВЫЕ НАСТРОЙКИ
     # =====================================================
-    
+
     def get_network_config(self) -> NetworkConfig:
         """Получает сетевые настройки"""
         config = self._load_config()
-        
+
         # Получаем gRPC настройки из секции grpc
-        grpc_data = config.get('grpc', {})
-        
+        grpc_data = config.get("grpc", {})
+
         # Создаем конфигурации для всех серверов из централизованной конфигурации
         grpc_servers = {}
-        servers_config = grpc_data.get('servers', {})
-        
+        servers_config = grpc_data.get("servers", {})
+
         for server_name, server_config in servers_config.items():
             # DEBUG: Log what we're reading from YAML
-            ssl_verify_value = server_config.get('ssl_verify', True)
+            ssl_verify_value = server_config.get("ssl_verify", True)
             logger.info(
                 "🔌 [DEBUG] Loading server '%s' from YAML: ssl_verify=%s",
                 server_name,
@@ -293,53 +306,53 @@ class UnifiedConfigLoader:
             )
 
             grpc_servers[server_name] = GrpcServerConfig(
-                host=server_config.get('host', '127.0.0.1'),
-                port=server_config.get('port', 50051),
-                ssl=server_config.get('ssl', False),
-                timeout=server_config.get('timeout', grpc_data.get('connection_timeout', 30)),
+                host=server_config.get("host", "127.0.0.1"),
+                port=server_config.get("port", 50051),
+                ssl=server_config.get("ssl", False),
+                timeout=server_config.get("timeout", grpc_data.get("connection_timeout", 30)),
                 retry_attempts=server_config.get(
-                    'retry_attempts',
-                    grpc_data.get('retry_attempts', 3),
+                    "retry_attempts",
+                    grpc_data.get("retry_attempts", 3),
                 ),
-                retry_delay=server_config.get('retry_delay', grpc_data.get('retry_delay', 1.0)),
+                retry_delay=server_config.get("retry_delay", grpc_data.get("retry_delay", 1.0)),
                 ssl_verify=ssl_verify_value,  # NEW
-                use_http2=server_config.get('use_http2', True),  # NEW
-                keepalive=server_config.get('keepalive', True),  # NEW
-                grpc_path=server_config.get('grpc_path')  # NEW
+                use_http2=server_config.get("use_http2", True),  # NEW
+                keepalive=server_config.get("keepalive", True),  # NEW
+                grpc_path=server_config.get("grpc_path"),  # NEW
             )
-        
+
         # Получаем настройки сети (если есть)
-        network_data = config.get('network', {})
-        
+        network_data = config.get("network", {})
+
         return NetworkConfig(
             grpc_servers=grpc_servers,
-            appcast=network_data.get('appcast', {'base_url': 'https://updates.nexy.ai'}),
-            connection_check_interval=network_data.get('connection_check_interval', 30),
-            auto_fallback=network_data.get('auto_fallback', True),
-            ping_timeout=network_data.get('ping_timeout', 5),
-            ping_hosts=network_data.get('ping_hosts', ['8.8.8.8', '1.1.1.1'])
+            appcast=network_data.get("appcast", {"base_url": "https://updates.nexy.ai"}),
+            connection_check_interval=network_data.get("connection_check_interval", 30),
+            auto_fallback=network_data.get("auto_fallback", True),
+            ping_timeout=network_data.get("ping_timeout", 5),
+            ping_hosts=network_data.get("ping_hosts", ["8.8.8.8", "1.1.1.1"]),
         )
-    
+
     def get_grpc_config(self, environment: str = "local") -> GrpcServerConfig:
         """Получает конфигурацию gRPC для указанного окружения"""
         network_config = self.get_network_config()
         if environment not in network_config.grpc_servers:
             raise ValueError(f"Environment '{environment}' not found")
         return network_config.grpc_servers[environment]
-    
+
     def get_appcast_url(self) -> str:
         """Получает URL AppCast (используется везде)"""
         network_config = self.get_network_config()
-        return network_config.appcast['base_url'] + "/appcast.xml"
-    
+        return network_config.appcast["base_url"] + "/appcast.xml"
+
     def get_grpc_host(self, environment: str = "local") -> str:
         """Получает хост gRPC сервера"""
         return self.get_grpc_config(environment).host
-    
+
     def get_grpc_port(self, environment: str = "local") -> int:
         """Получает порт gRPC сервера"""
         return self.get_grpc_config(environment).port
-    
+
     # =====================================================
     # РАЗРЕШЕНИЯ
     # =====================================================
@@ -347,12 +360,12 @@ class UnifiedConfigLoader:
     def get_permission_config(self) -> dict[str, Any]:
         """Получает настройки разрешений"""
         config = self._load_config()
-        return config.get('permissions', {})
+        return config.get("permissions", {})
 
     def get_permission_override_config(self) -> dict[str, Any]:
         """Возвращает настройку override для разрешений с учетом окружения"""
         config = self._load_config()
-        raw_override = config.get('permission_override', {})
+        raw_override = config.get("permission_override", {})
 
         if isinstance(raw_override, bool):
             return {"assume_granted": raw_override}
@@ -361,10 +374,10 @@ class UnifiedConfigLoader:
             return {}
 
         # Поддержка формата с default + окружениями
-        if any(isinstance(raw_override.get(key), dict) for key in ('default', self._environment)):
+        if any(isinstance(raw_override.get(key), dict) for key in ("default", self._environment)):
             resolved: dict[str, Any] = {}
 
-            default_section = raw_override.get('default')
+            default_section = raw_override.get("default")
             if isinstance(default_section, dict):
                 resolved.update(default_section)
 
@@ -424,65 +437,63 @@ class UnifiedConfigLoader:
     # =====================================================
     # НАСТРОЙКИ ЛОГИРОВАНИЯ
     # =====================================================
-    
+
     def get_logging_config(self) -> LoggingConfig:
         """Получает настройки логирования"""
         config = self._load_config()
-        logging_data = config['logging']
+        logging_data = config["logging"]
         return LoggingConfig(
-            level=logging_data['level'],
-            file=logging_data['file'],
-            error_file=logging_data['error_file'],
-            max_size=logging_data['max_size'],
-            backup_count=logging_data['backup_count'],
-            format=logging_data['format'],
-            loggers=logging_data['loggers']
+            level=logging_data["level"],
+            file=logging_data["file"],
+            error_file=logging_data["error_file"],
+            max_size=logging_data["max_size"],
+            backup_count=logging_data["backup_count"],
+            format=logging_data["format"],
+            loggers=logging_data["loggers"],
         )
-    
+
     def get_log_file(self) -> str:
         """Получает путь к файлу логов (используется везде)"""
         return self.get_logging_config().file
-    
+
     def get_error_log_file(self) -> str:
         """Получает путь к файлу ошибок"""
         return self.get_logging_config().error_file
-    
+
     # =====================================================
     # ДРУГИЕ НАСТРОЙКИ
     # =====================================================
-    
+
     def get_default_audio_config(self) -> dict[str, Any]:
         """Получает настройки default_audio"""
         config = self._load_config()
-        return config.get('default_audio', {})
-    
+        return config.get("default_audio", {})
+
     def get_audio_config(self) -> dict[str, Any]:
         """Получает настройки аудио (legacy - для совместимости)"""
         # Возвращаем default_audio конфигурацию
         return self.get_default_audio_config()
-    
+
     def get_speech_playback_config(self) -> dict[str, Any]:
         """Получает настройки воспроизведения речи"""
         config = self._load_config()
         audio_config = self.get_audio_config()
-        speech_playback_config = audio_config.get('speech_playback', {})
+        speech_playback_config = audio_config.get("speech_playback", {})
         # Canonical location is top-level `speech_playback`.
         # Keep legacy fallback for older configs where it lived under `audio`.
         if not speech_playback_config:
-            speech_playback_config = config.get('speech_playback', {})
-        
+            speech_playback_config = config.get("speech_playback", {})
+
         # Получаем формат аудио от сервера (централизованный источник истины)
-        server_audio_format = config.get('server_audio_format', {
-            'sample_rate': 48000,
-            'channels': 1,
-            'dtype': 'int16'
-        })
-        
+        server_audio_format = config.get(
+            "server_audio_format", {"sample_rate": 48000, "channels": 1, "dtype": "int16"}
+        )
+
         # ✅ ИСПРАВЛЕНО: Используем server_audio_format как источник истины
         # speech_playback.sample_rate должен быть синхронизирован с server_audio_format.sample_rate
-        server_sample_rate = server_audio_format.get('sample_rate', 48000)
-        playback_sample_rate = speech_playback_config.get('sample_rate', server_sample_rate)
-        
+        server_sample_rate = server_audio_format.get("sample_rate", 48000)
+        playback_sample_rate = speech_playback_config.get("sample_rate", server_sample_rate)
+
         # Проверяем синхронизацию
         if playback_sample_rate != server_sample_rate:
             logger.warning(
@@ -493,275 +504,285 @@ class UnifiedConfigLoader:
                 server_sample_rate,
             )
             playback_sample_rate = server_sample_rate
-        
+
         # 🔍 ДИАГНОСТИКА: Логируем загруженный sample_rate
         logger.info(
             "🔍 [CONFIG_DIAG] speech_playback sample_rate загружен: %sHz "
             "(из server_audio_format: %sHz)",
             playback_sample_rate,
-            server_audio_format.get('sample_rate', 'N/A'),
+            server_audio_format.get("sample_rate", "N/A"),
         )
-        
+
         return {
             # Синхронизировано с server_audio_format (источник истины)
-            'sample_rate': playback_sample_rate,
-            'channels': speech_playback_config.get(
-                'channels',
-                server_audio_format.get('channels', 1),
+            "sample_rate": playback_sample_rate,
+            "channels": speech_playback_config.get(
+                "channels",
+                server_audio_format.get("channels", 1),
             ),
-            'dtype': speech_playback_config.get(
-                'dtype',
-                server_audio_format.get('dtype', 'int16'),
+            "dtype": speech_playback_config.get(
+                "dtype",
+                server_audio_format.get("dtype", "int16"),
             ),
-            'buffer_size': speech_playback_config.get('buffer_size', 512),
-            'max_memory_mb': speech_playback_config.get('max_memory_mb', 50),
-            'auto_device_selection': speech_playback_config.get('auto_device_selection', True),
-            'auto_output_device_switch': speech_playback_config.get(
-                'auto_output_device_switch',
+            "buffer_size": speech_playback_config.get("buffer_size", 512),
+            "max_memory_mb": speech_playback_config.get("max_memory_mb", 50),
+            "auto_device_selection": speech_playback_config.get("auto_device_selection", True),
+            "auto_output_device_switch": speech_playback_config.get(
+                "auto_output_device_switch",
                 True,
             ),
-            'enable_resampling': speech_playback_config.get('enable_resampling', True),
-            'signal_max_age_ms': speech_playback_config.get('signal_max_age_ms', 2500),
+            "enable_resampling": speech_playback_config.get("enable_resampling", True),
+            "signal_max_age_ms": speech_playback_config.get("signal_max_age_ms", 2500),
+            "audio_diag_verbose": speech_playback_config.get("audio_diag_verbose", False),
+            "audio_diag_log_every": speech_playback_config.get("audio_diag_log_every", 50),
+            "tts_auto_gain_enabled": speech_playback_config.get("tts_auto_gain_enabled", True),
+            "tts_target_peak": speech_playback_config.get("tts_target_peak", 0.35),
+            "tts_max_gain": speech_playback_config.get("tts_max_gain", 6.0),
+            "tts_min_peak_for_gain": speech_playback_config.get("tts_min_peak_for_gain", 0.01),
             # Добавляем формат сервера для справки (используется как fallback при получении данных)
-            'server_audio_format': server_audio_format
+            "server_audio_format": server_audio_format,
         }
-    
+
     def get_server_audio_format(self) -> dict[str, Any]:
         """Получает централизованный формат аудио от сервера (источник истины)"""
         config = self._load_config()
-        return config.get('server_audio_format', {
-            'sample_rate': 24000,  # 24 kHz согласно спецификации gRPC
-            'channels': 1,         # mono
-            'dtype': 'int16',       # 16-bit PCM
-            'bit_depth': 16,
-            'endianness': 'little',
-            'format': 'raw_pcm'
-        })
-    
+        return config.get(
+            "server_audio_format",
+            {
+                "sample_rate": 24000,  # 24 kHz согласно спецификации gRPC
+                "channels": 1,  # mono
+                "dtype": "int16",  # 16-bit PCM
+                "bit_depth": 16,
+                "endianness": "little",
+                "format": "raw_pcm",
+            },
+        )
+
     def get_stt_config(self) -> dict[str, Any]:
         """Получает настройки распознавания речи"""
         config = self._load_config()
-        return config['stt']
+        return config["stt"]
 
     def get_stt_language(self, default: str = "en-US") -> str:
         """Получает язык распознавания речи (централизованно)"""
         try:
             stt = self.get_stt_config()
-            return stt.get('language', default) or default
+            return stt.get("language", default) or default
         except Exception:
             return default
-    
+
     def get_screen_capture_config(self) -> dict[str, Any]:
         """Получает настройки захвата экрана"""
         config = self._load_config()
         # Используем screenshot_capture для настроек захвата (не screen_capture для разрешений)
-        screenshot_config = config.get('screenshot_capture', {})
+        screenshot_config = config.get("screenshot_capture", {})
         # Маппинг старых ключей на новые для обратной совместимости
-        if 'capture_format' in screenshot_config and 'format' not in screenshot_config:
-            screenshot_config['format'] = screenshot_config['capture_format'].lower()
-        if 'capture_quality' in screenshot_config and 'quality' not in screenshot_config:
-            screenshot_config['quality'] = screenshot_config['capture_quality']
+        if "capture_format" in screenshot_config and "format" not in screenshot_config:
+            screenshot_config["format"] = screenshot_config["capture_format"].lower()
+        if "capture_quality" in screenshot_config and "quality" not in screenshot_config:
+            screenshot_config["quality"] = screenshot_config["capture_quality"]
         return screenshot_config
-    
+
     def get_update_manager_config(self) -> dict[str, Any]:
         """Получает настройки менеджера обновлений"""
         config = self._load_config()
-        update_config = config['update_manager'].copy()
+        update_config = config["update_manager"].copy()
         # Автоматически подставляем AppCast URL
-        update_config['appcast_url'] = self.get_appcast_url()
+        update_config["appcast_url"] = self.get_appcast_url()
         return update_config
-    
+
     def get_performance_config(self) -> dict[str, Any]:
         """Получает настройки производительности"""
         config = self._load_config()
-        return config['performance']
-    
+        return config["performance"]
+
     def get_security_config(self) -> dict[str, Any]:
         """Получает настройки безопасности"""
         config = self._load_config()
-        return config['security']
-    
+        return config["security"]
+
     # =====================================================
     # УТИЛИТЫ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
     # =====================================================
-    
+
     def get_legacy_app_config(self) -> dict[str, Any]:
         """Возвращает конфигурацию в старом формате для обратной совместимости"""
         config = self._load_config()
-        
+
         # Создаем конфигурацию в старом формате
         legacy_config = {
-            'app': config['app'],
-            'audio': config['audio'],
-            'stt': config['stt'],
-            'screen_capture': config['screen_capture'],
-            'grpc': {
-                'config_file': 'config/unified_config.yaml',
-                'server_priority': ['local', 'production', 'fallback'],
-                'auto_fallback': config['network']['auto_fallback'],
-                'connection_check_interval': config['network']['connection_check_interval']
+            "app": config["app"],
+            "audio": config["audio"],
+            "stt": config["stt"],
+            "screen_capture": config["screen_capture"],
+            "grpc": {
+                "config_file": "config/unified_config.yaml",
+                "server_priority": ["local", "production", "fallback"],
+                "auto_fallback": config["network"]["auto_fallback"],
+                "connection_check_interval": config["network"]["connection_check_interval"],
             },
-            'logging': config['logging'],
-            'accessibility': config['accessibility'],
-            'autostart': config['autostart'],
-            'performance': config['performance'],
-            'security': config['security'],
-            'update_manager': self.get_update_manager_config()
+            "logging": config["logging"],
+            "accessibility": config["accessibility"],
+            "autostart": config["autostart"],
+            "performance": config["performance"],
+            "security": config["security"],
+            "update_manager": self.get_update_manager_config(),
         }
-        
+
         return legacy_config
 
     def get_keyboard_config(self) -> KeyboardConfig:
         """Получает конфигурацию клавиатуры из unified_config.yaml"""
-        kbd_cfg = self._load_config().get('integrations', {}).get('keyboard', {})
-        
+        kbd_cfg = self._load_config().get("integrations", {}).get("keyboard", {})
+
         # Проверяем, что все обязательные поля присутствуют
         required_fields = [
-            'key_to_monitor',
-            'short_press_threshold',
-            'long_press_threshold',
-            'event_cooldown',
-            'hold_check_interval',
-            'debounce_time',
-            'backend',
+            "key_to_monitor",
+            "short_press_threshold",
+            "long_press_threshold",
+            "event_cooldown",
+            "hold_check_interval",
+            "debounce_time",
+            "backend",
         ]
-        
+
         for field in required_fields:
             if field not in kbd_cfg:
                 raise ValueError(
                     f"Отсутствует обязательное поле '{field}' в конфигурации клавиатуры"
                 )
-        
+
         # Валидация поддерживаемых клавиш
-        key_to_monitor = kbd_cfg['key_to_monitor']
-        supported_keys = {'left_control', 'ctrl_n'}
+        key_to_monitor = kbd_cfg["key_to_monitor"]
+        supported_keys = {"left_control", "ctrl_n"}
         if key_to_monitor not in supported_keys:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.warning(
                 f"⚠️ Неподдерживаемая клавиша '{key_to_monitor}'. "
                 f"Поддерживаемые: {', '.join(supported_keys)}. "
                 f"Используется '{key_to_monitor}' (может не работать)."
             )
-        
+
         return KeyboardConfig(
             key_to_monitor=key_to_monitor,
-            short_press_threshold=kbd_cfg['short_press_threshold'],
-            long_press_threshold=kbd_cfg['long_press_threshold'],
-            event_cooldown=kbd_cfg['event_cooldown'],
-            hold_check_interval=kbd_cfg['hold_check_interval'],
-            debounce_time=kbd_cfg['debounce_time'],
-            backend=kbd_cfg['backend'],
-            combo_timeout_sec=kbd_cfg.get('combo_timeout_sec', 10.0),
-            key_state_timeout_sec=kbd_cfg.get('key_state_timeout_sec', 5.0)
+            short_press_threshold=kbd_cfg["short_press_threshold"],
+            long_press_threshold=kbd_cfg["long_press_threshold"],
+            event_cooldown=kbd_cfg["event_cooldown"],
+            hold_check_interval=kbd_cfg["hold_check_interval"],
+            debounce_time=kbd_cfg["debounce_time"],
+            backend=kbd_cfg["backend"],
+            combo_timeout_sec=kbd_cfg.get("combo_timeout_sec", 10.0),
+            key_state_timeout_sec=kbd_cfg.get("key_state_timeout_sec", 5.0),
         )
 
     def get_input_processing_config(self) -> InputProcessingConfig:
         """Получает конфигурацию обработки ввода"""
-        input_cfg = self._load_config().get('integrations', {}).get('input_processing', {})
-        kbd_cfg = self._load_config().get('integrations', {}).get('keyboard', {})
+        input_cfg = self._load_config().get("integrations", {}).get("input_processing", {})
+        kbd_cfg = self._load_config().get("integrations", {}).get("keyboard", {})
         return InputProcessingConfig(
             keyboard=self.get_keyboard_config(),
-            enable_keyboard_monitoring=input_cfg.get('enable_keyboard_monitoring', True),
-            auto_start=input_cfg.get('auto_start', True),
-            keyboard_backend=kbd_cfg.get('backend', 'auto'),
-            min_recording_duration_sec=float(input_cfg.get('min_recording_duration_sec', 0.6)),
-            playback_idle_grace_sec=float(input_cfg.get('playback_idle_grace_sec', 0.3)),
-            playback_wait_timeout_sec=float(input_cfg.get('playback_wait_timeout_sec', 5.0)),
-            recording_prestart_delay_sec=float(input_cfg.get('recording_prestart_delay_sec', 0.3)),
-            mic_reset_timeout_sec=float(input_cfg.get('mic_reset_timeout_sec', 60.0)),
+            enable_keyboard_monitoring=input_cfg.get("enable_keyboard_monitoring", True),
+            auto_start=input_cfg.get("auto_start", True),
+            keyboard_backend=kbd_cfg.get("backend", "auto"),
+            min_recording_duration_sec=float(input_cfg.get("min_recording_duration_sec", 0.6)),
+            playback_idle_grace_sec=float(input_cfg.get("playback_idle_grace_sec", 0.3)),
+            playback_wait_timeout_sec=float(input_cfg.get("playback_wait_timeout_sec", 5.0)),
+            recording_prestart_delay_sec=float(input_cfg.get("recording_prestart_delay_sec", 0.3)),
+            mic_reset_timeout_sec=float(input_cfg.get("mic_reset_timeout_sec", 60.0)),
         )
 
     def get_actions_config(self) -> dict[str, OpenAppActionConfig]:
         """
         Получает конфигурацию действий.
-        
+
         Returns:
             Словарь с конфигурациями действий, ключ - тип действия (например, "open_app")
         """
         config = self._load_config()
-        actions_cfg = config.get('actions', {})
-        
+        actions_cfg = config.get("actions", {})
+
         result = {}
-        
+
         # Конфигурация для open_app
-        open_app_cfg = actions_cfg.get('open_app', {})
-        result['open_app'] = OpenAppActionConfig(
-            enabled=bool(open_app_cfg.get('enabled', False)),
-            timeout_sec=float(open_app_cfg.get('timeout_sec', 10.0)),
+        open_app_cfg = actions_cfg.get("open_app", {})
+        result["open_app"] = OpenAppActionConfig(
+            enabled=bool(open_app_cfg.get("enabled", False)),
+            timeout_sec=float(open_app_cfg.get("timeout_sec", 10.0)),
             allowed_apps=(
-                list(open_app_cfg.get('allowed_apps', []))
-                if open_app_cfg.get('allowed_apps')
+                list(open_app_cfg.get("allowed_apps", []))
+                if open_app_cfg.get("allowed_apps")
                 else []
             ),
-            binary=str(open_app_cfg.get('binary', '/usr/bin/open')),
-            speak_errors=bool(open_app_cfg.get('speak_errors', True)),
-            use_server_tts=bool(open_app_cfg.get('use_server_tts', False)),
+            binary=str(open_app_cfg.get("binary", "/usr/bin/open")),
+            speak_errors=bool(open_app_cfg.get("speak_errors", True)),
+            use_server_tts=bool(open_app_cfg.get("use_server_tts", False)),
         )
-        
+
         # Конфигурация для close_app (используем тот же тип, так как структура похожа)
-        close_app_cfg = actions_cfg.get('close_app', {})
-        result['close_app'] = OpenAppActionConfig(
-            enabled=bool(close_app_cfg.get('enabled', False)),
-            timeout_sec=float(close_app_cfg.get('timeout_sec', 10.0)),
+        close_app_cfg = actions_cfg.get("close_app", {})
+        result["close_app"] = OpenAppActionConfig(
+            enabled=bool(close_app_cfg.get("enabled", False)),
+            timeout_sec=float(close_app_cfg.get("timeout_sec", 10.0)),
             allowed_apps=[],  # close_app не использует whitelist
             binary="",  # close_app не использует binary (использует MCP)
-            speak_errors=bool(close_app_cfg.get('speak_errors', True)),
-            use_server_tts=bool(close_app_cfg.get('use_server_tts', False)),
+            speak_errors=bool(close_app_cfg.get("speak_errors", True)),
+            use_server_tts=bool(close_app_cfg.get("use_server_tts", False)),
         )
-        
+
         return result
-    
+
     def get_mcp_config(self) -> dict[str, dict[str, Any]]:
         """
         Получает конфигурацию MCP серверов.
-        
+
         Returns:
             Словарь с конфигурациями MCP серверов, ключ - тип действия
             (например, "open_app", "close_app")
         """
         config = self._load_config()
-        mcp_cfg = config.get('mcp', {})
-        
+        mcp_cfg = config.get("mcp", {})
+
         result = {}
-        
+
         # Конфигурация для open_app MCP сервера
-        open_app_mcp = mcp_cfg.get('open_app', {})
-        result['open_app'] = {
-            'server_path': str(open_app_mcp.get('server_path', '')),
-            'enabled': bool(open_app_mcp.get('enabled', True)),
-            'timeout_sec': float(open_app_mcp.get('timeout_sec', 10.0)),
+        open_app_mcp = mcp_cfg.get("open_app", {})
+        result["open_app"] = {
+            "server_path": str(open_app_mcp.get("server_path", "")),
+            "enabled": bool(open_app_mcp.get("enabled", True)),
+            "timeout_sec": float(open_app_mcp.get("timeout_sec", 10.0)),
         }
-        
+
         # Конфигурация для close_app MCP сервера
-        close_app_mcp = mcp_cfg.get('close_app', {})
-        result['close_app'] = {
-            'server_path': str(close_app_mcp.get('server_path', '')),
-            'enabled': bool(close_app_mcp.get('enabled', True)),
-            'timeout_sec': float(close_app_mcp.get('timeout_sec', 10.0)),
+        close_app_mcp = mcp_cfg.get("close_app", {})
+        result["close_app"] = {
+            "server_path": str(close_app_mcp.get("server_path", "")),
+            "enabled": bool(close_app_mcp.get("enabled", True)),
+            "timeout_sec": float(close_app_mcp.get("timeout_sec", 10.0)),
         }
-        
+
         return result
 
     def get_messages_config(self) -> dict[str, Any]:
         """
         Получает конфигурацию сообщений.
-        
+
         Returns:
             Dict с конфигурацией messages
         """
         config = self._load_config()
-        return config.get('messages', {})
+        return config.get("messages", {})
 
     def get_whatsapp_config(self) -> dict[str, Any]:
         """
         Получает конфигурацию WhatsApp из корня unified_config.yaml.
-        
+
         Returns:
             Dict с конфигурацией whatsapp
         """
         config = self._load_config()
-        whatsapp_cfg = config.get('whatsapp', {})
+        whatsapp_cfg = config.get("whatsapp", {})
         if not isinstance(whatsapp_cfg, dict):
             return {}
         return whatsapp_cfg.copy()
@@ -769,42 +790,42 @@ class UnifiedConfigLoader:
     def get_tray_config(self) -> dict[str, Any]:
         """Получает конфигурацию трея"""
         config = self._load_config()
-        return config.get('tray', {})
+        return config.get("tray", {})
 
     def get_hardware_id_config(self) -> dict[str, Any]:
         """Получает конфигурацию hardware_id"""
         config = self._load_config()
-        return config.get('integrations', {}).get('hardware_id', {})
+        return config.get("integrations", {}).get("hardware_id", {})
 
     def get_browser_use_config(self) -> dict[str, Any]:
         """
         Получает конфигурацию browser_use.
         """
         config = self._load_config()
-        return config.get('browser_use', {})
+        return config.get("browser_use", {})
 
     def get_feature_config(self, feature_name: str) -> dict[str, Any]:
         """
         Получает конфигурацию фичи из секции 'features'.
         Автоматически проверяет kill-switch (ks_feature_name).
-        
+
         Args:
             feature_name: Имя фичи (snake_case)
-            
+
         Returns:
             Dict с конфигурацией. Если kill-switch активен, возвравщает {'enabled': False}.
         """
         config = self._load_config()
-        features = config.get('features', {})
+        features = config.get("features", {})
         feature_config = features.get(feature_name, {}).copy()
-        
+
         # Check Kill-Switch
         ks_name = f"ks_{feature_name}"
         ks_config = features.get(ks_name, {})
-        if ks_config.get('enabled', False):
+        if ks_config.get("enabled", False):
             logger.warning(f"Feature '{feature_name}' disabled by kill-switch '{ks_name}'")
-            feature_config['enabled'] = False
-            
+            feature_config["enabled"] = False
+
         return feature_config
 
     def is_feature_enabled(self, feature_name: str, *, default: bool = False) -> bool:
@@ -845,33 +866,41 @@ class UnifiedConfigLoader:
 
         return default
 
+
 # Глобальный экземпляр загрузчика
 unified_config = UnifiedConfigLoader()
+
 
 # Удобные функции для быстрого доступа
 def get_version() -> str:
     """Получает версию приложения"""
     return unified_config.get_version()
 
+
 def get_appcast_url() -> str:
     """Получает URL AppCast"""
     return unified_config.get_appcast_url()
+
 
 def get_grpc_host(environment: str = "local") -> str:
     """Получает хост gRPC сервера"""
     return unified_config.get_grpc_host(environment)
 
+
 def get_grpc_port(environment: str = "local") -> int:
     """Получает порт gRPC сервера"""
     return unified_config.get_grpc_port(environment)
+
 
 def get_log_file() -> str:
     """Получает путь к файлу логов"""
     return unified_config.get_log_file()
 
+
 def get_bundle_id() -> str:
     """Получает Bundle ID"""
     return unified_config.get_bundle_id()
+
 
 def get_team_id() -> str:
     """Получает Team ID"""

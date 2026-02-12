@@ -7,6 +7,7 @@ exclude = [
   "build",
   "dist",
   "resources",
+  "Docs",
 ]
 
 [tool.ruff.lint]
@@ -162,12 +163,13 @@ max-complexity = 7
 "config/tests/**/*.py" = ["PLR2004"]
 "check_version.py" = ["PLR2004", "UP015"]
 "config/server_manager.py" = ["UP015", "C901", "F541"]
-"config/unified_config_loader.py" = ["UP007", "UP015", "UP035"]
 "config/updater_manager.py" = ["UP015", "C901", "F541"]
 "verify_path_resolution.py" = ["E402"]
 "test_first_run_centralization.py" = ["E402", "PLR0915", "E712"]
 "main.py" = ["E501", "F541", "C901", "B009", "E402", "PLW0602", "PLW0603"]
 "run_diagnostics.py" = ["E501", "F541", "C901", "PLR0912", "PLR0915"]
+"config/unified_config_loader.py" = ["UP007", "UP015", "UP035", "C901"]
+"modules/whatsapp/libs/qrcode/**/*.py" = ["PLE0704", "B027", "UP031", "B905"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["integration", "modules", "client"]
@@ -236,6 +238,8 @@ ignore = [
   "**/test*.py",
   "**/tests/**/*.py",
   "modules/grpc_client/proto",
+  "modules/whatsapp/libs",
+  "modules/input_processing/keyboard/mac/quartz_monitor.py",
 ]
 
 [tool.pytest.ini_options]

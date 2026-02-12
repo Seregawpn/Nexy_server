@@ -1,4 +1,5 @@
 """Утилиты для работы с событиями EventBus (dict-формат)."""
+
 from typing import Any
 
 
@@ -14,4 +15,3 @@ def event_data(event: Any) -> dict[str, Any]:
     if isinstance(event, dict):
         return event.get("data", {}) or {}
     return getattr(event, "data", {}) or {}
-

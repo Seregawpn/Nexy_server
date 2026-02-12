@@ -10,7 +10,7 @@ Simulates the permission wizard flow with mock probers to verify:
 
 Usage:
     python3 -m tests.test_permission_v2_simulation
-    
+
     # With specific scenarios:
     python3 -m tests.test_permission_v2_simulation --scenario all_pass
     python3 -m tests.test_permission_v2_simulation --scenario input_monitoring_needs_restart
@@ -50,8 +50,7 @@ from modules.permissions.v2 import (
 from modules.permissions.v2.orchestrator import PermissionOrchestrator
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -60,9 +59,11 @@ logger = logging.getLogger(__name__)
 # Mock Probers
 # ============================================================
 
+
 @dataclass
 class MockProberConfig:
     """Configuration for mock prober behavior."""
+
     permission: PermissionId
     # How many probes before returning PASS (0 = immediate pass)
     probes_until_pass: int = 2
@@ -76,33 +77,34 @@ class MockProberConfig:
 
 class MockProber:
     """Mock prober that simulates permission behavior."""
-    
+
     def __init__(self, config: MockProberConfig, step_config: StepConfig):
         self.mock_config = config
         self.step_config = step_config
         self.permission = config.permission
         self.probe_count = 0
         self.triggered = False
-    
+
     async def trigger(self) -> None:
         self.triggered = True
         logger.info(f"[MOCK] {self.permission.value}: trigger() called")
-    
+
     async def probe(self, probe_kind: Literal["light", "heavy"]) -> ProbeResult:
         self.probe_count += 1
         ts = time.time()
-        
-        logger.info(
-            f"[MOCK] {self.permission.value}: probe({probe_kind}) #{self.probe_count}"
-        )
-        
+
+        logger.info(f"[MOCK] {self.permission.value}: probe({probe_kind}) #{self.probe_count}")
+
         # Simulate different outcomes based on config
         if self.mock_config.should_fail:
             evidence = ProbeEvidence(
                 permission_denied_hint=True,
                 error_message="Mock: permission denied",
             )
-        elif self.mock_config.needs_restart and self.probe_count >= self.mock_config.probes_until_needs_restart:
+        elif (
+            self.mock_config.needs_restart
+            and self.probe_count >= self.mock_config.probes_until_needs_restart
+        ):
             evidence = ProbeEvidence(
                 tap_created=False,
                 tap_enabled=False,
@@ -118,14 +120,14 @@ class MockProber:
                 transient_hint=True,
                 error_message="Mock: still waiting",
             )
-        
+
         return ProbeResult(
             permission=self.permission,
             timestamp=ts,
             probe_kind=probe_kind,
             evidence=evidence,
         )
-    
+
     def _make_pass_evidence(self) -> ProbeEvidence:
         """Create evidence that indicates PASS for this permission type."""
         if self.permission == PermissionId.MICROPHONE:
@@ -148,7 +150,7 @@ class MockProber:
 
 class MockSettingsNavigator:
     """Mock settings navigator that logs instead of opening Settings."""
-    
+
     def open(self, target: str) -> bool:
         logger.info(f"[MOCK SETTINGS] Would open: {target}")
         return True
@@ -158,16 +160,25 @@ class MockSettingsNavigator:
 # Test Scenarios
 # ============================================================
 
+
 def create_scenario_all_pass() -> dict[PermissionId, MockProberConfig]:
     """All permissions pass quickly."""
     return {
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
-        PermissionId.SCREEN_CAPTURE: MockProberConfig(PermissionId.SCREEN_CAPTURE, probes_until_pass=1),
+        PermissionId.SCREEN_CAPTURE: MockProberConfig(
+            PermissionId.SCREEN_CAPTURE, probes_until_pass=1
+        ),
         PermissionId.CONTACTS: MockProberConfig(PermissionId.CONTACTS, probes_until_pass=1),
         PermissionId.MESSAGES: MockProberConfig(PermissionId.MESSAGES, probes_until_pass=1),
-        PermissionId.INPUT_MONITORING: MockProberConfig(PermissionId.INPUT_MONITORING, probes_until_pass=1),
-        PermissionId.ACCESSIBILITY: MockProberConfig(PermissionId.ACCESSIBILITY, probes_until_pass=2),
-        PermissionId.FULL_DISK_ACCESS: MockProberConfig(PermissionId.FULL_DISK_ACCESS, probes_until_pass=2),
+        PermissionId.INPUT_MONITORING: MockProberConfig(
+            PermissionId.INPUT_MONITORING, probes_until_pass=1
+        ),
+        PermissionId.ACCESSIBILITY: MockProberConfig(
+            PermissionId.ACCESSIBILITY, probes_until_pass=2
+        ),
+        PermissionId.FULL_DISK_ACCESS: MockProberConfig(
+            PermissionId.FULL_DISK_ACCESS, probes_until_pass=2
+        ),
     }
 
 
@@ -175,16 +186,20 @@ def create_scenario_input_monitoring_needs_restart() -> dict[PermissionId, MockP
     """Input Monitoring needs restart, others pass."""
     return {
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
-        PermissionId.SCREEN_CAPTURE: MockProberConfig(PermissionId.SCREEN_CAPTURE, probes_until_pass=1),
+        PermissionId.SCREEN_CAPTURE: MockProberConfig(
+            PermissionId.SCREEN_CAPTURE, probes_until_pass=1
+        ),
         PermissionId.CONTACTS: MockProberConfig(PermissionId.CONTACTS, probes_until_pass=1),
         PermissionId.MESSAGES: MockProberConfig(PermissionId.MESSAGES, probes_until_pass=1),
         PermissionId.INPUT_MONITORING: MockProberConfig(
-            PermissionId.INPUT_MONITORING,
-            needs_restart=True,
-            probes_until_needs_restart=2
+            PermissionId.INPUT_MONITORING, needs_restart=True, probes_until_needs_restart=2
         ),
-        PermissionId.ACCESSIBILITY: MockProberConfig(PermissionId.ACCESSIBILITY, probes_until_pass=2),
-        PermissionId.FULL_DISK_ACCESS: MockProberConfig(PermissionId.FULL_DISK_ACCESS, probes_until_pass=2),
+        PermissionId.ACCESSIBILITY: MockProberConfig(
+            PermissionId.ACCESSIBILITY, probes_until_pass=2
+        ),
+        PermissionId.FULL_DISK_ACCESS: MockProberConfig(
+            PermissionId.FULL_DISK_ACCESS, probes_until_pass=2
+        ),
     }
 
 
@@ -192,12 +207,20 @@ def create_scenario_hard_fail() -> dict[PermissionId, MockProberConfig]:
     """Microphone (hard) fails, should enter limited mode."""
     return {
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, should_fail=True),
-        PermissionId.SCREEN_CAPTURE: MockProberConfig(PermissionId.SCREEN_CAPTURE, probes_until_pass=1),
+        PermissionId.SCREEN_CAPTURE: MockProberConfig(
+            PermissionId.SCREEN_CAPTURE, probes_until_pass=1
+        ),
         PermissionId.CONTACTS: MockProberConfig(PermissionId.CONTACTS, probes_until_pass=1),
         PermissionId.MESSAGES: MockProberConfig(PermissionId.MESSAGES, probes_until_pass=1),
-        PermissionId.INPUT_MONITORING: MockProberConfig(PermissionId.INPUT_MONITORING, probes_until_pass=1),
-        PermissionId.ACCESSIBILITY: MockProberConfig(PermissionId.ACCESSIBILITY, probes_until_pass=2),
-        PermissionId.FULL_DISK_ACCESS: MockProberConfig(PermissionId.FULL_DISK_ACCESS, probes_until_pass=2),
+        PermissionId.INPUT_MONITORING: MockProberConfig(
+            PermissionId.INPUT_MONITORING, probes_until_pass=1
+        ),
+        PermissionId.ACCESSIBILITY: MockProberConfig(
+            PermissionId.ACCESSIBILITY, probes_until_pass=2
+        ),
+        PermissionId.FULL_DISK_ACCESS: MockProberConfig(
+            PermissionId.FULL_DISK_ACCESS, probes_until_pass=2
+        ),
     }
 
 
@@ -205,12 +228,20 @@ def create_scenario_feature_fail() -> dict[PermissionId, MockProberConfig]:
     """Contacts (feature) fails, should still complete."""
     return {
         PermissionId.MICROPHONE: MockProberConfig(PermissionId.MICROPHONE, probes_until_pass=1),
-        PermissionId.SCREEN_CAPTURE: MockProberConfig(PermissionId.SCREEN_CAPTURE, probes_until_pass=1),
+        PermissionId.SCREEN_CAPTURE: MockProberConfig(
+            PermissionId.SCREEN_CAPTURE, probes_until_pass=1
+        ),
         PermissionId.CONTACTS: MockProberConfig(PermissionId.CONTACTS, should_fail=True),
         PermissionId.MESSAGES: MockProberConfig(PermissionId.MESSAGES, probes_until_pass=1),
-        PermissionId.INPUT_MONITORING: MockProberConfig(PermissionId.INPUT_MONITORING, probes_until_pass=1),
-        PermissionId.ACCESSIBILITY: MockProberConfig(PermissionId.ACCESSIBILITY, probes_until_pass=2),
-        PermissionId.FULL_DISK_ACCESS: MockProberConfig(PermissionId.FULL_DISK_ACCESS, probes_until_pass=2),
+        PermissionId.INPUT_MONITORING: MockProberConfig(
+            PermissionId.INPUT_MONITORING, probes_until_pass=1
+        ),
+        PermissionId.ACCESSIBILITY: MockProberConfig(
+            PermissionId.ACCESSIBILITY, probes_until_pass=2
+        ),
+        PermissionId.FULL_DISK_ACCESS: MockProberConfig(
+            PermissionId.FULL_DISK_ACCESS, probes_until_pass=2
+        ),
     }
 
 
@@ -226,19 +257,20 @@ SCENARIOS = {
 # Test Runner
 # ============================================================
 
+
 class EventCollector:
     """Collects UI events for verification."""
-    
+
     def __init__(self):
         self.events: list[UIEvent] = []
-    
+
     def emit(self, event: UIEvent) -> None:
         self.events.append(event)
         logger.info(f"[EVENT] {event.type.value}: {event.payload}")
-    
+
     def has_event(self, event_type: UIEventType) -> bool:
         return any(e.type == event_type for e in self.events)
-    
+
     def get_events(self, event_type: UIEventType) -> list[UIEvent]:
         return [e for e in self.events if e.type == event_type]
 
@@ -254,7 +286,7 @@ def create_fast_step_configs() -> dict[PermissionId, StepConfig]:
         PermissionId.ACCESSIBILITY,
         PermissionId.FULL_DISK_ACCESS,
     ]
-    
+
     configs = {}
     for perm in order:
         if perm in [PermissionId.ACCESSIBILITY, PermissionId.FULL_DISK_ACCESS]:
@@ -263,14 +295,19 @@ def create_fast_step_configs() -> dict[PermissionId, StepConfig]:
         else:
             mode = StepMode.AUTO_DIALOG
             settings_target = None
-        
-        if perm in [PermissionId.MICROPHONE, PermissionId.INPUT_MONITORING, PermissionId.ACCESSIBILITY, PermissionId.MESSAGES]:
+
+        if perm in [
+            PermissionId.MICROPHONE,
+            PermissionId.INPUT_MONITORING,
+            PermissionId.ACCESSIBILITY,
+            PermissionId.MESSAGES,
+        ]:
             criticality = PermissionCriticality.HARD
         elif perm == PermissionId.SCREEN_CAPTURE:
             criticality = PermissionCriticality.SOFT
         else:
             criticality = PermissionCriticality.FEATURE
-        
+
         timing = StepTiming(
             grace_s=0.1,  # Very fast for testing
             poll_s=0.1,
@@ -280,7 +317,7 @@ def create_fast_step_configs() -> dict[PermissionId, StepConfig]:
             post_restart_verify_window_s=1.0,
             post_restart_verify_tick_s=0.1,
         )
-        
+
         configs[perm] = StepConfig(
             permission=perm,
             mode=mode,
@@ -289,27 +326,27 @@ def create_fast_step_configs() -> dict[PermissionId, StepConfig]:
             settings_target=settings_target,
             criticality=criticality,
         )
-    
+
     return configs
 
 
 async def run_test(scenario_name: str) -> bool:
     """Run a test scenario and return success/failure."""
-    
-    print(f"\n{'='*60}")
+
+    print(f"\n{'=' * 60}")
     print(f"Running scenario: {scenario_name}")
-    print(f"{'='*60}\n")
-    
+    print(f"{'=' * 60}\n")
+
     # Create mock prober configs
     if scenario_name not in SCENARIOS:
         print(f"Unknown scenario: {scenario_name}")
         return False
-    
+
     prober_configs = SCENARIOS[scenario_name]()
-    
+
     # Create step configs
     step_configs = create_fast_step_configs()
-    
+
     # Create order
     order = [
         PermissionId.MICROPHONE,
@@ -320,22 +357,22 @@ async def run_test(scenario_name: str) -> bool:
         PermissionId.ACCESSIBILITY,
         PermissionId.FULL_DISK_ACCESS,
     ]
-    
+
     # Create mock probers
     probers = {}
     for perm in order:
         probers[perm] = MockProber(prober_configs[perm], step_configs[perm])
-    
+
     # Create classifiers
     classifiers = {perm: get_classifier(perm) for perm in order}
-    
+
     # Create event collector
     events = EventCollector()
-    
+
     # Create temp ledger
-    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         ledger_path = f.name
-    
+
     try:
         # Create orchestrator
         orchestrator = PermissionOrchestrator(
@@ -356,21 +393,21 @@ async def run_test(scenario_name: str) -> bool:
             restart_handler=None,  # No actual restart
             is_gui_process=True,
         )
-        
+
         # Run with timeout
         try:
             await asyncio.wait_for(orchestrator.start(), timeout=30.0)
         except asyncio.TimeoutError:
             print("❌ Test timed out!")
             return False
-        
+
         # Verify results
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("Results:")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Final phase: {orchestrator.ledger.phase.value}")
         print(f"Events collected: {len(events.events)}")
-        
+
         # Check expected outcomes
         if scenario_name == "all_pass":
             expected_phase = Phase.COMPLETED
@@ -383,21 +420,23 @@ async def run_test(scenario_name: str) -> bool:
             expected_phase = Phase.COMPLETED  # Feature fails are skipped
         else:
             expected_phase = Phase.COMPLETED
-        
+
         success = orchestrator.ledger.phase == expected_phase
-        
+
         if success:
             print(f"\n✅ PASS: Phase is {expected_phase.value} as expected")
         else:
-            print(f"\n❌ FAIL: Expected {expected_phase.value}, got {orchestrator.ledger.phase.value}")
-        
+            print(
+                f"\n❌ FAIL: Expected {expected_phase.value}, got {orchestrator.ledger.phase.value}"
+            )
+
         # Print step states
         print("\nStep states:")
         for perm, entry in orchestrator.ledger.steps.items():
             print(f"  {perm.value}: {entry.state.value}")
-        
+
         return success
-        
+
     finally:
         # Cleanup
         if os.path.exists(ledger_path):
@@ -410,30 +449,30 @@ async def main():
         "--scenario",
         choices=list(SCENARIOS.keys()) + ["all"],
         default="all",
-        help="Test scenario to run"
+        help="Test scenario to run",
     )
     args = parser.parse_args()
-    
+
     if args.scenario == "all":
         scenarios = list(SCENARIOS.keys())
     else:
         scenarios = [args.scenario]
-    
+
     results = {}
     for scenario in scenarios:
         results[scenario] = await run_test(scenario)
-    
+
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Summary:")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for scenario, passed in results.items():
         status = "✅ PASS" if passed else "❌ FAIL"
         print(f"  {scenario}: {status}")
-    
+
     all_passed = all(results.values())
     print(f"\nOverall: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}")
-    
+
     return 0 if all_passed else 1
 
 

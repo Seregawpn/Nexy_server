@@ -42,9 +42,9 @@ def _log_decision(
     """
     # Include all axes in context: mic, screen, device, network, firstRun, appMode
     # Also include new axes if present in Snapshot: restart_pending, update_in_progress
-    restart_pending_val = getattr(s, 'restart_pending', None)
-    update_in_progress_val = getattr(s, 'update_in_progress', None)
-    
+    restart_pending_val = getattr(s, "restart_pending", None)
+    update_in_progress_val = getattr(s, "update_in_progress", None)
+
     ctx_parts = [
         f"mic={s.perm_mic.value}",
         f"screen={s.perm_screen.value}",
@@ -53,12 +53,12 @@ def _log_decision(
         f"firstRun={s.first_run}",
         f"appMode={s.app_mode.value}",
     ]
-    
+
     if restart_pending_val is not None:
         ctx_parts.append(f"restart_pending={restart_pending_val}")
     if update_in_progress_val is not None:
         ctx_parts.append(f"update_in_progress={update_in_progress_val}")
-    
+
     ctx = f"ctx={{{','.join(ctx_parts)}}}"
     reason_part = f" reason={reason}" if reason else ""
     duration_part = f" duration_ms={int(duration_ms)}" if duration_ms is not None else ""
@@ -87,7 +87,13 @@ def decide_start_listening(s: Snapshot) -> Decision:
             f"error={exc} fallback_to=legacy"
         )
         if s.first_run:
-            _log_decision(level="info", decision=Decision.ABORT, s=s, source="listening_gateway", reason="first_run_in_progress")
+            _log_decision(
+                level="info",
+                decision=Decision.ABORT,
+                s=s,
+                source="listening_gateway",
+                reason="first_run_in_progress",
+            )
             return Decision.ABORT
         if not mic_ready(s):
             _log_decision(level="debug", decision=Decision.ABORT, s=s, source="listening_gateway")
@@ -126,7 +132,9 @@ def decide_process_audio(s: Snapshot) -> Decision:
             _log_decision(level="debug", decision=Decision.ABORT, s=s, source="processing_gateway")
             return Decision.ABORT
         if should_degrade_offline(s):
-            _log_decision(level="debug", decision=Decision.DEGRADE, s=s, source="processing_gateway")
+            _log_decision(
+                level="debug", decision=Decision.DEGRADE, s=s, source="processing_gateway"
+            )
             return Decision.DEGRADE
         if can_process_audio(s):
             _log_decision(level="debug", decision=Decision.START, s=s, source="processing_gateway")
@@ -152,13 +160,19 @@ def decide_route_manager_reconcile(s: Snapshot) -> Decision:
             f"error={exc} fallback_to=legacy"
         )
         if s.first_run or s.restart_pending or s.update_in_progress:
-            _log_decision(level="info", decision=Decision.ABORT, s=s, source="route_manager_gateway")
+            _log_decision(
+                level="info", decision=Decision.ABORT, s=s, source="route_manager_gateway"
+            )
             return Decision.ABORT
         if device_busy(s):
-            _log_decision(level="debug", decision=Decision.RETRY, s=s, source="route_manager_gateway")
+            _log_decision(
+                level="debug", decision=Decision.RETRY, s=s, source="route_manager_gateway"
+            )
             return Decision.RETRY
         if network_offline(s):
-            _log_decision(level="debug", decision=Decision.DEGRADE, s=s, source="route_manager_gateway")
+            _log_decision(
+                level="debug", decision=Decision.DEGRADE, s=s, source="route_manager_gateway"
+            )
             return Decision.DEGRADE
         _log_decision(level="debug", decision=Decision.START, s=s, source="route_manager_gateway")
         return Decision.START

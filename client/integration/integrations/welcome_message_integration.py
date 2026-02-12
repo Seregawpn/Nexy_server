@@ -8,33 +8,31 @@ WelcomeMessageIntegration — интеграция модуля приветст
 
 import asyncio
 import contextlib
-import logging
-import sys
-import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any
+import sys
+from typing import Any
+import uuid
+
 import numpy as np
-
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-
-# Импорт модуля приветствия
-from modules.welcome_message.core.welcome_player import WelcomePlayer
-from modules.welcome_message.core.types import WelcomeConfig, WelcomeResult
-from modules.welcome_message.config.welcome_config import WelcomeConfigLoader
 
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
-
+from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_manager import ApplicationStateManager
 from integration.utils.logging_setup import get_logger
+from modules.welcome_message.config.welcome_config import WelcomeConfigLoader
+from modules.welcome_message.core.types import WelcomeConfig, WelcomeResult
+
+# Импорт модуля приветствия
+from modules.welcome_message.core.welcome_player import WelcomePlayer
 
 logger = get_logger(__name__)
 
 
 class WelcomeMessageIntegration:
     """Интеграция модуля приветствия с EventBus"""
-    
+
     def __init__(
         self,
         event_bus: EventBus,
@@ -46,7 +44,7 @@ class WelcomeMessageIntegration:
         self.state_manager = state_manager
         self.error_handler = error_handler
         self._grpc_integration = grpc_integration
-        
+
         # Загружаем конфигурацию
         try:
             unified_config = UnifiedConfigLoader.get_instance()
@@ -55,7 +53,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка загрузки конфигурации: {e}")
             self.config = WelcomeConfig()
-        
+
         # Создаем плеер приветствия (gRPC клиент опционален)
         grpc_client = None
         grpc_server_name = None
@@ -74,33 +72,33 @@ class WelcomeMessageIntegration:
             grpc_server_name=grpc_server_name,
             grpc_timeout=grpc_timeout,
         )
-        
+
         # Настраиваем коллбеки
         self.welcome_player.set_callbacks(
             on_started=self._on_welcome_started,
             on_completed=self._on_welcome_completed,
-            on_error=self._on_welcome_error
+            on_error=self._on_welcome_error,
         )
-        
+
         self._initialized = False
         self._running = False
         # Состояние разрешения микрофона (granted/denied/not_determined/None)
-        self._microphone_status: Optional[str] = None
+        self._microphone_status: str | None = None
         self._pending_welcome = False
         self._permission_prompted = False
-        self._permission_recheck_task: Optional[asyncio.Task] = None
+        self._permission_recheck_task: asyncio.Task[Any] | None = None
         self._welcome_played = False
         self._welcome_lock = asyncio.Lock()
         self._playback_ready = False
         self._playback_ready_event = asyncio.Event()
-        self._welcome_playback_session_id: Optional[str] = None
+        self._welcome_playback_session_id: str | None = None
 
         # Блокировки по разрешениям отключены по умолчанию
-        self._enforce_permissions = bool(
-            getattr(self.config, "force_permission_checks", False)
-        )
+        self._enforce_permissions = bool(getattr(self.config, "force_permission_checks", False))
         if self._enforce_permissions:
-            logger.info("🎙️ [WELCOME_INTEGRATION] Принудительная проверка микрофона включена конфигурацией")
+            logger.info(
+                "🎙️ [WELCOME_INTEGRATION] Принудительная проверка микрофона включена конфигурацией"
+            )
 
     def _schedule_on_event_loop(self, coro: "asyncio.Future[Any] | Any") -> None:
         """Планирует корутину в loop EventBus (SoT для фоновой async-работы)."""
@@ -115,45 +113,66 @@ class WelcomeMessageIntegration:
             current_loop = None
 
         if target_loop and target_loop.is_running() and target_loop != current_loop:
-            fut = asyncio.run_coroutine_threadsafe(coro, target_loop)
+            fut = asyncio.run_coroutine_threadsafe(coro, target_loop)  # type: ignore
             fut.add_done_callback(
-                lambda f: logger.error("❌ [WELCOME_INTEGRATION] background task failed: %s", f.exception())
-                if f.exception() else None
+                lambda f: (
+                    logger.error(
+                        "❌ [WELCOME_INTEGRATION] background task failed: %s", f.exception()
+                    )
+                    if f.exception()
+                    else None
+                )
             )
             return
 
-        asyncio.create_task(coro)
-    
+        asyncio.create_task(coro)  # type: ignore
+
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
         try:
             logger.info("🔧 [WELCOME_INTEGRATION] Инициализация...")
-            
+
             # Подписываемся на события
-            await self.event_bus.subscribe("system.ready_to_greet", self._on_ready_to_greet, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("permissions.status_checked", self._on_permission_event, EventPriority.HIGH)
-            await self.event_bus.subscribe("permissions.changed", self._on_permission_event, EventPriority.HIGH)
-            await self.event_bus.subscribe("permissions.requested", self._on_permission_event, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("permissions.integration_ready", self._on_permissions_ready, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("playback.ready", self._on_playback_ready, EventPriority.MEDIUM)
-            
+            await self.event_bus.subscribe(
+                "system.ready_to_greet", self._on_ready_to_greet, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "permissions.status_checked", self._on_permission_event, EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "permissions.changed", self._on_permission_event, EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "permissions.requested", self._on_permission_event, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "permissions.integration_ready", self._on_permissions_ready, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "permissions.first_run_completed",
+                self._on_first_run_completed,
+                EventPriority.MEDIUM,
+            )
+            await self.event_bus.subscribe(
+                "playback.ready", self._on_playback_ready, EventPriority.MEDIUM
+            )
+
             self._initialized = True
             logger.info("✅ [WELCOME_INTEGRATION] Инициализирован")
             # Запрашиваем актуальный статус разрешений (не блокируем initialize)
             self._schedule_on_event_loop(self._request_initial_permission_status())
             return True
-            
+
         except Exception as e:
             await self._handle_error(e, where="welcome.initialize")
             return False
-    
+
     async def start(self) -> bool:
         """Запуск интеграции"""
         if not self._initialized:
             logger.error("❌ [WELCOME_INTEGRATION] Не инициализирован")
             return False
-        
+
         self._refresh_grpc_client()
         self._running = True
         logger.info("✅ [WELCOME_INTEGRATION] Запущен")
@@ -162,7 +181,7 @@ class WelcomeMessageIntegration:
                 self._request_welcome_play("playback_ready", allow_pending=True)
             )
         return True
-    
+
     async def stop(self) -> bool:
         """Остановка интеграции"""
         try:
@@ -174,7 +193,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             await self._handle_error(e, where="welcome.stop", severity="warning")
             return False
-    
+
     async def _on_ready_to_greet(self, event):
         """Обработка события запуска приложения"""
         try:
@@ -186,12 +205,14 @@ class WelcomeMessageIntegration:
 
             # 🎙️ Разрешения будут запрошены через PermissionsIntegration автоматически
             # Не запрашиваем здесь, чтобы избежать дублирования
-            logger.info("🎙️ [WELCOME_INTEGRATION] Приветствие завершено. Разрешения обрабатываются через PermissionsIntegration")
-            
+            logger.info(
+                "🎙️ [WELCOME_INTEGRATION] Приветствие завершено. Разрешения обрабатываются через PermissionsIntegration"
+            )
+
         except Exception as e:
             await self._handle_error(e, where="welcome.on_ready_to_greet", severity="warning")
 
-    async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
+    async def _on_first_run_completed(self, event: dict[str, Any]) -> None:
         """Legacy fallback: поддерживаем completion-триггер без локального defer-state."""
         try:
             if not self.config.enabled:
@@ -200,7 +221,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             await self._handle_error(e, where="welcome.on_first_run_completed", severity="warning")
 
-    async def _on_playback_ready(self, event: Dict[str, Any]) -> None:
+    async def _on_playback_ready(self, event: dict[str, Any]) -> None:
         """Получили готовность playback — можно воспроизводить приветствие."""
         if self._playback_ready:
             return
@@ -245,37 +266,39 @@ class WelcomeMessageIntegration:
                 raise
             finally:
                 self._pending_welcome = False
-    
+
     async def _play_welcome_message(self, trigger: str = "app_startup"):
         """Воспроизводит приветственное сообщение"""
         try:
-            logger.info(f"🎵 [WELCOME_INTEGRATION] Начинаю воспроизведение приветствия (trigger={trigger})")
+            logger.info(
+                f"🎵 [WELCOME_INTEGRATION] Начинаю воспроизведение приветствия (trigger={trigger})"
+            )
 
             # Обновляем gRPC клиент непосредственно перед воспроизведением
             self._refresh_grpc_client()
-            
+
             # 🆕 ПЕРЕХОД В PROCESSING РЕЖИМ
             logger.info("🔄 [WELCOME_INTEGRATION] Переход в режим PROCESSING для приветствия")
-            await self.event_bus.publish("mode.request", {
-                "target": "PROCESSING",
-                "source": "welcome_message",
-                "reason": "welcome_playback"
-            })
-            
+            await self.event_bus.publish(
+                "mode.request",
+                {"target": "PROCESSING", "source": "welcome_message", "reason": "welcome_playback"},
+            )
+
             # Воспроизводим через плеер
             logger.info("TRACE [WELCOME_INT] calling welcome_player.play_welcome()")
             result = await self.welcome_player.play_welcome()
             logger.info(f"TRACE [WELCOME_INT] welcome_player.play_welcome() returned: {result}")
-            
+
             if result.success:
-                logger.info(f"✅ [WELCOME_INTEGRATION] Приветствие воспроизведено: {result.method}, {result.duration_sec:.1f}s")
+                logger.info(
+                    f"✅ [WELCOME_INTEGRATION] Приветствие воспроизведено: {result.method}, {result.duration_sec:.1f}s"
+                )
 
                 # Централизованное правило:
                 # если сервер подготовил аудио (независимо от method), проигрываем через общий playback.
                 # локальный fallback уже проигрывается командой `say`, дублировать не нужно.
                 audio_data = self.welcome_player.get_audio_data()
-                should_send_to_playback = audio_data is not None and result.method != "local_fallback"
-                if should_send_to_playback:
+                if audio_data is not None and result.method != "local_fallback":
                     logger.info(
                         "🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration "
                         "(method=%s, async context)",
@@ -294,20 +317,22 @@ class WelcomeMessageIntegration:
                     )
             else:
                 logger.warning(f"⚠️ [WELCOME_INTEGRATION] Приветствие не удалось: {result.error}")
-            
+
         except BaseException as e:
             # 🆕 ВОЗВРАТ В SLEEPING ПРИ ОШИБКЕ (с задержкой для видимости)
-            logger.critical(f"🛑 [WELCOME_INTEGRATION] CRITICAL ERROR/CANCELLED: {type(e).__name__}: {e}")
+            logger.critical(
+                f"🛑 [WELCOME_INTEGRATION] CRITICAL ERROR/CANCELLED: {type(e).__name__}: {e}"
+            )
             import traceback
+
             logger.critical(traceback.format_exc())
-            
+
             logger.error("🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING из-за ошибки")
             await asyncio.sleep(0.5)  # Небольшая задержка для видимости изменения иконки
-            await self.event_bus.publish("mode.request", {
-                "target": "SLEEPING",
-                "source": "welcome_message", 
-                "reason": "welcome_error"
-            })
+            await self.event_bus.publish(
+                "mode.request",
+                {"target": "SLEEPING", "source": "welcome_message", "reason": "welcome_error"},
+            )
             if isinstance(e, Exception):
                 await self._handle_error(e, where="welcome.play_message", severity="warning")
             raise
@@ -323,41 +348,47 @@ class WelcomeMessageIntegration:
             self.welcome_player.set_grpc_client(grpc_client)
         except Exception as e:
             logger.warning(f"⚠️ [WELCOME_INTEGRATION] Не удалось обновить gRPC клиент: {e}")
-    
+
     def _on_welcome_started(self):
         """Коллбек начала воспроизведения приветствия (вызывается из sync контекста)"""
         logger.info("🎵 [WELCOME_INTEGRATION] Приветствие началось")
-    
+
     def _on_welcome_completed(self, result: WelcomeResult):
         """Коллбек завершения воспроизведения приветствия"""
         try:
-            logger.info(f"🎵 [WELCOME_INTEGRATION] Приветствие завершено: {result.method}, success={result.success}")
+            logger.info(
+                f"🎵 [WELCOME_INTEGRATION] Приветствие завершено: {result.method}, success={result.success}"
+            )
             self._welcome_played = bool(result.success)
 
             # 🔍 ДИАГНОСТИКА: Подробное логирование результата
-            logger.info(f"🔍 [WELCOME_INTEGRATION] result.success={result.success}, result.method={result.method}")
+            logger.info(
+                f"🔍 [WELCOME_INTEGRATION] result.success={result.success}, result.method={result.method}"
+            )
             logger.info(f"🔍 [WELCOME_INTEGRATION] result.error={result.error}")
             logger.info(f"🔍 [WELCOME_INTEGRATION] result.metadata={result.metadata}")
 
             # Больше не отправляем аудио здесь - это делается в async контексте play_welcome()
             logger.info("🔍 [WELCOME_INTEGRATION] _on_welcome_completed: callback выполнен")
-            
+
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _on_welcome_completed: {e}")
-    
+
     def _on_welcome_error(self, error: str):
         """Коллбек ошибки воспроизведения приветствия (вызывается из sync контекста)"""
         logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка приветствия: {error}")
-            
-    async def _wait_for_playback_completion(self, session_id: Optional[str]):
+
+    async def _wait_for_playback_completion(self, session_id: str | None):
         """Ожидает завершения воспроизведения приветствия"""
         try:
             if not session_id:
-                logger.warning("⚠️ [WELCOME_INTEGRATION] Нет session_id для ожидания playback — пропускаю ожидание")
+                logger.warning(
+                    "⚠️ [WELCOME_INTEGRATION] Нет session_id для ожидания playback — пропускаю ожидание"
+                )
                 return
             # Создаем Future для ожидания события
             playback_completed = asyncio.Future()
-            
+
             async def on_playback_terminal(event):
                 data = event.get("data", {}) if isinstance(event, dict) else {}
                 event_session_id = data.get("session_id")
@@ -370,12 +401,12 @@ class WelcomeMessageIntegration:
                     )
                     if not playback_completed.done():
                         playback_completed.set_result(True)
-            
+
             # Подписываемся на все terminal-события playback
             await self.event_bus.subscribe("playback.completed", on_playback_terminal)
             await self.event_bus.subscribe("playback.cancelled", on_playback_terminal)
             await self.event_bus.subscribe("playback.failed", on_playback_terminal)
-            
+
             try:
                 # Ждем завершения воспроизведения с таймаутом 10 секунд
                 await asyncio.wait_for(playback_completed, timeout=10.0)
@@ -391,64 +422,81 @@ class WelcomeMessageIntegration:
                 await self.event_bus.unsubscribe("playback.completed", on_playback_terminal)
                 await self.event_bus.unsubscribe("playback.cancelled", on_playback_terminal)
                 await self.event_bus.unsubscribe("playback.failed", on_playback_terminal)
-            
+
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _wait_for_playback_completion: {e}")
-    
+
     async def _return_to_sleeping_after_playback(self):
         """Возвращает приложение в режим SLEEPING после завершения воспроизведения"""
         try:
             # Слушаем событие завершения воспроизведения от SpeechPlaybackIntegration
             logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
-            
+
             # Создаем Future для ожидания события
             playback_completed = asyncio.Future()
-            
+
             async def on_playback_completed(event):
                 # Проверяем session_id вместо pattern, так как SpeechPlaybackIntegration
                 # не публикует pattern в playback.completed
                 session_id = event.get("data", {}).get("session_id", "")
                 if "welcome_message" in session_id:
-                    logger.info("🎵 [WELCOME_INTEGRATION] Получено событие завершения воспроизведения")
+                    logger.info(
+                        "🎵 [WELCOME_INTEGRATION] Получено событие завершения воспроизведения"
+                    )
                     if not playback_completed.done():
                         playback_completed.set_result(True)
-            
+
             # Подписываемся на событие завершения воспроизведения
             await self.event_bus.subscribe("playback.completed", on_playback_completed)
-            
+
             try:
                 # Ждем завершения воспроизведения с таймаутом
                 await asyncio.wait_for(playback_completed, timeout=10.0)
             except asyncio.TimeoutError:
-                logger.warning("⚠️ [WELCOME_INTEGRATION] Таймаут ожидания завершения воспроизведения")
+                logger.warning(
+                    "⚠️ [WELCOME_INTEGRATION] Таймаут ожидания завершения воспроизведения"
+                )
             finally:
                 # Отписываемся от события
                 await self.event_bus.unsubscribe("playback.completed", on_playback_completed)
-            
-            logger.info("🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING после завершения воспроизведения")
-            await self.event_bus.publish("mode.request", {
-                "target": "SLEEPING",
-                "source": "welcome_message",
-                "reason": "welcome_playback_completed"
-            })
-            
+
+            logger.info(
+                "🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING после завершения воспроизведения"
+            )
+            await self.event_bus.publish(
+                "mode.request",
+                {
+                    "target": "SLEEPING",
+                    "source": "welcome_message",
+                    "reason": "welcome_playback_completed",
+                },
+            )
+
         except Exception as e:
-            logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _return_to_sleeping_after_playback: {e}")
-    
+            logger.error(
+                f"❌ [WELCOME_INTEGRATION] Ошибка в _return_to_sleeping_after_playback: {e}"
+            )
+
     async def _send_audio_to_playback(self, audio_data: np.ndarray) -> str:
         """Отправляет аудио данные в SpeechPlaybackIntegration для воспроизведения"""
         try:
-            audio_samples = audio_data.size if hasattr(audio_data, 'size') else len(audio_data)
-            logger.info(f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration: {audio_samples} сэмплов")
-            
+            audio_samples = audio_data.size if hasattr(audio_data, "size") else len(audio_data)
+            logger.info(
+                f"🎵 [WELCOME_INTEGRATION] Отправляю аудио в SpeechPlaybackIntegration: {audio_samples} сэмплов"
+            )
+
             # ОТЛАДКА: Проверяем формат данных
-            logger.info(f"🔍 [WELCOME_INTEGRATION] Формат данных: dtype={audio_data.dtype}, shape={audio_data.shape}")
-            logger.info(f"🔍 [WELCOME_INTEGRATION] Диапазон: min={audio_data.min()}, max={audio_data.max()}")
+            logger.info(
+                f"🔍 [WELCOME_INTEGRATION] Формат данных: dtype={audio_data.dtype}, shape={audio_data.shape}"
+            )
+            logger.info(
+                f"🔍 [WELCOME_INTEGRATION] Диапазон: min={audio_data.min()}, max={audio_data.max()}"
+            )
             metadata = self.welcome_player.get_audio_metadata() or {}
-            sample_rate = int(metadata.get('sample_rate', self.config.sample_rate))
-            channels = int(metadata.get('channels', self.config.channels))
-            method = metadata.get('method', 'server')
-            
+            sample_rate = int(metadata.get("sample_rate", self.config.sample_rate))
+            channels = int(metadata.get("channels", self.config.channels))
+            method = metadata.get("method", "server")
+
             # 🔍 ДИАГНОСТИКА: Вычисляем ожидаемую длительность
             expected_duration = audio_samples / float(sample_rate) if sample_rate > 0 else 0.0
             logger.info(
@@ -456,8 +504,16 @@ class WelcomeMessageIntegration:
                 f"expected_duration={expected_duration:.3f}s, config_sr={self.config.sample_rate}Hz"
             )
             if sample_rate != self.config.sample_rate:
-                config_duration = audio_samples / float(self.config.sample_rate) if self.config.sample_rate > 0 else 0.0
-                speed_factor = sample_rate / float(self.config.sample_rate) if self.config.sample_rate > 0 else 1.0
+                config_duration = (
+                    audio_samples / float(self.config.sample_rate)
+                    if self.config.sample_rate > 0
+                    else 0.0
+                )
+                speed_factor = (
+                    sample_rate / float(self.config.sample_rate)
+                    if self.config.sample_rate > 0
+                    else 1.0
+                )
                 logger.warning(
                     f"⚠️ [WELCOME_DIAG] Sample rate mismatch: server={sample_rate}Hz, config={self.config.sample_rate}Hz, "
                     f"speed_factor={speed_factor:.2f}x, expected_duration={expected_duration:.3f}s, "
@@ -466,29 +522,32 @@ class WelcomeMessageIntegration:
 
             welcome_session_id = str(uuid.uuid4())
             self._welcome_playback_session_id = welcome_session_id
-            
+
             # ✅ ПРАВИЛЬНО: Передаем numpy массив напрямую в плеер
             # БЕЗ конвертации в bytes - плеер сам разберется с форматом
-            await self.event_bus.publish("playback.raw_audio", {
-                "audio_data": audio_data,  # numpy array
-                "sample_rate": sample_rate,
-                "channels": channels,
-                "dtype": "int16",  # для информации
-                "priority": 5,  # Высокий приоритет для приветствия
-                "pattern": "welcome_message",
-                "session_id": welcome_session_id,
-                "metadata": metadata,
-                "method": method,
-            })
-            
+            await self.event_bus.publish(
+                "playback.raw_audio",
+                {
+                    "audio_data": audio_data,  # numpy array
+                    "sample_rate": sample_rate,
+                    "channels": channels,
+                    "dtype": "int16",  # для информации
+                    "priority": 5,  # Высокий приоритет для приветствия
+                    "pattern": "welcome_message",
+                    "session_id": welcome_session_id,
+                    "metadata": metadata,
+                    "method": method,
+                },
+            )
+
             logger.info("✅ [WELCOME_INTEGRATION] Аудио отправлено в SpeechPlaybackIntegration")
             return welcome_session_id
-            
+
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка отправки аудио: {e}")
             return ""
 
-    async def _on_permission_event(self, event: Dict[str, Any]):
+    async def _on_permission_event(self, event: dict[str, Any]):
         """Обработка событий статуса разрешений"""
         try:
             data = (event or {}).get("data") or {}
@@ -508,17 +567,21 @@ class WelcomeMessageIntegration:
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка обработки события разрешений: {e}")
 
-    async def _on_permissions_ready(self, event: Dict[str, Any]):
+    async def _on_permissions_ready(self, event: dict[str, Any]):
         """Получение начального статуса разрешений микрофона"""
         try:
             data = (event or {}).get("data") or {}
             permissions_map = data.get("permissions")
             if permissions_map:
-                self._process_permissions_map(permissions_map, source="permissions.integration_ready")
+                self._process_permissions_map(
+                    permissions_map, source="permissions.integration_ready"
+                )
         except Exception as e:
-            logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка обработки permissions.integration_ready: {e}")
+            logger.error(
+                f"❌ [WELCOME_INTEGRATION] Ошибка обработки permissions.integration_ready: {e}"
+            )
 
-    def _process_permissions_map(self, permissions_map: Dict[Any, Any], source: str):
+    def _process_permissions_map(self, permissions_map: dict[Any, Any], source: str):
         """Обновить статусы из словаря"""
         try:
             for perm_key, status_value in permissions_map.items():
@@ -528,7 +591,9 @@ class WelcomeMessageIntegration:
                     status = status_value.get("status") or status_value.get("new_status")
                 self._process_permission_update(perm_key, status, source=source)
         except Exception as e:
-            logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка разбора словаря разрешений ({source}): {e}")
+            logger.error(
+                f"❌ [WELCOME_INTEGRATION] Ошибка разбора словаря разрешений ({source}): {e}"
+            )
 
     def _process_permission_update(self, raw_permission: Any, raw_status: Any, source: str):
         """Нормализует и сохраняет статус отдельного разрешения"""
@@ -595,7 +660,9 @@ class WelcomeMessageIntegration:
         )
 
         # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration при старте
-        logger.info("🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration")
+        logger.info(
+            "🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration"
+        )
 
         await self._ensure_permission_status()
         self._schedule_permission_recheck()
@@ -605,9 +672,9 @@ class WelcomeMessageIntegration:
         if not self._enforce_permissions:
             return
         try:
-            await self.event_bus.publish("permissions.check_required", {
-                "source": "welcome_message"
-            })
+            await self.event_bus.publish(
+                "permissions.check_required", {"source": "welcome_message"}
+            )
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка запроса проверки разрешений: {e}")
 
@@ -615,24 +682,28 @@ class WelcomeMessageIntegration:
         """Одноразовая проверка разрешения микрофона без блокировки"""
         try:
             # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration при старте
-            logger.info("🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration")
+            logger.info(
+                "🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration"
+            )
 
             # Небольшая задержка для обработки
             await asyncio.sleep(0.5)
 
             # Запрашиваем актуальный статус разрешений
             await self._ensure_permission_status()
-            
+
             if self._is_microphone_granted():
                 logger.info("✅ [WELCOME_INTEGRATION] Разрешение микрофона предоставлено")
                 return
-            
+
             # Разрешения нет - показываем уведомление и продолжаем
-            logger.warning("⚠️ [WELCOME_INTEGRATION] Разрешение микрофона отсутствует, продолжаем в деградированном режиме")
-            
+            logger.warning(
+                "⚠️ [WELCOME_INTEGRATION] Разрешение микрофона отсутствует, продолжаем в деградированном режиме"
+            )
+
             # Показываем инструкции пользователю
             await self._show_permission_instructions()
-            
+
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка проверки разрешений: {e}")
             # Продолжаем работу даже при ошибке
@@ -660,9 +731,10 @@ class WelcomeMessageIntegration:
                 while not self._is_microphone_granted() and attempts < max_attempts:
                     await asyncio.sleep(interval)
                     attempts += 1
-                    await self.event_bus.publish("permissions.check_required", {
-                        "source": f"welcome_message.recheck#{attempts}"
-                    })
+                    await self.event_bus.publish(
+                        "permissions.check_required",
+                        {"source": f"welcome_message.recheck#{attempts}"},
+                    )
             except asyncio.CancelledError:
                 logger.debug("🛑 [WELCOME_INTEGRATION] Повторная проверка разрешений отменена")
                 raise
@@ -690,9 +762,11 @@ class WelcomeMessageIntegration:
                 "🔧 Найдите 'Nexy' в списке и включите переключатель\n"
                 "⏳ Приложение будет ждать до 5 минут..."
             )
-            
+
             # НЕ запрашиваем разрешения здесь - это делает PermissionsIntegration при старте
-            logger.info("🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration")
+            logger.info(
+                "🎙️ [WELCOME_INTEGRATION] Разрешение микрофона обрабатывается через PermissionsIntegration"
+            )
 
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка показа инструкций: {e}")
@@ -706,14 +780,17 @@ class WelcomeMessageIntegration:
                 "🚀 Продолжаем запуск приложения без микрофона\n"
                 "💡 Вы можете дать разрешение позже в настройках системы"
             )
-            
+
             # Публикуем событие о таймауте
-            await self.event_bus.publish("permissions.timeout", {
-                "source": "welcome_message",
-                "permissions": ["microphone"],
-                "message": "Таймаут ожидания разрешения микрофона"
-            })
-            
+            await self.event_bus.publish(
+                "permissions.timeout",
+                {
+                    "source": "welcome_message",
+                    "permissions": ["microphone"],
+                    "message": "Таймаут ожидания разрешения микрофона",
+                },
+            )
+
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка показа сообщения о таймауте: {e}")
 
@@ -727,20 +804,16 @@ class WelcomeMessageIntegration:
         except Exception:
             return False
 
-    
     async def _handle_error(self, e: Exception, *, where: str, severity: str = "error"):
         """Обработка ошибок"""
-        if hasattr(self.error_handler, 'handle'):
+        if hasattr(self.error_handler, "handle"):
             await self.error_handler.handle(
-                error=e,
-                category="welcome_message",
-                severity=severity,
-                context={"where": where}
+                error=e, category="welcome_message", severity=severity, context={"where": where}
             )
         else:
             logger.error(f"Welcome message error at {where}: {e}")
-    
-    def get_status(self) -> Dict[str, Any]:
+
+    def get_status(self) -> dict[str, Any]:
         """Получить статус интеграции"""
         return {
             "initialized": self._initialized,
@@ -748,7 +821,9 @@ class WelcomeMessageIntegration:
             "config": {
                 "enabled": self.config.enabled,
                 "text": self.config.text,
-                "delay_sec": self.config.delay_sec
+                "delay_sec": self.config.delay_sec,
             },
-            "player_state": self.welcome_player.state.value if hasattr(self.welcome_player, 'state') else "unknown"
+            "player_state": self.welcome_player.state.value
+            if hasattr(self.welcome_player, "state")
+            else "unknown",
         }

@@ -62,7 +62,9 @@ class WelcomeAudioGenerator:
             return None
 
         try:
-            logger.info(f"TRACE [WELCOME_GEN] calling client.generate_welcome_audio(timeout={self._grpc_timeout})")
+            logger.info(
+                f"TRACE [WELCOME_GEN] calling client.generate_welcome_audio(timeout={self._grpc_timeout})"
+            )
             # Hard timeout на уровне интеграции: защищаемся от подвисаний cross-loop/future bridge.
             # Небольшой запас поверх RPC timeout оставляем на десериализацию/переключение loop.
             bridge_timeout = float(self._grpc_timeout) + 5.0
@@ -77,9 +79,9 @@ class WelcomeAudioGenerator:
                 timeout=bridge_timeout,
             )
             logger.info("TRACE [WELCOME_GEN] client.generate_welcome_audio returned")
-            
-            audio_array: np.ndarray | None = result.get('audio')
-            metadata = result.get('metadata', {})
+
+            audio_array: np.ndarray | None = result.get("audio")
+            metadata = result.get("metadata", {})
             self._last_server_metadata = metadata
 
             # 🔍 ДИАГНОСТИКА: Логируем RAW данные от gRPC клиента
@@ -93,11 +95,11 @@ class WelcomeAudioGenerator:
                 logger.error("❌ [WELCOME_AUDIO] Сервер вернул пустое аудио")
                 return None
 
-            sample_rate = metadata.get('sample_rate') or self.config.sample_rate
-            channels = metadata.get('channels') or self.config.channels
-            
+            sample_rate = metadata.get("sample_rate") or self.config.sample_rate
+            channels = metadata.get("channels") or self.config.channels
+
             # 🔍 ДИАГНОСТИКА: Вычисляем ожидаемую длительность
-            audio_samples = audio_array.size if hasattr(audio_array, 'size') else len(audio_array)
+            audio_samples = audio_array.size if hasattr(audio_array, "size") else len(audio_array)
             expected_duration = audio_samples / float(sample_rate) if sample_rate > 0 else 0.0
             logger.info(
                 f"🔍 [WELCOME_AUDIO_DIAG] Параметры аудио: samples={audio_samples}, "
@@ -106,8 +108,16 @@ class WelcomeAudioGenerator:
             )
 
             if sample_rate != self.config.sample_rate or channels != self.config.channels:
-                config_duration = audio_samples / float(self.config.sample_rate) if self.config.sample_rate > 0 else 0.0
-                speed_factor = sample_rate / float(self.config.sample_rate) if self.config.sample_rate > 0 else 1.0
+                config_duration = (
+                    audio_samples / float(self.config.sample_rate)
+                    if self.config.sample_rate > 0
+                    else 0.0
+                )
+                speed_factor = (
+                    sample_rate / float(self.config.sample_rate)
+                    if self.config.sample_rate > 0
+                    else 1.0
+                )
                 logger.warning(
                     f"⚠️ [WELCOME_AUDIO_DIAG] Несовпадение формата: server_sr={sample_rate}Hz, "
                     f"config_sr={self.config.sample_rate}Hz, server_ch={channels}, config_ch={self.config.channels}, "
@@ -118,7 +128,7 @@ class WelcomeAudioGenerator:
 
             logger.info("TRACE [WELCOME_GEN] _generate_with_server: SUCCESS")
             return audio_array
-            
+
         except asyncio.TimeoutError:
             logger.error(
                 "❌ [WELCOME_AUDIO] Таймаут ожидания generate_welcome_audio (%.1fs)",
@@ -131,11 +141,13 @@ class WelcomeAudioGenerator:
         except Exception as exc:
             logger.error(f"❌ [WELCOME_AUDIO] Ошибка серверной генерации: {exc}")
             import traceback
+
             logger.error(traceback.format_exc())
             return None
         except BaseException as be:
             logger.critical(f"🛑 [WELCOME_AUDIO] FATAL ERROR/CANCELLED: {type(be).__name__}: {be}")
             import traceback
+
             logger.critical(traceback.format_exc())
             raise
 
@@ -147,39 +159,41 @@ class WelcomeAudioGenerator:
         try:
             # ЦЕНТРАЛИЗОВАНО: Используем ServerManager для получения сервера
             from config.server_manager import get_default_server
-            
+
             loader = UnifiedConfigLoader.get_instance()
             config_data = loader._load_config()
-            integrations_cfg = (config_data.get('integrations') or {}).get('grpc_client', {})
-            
+            integrations_cfg = (config_data.get("integrations") or {}).get("grpc_client", {})
+
             # Используем централизованный ServerManager вместо прямого чтения конфига
-            self._grpc_server_name = get_default_server() or 'local'
-            integration_timeout = float(integrations_cfg.get('request_timeout_sec', self._grpc_timeout))
+            self._grpc_server_name = get_default_server() or "local"
+            integration_timeout = float(
+                integrations_cfg.get("request_timeout_sec", self._grpc_timeout)
+            )
             self._grpc_timeout = float(self.config.server_timeout_sec or integration_timeout)
 
             network_cfg = loader.get_network_config()
             servers_cfg: dict[str, dict[str, Any]] = {}
             for name, server in network_cfg.grpc_servers.items():
                 servers_cfg[name] = {
-                    'address': server.host,
-                    'port': server.port,
-                    'use_ssl': server.ssl,
-                    'ssl_verify': server.ssl_verify,  # NEW: Pass ssl_verify from config
-                    'use_http2': server.use_http2,  # NEW: Pass use_http2 from config
-                    'keepalive': server.keepalive,  # NEW: Pass keepalive from config
-                    'grpc_path': server.grpc_path,  # NEW: Pass grpc_path from config
-                    'timeout': server.timeout,
-                    'retry_attempts': server.retry_attempts,
-                    'retry_delay': server.retry_delay,
+                    "address": server.host,
+                    "port": server.port,
+                    "use_ssl": server.ssl,
+                    "ssl_verify": server.ssl_verify,  # NEW: Pass ssl_verify from config
+                    "use_http2": server.use_http2,  # NEW: Pass use_http2 from config
+                    "keepalive": server.keepalive,  # NEW: Pass keepalive from config
+                    "grpc_path": server.grpc_path,  # NEW: Pass grpc_path from config
+                    "timeout": server.timeout,
+                    "retry_attempts": server.retry_attempts,
+                    "retry_delay": server.retry_delay,
                 }
 
             self._grpc_client_config = {
-                'servers': servers_cfg,
-                'auto_fallback': network_cfg.auto_fallback,
-                'connection_timeout': network_cfg.connection_check_interval,
-                'max_retry_attempts': int(integrations_cfg.get('max_retries', 3)),
-                'retry_delay': float(integrations_cfg.get('retry_delay', 1.0)),
-                'welcome_timeout_sec': self._grpc_timeout,
+                "servers": servers_cfg,
+                "auto_fallback": network_cfg.auto_fallback,
+                "connection_timeout": network_cfg.connection_check_interval,
+                "max_retry_attempts": int(integrations_cfg.get("max_retries", 3)),
+                "retry_delay": float(integrations_cfg.get("retry_delay", 1.0)),
+                "welcome_timeout_sec": self._grpc_timeout,
             }
         except Exception as exc:
             logger.warning(f"⚠️ [WELCOME_AUDIO] Не удалось загрузить настройки gRPC: {exc}")

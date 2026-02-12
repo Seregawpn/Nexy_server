@@ -15,6 +15,7 @@ from integration.utils.resource_path import get_resource_path
 @dataclass
 class UpdateChannel:
     """Информация о канале обновлений"""
+
     name: str
     url: str
     description: str
@@ -24,6 +25,7 @@ class UpdateChannel:
 @dataclass
 class UpdaterConfig:
     """Конфигурация системы обновлений"""
+
     enabled: bool
     update_channel: str
     appcast_url: str
@@ -42,7 +44,7 @@ class UpdaterConfig:
 
 class UpdaterManager:
     """Централизованный менеджер обновлений"""
-    
+
     def __init__(self, config_path: str = "config/unified_config.yaml"):
         resource_path = get_resource_path(config_path)
         self.config_path = resource_path
@@ -50,56 +52,56 @@ class UpdaterManager:
         self._updater_config = None
         self._environment = UnifiedConfigLoader.get_instance().get_environment()
         self._load_config()
-    
+
     def _load_config(self):
         """Загружает конфигурацию из файла"""
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
+            with open(self.config_path, "r", encoding="utf-8") as f:
                 self._config = yaml.safe_load(f)
                 if self._config is None:
                     self._config = {}
-            
+
             # Парсим конфигурацию обновлений
             self._parse_updater_config()
-            
+
         except Exception as e:
             raise RuntimeError(
                 f"Не удалось загрузить конфигурацию из {self.config_path}: {e}"
             ) from e
-    
+
     def _parse_updater_config(self):
         """Парсит конфигурацию обновлений"""
         if self._config is None:
             raise RuntimeError("Конфигурация не загружена")
-        updater_raw = self._config.get('updater', {})
+        updater_raw = self._config.get("updater", {})
         updater_data = self._resolve_environment_section(updater_raw)
-        
+
         # Парсим каналы
         channels = {}
-        channels_data = updater_data.get('channels', {})
+        channels_data = updater_data.get("channels", {})
         for channel_name, channel_data in channels_data.items():
             channels[channel_name] = UpdateChannel(
                 name=channel_name,
-                url=channel_data.get('url', ''),
-                description=channel_data.get('description', ''),
-                enabled=channel_data.get('enabled', True)
+                url=channel_data.get("url", ""),
+                description=channel_data.get("description", ""),
+                enabled=channel_data.get("enabled", True),
             )
-        
+
         self._updater_config = UpdaterConfig(
-            enabled=updater_data.get('enabled', True),
-            update_channel=updater_data.get('update_channel', 'stable'),
-            appcast_url=updater_data.get('appcast_url', ''),
-            manifest_url=updater_data.get('manifest_url', ''),
-            auto_check=updater_data.get('auto_check', True),
-            check_interval=updater_data.get('check_interval', 3600),
-            check_on_startup=updater_data.get('check_on_startup', True),
-            auto_install=updater_data.get('auto_install', False),
-            install_after_download=updater_data.get('install_after_download', False),
-            silent_mode=updater_data.get('silent_mode', True),
-            security=updater_data.get('security', {}),
-            network=updater_data.get('network', {}),
-            ui=updater_data.get('ui', {}),
-            channels=channels
+            enabled=updater_data.get("enabled", True),
+            update_channel=updater_data.get("update_channel", "stable"),
+            appcast_url=updater_data.get("appcast_url", ""),
+            manifest_url=updater_data.get("manifest_url", ""),
+            auto_check=updater_data.get("auto_check", True),
+            check_interval=updater_data.get("check_interval", 3600),
+            check_on_startup=updater_data.get("check_on_startup", True),
+            auto_install=updater_data.get("auto_install", False),
+            install_after_download=updater_data.get("install_after_download", False),
+            silent_mode=updater_data.get("silent_mode", True),
+            security=updater_data.get("security", {}),
+            network=updater_data.get("network", {}),
+            ui=updater_data.get("ui", {}),
+            channels=channels,
         )
 
     def _resolve_environment_section(self, data: Any) -> dict[str, Any]:
@@ -107,7 +109,7 @@ class UpdaterManager:
         if not isinstance(data, dict):
             return {}
 
-        default_section = data.get('default')
+        default_section = data.get("default")
         env_section = data.get(self._environment)
 
         if isinstance(default_section, dict) or isinstance(env_section, dict):
@@ -125,20 +127,16 @@ class UpdaterManager:
         """Глубокое объединение словарей"""
         result = dict(base)
         for key, value in overrides.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = self._deep_merge_dicts(result[key], value)
             else:
                 result[key] = value
         return result
-    
+
     def _save_config(self):
         """Сохраняет конфигурацию в файл"""
         try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            with open(self.config_path, "w", encoding="utf-8") as f:
                 yaml.dump(
                     self._config,
                     f,
@@ -150,166 +148,163 @@ class UpdaterManager:
             raise RuntimeError(
                 f"Не удалось сохранить конфигурацию в {self.config_path}: {e}"
             ) from e
-    
+
     def get_updater_config(self) -> UpdaterConfig:
         """Получает конфигурацию обновлений"""
         if self._updater_config is None:
             raise RuntimeError("Конфигурация обновлений не загружена")
         return self._updater_config
-    
+
     def get_current_channel(self) -> UpdateChannel | None:
         """Получает текущий канал обновлений"""
         if self._updater_config is None:
             return None
         channel_name = self._updater_config.update_channel
         return self._updater_config.channels.get(channel_name)
-    
+
     def get_all_channels(self) -> dict[str, UpdateChannel]:
         """Получает все доступные каналы"""
         if self._updater_config is None:
             return {}
         return self._updater_config.channels
-    
+
     def switch_channel(self, channel_name: str) -> bool:
         """Переключает канал обновлений"""
         try:
             if self._updater_config is None or self._config is None:
                 return False
-            
+
             if channel_name not in self._updater_config.channels:
                 return False
-            
+
             # Обновляем конфигурацию
-            if 'updater' not in self._config:
-                self._config['updater'] = {}
-            self._config['updater']['update_channel'] = channel_name
+            if "updater" not in self._config:
+                self._config["updater"] = {}
+            self._config["updater"]["update_channel"] = channel_name
             self._updater_config.update_channel = channel_name
-            
+
             # Обновляем URL для текущего канала
             channel = self._updater_config.channels[channel_name]
-            self._config['updater']['appcast_url'] = channel.url
+            self._config["updater"]["appcast_url"] = channel.url
             self._updater_config.appcast_url = channel.url
-            
+
             self._save_config()
             return True
-            
+
         except Exception as e:
             print(f"Ошибка переключения канала {channel_name}: {e}")
             return False
-    
+
     def update_channel_url(self, channel_name: str, new_url: str) -> bool:
         """Обновляет URL канала обновлений"""
         try:
             if self._updater_config is None or self._config is None:
                 return False
-            
+
             if channel_name not in self._updater_config.channels:
                 return False
-            
+
             # Обновляем в конфигурации
-            if 'updater' not in self._config:
-                self._config['updater'] = {}
-            if 'channels' not in self._config['updater']:
-                self._config['updater']['channels'] = {}
-            if channel_name not in self._config['updater']['channels']:
-                self._config['updater']['channels'][channel_name] = {}
-            
-            self._config['updater']['channels'][channel_name]['url'] = new_url
+            if "updater" not in self._config:
+                self._config["updater"] = {}
+            if "channels" not in self._config["updater"]:
+                self._config["updater"]["channels"] = {}
+            if channel_name not in self._config["updater"]["channels"]:
+                self._config["updater"]["channels"][channel_name] = {}
+
+            self._config["updater"]["channels"][channel_name]["url"] = new_url
             self._updater_config.channels[channel_name].url = new_url
-            
+
             # Если это текущий канал, обновляем и основной URL
             if self._updater_config.update_channel == channel_name:
-                self._config['updater']['appcast_url'] = new_url
+                self._config["updater"]["appcast_url"] = new_url
                 self._updater_config.appcast_url = new_url
-            
+
             self._save_config()
             return True
-            
+
         except Exception as e:
             print(f"Ошибка обновления URL канала {channel_name}: {e}")
             return False
-    
+
     def add_channel(self, channel_name: str, url: str, description: str = "") -> bool:
         """Добавляет новый канал обновлений"""
         try:
             if self._updater_config is None or self._config is None:
                 return False
-            
+
             # Добавляем в конфигурацию
-            if 'updater' not in self._config:
-                self._config['updater'] = {}
-            if 'channels' not in self._config['updater']:
-                self._config['updater']['channels'] = {}
-            
-            self._config['updater']['channels'][channel_name] = {
-                'url': url,
-                'description': description,
-                'enabled': True
+            if "updater" not in self._config:
+                self._config["updater"] = {}
+            if "channels" not in self._config["updater"]:
+                self._config["updater"]["channels"] = {}
+
+            self._config["updater"]["channels"][channel_name] = {
+                "url": url,
+                "description": description,
+                "enabled": True,
             }
-            
+
             # Добавляем в объект конфигурации
             self._updater_config.channels[channel_name] = UpdateChannel(
-                name=channel_name,
-                url=url,
-                description=description,
-                enabled=True
+                name=channel_name, url=url, description=description, enabled=True
             )
-            
+
             self._save_config()
             return True
-            
+
         except Exception as e:
             print(f"Ошибка добавления канала {channel_name}: {e}")
             return False
-    
+
     def remove_channel(self, channel_name: str) -> bool:
         """Удаляет канал обновлений"""
         try:
             if self._updater_config is None or self._config is None:
                 return False
-            
+
             if channel_name not in self._updater_config.channels:
                 return False
-            
+
             # Нельзя удалить текущий канал
             if self._updater_config.update_channel == channel_name:
                 return False
-            
+
             # Удаляем из конфигурации
-            if 'updater' in self._config and 'channels' in self._config['updater']:
-                if channel_name in self._config['updater']['channels']:
-                    del self._config['updater']['channels'][channel_name]
+            if "updater" in self._config and "channels" in self._config["updater"]:
+                if channel_name in self._config["updater"]["channels"]:
+                    del self._config["updater"]["channels"][channel_name]
             del self._updater_config.channels[channel_name]
-            
+
             self._save_config()
             return True
-            
+
         except Exception as e:
             print(f"Ошибка удаления канала {channel_name}: {e}")
             return False
-    
+
     def update_setting(self, setting_name: str, value: Any) -> bool:
         """Обновляет настройку обновлений"""
         try:
             if self._updater_config is None or self._config is None:
                 return False
-            
+
             # Обновляем в конфигурации
-            if 'updater' not in self._config:
-                self._config['updater'] = {}
-            self._config['updater'][setting_name] = value
-            
+            if "updater" not in self._config:
+                self._config["updater"] = {}
+            self._config["updater"][setting_name] = value
+
             # Обновляем в объекте конфигурации
             if hasattr(self._updater_config, setting_name):
                 setattr(self._updater_config, setting_name, value)
-            
+
             self._save_config()
             return True
-            
+
         except Exception as e:
             print(f"Ошибка обновления настройки {setting_name}: {e}")
             return False
-    
+
     def get_manifest_url(self) -> str:
         """Получает URL манифеста для текущего канала"""
         if self._updater_config is None:
@@ -318,20 +313,20 @@ class UpdaterManager:
         if channel and channel.url:
             return channel.url
         return self._updater_config.manifest_url
-    
+
     def is_enabled(self) -> bool:
         """Проверяет, включены ли обновления"""
         if self._updater_config is None:
             return False
         return self._updater_config.enabled
-    
+
     def enable(self) -> bool:
         """Включает обновления"""
-        return self.update_setting('enabled', True)
-    
+        return self.update_setting("enabled", True)
+
     def disable(self) -> bool:
         """Отключает обновления"""
-        return self.update_setting('enabled', False)
+        return self.update_setting("enabled", False)
 
 
 # Глобальный экземпляр для использования в приложении
@@ -367,21 +362,21 @@ def update_channel_url(channel_name: str, new_url: str) -> bool:
 if __name__ == "__main__":
     # Пример использования
     manager = UpdaterManager()
-    
+
     print("=== КОНФИГУРАЦИЯ ОБНОВЛЕНИЙ ===")
     config = manager.get_updater_config()
     print(f"Включено: {config.enabled}")
     print(f"Канал: {config.update_channel}")
     print(f"URL: {config.appcast_url}")
     print(f"Интервал проверки: {config.check_interval} сек")
-    
+
     print(f"\n=== ТЕКУЩИЙ КАНАЛ ===")
     current = manager.get_current_channel()
     if current:
         print(f"Канал: {current.name}")
         print(f"URL: {current.url}")
         print(f"Описание: {current.description}")
-    
+
     print(f"\n=== ВСЕ КАНАЛЫ ===")
     for name, channel in manager.get_all_channels().items():
         print(f"{name}: {channel.url} - {channel.description}")

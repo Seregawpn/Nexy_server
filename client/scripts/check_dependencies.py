@@ -56,9 +56,7 @@ def check_packages() -> list[str]:
             continue
 
         if installed_version != expected_version:
-            errors.append(
-                f"{dist_name}: {installed_version} (expected {expected_version})"
-            )
+            errors.append(f"{dist_name}: {installed_version} (expected {expected_version})")
     return errors
 
 

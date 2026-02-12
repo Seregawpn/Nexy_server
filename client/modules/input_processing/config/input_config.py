@@ -9,12 +9,14 @@ from ..keyboard.types import KeyboardConfig
 
 # from ..speech.types import SpeechConfig  # Временно отключено
 
+
 @dataclass
 class InputConfig:
     """Общая конфигурация модулей ввода"""
+
     keyboard: KeyboardConfig | None = None
     # speech: SpeechConfig = None  # Временно отключено
-    
+
     def __post_init__(self):
         """Инициализация конфигурации по умолчанию"""
         if self.keyboard is None:
@@ -29,32 +31,32 @@ class InputConfig:
             )
         # if self.speech is None:  # Временно отключено
         #     self.speech = SpeechConfig()
-    
+
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> 'InputConfig':
+    def from_dict(cls, config_dict: dict[str, Any]) -> "InputConfig":
         """Создает конфигурацию из словаря"""
-        keyboard_config = KeyboardConfig(**config_dict.get('keyboard', {}))
+        keyboard_config = KeyboardConfig(**config_dict.get("keyboard", {}))
         # speech_config = SpeechConfig(**config_dict.get('speech', {}))  # Временно отключено
-        
+
         return cls(
             keyboard=keyboard_config,
             # speech=speech_config  # Временно отключено
         )
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Преобразует конфигурацию в словарь"""
         if self.keyboard is None:
-            return {'keyboard': {}}
+            return {"keyboard": {}}
         return {
-            'keyboard': {
-                'key_to_monitor': self.keyboard.key_to_monitor,
-                'short_press_threshold': self.keyboard.short_press_threshold,
-                'long_press_threshold': self.keyboard.long_press_threshold,
-                'event_cooldown': self.keyboard.event_cooldown,
-                'hold_check_interval': self.keyboard.hold_check_interval,
-                'debounce_time': self.keyboard.debounce_time,
-                'combo_timeout_sec': self.keyboard.combo_timeout_sec,
-                'key_state_timeout_sec': self.keyboard.key_state_timeout_sec,
+            "keyboard": {
+                "key_to_monitor": self.keyboard.key_to_monitor,
+                "short_press_threshold": self.keyboard.short_press_threshold,
+                "long_press_threshold": self.keyboard.long_press_threshold,
+                "event_cooldown": self.keyboard.event_cooldown,
+                "hold_check_interval": self.keyboard.hold_check_interval,
+                "debounce_time": self.keyboard.debounce_time,
+                "combo_timeout_sec": self.keyboard.combo_timeout_sec,
+                "key_state_timeout_sec": self.keyboard.key_state_timeout_sec,
             },
             # 'speech': {  # Временно отключено
             #     'enabled': self.speech.enabled,
@@ -71,13 +73,14 @@ class InputConfig:
             # }
         }
 
+
 def get_default_input_config() -> InputConfig:
     """Получает конфигурацию по умолчанию из UnifiedConfigLoader"""
     from config.unified_config_loader import UnifiedConfigLoader
-    
+
     config_loader = UnifiedConfigLoader.get_instance()
     input_config = config_loader.get_input_processing_config()
-    
+
     # Преобразуем KeyboardConfig из unified_config_loader в KeyboardConfig из types
     unified_kbd_config = input_config.keyboard
     keyboard_config = KeyboardConfig(
@@ -90,7 +93,7 @@ def get_default_input_config() -> InputConfig:
         combo_timeout_sec=unified_kbd_config.combo_timeout_sec,
         key_state_timeout_sec=unified_kbd_config.key_state_timeout_sec,
     )
-    
+
     return InputConfig(
         keyboard=keyboard_config
         # speech=SpeechConfig(  # Временно отключено
@@ -107,6 +110,7 @@ def get_default_input_config() -> InputConfig:
         #     auto_start=True
         # )
     )
+
 
 # Для обратной совместимости
 DEFAULT_INPUT_CONFIG = get_default_input_config()

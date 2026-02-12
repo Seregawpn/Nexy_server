@@ -1,5 +1,6 @@
-import qrcode.image.base
 from PIL import Image
+
+import qrcode.image.base
 from qrcode.image.styles.colormasks import QRColorMask, SolidFillColorMask
 from qrcode.image.styles.moduledrawers import SquareModuleDrawer
 
@@ -45,9 +46,7 @@ class StyledPilImage(qrcode.image.base.BaseImageWithDrawer):
         embedded_image_path = kwargs.get(
             "embedded_image_path", kwargs.get("embeded_image_path", None)
         )
-        self.embedded_image = kwargs.get(
-            "embedded_image", kwargs.get("embeded_image", None)
-        )
+        self.embedded_image = kwargs.get("embedded_image", kwargs.get("embeded_image", None))
         self.embedded_image_ratio = kwargs.get(
             "embedded_image_ratio", kwargs.get("embeded_image_ratio", 0.25)
         )
@@ -97,8 +96,7 @@ class StyledPilImage(qrcode.image.base.BaseImageWithDrawer):
         total_width = int(total_width)
         logo_width_ish = int(total_width * self.embedded_image_ratio)
         logo_offset = (
-            int((int(total_width / 2) - int(logo_width_ish / 2)) / self.box_size)
-            * self.box_size
+            int((int(total_width / 2) - int(logo_width_ish / 2)) / self.box_size) * self.box_size
         )  # round the offset to the nearest module
         logo_position = (logo_offset, logo_offset)
         logo_width = total_width - logo_offset * 2

@@ -21,7 +21,7 @@ def _find_publishers(token: str) -> list[Path]:
             text = path.read_text(encoding="utf-8")
         except Exception:
             continue
-        if f"publish(\"{token}\"" in text or f"publish('{token}'" in text:
+        if f'publish("{token}"' in text or f"publish('{token}'" in text:
             hits.append(path)
     return hits
 

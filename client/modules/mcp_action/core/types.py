@@ -23,4 +23,3 @@ class McpActionResult:
     message: str
     error: str | None = None
     app_name: str | None = None
-

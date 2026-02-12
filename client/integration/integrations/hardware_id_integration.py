@@ -28,6 +28,7 @@ logger = get_logger(__name__)
 @dataclass
 class HardwareIdIntegrationConfig:
     """Небольшая конфигурация уровня интеграции (не дублирует модуль)."""
+
     wait_ready_timeout_ms: int = 1500
     refresh_on_ttl_expired: bool = True
 
@@ -51,10 +52,10 @@ class HardwareIdIntegration:
             try:
                 uc = UnifiedConfigLoader.get_instance()
                 data = uc._load_config()
-                cfg = (data.get('integrations', {}) or {}).get('hardware_id', {})
+                cfg = (data.get("integrations", {}) or {}).get("hardware_id", {})
                 config = HardwareIdIntegrationConfig(
-                    wait_ready_timeout_ms=int(cfg.get('wait_ready_timeout_ms', 1500)),
-                    refresh_on_ttl_expired=bool(cfg.get('refresh_on_ttl_expired', True)),
+                    wait_ready_timeout_ms=int(cfg.get("wait_ready_timeout_ms", 1500)),
+                    refresh_on_ttl_expired=bool(cfg.get("refresh_on_ttl_expired", True)),
                 )
             except Exception:
                 config = HardwareIdIntegrationConfig()
@@ -89,9 +90,15 @@ class HardwareIdIntegration:
 
             # Подписки на события
             await self.event_bus.subscribe("app.startup", self._on_app_startup, EventPriority.HIGH)
-            await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("hardware.id_request", self._on_id_request, EventPriority.HIGH)
-            await self.event_bus.subscribe("hardware.id_refresh", self._on_id_refresh, EventPriority.MEDIUM)
+            await self.event_bus.subscribe(
+                "app.shutdown", self._on_app_shutdown, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "hardware.id_request", self._on_id_request, EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "hardware.id_refresh", self._on_id_refresh, EventPriority.MEDIUM
+            )
 
             self._initialized = True
             logger.info("HardwareIdIntegration initialized")
@@ -108,7 +115,7 @@ class HardwareIdIntegration:
             return True
         self._running = True
         logger.info("HardwareIdIntegration started")
-        
+
         # Принудительно публикуем Hardware ID при старте для gRPC клиента
         try:
             await self._ensure_id_ready()
@@ -117,7 +124,7 @@ class HardwareIdIntegration:
                 logger.info(f"Hardware ID published on startup: {self._id_result.uuid[:8]}...")
         except Exception as e:
             logger.warning(f"Failed to publish Hardware ID on startup: {e}")
-        
+
         return True
 
     async def stop(self) -> bool:
@@ -151,7 +158,9 @@ class HardwareIdIntegration:
             if not self._id_result and wait_ready:
                 # Ждём готовности с таймаутом
                 try:
-                    await asyncio.wait_for(self._ensure_id_ready(), timeout=self.config.wait_ready_timeout_ms / 1000.0)
+                    await asyncio.wait_for(
+                        self._ensure_id_ready(), timeout=self.config.wait_ready_timeout_ms / 1000.0
+                    )
                 except asyncio.TimeoutError:
                     logger.warning("hardware.id_request: timeout waiting for id ready")
 
@@ -163,11 +172,14 @@ class HardwareIdIntegration:
             if self._id_result:
                 await self._publish_response(self._id_result, request_id=request_id)
             else:
-                await self.event_bus.publish("hardware.id_error", {
-                    "error": "id_unavailable",
-                    "cause": "not_ready",
-                    "can_retry": True,
-                })
+                await self.event_bus.publish(
+                    "hardware.id_error",
+                    {
+                        "error": "id_unavailable",
+                        "cause": "not_ready",
+                        "can_retry": True,
+                    },
+                )
         except Exception as e:
             await self._handle_error(e, where="hardware_id.on_id_request")
 
@@ -204,7 +216,9 @@ class HardwareIdIntegration:
         if not self._identifier:
             return None
         try:
-            res = await asyncio.get_event_loop().run_in_executor(None, self._identifier.get_hardware_id, force)
+            res = await asyncio.get_event_loop().run_in_executor(
+                None, self._identifier.get_hardware_id, force
+            )
             self._id_result = res
             self._ready_event.set()
             logger.info(self._fmt_log(f"Hardware ID ready ({res.source}, cached={res.cached})"))
@@ -224,43 +238,46 @@ class HardwareIdIntegration:
     # --------------------- Publishing helpers ---------------------
     async def _publish_obtained(self, res: HardwareIdResult):
         try:
-            await self.event_bus.publish("hardware.id_obtained", {
-                "uuid": res.uuid,
-                "source": res.source,
-                "cached": res.cached,
-                "status": res.status.value if hasattr(res.status, 'value') else str(res.status),
-            })
+            await self.event_bus.publish(
+                "hardware.id_obtained",
+                {
+                    "uuid": res.uuid,
+                    "source": res.source,
+                    "cached": res.cached,
+                    "status": res.status.value if hasattr(res.status, "value") else str(res.status),
+                },
+            )
         except Exception as e:
             logger.debug(f"Failed to publish hardware.id_obtained: {e}")
 
     async def _publish_response(self, res: HardwareIdResult, *, request_id: str | None):
         try:
-            await self.event_bus.publish("hardware.id_response", {
-                "request_id": request_id,
-                "uuid": res.uuid,
-                "source": res.source,
-                "cached": res.cached,
-                "status": res.status.value if hasattr(res.status, 'value') else str(res.status),
-            })
+            await self.event_bus.publish(
+                "hardware.id_response",
+                {
+                    "request_id": request_id,
+                    "uuid": res.uuid,
+                    "source": res.source,
+                    "cached": res.cached,
+                    "status": res.status.value if hasattr(res.status, "value") else str(res.status),
+                },
+            )
         except Exception as e:
             logger.debug(f"Failed to publish hardware.id_response: {e}")
 
     # --------------------- Utilities ---------------------
     def _fmt_log(self, msg: str) -> str:
         try:
-            u = (self._id_result.uuid if self._id_result and self._id_result.uuid else "")
+            u = self._id_result.uuid if self._id_result and self._id_result.uuid else ""
             masked = (u[:8] + "…") if u else "unknown"
             return f"{msg} — uuid={masked}"
         except Exception:
             return msg
 
     async def _handle_error(self, e: Exception, *, where: str, severity: str = "error"):
-        if hasattr(self.error_handler, 'handle'):
+        if hasattr(self.error_handler, "handle"):
             await self.error_handler.handle(
-                error=e,
-                category="hardware_id",
-                severity=severity,
-                context={"where": where}
+                error=e, category="hardware_id", severity=severity, context={"where": where}
             )
         else:
             logger.error(f"Error in HardwareIdIntegration ({where}): {e}")
@@ -272,8 +289,7 @@ class HardwareIdIntegration:
             "initialized": self._initialized,
             "running": self._running,
             "id_ready": res is not None,
-            "source": getattr(res, 'source', None) if res else None,
-            "cached": getattr(res, 'cached', None) if res else None,
-            "status": (res.status.value if res and hasattr(res.status, 'value') else None),
+            "source": getattr(res, "source", None) if res else None,
+            "cached": getattr(res, "cached", None) if res else None,
+            "status": (res.status.value if res and hasattr(res.status, "value") else None),
         }
-

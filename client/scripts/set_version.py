@@ -27,9 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def validate_version(value: str) -> str:
     # Very lightweight validation – ensure format like 1.0.0 etc.
     if not re.match(r"^[0-9]+(\.[0-9]+){0,3}$", value):
-        raise argparse.ArgumentTypeError(
-            "Version must be numeric dots string, e.g. 1.0.0 or 2.1"
-        )
+        raise argparse.ArgumentTypeError("Version must be numeric dots string, e.g. 1.0.0 or 2.1")
     return value
 
 

@@ -19,7 +19,7 @@ from integration.core.selectors import (
 from integration.core.state_manager import ApplicationStateManager
 from integration.utils.logging_setup import get_logger
 
-try: # ruff: noqa: I001
+try:  # ruff: noqa: I001
     from mode_management import AppMode  # type: ignore[reportMissingImports]
 except ImportError:
     from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
@@ -29,17 +29,20 @@ from modules.updater.config import UpdaterConfig
 
 logger = get_logger(__name__)
 
+
 class UpdaterIntegration:
     """Интеграция системы обновлений с архитектурой приложения"""
-    
-    def __init__(self, event_bus: EventBus, state_manager: ApplicationStateManager, config: dict[str, Any]):
+
+    def __init__(
+        self, event_bus: EventBus, state_manager: ApplicationStateManager, config: dict[str, Any]
+    ):
         self.event_bus = event_bus
         self.state_manager = state_manager
-        
+
         # Получаем централизованную конфигурацию обновлений
         self.updater_manager = get_updater_manager()
         updater_config_data = self.updater_manager.get_updater_config()
-        
+
         # Создаем конфигурацию обновлений из централизованной системы
         updater_config = UpdaterConfig(
             enabled=updater_config_data.enabled,
@@ -52,11 +55,11 @@ class UpdaterIntegration:
             retries=updater_config_data.network.get("retries", 3),
             show_notifications=updater_config_data.ui.get("show_notifications", True),
             auto_download=updater_config_data.ui.get("auto_download", True),
-            ssl_verify=updater_config_data.security.get("ssl_verify", True)
+            ssl_verify=updater_config_data.security.get("ssl_verify", True),
         )
-        
+
         self.updater = Updater(updater_config)
-        self.check_task = None
+        self.check_task: asyncio.Task[Any] | None = None
         self.is_running = False
         self._update_in_progress: bool = False
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -70,14 +73,14 @@ class UpdaterIntegration:
         self._config_loader = UnifiedConfigLoader.get_instance()
         # Current app mode (tracked via events instead of direct state access)
         self._current_mode: AppMode = AppMode.SLEEPING
-    
+
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
         try:
             logger.info("🔄 Инициализация UpdaterIntegration...")
-            
+
             # Миграция в пользовательскую папку отключена (установка в /Applications)
-            
+
             # Настраиваем обработчики событий
             await self._setup_event_handlers()
             # Initialize current mode from state (one-time read allowed during init)
@@ -91,7 +94,7 @@ class UpdaterIntegration:
             # Attach event loop for async event publishing
             try:
                 self._loop = asyncio.get_running_loop()
-                # НЕ переприсваиваем loop в event_bus! 
+                # НЕ переприсваиваем loop в event_bus!
                 # SimpleModuleCoordinator уже установил правильный _bg_loop
                 # Переприсваивание здесь ломает async callbacks в QuartzMonitor!
                 # if hasattr(self.event_bus, "attach_loop"):
@@ -99,23 +102,23 @@ class UpdaterIntegration:
             except RuntimeError:
                 self._loop = None
             self._set_update_state(False, trigger="initialize")
-            
+
             logger.info("✅ UpdaterIntegration инициализирован")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации UpdaterIntegration: {e}")
             return False
-    
+
     async def start(self) -> bool:
         """Запуск интеграции"""
         try:
             if not self.updater.config.enabled:
                 logger.info("⏭️ Пропускаю запуск UpdaterIntegration - отключен")
                 return True
-            
+
             logger.info("🚀 Запуск UpdaterIntegration...")
-            
+
             # Проверка при запуске (если включена)
             if self.updater.config.check_on_startup:
                 logger.info("🔍 Проверка обновлений при запуске...")
@@ -133,18 +136,18 @@ class UpdaterIntegration:
                         update_performed = False
                     if update_performed:
                         return True  # Приложение перезапустится
-            
+
             # Запускаем периодическую проверку
             self.check_task = asyncio.create_task(self._check_loop())
-            
+
             self.is_running = True
             logger.info("✅ UpdaterIntegration запущен")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка запуска UpdaterIntegration: {e}")
             return False
-    
+
     async def _check_loop(self):
         """Цикл проверки обновлений"""
         while self.is_running:
@@ -153,22 +156,22 @@ class UpdaterIntegration:
                 if await self._can_update():
                     if await self._execute_update(trigger="scheduled"):
                         return  # Приложение перезапустится
-                
+
                 # Ждем до следующей проверки
                 await asyncio.sleep(self.updater.config.check_interval)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Ошибка в цикле проверки обновлений: {e}")
                 await asyncio.sleep(300)  # Ждем 5 минут при ошибке
-    
+
     async def _can_update(self) -> bool:
         """Проверка, можно ли обновляться.
-        
+
         Использует tracked mode (из событий app.mode_changed) вместо прямого доступа к state_manager.
         Это соответствует правилу 21.3: запрет прямого доступа к состоянию вне selectors/gateways.
-        
+
         Fallback: Если tracked mode не обновлен событиями (например, в тестах без реального EventBus),
         читаем из state_manager для совместимости. В production режим должен обновляться через события.
         """
@@ -182,7 +185,7 @@ class UpdaterIntegration:
 
         # Use tracked mode from events (updated in _on_mode_changed/_on_mode_changed_via_gateway)
         current_mode = self._current_mode
-        
+
         # Fallback: Если tracked mode == SLEEPING (initial state), проверяем актуальный режим
         # Это необходимо для тестов и edge cases, когда события не работают
         # TODO: Remove fallback after all consumers migrate to event-based mode tracking
@@ -203,34 +206,36 @@ class UpdaterIntegration:
                     pass
         except Exception:
             pass  # Use tracked mode if fallback fails
-        
+
         if current_mode in (AppMode.LISTENING, AppMode.PROCESSING):
             return False
         return True
-    
+
     async def _setup_event_handlers(self):
         """Настройка обработчиков событий"""
         # Подписываемся на события
         await self.event_bus.subscribe("app.startup", self._on_app_startup, EventPriority.MEDIUM)
         await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
-        await self.event_bus.subscribe("updater.check_manual", self._on_manual_check, EventPriority.HIGH)
+        await self.event_bus.subscribe(
+            "updater.check_manual", self._on_manual_check, EventPriority.HIGH
+        )
         await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed, EventPriority.LOW)
-    
+
     async def _on_app_startup(self, event_data):
         """Обработка запуска приложения"""
         logger.info("🚀 Обработка запуска приложения в UpdaterIntegration")
-    
+
     async def _on_app_shutdown(self, event_data):
         """Обработка завершения приложения"""
         logger.info("🛑 Обработка завершения приложения в UpdaterIntegration")
         await self.stop()
-    
+
     async def _on_manual_check(self, event_data):
         """Ручная проверка обновлений"""
         logger.info("🔍 Ручная проверка обновлений")
         if await self._can_update():
             await self._execute_update(trigger="manual")
-    
+
     async def _on_mode_changed(self, event_data):
         """Обработка изменения режима приложения (legacy event)"""
         data = (event_data or {}).get("data", event_data or {})
@@ -243,7 +248,7 @@ class UpdaterIntegration:
             except Exception:
                 pass
         logger.info(f"Режим приложения изменен на: {new_mode}")
-    
+
     async def _execute_update(self, trigger: str) -> bool:
         """
         Проверяет, скачивает и устанавливает обновление с публикацией событий.
@@ -261,11 +266,14 @@ class UpdaterIntegration:
 
         if not manifest:
             # НЕТ обновления - публикуем update_skipped и выходим
-            await self._safe_publish("updater.update_skipped", {
-                "trigger": trigger,
-                "reason": "no_updates_available",
-                "current_version": self.updater.get_current_build()
-            })
+            await self._safe_publish(
+                "updater.update_skipped",
+                {
+                    "trigger": trigger,
+                    "reason": "no_updates_available",
+                    "current_version": self.updater.get_current_build(),
+                },
+            )
             logger.info("✅ Обновления не требуются (trigger=%s)", trigger)
             return False
 
@@ -274,27 +282,33 @@ class UpdaterIntegration:
         logger.info(f"🔄 Найдено обновление до версии {version} (trigger={trigger})")
 
         self._set_update_state(True, trigger=trigger)
-        await self._safe_publish("updater.update_started", {
-            "trigger": trigger,
-            "version": version
-        })
+        await self._safe_publish("updater.update_started", {"trigger": trigger, "version": version})
 
         # ШАГ 3: Настраиваем callbacks для прогресса
         try:
-            loop = self._loop if (self._loop is not None and self._loop.is_running()) else asyncio.get_running_loop()
+            loop = (
+                self._loop
+                if (self._loop is not None and self._loop.is_running())
+                else asyncio.get_running_loop()
+            )
         except RuntimeError:
             loop = None
         self._last_download_percent = 0
         self._last_install_percent = 0
         if loop is not None:
-            self.updater.on_download_progress = lambda downloaded, total: asyncio.run_coroutine_threadsafe(  # type: ignore[assignment]
-                self._handle_download_progress(downloaded, total, trigger),
-                loop,
-            )
-            self.updater.on_install_progress = lambda stage, percent: asyncio.run_coroutine_threadsafe(  # type: ignore[assignment]
-                self._handle_install_progress(stage, percent, trigger),
-                loop,
-            )
+            def _download_progress_cb(downloaded: int, total: int) -> None:
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_download_progress(downloaded, total, trigger),
+                    loop,
+                )
+            self.updater.on_download_progress = _download_progress_cb  # type: ignore
+
+            def _install_progress_cb(stage: str, percent: int) -> None:
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_install_progress(stage, percent, trigger),
+                    loop,
+                )
+            self.updater.on_install_progress = _install_progress_cb  # type: ignore
         else:
             # Fallback: if no loop available, use async call directly (for tests)
             # In production, loop should always be available
@@ -307,33 +321,27 @@ class UpdaterIntegration:
         try:
             # download_and_verify
             artifact_path = await asyncio.to_thread(
-                self.updater.download_and_verify,
-                manifest["artifact"]
+                self.updater.download_and_verify, manifest["artifact"]
             )
 
             # install_update
             await asyncio.to_thread(
-                self.updater.install_update,
-                artifact_path,
-                manifest["artifact"]
+                self.updater.install_update, artifact_path, manifest["artifact"]
             )
 
             # ШАГ 5: Успешно завершено
-            await self._safe_publish("updater.update_completed", {
-                "trigger": trigger,
-                "version": version
-            })
+            await self._safe_publish(
+                "updater.update_completed", {"trigger": trigger, "version": version}
+            )
 
             # relaunch
             await asyncio.to_thread(self.updater.relaunch_app)
             return True
 
         except Exception as exc:
-            await self._safe_publish("updater.update_failed", {
-                "trigger": trigger,
-                "error": str(exc),
-                "version": version
-            })
+            await self._safe_publish(
+                "updater.update_failed", {"trigger": trigger, "error": str(exc), "version": version}
+            )
             raise
         finally:
             self.updater.on_download_progress = None
@@ -347,7 +355,6 @@ class UpdaterIntegration:
         self.is_running = False
         self._set_update_state(False, trigger="stop")
         logger.info("✅ UpdaterIntegration остановлен")
-
 
     def _should_migrate_on_start(self) -> bool:
         """Миграция отключена по политике установки (/Applications)."""
@@ -388,13 +395,18 @@ class UpdaterIntegration:
                 self.state_manager.set_update_in_progress(active)
             except Exception:
                 pass
-            
+
             # Shadow-mode: diagnostic logging for accessor vs state_data comparison
             try:
-                feature_config = self._config_loader._load_config().get("features", {}).get("use_events_for_update_status", {})
+                feature_config = (
+                    self._config_loader._load_config()
+                    .get("features", {})
+                    .get("use_events_for_update_status", {})
+                )
                 if feature_config.get("enabled", False):
                     # Compare accessor vs state_data
                     from integration.core.selectors import is_update_in_progress
+
                     state_data_value = is_update_in_progress(self.state_manager)
                     accessor_value = self._update_in_progress
                     if state_data_value != accessor_value:
@@ -413,7 +425,7 @@ class UpdaterIntegration:
                         )
             except Exception:
                 pass  # Don't fail if feature flag check fails
-            
+
             # Публикуем событие изменения состояния (shadow-mode)
             try:
                 if self._loop is not None and self._loop.is_running():
@@ -448,10 +460,14 @@ class UpdaterIntegration:
             self.state_manager.set_update_in_progress(active)
         except Exception:
             pass
-        
+
         # Shadow-mode: diagnostic logging for accessor vs state_data comparison
         try:
-            feature_config = self._config_loader._load_config().get("features", {}).get("use_events_for_update_status", {})
+            feature_config = (
+                self._config_loader._load_config()
+                .get("features", {})
+                .get("use_events_for_update_status", {})
+            )
             if feature_config.get("enabled", False):
                 # Compare accessor vs state_data
                 state_data_value = selector_is_update_in_progress(self.state_manager)
@@ -472,7 +488,7 @@ class UpdaterIntegration:
                     )
         except Exception as e:
             logger.debug(f"[UPDATER] Shadow-mode error: {e}")
-        
+
         logger.debug("UpdaterIntegration: update_in_progress=%s (trigger=%s)", active, trigger)
         # Публикуем событие изменения состояния
         try:
@@ -540,7 +556,7 @@ class UpdaterIntegration:
     async def _safe_publish(self, event_type: str, payload: dict[str, Any]) -> None:
         """
         Safely publish event to EventBus.
-        
+
         This method can be called from:
         - Async context (await directly)
         - Sync context (via run_coroutine_threadsafe)

@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StepLedgerEntry:
     """Persistent state for a single permission step."""
+
     permission: PermissionId
     mode: StepMode
     state: StepState = StepState.UNKNOWN
@@ -55,6 +56,7 @@ class StepLedgerEntry:
 @dataclass
 class LedgerRecord:
     """Complete wizard state stored to disk."""
+
     session_id: str
     phase: Phase
     created_at: float
@@ -78,6 +80,7 @@ class LedgerStore:
     JSON persistence with atomic replace.
     Stores ledger under Application Support.
     """
+
     def __init__(self, path: str):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -129,7 +132,9 @@ class LedgerStore:
                 restart_count=data.get("restart_count", 0),
                 needs_restart=data.get("needs_restart", False),
                 restart_unavailable=data.get("restart_unavailable", False),
-                current_step=PermissionId(data["current_step"]) if data.get("current_step") else None,
+                current_step=PermissionId(data["current_step"])
+                if data.get("current_step")
+                else None,
                 steps=steps,
                 app_bundle_id=data.get("app_bundle_id"),
                 app_path=data.get("app_path"),

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class TTSIntegration:
     """Интеграция для обработки текста в речь"""
-    
+
     def __init__(
         self,
         event_bus: EventBus,
@@ -37,12 +37,14 @@ class TTSIntegration:
         self._voice = self.config.get("voice", "ru-RU")
         self._rate = self.config.get("rate", 200)  # Скорость речи
         self._volume = self.config.get("volume", 0.5)  # Громкость
-    
+
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
         try:
-            logger.info(f"TTS Integration initializing (enabled={self._enabled}, voice={self._voice})")
-            
+            logger.info(
+                f"TTS Integration initializing (enabled={self._enabled}, voice={self._voice})"
+            )
+
             # Проверяем доступность системного TTS
             if platform.system() == "Darwin":  # macOS
                 try:
@@ -59,31 +61,29 @@ class TTSIntegration:
             else:
                 logger.warning(f"TTS not supported on {platform.system()} - TTS will be disabled")
                 self._enabled = False
-            
+
             return True
         except Exception as e:
             logger.error(f"TTS Integration initialization failed: {e}")
             return False
-    
+
     async def start(self) -> bool:
         """Запуск интеграции"""
         try:
             if not self._enabled:
                 logger.info("TTS Integration disabled - skipping subscription")
                 return True
-            
+
             # Подписываемся на события speech.playback.request
             await self.event_bus.subscribe(
-                "speech.playback.request", 
-                self._on_speech_request, 
-                EventPriority.MEDIUM
+                "speech.playback.request", self._on_speech_request, EventPriority.MEDIUM
             )
             logger.info("TTS Integration started - subscribed to speech.playback.request")
             return True
         except Exception as e:
             logger.error(f"TTS Integration start failed: {e}")
             return False
-    
+
     async def stop(self) -> bool:
         """Остановка интеграции"""
         try:
@@ -96,7 +96,7 @@ class TTSIntegration:
         except Exception as e:
             logger.error(f"TTS Integration stop failed: {e}")
             return False
-    
+
     async def _on_speech_request(self, event: dict[str, Any]) -> None:
         """Обработка запроса на синтез речи"""
         try:
@@ -104,25 +104,25 @@ class TTSIntegration:
             text = data.get("text", "")
             voice = data.get("voice", self._voice)
             category = data.get("category", "tts")
-            
+
             if not text:
                 logger.warning("TTS request without text")
                 return
-            
+
             logger.info(f"TTS request: '{text[:50]}...' (voice={voice}, category={category})")
-            
+
             # Воспроизводим речь через системный TTS
             await self._speak_text(text, voice)
-            
+
         except Exception as e:
             logger.error(f"Error processing TTS request: {e}")
             await self.error_handler.handle(
                 e,
                 category="runtime",
                 severity="warning",
-                context={"where": "TTSIntegration._on_speech_request"}
+                context={"where": "TTSIntegration._on_speech_request"},
             )
-    
+
     async def _speak_text(self, text: str, voice: str | None = None) -> None:
         """Воспроизведение текста через системный TTS"""
         # DISABLED: Local TTS is completely removed per user request.

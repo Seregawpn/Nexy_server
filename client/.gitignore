@@ -4,6 +4,7 @@ dist/
 packaging/build/
 packaging/dist/
 *.spec
+!packaging/Nexy.spec
 *.pkg
 *.dmg
 *-app-for-notarization.zip

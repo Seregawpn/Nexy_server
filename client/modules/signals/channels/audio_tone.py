@@ -54,9 +54,9 @@ def _generate_tone_bytes(
         s = math.sin(2.0 * math.pi * hz * t)
         # Apply simple linear fade-in/out
         if n < fade_samples:
-            s *= (n / float(fade_samples))
+            s *= n / float(fade_samples)
         elif total_samples - n < fade_samples:
-            s *= ((total_samples - n) / float(fade_samples))
+            s *= (total_samples - n) / float(fade_samples)
 
         s *= volume
         val = int(max(-1.0, min(1.0, s)) * max_i16)

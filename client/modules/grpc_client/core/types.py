@@ -9,6 +9,7 @@ from typing import Callable
 
 class ConnectionState(Enum):
     """Состояния соединения"""
+
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -18,6 +19,7 @@ class ConnectionState(Enum):
 
 class RetryStrategy(Enum):
     """Стратегии повторных попыток"""
+
     NONE = "none"
     LINEAR = "linear"
     EXPONENTIAL = "exponential"
@@ -27,6 +29,7 @@ class RetryStrategy(Enum):
 @dataclass
 class ServerConfig:
     """Конфигурация сервера"""
+
     address: str
     port: int
     use_ssl: bool = False
@@ -47,6 +50,7 @@ class ServerConfig:
 @dataclass
 class ConnectionMetrics:
     """Метрики соединения"""
+
     total_connections: int = 0
     successful_connections: int = 0
     failed_connections: int = 0
@@ -61,6 +65,7 @@ class ConnectionMetrics:
 @dataclass
 class RetryConfig:
     """Конфигурация retry механизма"""
+
     max_attempts: int = 3
     base_delay: float = 1.0
     strategy: RetryStrategy = RetryStrategy.EXPONENTIAL
@@ -71,6 +76,7 @@ class RetryConfig:
 @dataclass
 class HealthCheckConfig:
     """Конфигурация health check"""
+
     enabled: bool = True
     interval: float = 30.0
     timeout: float = 5.0

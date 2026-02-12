@@ -18,37 +18,37 @@ logger = logging.getLogger(__name__)
 
 class ConnectionManager:
     """Менеджер gRPC соединений"""
-    
+
     def __init__(self):
         self.servers: dict[str, ServerConfig] = {}
         self.current_server: str | None = None
         self.connection_state = ConnectionState.DISCONNECTED
         self.metrics = ConnectionMetrics()
-        
+
         # gRPC компоненты
         self.channel: grpc.aio.Channel | None = None
         self.stub: Any | None = None
 
         # Event loop, в котором создан gRPC channel (источник истины для aio вызовов)
         self._channel_loop: asyncio.AbstractEventLoop | None = None
-        
+
         # Thread safety
         self._connection_lock = asyncio.Lock()
-        
+
         # Health checker
         self.health_checker = HealthChecker()
-        
+
         # Callbacks
         self.on_connection_changed: Callable[[ConnectionState], None] | None = None
         self.on_error: Callable[[Exception, str], None] | None = None
-    
+
     def add_server(self, name: str, config: ServerConfig):
         """Добавляет сервер в конфигурацию"""
         self.servers[name] = config
         if not self.current_server:
             self.current_server = name
         logger.info(f"🌐 Добавлен сервер {name}: {config.address}:{config.port}")
-    
+
     async def connect(self, server_name: str | None = None) -> bool:
         """Подключается к серверу"""
         try:
@@ -77,7 +77,7 @@ class ConnectionManager:
         except Exception as e:
             logger.error(f"❌ Ошибка подключения: {e}")
             return False
-    
+
     async def _connect(self) -> bool:
         """Внутренний метод подключения"""
         try:
@@ -95,7 +95,9 @@ class ConnectionManager:
             address = f"{server_config.address}:{server_config.port}"
 
             # DEBUG: Логируем конфигурацию сервера
-            logger.info(f"🔌 [DEBUG] Server config - address: {address}, use_ssl: {server_config.use_ssl}, ssl_verify: {server_config.ssl_verify}")
+            logger.info(
+                f"🔌 [DEBUG] Server config - address: {address}, use_ssl: {server_config.use_ssl}, ssl_verify: {server_config.ssl_verify}"
+            )
 
             if self.channel:
                 try:
@@ -110,10 +112,14 @@ class ConnectionManager:
             current_loop = asyncio.get_running_loop()
             self._channel_loop = current_loop
             loop_id = id(current_loop)
-            logger.info(f"🔌 [GRPC_LOOP] Creating channel in loop={loop_id} (running={current_loop.is_running()})")
-            
+            logger.info(
+                f"🔌 [GRPC_LOOP] Creating channel in loop={loop_id} (running={current_loop.is_running()})"
+            )
+
             # Создаем канал
-            logger.info(f"🔌 [DEBUG] Создание канала - use_ssl={server_config.use_ssl}, ssl_verify={server_config.ssl_verify}")
+            logger.info(
+                f"🔌 [DEBUG] Создание канала - use_ssl={server_config.use_ssl}, ssl_verify={server_config.ssl_verify}"
+            )
             if server_config.use_ssl:
                 # Создаем SSL credentials с учётом ssl_verify
                 logger.info(f"🔌 [DEBUG] SSL enabled, ssl_verify={server_config.ssl_verify}")
@@ -121,33 +127,30 @@ class ConnectionManager:
                     # Проверять сертификат (по умолчанию - системные CA)
                     logger.info(f"🔌 [DEBUG] Using system CA certificates")
                     credentials = grpc.ssl_channel_credentials()
-                    self.channel = grpc.aio.secure_channel(
-                        address,
-                        credentials,
-                        options=options
-                    )
+                    self.channel = grpc.aio.secure_channel(address, credentials, options=options)
                 else:
                     # Для self-signed сертификата загружаем сертификат и используем secure_channel
-                    logger.warning(f"⚠️ SSL verification disabled for {address} - используется self-signed сертификат")
+                    logger.warning(
+                        f"⚠️ SSL verification disabled for {address} - используется self-signed сертификат"
+                    )
                     logger.info(f"🔌 [DEBUG] Attempting to load self-signed certificate...")
-                    
+
                     # Пытаемся загрузить сертификат production сервера
                     try:
                         from integration.utils.resource_path import get_resource_path
-                        cert_path = get_resource_path('resources/certs/production_server.pem')
+
+                        cert_path = get_resource_path("resources/certs/production_server.pem")
                         logger.info(f"🔌 [DEBUG] Certificate path resolved to: {cert_path}")
-                        with open(cert_path, 'rb') as f:
+                        with open(cert_path, "rb") as f:
                             root_cert = f.read()
                         logger.info(f"🔌 [DEBUG] Certificate loaded, size: {len(root_cert)} bytes")
                         logger.info(f"✅ Загружен self-signed сертификат: {cert_path}")
                         credentials = grpc.ssl_channel_credentials(root_certificates=root_cert)
                         logger.info(f"🔌 [DEBUG] SSL credentials created with custom certificate")
                         # Добавляем опцию для отключения проверки имени хоста
-                        options.append(('grpc.ssl_target_name_override', server_config.address))
+                        options.append(("grpc.ssl_target_name_override", server_config.address))
                         self.channel = grpc.aio.secure_channel(
-                            address,
-                            credentials,
-                            options=options
+                            address, credentials, options=options
                         )
                     except Exception as e:
                         logger.error(f"❌ Не удалось загрузить сертификат: {e}")
@@ -155,35 +158,32 @@ class ConnectionManager:
                         self.channel = grpc.aio.insecure_channel(address, options=options)
             else:
                 self.channel = grpc.aio.insecure_channel(address, options=options)
-            
+
             # Создаем stub
             self.stub = self._create_stub()
-            
+
             # Ждем готовности канала
             try:
-                await asyncio.wait_for(
-                    self.channel.channel_ready(),
-                    timeout=server_config.timeout
-                )
-                
+                await asyncio.wait_for(self.channel.channel_ready(), timeout=server_config.timeout)
+
                 self.connection_state = ConnectionState.CONNECTED
                 self.metrics.successful_connections += 1
                 self.metrics.last_connection_time = time.time()
                 self._notify_connection_changed()
-                
+
                 # Запускаем health checker
                 self.health_checker.start(self._check_connection_health)
-                
+
                 logger.info(f"✅ Подключение к {address} установлено (loop={loop_id})")
                 return True
-                
+
             except asyncio.TimeoutError:
                 logger.error(f"⏰ Таймаут подключения к {address}")
                 self.connection_state = ConnectionState.FAILED
                 self.metrics.failed_connections += 1
                 self._notify_connection_changed()
                 return False
-                
+
         except Exception as e:
             logger.error(f"❌ Ошибка подключения: {e}")
             self.connection_state = ConnectionState.FAILED
@@ -191,38 +191,49 @@ class ConnectionManager:
             self.metrics.last_error = str(e)
             self._notify_connection_changed()
             return False
-    
+
     def _create_grpc_options(self, server_config: ServerConfig) -> list[tuple[str, Any]]:
         """Создает опции gRPC"""
         options = [
-            ('grpc.max_send_message_length', server_config.max_message_size),
-            ('grpc.max_receive_message_length', server_config.max_message_size),
-            ('grpc.max_metadata_size', 1024 * 1024),
+            ("grpc.max_send_message_length", server_config.max_message_size),
+            ("grpc.max_receive_message_length", server_config.max_message_size),
+            ("grpc.max_metadata_size", 1024 * 1024),
         ]
 
         # HTTP/2 ALPN для reverse proxy
         if server_config.use_http2:
-            options.append(('grpc.http2.true_binary', 1))
+            options.append(("grpc.http2.true_binary", 1))
 
         # Keepalive настройки (если включено)
         if server_config.keepalive:
             # Консервативные keepalive-настройки, чтобы избежать ENHANCE_YOUR_CALM/too_many_pings
-            options.extend([
-                ('grpc.keepalive_time_ms', max(60000, server_config.keep_alive_time * 1000)),  # >= 60s
-                ('grpc.keepalive_timeout_ms', max(5000, server_config.keep_alive_timeout * 1000)),
-                ('grpc.keepalive_permit_without_calls', server_config.keep_alive_permit_without_calls),
-                ('grpc.http2.max_pings_without_data', 1),
-                ('grpc.http2.min_time_between_pings_ms', 60000),
-                ('grpc.http2.min_ping_interval_without_data_ms', 600000),
-            ])
+            options.extend(
+                [
+                    (
+                        "grpc.keepalive_time_ms",
+                        max(60000, server_config.keep_alive_time * 1000),
+                    ),  # >= 60s
+                    (
+                        "grpc.keepalive_timeout_ms",
+                        max(5000, server_config.keep_alive_timeout * 1000),
+                    ),
+                    (
+                        "grpc.keepalive_permit_without_calls",
+                        server_config.keep_alive_permit_without_calls,
+                    ),
+                    ("grpc.http2.max_pings_without_data", 1),
+                    ("grpc.http2.min_time_between_pings_ms", 60000),
+                    ("grpc.http2.min_ping_interval_without_data_ms", 600000),
+                ]
+            )
 
         return options
-    
+
     def _create_stub(self):
         """Создает gRPC stub (должен быть переопределен в наследниках)"""
         # Это базовый класс, stub создается в наследниках
         return None
-    
+
     def _check_connection_health(self) -> bool:
         """Проверяет здоровье соединения"""
         try:
@@ -232,20 +243,20 @@ class ConnectionManager:
             return False
         except Exception:
             return False
-    
+
     async def disconnect(self):
         """Отключается от сервера"""
         try:
             async with self._connection_lock:
                 # Останавливаем health checker
                 self.health_checker.stop()
-                
+
                 if self.channel:
                     await self.channel.close()
                     self.channel = None
                     self.stub = None
                 self._channel_loop = None
-                
+
                 self.connection_state = ConnectionState.DISCONNECTED
                 self._notify_connection_changed()
                 logger.info("🔌 Отключение от сервера")
@@ -255,7 +266,7 @@ class ConnectionManager:
     def get_channel_loop(self) -> asyncio.AbstractEventLoop | None:
         """Возвращает loop, в котором создан gRPC channel."""
         return self._channel_loop
-    
+
     async def reconnect(self) -> bool:
         """Переподключается к серверу"""
         try:
@@ -266,41 +277,41 @@ class ConnectionManager:
         except Exception as e:
             logger.error(f"❌ Ошибка переподключения: {e}")
             return False
-    
+
     async def switch_server(self, server_name: str) -> bool:
         """Переключается на другой сервер"""
         try:
             if server_name not in self.servers:
                 logger.error(f"❌ Сервер {server_name} не найден")
                 return False
-            
+
             logger.info(f"🔄 Переключение на сервер {server_name}")
             self.current_server = server_name
             return await self.reconnect()
         except Exception as e:
             logger.error(f"❌ Ошибка переключения сервера: {e}")
             return False
-    
+
     def get_connection_state(self) -> ConnectionState:
         """Возвращает текущее состояние соединения"""
         return self.connection_state
-    
+
     def get_metrics(self) -> ConnectionMetrics:
         """Возвращает метрики соединения"""
         return self.metrics
-    
+
     def is_connected(self) -> bool:
         """Проверяет, подключен ли клиент"""
         return self.connection_state == ConnectionState.CONNECTED
-    
+
     def set_connection_callback(self, callback: Callable[[ConnectionState], None]):
         """Устанавливает callback для изменений состояния соединения"""
         self.on_connection_changed = callback
-    
+
     def set_error_callback(self, callback: Callable[[Exception, str], None]):
         """Устанавливает callback для ошибок"""
         self.on_error = callback
-    
+
     def _notify_connection_changed(self):
         """Уведомляет о изменении состояния соединения"""
         if self.on_connection_changed:
@@ -308,7 +319,7 @@ class ConnectionManager:
                 self.on_connection_changed(self.connection_state)
             except Exception as e:
                 logger.error(f"❌ Ошибка в callback соединения: {e}")
-    
+
     def _notify_error(self, error: Exception, context: str):
         """Уведомляет об ошибке"""
         if self.on_error:
@@ -316,7 +327,7 @@ class ConnectionManager:
                 self.on_error(error, context)
             except Exception as e:
                 logger.error(f"❌ Ошибка в error callback: {e}")
-    
+
     async def cleanup(self):
         """Очистка ресурсов"""
         try:

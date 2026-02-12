@@ -97,10 +97,14 @@ class UpdateNotificationIntegration(BaseIntegration):
             return True
 
         # Подписываемся на события обновления
-        await self._subscribe("updater.update_started", self._on_update_started, EventPriority.MEDIUM)
+        await self._subscribe(
+            "updater.update_started", self._on_update_started, EventPriority.MEDIUM
+        )
         await self._subscribe("updater.download_progress", self._on_progress, EventPriority.MEDIUM)
         await self._subscribe("updater.install_progress", self._on_progress, EventPriority.MEDIUM)
-        await self._subscribe("updater.update_completed", self._on_update_completed, EventPriority.MEDIUM)
+        await self._subscribe(
+            "updater.update_completed", self._on_update_completed, EventPriority.MEDIUM
+        )
         await self._subscribe("updater.update_failed", self._on_update_failed, EventPriority.MEDIUM)
 
         logger.info("[UPDATE_NOTIFY] Подписки на события обновления зарегистрированы")
@@ -182,9 +186,7 @@ class UpdateNotificationIntegration(BaseIntegration):
             self._last_announce_ts = time.monotonic()
 
         stage_text = "downloading" if stage == "download" else "installing"
-        logger.debug(
-            "[UPDATE_NOTIFY] progress stage=%s percent=%s", stage, percent
-        )
+        logger.debug("[UPDATE_NOTIFY] progress stage=%s percent=%s", stage, percent)
         await self._speak(f"Nexy update: {stage_text} {percent} percent completed.")
 
     async def _on_update_completed(self, event: dict[str, Any]) -> None:
@@ -241,7 +243,10 @@ class UpdateNotificationIntegration(BaseIntegration):
 
         # Проверяем интервал времени между уведомлениями
         now = time.monotonic()
-        if self._last_announce_ts > 0 and now - self._last_announce_ts < self.config.progress_interval_sec:
+        if (
+            self._last_announce_ts > 0
+            and now - self._last_announce_ts < self.config.progress_interval_sec
+        ):
             return False
 
         # Озвучиваем только при достижении или превышении порога
@@ -278,7 +283,9 @@ class UpdateNotificationIntegration(BaseIntegration):
             # GrpcClientIntegration обработает этот запрос и вернет аудио через grpc.response.audio
             session_id = f"update_notification_{int(time.time() * 1000)}"
 
-            logger.info(f"[UPDATE_NOTIFY] Отправляем текст для озвучки через gRPC TTS: '{text[:50]}...'")
+            logger.info(
+                f"[UPDATE_NOTIFY] Отправляем текст для озвучки через gRPC TTS: '{text[:50]}...'"
+            )
 
             # Используем grpc.tts_request для серверной генерации TTS
             # Это правильный путь: gRPC → сервер TTS → аудио → SpeechPlaybackIntegration

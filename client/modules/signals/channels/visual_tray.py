@@ -17,8 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class TrayBlinker(Protocol):
-    async def blink(self, pattern: str, duration_ms: int = 120) -> None:
-        ...
+    async def blink(self, pattern: str, duration_ms: int = 120) -> None: ...
 
 
 class VisualTrayChannel(SignalChannel):
@@ -31,7 +30,8 @@ class VisualTrayChannel(SignalChannel):
     async def emit(self, req: SignalRequest) -> None:
         # Minimal mapping: reuse pattern name and duration
         try:
-            await self._blinker.blink(pattern=req.pattern.value, duration_ms=max(60, req.duration_ms))
+            await self._blinker.blink(
+                pattern=req.pattern.value, duration_ms=max(60, req.duration_ms)
+            )
         except Exception as e:
             logger.debug(f"VisualTrayChannel blink failed: {e}")
-

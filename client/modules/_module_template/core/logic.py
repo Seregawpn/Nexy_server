@@ -11,12 +11,13 @@ from .types import TemplateConfig, TemplateResult, TemplateState
 
 logger = logging.getLogger(__name__)
 
+
 class TemplateLogic:
     """
     Main logic class for the module.
     Should be testable in isolation.
     """
-    
+
     def __init__(self, config: TemplateConfig):
         self.config = config
         self.state = TemplateState.IDLE
@@ -43,17 +44,14 @@ class TemplateLogic:
         try:
             self.state = TemplateState.PROCESSING
             logger.info(f"[{self.config.name}] Processing data: {data}")
-            
+
             # --- BUSINESS LOGIC HERE ---
             # result = await do_something(data)
             processed_value = data.get("value", "default")
             # ---------------------------
-            
+
             self.state = TemplateState.READY
-            return TemplateResult(
-                success=True,
-                data={"processed": processed_value}
-            )
+            return TemplateResult(success=True, data={"processed": processed_value})
 
         except Exception as e:
             logger.error(f"[{self.config.name}] Error processing: {e}")

@@ -18,10 +18,9 @@ import threading
 import time
 from typing import Sequence
 
-from integration.utils.env_detection import is_production_env
 from config.unified_config_loader import UnifiedConfigLoader
+from integration.utils.env_detection import is_production_env
 from integration.utils.resource_path import get_user_data_dir
-from modules.instance_manager import InstanceManager, InstanceManagerConfig
 from modules.permission_restart.core.atomic_flag import AtomicRestartFlag
 from modules.permission_restart.core.config import PermissionRestartConfig
 from modules.updater.migrate import get_user_app_path
@@ -37,6 +36,7 @@ class PermissionsRestartHandler:
     - Production / packaged build: launch bundled Nexy.app via `open -a`.
     - Development (no Nexy.app): restart the current Python command.
     """
+
     _restart_guard = threading.Lock()
     _restart_in_progress = False
     _restart_lock_fd: int | None = None  # file descriptor for restart_in_progress.lock
@@ -72,25 +72,25 @@ class PermissionsRestartHandler:
         if dry_run is None:
             dry_run = bool(env_flag) and env_flag.strip().lower() in {"1", "true", "yes"}
         if env_flag and is_production_env():
-            logger.warning(
-                "[PERMISSION_RESTART] NEXY_DISABLE_AUTO_RESTART used in production"
-            )
+            logger.warning("[PERMISSION_RESTART] NEXY_DISABLE_AUTO_RESTART used in production")
 
         # Kill-switch для emergency отключения restart механизма
         if kill_switch and kill_switch.strip().lower() in {"1", "true", "yes"}:
-            logger.warning("[PERMISSION_RESTART] Kill-switch active (NEXY_KS_FIRST_RUN_RESTART) - disabling restart")
+            logger.warning(
+                "[PERMISSION_RESTART] Kill-switch active (NEXY_KS_FIRST_RUN_RESTART) - disabling restart"
+            )
             dry_run = True
             if is_production_env():
-                logger.warning(
-                    "[PERMISSION_RESTART] NEXY_KS_FIRST_RUN_RESTART used in production"
-                )
+                logger.warning("[PERMISSION_RESTART] NEXY_KS_FIRST_RUN_RESTART used in production")
 
         self._dry_run = bool(dry_run)
-        self._packaged_unavailable = False  # Флаг что .app бандл недоступен (для избежания повторных попыток)
+        self._packaged_unavailable = (
+            False  # Флаг что .app бандл недоступен (для избежания повторных попыток)
+        )
         self._last_reason: str = "unknown"
         self._last_permissions: Sequence[str] = ()
         self._config = config or PermissionRestartConfig()  # Default config if not provided
-        
+
         # Атомарный флаг перезапуска в persistent директории
         data_dir = get_user_data_dir("Nexy")
         flag_path = data_dir / "restart_completed.flag"
@@ -102,12 +102,15 @@ class PermissionsRestartHandler:
                 "проверьте доступ к Application Support",
                 flag_path,
             )
-        
+
         # Inter-process restart lock (prevents multiple concurrent restarts)
         self._restart_in_progress_lock_path = data_dir / "restart_in_progress.lock"
         self._restart_in_progress_lock_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("[PERMISSION_RESTART] restart_in_progress.lock path: %s", self._restart_in_progress_lock_path)
-        
+        logger.info(
+            "[PERMISSION_RESTART] restart_in_progress.lock path: %s",
+            self._restart_in_progress_lock_path,
+        )
+
         # Store lock_file path for InstanceManager (to pass to helper script)
         self._lock_file_path = self._get_instance_manager_lock_path()
         self._lock_grace_ms = self._get_instance_manager_lock_grace_ms()
@@ -178,7 +181,7 @@ class PermissionsRestartHandler:
         try:
             # REMOVED: _is_other_instance_running() check - moved to helper script
             # to eliminate TOCTOU race between check and actual launch
-            
+
             # Acquire inter-process restart lock (non-blocking)
             if not self._acquire_restart_file_lock():
                 logger.warning(
@@ -212,7 +215,10 @@ class PermissionsRestartHandler:
                     )
                 if restart_successful:
                     delay_sec = self._config.handler_launch_delay_ms / 1000.0
-                    logger.debug("[PERMISSION_RESTART] Sleeping %.2fs to allow dev process to boot", delay_sec)
+                    logger.debug(
+                        "[PERMISSION_RESTART] Sleeping %.2fs to allow dev process to boot",
+                        delay_sec,
+                    )
                     time.sleep(delay_sec)
                 return
 
@@ -260,7 +266,9 @@ class PermissionsRestartHandler:
                     restart_successful = True
 
                 delay_sec = self._config.handler_launch_delay_ms / 1000.0
-                logger.debug("[PERMISSION_RESTART] Sleeping %.2fs to allow dev process to boot", delay_sec)
+                logger.debug(
+                    "[PERMISSION_RESTART] Sleeping %.2fs to allow dev process to boot", delay_sec
+                )
                 time.sleep(delay_sec)
 
         except Exception as exc:
@@ -294,7 +302,9 @@ class PermissionsRestartHandler:
             return env_lock_file
         try:
             raw_config = UnifiedConfigLoader.get_instance()._load_config()
-            instance_cfg = raw_config.get("instance_manager", {}) if isinstance(raw_config, dict) else {}
+            instance_cfg = (
+                raw_config.get("instance_manager", {}) if isinstance(raw_config, dict) else {}
+            )
             lock_file = instance_cfg.get("lock_file", None)
             if lock_file:
                 return lock_file
@@ -306,37 +316,38 @@ class PermissionsRestartHandler:
         """Get lock grace window (ms) from config or use default."""
         try:
             raw_config = UnifiedConfigLoader.get_instance()._load_config()
-            instance_cfg = raw_config.get("instance_manager", {}) if isinstance(raw_config, dict) else {}
+            instance_cfg = (
+                raw_config.get("instance_manager", {}) if isinstance(raw_config, dict) else {}
+            )
             grace_ms = instance_cfg.get("lock_grace_ms")
             if isinstance(grace_ms, (int, float)) and grace_ms >= 0:
                 return int(grace_ms)
         except Exception:
             pass
         return 1500
+
     def _acquire_restart_file_lock(self) -> bool:
         """Acquire inter-process restart lock. Returns False if already held."""
         try:
             # Try to acquire exclusive lock (non-blocking)
             # NOTE: Do NOT unlink stale files before flock - this can bypass mutual exclusion
             # if the file is still held by another process (different inode attack)
-            fd = os.open(
-                str(self._restart_in_progress_lock_path),
-                os.O_CREAT | os.O_WRONLY,
-                0o644
-            )
+            fd = os.open(str(self._restart_in_progress_lock_path), os.O_CREAT | os.O_WRONLY, 0o644)
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                
+
                 # Now we hold the lock - check if it's stale and update mtime
                 # TTL check happens AFTER acquiring lock to prevent race
                 try:
                     mtime = self._restart_in_progress_lock_path.stat().st_mtime
                     age = time.time() - mtime
                     if age > 60.0:
-                        logger.info("[PERMISSION_RESTART] Acquired stale restart lock (age=%.1fs)", age)
+                        logger.info(
+                            "[PERMISSION_RESTART] Acquired stale restart lock (age=%.1fs)", age
+                        )
                 except Exception:
                     pass  # File might not exist yet, that's OK
-                
+
                 # Write PID and timestamp (updates mtime)
                 os.ftruncate(fd, 0)
                 os.write(fd, f"{os.getpid()}:{time.time()}".encode())
@@ -354,7 +365,7 @@ class PermissionsRestartHandler:
                         logger.warning(
                             "[PERMISSION_RESTART] Lock appears stale (age=%.1fs) but still held - "
                             "another process may be in long restart",
-                            age
+                            age,
                         )
                 except Exception:
                     pass
@@ -631,7 +642,9 @@ class PermissionsRestartHandler:
             logger.debug("[PERMISSION_RESTART] Spawned delayed relaunch helper (label=%s)", label)
             return True
         except Exception as exc:
-            logger.error("[PERMISSION_RESTART] Failed to spawn relaunch helper (%s): %s", label, exc)
+            logger.error(
+                "[PERMISSION_RESTART] Failed to spawn relaunch helper (%s): %s", label, exc
+            )
             return False
 
     def _launch_dev_process(self) -> None:
@@ -681,7 +694,9 @@ class PermissionsRestartHandler:
                 if bundle_path.exists() and bundle_path.suffix == ".app":
                     return bundle_path
         except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("[PERMISSION_RESTART] Unable to derive bundle path from sys.executable: %s", exc)
+            logger.debug(
+                "[PERMISSION_RESTART] Unable to derive bundle path from sys.executable: %s", exc
+            )
 
         # 2. Фолбэк на конфигурационный путь
         try:

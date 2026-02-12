@@ -27,7 +27,9 @@ class PermissionChangeDetector:
 
         self._critical = set(permissions)
 
-    def process_event(self, event_type: str, payload: dict[str, object]) -> list[PermissionTransition]:
+    def process_event(
+        self, event_type: str, payload: dict[str, object]
+    ) -> list[PermissionTransition]:
         """
         Normalise raw event data and return transitions that require attention.
         """
@@ -57,7 +59,11 @@ class PermissionChangeDetector:
             if baseline_old is None:
                 baseline_old = new_status
 
-            if perm in self._critical and new_status == PermissionStatus.GRANTED and baseline_old != PermissionStatus.GRANTED:
+            if (
+                perm in self._critical
+                and new_status == PermissionStatus.GRANTED
+                and baseline_old != PermissionStatus.GRANTED
+            ):
                 transition = PermissionTransition(
                     permission=perm,
                     old_status=baseline_old,
@@ -89,7 +95,11 @@ class PermissionChangeDetector:
 
     def _extract_entries(
         self, event_type: str, payload: dict[str, object]
-    ) -> Iterator[tuple[PermissionType, PermissionStatus | None, PermissionStatus | None, str | None, str | None]]:
+    ) -> Iterator[
+        tuple[
+            PermissionType, PermissionStatus | None, PermissionStatus | None, str | None, str | None
+        ]
+    ]:
         base_session_id = _safe_str(payload.get("session_id"))
         base_source = _safe_str(payload.get("source")) or event_type
 

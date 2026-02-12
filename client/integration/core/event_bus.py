@@ -10,16 +10,19 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
+
 class EventPriority(Enum):
     """Приоритеты событий"""
+
     LOW = 1
     MEDIUM = 2
     HIGH = 3
     CRITICAL = 4
 
+
 class EventBus:
     """Система событий для интеграции модулей"""
-    
+
     def __init__(self):
         self.subscribers: dict[str, list[dict[str, Any]]] = {}
         self.event_history: list[dict[str, Any]] = []
@@ -57,30 +60,39 @@ class EventBus:
             return
 
         state["suppressed"] = int(state["suppressed"]) + 1
-    
+
     def _log_future_exception(self, fut, event_type: str, callback_name: str):
         """Callback to log exceptions from fire-and-forget futures."""
         try:
             exc = fut.exception()
             if exc:
-                logger.error(f"❌ EventBus callback failed for '{event_type}' ({callback_name}): {exc}")
+                logger.error(
+                    f"❌ EventBus callback failed for '{event_type}' ({callback_name}): {exc}"
+                )
         except Exception:
             pass
-    
+
     def attach_loop(self, loop: asyncio.AbstractEventLoop | None = None):
         """Зафиксировать основной event loop для безопасной доставки событий из любых потоков."""
         try:
             self._loop = loop or asyncio.get_running_loop()
-            logger.debug(f"EventBus: attached loop={id(self._loop)} running={self._loop.is_running() if self._loop else False}")
+            logger.debug(
+                f"EventBus: attached loop={id(self._loop)} running={self._loop.is_running() if self._loop else False}"
+            )
         except Exception as e:
             logger.debug(f"EventBus: failed to attach loop: {e}")
             self._loop = None
-    
+
     def get_loop(self) -> asyncio.AbstractEventLoop | None:
         """Получить прикрепленный event loop."""
         return self._loop
-        
-    async def subscribe(self, event_type: str, callback: Callable[..., Any], priority: EventPriority = EventPriority.MEDIUM):
+
+    async def subscribe(
+        self,
+        event_type: str,
+        callback: Callable[..., Any],
+        priority: EventPriority = EventPriority.MEDIUM,
+    ):
         """Подписка на событие"""
         try:
             if event_type not in self.subscribers:
@@ -88,60 +100,53 @@ class EventBus:
             else:
                 for sub in self.subscribers[event_type]:
                     if sub.get("callback") is callback:
-                        logger.warning(f"⚠️ Duplicate subscription ignored: event_type={event_type}, callback={callback}")
+                        logger.warning(
+                            f"⚠️ Duplicate subscription ignored: event_type={event_type}, callback={callback}"
+                        )
                         return
-            
-            subscriber = {
-                "callback": callback,
-                "priority": priority,
-                "event_type": event_type
-            }
-            
+
+            subscriber = {"callback": callback, "priority": priority, "event_type": event_type}
+
             self.subscribers[event_type].append(subscriber)
-            
+
             # Сортируем по приоритету (высокий приоритет первым)
             self.subscribers[event_type].sort(key=lambda x: x["priority"].value, reverse=True)
-            
+
             logger.info(f"📝 Подписка на событие: {event_type} (приоритет: {priority.name})")
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка подписки на событие {event_type}: {e}")
-    
+
     async def unsubscribe(self, event_type: str, callback: Callable[..., Any]):
         """Отписка от события"""
         try:
             if event_type in self.subscribers:
                 self.subscribers[event_type] = [
-                    sub for sub in self.subscribers[event_type] 
-                    if sub["callback"] != callback
+                    sub for sub in self.subscribers[event_type] if sub["callback"] != callback
                 ]
-                
+
                 if not self.subscribers[event_type]:
                     del self.subscribers[event_type]
-                
+
                 logger.info(f"📝 Отписка от события: {event_type}")
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка отписки от события {event_type}: {e}")
-    
+
     async def publish(self, event_type: str, data: dict[str, Any] | None = None):
         """Публикация события"""
         try:
             if data is None:
                 data = {}
-            
-            event = {
-                "type": event_type,
-                "data": data,
-                "timestamp": asyncio.get_event_loop().time()
-            }
-            
+
+            event = {"type": event_type, "data": data, "timestamp": asyncio.get_event_loop().time()}
+
             # Добавляем в историю (кроме high-frequency событий)
             if event_type not in self._exclude_from_history:
                 self.event_history.append(event)
                 if len(self.event_history) > self.max_history:
                     self.event_history.pop(0)
-            
+
             # Уведомляем подписчиков
             subs_cnt = len(self.subscribers.get(event_type, []))
             if event_type == "app.mode_changed":
@@ -159,10 +164,18 @@ class EventBus:
                             # Быстрые события: не блокируем публикацию
                             if event_type in self._fast_events:
                                 try:
-                                    if self._loop and self._loop.is_running() and self._loop != asyncio.get_event_loop():
-                                        fut = asyncio.run_coroutine_threadsafe(cb(event), self._loop)
+                                    if (
+                                        self._loop
+                                        and self._loop.is_running()
+                                        and self._loop != asyncio.get_event_loop()
+                                    ):
+                                        fut = asyncio.run_coroutine_threadsafe(
+                                            cb(event), self._loop
+                                        )
                                         fut.add_done_callback(
-                                            lambda f, et=event_type, cn=str(cb): self._log_future_exception(f, et, cn)
+                                            lambda f, et=event_type, cn=str(cb): (
+                                                self._log_future_exception(f, et, cn)
+                                            )
                                         )
                                         self._debug_log_event(
                                             event_type,
@@ -183,10 +196,16 @@ class EventBus:
                                     await cb(event)
                             else:
                                 # Стандартный режим: сохраняем прежнюю семантику
-                                if self._loop and self._loop.is_running() and self._loop != asyncio.get_event_loop():
+                                if (
+                                    self._loop
+                                    and self._loop.is_running()
+                                    and self._loop != asyncio.get_event_loop()
+                                ):
                                     fut = asyncio.run_coroutine_threadsafe(cb(event), self._loop)
                                     fut.add_done_callback(
-                                        lambda f, et=event_type, cn=str(cb): self._log_future_exception(f, et, cn)
+                                        lambda f, et=event_type, cn=str(cb): (
+                                            self._log_future_exception(f, et, cn)
+                                        )
                                     )
                                     self._debug_log_event(
                                         event_type,
@@ -212,27 +231,28 @@ class EventBus:
                         logger.error(f"❌ Ошибка в обработчике события {event_type}: {e}")
 
             self._debug_log_event(event_type, "published", f"📢 Событие опубликовано: {event_type}")
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка публикации события {event_type}: {e}")
-    
-    def get_event_history(self, event_type: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+
+    def get_event_history(
+        self, event_type: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Получить историю событий"""
         try:
             if event_type:
                 filtered_history = [
-                    event for event in self.event_history 
-                    if event["type"] == event_type
+                    event for event in self.event_history if event["type"] == event_type
                 ]
             else:
                 filtered_history = self.event_history
-            
+
             return filtered_history[-limit:]
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка получения истории событий: {e}")
             return []
-    
+
     def get_subscribers_count(self, event_type: str | None = None) -> int:
         """Получить количество подписчиков"""
         try:
@@ -240,16 +260,16 @@ class EventBus:
                 return len(self.subscribers.get(event_type, []))
             else:
                 return sum(len(subs) for subs in self.subscribers.values())
-                
+
         except Exception as e:
             logger.error(f"❌ Ошибка подсчета подписчиков: {e}")
             return 0
-    
+
     def get_status(self) -> dict[str, Any]:
         """Получить статус EventBus"""
         return {
             "subscribers_count": self.get_subscribers_count(),
             "event_types": list(self.subscribers.keys()),
             "history_size": len(self.event_history),
-            "max_history": self.max_history
+            "max_history": self.max_history,
         }

@@ -18,12 +18,12 @@ from .types import (
 __all__ = [
     "GrpcClient",
     "ConnectionState",
-    "RetryStrategy", 
+    "RetryStrategy",
     "ServerConfig",
     "ConnectionMetrics",
     "RetryConfig",
     "HealthCheckConfig",
     "RetryManager",
     "HealthChecker",
-    "ConnectionManager"
+    "ConnectionManager",
 ]

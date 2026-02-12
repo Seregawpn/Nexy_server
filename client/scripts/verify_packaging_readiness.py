@@ -5,6 +5,7 @@ This script provides a lightweight signal that the client is ready to be package
 It does NOT build artifacts; it checks for required files and runs a subset of
 pre-packaging validations.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

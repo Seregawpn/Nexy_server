@@ -35,6 +35,7 @@ _GOOGLE_SR_AVAILABLE = True  # optimistically assume available until checked
 @dataclass
 class VoiceRecognitionConfig:
     """Конфигурация распознавания речи"""
+
     timeout_sec: float | None = None  # None = без лимита (завершится при тишине)
     simulate: bool = False
     simulate_success_rate: float = 0.7  # 70% успеха по умолчанию
@@ -63,7 +64,7 @@ class VoiceRecognitionIntegration:
         self._recognition_task: asyncio.Task[Any] | None = None
         self._initialized: bool = False
         self._running: bool = False
-        
+
         # GoogleSRController (Input)
         self._google_sr_controller: Any | None = None  # type: ignore[assignment]
 
@@ -75,7 +76,7 @@ class VoiceRecognitionIntegration:
         self._mic_closed_dedup_window_sec: float = 0.5
         # Single-flight guard для сериализации start/stop переходов аудио.
         self._audio_transition_lock = asyncio.Lock()
-        
+
         # NOTE: _first_run_in_progress cache removed - use selectors.is_first_run_in_progress() instead
         # Если распознавание завершилось при активном PTT — публикацию откладываем до RELEASE
         self._defer_result_until_stop: bool = False
@@ -96,13 +97,19 @@ class VoiceRecognitionIntegration:
         # Checks mostly covered by GoogleSRController internal checks
         # Assuming SpeechRecognition is present
         return True
-        
+
     async def initialize(self) -> bool:
         try:
             # Подписки на события записи/прерывания
-            await self.event_bus.subscribe("voice.recording_start", self._on_recording_start, EventPriority.HIGH)
-            await self.event_bus.subscribe("voice.recording_stop", self._on_recording_stop, EventPriority.HIGH)
-            await self.event_bus.subscribe("app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM)
+            await self.event_bus.subscribe(
+                "voice.recording_start", self._on_recording_start, EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "voice.recording_stop", self._on_recording_stop, EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM
+            )
 
             # NOTE: Больше не подписываемся на события first_run
             # Вместо этого используем selector is_first_run_in_progress() для проверки
@@ -110,17 +117,17 @@ class VoiceRecognitionIntegration:
             # Инициализация контроллера перенесена в start()
             # Это предотвращает ранний доступ к микрофону (AVAudioSession)
             # до того, как FirstRunPermissionsIntegration даст добро.
-            
+
             self._initialized = True
             logger.info("VoiceRecognitionIntegration initialized (controller deferred)")
             return True
         except Exception as e:
-            if hasattr(self.error_handler, 'handle_error'):
+            if hasattr(self.error_handler, "handle_error"):
                 await self.error_handler.handle_error(
                     severity="error",
                     category="voice",
                     message=f"Ошибка инициализации VoiceRecognitionIntegration: {e}",
-                    context={"where": "voice.initialize"}
+                    context={"where": "voice.initialize"},
                 )
             else:
                 logger.error(f"Error initializing VoiceRecognitionIntegration: {e}")
@@ -137,7 +144,7 @@ class VoiceRecognitionIntegration:
                 from modules.voice_recognition import (  # type: ignore[reportMissingImports]
                     GoogleSRController,
                 )
-                
+
                 logger.info("🚀 [AUDIO] Initializing GoogleSRController (deferred)...")
                 self._google_sr_controller = GoogleSRController(  # type: ignore[misc]
                     language_code=self.config.language,
@@ -147,7 +154,11 @@ class VoiceRecognitionIntegration:
                     on_completed=self._on_sr_v2_completed,
                     on_failed=self._on_sr_v2_failed,
                 )
-                if self._google_sr_controller and hasattr(self._google_sr_controller, 'initialize') and self._google_sr_controller.initialize():  # type: ignore[attr-defined]
+                if (
+                    self._google_sr_controller
+                    and hasattr(self._google_sr_controller, "initialize")
+                    and self._google_sr_controller.initialize()
+                ):  # type: ignore[attr-defined]
                     logger.info("✅ [AUDIO] GoogleSRController initialized successfully")
                 else:
                     logger.warning("⚠️ [AUDIO] GoogleSRController init failed, using simulation")
@@ -157,23 +168,23 @@ class VoiceRecognitionIntegration:
                 logger.warning(f"⚠️ [AUDIO] GoogleSRController init error: {e}, using simulation")
                 self._google_sr_controller = None
                 self.config.simulate = True
-    
+
     async def start(self) -> bool:
         if not self._initialized:
             logger.error("VoiceRecognitionIntegration not initialized")
             return False
         if self._running:
             return True
-        
+
         # Проверяем разрешения микрофона перед запуском
         # И отложенно инициализируем контроллер
         await self._initialize_controller()
         await self._check_microphone_permissions()
-        
+
         self._running = True
         logger.info("VoiceRecognitionIntegration started")
         return True
-    
+
     async def stop(self) -> bool:
         try:
             self._running = False
@@ -188,34 +199,34 @@ class VoiceRecognitionIntegration:
     # Эти методы упрощают логику проверок и делают код более читаемым.
     # Они не изменяют логику, а только инкапсулируют проверки состояния.
     # Шаг 1: Добавление методов-помощников для подготовки к миграции на state_manager.
-    
+
     def _has_active_session(self) -> bool:
         """
         Проверка: есть ли активная сессия.
-        
+
         Returns:
             True если есть активная сессия (из state_manager - единый источник истины)
         """
         # Используем state_manager как единый источник истины
         session_id = selectors.get_current_session_id(self.state_manager)
         return session_id is not None
-    
+
     def _get_active_session_id(self) -> str | None:
         """
         Получить активный session_id из state_manager (единый источник истины).
-        
+
         Returns:
             Активный session_id или None.
         """
         return selectors.get_current_session_id(self.state_manager)
-    
+
     def _set_session_id(self, session_id: str | None, reason: str = "unknown"):
         """
         Установить session_id в state_manager (единый источник истины).
-        
+
         КРИТИЧНО: Используем state_manager как единственный источник истины.
         Локальная переменная _current_session_id удалена - все через state_manager.
-        
+
         Args:
             session_id: Session ID для установки (uuid4 или None)
             reason: Причина установки (для логирования)
@@ -228,7 +239,9 @@ class VoiceRecognitionIntegration:
                 # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
                 self.state_manager.update_session_id(session_id)
-                logger.debug(f"🔄 [VOICE] Session ID синхронизирован с state_manager: {session_id} (reason: {reason})")
+                logger.debug(
+                    f"🔄 [VOICE] Session ID синхронизирован с state_manager: {session_id} (reason: {reason})"
+                )
         else:
             # Сбрасываем session_id в state_manager только если он был установлен
             if selectors.get_current_session_id(self.state_manager) is not None:
@@ -242,7 +255,7 @@ class VoiceRecognitionIntegration:
         try:
             async with self._audio_transition_lock:
                 logger.debug(f"🎤 [VOICE_DEBUG] _on_recording_start event received: {event}")
-                
+
                 # REQ-004: use selector for first_run check (single source of truth)
                 if selectors.is_first_run_in_progress(self.state_manager):
                     logger.warning("⚠️ [VOICE] Blocked - first_run in progress")
@@ -271,7 +284,7 @@ class VoiceRecognitionIntegration:
                 # Началась запись — фиксируем сессию
                 self._set_session_id(session_id, reason="recording_start")
                 self._recording_active = True
-                
+
                 # Любое предыдущие распознавание отменяем
                 await self._cancel_recognition(reason="new_recording_start")
                 logger.debug(f"VOICE: recording_start, session={session_id}")
@@ -282,10 +295,12 @@ class VoiceRecognitionIntegration:
 
                 # Start GoogleSRController
                 # Note: We rely on _GOOGLE_SR_AVAILABLE check done in init
-                
+
                 # Lazy initialize if needed (e.g. if start() was skipped due to permissions gate)
                 if not self._google_sr_controller and not self.config.simulate:
-                    logger.info("🔄 [AUDIO] Lazy initializing GoogleSRController on first recording request...")
+                    logger.info(
+                        "🔄 [AUDIO] Lazy initializing GoogleSRController on first recording request..."
+                    )
                     await self._initialize_controller()
 
                 if self._google_sr_controller and not self.config.simulate:
@@ -310,18 +325,24 @@ class VoiceRecognitionIntegration:
                                     self._dedup_start_skips,
                                 )
                                 return
-                        
-                        logger.info(f"🚀 [AUDIO] Starting GoogleSRController for session {session_id}")
+
+                        logger.info(
+                            f"🚀 [AUDIO] Starting GoogleSRController for session {session_id}"
+                        )
                         # session_id уже установлен в state_manager через _set_session_id выше
                         success = self._google_sr_controller.start_listening()
                         if success:
-                            await self.event_bus.publish("voice.recognition_started", {
-                                "session_id": session_id,
-                                "language": self.config.language
-                            })
-                            logger.info(f"✅ [AUDIO] GoogleSRController started for session {session_id}")
+                            await self.event_bus.publish(
+                                "voice.recognition_started",
+                                {"session_id": session_id, "language": self.config.language},
+                            )
+                            logger.info(
+                                f"✅ [AUDIO] GoogleSRController started for session {session_id}"
+                            )
                         else:
-                            logger.error(f"❌ [AUDIO] GoogleSRController failed to start (returned False)")
+                            logger.error(
+                                f"❌ [AUDIO] GoogleSRController failed to start (returned False)"
+                            )
                             # Fallback to simulation
                             self._recording_active = False
                             self._set_session_id(None, reason="start_failed")
@@ -333,8 +354,9 @@ class VoiceRecognitionIntegration:
                     except Exception as e:
                         logger.error(f"❌ [AUDIO] Error starting controller: {e}")
                         import traceback
+
                         logger.error(traceback.format_exc())
-                        
+
                         self._recording_active = False
                         self._set_session_id(None, reason="start_error")
                         await self._publish_recognition_failed(
@@ -344,7 +366,9 @@ class VoiceRecognitionIntegration:
                         )
                 else:
                     # Simulation mode
-                    logger.info(f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})")
+                    logger.info(
+                        f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})"
+                    )
                     if session_id is not None:
                         await self._start_recognition(session_id)
                     else:
@@ -352,6 +376,7 @@ class VoiceRecognitionIntegration:
         except Exception as e:
             logger.error(f"VOICE: error in recording_start handler: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
 
     async def _on_recording_stop(self, event: dict[str, Any]):
@@ -396,12 +421,14 @@ class VoiceRecognitionIntegration:
                     return
 
                 self._recording_active = False
-                
+
                 # ✅ КРИТИЧНО: Публикуем voice.mic_closed СРАЗУ, не дожидаясь завершения распознавания
                 # Это устраняет задержку 5-10 секунд после отпускания клавиши
                 await self._publish_mic_closed(resolved_session_id, source="recording_stop")
-                logger.info(f"🎤 VOICE: microphone closed immediately for session {resolved_session_id}")
-                
+                logger.info(
+                    f"🎤 VOICE: microphone closed immediately for session {resolved_session_id}"
+                )
+
                 # Stop GoogleSRController — МГНОВЕННО, без ожидания
                 # Результаты придут через callback'и асинхронно
                 if self._google_sr_controller and not self.config.simulate:
@@ -413,7 +440,7 @@ class VoiceRecognitionIntegration:
                     # Если snapshot пустой — ставим fallback, чтобы PROCESSING не зависал.
                     if resolved_session_id is not None:
                         self._schedule_stop_terminal_fallback(resolved_session_id)
-                
+
         except Exception as e:
             logger.error(f"VOICE: error in recording_stop handler: {e}")
 
@@ -426,7 +453,11 @@ class VoiceRecognitionIntegration:
             active_session_id = self._get_active_session_id()
 
             # КРИТИЧНО: игнорируем смену режима для другой сессии, чтобы не убить новое прослушивание
-            if event_session_id is not None and active_session_id is not None and event_session_id != active_session_id:
+            if (
+                event_session_id is not None
+                and active_session_id is not None
+                and event_session_id != active_session_id
+            ):
                 logger.debug(
                     "VOICE: mode_changed ignored due to session mismatch (event=%s, active=%s)",
                     event_session_id,
@@ -435,12 +466,14 @@ class VoiceRecognitionIntegration:
                 return
             if new_mode in (AppMode.SLEEPING, AppMode.PROCESSING):
                 # Закрываем распознавание/прослушивание, если вдруг активно
-                if self._recording_active or (not self.config.simulate and self._google_sr_controller):
+                if self._recording_active or (
+                    not self.config.simulate and self._google_sr_controller
+                ):
                     logger.debug(f"VOICE: mode changed to {new_mode}, ensuring listening stopped")
                     await self._cancel_recognition(reason="mode_changed")
                     if active_session_id is not None:
                         self._cancel_stop_terminal_fallback(active_session_id)
-                    
+
                     if not self.config.simulate and self._google_sr_controller:
                         # Пытаемся мягко отменить прослушивание
                         try:
@@ -455,10 +488,10 @@ class VoiceRecognitionIntegration:
 
     async def _start_recognition(self, session_id: str):
         # Публикуем старт распознавания
-        await self.event_bus.publish("voice.recognition_started", {
-            "session_id": session_id,
-            "language": self.config.language
-        })
+        await self.event_bus.publish(
+            "voice.recognition_started",
+            {"session_id": session_id, "language": self.config.language},
+        )
 
         # Запускаем задачу распознавания (симуляция/реал)
         async def _recognize():
@@ -468,7 +501,9 @@ class VoiceRecognitionIntegration:
 
                 async def _simulate_work():
                     # Имитируем задержку от 1 до 3 секунд
-                    delay = random.uniform(self.config.simulate_min_delay_sec, self.config.simulate_max_delay_sec)
+                    delay = random.uniform(
+                        self.config.simulate_min_delay_sec, self.config.simulate_max_delay_sec
+                    )
                     await asyncio.sleep(delay)
                     # Имитируем успех/неуспех
                     ts_ms = int(time.monotonic() * 1000)
@@ -476,16 +511,23 @@ class VoiceRecognitionIntegration:
                         text = "открой браузер"
                         confidence = round(random.uniform(0.75, 0.98), 2)
                         # TRACE: распознавание завершено успешно (симуляция)
-                        logger.info(f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(text)}, confidence={confidence:.2f}, simulated=true}}")
-                        await self.event_bus.publish("voice.recognition_completed", {
-                            "session_id": session_id,
-                            "text": text,
-                            "confidence": confidence,
-                            "language": self.config.language
-                        })
+                        logger.info(
+                            f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(text)}, confidence={confidence:.2f}, simulated=true}}"
+                        )
+                        await self.event_bus.publish(
+                            "voice.recognition_completed",
+                            {
+                                "session_id": session_id,
+                                "text": text,
+                                "confidence": confidence,
+                                "language": self.config.language,
+                            },
+                        )
                     else:
                         # TRACE: распознавание завершено с ошибкой (симуляция)
-                        logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error=no_speech, simulated=true}}")
+                        logger.info(
+                            f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error=no_speech, simulated=true}}"
+                        )
                         await self._publish_recognition_failed(
                             session_id,
                             error="no_speech",
@@ -507,22 +549,22 @@ class VoiceRecognitionIntegration:
                         await _simulate_work()  # Без таймаута
 
             except asyncio.TimeoutError:
-                await self.event_bus.publish("voice.recognition_timeout", {
-                    "session_id": session_id,
-                    "timeout_sec": self.config.timeout_sec
-                })
+                await self.event_bus.publish(
+                    "voice.recognition_timeout",
+                    {"session_id": session_id, "timeout_sec": self.config.timeout_sec},
+                )
                 # Не переводим режим здесь — финализация режима делает воспроизведение
             except asyncio.CancelledError:
                 # Отмена — ничего не публикуем, считается корректной отменой
                 raise
             except Exception as e:
                 # Неожиданная ошибка распознавания
-                if hasattr(self.error_handler, 'handle_error'):
+                if hasattr(self.error_handler, "handle_error"):
                     await self.error_handler.handle_error(
                         severity="warning",
                         category="voice",
                         message=f"Ошибка распознавания: {e}",
-                        context={"where": "voice.recognize"}
+                        context={"where": "voice.recognize"},
                     )
                 else:
                     logger.error(f"VOICE: recognition unexpected error: {e}")
@@ -557,43 +599,45 @@ class VoiceRecognitionIntegration:
                 "timeout_sec": self.config.timeout_sec,
                 "simulate": self.config.simulate,
                 "language": self.config.language,
-            }
+            },
         }
-    
+
     # ========== GoogleSRController v2 Callbacks ==========
     # These callbacks are called from the GoogleSRController thread
     # and bridge to EventBus asynchronously
-    
+
     def _on_sr_v2_started(self) -> None:
         """Callback when v2 controller starts listening."""
         logger.debug("🚀 [AUDIO_V2] v2 started listening (callback)")
-    
+
     def _on_sr_v2_completed(self, result: Any) -> None:  # type: ignore[type-arg]
         """Callback when v2 controller completes recognition."""
         try:
             # Используем state_manager как единственный источник истины для session_id
             session_id = self._get_active_session_id()
-            logger.info(f"✅ [AUDIO_V2] Recognition completed: {result.text[:50] if result.text else '(empty)'}...")
-            
+            logger.info(
+                f"✅ [AUDIO_V2] Recognition completed: {result.text[:50] if result.text else '(empty)'}..."
+            )
+
             # Publish event via asyncio (we're in a thread)
             import asyncio
+
             # Use the loop from EventBus if available, or try to get running loop
-            loop = getattr(self.event_bus, '_loop', None)
-            
+            loop = getattr(self.event_bus, "_loop", None)
+
             if loop and loop.is_running():
                 asyncio.run_coroutine_threadsafe(
-                    self._publish_v2_completed(session_id, result),
-                    loop
+                    self._publish_v2_completed(session_id, result), loop
                 )
             else:
                 logger.error("❌ [AUDIO_V2] No running event loop found to publish result")
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error in completed callback: {e}")
-    
+
     async def _publish_v2_completed(self, session_id: str | None, result: Any) -> None:  # type: ignore[type-arg]
         """
         Helper to publish v2 completion via EventBus.
-        
+
         БЕСШОВНЫЙ РЕЖИМ: GoogleSRController сам управляет циклом слушания,
         поэтому здесь мы только публикуем результаты. Если PTT зажат —
         mic_closed НЕ публикуем (микрофон всё ещё открыт).
@@ -603,72 +647,79 @@ class VoiceRecognitionIntegration:
             with self._state_lock:
                 ptt_pressed = selectors.is_ptt_pressed(self.state_manager)
                 is_still_listening = ptt_pressed and self._recording_active
-            
+
             ts_ms = int(time.monotonic() * 1000)
-            
+
             if result.text:
                 if not self._try_mark_terminal_recognition(session_id, "completed"):
                     return
                 self._cancel_stop_terminal_fallback(session_id)
                 # TRACE: распознавание завершено успешно
-                logger.info(f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(result.text)}, confidence={result.confidence:.2f}, still_listening={is_still_listening}}}")
-                await self.event_bus.publish("voice.recognition_completed", {
-                    "session_id": session_id,
-                    "text": result.text,
-                    "confidence": result.confidence,
-                    "language": result.language,
-                    "interim": is_still_listening  # Маркер что слушание продолжается
-                })
+                logger.info(
+                    f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(result.text)}, confidence={result.confidence:.2f}, still_listening={is_still_listening}}}"
+                )
+                await self.event_bus.publish(
+                    "voice.recognition_completed",
+                    {
+                        "session_id": session_id,
+                        "text": result.text,
+                        "confidence": result.confidence,
+                        "language": result.language,
+                        "interim": is_still_listening,  # Маркер что слушание продолжается
+                    },
+                )
             else:
                 # TRACE: распознавание пустое — логируем, но не публикуем как ошибку
                 # (это нормально при тишине в бесшовном режиме)
                 if is_still_listening:
-                    logger.debug(f"⏳ Empty result while listening, continuing... (session={session_id})")
+                    logger.debug(
+                        f"⏳ Empty result while listening, continuing... (session={session_id})"
+                    )
                 else:
                     if not self._try_mark_terminal_recognition(session_id, "failed_empty"):
                         return
                     self._cancel_stop_terminal_fallback(session_id)
-                    logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={result.error or 'empty_result'}}}")
+                    logger.info(
+                        f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={result.error or 'empty_result'}}}"
+                    )
                     await self._publish_recognition_failed(
                         session_id,
                         error=result.error or "empty_result",
                         reason="no_text",
                     )
-            
+
             # Если PTT отпущен — закрываем микрофон и сбрасываем состояние
             if not is_still_listening:
                 self._recording_active = False
                 await self._publish_mic_closed(session_id, source="v2_completed")
-                
+
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error publishing completed: {e}")
-    
+
     def _on_sr_v2_failed(self, error: str) -> None:
         """Callback when v2 controller fails."""
         try:
             # Используем state_manager как единственный источник истины для session_id
             session_id = self._get_active_session_id()
             logger.warning(f"⚠️ [AUDIO_V2] Recognition failed: {error}")
-            
+
             # Publish event via asyncio (we're in a thread)
             import asyncio
+
             # Use the loop from EventBus if available
-            loop = getattr(self.event_bus, '_loop', None)
-            
+            loop = getattr(self.event_bus, "_loop", None)
+
             if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    self._publish_v2_failed(session_id, error),
-                    loop
-                )
+                asyncio.run_coroutine_threadsafe(self._publish_v2_failed(session_id, error), loop)
             else:
                 logger.error("❌ [AUDIO_V2] No running event loop found to publish failure")
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error in failed callback: {e}")
-    
+
     async def _publish_v2_failed(self, session_id, error: str) -> None:
         """
         Helper to publish v2 failure via EventBus.
-        
+
         БЕСШОВНЫЙ РЕЖИМ: ошибки распознавания (например "unknown_value")
         не прерывают слушание если PTT зажат — просто логируем и продолжаем.
         """
@@ -677,13 +728,15 @@ class VoiceRecognitionIntegration:
             with self._state_lock:
                 ptt_pressed = selectors.is_ptt_pressed(self.state_manager)
                 is_still_listening = ptt_pressed and self._recording_active
-            
+
             ts_ms = int(time.monotonic() * 1000)
-            
+
             if is_still_listening:
                 # PTT зажат — не публикуем ошибку, просто логируем
                 # Google не понял кусок аудио — это нормально, продолжаем
-                logger.debug(f"⏳ Recognition failed ({error}) while listening, continuing... (session={session_id})")
+                logger.debug(
+                    f"⏳ Recognition failed ({error}) while listening, continuing... (session={session_id})"
+                )
             else:
                 if not self._try_mark_terminal_recognition(session_id, "failed"):
                     return
@@ -691,16 +744,18 @@ class VoiceRecognitionIntegration:
                 # PTT отпущен — публикуем ошибку и закрываем микрофон
                 self._recording_active = False
                 await self._publish_mic_closed(session_id, source="v2_failed")
-                logger.info(f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={error}}}")
+                logger.info(
+                    f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={error}}}"
+                )
                 await self._publish_recognition_failed(
                     session_id,
                     error=error,
                     reason=error,
                 )
-                
+
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error publishing failed: {e}")
-    
+
     async def _check_microphone_permissions(self):
         """Проверить разрешения микрофона (получаем от macOS)"""
         try:
@@ -761,13 +816,16 @@ class VoiceRecognitionIntegration:
         if text:
             if not self._try_mark_terminal_recognition(session_id, "snapshot_completed"):
                 return
-            await self.event_bus.publish("voice.recognition_completed", {
-                "session_id": session_id,
-                "text": text,
-                "confidence": float(getattr(result, "confidence", 0.0) or 0.0),
-                "language": getattr(result, "language", self.config.language),
-                "interim": False,
-            })
+            await self.event_bus.publish(
+                "voice.recognition_completed",
+                {
+                    "session_id": session_id,
+                    "text": text,
+                    "confidence": float(getattr(result, "confidence", 0.0) or 0.0),
+                    "language": getattr(result, "language", self.config.language),
+                    "interim": False,
+                },
+            )
             return
         error = str(getattr(result, "error", "") or "").strip()
         if error:

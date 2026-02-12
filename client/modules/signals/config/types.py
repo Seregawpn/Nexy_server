@@ -27,13 +27,25 @@ class SignalsConfig:
     enabled: bool = True
     sample_rate: int = 48_000
     default_volume: float = 0.2
-    patterns: dict[str, PatternConfig] = field(default_factory=lambda: {
-        SignalPattern.LISTEN_START.value: PatternConfig(audio=True, visual=False, volume=0.22, tone_hz=880, duration_ms=120, cooldown_ms=300),
-        SignalPattern.PROCESSING_START.value: PatternConfig(audio=False, visual=True, duration_ms=100),
-        SignalPattern.DONE.value: PatternConfig(audio=True, visual=False, volume=0.22, tone_hz=880, duration_ms=120, cooldown_ms=150),
-        SignalPattern.ERROR.value: PatternConfig(audio=True, visual=False, volume=0.22, tone_hz=880, duration_ms=120, cooldown_ms=150),
-        SignalPattern.CANCEL.value: PatternConfig(audio=True, visual=False, volume=0.22, tone_hz=880, duration_ms=120, cooldown_ms=150),
-    })
+    patterns: dict[str, PatternConfig] = field(
+        default_factory=lambda: {
+            SignalPattern.LISTEN_START.value: PatternConfig(
+                audio=True, visual=False, volume=0.22, tone_hz=880, duration_ms=120, cooldown_ms=300
+            ),
+            SignalPattern.PROCESSING_START.value: PatternConfig(
+                audio=False, visual=True, duration_ms=100
+            ),
+            SignalPattern.DONE.value: PatternConfig(
+                audio=True, visual=False, volume=0.22, tone_hz=880, duration_ms=120, cooldown_ms=150
+            ),
+            SignalPattern.ERROR.value: PatternConfig(
+                audio=True, visual=False, volume=0.22, tone_hz=880, duration_ms=120, cooldown_ms=150
+            ),
+            SignalPattern.CANCEL.value: PatternConfig(
+                audio=True, visual=False, volume=0.22, tone_hz=880, duration_ms=120, cooldown_ms=150
+            ),
+        }
+    )
 
     def get(self, pattern: SignalPattern) -> PatternConfig:
         return self.patterns.get(pattern.value, PatternConfig())

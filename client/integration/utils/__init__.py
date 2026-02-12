@@ -11,10 +11,5 @@ __all__ = [
     "print_pyobjc_diagnostics",
     "get_logger",
     "setup_logging",
-    "is_logging_configured"
+    "is_logging_configured",
 ]
-
-
-
-
-

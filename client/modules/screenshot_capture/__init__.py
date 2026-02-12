@@ -21,27 +21,24 @@ from .core.types import (
 
 __all__ = [
     # Основные классы
-    'ScreenshotCapture',
+    "ScreenshotCapture",
     # глобальные синглтоны удалены
-    
     # Типы данных
-    'ScreenshotConfig',
-    'ScreenshotData',
-    'ScreenshotResult',
-    'ScreenshotFormat',
-    'ScreenshotQuality',
-    'ScreenshotRegion',
-    'ScreenInfo',
-    
+    "ScreenshotConfig",
+    "ScreenshotData",
+    "ScreenshotResult",
+    "ScreenshotFormat",
+    "ScreenshotQuality",
+    "ScreenshotRegion",
+    "ScreenInfo",
     # Исключения
-    'ScreenshotError',
-    'ScreenshotPermissionError',
-    'ScreenshotCaptureError',
-    'ScreenshotFormatError',
-    'ScreenshotTimeoutError',
-    
+    "ScreenshotError",
+    "ScreenshotPermissionError",
+    "ScreenshotCaptureError",
+    "ScreenshotFormatError",
+    "ScreenshotTimeoutError",
     # Конфигурация
-    'get_screenshot_config'
+    "get_screenshot_config",
 ]
 
 # Версия модуля

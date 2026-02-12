@@ -30,29 +30,26 @@ __version__ = "1.6.1.28"
 __all__ = [
     # Основные классы
     "GrpcClient",
-    
     # Типы данных
     "ConnectionState",
-    "RetryStrategy", 
+    "RetryStrategy",
     "ServerConfig",
     "ConnectionMetrics",
     "RetryConfig",
     "HealthCheckConfig",
-    
     # Конфигурация централизована в unified_config.yaml
-    
     # Версия
-    "__version__"
+    "__version__",
 ]
 
 
 def create_grpc_client(**kwargs) -> GrpcClient:
     """
     Создает экземпляр GrpcClient с централизованной конфигурацией
-    
+
     Args:
         **kwargs: Дополнительные параметры конфигурации (переопределяют unified_config.yaml)
-        
+
     Returns:
         GrpcClient: Экземпляр gRPC клиента
     """
@@ -62,7 +59,7 @@ def create_grpc_client(**kwargs) -> GrpcClient:
 def create_default_grpc_client(**kwargs) -> GrpcClient:
     """
     Создает GrpcClient с централизованной конфигурацией
-    
+
     Returns:
         GrpcClient: Экземпляр gRPC клиента
     """

@@ -9,27 +9,34 @@ from typing import Any
 
 class ScreenshotFormat(Enum):
     """Поддерживаемые форматы скриншотов"""
+
     JPEG = "jpeg"
     PNG = "png"
     WEBP = "webp"  # WebP формат для лучшего сжатия
 
+
 class ScreenshotQuality(Enum):
     """Уровни качества скриншотов"""
-    LOW = "low"           # 50% качество, быстро
-    MEDIUM = "medium"     # 75% качество, сбалансированно
-    HIGH = "high"         # 90% качество, качественно
-    MAXIMUM = "maximum"   # 100% качество, медленно
+
+    LOW = "low"  # 50% качество, быстро
+    MEDIUM = "medium"  # 75% качество, сбалансированно
+    HIGH = "high"  # 90% качество, качественно
+    MAXIMUM = "maximum"  # 100% качество, медленно
+
 
 class ScreenshotRegion(Enum):
     """Регионы захвата скриншотов"""
-    FULL_SCREEN = "full_screen"           # Весь экран
-    PRIMARY_MONITOR = "primary_monitor"   # Основной монитор
-    ACTIVE_WINDOW = "active_window"       # Активное окно
-    CUSTOM = "custom"                     # Пользовательский регион
+
+    FULL_SCREEN = "full_screen"  # Весь экран
+    PRIMARY_MONITOR = "primary_monitor"  # Основной монитор
+    ACTIVE_WINDOW = "active_window"  # Активное окно
+    CUSTOM = "custom"  # Пользовательский регион
+
 
 @dataclass
 class ScreenshotConfig:
     """Конфигурация для захвата скриншотов"""
+
     format: ScreenshotFormat = ScreenshotFormat.JPEG
     quality: ScreenshotQuality = ScreenshotQuality.MEDIUM
     region: ScreenshotRegion = ScreenshotRegion.FULL_SCREEN
@@ -40,9 +47,11 @@ class ScreenshotConfig:
     max_height: int | None = 720  # Оптимизированный размер
     timeout: float = 5.0  # Таймаут в секундах
 
+
 @dataclass
 class ScreenshotData:
     """Данные скриншота"""
+
     base64_data: str
     format: ScreenshotFormat
     width: int
@@ -50,7 +59,7 @@ class ScreenshotData:
     size_bytes: int
     mime_type: str
     metadata: dict[str, Any]
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Конвертирует в словарь для совместимости с text_processor"""
         return {
@@ -61,11 +70,11 @@ class ScreenshotData:
             "height": self.height,
             "size_bytes": self.size_bytes,
             "format": self.format.value,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'ScreenshotData':
+    def from_dict(cls, data: dict[str, Any]) -> "ScreenshotData":
         """Создает из словаря"""
         return cls(
             base64_data=data["data"],
@@ -74,12 +83,14 @@ class ScreenshotData:
             height=data.get("height", 0),
             size_bytes=data.get("size_bytes", len(data["data"])),
             mime_type=data["mime_type"],
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
+
 
 @dataclass
 class ScreenInfo:
     """Информация об экране"""
+
     width: int
     height: int
     scale_factor: float = 1.0
@@ -88,35 +99,47 @@ class ScreenInfo:
     primary: bool = True
     monitor_name: str = "Unknown"
 
+
 @dataclass
 class ScreenshotResult:
     """Результат захвата скриншота"""
+
     success: bool
     data: ScreenshotData | None = None
     error: str | None = None
     screen_info: ScreenInfo | None = None
     capture_time: float = 0.0  # Время захвата в секундах
-    
+
     def is_valid(self) -> bool:
         """Проверяет валидность результата"""
         return bool(self.success and self.data is not None and self.data.base64_data)
 
+
 class ScreenshotError(Exception):
     """Базовое исключение для модуля скриншотов"""
+
     pass
+
 
 class ScreenshotPermissionError(ScreenshotError):
     """Ошибка прав доступа к экрану"""
+
     pass
+
 
 class ScreenshotCaptureError(ScreenshotError):
     """Ошибка захвата скриншота"""
+
     pass
+
 
 class ScreenshotFormatError(ScreenshotError):
     """Ошибка формата скриншота"""
+
     pass
+
 
 class ScreenshotTimeoutError(ScreenshotError):
     """Ошибка таймаута захвата"""
+
     pass

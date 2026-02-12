@@ -24,25 +24,25 @@ def check_permissions():
     print("ПРОВЕРКА РАЗРЕШЕНИЙ ДОСТУПА К БАЗЕ ДАННЫХ MESSAGES")
     print("=" * 70)
     print()
-    
+
     # Проверка 1: Путь к базе данных
     print("📁 Проверка 1: Путь к базе данных")
     db_path = messages_db.get_db_path()
     print(f"   Путь: {db_path}")
-    
+
     if db_path.exists():
         print("   ✅ Файл существует")
     else:
         print("   ❌ Файл не найден")
         print("   ⚠️  Возможно, база данных еще не создана")
         return False
-    
+
     print()
-    
+
     # Проверка 2: Доступность файла
     print("🔐 Проверка 2: Доступность файла")
     accessible, error_msg = messages_db.check_db_access()
-    
+
     if accessible:
         print("   ✅ Файл доступен для чтения")
     else:
@@ -59,36 +59,36 @@ def check_permissions():
         print("   5. Перезапустите приложение")
         print()
         return False
-    
+
     print()
-    
+
     # Проверка 3: Подключение к базе данных
     print("🔌 Проверка 3: Подключение к базе данных")
     conn = messages_db.connect_db()
-    
+
     if conn:
         print("   ✅ Подключение успешно")
-        
+
         # Проверка 4: Чтение структуры
         print()
         print("📊 Проверка 4: Чтение структуры базы данных")
         tables = messages_db.get_tables(conn)
-        
+
         if tables:
             print(f"   ✅ Найдено таблиц: {len(tables)}")
-            
+
             # Проверяем наличие ключевых таблиц
             key_tables = ["handle", "chat", "message", "chat_handle_join", "chat_message_join"]
             found_key_tables = [t for t in key_tables if t in tables]
-            
+
             print(f"   ✅ Ключевые таблицы найдены: {len(found_key_tables)}/{len(key_tables)}")
-            
+
             if len(found_key_tables) == len(key_tables):
                 print("   ✅ Все необходимые таблицы доступны")
             else:
                 missing = [t for t in key_tables if t not in tables]
                 print(f"   ⚠️  Отсутствуют таблицы: {missing}")
-            
+
             # Показываем примеры таблиц
             print()
             print("   Примеры таблиц:")
@@ -98,9 +98,9 @@ def check_permissions():
                 print(f"     ... и еще {len(tables) - 5} таблиц")
         else:
             print("   ⚠️  Не удалось получить список таблиц")
-        
+
         conn.close()
-        
+
         print()
         print("=" * 70)
         print("✅ ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ УСПЕШНО!")
@@ -119,10 +119,7 @@ def check_permissions():
         print("   ⚠️  НЕОБХОДИМО ПРЕДОСТАВИТЬ FULL DISK ACCESS")
         return False
 
+
 if __name__ == "__main__":
     success = check_permissions()
     sys.exit(0 if success else 1)
-
-
-
-

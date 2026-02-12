@@ -5,39 +5,45 @@ TrayController Integration
 """
 
 import asyncio
-import logging
 import os
-from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from typing import Any
 
-# Импорты модулей (НЕ дублируем логику!)
-from modules.tray_controller import TrayController, TrayStatus
-from modules.tray_controller.core.tray_types import TrayConfig, TrayEvent
-
-# Импорт конфигурации
-from config.unified_config_loader import UnifiedConfigLoader
-
-# Импорты интеграции
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.event_types import EventTypes
-from integration.core.state_keys import StateKeys
-from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[reportAttributeAccessIssue]
-from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
-from integration.core import selectors
 from PyObjCTools import AppHelper
 import rumps
 
+# Импорт конфигурации
+from config.unified_config_loader import UnifiedConfigLoader
+from integration.core import selectors
+from integration.core.error_handler import ErrorHandler
+
+# Импорты интеграции
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_keys import StateKeys
+from integration.core.state_manager import (  # type: ignore[reportAttributeAccessIssue]
+    ApplicationStateManager,
+    AppMode,  # type: ignore
+)
 from integration.utils.logging_setup import get_logger
+
+# Импорты модулей (НЕ дублируем логику!)
+from modules.tray_controller import TrayController, TrayStatus
+from modules.tray_controller.core.tray_types import TrayConfig
 
 logger = get_logger(__name__)
 
 # Убираем дублированную конфигурацию - используем TrayConfig из модуля
 
+
 class TrayControllerIntegration:
     """Интеграция TrayController с EventBus и ApplicationStateManager"""
-    
-    def __init__(self, event_bus: EventBus, state_manager: ApplicationStateManager, 
-                 error_handler: ErrorHandler, config: Optional[TrayConfig] = None):
+
+    def __init__(
+        self,
+        event_bus: EventBus,
+        state_manager: ApplicationStateManager,
+        error_handler: ErrorHandler,
+        config: TrayConfig | None = None,
+    ):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
@@ -46,14 +52,18 @@ class TrayControllerIntegration:
         if config is None:
             # Создаем конфигурацию модуля из unified_config (с безопасными дефолтами)
             config_data = unified_config._load_config()
-            integrations_cfg = (config_data.get('integrations') or {})
-            tray_cfg = (integrations_cfg.get('tray_controller') or {})
-            tray_basic = (config_data.get('tray') or {})
+            integrations_cfg = config_data.get("integrations") or {}
+            tray_cfg = integrations_cfg.get("tray_controller") or {}
+            tray_basic = config_data.get("tray") or {}
 
-            icon_size = tray_cfg.get('icon_size', tray_basic.get('icon_size', 18))
-            show_status_in_menu = tray_cfg.get('show_status_in_menu', True)
-            enable_notifications = tray_cfg.get('enable_notifications', tray_basic.get('show_notifications', True))
-            debug_mode = tray_cfg.get('debug_mode', (config_data.get('app') or {}).get('debug', False))
+            icon_size = tray_cfg.get("icon_size", tray_basic.get("icon_size", 18))
+            show_status_in_menu = tray_cfg.get("show_status_in_menu", True)
+            enable_notifications = tray_cfg.get(
+                "enable_notifications", tray_basic.get("show_notifications", True)
+            )
+            debug_mode = tray_cfg.get(
+                "debug_mode", (config_data.get("app") or {}).get("debug", False)
+            )
 
             config = TrayConfig(
                 icon_size=icon_size,
@@ -65,11 +75,11 @@ class TrayControllerIntegration:
                 animation_speed=0.5,  # Из модуля
                 menu_font_size=13,  # Из модуля
                 enable_sound=enable_notifications,  # Маппинг
-                debug_mode=debug_mode
+                debug_mode=debug_mode,
             )
-        
+
         self.config = config
-        
+
         # Опциональное отключение через переменную окружения (для headless/dev режима)
         disable_env = os.environ.get("NEXY_DISABLE_TRAY")
         self._disabled_by_env = False
@@ -81,8 +91,8 @@ class TrayControllerIntegration:
             )
 
         # TrayController (обертываем существующий модуль)
-        self.tray_controller: Optional[TrayController] = None
-        
+        self.tray_controller: TrayController | None = None
+
         # Состояние интеграции
         self.is_initialized = False
         self.is_running = False
@@ -90,11 +100,11 @@ class TrayControllerIntegration:
         self._init_failures: int = 0
         self._start_failures: int = 0
         # Желаемый статус трея (прямое применение в UI-треде при смене режима)
-        self._desired_status: Optional[TrayStatus] = None
-        self._ui_timer: Optional[rumps.Timer] = None
+        self._desired_status: TrayStatus | None = None
+        self._ui_timer: rumps.Timer | None = None
         self._ui_timer_started: bool = False
         self._ui_dirty: bool = False
-        
+
         # Маппинг режимов приложения на статусы трея
         self.mode_to_status = {
             AppMode.SLEEPING: TrayStatus.SLEEPING,
@@ -105,14 +115,19 @@ class TrayControllerIntegration:
         if self._disabled_by_env:
             # Считаем интеграцию проинициализированной, чтобы coordinator не падал
             self.is_initialized = True
-    
+
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
         try:
             import time
+
             init_start = time.time()
-            logger.info("🔧 [TRAY_METRICS] tray.will_init - начало инициализации TrayControllerIntegration")
-            logger.info("🔧 [TRAY_METRICS] tray.will_init - начало инициализации TrayControllerIntegration")
+            logger.info(
+                "🔧 [TRAY_METRICS] tray.will_init - начало инициализации TrayControllerIntegration"
+            )
+            logger.info(
+                "🔧 [TRAY_METRICS] tray.will_init - начало инициализации TrayControllerIntegration"
+            )
 
             if self._disabled_due_to_errors:
                 self.is_initialized = True
@@ -140,7 +155,9 @@ class TrayControllerIntegration:
                 attempt_duration_ms = int((time.time() - attempt_start) * 1000)
 
                 if success:
-                    logger.info(f"✅ [TRAY_METRICS] Initialize succeeded (attempt {attempt}/{max_retries}, {attempt_duration_ms}ms)")
+                    logger.info(
+                        f"✅ [TRAY_METRICS] Initialize succeeded (attempt {attempt}/{max_retries}, {attempt_duration_ms}ms)"
+                    )
                     break
 
                 self._init_failures += 1
@@ -157,27 +174,30 @@ class TrayControllerIntegration:
             init_duration_ms = int((time.time() - init_start) * 1000)
 
             if not success:
-                logger.error(f"❌ [TRAY_METRICS] Initialization failed after retries ({init_duration_ms}ms total) – auto-disabling tray")
+                logger.error(
+                    f"❌ [TRAY_METRICS] Initialization failed after retries ({init_duration_ms}ms total) – auto-disabling tray"
+                )
                 self._disabled_due_to_errors = True
                 self.tray_controller = None
                 # Не считаем это фатальной ошибкой: позволяем приложению работать без меню-бара
                 return True
-            
+
             # Настраиваем обработчики событий
             await self._setup_event_handlers()
-            
+
             self.is_initialized = True
             logger.info("✅ TrayControllerIntegration инициализирован")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации TrayControllerIntegration: {e}")
             return False
-    
+
     async def start(self) -> bool:
         """Запуск интеграции"""
         try:
             import time
+
             start_time = time.time()
 
             if not self.is_initialized:
@@ -203,10 +223,14 @@ class TrayControllerIntegration:
             success = False
             for attempt in range(1, max_retries + 1):
                 attempt_start = time.time()
-                success = await (self.tray_controller.start() if self.tray_controller else asyncio.sleep(0))
+                success = await (
+                    self.tray_controller.start() if self.tray_controller else asyncio.sleep(0)
+                )
                 attempt_duration_ms = int((time.time() - attempt_start) * 1000)
                 if success:
-                    logger.info(f"✅ [TRAY_METRICS] Start succeeded (attempt {attempt}/{max_retries}, {attempt_duration_ms}ms)")
+                    logger.info(
+                        f"✅ [TRAY_METRICS] Start succeeded (attempt {attempt}/{max_retries}, {attempt_duration_ms}ms)"
+                    )
                     break
 
                 self._start_failures += 1
@@ -223,7 +247,9 @@ class TrayControllerIntegration:
             start_duration_ms = int((time.time() - start_time) * 1000)
 
             if not success:
-                logger.error(f"❌ [TRAY_METRICS] Start failed after retries ({start_duration_ms}ms total) – auto-disabling tray")
+                logger.error(
+                    f"❌ [TRAY_METRICS] Start failed after retries ({start_duration_ms}ms total) – auto-disabling tray"
+                )
                 self._disabled_due_to_errors = True
                 self.tray_controller = None
                 return True
@@ -237,14 +263,21 @@ class TrayControllerIntegration:
             self._ui_timer = None
 
             # Публикуем событие готовности
-            await self.event_bus.publish("tray.integration_ready", {
-                "integration": "tray_controller",
-                "status": "running",
-                "duration_ms": start_duration_ms
-            })
+            await self.event_bus.publish(
+                "tray.integration_ready",
+                {
+                    "integration": "tray_controller",
+                    "status": "running",
+                    "duration_ms": start_duration_ms,
+                },
+            )
 
-            logger.info(f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms")
-            logger.info(f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms")
+            logger.info(
+                f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms"
+            )
+            logger.info(
+                f"✅ [TRAY_METRICS] tray.ready - TrayControllerIntegration запущен за {start_duration_ms}ms"
+            )
 
             # КРИТИЧНО: НЕ включаем автоматическую терминацию здесь!
             # Это делает SimpleModuleCoordinator в _on_tray_ready() после получения события tray.integration_ready
@@ -253,72 +286,94 @@ class TrayControllerIntegration:
 
             # Обработчик клика по пункту Quit
             try:
-                if self.tray_controller and hasattr(self.tray_controller, 'set_event_callback'):
+                if self.tray_controller and hasattr(self.tray_controller, "set_event_callback"):
                     self.tray_controller.set_event_callback("quit_clicked", self._on_tray_quit)
             except Exception:
                 pass
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка запуска TrayControllerIntegration: {e}")
             return False
-    
+
     async def stop(self) -> bool:
         """Остановка интеграции"""
         try:
             if not self.is_running:
                 logger.warning("TrayControllerIntegration не запущен")
                 return True
-            
+
             logger.info("⏹️ Остановка TrayControllerIntegration...")
-            
+
             # Останавливаем UI-таймер
             self.stop_ui_timer()
-            
+
             # Останавливаем TrayController
             if self.tray_controller:
                 success = await self.tray_controller.stop()
                 if not success:
                     logger.warning("Ошибка остановки TrayController")
-            
+
             self.is_running = False
-            
+
             logger.info("✅ TrayControllerIntegration остановлен")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка остановки TrayControllerIntegration: {e}")
             return False
-    
+
     async def _setup_event_handlers(self):
         """Настройка обработчиков событий"""
         try:
             # Подписываемся на события приложения
-            await self.event_bus.subscribe("app.mode_changed", self._on_mode_changed, EventPriority.HIGH)
+            await self.event_bus.subscribe(
+                "app.mode_changed", self._on_mode_changed, EventPriority.HIGH
+            )
             await self.event_bus.subscribe("app.startup", self._on_app_startup, EventPriority.HIGH)
-            await self.event_bus.subscribe("app.shutdown", self._on_app_shutdown, EventPriority.HIGH)
-            
+            await self.event_bus.subscribe(
+                "app.shutdown", self._on_app_shutdown, EventPriority.HIGH
+            )
+
             # КРИТИЧНО: Подписка на события разрешений для визуальной блокировки (Красная иконка)
-            await self.event_bus.subscribe("permissions.first_run_started", self._on_permissions_blocked, EventPriority.CRITICAL)
-            await self.event_bus.subscribe("permissions.first_run_completed", self._on_permissions_completed, EventPriority.CRITICAL)
-            await self.event_bus.subscribe("permissions.first_run_failed", self._on_permissions_completed, EventPriority.CRITICAL)
-            
+            await self.event_bus.subscribe(
+                "permissions.first_run_started",
+                self._on_permissions_blocked,
+                EventPriority.CRITICAL,
+            )
+            await self.event_bus.subscribe(
+                "permissions.first_run_completed",
+                self._on_permissions_completed,
+                EventPriority.CRITICAL,
+            )
+            await self.event_bus.subscribe(
+                "permissions.first_run_failed",
+                self._on_permissions_completed,
+                EventPriority.CRITICAL,
+            )
+
             # Подписки на события клавиатуры убраны - они обрабатываются через SimpleModuleCoordinator
             # чтобы избежать дублирования обработки
 
             # Подписываемся на события микрофона/распознавания для точной индикации
-            await self.event_bus.subscribe("voice.mic_opened", self._on_voice_mic_opened, EventPriority.HIGH)
-            await self.event_bus.subscribe("voice.mic_closed", self._on_voice_mic_closed, EventPriority.HIGH)
+            await self.event_bus.subscribe(
+                "voice.mic_opened", self._on_voice_mic_opened, EventPriority.HIGH
+            )
+            await self.event_bus.subscribe(
+                "voice.mic_closed", self._on_voice_mic_closed, EventPriority.HIGH
+            )
 
             # Generic System Notifications (for background tasks like downloads)
-            await self.event_bus.subscribe("system.notification", self._on_system_notification, EventPriority.MEDIUM)
-            
+            await self.event_bus.subscribe(
+                "system.notification", self._on_system_notification, EventPriority.MEDIUM
+            )
+
             logger.info("✅ Обработчики событий TrayControllerIntegration настроены")
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка настройки обработчиков событий: {e}")
 
-    async def _on_tray_quit(self, event_type: str, data: Dict[str, Any]):
+    async def _on_tray_quit(self, event_type: str, data: dict[str, Any]):
         """Корректное завершение приложения по пункту меню Quit."""
         # КРИТИЧНО: фиксируем quit-intent синхронно в SoT до любых async публикаций.
         # Это защищает от гонки между завершением UI-процесса и обработкой EventBus.
@@ -332,7 +387,7 @@ class TrayControllerIntegration:
         except Exception:
             pass
         # Завершение приложения выполняет модуль TrayController (см. _on_quit_clicked)
-    
+
     async def _sync_with_app_mode(self):
         """Синхронизация с текущим режимом приложения"""
         try:
@@ -341,18 +396,20 @@ class TrayControllerIntegration:
             if current_mode in self.mode_to_status:
                 target_status = self.mode_to_status[current_mode]
                 self._desired_status = target_status
-                
-                logger.info(f"🔄 Синхронизация с режимом приложения: {current_mode.value} → {target_status.value}")
-        
+
+                logger.info(
+                    f"🔄 Синхронизация с режимом приложения: {current_mode.value} → {target_status.value}"
+                )
+
         except Exception as e:
             logger.error(f"❌ Ошибка синхронизации с режимом приложения: {e}")
-    
+
     async def _update_tray_status(self, status: TrayStatus):
         """Обновление статуса трея"""
         try:
             if not self.tray_controller or not self.is_running:
                 return
-            
+
             success = await self.tray_controller.update_status(status)
             if success:
                 logger.info(f"🔄 Статус трея обновлен: {status.value}")
@@ -365,44 +422,50 @@ class TrayControllerIntegration:
                 await self.tray_controller.update_menu_status_text(human)
             else:
                 logger.warning(f"⚠️ Не удалось обновить статус трея: {status.value}")
-                
+
         except Exception as e:
             logger.error(f"❌ Ошибка обновления статуса трея: {e}")
-    
+
     # Обработчики событий EventBus (НЕ дублируем логику модуля!)
-    
 
     async def _on_mode_changed(self, event):
         """Обработка смены режима приложения"""
         try:
             data = (event.get("data") or {}) if isinstance(event, dict) else {}
             new_mode = data.get("mode")
-            
+
             if new_mode in self.mode_to_status:
                 target_status = self.mode_to_status[new_mode]
-                logger.debug(f"TrayIntegration: mapping mode -> status: {new_mode} -> {target_status}")
+                logger.debug(
+                    f"TrayIntegration: mapping mode -> status: {new_mode} -> {target_status}"
+                )
                 # Фиксируем желаемый статус и применяем немедленно в UI-потоке
                 self._desired_status = target_status
                 self._ui_dirty = True
-                
+
                 # Публикуем событие обновления статуса
-                await self.event_bus.publish("tray.status_updated", {
-                    "status": target_status.value if target_status else None,
-                    "mode": new_mode.value if new_mode else None,
-                    "integration": "tray_controller"
-                })
-                
-                logger.info(f"🔄 Режим приложения изменен: {new_mode.value if new_mode else None} → {target_status.value if target_status else None}")
+                await self.event_bus.publish(
+                    "tray.status_updated",
+                    {
+                        "status": target_status.value if target_status else None,
+                        "mode": new_mode.value if new_mode else None,
+                        "integration": "tray_controller",
+                    },
+                )
+
+                logger.info(
+                    f"🔄 Режим приложения изменен: {new_mode.value if new_mode else None} → {target_status.value if target_status else None}"
+                )
                 # Применяем на главном UI-потоке через AppHelper.callAfter
                 try:
                     # Прямой вызов _apply_status_ui_sync (убрано двойное планирование)
                     AppHelper.callAfter(self._apply_status_ui_sync, target_status)
                 except Exception:
                     pass
-        
+
         except Exception as e:
             logger.error(f"❌ Ошибка обработки смены режима: {e}")
-    
+
     async def _on_keyboard_event(self, event):
         """Обработка событий клавиатуры"""
         try:
@@ -410,26 +473,30 @@ class TrayControllerIntegration:
             if isinstance(event, dict):
                 event_type = event.get("type", "unknown")
             else:
-                event_type = getattr(event, 'event_type', 'unknown')
-            
+                event_type = getattr(event, "event_type", "unknown")
+
             logger.info(f"⌨️ Обработка события клавиатуры в TrayControllerIntegration: {event_type}")
-            
+
             # Push-to-talk: режимы меняются в InputProcessingIntegration
             # Здесь только логируем/можно обновлять UI, если нужно
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка обработки события клавиатуры: {e}")
             import traceback
+
             logger.debug(f"Стектрейс: {traceback.format_exc()}")
 
     async def _on_voice_mic_opened(self, event):
         """Не меняем цвет иконки напрямую: источником истины остаётся app.mode_changed"""
         try:
-            await self.event_bus.publish("tray.status_updated", {
-                "status": getattr(self._desired_status, 'value', None),
-                "reason": "voice.mic_opened",
-                "integration": "tray_controller"
-            })
+            await self.event_bus.publish(
+                "tray.status_updated",
+                {
+                    "status": getattr(self._desired_status, "value", None),
+                    "reason": "voice.mic_opened",
+                    "integration": "tray_controller",
+                },
+            )
         except Exception as e:
             logger.error(f"❌ Ошибка обработки voice.mic_opened: {e}")
 
@@ -438,29 +505,25 @@ class TrayControllerIntegration:
         try:
             # REQ-004: use selector for mode access
             mode = selectors.get_current_mode(self.state_manager)
-            await self.event_bus.publish("tray.status_updated", {
-                "status": getattr(self._desired_status, 'value', None),
-                "mode": getattr(mode, 'value', str(mode)),
-                "reason": "voice.mic_closed",
-                "integration": "tray_controller"
-            })
+            await self.event_bus.publish(
+                "tray.status_updated",
+                {
+                    "status": getattr(self._desired_status, "value", None),
+                    "mode": getattr(mode, "value", str(mode)),
+                    "reason": "voice.mic_closed",
+                    "integration": "tray_controller",
+                },
+            )
         except Exception as e:
             logger.error(f"❌ Ошибка обработки voice.mic_closed: {e}")
 
     async def _on_permissions_blocked(self, event):
-        """Обработка начала блокирующей проверки разрешений"""
+        """Обработка начала проверки разрешений без отдельного tray-режима."""
         try:
-            logger.info("🔐 [TRAY] Использование LOCKED статуса для индикации ожидания разрешений")
-            self._desired_status = TrayStatus.LOCKED
-            self._ui_dirty = True
-            
-            # Применяем немедленно
-            try:
-                AppHelper.callAfter(self._apply_status_ui_sync, TrayStatus.LOCKED)
-            except Exception:
-                pass
+            logger.info("🔐 [TRAY] First-run started: сохраняем только канонические 3 режима")
+            await self._sync_with_app_mode()
         except Exception as e:
-            logger.error(f"❌ Ошибка при переключении трея в статус LOCKED: {e}")
+            logger.error(f"❌ Ошибка при обработке старта проверки разрешений: {e}")
 
     async def _on_permissions_completed(self, event):
         """Обработка завершения проверки разрешений"""
@@ -481,9 +544,9 @@ class TrayControllerIntegration:
         }
         """
         try:
-            data = event.get('data', {}) if isinstance(event, dict) else {}
+            data = event.get("data", {}) if isinstance(event, dict) else {}
             # Fallback if event is just the data dict
-            if not data and isinstance(event, dict): 
+            if not data and isinstance(event, dict):
                 data = event
 
             title = data.get("title", "Nexy")
@@ -493,26 +556,32 @@ class TrayControllerIntegration:
             if message:
                 logger.info(f"🔔 System Notification: {title} - {message}")
                 # rumps.notification is thread-safe or handles dispatch internally usually,
-                # but safer to wrap if we are in asyncio loop? 
+                # but safer to wrap if we are in asyncio loop?
                 # rumps.notification triggers NSUserNotification center immediately.
                 rumps.notification(
                     title=title,
                     subtitle=subtitle,
                     message=message,
-                    sound=self.config.enable_notifications
+                    sound=self.config.enable_notifications,
                 )
         except Exception as e:
             logger.error(f"❌ Failed to show system notification: {e}")
 
     def _apply_status_ui_sync(self, status: TrayStatus):
         """Фактическое обновление UI. ДОЛЖНО выполняться в главном UI-потоке."""
-        if not self.tray_controller or not self.tray_controller.tray_menu or not self.tray_controller.tray_icon:
+        if (
+            not self.tray_controller
+            or not self.tray_controller.tray_menu
+            or not self.tray_controller.tray_icon
+        ):
             return
         try:
             icon_path = self.tray_controller.tray_icon.create_icon_file(status)
             if not icon_path:
-                logger.error(f"❌ КРИТИЧНО: Не удалось создать иконку для status={status}. "
-                            f"Иконка может не отображаться корректно.")
+                logger.error(
+                    f"❌ КРИТИЧНО: Не удалось создать иконку для status={status}. "
+                    f"Иконка может не отображаться корректно."
+                )
                 # Всё равно продолжаем — fallback уже был попробован
                 return
             self.tray_controller.tray_menu.update_icon(icon_path)
@@ -523,10 +592,10 @@ class TrayControllerIntegration:
             }
             human = human_names.get(status, status.value.title())
             self.tray_controller.tray_menu.update_status_text(human)
-            prev_status = getattr(self.tray_controller, 'current_status', None)
+            prev_status = getattr(self.tray_controller, "current_status", None)
             self.tray_controller.current_status = status
             self._ui_dirty = False
-            prev_value = getattr(prev_status, 'value', str(prev_status)) if prev_status else 'None'
+            prev_value = getattr(prev_status, "value", str(prev_status)) if prev_status else "None"
             logger.info(f"✅ Tray UI applied: {prev_value} -> {status.value}")
         except Exception as e:
             logger.error(f"❌ Ошибка _apply_status_ui_sync: {e}", exc_info=True)
@@ -545,75 +614,83 @@ class TrayControllerIntegration:
             if not self.tray_controller.tray_icon:
                 logger.debug("UI tick: tray_icon не инициализирован")
                 return
-            
+
             # Получаем желаемый статус
             desired = self._desired_status
             if not desired:
                 logger.debug("UI tick: _desired_status не установлен")
                 return
-            
+
             # Получаем текущий статус
-            current = getattr(self.tray_controller, 'current_status', None)
+            current = getattr(self.tray_controller, "current_status", None)
             try:
-                logger.debug(f"UI tick: current={getattr(current,'value','None')}, desired={getattr(desired,'value','None')}")
+                logger.debug(
+                    f"UI tick: current={getattr(current, 'value', 'None')}, desired={getattr(desired, 'value', 'None')}"
+                )
             except Exception:
                 pass
-            
+
             # Проверяем, нужно ли обновление
-            dirty = getattr(self, '_ui_dirty', False)
+            dirty = getattr(self, "_ui_dirty", False)
             if (current == desired) and (not dirty):
                 # Логируем только первые несколько раз для отладки
-                if not hasattr(self, '_ui_tick_debug_count'):
+                if not hasattr(self, "_ui_tick_debug_count"):
                     self._ui_tick_debug_count = 0
                 if self._ui_tick_debug_count < 3:
                     logger.debug(f"UI tick: статус уже актуален ({desired.value}), dirty={dirty}")
                     self._ui_tick_debug_count += 1
                 return
-            
-            logger.debug(f"UI tick: обновление иконки {getattr(current,'value','None')} -> {desired.value}")
-            
+
+            logger.debug(
+                f"UI tick: обновление иконки {getattr(current, 'value', 'None')} -> {desired.value}"
+            )
+
             # Генерируем новую иконку
             try:
                 icon_path = self.tray_controller.tray_icon.create_icon_file(desired)
                 if not icon_path:
                     logger.error("❌ UI tick: не удалось создать иконку")
                     return
-                
+
                 # Применяем иконку в UI
                 self.tray_controller.tray_menu.update_icon(icon_path)
-                
+
                 # Обновляем текст статуса в меню
                 human_names = {
                     TrayStatus.SLEEPING: "Sleeping",
-                    TrayStatus.LISTENING: "Listening", 
+                    TrayStatus.LISTENING: "Listening",
                     TrayStatus.PROCESSING: "Processing",
                 }
                 human = human_names.get(desired, desired.value.title())
                 self.tray_controller.tray_menu.update_status_text(human)
-                
+
                 # Обновляем текущее состояние контроллера
-                prev_status = getattr(self.tray_controller, 'current_status', None)
+                prev_status = getattr(self.tray_controller, "current_status", None)
                 self.tray_controller.current_status = desired
                 self._ui_dirty = False
-                
+
                 # Логируем успешное обновление
-                prev_value = getattr(prev_status, 'value', str(prev_status)) if prev_status else 'None'
+                prev_value = (
+                    getattr(prev_status, "value", str(prev_status)) if prev_status else "None"
+                )
                 logger.info(f"✅ Tray UI applied: {prev_value} -> {desired.value}")
-                
+
                 # Сбрасываем счетчик отладки при успешном обновлении
-                if hasattr(self, '_ui_tick_debug_count'):
+                if hasattr(self, "_ui_tick_debug_count"):
                     self._ui_tick_debug_count = 0
-                
+
             except Exception as e:
                 logger.error(f"❌ UI tick: ошибка применения изменений: {e}")
                 import traceback
+
                 logger.debug(f"UI tick stacktrace: {traceback.format_exc()}")
-                
+
         except Exception as e:
             logger.error(f"❌ UI tick: критическая ошибка: {e}")
             import traceback
+
             logger.debug(f"UI tick critical stacktrace: {traceback.format_exc()}")
-    
+
     async def _on_app_startup(self, event):
         """Обработка запуска приложения"""
         try:
@@ -628,20 +705,20 @@ class TrayControllerIntegration:
                     AppHelper.callAfter(self._apply_status_ui_sync, status)
             except Exception:
                 pass
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка обработки запуска приложения: {e}")
-    
+
     async def _on_app_shutdown(self, event):
         """Обработка завершения приложения"""
         try:
             logger.info("⏹️ Обработка завершения приложения в TrayControllerIntegration")
             await self.stop()
-            
+
         except Exception as e:
             logger.error(f"❌ Ошибка обработки завершения приложения: {e}")
-    
-    def get_status(self) -> Dict[str, Any]:
+
+    def get_status(self) -> dict[str, Any]:
         """Получить статус интеграции"""
         return {
             "is_initialized": self.is_initialized,
@@ -652,17 +729,19 @@ class TrayControllerIntegration:
             "tray_controller": {
                 "initialized": self.tray_controller is not None,
                 "running": self.tray_controller.is_running if self.tray_controller else False,
-                "current_status": self.tray_controller.current_status.value if self.tray_controller else None
+                "current_status": self.tray_controller.current_status.value
+                if self.tray_controller
+                else None,
             },
             "config": {
                 "icon_size": self.config.icon_size,
                 "show_status_in_menu": self.config.show_status_in_menu,
                 "enable_notifications": self.config.enable_notifications,
                 "auto_update_status": self.config.auto_update_status,
-                "debug_mode": self.config.debug_mode
-            }
+                "debug_mode": self.config.debug_mode,
+            },
         }
-    
+
     def get_app(self):
         """Получить приложение rumps для запуска в главном потоке"""
         if self.tray_controller:
@@ -686,11 +765,11 @@ class TrayControllerIntegration:
             # Если таймера нет — ничего не делаем (без логирования)
         except Exception as e:
             logger.error(f"❌ Ошибка запуска UI-таймера: {e}")
-    
+
     def stop_ui_timer(self):
         """Остановить UI-таймер"""
         try:
-            if self._ui_timer and getattr(self._ui_timer, 'is_alive', lambda: False)():
+            if self._ui_timer and getattr(self._ui_timer, "is_alive", lambda: False)():
                 self._ui_timer.stop()
                 self._ui_timer_started = False
                 logger.info("⏹️ UI-таймер остановлен")

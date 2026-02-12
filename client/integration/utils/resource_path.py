@@ -26,30 +26,33 @@ def _resolve_app_name(app_name: str) -> str:
     if explicit:
         if is_production_env():
             import logging
+
             logging.getLogger(__name__).warning(
                 "[RESOURCE_PATH] NEXY_APP_NAME override used in production: %s",
                 explicit,
             )
         return explicit
-        
+
     # Validating environment: if not frozen (Dev), default to AppName-Dev
     is_frozen = getattr(sys, "frozen", False)
     suffix = os.environ.get("NEXY_APP_DATA_SUFFIX")
-    
+
     if not is_frozen:
         # Dev mode: use suffix or default to "Dev"
         if suffix and is_production_env():
             import logging
+
             logging.getLogger(__name__).warning(
                 "[RESOURCE_PATH] NEXY_APP_DATA_SUFFIX override used in production: %s",
                 suffix,
             )
         return f"{app_name}-{suffix or 'Dev'}"
-    
+
     # Prod mode: use suffix only if explicitly set
     if suffix:
         if is_production_env():
             import logging
+
             logging.getLogger(__name__).warning(
                 "[RESOURCE_PATH] NEXY_APP_DATA_SUFFIX override used in production: %s",
                 suffix,
@@ -117,6 +120,7 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
         RuntimeError: Если не удалось создать ни одну из директорий
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     # КРИТИЧНО: Кэшируем путь чтобы всегда возвращать один и тот же
@@ -143,7 +147,16 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
 
     # Попытка 2: Sandbox container (определяем bundle_id из окружения или используем дефолтный)
     bundle_id = os.environ.get("APP_BUNDLE_ID", "com.nexy.assistant")
-    sandbox_dir = Path.home() / "Library" / "Containers" / bundle_id / "Data" / "Library" / "Application Support" / app_name
+    sandbox_dir = (
+        Path.home()
+        / "Library"
+        / "Containers"
+        / bundle_id
+        / "Data"
+        / "Library"
+        / "Application Support"
+        / app_name
+    )
     try:
         sandbox_dir.mkdir(parents=True, exist_ok=True)
         # Проверяем возможность записи
@@ -160,7 +173,9 @@ def get_user_data_dir(app_name: str = "Nexy") -> Path:
     tmp_dir = Path("/tmp") / app_name
     try:
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        logger.error(f"🚨 CRITICAL: Using temporary data directory: {tmp_dir} - flags will be lost on reboot!")
+        logger.error(
+            f"🚨 CRITICAL: Using temporary data directory: {tmp_dir} - flags will be lost on reboot!"
+        )
         _USER_DATA_DIR_CACHE = tmp_dir  # type: ignore[reportConstantRedefinition]
         return tmp_dir
     except (PermissionError, OSError) as e:
@@ -182,6 +197,7 @@ def get_user_cache_dir(app_name: str = "Nexy") -> Path:
     затем в sandbox container, затем в /tmp.
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     app_name = _resolve_app_name(app_name)
@@ -199,7 +215,16 @@ def get_user_cache_dir(app_name: str = "Nexy") -> Path:
 
     # Попытка 2: Sandbox
     bundle_id = os.environ.get("APP_BUNDLE_ID", "com.nexy.assistant")
-    sandbox_dir = Path.home() / "Library" / "Containers" / bundle_id / "Data" / "Library" / "Caches" / app_name
+    sandbox_dir = (
+        Path.home()
+        / "Library"
+        / "Containers"
+        / bundle_id
+        / "Data"
+        / "Library"
+        / "Caches"
+        / app_name
+    )
     try:
         sandbox_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Using sandbox cache directory: {sandbox_dir}")
@@ -222,6 +247,7 @@ def get_user_logs_dir(app_name: str = "Nexy") -> Path:
     затем в sandbox container, затем в /tmp.
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     app_name = _resolve_app_name(app_name)
@@ -239,7 +265,9 @@ def get_user_logs_dir(app_name: str = "Nexy") -> Path:
 
     # Попытка 2: Sandbox
     bundle_id = os.environ.get("APP_BUNDLE_ID", "com.nexy.assistant")
-    sandbox_dir = Path.home() / "Library" / "Containers" / bundle_id / "Data" / "Library" / "Logs" / app_name
+    sandbox_dir = (
+        Path.home() / "Library" / "Containers" / bundle_id / "Data" / "Library" / "Logs" / app_name
+    )
     try:
         sandbox_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Using sandbox logs directory: {sandbox_dir}")

@@ -22,24 +22,24 @@ import traceback
 def _apply_pyobjc_fix_early():
     """
     Применяет PyObjC fix для NSMakeRect и других символов.
-    
+
     КРИТИЧНО: Выполняется ДО любых импортов, которые могут косвенно импортировать rumps/AppKit.
     """
     try:
         # Проверяем, что мы на macOS
         if platform.system() != "Darwin":
             return "not_macos"
-        
+
         # Применяем инлайн-фикс напрямую
         import AppKit
         import Foundation
-        
+
         fixed_symbols = []
         for symbol in ["NSMakeRect", "NSMakePoint", "NSMakeSize", "NSMakeRange"]:
             if not hasattr(Foundation, symbol) and hasattr(AppKit, symbol):
                 setattr(Foundation, symbol, getattr(AppKit, symbol))
                 fixed_symbols.append(symbol)
-        
+
         if fixed_symbols:
             return f"fixed_inline:{','.join(fixed_symbols)}"
         else:
@@ -49,20 +49,22 @@ def _apply_pyobjc_fix_early():
     except Exception as e:
         return f"error:{e}"
 
+
 # ПРИМЕНЯЕМ ФИКС СРАЗУ, ДО ЛЮБЫХ ДРУГИХ ИМПОРТОВ
 _pyobjc_fix_result_early = _apply_pyobjc_fix_early()
 
 # Добавляем пути к модулям (централизованно)
 CLIENT_ROOT = Path(__file__).parent
 ROOT_DIR = CLIENT_ROOT.parent
-sys.path.insert(0, str(ROOT_DIR))            # Для доступа к корневому 'integration'
-sys.path.insert(0, str(CLIENT_ROOT))         # Для доступа к локальным модулям
+sys.path.insert(0, str(ROOT_DIR))  # Для доступа к корневому 'integration'
+sys.path.insert(0, str(CLIENT_ROOT))  # Для доступа к локальным модулям
 # КРИТИЧНО: client/modules должен быть ПЕРЕД modules, чтобы полная версия GrpcClient загружалась раньше неполной
 if (CLIENT_ROOT / "modules").exists():
     sys.path.insert(0, str(CLIENT_ROOT / "modules"))  # client/modules (полная версия)
 # Добавляем корневой modules только если нужен для других модулей (низкий приоритет)
 if (ROOT_DIR / "modules").exists():
     sys.path.insert(0, str(ROOT_DIR / "modules"))  # modules/ (неполная версия, низкий приоритет)
+
 
 # --- Ранняя инициализация pydub/ffmpeg (до любых вызовов pydub) ---
 def init_ffmpeg_for_pydub():
@@ -103,6 +105,7 @@ def init_ffmpeg_for_pydub():
     if ffmpeg_path and ffmpeg_path.exists():
         try:
             from pydub import AudioSegment
+
             os.environ["FFMPEG_BINARY"] = str(ffmpeg_path)
             AudioSegment.converter = str(ffmpeg_path)
         except Exception:
@@ -116,11 +119,14 @@ BOOT_NOTES: list[str] = []
 
 # Выполняем инициализацию до импортов модулей, использующих pydub
 _ffmpeg_path = init_ffmpeg_for_pydub()
-BOOT_NOTES.append(f"init_ffmpeg_for_pydub: path={(str(_ffmpeg_path) if _ffmpeg_path else 'not found')}")
+BOOT_NOTES.append(
+    f"init_ffmpeg_for_pydub: path={(str(_ffmpeg_path) if _ffmpeg_path else 'not found')}"
+)
 
 # Фикс уже применен выше (в _apply_pyobjc_fix_early)
 # Добавляем результат в BOOT_NOTES для логирования
 BOOT_NOTES.append(f"pyobjc_fix: {_pyobjc_fix_result_early}")
+
 
 # Функция активации NSApplication - вызывается при каждом запуске
 def activate_nsapplication_for_menu_bar(force_activate: bool = False):
@@ -148,9 +154,12 @@ def activate_nsapplication_for_menu_bar(force_activate: bool = False):
         # ДИАГНОСТИКА: Проверяем статус автоматической терминации
         try:
             import Foundation
+
             process_info = Foundation.NSProcessInfo.processInfo()  # type: ignore[attr-defined]
             auto_term_enabled = process_info.automaticTerminationSupportEnabled()
-            print(f"[NEXY_INIT] 🔍 DIAGNOSTICS: automaticTerminationSupportEnabled = {auto_term_enabled}")
+            print(
+                f"[NEXY_INIT] 🔍 DIAGNOSTICS: automaticTerminationSupportEnabled = {auto_term_enabled}"
+            )
             print(f"[NEXY_INIT] 🔍 DIAGNOSTICS: System uptime = {process_info.systemUptime():.2f}s")
             print(f"[NEXY_INIT] 🔍 DIAGNOSTICS: Process ID = {process_info.processIdentifier()}")
 
@@ -178,12 +187,16 @@ def activate_nsapplication_for_menu_bar(force_activate: bool = False):
             focus_cfg = raw_config.get("focus", {}) if isinstance(raw_config, dict) else {}
             force_activate_cfg = bool(focus_cfg.get("force_activate_on_startup", False))
         except Exception as cfg_err:
-            print(f"[NEXY_INIT] ⚠️  WARNING: focus config unavailable, default force_activate=False ({cfg_err})")
+            print(
+                f"[NEXY_INIT] ⚠️  WARNING: focus config unavailable, default force_activate=False ({cfg_err})"
+            )
 
         should_force_activate = bool(force_activate or force_activate_cfg)
         if should_force_activate:
             app.activateIgnoringOtherApps_(True)
-            print(f"[NEXY_INIT] Called activateIgnoringOtherApps_(True) (force={force_activate}, cfg={force_activate_cfg})")
+            print(
+                f"[NEXY_INIT] Called activateIgnoringOtherApps_(True) (force={force_activate}, cfg={force_activate_cfg})"
+            )
         else:
             print("[NEXY_INIT] Skipped activateIgnoringOtherApps_(True) by focus config")
 
@@ -192,8 +205,10 @@ def activate_nsapplication_for_menu_bar(force_activate: bool = False):
     except Exception as e:
         print(f"[NEXY_INIT] ERROR: NSApplication activation failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
+
 
 # Настройка логирования (через unified_config.yaml)
 # ВАЖНО: Для .app bundle логи должны писаться в файл, т.к. stdout недоступен
@@ -217,6 +232,7 @@ log_file = os.path.abspath(log_file)
 
 try:
     from logging.handlers import RotatingFileHandler
+
     has_file_handler = any(
         isinstance(h, (logging.FileHandler, RotatingFileHandler))
         and getattr(h, "baseFilename", "") == log_file
@@ -246,6 +262,8 @@ logger.info(
 for note in BOOT_NOTES:
     logger.info("BOOT: %s", note)
 logger.info("BOOT: tempr log file=%s", log_file)
+
+
 def safe_exit(reason: str, code: int = 0) -> None:
     """Единая точка корректного завершения приложения."""
     try:
@@ -267,17 +285,19 @@ def safe_exit(reason: str, code: int = 0) -> None:
 
     sys.exit(code)
 
+
 # Глобальная переменная для отслеживания состояния приложения
 _app_shutting_down = False
+
 
 def log_crash_to_file(error_type, error_value, tb, context=""):
     """Записывает информацию о падении приложения в лог-файл"""
     try:
-        crash_log_file = os.path.join(tempfile.gettempdir(), 'nexy_crash.log')
-        with open(crash_log_file, 'a', encoding='utf-8') as f:
-            f.write("\n" + "="*80 + "\n")
+        crash_log_file = os.path.join(tempfile.gettempdir(), "nexy_crash.log")
+        with open(crash_log_file, "a", encoding="utf-8") as f:
+            f.write("\n" + "=" * 80 + "\n")
             f.write(f"💥 CRASH REPORT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("="*80 + "\n")
+            f.write("=" * 80 + "\n")
             if context:
                 f.write(f"Context: {context}\n")
             f.write(f"Error Type: {error_type.__name__}\n")
@@ -287,8 +307,8 @@ def log_crash_to_file(error_type, error_value, tb, context=""):
             f.write(f"Working Dir: {os.getcwd()}\n")
             f.write("\nFull Traceback:\n")
             f.write("".join(traceback.format_exception(error_type, error_value, tb)))
-            f.write("\n" + "="*80 + "\n\n")
-        
+            f.write("\n" + "=" * 80 + "\n\n")
+
         # Пытаемся использовать logger, если он доступен
         try:
             logger.critical(f"💥 CRASH записан в: {crash_log_file}")
@@ -298,35 +318,38 @@ def log_crash_to_file(error_type, error_value, tb, context=""):
     except Exception as e:
         print(f"❌ Не удалось записать crash log: {e}")
         import traceback as tb_module
+
         tb_module.print_exc()
+
 
 def exception_hook(error_type, error_value, tb):
     """Глобальный обработчик необработанных исключений"""
     global _app_shutting_down
     if _app_shutting_down:
         return
-    
+
     # Логируем в основной лог
     logger.critical(
         f"💥 НЕОБРАБОТАННОЕ ИСКЛЮЧЕНИЕ: {error_type.__name__}: {error_value}",
-        exc_info=(error_type, error_value, tb)
+        exc_info=(error_type, error_value, tb),
     )
-    
+
     # Записываем в crash log
     log_crash_to_file(error_type, error_value, tb, "Unhandled exception")
-    
+
     # Выводим в консоль
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("💥 НЕОБРАБОТАННОЕ ИСКЛЮЧЕНИЕ")
-    print("="*80)
+    print("=" * 80)
     traceback.print_exception(error_type, error_value, tb)
-    print("="*80)
+    print("=" * 80)
     print(f"📝 Полный лог ошибки записан в: {log_file}")
     print(f"💥 Crash report записан в: {os.path.join(tempfile.gettempdir(), 'nexy_crash.log')}")
-    print("="*80 + "\n")
-    
+    print("=" * 80 + "\n")
+
     # Вызываем стандартный обработчик для завершения приложения
     sys.__excepthook__(error_type, error_value, tb)
+
 
 def signal_handler(signum, frame):
     """Обработчик сигналов для корректного завершения"""
@@ -334,23 +357,24 @@ def signal_handler(signum, frame):
     signal_name = signal.Signals(signum).name
     logger.info(f"📡 Получен сигнал {signal_name} (PID: {os.getpid()})")
     print(f"\n📡 Получен сигнал {signal_name}, завершение работы...")
-    
+
     _app_shutting_down = True
-    
+
     # Записываем информацию о сигнале
     try:
-        crash_log_file = os.path.join(tempfile.gettempdir(), 'nexy_crash.log')
-        with open(crash_log_file, 'a', encoding='utf-8') as f:
-            f.write("\n" + "="*80 + "\n")
+        crash_log_file = os.path.join(tempfile.gettempdir(), "nexy_crash.log")
+        with open(crash_log_file, "a", encoding="utf-8") as f:
+            f.write("\n" + "=" * 80 + "\n")
             f.write(f"📡 SIGNAL RECEIVED - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Signal: {signal_name} ({signum})\n")
             f.write(f"PID: {os.getpid()}\n")
-            f.write("="*80 + "\n\n")
+            f.write("=" * 80 + "\n\n")
     except Exception as e:
         logger.error(f"Не удалось записать signal log: {e}")
-    
+
     # Завершаем приложение через safe_exit
     safe_exit(f"signal_handler signal={signal_name}", 0)
+
 
 # Устанавливаем глобальный обработчик исключений
 sys.excepthook = exception_hook
@@ -359,6 +383,7 @@ sys.excepthook = exception_hook
 signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 
+
 async def main():
     """Главная функция"""
     try:
@@ -366,10 +391,11 @@ async def main():
         logger.info(f"Python version: {sys.version}")
         logger.info(f"PID: {os.getpid()}")
         logger.info(f"Working directory: {os.getcwd()}")
-        
+
         logger.info("BOOT: step 1 - importing SimpleModuleCoordinator")
         # Импортируем SimpleModuleCoordinator
         from integration.core.simple_module_coordinator import SimpleModuleCoordinator
+
         logger.info("BOOT: step 1 - SimpleModuleCoordinator import complete")
 
         # Создаем координатор
@@ -396,6 +422,7 @@ async def main():
         traceback.print_exc()
         raise
 
+
 if __name__ == "__main__":
     if "--diagnostics" in sys.argv or os.getenv("NEXY_DIAG") == "voice":
         from integration.integrations.voice_recognition_integration import (
@@ -408,11 +435,11 @@ if __name__ == "__main__":
     # Создаем новый event loop для главного потока
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     try:
-        logger.info("="*80)
+        logger.info("=" * 80)
         logger.info("🚀 NEXY APPLICATION START")
-        logger.info("="*80)
+        logger.info("=" * 80)
         logger.info("BOOT: event loop run_until_complete start")
         loop.run_until_complete(main())
         logger.info("BOOT: event loop run_until_complete finished")
@@ -434,9 +461,9 @@ if __name__ == "__main__":
         traceback.print_exc()
         sys.exit(1)
     finally:
-        logger.info("="*80)
+        logger.info("=" * 80)
         logger.info("🛑 NEXY APPLICATION STOP")
-        logger.info("="*80)
+        logger.info("=" * 80)
         try:
             loop.close()
         except Exception as e:

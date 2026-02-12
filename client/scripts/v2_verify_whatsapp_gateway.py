@@ -23,6 +23,7 @@ from integration.core.selectors import (
     Snapshot,
     WhatsappStatus,
 )
+
 try:
     from mode_management import AppMode  # type: ignore[reportMissingImports]
 except ImportError:
@@ -30,7 +31,6 @@ except ImportError:
 
 
 class TestWhatsappGateway(unittest.TestCase):
-
     def create_snapshot(self, whatsapp_status: WhatsappStatus):
         return Snapshot(
             perm_mic=PermissionStatus.GRANTED,
@@ -42,7 +42,7 @@ class TestWhatsappGateway(unittest.TestCase):
             app_mode=AppMode.SLEEPING,
             restart_pending=False,
             update_in_progress=False,
-            whatsapp_status=whatsapp_status
+            whatsapp_status=whatsapp_status,
         )
 
     def test_qr_required_decision(self):
@@ -60,7 +60,9 @@ class TestWhatsappGateway(unittest.TestCase):
         decision = decide_whatsapp_action(snapshot)
         print(f"Decision for CONNECTED: {decision}")
         # Assuming default is START as per decision_engine.py if no rules match
-        self.assertEqual(decision, Decision.START, "Should default to START when connected (no specific rule)")
+        self.assertEqual(
+            decision, Decision.START, "Should default to START when connected (no specific rule)"
+        )
 
     def test_disconnected_decision(self):
         """Test that DISCONNECTED status results in default decision (START)."""
@@ -69,6 +71,7 @@ class TestWhatsappGateway(unittest.TestCase):
         decision = decide_whatsapp_action(snapshot)
         print(f"Decision for DISCONNECTED: {decision}")
         self.assertEqual(decision, Decision.START, "Should default to START when disconnected")
+
 
 if __name__ == "__main__":
     unittest.main()

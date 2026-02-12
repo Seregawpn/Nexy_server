@@ -36,9 +36,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CLIENT_ROOT = PROJECT_ROOT
 ROOT_DIR = CLIENT_ROOT.parent
 if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))            # Для доступа к корневому 'integration'
+    sys.path.insert(0, str(ROOT_DIR))  # Для доступа к корневому 'integration'
 if str(CLIENT_ROOT) not in sys.path:
-    sys.path.insert(0, str(CLIENT_ROOT))         # Для доступа к локальным модулям
+    sys.path.insert(0, str(CLIENT_ROOT))  # Для доступа к локальным модулям
 if str(CLIENT_ROOT / "modules") not in sys.path:
     sys.path.insert(0, str(CLIENT_ROOT / "modules"))
 
@@ -194,19 +194,19 @@ class CheckError(Exception):
 def check_syntax(file_path: Path) -> tuple[bool, str]:
     """
     Проверяет синтаксис Python файла.
-    
+
     Returns:
         (success, error_message)
     """
     try:
         # Проверяем синтаксис через py_compile
         py_compile.compile(str(file_path), doraise=True)
-        
+
         # Дополнительная проверка через AST
         with open(file_path, "r", encoding="utf-8") as f:
             source = f.read()
         ast.parse(source, filename=str(file_path))
-        
+
         return True, ""
     except py_compile.PyCompileError as e:
         return False, f"PyCompileError: {e}"
@@ -219,7 +219,7 @@ def check_syntax(file_path: Path) -> tuple[bool, str]:
 def check_import(module_name: str) -> tuple[bool, str]:
     """
     Проверяет возможность импорта модуля.
-    
+
     Returns:
         (success, error_message)
     """
@@ -237,187 +237,193 @@ def check_import(module_name: str) -> tuple[bool, str]:
 def check_all_syntax() -> list[str]:
     """Проверяет синтаксис всех критических файлов."""
     errors = []
-    
+
     for rel_path in CRITICAL_FILES:
         file_path = PROJECT_ROOT / rel_path
         if not file_path.exists():
             errors.append(f"{rel_path}: файл не найден")
             continue
-        
+
         success, error_msg = check_syntax(file_path)
         if not success:
             errors.append(f"{rel_path}: {error_msg}")
-    
+
     return errors
 
 
 def check_all_integrations() -> list[str]:
     """Проверяет импорт всех интеграций."""
     errors = []
-    
+
     for integration in INTEGRATIONS:
         success, error_msg = check_import(integration)
         if not success:
             errors.append(f"{integration}: {error_msg}")
-    
+
     return errors
 
 
 def check_core_imports() -> list[str]:
     """Проверяет импорт core компонентов."""
     errors = []
-    
+
     for module in CORE_IMPORTS:
         success, error_msg = check_import(module)
         if not success:
             errors.append(f"{module}: {error_msg}")
-    
+
     return errors
 
 
 def check_pyobjc_imports() -> list[str]:
     """Проверяет импорт PyObjC модулей."""
     errors = []
-    
+
     for module in PYOBJC_IMPORTS:
         success, error_msg = check_import(module)
         if not success:
             errors.append(f"{module}: {error_msg}")
-    
+
     return errors
 
 
 def check_all_modules() -> list[str]:
     """Проверяет импорт всех модулей из modules/."""
     errors = []
-    
+
     for module in MODULES:
         success, error_msg = check_import(module)
         if not success:
             errors.append(f"{module}: {error_msg}")
-    
+
     return errors
 
 
 def check_all_workflows() -> list[str]:
     """Проверяет импорт всех workflows."""
     errors = []
-    
+
     for workflow in WORKFLOWS:
         success, error_msg = check_import(workflow)
         if not success:
             errors.append(f"{workflow}: {error_msg}")
-    
+
     return errors
 
 
 def check_all_gateways() -> list[str]:
     """Проверяет импорт всех gateways."""
     errors = []
-    
+
     for gateway in GATEWAYS:
         success, error_msg = check_import(gateway)
         if not success:
             errors.append(f"{gateway}: {error_msg}")
-    
+
     return errors
 
 
 def check_resources_exist() -> list[str]:
     """Проверяет существование критических ресурсов."""
     errors = []
-    
+
     for resource in CRITICAL_RESOURCES:
         resource_path = PROJECT_ROOT / resource
         if not resource_path.exists():
             errors.append(f"{resource}: файл не найден")
-    
+
     return errors
 
 
 def check_configs_exist() -> list[str]:
     """Проверяет существование критических конфигурационных файлов."""
     errors = []
-    
+
     for config in CRITICAL_CONFIGS:
         config_path = PROJECT_ROOT / config
         if not config_path.exists():
             errors.append(f"{config}: файл не найден")
-    
+
     return errors
 
 
 def check_packaging_files() -> list[str]:
     """Проверяет существование критических packaging файлов."""
     errors = []
-    
+
     for pkg_file in CRITICAL_PACKAGING:
         pkg_path = PROJECT_ROOT / pkg_file
         if not pkg_path.exists():
             errors.append(f"{pkg_file}: файл не найден")
-    
+
     return errors
 
 
 def check_all_utils() -> list[str]:
     """Проверяет импорт всех utils."""
     errors = []
-    
+
     for util in UTILS:
         success, error_msg = check_import(util)
         if not success:
             errors.append(f"{util}: {error_msg}")
-    
+
     return errors
 
 
 def check_system_tools() -> list[str]:
     """Проверяет доступность системных инструментов."""
     import shutil
+
     errors = []
-    
+
     for tool in SYSTEM_TOOLS:
         if shutil.which(tool) is None:
             errors.append(f"{tool}: не найден в PATH")
-    
+
     return errors
 
 
 def check_binary_permissions() -> list[str]:
     """Проверяет права доступа на исполнение бинарников."""
     import os
+
     errors = []
-    
+
     for binary in EXECUTABLE_BINARIES:
         binary_path = PROJECT_ROOT / binary
         if binary_path.exists():
             if not os.access(binary_path, os.X_OK):
                 errors.append(f"{binary}: нет прав на исполнение (chmod +x)")
-    
+
     return errors
 
 
 def check_proto_files() -> list[str]:
     """Проверяет существование proto файлов и pb2.py."""
     errors = []
-    
+
     proto_dir = PROJECT_ROOT / "modules" / "grpc_client" / "proto"
-    
+
     # Проверяем существование proto файла
     proto_file = proto_dir / "streaming.proto"
     if not proto_file.exists():
         errors.append(f"modules/grpc_client/proto/streaming.proto: файл не найден")
         return errors
-    
+
     # Проверяем существование сгенерированных pb2 файлов
     pb2_file = proto_dir / "streaming_pb2.py"
     pb2_grpc_file = proto_dir / "streaming_pb2_grpc.py"
-    
+
     if not pb2_file.exists():
-        errors.append(f"modules/grpc_client/proto/streaming_pb2.py: не найден (запустите scripts/regenerate_proto.sh)")
+        errors.append(
+            f"modules/grpc_client/proto/streaming_pb2.py: не найден (запустите scripts/regenerate_proto.sh)"
+        )
     if not pb2_grpc_file.exists():
-        errors.append(f"modules/grpc_client/proto/streaming_pb2_grpc.py: не найден (запустите scripts/regenerate_proto.sh)")
-    
+        errors.append(
+            f"modules/grpc_client/proto/streaming_pb2_grpc.py: не найден (запустите scripts/regenerate_proto.sh)"
+        )
+
     return errors
 
 
@@ -425,10 +431,10 @@ def main() -> int:
     """Главная функция."""
     print("🔍 Проверка синтаксиса и импортов...")
     print()
-    
+
     all_errors = []
     check_num = 0
-    
+
     # 1. Проверка синтаксиса
     check_num += 1
     print(f"{check_num}. Проверка синтаксиса критических файлов...")
@@ -440,7 +446,7 @@ def main() -> int:
     else:
         print("   ✅ Синтаксис всех файлов корректен")
     print()
-    
+
     # 2. Проверка существования ресурсов
     check_num += 1
     print(f"{check_num}. Проверка существования критических ресурсов...")
@@ -452,7 +458,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(CRITICAL_RESOURCES)} ресурсов найдены")
     print()
-    
+
     # 3. Проверка существования конфигов
     check_num += 1
     print(f"{check_num}. Проверка существования конфигурационных файлов...")
@@ -464,7 +470,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(CRITICAL_CONFIGS)} конфигурационных файлов найдены")
     print()
-    
+
     # 4. Проверка существования packaging файлов
     check_num += 1
     print(f"{check_num}. Проверка существования packaging файлов...")
@@ -476,7 +482,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(CRITICAL_PACKAGING)} packaging файлов найдены")
     print()
-    
+
     # 5. Проверка core импортов
     check_num += 1
     print(f"{check_num}. Проверка импорта core компонентов...")
@@ -488,7 +494,7 @@ def main() -> int:
     else:
         print("   ✅ Все core компоненты импортируются")
     print()
-    
+
     # 6. Проверка gateways
     check_num += 1
     print(f"{check_num}. Проверка импорта gateways...")
@@ -500,7 +506,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(GATEWAYS)} gateways импортируются")
     print()
-    
+
     # 7. Проверка workflows
     check_num += 1
     print(f"{check_num}. Проверка импорта workflows...")
@@ -512,7 +518,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(WORKFLOWS)} workflows импортируются")
     print()
-    
+
     # 8. Проверка модулей
     check_num += 1
     print(f"{check_num}. Проверка импорта модулей...")
@@ -524,7 +530,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(MODULES)} модулей импортируются")
     print()
-    
+
     # 9. Проверка интеграций
     check_num += 1
     print(f"{check_num}. Проверка импорта интеграций...")
@@ -536,7 +542,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(INTEGRATIONS)} интеграций импортируются")
     print()
-    
+
     # 10. Проверка PyObjC
     check_num += 1
     print(f"{check_num}. Проверка импорта PyObjC модулей...")
@@ -548,7 +554,7 @@ def main() -> int:
     else:
         print("   ✅ Все PyObjC модули импортируются")
     print()
-    
+
     # 11. Проверка utils
     check_num += 1
     print(f"{check_num}. Проверка импорта utils...")
@@ -560,7 +566,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(UTILS)} utils импортируются")
     print()
-    
+
     # 12. Проверка системных инструментов
     check_num += 1
     print(f"{check_num}. Проверка системных инструментов...")
@@ -572,7 +578,7 @@ def main() -> int:
     else:
         print(f"   ✅ Все {len(SYSTEM_TOOLS)} системных инструментов доступны")
     print()
-    
+
     # 13. Проверка прав на бинарники
     check_num += 1
     print(f"{check_num}. Проверка прав на исполнение бинарников...")
@@ -584,7 +590,7 @@ def main() -> int:
     else:
         print("   ✅ Все бинарники имеют права на исполнение")
     print()
-    
+
     # 14. Проверка proto файлов
     check_num += 1
     print(f"{check_num}. Проверка proto файлов...")
@@ -596,7 +602,7 @@ def main() -> int:
     else:
         print("   ✅ Все proto файлы и pb2.py найдены")
     print()
-    
+
     # Итоги
     if all_errors:
         print("❌ Проверка завершена с ошибками:")
@@ -604,7 +610,7 @@ def main() -> int:
         for err in all_errors:
             print(f"   - {err}")
         return 1
-    
+
     print("✅ Все проверки пройдены успешно!")
     return 0
 

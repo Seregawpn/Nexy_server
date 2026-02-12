@@ -12,7 +12,4 @@ __version__ = "1.6.1.28"
 __author__ = "Nexy AI Voice Assistant Team"
 
 # Export main classes
-__all__ = [
-    'AVFoundationPlayer',
-    'AVFPlayerConfig'
-]
+__all__ = ["AVFoundationPlayer", "AVFPlayerConfig"]

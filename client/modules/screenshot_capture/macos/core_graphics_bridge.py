@@ -99,17 +99,17 @@ class CoreGraphicsBridge:
     ) -> ScreenshotResult:
         """Кодирует CGImage напрямую в нужный формат (JPEG или WebP) без промежуточных форматов."""
         target_cg_image = self._resize_if_needed(cg_image, config)
-        
+
         # Определяем формат из конфигурации
         target_format = config.format
-        
+
         # Для WebP используем Pillow для прямого кодирования из CGImage
         if target_format == ScreenshotFormat.WEBP:
             return self._encode_as_webp_result(target_cg_image, config, start_ts, meta)
         else:
             # Для JPEG используем нативный NSBitmapImageRep (быстрее)
             return self._encode_as_jpeg_result(target_cg_image, config, start_ts, meta)
-    
+
     def _encode_as_webp_result(
         self, cg_image, config: ScreenshotConfig, start_ts: float, meta: dict[str, Any]
     ) -> ScreenshotResult:
@@ -119,75 +119,68 @@ class CoreGraphicsBridge:
         except ImportError:
             logger.warning("⚠️ Pillow недоступен, fallback на JPEG")
             return self._encode_as_jpeg_result(cg_image, config, start_ts, meta)
-        
+
         try:
             # Конвертируем CGImage в PIL Image напрямую из raw pixel data
             rep = NSBitmapImageRep.alloc().initWithCGImage_(cg_image)
             width = rep.pixelsWide()
             height = rep.pixelsHigh()
-            
+
             # Получаем raw pixel data напрямую (без промежуточного PNG!)
             bitmap_data = rep.bitmapData()
             bytes_per_row = rep.bytesPerRow()
             bits_per_pixel = rep.bitsPerPixel()
             samples_per_pixel = rep.samplesPerPixel()
-            
+
             # Определяем формат пикселей
             if bits_per_pixel == 32 and samples_per_pixel == 4:
                 # RGBA формат (8 бит на канал)
-                mode = 'RGBA'
+                mode = "RGBA"
                 # Создаем PIL Image напрямую из raw данных
                 img = Image.frombuffer(
-                    mode,
-                    (width, height),
-                    bitmap_data,
-                    'raw',
-                    mode,
-                    bytes_per_row,
-                    1
+                    mode, (width, height), bitmap_data, "raw", mode, bytes_per_row, 1
                 )
             elif bits_per_pixel == 24 and samples_per_pixel == 3:
                 # RGB формат
-                mode = 'RGB'
+                mode = "RGB"
                 img = Image.frombuffer(
-                    mode,
-                    (width, height),
-                    bitmap_data,
-                    'raw',
-                    mode,
-                    bytes_per_row,
-                    1
+                    mode, (width, height), bitmap_data, "raw", mode, bytes_per_row, 1
                 )
             else:
                 # Fallback: используем PNG как промежуточный формат (только если не удалось получить raw data)
-                logger.debug(f"Нестандартный формат пикселей ({bits_per_pixel}bpp, {samples_per_pixel}spp), используем PNG fallback")
+                logger.debug(
+                    f"Нестандартный формат пикселей ({bits_per_pixel}bpp, {samples_per_pixel}spp), используем PNG fallback"
+                )
                 from AppKit import (
                     NSBitmapImageFileTypePNG,  # pyright: ignore[reportAttributeAccessIssue]
                 )
-                nsdata = rep.representationUsingType_properties_(
-                    NSBitmapImageFileTypePNG, {}
-                )
+
+                nsdata = rep.representationUsingType_properties_(NSBitmapImageFileTypePNG, {})
                 img = Image.open(io.BytesIO(bytes(nsdata)))
-            
+
             # Получаем качество WebP из общей утилиты
             webp_quality = get_webp_quality(config.quality, default=80)
-            
+
             # Кодируем в WebP напрямую в память и сразу в Base64 (без промежуточных переменных)
             output = io.BytesIO()
-            img.save(output, 'WEBP', quality=webp_quality, method=6)  # method=6 - максимальное сжатие
+            img.save(
+                output, "WEBP", quality=webp_quality, method=6
+            )  # method=6 - максимальное сжатие
             webp_bytes = output.getvalue()
             # Генерируем Base64 сразу из WebP bytes
             base64_data = base64.b64encode(webp_bytes).decode("utf-8")
-            
+
             metadata = {
                 **meta,
                 "timestamp": time.time(),
                 "quality": webp_quality,
-                "encoding": "pillow_webp_direct_base64"  # Прямое кодирование WebP → Base64 без PNG
+                "encoding": "pillow_webp_direct_base64",  # Прямое кодирование WebP → Base64 без PNG
             }
-            
-            logger.debug(f"✅ WebP → Base64 напрямую: {width}x{height}, {len(webp_bytes)} bytes, quality={webp_quality}")
-            
+
+            logger.debug(
+                f"✅ WebP → Base64 напрямую: {width}x{height}, {len(webp_bytes)} bytes, quality={webp_quality}"
+            )
+
             return ScreenshotResult(
                 success=True,
                 data=ScreenshotData(
@@ -204,9 +197,10 @@ class CoreGraphicsBridge:
         except Exception as e:
             logger.warning(f"⚠️ WebP кодирование не удалось: {e}, fallback на JPEG")
             import traceback
+
             logger.debug(traceback.format_exc())
             return self._encode_as_jpeg_result(cg_image, config, start_ts, meta)
-    
+
     def _encode_as_jpeg_result(
         self, cg_image, config: ScreenshotConfig, start_ts: float, meta: dict[str, Any]
     ) -> ScreenshotResult:
@@ -228,7 +222,7 @@ class CoreGraphicsBridge:
             **meta,
             "timestamp": time.time(),
             "quality": compression,
-            "encoding": "native_jpeg_base64"
+            "encoding": "native_jpeg_base64",
         }
 
         return ScreenshotResult(
@@ -280,5 +274,3 @@ class CoreGraphicsBridge:
         # Use CGRect tuple representation instead of CGRectMake
         CGContextDrawImage(ctx, ((0, 0), (new_w, new_h)), cg_image)
         return CGBitmapContextCreateImage(ctx)
-
-

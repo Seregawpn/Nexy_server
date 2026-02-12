@@ -13,17 +13,13 @@ from .types import Decision
 def decide_whatsapp_action(snapshot: Snapshot) -> Decision:
     """
     Decide what action to take based on WhatsApp status.
-    
+
     Uses centralized DecisionEngine and rules from interaction_matrix.yaml.
     Canonical logging is handled by the engine.
     """
     engine = get_engine("decide_whatsapp_action")
-    
+
     # Use standard context creation which now includes whatsapp status
     ctx = create_ctx_from_snapshot(snapshot)
-    
-    return engine.decide(
-        snapshot,
-        source="whatsapp",
-        ctx=ctx
-    )
+
+    return engine.decide(snapshot, source="whatsapp", ctx=ctx)

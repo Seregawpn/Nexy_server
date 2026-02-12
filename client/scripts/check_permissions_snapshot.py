@@ -5,7 +5,7 @@ Read-only, no runtime interference.
 
 Usage:
     python3 scripts/check_permissions_snapshot.py [--loop N]
-    
+
 Options:
     --loop N    Run N iterations with 2s delay to detect stale cache (default: 1)
 """
@@ -29,6 +29,7 @@ def check_microphone() -> tuple[Status, str]:
     """Check microphone permission via AVFoundation."""
     try:
         import AVFoundation
+
         status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(  # type: ignore[reportAttributeAccessIssue]
             AVFoundation.AVMediaTypeAudio  # type: ignore[reportAttributeAccessIssue]
         )
@@ -43,8 +44,9 @@ def check_microphone() -> tuple[Status, str]:
         # Fallback: try sounddevice
         try:
             import sounddevice as sd
+
             devices = sd.query_devices()
-            input_devices = [d for d in devices if d.get('max_input_channels', 0) > 0]
+            input_devices = [d for d in devices if d.get("max_input_channels", 0) > 0]
             if input_devices:
                 return Status.GRANTED, f"sounddevice found {len(input_devices)} input devices"
             else:
@@ -63,18 +65,19 @@ def check_accessibility() -> tuple[Status, str]:
             from Foundation import (
                 NSBundle,  # type: ignore[reportMissingImports, reportAttributeAccessIssue]
             )
+
             bundle_id = NSBundle.mainBundle().bundleIdentifier() or "com.nexy.assistant"
         except Exception:
             bundle_id = "com.nexy.assistant"
-        
+
         # tccutil check Accessibility <bundle_id>
         result = subprocess.run(
-            ['tccutil', 'check', 'Accessibility', bundle_id],
+            ["tccutil", "check", "Accessibility", bundle_id],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
-        
+
         if result.returncode == 0:
             return Status.GRANTED, f"tccutil check Accessibility {bundle_id}=True"
         else:
@@ -95,6 +98,7 @@ def check_input_monitoring() -> tuple[Status, str]:
             IOHIDCheckAccess,  # type: ignore[reportAttributeAccessIssue]
             kIOHIDRequestTypeListenEvent,  # type: ignore[reportAttributeAccessIssue]
         )
+
         # IOHIDCheckAccess returns: 0=Denied, 1=Granted, 2=Unknown/NotDetermined
         access = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
         if access == 1:
@@ -107,28 +111,28 @@ def check_input_monitoring() -> tuple[Status, str]:
         pass  # Fall through to pynput check
     except Exception as e:
         return Status.ERROR, str(e)
-    
+
     # Fallback: try pynput listener briefly
     try:
         import threading
 
         from pynput import keyboard
-        
+
         result = {"status": Status.NOT_DETERMINED, "detail": "pynput test"}
         event_received = threading.Event()
-        
+
         def on_press(key):
             result["status"] = Status.GRANTED
             result["detail"] = "pynput listener received events"
             event_received.set()
             return False  # Stop listener
-        
+
         listener = keyboard.Listener(on_press=on_press)  # type: ignore[reportArgumentType]
         listener.start()
-        
+
         # Wait briefly - if listener starts without error, likely granted
         listener.join(timeout=0.1)
-        
+
         if listener.is_alive():
             listener.stop()
             # Listener ran without error = likely granted
@@ -137,7 +141,7 @@ def check_input_monitoring() -> tuple[Status, str]:
             return result["status"], result["detail"]
         else:
             return Status.GRANTED, "pynput listener completed"
-            
+
     except Exception as e:
         error_str = str(e).lower()
         if "permission" in error_str or "not trusted" in error_str:
@@ -151,6 +155,7 @@ def check_screen_capture() -> tuple[Status, str]:
         from Quartz import (
             CGPreflightScreenCaptureAccess,  # type: ignore[reportMissingImports, reportAttributeAccessIssue]
         )
+
         granted = CGPreflightScreenCaptureAccess()
         if granted:
             return Status.GRANTED, "CGPreflightScreenCaptureAccess=True"
@@ -174,19 +179,19 @@ def run_snapshot() -> dict[str, tuple[Status, str]]:
 
 def print_table(results: dict[str, tuple[Status, str]], iteration: int, timestamp: str):
     """Print results as a formatted table."""
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Iteration {iteration} | {timestamp}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"{'Permission':<20} {'Status':<20} {'Details'}")
-    print(f"{'-'*70}")
+    print(f"{'-' * 70}")
     for perm, (status, details) in results.items():
         print(f"{perm:<20} {status.value:<20} {details}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
 
 def main():
     iterations = 1
-    
+
     # Parse --loop argument
     if "--loop" in sys.argv:
         idx = sys.argv.index("--loop")
@@ -196,30 +201,30 @@ def main():
             except ValueError:
                 print("Error: --loop requires an integer")
                 sys.exit(1)
-    
-    print("\n" + "="*70)
+
+    print("\n" + "=" * 70)
     print("  macOS PERMISSIONS SNAPSHOT")
     print("  Read-only diagnostic — no prompts, no side effects")
-    print("="*70)
-    
+    print("=" * 70)
+
     history = []
-    
+
     for i in range(1, iterations + 1):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         results = run_snapshot()
         print_table(results, i, timestamp)
         history.append((timestamp, results))
-        
+
         if i < iterations:
             print(f"\nWaiting 2 seconds before next check...")
             time.sleep(2)
-    
+
     # Summary if multiple iterations
     if iterations > 1:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print("  CHANGE DETECTION SUMMARY")
-        print(f"{'='*70}")
-        
+        print(f"{'=' * 70}")
+
         changes_detected = False
         for perm in history[0][1].keys():
             statuses = [h[1][perm][0] for h in history]
@@ -228,10 +233,10 @@ def main():
                 print(f"{perm}: CHANGED")
                 for ts, res in history:
                     print(f"  {ts}: {res[perm][0].value}")
-        
+
         if not changes_detected:
             print("No status changes detected across iterations.")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
 
 if __name__ == "__main__":

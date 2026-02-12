@@ -6,6 +6,5 @@ macOS специфичные bridge-модули для захвата экра�
 from .simple_bridge import SimpleCoreGraphicsBridge
 
 __all__ = [
-    'SimpleCoreGraphicsBridge',
+    "SimpleCoreGraphicsBridge",
 ]
-

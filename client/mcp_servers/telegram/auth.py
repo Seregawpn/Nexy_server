@@ -3,7 +3,7 @@ from pathlib import Path
 
 from telethon.sync import TelegramClient  # type: ignore[reportMissingImports]
 
-# Стандартный путь к сессии (в корне home, как попросил пользователь в чате, 
+# Стандартный путь к сессии (в корне home, как попросил пользователь в чате,
 # или лучше скрытый файл. Используем скрытый для безопасности)
 SESSION_FILE_PATH = Path.home() / ".telegram_mcp_session"
 
@@ -13,9 +13,11 @@ SESSION_FILE_PATH = Path.home() / ".telegram_mcp_session"
 DEFAULT_API_ID = os.getenv("TELEGRAM_API_ID")
 DEFAULT_API_HASH = os.getenv("TELEGRAM_API_HASH")
 
+
 def get_session_path() -> Path:
     """Возвращает путь к файлу сессии."""
     return SESSION_FILE_PATH
+
 
 def load_session() -> str | None:
     """Загружает строку сессии из файла."""
@@ -27,6 +29,7 @@ def load_session() -> str | None:
     except Exception:
         return None
 
+
 def save_session(session_str: str):
     """Сохраняет строку сессии в файл."""
     path = get_session_path()
@@ -34,6 +37,7 @@ def save_session(session_str: str):
     # Set restrictive permissions
     path.write_text(session_str)
     os.chmod(path, 0o600)
+
 
 def ensure_authorized(client: TelegramClient) -> bool:
     """Проверяет авторизацию клиента."""
