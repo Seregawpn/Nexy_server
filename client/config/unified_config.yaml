@@ -30,7 +30,7 @@ app:
   debug: true
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.1.30
+  version: 1.6.1.31
 focus:
   force_activate_on_startup: false
   allow_tray_startup_fallback: true
