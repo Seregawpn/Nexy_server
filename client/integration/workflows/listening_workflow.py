@@ -141,8 +141,8 @@ class ListeningWorkflow(BaseWorkflow):
                 
                 if duration < self.debounce_threshold:
                     logger.warning(f"🎤 ListeningWorkflow: запись слишком короткая ({duration:.2f}с), возможно случайное нажатие")
-                    # Не переходим в PROCESSING для коротких записей
-                    await self._return_to_sleeping("short_recording")
+                    # Centralization: terminal mode decision owned by InputProcessingIntegration.
+                    # ListeningWorkflow does not publish competing mode.request here.
                     return
             
             # Переход в PROCESSING координируется InputProcessingIntegration
@@ -168,9 +168,9 @@ class ListeningWorkflow(BaseWorkflow):
             
             # Отменяем все мониторинговые задачи
             await self._cancel_monitoring_tasks()
-            
-            # Координированный возврат в SLEEPING
-            await self._return_to_sleeping(reason)
+            # Mode transition при interrupt централизован в InterruptManagementIntegration.
+            # Здесь только локальная очистка workflow-состояния.
+            self._reset_state()
             
         except Exception as e:
             logger.error(f"❌ ListeningWorkflow: ошибка обработки прерывания - {e}")

@@ -322,7 +322,7 @@ class MacOSTrayMenu:
             logger.error(f"❌ Ошибка обновления устройства в меню: {e}")
     
     def update_icon(self, icon_path: str):
-        """Обновить иконку с retry механизмом"""
+        """Обновить иконку без блокирующих ожиданий UI-потока."""
         if not self.app:
             logger.warning("⚠️ ДИАГНОСТИКА update_icon: self.app is None")
             return
@@ -332,23 +332,8 @@ class MacOSTrayMenu:
             logger.info(f"🔍 ДИАГНОСТИКА update_icon: os.path.exists(icon_path)={os.path.exists(icon_path)}")
             if os.path.exists(icon_path):
                 logger.info(f"🔍 ДИАГНОСТИКА update_icon: размер файла={os.path.getsize(icon_path)} bytes")
-
-            # Retry механизм для обновления иконки (на случай временных сбоев XPC)
-            max_retries = 2
-            retry_delay = 0.2
-            import time
-
-            for attempt in range(1, max_retries + 1):
-                try:
-                    self.app.icon = icon_path
-                    logger.info(f"✅ ДИАГНОСТИКА update_icon: Иконка обновлена успешно (попытка {attempt})")
-                    break
-                except Exception as e:
-                    logger.warning(f"⚠️ update_icon попытка {attempt} не удалась: {e}")
-                    if attempt < max_retries:
-                        time.sleep(retry_delay)
-                    else:
-                        raise  # Перебрасываем исключение после последней попытки
+            self.app.icon = icon_path
+            logger.info("✅ ДИАГНОСТИКА update_icon: Иконка обновлена успешно")
 
         except Exception as e:
             logger.error(f"❌ ДИАГНОСТИКА update_icon: Ошибка обновления иконки: {e}", exc_info=True)

@@ -11,8 +11,6 @@ from integration.core.selectors import (
     can_process_audio,
     can_start_listening,
     device_busy,
-    is_first_run_restart_pending,
-    is_restart_pending,
     mic_ready,
     network_offline,
     should_degrade_offline,
@@ -38,11 +36,10 @@ def _log_decision(
     """Unified decision log formatter.
 
     Always logs ctx={mic, screen, device, network, firstRun, appMode} with optional duration_ms.
-    Also includes new axes if present in Snapshot: restart_pending, update_in_progress.
+    Also includes new axes if present in Snapshot: update_in_progress.
     """
     # Include all axes in context: mic, screen, device, network, firstRun, appMode
-    # Also include new axes if present in Snapshot: restart_pending, update_in_progress
-    restart_pending_val = getattr(s, 'restart_pending', None)
+    # Also include new axis if present in Snapshot: update_in_progress
     update_in_progress_val = getattr(s, 'update_in_progress', None)
     
     ctx_parts = [
@@ -54,8 +51,6 @@ def _log_decision(
         f"appMode={s.app_mode.value}",
     ]
     
-    if restart_pending_val is not None:
-        ctx_parts.append(f"restart_pending={restart_pending_val}")
     if update_in_progress_val is not None:
         ctx_parts.append(f"update_in_progress={update_in_progress_val}")
     
@@ -151,7 +146,7 @@ def decide_route_manager_reconcile(s: Snapshot) -> Decision:
             f"ctx={create_ctx_from_snapshot(s).to_log_string()} "
             f"error={exc} fallback_to=legacy"
         )
-        if s.first_run or s.restart_pending or s.update_in_progress:
+        if s.first_run or s.update_in_progress:
             _log_decision(level="info", decision=Decision.ABORT, s=s, source="route_manager_gateway")
             return Decision.ABORT
         if device_busy(s):
@@ -222,23 +217,13 @@ def decide_continue_integration_startup(s: Snapshot) -> Decision:
             f"ctx={create_ctx_from_snapshot(s).to_log_string()} "
             f"error={exc} fallback_to=legacy"
         )
-        if is_first_run_restart_pending(s):
+        if s.first_run:
             _log_decision(
                 level="info",
                 decision=Decision.ABORT,
                 s=s,
                 source="coordinator_gateway",
-                reason="first_run_restart_pending",
-                duration_ms=0,
-            )
-            return Decision.ABORT
-        if is_restart_pending(s):
-            _log_decision(
-                level="warning",
-                decision=Decision.ABORT,
-                s=s,
-                source="coordinator_gateway",
-                reason="restart_pending_without_first_run",
+                reason="first_run_in_progress",
                 duration_ms=0,
             )
             return Decision.ABORT

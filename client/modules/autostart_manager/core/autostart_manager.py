@@ -76,3 +76,13 @@ class AutostartManager:
         except Exception as e:
             print(f"❌ Ошибка удаления legacy LaunchAgent: {e}")
             return False
+
+    async def suspend_current_session(self) -> bool:
+        """Отключает LaunchAgent только для текущей user-сессии."""
+        try:
+            if self.config.method != "launch_agent":
+                return False
+            return await self.launch_agent_manager.unload_for_current_session()
+        except Exception as e:
+            print(f"❌ Ошибка отключения LaunchAgent для текущей сессии: {e}")
+            return False

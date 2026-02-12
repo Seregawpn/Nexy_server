@@ -45,7 +45,6 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             
             # Создаем контроллер
             self.controller = VoiceOverController(settings)
-            await self.event_bus.subscribe("system.permissions_ready", self._on_permissions_ready)
 
             # Инициализируем контроллер только если есть разрешение Accessibility
             if await self._maybe_initialize_controller():
@@ -56,7 +55,8 @@ class VoiceOverDuckingIntegration(BaseIntegration):
             
             # Подписываемся на события
             await self.event_bus.subscribe("app.mode_changed", self.handle_mode_change)
-            await self.event_bus.subscribe("keyboard.press", self.handle_keyboard_press)
+            if bool(self.config.get("engage_on_keyboard_events", True)):
+                await self.event_bus.subscribe("keyboard.press", self.handle_keyboard_press)
             await self.event_bus.subscribe("app.shutdown", self.handle_shutdown)
             await self.event_bus.subscribe("system.permissions_ready", self._on_permissions_ready)
             await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed)

@@ -13,6 +13,40 @@ When a feature is disabled:
 
 ---
 
+## Flag Governance (Source of Truth)
+
+This file is the only Source of Truth for feature-flag definitions and conflicts.
+
+Rules:
+1. Do not introduce new runtime flags before documenting them here.
+2. Each flag must define: `owner`, `scope`, `default`, `remove-condition`, `conflicts-with`.
+3. Shadow/alias flags are forbidden unless explicitly marked as legacy with removal plan.
+4. If two flags control one behavior, a single canonical flag must be selected.
+
+Required contract for each flag change:
+- Owner: module/team responsible for lifecycle.
+- Scope: server/client/both + specific config path/env.
+- Default: value used in production by default.
+- Remove-condition: when flag must be deleted.
+- Conflicts-with: mutually exclusive or overlapping flags.
+
+---
+
+## Canonical Flag Registry
+
+| Flag | Owner | Scope | Default | Remove-condition | Conflicts-with |
+|------|-------|-------|---------|------------------|----------------|
+| `MESSAGES_ENABLED` + `messages.enabled` | Messaging integration owners | both | true | remove after permanent rollout | none |
+| `BROWSER_USE_ENABLED` + `browser_use.enabled` | Browser automation owners | both | true | remove after permanent rollout | legacy alias `features.browser_use.enabled` |
+| `SUBSCRIPTION_ENABLED` + `payment_use.enabled` | Payment/subscription owners | both | true | remove after product policy freeze | `SUBSCRIPTION_KILL_SWITCH=true` (override) |
+| `SUBSCRIPTION_KILL_SWITCH` | Payment/subscription owners | server | false | remove after incident tooling replacement | overrides `SUBSCRIPTION_ENABLED` |
+| `WHATSAPP_ENABLED` + `whatsapp.enabled` | WhatsApp integration owners | both | false | remove after stable always-on decision | none |
+| `WEB_SEARCH_ENABLED` | Server LLM/tooling owners | server | true | remove after tool policy freeze | none |
+| `FORWARD_ASSISTANT_ACTIONS` | Server orchestration owners | server | true | remove after protocol hardening complete | none |
+| `PAYMENT_USE_ENABLED` | Payment automation owners | server | true | remove if automation merged into core payment flow | none |
+
+---
+
 ## 1. Messages Integration (iMessage)
 
 Controls: `read_messages`, `send_message`, `find_contact`.

@@ -66,6 +66,26 @@ class LaunchAgentManager:
             print(f"❌ Ошибка удаления LaunchAgent: {e}")
             return False
 
+    async def unload_for_current_session(self) -> bool:
+        """Выгружает LaunchAgent из текущей GUI-сессии без удаления plist."""
+        try:
+            result = subprocess.run(
+                ['launchctl', 'bootout', f'gui/{os.getuid()}/{self.bundle_id}'],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                return True
+            # Fallback bootout by plist path (agent can be loaded without canonical label path)
+            path_result = subprocess.run(
+                ['launchctl', 'bootout', f'gui/{os.getuid()}', self.plist_path],
+                capture_output=True,
+                text=True,
+            )
+            return path_result.returncode == 0
+        except Exception:
+            return False
+
     async def remove_legacy_launch_agent(self, legacy_path: str, legacy_label: str) -> bool:
         """Удаление legacy LaunchAgent (дубликат автозапуска)."""
         try:

@@ -110,19 +110,6 @@ def app_mode_alias_predicate(s: Snapshot, expected: str | list[Any], extra: dict
     return app_mode_predicate(s, expected, extra)
 
 
-@_register("app.restart_pending")
-def app_restart_pending(s: Snapshot, expected: bool, extra: dict[str, Any] | None) -> bool:
-    """Check if restart is pending (without first_run check)."""
-    return bool(s.restart_pending) == bool(expected)
-
-
-@_register("app.first_run_restart_pending")
-def app_first_run_restart_pending(s: Snapshot, expected: bool, extra: dict[str, Any] | None) -> bool:
-    """Check if first run AND restart is pending."""
-    pending = bool(s.first_run) and bool(s.restart_pending)
-    return pending == bool(expected)
-
-
 # ===== Extra context (from extra dict) =====
 
 @_register("update.in_progress")

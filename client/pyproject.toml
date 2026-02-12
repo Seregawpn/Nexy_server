@@ -241,4 +241,5 @@ ignore = [
 [tool.pytest.ini_options]
 markers = [
   "smoke: smoke tests",
+  "integration: integration tests",
 ]

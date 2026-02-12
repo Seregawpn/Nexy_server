@@ -4,6 +4,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 
 class AutostartStatus(Enum):
@@ -17,6 +18,6 @@ class AutostartConfig:
     """Конфигурация модуля автозапуска."""
     enabled: bool = False
     delay_seconds: int = 5
-    method: str = "launch_agent"  # "launch_agent" или "login_item"
+    method: Literal["launch_agent"] = "launch_agent"
     launch_agent_path: str = "~/Library/LaunchAgents/com.nexy.assistant.plist"
     bundle_id: str = "com.nexy.assistant"

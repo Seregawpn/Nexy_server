@@ -213,7 +213,7 @@ except Exception:
 if not log_file:
     log_file = os.path.join(tempfile.gettempdir(), "nexy_debug.log")
 
-log_file = os.path.abspath(log_file)
+log_file = str(Path(log_file).expanduser().resolve())
 
 try:
     from logging.handlers import RotatingFileHandler
@@ -245,7 +245,7 @@ logger.info(
 )
 for note in BOOT_NOTES:
     logger.info("BOOT: %s", note)
-logger.info("BOOT: tempr log file=%s", log_file)
+logger.info("BOOT: temp log file=%s", log_file)
 def safe_exit(reason: str, code: int = 0) -> None:
     """Единая точка корректного завершения приложения."""
     try:

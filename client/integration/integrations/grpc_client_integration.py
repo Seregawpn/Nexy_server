@@ -980,13 +980,54 @@ class GrpcClientIntegration:
                             f"shape={shape}, sample_rate={effective_sr}Hz, channels={effective_ch} для сессии {session_id}"
                         )
 
-                    # DIAGNOSTIC: оцениваем амплитуду по полному чанку (не только head),
-                    # чтобы корректно различать тишину и "микрошум".
+                    # DIAGNOSTIC/GATE: оцениваем амплитуду с учетом реального dtype чанка.
+                    # Source-of-truth для формата — grpc_client_integration; здесь нельзя
+                    # предполагать int16 для всех случаев, иначе float32 может ошибочно
+                    # классифицироваться как noise-floor и не доходить до playback.
                     first_bytes = data[:8].hex() if len(data) >= 8 else ""
-                    arr_full = np.frombuffer(data, dtype=np.int16)
-                    peak_raw = float(np.max(np.abs(arr_full))) if arr_full.size > 0 else 0.0
-                    rms_raw = float(np.sqrt(np.mean(np.square(arr_full.astype(np.float32))))) if arr_full.size > 0 else 0.0
-                    is_zeros = bool(arr_full.size == 0 or np.all(arr_full == 0))
+                    dtype_norm = str(dtype).strip().lower()
+                    arr_full_i16 = None
+                    arr_full_f32 = None
+                    if dtype_norm in ("float32", "float", "f32"):
+                        try:
+                            arr_full_f32 = np.frombuffer(data, dtype=np.float32)
+                        except Exception:
+                            arr_full_f32 = np.array([], dtype=np.float32)
+                    elif dtype_norm in ("int16_be", "pcm_s16be"):
+                        try:
+                            arr_full_i16 = np.frombuffer(data, dtype=np.dtype(">i2"))
+                        except Exception:
+                            arr_full_i16 = np.array([], dtype=np.int16)
+                    else:
+                        # Default/fallback protocol path: int16 little-endian
+                        try:
+                            arr_full_i16 = np.frombuffer(data, dtype=np.dtype("<i2"))
+                        except Exception:
+                            arr_full_i16 = np.array([], dtype=np.int16)
+
+                    if arr_full_f32 is not None:
+                        finite_mask = np.isfinite(arr_full_f32)
+                        if not np.all(finite_mask):
+                            arr_full_f32 = np.where(finite_mask, arr_full_f32, 0.0).astype(np.float32, copy=False)
+                        peak_f = float(np.max(np.abs(arr_full_f32))) if arr_full_f32.size > 0 else 0.0
+                        rms_f = (
+                            float(np.sqrt(np.mean(np.square(arr_full_f32.astype(np.float32)))))
+                            if arr_full_f32.size > 0
+                            else 0.0
+                        )
+                        # Приводим к шкале int16 для единых порогов
+                        peak_raw = peak_f * 32767.0
+                        rms_raw = rms_f * 32767.0
+                        is_zeros = bool(arr_full_f32.size == 0 or np.all(np.abs(arr_full_f32) < 1e-8))
+                    else:
+                        arr_int = arr_full_i16 if arr_full_i16 is not None else np.array([], dtype=np.int16)
+                        peak_raw = float(np.max(np.abs(arr_int.astype(np.int32)))) if arr_int.size > 0 else 0.0
+                        rms_raw = (
+                            float(np.sqrt(np.mean(np.square(arr_int.astype(np.float32)))))
+                            if arr_int.size > 0
+                            else 0.0
+                        )
+                        is_zeros = bool(arr_int.size == 0 or np.all(arr_int == 0))
                     is_audible = (
                         peak_raw >= float(self._min_audible_peak_int16)
                         or rms_raw >= float(self._min_audible_rms_int16)

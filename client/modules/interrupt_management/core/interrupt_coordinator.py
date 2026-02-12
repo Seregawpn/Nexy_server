@@ -98,6 +98,11 @@ class InterruptCoordinator:
             
             # Блокируем только для обновления статуса и перемещения в историю
             async with self._lock:
+                # Прерывание могло быть отменено параллельно через cancel_all_interrupts().
+                if event.status == InterruptStatus.CANCELLED or event not in self.active_interrupts:
+                    logger.info(f"⚠️ Прерывание {event.type.value} уже отменено до завершения обработчика")
+                    return False
+
                 # Обновляем статус
                 if result:
                     event.status = InterruptStatus.COMPLETED
@@ -110,7 +115,8 @@ class InterruptCoordinator:
                 
                 # Перемещаем в историю
                 self.interrupt_history.append(event)
-                self.active_interrupts.remove(event)
+                if event in self.active_interrupts:
+                    self.active_interrupts.remove(event)
                 
                 # Очищаем старую историю (оставляем последние 100)
                 if len(self.interrupt_history) > 100:
@@ -126,10 +132,26 @@ class InterruptCoordinator:
             # Блокируем для обновления статуса и перемещения в историю
             async with self._lock:
                 self.metrics.failed_interrupts += 1
-                self.interrupt_history.append(event)
-                self.active_interrupts.remove(event)
+                if event in self.active_interrupts:
+                    self.interrupt_history.append(event)
+                    self.active_interrupts.remove(event)
             
             return False
+
+    async def cancel_all_interrupts(self) -> int:
+        """Отменяет все активные прерывания lock-safe и переносит их в историю."""
+        async with self._lock:
+            cancelled = 0
+            for event in self.active_interrupts:
+                event.status = InterruptStatus.CANCELLED
+                self.interrupt_history.append(event)
+                cancelled += 1
+            self.active_interrupts.clear()
+            if len(self.interrupt_history) > 100:
+                self.interrupt_history = self.interrupt_history[-100:]
+            if cancelled > 0:
+                logger.info("🛑 Отменено активных прерываний: %s", cancelled)
+            return cancelled
                 
     async def _execute_interrupt(self, event: InterruptEvent) -> bool:
         """Выполняет прерывание"""

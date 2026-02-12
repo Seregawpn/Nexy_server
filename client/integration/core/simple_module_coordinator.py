@@ -6,74 +6,36 @@ SimpleModuleCoordinator - Центральный координатор моду
 
 import asyncio
 import ctypes
-import logging
-import os
-import sys
 import time
-from pathlib import Path
-from typing import Optional, Dict, Any, Callable
+from typing import Any, Callable
 
-# Пути уже добавлены в main.py - не дублируем
-
-# Импорты интеграций (НЕ модулей напрямую!)
-from integration.integrations.instance_manager_integration import InstanceManagerIntegration
-from integration.integrations.autostart_manager_integration import AutostartManagerIntegration
-from integration.integrations.tray_controller_integration import TrayControllerIntegration
-from integration.integrations.mode_management_integration import ModeManagementIntegration
-from integration.integrations.hardware_id_integration import HardwareIdIntegration, HardwareIdIntegrationConfig
-from integration.integrations.grpc_client_integration import GrpcClientIntegration
-from integration.integrations.speech_playback_integration import SpeechPlaybackIntegration
-from modules.tray_controller.core.tray_types import TrayConfig
-from integration.integrations.input_processing_integration import InputProcessingIntegration, InputProcessingConfig
-from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration, VoiceRecognitionConfig
-from integration.integrations.updater_integration import UpdaterIntegration
-from integration.integrations.permission_restart_integration import PermissionRestartIntegration
-from integration.integrations.update_notification_integration import UpdateNotificationIntegration
-from integration.integrations.network_manager_integration import NetworkManagerIntegration
-from modules.network_manager.core.config import NetworkManagerConfig
-# DefaultAudioIntegration удален - используем audio_default напрямую
-from integration.integrations.interrupt_management_integration import InterruptManagementIntegration, InterruptManagementIntegrationConfig
-from modules.input_processing.keyboard.types import KeyboardConfig
-from integration.integrations.screenshot_capture_integration import ScreenshotCaptureIntegration
-from integration.integrations.signal_integration import SignalIntegration
-from modules.signals.config.types import PatternConfig
-from integration.integrations.signal_integration import SignalsIntegrationConfig
-from integration.integrations.welcome_message_integration import WelcomeMessageIntegration
-from integration.integrations.voiceover_ducking_integration import VoiceOverDuckingIntegration
-from integration.integrations.first_run_permissions_integration import FirstRunPermissionsIntegration
-from integration.integrations.action_execution_integration import ActionExecutionIntegration
-from integration.core.selectors import (
-    Snapshot,
-    PermissionStatus,
-    DeviceStatus,
-    NetworkStatus,
-)
-from integration.core.gateways import decide_continue_integration_startup, Decision
+from integration.core.error_handler import ErrorHandler
 
 # Импорты core компонентов
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_keys import StateKeys
 from integration.core.event_types import EventTypes
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
 from integration.core.integration_factory import IntegrationFactory
+from integration.core.state_keys import StateKeys
+from integration.core.state_manager import ApplicationStateManager
+
+# Пути уже добавлены в main.py - не дублируем
+# Импорты интеграций (НЕ модулей напрямую!)
+# DefaultAudioIntegration удален - используем audio_default напрямую
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
     # Preferred: top-level import (packaged or PYTHONPATH includes modules)
-    from mode_management import AppMode  # type: ignore[reportMissingImports]
+    pass  # type: ignore[reportMissingImports]
 except Exception:
     # Fallback: explicit modules path if repository layout is used
-    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
+    pass  # type: ignore[reportMissingImports]
 
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
-
-# Импорт Workflows
-from integration.workflows import ListeningWorkflow, ProcessingWorkflow
-
 from integration.utils.logging_setup import get_logger
 from integration.utils.resource_path import get_user_data_dir
+
+# Импорт Workflows
 
 logger = get_logger(__name__)
 
@@ -87,21 +49,21 @@ class SimpleModuleCoordinator:
 
     def __init__(self):
         # Core компоненты (центральные)
-        self.event_bus: Optional[EventBus] = None
-        self.state_manager: Optional[ApplicationStateManager] = None
-        self.error_handler: Optional[ErrorHandler] = None
+        self.event_bus: EventBus | None = None
+        self.state_manager: ApplicationStateManager | None = None
+        self.error_handler: ErrorHandler | None = None
 
         # Интеграции (обертки для модулей)
-        self.integrations: Dict[str, Any] = {}
+        self.integrations: dict[str, Any] = {}
 
         # Workflows (координаторы режимов)
-        self.workflows: Dict[str, Any] = {}
+        self.workflows: dict[str, Any] = {}
 
         # Конфигурация
         self.config = UnifiedConfigLoader.get_instance()
 
         # Очередь разрешений (по умолчанию отсутствует)
-        self.permissions_queue: Optional[Any] = None
+        self.permissions_queue: Any | None = None
 
         # Состояние
         self.is_initialized = False
@@ -119,16 +81,17 @@ class SimpleModuleCoordinator:
         self._tray_ready = False
         self._tray_start_time = None
         self._focus_fallback_done = False
-        self._tal_hold_start: Optional[float] = None  # Время начала TAL удержания
+        self._tal_hold_start: float | None = None  # Время начала TAL удержания
         self._tal_hold_active: bool = False  # Флаг активного TAL hold (для идемпотентности)
-        self._tal_refresh_task: Optional[asyncio.Task] = None  # Задача периодического обновления
-        self._idle_metrics_task: Optional[asyncio.Task] = None  # Задача периодического сбора idle метрик
+        self._tal_refresh_task: asyncio.Task | None = None  # Задача периодического обновления
+        self._idle_metrics_task: asyncio.Task | None = None  # Задача периодического сбора idle метрик
         self._launch_activity_token = None
         self._xpc_transaction_active = False
-        self._user_quit_task: Optional[asyncio.Task] = None
+        self._user_quit_task: asyncio.Task | None = None
+        self._permissions_restricted_startup = False
 
         # NSApplication activator callback (устанавливается из main.py)
-        self.nsapp_activator: Optional[Callable[..., bool]] = None
+        self.nsapp_activator: Callable[..., bool] | None = None
     
     def _ensure_event_bus(self) -> EventBus:
         """Гарантирует, что event_bus инициализирован"""
@@ -163,7 +126,7 @@ class SimpleModuleCoordinator:
             cfg = {}
         return {
             "force_activate_on_startup": bool(cfg.get("force_activate_on_startup", False)),
-            "allow_tray_startup_fallback": bool(cfg.get("allow_tray_startup_fallback", True)),
+            "allow_tray_startup_fallback": bool(cfg.get("allow_tray_startup_fallback", False)),
             "tray_fallback_timeout_sec": float(cfg.get("tray_fallback_timeout_sec", 6.0)),
         }
 
@@ -330,8 +293,28 @@ class SimpleModuleCoordinator:
             if self.permissions_queue:
                 await self.permissions_queue.initialize()
 
-            # Затем инициализируем остальные интеграции
+            # Инициализируем интеграции в каноническом порядке (single owner = IntegrationFactory)
+            init_order = IntegrationFactory.get_startup_order(
+                restrict_to_permissions=False,
+                available=set(self.integrations.keys()),
+            )
+
+            for name in init_order:
+                integration = self.integrations.get(name)
+                if integration is None:
+                    continue
+                print(f"🔧 Инициализация {name}...")
+                success = await integration.initialize()
+                if not success:
+                    print(f"❌ Ошибка инициализации {name}")
+                    raise Exception(f"Failed to initialize {name}")
+                print(f"✅ {name} инициализирован")
+
+            # Fallback: инициализируем всё, что не попало в порядок (если появятся новые интеграции).
+            initialized = set(init_order)
             for name, integration in self.integrations.items():
+                if name in initialized:
+                    continue
                 print(f"🔧 Инициализация {name}...")
                 success = await integration.initialize()
                 if not success:
@@ -371,11 +354,6 @@ class SimpleModuleCoordinator:
                 "permissions.first_run_completed",
                 self._on_permissions_completed,
                 EventPriority.HIGH
-            )
-            await self._ensure_event_bus().subscribe(
-                "permissions.first_run_restart_pending",
-                self._on_permissions_restart_pending,
-                EventPriority.CRITICAL
             )
             await self._ensure_event_bus().subscribe(
                 "permissions.first_run_failed",
@@ -421,8 +399,6 @@ class SimpleModuleCoordinator:
             # NOTE: Подписки на события разрешений перенесены в _setup_critical_subscriptions()
             # (вызывается ДО инициализации интеграций для предотвращения потери событий)
 
-            print("✅ Координация настроена")
-            
         except Exception as e:
             print(f"❌ Ошибка настройки координации: {e}")
             raise
@@ -447,6 +423,7 @@ class SimpleModuleCoordinator:
 
             first_run = self.integrations.get("first_run_permissions")
             restrict_to_permissions = bool(first_run and not first_run.are_all_granted)
+            self._permissions_restricted_startup = restrict_to_permissions
             if restrict_to_permissions:
                 logger.info("[PERMISSIONS_GATE] First-run not completed, limiting startup to permissions flow only")
                 print("⛔ [PERMISSIONS] First-run не завершён — запускаем только permissions flow")
@@ -471,21 +448,18 @@ class SimpleModuleCoordinator:
                             print(f"⛔ [PERMISSIONS] Пропуск {name} - нет разрешений")
                             continue
 
-                    # GATE: Не запускаем зависимые модули во время first-run или pending restart
+                    # GATE: Не запускаем зависимые модули во время first-run
                     if name in ["input", "voice_recognition", "screenshot_capture", "signals", "voiceover_ducking"]:
                         state_manager = self._ensure_state_manager()
                         first_run_in_progress = state_manager.get_state_data(StateKeys.FIRST_RUN_IN_PROGRESS, False)
-                        restart_pending = state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False)
-                        if first_run_in_progress or restart_pending:
+                        if first_run_in_progress:
                             logger.warning(
-                                "⛔ [PERMISSIONS] Skipping %s start (first_run_in_progress=%s, restart_pending=%s)",
+                                "⛔ [PERMISSIONS] Skipping %s start (first_run_in_progress=%s)",
                                 name,
                                 first_run_in_progress,
-                                restart_pending,
                             )
                             print(
-                                f"⛔ [PERMISSIONS] Пропуск {name} - first_run_in_progress={first_run_in_progress}, "
-                                f"restart_pending={restart_pending}"
+                                f"⛔ [PERMISSIONS] Пропуск {name} - first_run_in_progress={first_run_in_progress}"
                             )
                             continue
 
@@ -548,30 +522,10 @@ class SimpleModuleCoordinator:
                         print("✅ [PERMISSIONS] Проверка разрешений завершена, продолжаем запуск...")
                     
                     # КРИТИЧНО: first_run_permissions возвращает False при недостающих разрешениях
-                    # Если есть pending restart - запускаем permission_restart, иначе просто блокируем startup.
+                    # Блокируем дальнейший startup до завершения permission flow.
                     if name == "first_run_permissions" and not success:
-                        state_manager = self._ensure_state_manager()
-                        restart_pending = state_manager.get_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, False)
-                        if restart_pending:
-                            logger.warning("⚠️ [PERMISSIONS] Restart required - starting permission_restart before stopping...")
-                            print("⚠️ [PERMISSIONS] Требуется рестарт - запускаем permission_restart...")
-                            
-                            # Запускаем permission_restart чтобы он мог обработать restart_pending
-                            if "permission_restart" in self.integrations:
-                                try:
-                                    pr_success = await self.integrations["permission_restart"].start()
-                                    if pr_success:
-                                        logger.info("✅ [PERMISSIONS] permission_restart started successfully")
-                                        print("✅ [PERMISSIONS] permission_restart запущен успешно")
-                                    else:
-                                        logger.error("❌ [PERMISSIONS] permission_restart failed to start")
-                                        print("❌ [PERMISSIONS] permission_restart не удалось запустить")
-                                except Exception as e:
-                                    logger.error(f"❌ [PERMISSIONS] Error starting permission_restart: {e}")
-                                    print(f"❌ [PERMISSIONS] Ошибка запуска permission_restart: {e}")
-                        else:
-                            logger.warning("⛔ [PERMISSIONS] Missing permissions - blocking startup until granted")
-                            print("⛔ [PERMISSIONS] Нет всех разрешений - блокируем запуск")
+                        logger.warning("⛔ [PERMISSIONS] Missing permissions - blocking startup until granted")
+                        print("⛔ [PERMISSIONS] Нет всех разрешений - блокируем запуск")
                         
                         # Останавливаем загрузку модулей, пока разрешения не получены или не выполнен рестарт
                         logger.info("🛑 [PERMISSIONS] Stopping further module loading until permissions are granted")
@@ -587,6 +541,7 @@ class SimpleModuleCoordinator:
             if restrict_to_permissions:
                 logger.info("[PERMISSIONS_GATE] First-run mode: skipping remaining integrations")
                 print("🛑 [PERMISSIONS] First-run режим — остальные модули не запускаются")
+                self.is_running = True
                 return True
 
             for name, integration in self.integrations.items():
@@ -639,8 +594,18 @@ class SimpleModuleCoordinator:
                 self._release_tal_hold(reason=reason)
             
             # Публикуем событие остановки
+            user_initiated = False
+            try:
+                if self.state_manager:
+                    user_initiated = bool(
+                        self._ensure_state_manager().get_state_data(StateKeys.USER_QUIT_INTENT, False)
+                    )
+            except Exception:
+                user_initiated = False
             await self._ensure_event_bus().publish("app.shutdown", {
-                "coordinator": "simple_module_coordinator"
+                "coordinator": "simple_module_coordinator",
+                "source": "coordinator.stop",
+                "user_initiated": user_initiated,
             })
             
             # Останавливаем все интеграции
@@ -762,7 +727,6 @@ class SimpleModuleCoordinator:
                 logger.info("✅ [ANTI_TAL] _hold_tal_until_tray_ready() завершён успешно")
             except Exception as e:
                 logger.error(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
-                logger.error(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
                 import traceback
                 traceback.print_exc()
             
@@ -778,7 +742,6 @@ class SimpleModuleCoordinator:
             # Запускаем приложение rumps (блокирующий вызов)
             # ВАЖНО: Используем tray_controller.run_app() который настраивает
             # отложенную установку иконки ПОСЛЕ создания StatusItem
-            tray_controller = tray_integration.get_tray_controller()
             tray_controller = tray_integration.get_tray_controller()
             if tray_controller:
                 logger.info("✅ CRITICAL: Вызываем tray_controller.run_app()")
@@ -956,11 +919,30 @@ class SimpleModuleCoordinator:
             # Обновляем StateManager
             try:
                 if self.state_manager:
-                    self._ensure_state_manager().set_first_run_state(
-                        in_progress=False, required=False, completed=True
-                    )
+                    if all_granted:
+                        self._ensure_state_manager().set_first_run_state(
+                            in_progress=False, required=False, completed=True
+                        )
+                    else:
+                        self._ensure_state_manager().set_first_run_state(
+                            in_progress=False, required=True, completed=False
+                        )
             except Exception:
                 logger.debug("[PERMISSIONS] Failed to update first_run state (completed)")
+
+            if self._permissions_restricted_startup:
+                logger.info("🔄 [PERMISSIONS] First-run completed in restricted mode - scheduling app restart")
+                permission_restart = self.integrations.get("permission_restart")
+                if permission_restart and hasattr(permission_restart, "request_restart_after_first_run_completed"):
+                    scheduled = await permission_restart.request_restart_after_first_run_completed(
+                        session_id=session_id
+                    )
+                    if scheduled:
+                        logger.info("✅ [PERMISSIONS] Restart scheduled after first-run completion")
+                    else:
+                        logger.warning("⚠️ [PERMISSIONS] Restart was not scheduled (guarded or unavailable)")
+                else:
+                    logger.warning("⚠️ [PERMISSIONS] PermissionRestartIntegration unavailable - cannot schedule restart")
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] Error handling permissions.first_run_completed: {e}")
 
@@ -1059,8 +1041,9 @@ class SimpleModuleCoordinator:
         только обновляет assertion и логирует повторный вызов.
         """
         try:
-            import Foundation
             import time
+
+            import Foundation
             
             print(f"🛡️ [ANTI_TAL] _hold_tal_until_tray_ready() ВХОД (tal_hold_active={self._tal_hold_active})")
             logger.info(f"🛡️ [ANTI_TAL] _hold_tal_until_tray_ready() ВХОД (tal_hold_active={self._tal_hold_active})")
@@ -1189,8 +1172,9 @@ class SimpleModuleCoordinator:
             reason: Причина снятия TAL hold (tray_ready, fatal_before_tray, timeout, duplicate_call)
         """
         try:
-            import Foundation
             import time
+
+            import Foundation
             
             # ИДЕМПОТЕНТНОСТЬ: Если TAL hold уже снят, только логируем
             if not self._tal_hold_active:
@@ -1328,8 +1312,9 @@ class SimpleModuleCoordinator:
         Собирает каждые 30 секунд после tray.ready.
         """
         try:
-            import psutil
             import os
+
+            import psutil
             
             # Ждём 30 секунд после tray.ready для стабилизации idle-режима
             await asyncio.sleep(30.0)
@@ -1435,48 +1420,7 @@ class SimpleModuleCoordinator:
             finally:
                 self._xpc_transaction_active = False
 
-    async def _on_permissions_restart_pending(self, event):
-        """Обработка события перезапуска после первого запуска."""
-        try:
-            data = (event or {}).get("data") or {}
-            session_id = data.get("session_id", "unknown")
-            permissions = data.get("permissions", [])
-            source = data.get("source", "permissions.first_run_restart_pending")
-
-            logger.info(
-                "[PERMISSIONS] Restart pending received (session_id=%s, permissions=%s, source=%s)",
-                session_id,
-                permissions,
-                source,
-            )
-
-            # Persist restart_pending state for integrations that start later
-            try:
-                self._ensure_state_manager().set_restart_pending(True)
-                self._ensure_state_manager().set_state_data(
-                    "permissions_restart_pending_permissions",
-                    list(permissions) if isinstance(permissions, list) else [permissions],
-                )
-                self._ensure_state_manager().set_state_data(
-                    "permissions_restart_pending_session_id",
-                    session_id,
-                )
-            except Exception as e:
-                logger.debug("[PERMISSIONS] Failed to update restart_pending state: %s", e)
-
-            # Legacy notification for consumers still listening to restart_pending events
-            try:
-                await self._ensure_event_bus().publish(
-                    "permissions.restart_pending.changed",
-                    {"active": True, "session_id": session_id, "source": source},
-                )
-            except Exception:
-                pass
-
-        except Exception as e:
-            logger.error(f"❌ [PERMISSIONS] Error handling permissions.first_run_restart_pending: {e}")
-
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус всех компонентов"""
         from integration.core.selectors import is_first_run_in_progress
         
@@ -1504,7 +1448,8 @@ class SimpleModuleCoordinator:
 
     def _start_background_loop(self):
         """Запускает отдельный поток с asyncio loop, чтобы не блокироваться на app.run()."""
-        import asyncio, threading
+        import asyncio
+        import threading
         if self._bg_loop and self._bg_thread:
             return
         self._bg_loop = asyncio.new_event_loop()

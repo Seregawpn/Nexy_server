@@ -28,7 +28,6 @@ class DecisionCtx:
     network: str
     firstRun: bool
     appMode: str
-    restart_pending: bool | None = None
     update_in_progress: bool | None = None
     whatsapp: str | None = None
     extra: dict[str, Any] | None = None
@@ -44,9 +43,6 @@ class DecisionCtx:
             f"firstRun={self.firstRun}",
             f"appMode={self.appMode}",
         ]
-        
-        if self.restart_pending is not None:
-            parts.append(f"restart_pending={self.restart_pending}")
         
         if self.update_in_progress is not None:
             parts.append(f"update_in_progress={self.update_in_progress}")
@@ -67,7 +63,6 @@ def create_ctx_from_snapshot(s: Snapshot) -> DecisionCtx:
         network=s.network.value,
         firstRun=s.first_run,
         appMode=s.app_mode.value,
-        restart_pending=getattr(s, "restart_pending", None),
         update_in_progress=getattr(s, "update_in_progress", None),
         whatsapp= getattr(s.whatsapp_status, "value", "disconnected") if hasattr(s, "whatsapp_status") else None,
     )

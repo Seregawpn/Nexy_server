@@ -294,6 +294,19 @@ class PermissionOrchestrator:
             perm = self.order[self._idx]
             cfg = self.step_configs[perm]
             entry = self.ledger.steps[perm]
+
+            # Timeout-mode is "single-pass by time budget".
+            # Reset per-step runtime markers to avoid carrying terminal/stale
+            # state from previous app runs via persisted ledger.
+            if self.advance_on_timeout:
+                entry.state = StepState.UNKNOWN
+                entry.triggered_at = None
+                entry.grace_started_at = None
+                entry.polling_started_at = None
+                entry.waiting_long_entered_at = None
+                entry.last_reason_code = None
+                entry.last_reason = None
+                self._save()
             
             self.ledger.current_step = perm
             self._save()
@@ -361,7 +374,9 @@ class PermissionOrchestrator:
             
             step_deadline: float | None = None
             if self.advance_on_timeout and cfg.timing.step_timeout_s:
-                step_start = entry.grace_started_at or time.time()
+                # Use current attempt start to avoid carrying stale grace timestamp
+                # from a previous app run/session in ledger.
+                step_start = entry.triggered_at or entry.grace_started_at or time.time()
                 step_deadline = step_start + cfg.timing.step_timeout_s
 
             if self.advance_on_timeout:
@@ -599,9 +614,9 @@ class PermissionOrchestrator:
         """
         Prepare for and trigger restart.
         
-        Changed in V2 Fix:
-        We now treat this as the end of the first run. We emit restart-related events,
-        but we ensure the system knows we are 'done' with the wizard steps.
+        Centralized restart policy:
+        V2 orchestrator is no longer the restart owner. It only signals that restart is required.
+        Actual restart is delegated to integration-level restart coordinator.
         """
         if not self.ledger:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot enter restart sequence")
@@ -634,47 +649,9 @@ class PermissionOrchestrator:
         
         if self._cancelled:
             return
-        
-        # Only proceed to restart if handler is present
-        if self.restart_handler:
-            self.emit(UIEvent(
-                UIEventType.RESTART_STARTED,
-                time.time(),
-                {"restart_count": self.ledger.restart_count + 1}
-            ))
-            
-            self.ledger.restart_count += 1
-            # Next boot should verify permissions
-            self.ledger.phase = Phase.POST_RESTART_VERIFY
-            self._save()
-            
-            permissions = [p.value for p in self.order if self.ledger.steps[p].needs_restart_marked]
-            
-            # Fire restart
-            await self.restart_handler.trigger_restart(
-                reason="permission_activation",
-                permissions=permissions
-            )
-        else:
-            # No restart handler - cannot restart
-            logger.warning("[ORCHESTRATOR] No restart handler available")
-            
-            # Check if any HARD permission needs restart
-            hard_needs_restart = any(
-                self.ledger.steps[p].state == StepState.NEEDS_RESTART
-                for p in self.hard_permissions
-                if p in self.ledger.steps
-            )
-            
-            if hard_needs_restart:
-                # Cannot activate HARD permissions without restart → LIMITED_MODE
-                logger.warning("[ORCHESTRATOR] HARD permissions need restart but no handler - entering LIMITED_MODE")
-                self.ledger.restart_unavailable = True
-                await self._enter_limited_mode()
-            else:
-                # Only SOFT/FEATURE need restart, can continue without them
-                logger.info("[ORCHESTRATOR] Only soft permissions need restart - completing anyway")
-                await self._complete(full_mode=True)
+
+        logger.info("[ORCHESTRATOR] Restart required - delegating execution to centralized restart integration")
+        await self._complete(full_mode=True)
     
     async def _enter_post_restart_verify(self) -> None:
         """Verify permissions after restart."""

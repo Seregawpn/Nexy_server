@@ -223,6 +223,7 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 Основные потоки:
 - **PTT Flow**: SLEEPING → LISTENING → PROCESSING → SLEEPING (см. разделы 4.4-4.5 канона)
 - **Interrupt Flow**: `interrupt.request` → `grpc.request_cancel` (publisher: InterruptManagement) → `playback.cancelled` (publisher: SpeechPlaybackIntegration) (см. раздел 4.6 канона)
+- **Cancel ownership**: side effects отмены аудио (stop/clear/guard/session cleanup) выполняет только `SpeechPlaybackIntegration` по событию `playback.cancelled`.
 
 Детальная последовательность событий, контракты payload и требования к координации описаны в каноническом документе.
 
@@ -276,8 +277,8 @@ state_manager.get_state_data(StateKeys.FIRST_RUN_IN_PROGRESS, False)  # ✅
 
 **Доступные константы:**
 - `FIRST_RUN_IN_PROGRESS`, `FIRST_RUN_REQUIRED`, `FIRST_RUN_COMPLETED`
-- `PERMISSIONS_RESTART_PENDING`, `PERMISSIONS_RESTART_COMPLETED_FALLBACK`
-- `PTT_PRESSED`, `UPDATE_IN_PROGRESS`
+- `PERMISSIONS_RESTART_PENDING` (+ метаданные pending batch/session/permissions)
+- `PTT_PRESSED`, `UPDATE_IN_PROGRESS`, `USER_QUIT_INTENT`
 
 ### EventTypes (integration/core/event_types.py)
 
@@ -309,6 +310,7 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
 ## 7) Конфигурация и расширяемость
 
 - UnifiedConfigLoader — единый источник конфигураций интеграций и модулей
+- AVFoundation feature/kill-switch resolver: `UnifiedConfigLoader.get_avfoundation_flags()` (приоритет `env > config`, вычисляет `effective` flags).
 - Добавление нового модуля:
   1) Создать модуль в `client/modules/<name>` без знания EventBus
   2) Создать интеграцию в `client/integration/integrations/<name>_integration.py`
@@ -444,12 +446,12 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
 
 _macOS автоматически управляет активными аудиоустройствами, поэтому отдельный менеджер больше не требуется._
 - `action_errors` — обработка ошибок MCP действий: типизированные ошибки для open_app/close_app, локализованные сообщения.
-- `autostart_manager` — автозапуск приложения: LaunchAgent управление, Login Items, bundle_id подход, совместимость с обновлениями.
+- `autostart_manager` — автозапуск приложения: LaunchAgent управление, bundle_id подход, совместимость с обновлениями.
 - `browser_automation` — НОВЫЙ: клиентский модуль browser-use для AI-управляемой автоматизации браузера. Выполняет задачи локально, отправляет статистику токенов на сервер.
 - `browser_progress` — обработка прогресса: типы событий и статусы выполнения задач браузера (Feature F-2025-015).
 - `grpc_client` — низкоуровневый gRPC клиент, отправка запросов на сервер, управление соединением/ретраями.
 - `hardware_id` — стабильный аппаратный идентификатор, кэш/TTL, фоновые обновления.
-- `input_processing` — клавиатурные события (Quartz/pynput), детекция LONG/SHORT/RELEASE, конфиг порогов.
+- `input_processing` — клавиатурные события (Quartz/pynput), детекция LONG/SHORT/RELEASE, конфиг порогов. Event tap работает в observe-only режиме (не подавляет системные хоткеи).
 - `instance_manager` — защита от дублирования экземпляров: файловые блокировки, PID проверка, TOCTOU защита, аудио-сигналы для незрячих.
 - `interrupt_management` — координация прерываний (типы/приоритеты/история), API для остановки записи/воспроизведения.
 - `mcp_action` — выполнение MCP команд от ассистента: open_app/close_app через macOS AppleScript/NSWorkspace.
@@ -458,11 +460,11 @@ _macOS автоматически управляет активными ауди
 - `permissions` — проверка и запрос системных разрешений (микрофон/захват экрана/сеть/уведомления) + модули first_run для системы первого запуска.
 - `permission_restart` — ядро автоперезапуска: детектор переходов, планировщик и macOS рестарт-хендлер, взаимодействие только через EventBus.
 - `screenshot_capture` — кроссплатформенный захват экрана, конфигурация качества/размера; на macOS — bridge/CLI fallback.
-- `signals` — акустические сигналы: listen_start/done/error/cancel + duplicate_instance.
+- `signals` — акустические сигналы: listen_start/done/error/cancel + duplicate_instance; единый owner акустических cue через `SignalIntegration` + `playback.signal`.
 - `speech_playback` — последовательное воспроизведение аудио чанков, буферизация, управление устройством.
 - `telegram` — клиентский модуль Telegram‑интеграции (MCP команды, события).
 - `tray_controller` — UI-иконка/меню, статусы для режимов.
-- `updater` — НОВАЯ система обновлений: HTTP манифест, DMG файлы, миграция в ~/Applications, 3 уровня безопасности (SHA256 + Ed25519 + codesign).
+- `updater` — НОВАЯ система обновлений: HTTP манифест, DMG файлы, миграция в ~/Applications, 3 уровня безопасности (SHA256 + Ed25519 + codesign), relaunch только при отсутствии `USER_QUIT_INTENT`.
 - `voice_recognition` — запись/распознавание речи, симулятор/реальный движок, таймауты, отмена.
 - `voiceover_control` — управление VoiceOver на macOS: умное отключение/включение через Command+F5, отслеживание состояния, диагностика.
 - `welcome_message` — приветственное сообщение: серверная генерация приветствия при запуске, конфигурируемые параметры.
@@ -499,9 +501,9 @@ _macOS автоматически управляет активными ауди
   - Публикует: `action.execution_started|completed|failed`, результат выполнения команды.
 
 - `autostart_manager_integration.py`
-  - Назначение: управление автозапуском - LaunchAgent, Login Items, bundle_id подход.
-  - Подписки: `app.startup`, `autostart.request`, `autostart.status_check`.
-  - Публикует: `autostart.status_checked`, события управления автозапуском.
+  - Назначение: мониторинг и обслуживание автозапуска через LaunchAgent (runtime-config driven).
+  - Подписки: `app.startup`, `app.shutdown`, `autostart.check_status`, `autostart.enable_requested`, `autostart.disable_requested`.
+  - Публикует: `autostart.status_checked`, `autostart.command_result`.
   - КРИТИЧНО: запускается ПОСЛЕДНИМ и НЕ БЛОКИРУЮЩИМ.
 
 - `browser_progress_integration.py`
@@ -511,7 +513,7 @@ _macOS автоматически управляет активными ауди
 
 - `browser_use_integration.py`
   - Назначение: НОВЫЙ - интеграция клиентского browser-use модуля с EventBus.
-  - Подписки: `browser.task_request`, `app.shutdown`.
+  - Подписки: `browser.task_request`, `browser.close.request`, `browser.cancel.request`, `grpc.request_cancel`.
   - Публикует: `browser.started|completed|failed|cancelled`, события жизненного цикла браузера.
 
 - `first_run_permissions_integration.py`
@@ -557,9 +559,9 @@ _macOS автоматически управляет активными ауди
 
 - `permission_restart_integration.py`
   - Назначение: автоматический перезапуск клиента после выдачи критических разрешений (микрофон, accessibility, input monitoring, screen capture).
-  - Подписки: `permissions.changed`, `permissions.status_checked`.
-  - Публикует: `permission_restart.scheduled`, `permission_restart.executing`.
-  - Логика: использует `modules.permission_restart` для детекции и планирования, ждёт окончания LISTENING/PROCESSING и отсутствия обновлений (`UpdaterIntegration`).
+  - Подписки: `app.startup`, `updater.update_*`; legacy-подписки на `permissions.*` активны только при `permissions_v2.enabled=false`.
+  - Публикует: `system.permissions_ready` (legacy readiness path only). `system.ready_to_greet` не публикует.
+  - Логика: V2-owner restart/readiness не дублируется; перед trigger есть финальная revalidation guard (quit/update/first-run state).
 
 - `screenshot_capture_integration.py`
   - Назначение: один скриншот при входе в PROCESSING; CLI‑fallback при отсутствии модуля.
@@ -567,14 +569,16 @@ _macOS автоматически управляет активными ауди
   - Публикует: `screenshot.captured` (jpeg/webp), `screenshot.error`.
 
 - `signal_integration.py`
-  - Назначение: воспроизведение акустических сигналов для обратной связи.
-  - Подписки: `signal.request`, события, требующие звуковой индикации.
-  - Публикует: `signal.completed|failed`.
+  - Назначение: централизованный owner акустических сигналов для UX-обратной связи.
+  - Подписки: `app.mode_changed`, `processing.terminal`, `keyboard.short_press`, `playback.cancelled`, `app.shutdown`.
+  - Публикует: `playback.signal` (через `EventBusAudioSink`) и CUE_TRACE логи.
+  - Контракт: `listen_start` эмитится только на `app.mode_changed(LISTENING)`, terminal cues (`done/error`) — только на `processing.terminal`.
 
 - `speech_playback_integration.py`
   - Назначение: воспроизведение аудио чанков ответа, корректное завершение/отмена.
   - Подписки: `grpc.response.audio`, `grpc.request_completed|failed`, `keyboard.short_press`, `interrupt.request`, `app.shutdown`.
   - Публикует: `playback.started|completed|failed|cancelled`, `mode.request(SLEEPING)` по завершению/ошибке/тишине.
+  - Ownership: `_on_grpc_cancel` только публикует канонический `playback.cancelled`; cancel side effects выполняются одним owner-обработчиком по `playback.cancelled`.
 
 - `tray_controller_integration.py`
   - Назначение: отображение статуса/меню в трее.
@@ -595,11 +599,13 @@ _macOS автоматически управляет активными ауди
   - Назначение: НОВАЯ система обновлений - HTTP манифест, DMG файлы, миграция в ~/Applications, проверка обновлений при запуске и по расписанию.
   - Подписки: `app.startup`, `app.shutdown`, `updater.check_manual`.
   - Публикует: события обновлений, автоматическая миграция при первом запуске.
+  - Guard: после `updater.update_completed` relaunch выполняется только если `StateKeys.USER_QUIT_INTENT == false`.
 
 - `voice_recognition_integration.py`
   - Назначение: запуск/остановка распознавания, публикация результатов.
   - Подписки: `mode.switch` (если используется), внутренние старт/стоп записи, таймеры; реагирует на смену режима.
   - Публикует: `voice.recognition_started|completed|failed|timeout`, `mode.request(SLEEPING)` при fail/timeout.
+  - Runtime gate: перед стартом записи выполняет `decide_route_manager_reconcile(snapshot)` в integration layer.
 
 - `voiceover_ducking_integration.py`
   - Назначение: умное управление VoiceOver для пользователей с нарушениями зрения - автоматическое отключение/включение VoiceOver при работе с приложением.

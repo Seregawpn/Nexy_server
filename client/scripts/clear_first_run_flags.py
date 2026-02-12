@@ -103,11 +103,27 @@ def clear_flags():
             except Exception as e:
                 print(f"  ❌ Ошибка удаления {tmp_flag}: {e}")
     
-    # 6. Очистка env переменной (если установлена)
+    # 6. Очистка permission_ledger.json (новый формат)
+    print("\n📋 Проверка permission_ledger.json (новый формат):")
+    
+    ledger_file = data_dir / "permission_ledger.json"
+    checked_paths.append(ledger_file)
+    
+    if ledger_file.exists():
+        try:
+            ledger_file.unlink()
+            print(f"  ✅ Удалён: {ledger_file}")
+            cleared_count += 1
+        except Exception as e:
+            print(f"  ❌ Ошибка удаления {ledger_file}: {e}")
+    else:
+        print(f"  ℹ️  Не найден: {ledger_file}")
+
+    # 7. Очистка env переменной (если установлена)
     print("\n📋 Проверка environment переменных:")
     # Итоги
     print("\n" + "=" * 60)
-    print(f"✅ Очищено флагов: {cleared_count}")
+    print(f"✅ Очищено флагов/файлов: {cleared_count}")
     print(f"📁 Проверено путей: {len(checked_paths)}")
     
     if cleared_count > 0:

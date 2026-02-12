@@ -12,9 +12,11 @@ import time
 from typing import Any
 
 from integration.core import selectors
+from integration.core.gateways import Decision, decide_route_manager_reconcile
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
+from config.unified_config_loader import unified_config
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
@@ -66,13 +68,13 @@ class VoiceRecognitionIntegration:
         
         # GoogleSRController (Input)
         self._google_sr_controller: Any | None = None  # type: ignore[assignment]
+        self._avf_flags = unified_config.get_avfoundation_flags()
 
         # Thread-safe lock для защиты shared state от concurrent callbacks GoogleSRController
         self._state_lock = threading.Lock()
-        # Idempotency для mic_closed, чтобы избежать дублей из конкурентных путей stop/fail.
-        self._last_mic_closed_key: tuple[str | None, str] | None = None
-        self._last_mic_closed_ts: float = 0.0
-        self._mic_closed_dedup_window_sec: float = 0.5
+        # Idempotency для mic_closed: одно terminal-событие на session_id.
+        self._mic_closed_by_session_ts: dict[str, float] = {}
+        self._mic_closed_ttl_sec: float = 120.0
         # Single-flight guard для сериализации start/stop переходов аудио.
         self._audio_transition_lock = asyncio.Lock()
         
@@ -86,6 +88,11 @@ class VoiceRecognitionIntegration:
         self._stop_terminal_fallback_sec: float = 1.2
         # Runtime metric: сколько дублей start было отфильтровано guard'ом.
         self._dedup_start_skips: int = 0
+        logger.info(
+            "🎙️ [AVF_FLAGS] effective=%s source=%s",
+            self._avf_flags.get("effective"),
+            self._avf_flags.get("source"),
+        )
 
     @classmethod
     def run_dependency_check(cls) -> bool:
@@ -268,6 +275,9 @@ class VoiceRecognitionIntegration:
                         self._dedup_start_skips,
                     )
                     return
+
+                if not await self._allow_route_reconcile_start(session_id):
+                    return
                 # Началась запись — фиксируем сессию
                 self._set_session_id(session_id, reason="recording_start")
                 self._recording_active = True
@@ -275,10 +285,6 @@ class VoiceRecognitionIntegration:
                 # Любое предыдущие распознавание отменяем
                 await self._cancel_recognition(reason="new_recording_start")
                 logger.debug(f"VOICE: recording_start, session={session_id}")
-
-                # Публикуем voice.mic_opened СРАЗУ
-                await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
-                logger.info(f"🎤 VOICE: microphone opened (pending) для session {session_id}")
 
                 # Start GoogleSRController
                 # Note: We rely on _GOOGLE_SR_AVAILABLE check done in init
@@ -315,6 +321,8 @@ class VoiceRecognitionIntegration:
                         # session_id уже установлен в state_manager через _set_session_id выше
                         success = self._google_sr_controller.start_listening()
                         if success:
+                            await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
+                            logger.info(f"🎤 VOICE: microphone opened for session {session_id}")
                             await self.event_bus.publish("voice.recognition_started", {
                                 "session_id": session_id,
                                 "language": self.config.language
@@ -346,6 +354,8 @@ class VoiceRecognitionIntegration:
                     # Simulation mode
                     logger.info(f"ℹ️ [AUDIO] Using simulation mode (controller={self._google_sr_controller}, simulate={self.config.simulate})")
                     if session_id is not None:
+                        await self.event_bus.publish("voice.mic_opened", {"session_id": session_id})
+                        logger.info(f"🎤 VOICE: microphone opened (simulation) for session {session_id}")
                         await self._start_recognition(session_id)
                     else:
                         logger.warning("VOICE: session_id is None, cannot start recognition")
@@ -353,6 +363,62 @@ class VoiceRecognitionIntegration:
             logger.error(f"VOICE: error in recording_start handler: {e}")
             import traceback
             logger.error(traceback.format_exc())
+
+    async def _allow_route_reconcile_start(self, session_id: str | None) -> bool:
+        """
+        Runtime owner for route-manager reconcile decision on recording start.
+
+        Integration layer owns this gate, modules stay unaware of gateway layer.
+        """
+        try:
+            snapshot = selectors.create_snapshot_from_state(self.state_manager)
+            decision = decide_route_manager_reconcile(snapshot)
+        except Exception as e:
+            logger.warning("VOICE: route_reconcile_gate fallback to allow (error=%s)", e)
+            return True
+
+        if decision == Decision.ABORT:
+            logger.warning(
+                "VOICE: route_reconcile_gate abort (session=%s, mode=%s, first_run=%s, update_in_progress=%s)",
+                session_id,
+                snapshot.app_mode,
+                snapshot.first_run,
+                snapshot.update_in_progress,
+            )
+            self._recording_active = False
+            await self._publish_mic_closed(session_id, source="route_reconcile_abort")
+            await self._publish_recognition_failed(
+                session_id,
+                error="route_reconcile_blocked",
+                reason="route_reconcile_abort",
+            )
+            return False
+
+        if decision == Decision.RETRY:
+            # Single short retry to absorb transient route changes without introducing queues.
+            await asyncio.sleep(0.1)
+            retry_snapshot = selectors.create_snapshot_from_state(self.state_manager)
+            retry_decision = decide_route_manager_reconcile(retry_snapshot)
+            if retry_decision in {Decision.ABORT, Decision.RETRY}:
+                logger.warning(
+                    "VOICE: route_reconcile_gate retry->%s (session=%s)",
+                    retry_decision.value,
+                    session_id,
+                )
+                self._recording_active = False
+                reason = (
+                    "route_reconcile_retry_abort"
+                    if retry_decision == Decision.ABORT
+                    else "route_reconcile_retry_exhausted"
+                )
+                await self._publish_mic_closed(session_id, source=reason)
+                await self._publish_recognition_failed(
+                    session_id,
+                    error="route_reconcile_blocked",
+                    reason=reason,
+                )
+                return False
+        return True
 
     async def _on_recording_stop(self, event: dict[str, Any]):
         try:
@@ -731,23 +797,29 @@ class VoiceRecognitionIntegration:
             return False
 
     async def _publish_mic_closed(self, session_id: str | None, *, source: str) -> None:
-        """Единая idempotent-публикация voice.mic_closed."""
-        now = time.monotonic()
-        key = (session_id, source)
-        if (
-            self._last_mic_closed_key == key
-            and (now - self._last_mic_closed_ts) < self._mic_closed_dedup_window_sec
-        ):
-            logger.debug(
-                "VOICE: mic_closed dedup skipped (session=%s, source=%s, dt=%.3fs)",
-                session_id,
-                source,
-                now - self._last_mic_closed_ts,
+        """Единая idempotent-публикация voice.mic_closed (once-per-session)."""
+        if session_id is None:
+            await self.event_bus.publish(
+                "voice.mic_closed",
+                {"session_id": session_id, "source": source},
             )
             return
 
-        self._last_mic_closed_key = key
-        self._last_mic_closed_ts = now
+        now = time.monotonic()
+        cutoff = now - self._mic_closed_ttl_sec
+        stale_sessions = [sid for sid, ts in self._mic_closed_by_session_ts.items() if ts < cutoff]
+        for sid in stale_sessions:
+            self._mic_closed_by_session_ts.pop(sid, None)
+
+        if session_id in self._mic_closed_by_session_ts:
+            logger.debug(
+                "VOICE: mic_closed dedup skipped (session=%s, source=%s)",
+                session_id,
+                source,
+            )
+            return
+
+        self._mic_closed_by_session_ts[session_id] = now
         await self.event_bus.publish(
             "voice.mic_closed",
             {"session_id": session_id, "source": source},

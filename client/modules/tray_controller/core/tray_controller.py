@@ -5,6 +5,7 @@
 import asyncio
 import logging
 import threading
+import concurrent.futures
 from typing import Optional, Callable, Dict, Any
 from .tray_types import TrayStatus, TrayConfig, TrayMenu, TrayMenuItem, TrayEvent
 from .config import TrayConfigManager
@@ -84,6 +85,10 @@ class TrayController:
             if not app:
                 logger.error("❌ Не удалось создать приложение трея")
                 return False
+
+            # Единый путь завершения: системный terminate (Dock/Cmd+Q/osascript quit)
+            # должен идти через тот же quit handler, что и пункт меню Quit.
+            self.tray_menu.set_quit_callback(lambda: self._on_quit_clicked(sender=None))
             
             # Сохраняем приложение для использования в главном потоке
             self.tray_menu.app = app
@@ -141,7 +146,8 @@ class TrayController:
                 logger.warning("TrayController не запущен")
                 return False
             
-            logger.info(f"🔄 Обновление статуса трея: {self.current_status.value} → {status.value}")
+            previous_status = self.current_status
+            logger.info(f"🔄 Обновление статуса трея: {previous_status.value} → {status.value}")
             
             # Обновляем иконку
             if self.tray_icon:
@@ -154,7 +160,7 @@ class TrayController:
             # Публикуем событие
             await self._publish_event("status_changed", {
                 "status": status.value,
-                "previous_status": self.current_status.value
+                "previous_status": previous_status.value
             })
             
             return True
@@ -278,7 +284,9 @@ class TrayController:
         """Обработчик клика по выходу"""
         # 1) Сообщаем слушателям (например, интеграции), что пользователь инициировал выход.
         # КРИТИЧНО: rumps callback может выполняться вне asyncio loop.
-        # Доставляем событие в dispatch-loop без блокирующего ожидания UI callback.
+        # Доставляем событие в dispatch-loop и коротко ждём подтверждения доставки,
+        # чтобы USER_QUIT_INTENT успел установиться до завершения процесса.
+        dispatch_timeout_sec = 2.0
         try:
             logger.info("🔚 Quit requested via tray menu (user action)")
             if self._dispatch_loop and self._dispatch_loop.is_running():
@@ -286,6 +294,15 @@ class TrayController:
                     self._publish_event("quit_clicked", {}),
                     self._dispatch_loop,
                 )
+                try:
+                    fut.result(timeout=dispatch_timeout_sec)
+                except concurrent.futures.TimeoutError:
+                    logger.warning(
+                        "⚠️ quit_clicked dispatch timeout (%.1fs); continuing quit",
+                        dispatch_timeout_sec,
+                    )
+                except Exception as exc:
+                    logger.warning("⚠️ quit_clicked dispatch error before quit: %s", exc)
                 def _log_quit_dispatch_result(done_fut):
                     try:
                         done_fut.result()
@@ -295,9 +312,19 @@ class TrayController:
                 fut.add_done_callback(_log_quit_dispatch_result)
             else:
                 try:
-                    asyncio.create_task(self._publish_event("quit_clicked", {}))
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._publish_event("quit_clicked", {}))
                 except RuntimeError as exc:
-                    logger.warning("⚠️ quit_clicked event was not dispatched (no running loop): %s", exc)
+                    logger.warning("⚠️ quit_clicked event loop unavailable, using sync fallback: %s", exc)
+                    callback = self.event_callbacks.get("quit_clicked")
+                    if callback:
+                        try:
+                            if asyncio.iscoroutinefunction(callback):
+                                asyncio.run(callback("quit_clicked", {}))
+                            else:
+                                callback("quit_clicked", {})
+                        except Exception as fallback_exc:
+                            logger.warning("⚠️ quit_clicked sync fallback failed: %s", fallback_exc)
 
             # 2) Завершаем приложение через rumps
             if self.tray_menu:

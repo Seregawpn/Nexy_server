@@ -22,10 +22,7 @@ class StateKeys:
     FIRST_RUN_IN_PROGRESS = "first_run_in_progress"
     FIRST_RUN_REQUIRED = "first_run_required"
     FIRST_RUN_COMPLETED = "first_run_completed"
-    
-    # Permission keys
-    PERMISSIONS_RESTART_PENDING = "permissions_restart_pending"
-    PERMISSIONS_RESTART_COMPLETED_FALLBACK = "permissions_restart_completed_fallback"
+    FIRST_RUN_RESTART_SCHEDULED = "first_run_restart_scheduled"
     
     # Input keys
     PTT_PRESSED = "ptt_pressed"

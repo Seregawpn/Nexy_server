@@ -75,11 +75,16 @@ class ScreenshotCapture:
         try:
             # Выполняем захват в executor'е для неблокирующей работы
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
+            capture_future = loop.run_in_executor(
                 None, 
                 self._capture_sync, 
                 capture_config
             )
+            timeout = capture_config.timeout if capture_config.timeout and capture_config.timeout > 0 else None
+            if timeout is not None:
+                result = await asyncio.wait_for(capture_future, timeout=timeout)
+            else:
+                result = await capture_future
             
             return result
             
@@ -137,12 +142,17 @@ class ScreenshotCapture:
         try:
             # Выполняем захват в executor'е
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
+            capture_future = loop.run_in_executor(
                 None, 
                 self._capture_region_sync, 
                 region, 
                 capture_config
             )
+            timeout = capture_config.timeout if capture_config.timeout and capture_config.timeout > 0 else None
+            if timeout is not None:
+                result = await asyncio.wait_for(capture_future, timeout=timeout)
+            else:
+                result = await capture_future
             
             return result
             

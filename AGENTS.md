@@ -28,6 +28,13 @@
 - Запрет: локальные флаги/стейты/обход центра управления, если это создаёт второй источник истины.
 - Если архитектура не описана — используй разумное предположение и пометь: Assumption: ...
 
+## 1.1) Pre-Change Gate (обязательно до любых правок кода)
+- Сначала прочитай и зафиксируй в ответе релевантные разделы: `Docs/PROJECT_REQUIREMENTS.md`, `Docs/ARCHITECTURE_OVERVIEW.md`, `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`, `Docs/FEATURE_FLAGS.md`.
+- Перед изменениями проверь существующую реализацию (поиск дубликатов/похожей логики) и укажи, что именно будет единым владельцем (Source of Truth).
+- Любой новый флаг/стейт допустим только если указан владелец, зона действия, условие удаления и нет пересечения с `Docs/FEATURE_FLAGS.md`.
+- Если Gate не пройден, изменения не вносить.
+- Используй `Docs/PRE_CHANGE_CHECKLIST.md` как обязательный чек-лист перед редактированием.
+
 ## 2) Формат ответа (СТРОГО)
 Всегда отвечай только в этом формате:
 
@@ -136,6 +143,7 @@ Race:
 - `Docs/PROJECT_REQUIREMENTS.md`
 - `Docs/ARCHITECTURE_OVERVIEW.md`
 - `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`
+- `Docs/FEATURE_FLAGS.md`
 - `Docs/assistant_exchange/TEMPLATE.md`
 
 ---
@@ -154,6 +162,7 @@ Race:
 - `Docs/ARCHITECTURE_OVERVIEW.md`
 - `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`
 - `Docs/ANTIGRAVITY_PROMPT.md`
+- `Docs/FEATURE_FLAGS.md`
 - `Docs/assistant_exchange/TEMPLATE.md`
 
 ---
@@ -166,7 +175,14 @@ Race:
 - `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`
 - `Docs/ANTIGRAVITY_PROMPT.md`
 - `Docs/CODEX_PROMPT.md`
+- `Docs/FEATURE_FLAGS.md`
+- `Docs/DOCS_INDEX.md`
+- `Docs/PRE_CHANGE_CHECKLIST.md`
 - `Docs/assistant_exchange/TEMPLATE.md`
+
+Правило источников:
+- `Docs/_archive/*` — только reference, не Source of Truth.
+- При конфликте версий использовать только canonical-документы из `Docs/DOCS_INDEX.md`.
 
 После каждого выполненного задания ассистент обязан создать отчетный документ:
 - Путь: `Docs/assistant_exchange/<assistant>/`

@@ -36,7 +36,6 @@ from modules.permission_restart import (
 from modules.permission_restart.core.types import (
     PermissionStatus,
     PermissionTransition,
-    PermissionType,
 )
 from modules.permission_restart.macos.permissions_restart_handler import (
     PermissionsRestartHandler,
@@ -91,6 +90,22 @@ class PermissionRestartIntegration(BaseIntegration):
         self._v2_enabled: bool = False
         self._was_restarted_this_session: bool = False
 
+    def _set_first_run_restart_scheduled(self, value: bool) -> None:
+        """Single source of truth for first-run restart scheduling state."""
+        try:
+            self.state_manager.set_state_data(StateKeys.FIRST_RUN_RESTART_SCHEDULED, bool(value))
+        except Exception as exc:
+            logger.debug("[PERMISSION_RESTART] Failed to set FIRST_RUN_RESTART_SCHEDULED=%s: %s", value, exc)
+
+    def _attach_restart_task(self, task: asyncio.Task[Any]) -> None:
+        self._restart_task = task
+        self._set_first_run_restart_scheduled(True)
+
+        def _on_done(_task: asyncio.Task[Any]) -> None:
+            self._set_first_run_restart_scheduled(False)
+
+        task.add_done_callback(_on_done)
+
     async def _do_initialize(self) -> bool:
         try:
             config_section = self._resolve_config_section()
@@ -122,28 +137,43 @@ class PermissionRestartIntegration(BaseIntegration):
             return False
 
         try:
+            # Reset cross-run stale scheduling marker on each process start.
+            self._set_first_run_restart_scheduled(False)
+
             if not self._v2_enabled:
                 await self._subscribe("permissions.changed", self._on_permission_event, EventPriority.HIGH)
-                await self._subscribe("permissions.first_run_restart_pending", self._on_first_run_restart_pending, EventPriority.HIGH)
-                await self._subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.HIGH)
             await self._subscribe("updater.update_started", self._on_update_started, EventPriority.MEDIUM)
             await self._subscribe("updater.update_completed", self._on_update_completed, EventPriority.HIGH)
             await self._subscribe("updater.update_skipped", self._on_update_completed, EventPriority.HIGH)
             await self._subscribe("updater.update_failed", self._on_update_completed, EventPriority.HIGH)
             await self._subscribe("app.startup", self._on_app_startup_event, EventPriority.MEDIUM)
-            logger.info("[PERMISSION_RESTART] Subscribed to permission events")
-            logger.info("[PERMISSION_RESTART] First run handling: will react to permissions.first_run_restart_pending events")
+            if self._v2_enabled:
+                logger.info("[PERMISSION_RESTART] V2 mode: legacy permission subscriptions skipped")
+            else:
+                logger.info("[PERMISSION_RESTART] Subscribed to permission events")
 
-            # Если restart_pending уже выставлен (event был опубликован до старта интеграции),
-            # восстанавливаем обработку через синтетический replay.
-            if not self._v2_enabled:
-                # КРИТИЧНО: Проверяем флаг рестарта ПРИ ЗАПУСКЕ и запоминаем в памяти
-                # Файл может быть удален позже, но мы должны помнить этот факт до конца сессии
-                if self._has_recent_restart_flag():
-                    logger.info("[PERMISSION_RESTART] 🚩 Detected recent restart flag at startup - Marking session as 'restarted'")
-                    self._was_restarted_this_session = True
-                
-                await self._resume_pending_first_run_restart()
+            # Consume stale/fresh restart flag once on startup to avoid cross-run false positives.
+            # Only explicit env marker means "this process is already a restarted session".
+            restart_env = os.environ.get("NEXY_FIRST_RUN_RESTARTED", "").strip().lower() in {"1", "true", "yes"}
+            consumed_flag = None
+            try:
+                consumed_flag = self._restart_handler.consume_recent_restart_flag()
+            except Exception as exc:
+                logger.debug("[PERMISSION_RESTART] Failed to consume startup restart flag: %s", exc)
+
+            if restart_env:
+                self._was_restarted_this_session = True
+                logger.info(
+                    "[PERMISSION_RESTART] Startup marked as restarted session via env "
+                    "(flag_present=%s)",
+                    bool(consumed_flag),
+                )
+            elif consumed_flag:
+                logger.info(
+                    "[PERMISSION_RESTART] Consumed restart flag on startup without restart env "
+                    "(stale/foreign flag ignored): reason=%s",
+                    consumed_flag.get("reason"),
+                )
 
             return True
         except Exception as exc:
@@ -202,213 +232,39 @@ class PermissionRestartIntegration(BaseIntegration):
         except Exception as exc:
             logger.error("[PERMISSION_RESTART] Error handling permission event: %s", exc)
 
-    async def _on_first_run_restart_pending(self, event: dict[str, Any]) -> None:
+    async def request_restart_after_first_run_completed(self, *, session_id: str | None = None) -> bool:
         """
-        Обработчик события ожидания рестарта после first-run.
-        
-        Это событие публикуется FirstRunPermissionsIntegration когда завершён батч
-        и требуется рестарт для продолжения с следующим батчем.
+        Централизованный запрос рестарта после завершения first-run.
+        Используется координатором в permissions-only режиме.
         """
         if not self._config.enabled:
-            return
-        if self._v2_enabled:
-            logger.debug("[PERMISSION_RESTART] V2 enabled - ignoring first_run_restart_pending")
-            return
+            logger.warning("[PERMISSION_RESTART] Restart request ignored: integration disabled")
+            return False
+        if not self._restart_handler:
+            logger.warning("[PERMISSION_RESTART] Restart request ignored: restart handler not initialized")
+            return False
         if self._is_user_quit_intent():
-            logger.info("[PERMISSION_RESTART] User quit intent active - skip first_run restart_pending")
-            return
-
-        data = (event or {}).get("data") or {}
-        session_id = data.get("session_id")
-        source = data.get("source", "")
-        permissions = data.get("permissions", [])
-        is_last_batch = data.get("is_last_batch", True)
-        batch_index = data.get("batch_index", 0)
-        total_batches = data.get("total_batches", 1)
-
-        # V2 orchestrator owns restart. Avoid double-restart from legacy mapping.
-        if source == "v2_integration":
-            logger.info(
-                "[PERMISSION_RESTART] Skipping legacy restart_pending from v2 (session_id=%s) - Decision: ABORT",
-                session_id,
-            )
-            # Guard: Explicitly abort legacy restart for V2 source
-            return
-
+            logger.info("[PERMISSION_RESTART] Restart request ignored: user quit intent active")
+            return False
+        if self._is_updater_busy():
+            logger.info("[PERMISSION_RESTART] Restart request ignored: updater is active")
+            return False
         if self._was_restarted_this_session or self._has_recent_restart_flag():
-            logger.info(
-                "[PERMISSION_RESTART] Skipping restart_pending due to fresh restart flag/cached state (session_id=%s)",
-                session_id,
-            )
-            return
-
-        logger.info(
-            "[PERMISSION_RESTART] First run restart pending (session_id=%s, permissions=%s, batch=%d/%d, is_last=%s)",
-            session_id,
-            permissions,
-            batch_index + 1,
-            total_batches,
-            is_last_batch,
-        )
-
-        # restart_pending state is owned by coordinator event path (single writer).
-
-        # КРИТИЧНО: Для продолжения батчей напрямую вызываем restart
-        # Не используем детектор/переходы, т.к. они имеют guards которые блокируют restart
-        if not is_last_batch:
-            logger.info(
-                "[PERMISSION_RESTART] Batch %d/%d completed, skipping restart (waiting for last batch)",
-                batch_index + 1,
-                total_batches,
-            )
-            return
-
-        # Для последнего батча - стандартная логика через детектор (если нужно)
-        perm_type_map = {
-            "accessibility": PermissionType.ACCESSIBILITY,
-            "input_monitoring": PermissionType.INPUT_MONITORING,
-            "screen_capture": PermissionType.SCREEN_CAPTURE,
-            "microphone": PermissionType.MICROPHONE,
-        }
-        
-        for perm_name in permissions:
-            perm_type = perm_type_map.get(perm_name)
-            if not perm_type:
-                logger.warning("[PERMISSION_RESTART] Unknown permission name: %s", perm_name)
-                continue
-            
-            payload = {
-                "permission": perm_type.value,
-                "old_status": PermissionStatus.NOT_DETERMINED.value,
-                "new_status": PermissionStatus.GRANTED.value,
-                "session_id": session_id,
-                "source": "permissions.first_run_restart_pending",
-            }
-            transitions = self._detector.process_event("permissions.synthetic", payload)
-            for transition in transitions:
-                await self._handle_transition(transition)
-
-
-    async def _on_first_run_completed(self, event: dict[str, Any]) -> None:
-        """
-        Обработчик завершения процедуры первого запуска.
-        
-        DEPRECATED: Используется только для обратной совместимости (legacy).
-        Основной путь через permissions.first_run_restart_pending.
-        
-        NO-OP: Рестарт не планируется из этого события, чтобы избежать дублирования.
-        Рестарт инициируется только через permissions.first_run_restart_pending.
-        """
-        if not self._config.enabled:
-            return
-
-        data = (event or {}).get("data") or {}
-        session_id = data.get("session_id")
-
-        logger.debug(
-            "[PERMISSION_RESTART] First run completed (session_id=%s) - NO-OP (legacy event, restart handled via restart_pending)",
-            session_id,
-        )
-        
-        # NO-OP: Рестарт не планируется из этого события
-        # Рестарт инициируется только через permissions.first_run_restart_pending
-        return
-
-    async def _resume_pending_first_run_restart(self) -> None:
-        """
-        Восстановить обработку restart_pending, если событие было опубликовано
-        до подписки PermissionRestartIntegration.
-        """
-        if not self._config.enabled:
-            return
-
+            logger.info("[PERMISSION_RESTART] Restart request ignored: recent restart already detected")
+            return False
         if self._restart_task and not self._restart_task.done():
-            return
+            logger.info("[PERMISSION_RESTART] Restart already scheduled, duplicate request ignored")
+            return True
 
-        if self._was_restarted_this_session or self._has_recent_restart_flag():
-            logger.info("[PERMISSION_RESTART] Pending restart already completed (fresh flag/cached) - skip resume")
-            return
-
-        try:
-            pending = bool(get_state_value(self.state_manager, StateKeys.PERMISSIONS_RESTART_PENDING, False))
-        except Exception:
-            pending = False
-
-        if not pending:
-            return
-
-        try:
-            stored_permissions = get_state_value(
-                self.state_manager,
-                "permissions_restart_pending_permissions",
-                [],
-            )
-        except Exception:
-            stored_permissions = []
-
-        # КРИТИЧНО: Читаем информацию о батчах из state
-        try:
-            batch_index = get_state_value(
-                self.state_manager,
-                "permissions_restart_pending_batch_index",
-                0,
-            )
-            total_batches = get_state_value(
-                self.state_manager,
-                "permissions_restart_pending_total_batches",
-                1,
-            )
-            is_last_batch = get_state_value(
-                self.state_manager,
-                "permissions_restart_pending_is_last_batch",
-                True,  # Default to True only if not saved
-            )
-        except Exception:
-            batch_index = 0
-            total_batches = 1
-            is_last_batch = True
-
-        # Если permissions пустые, но у нас есть batch info - НЕ используем дефолт
-        # Дефолт используется только если нет никакой информации о батчах
-        if not stored_permissions and total_batches == 1:
-            stored_permissions = [perm.value for perm in self._config.critical_permissions]
-
-        if not isinstance(stored_permissions, list):
-            stored_permissions = [stored_permissions]
-
-        permissions = [str(perm) for perm in stored_permissions if perm]
-
-        try:
-            session_id = get_state_value(
-                self.state_manager,
-                "permissions_restart_pending_session_id",
-                "pending_state",
-            )
-        except Exception:
-            session_id = "pending_state"
-
+        reason = f"first_run_completed:{session_id or 'unknown'}"
+        permissions = ["first_run_permissions"]
         logger.info(
-            "[PERMISSION_RESTART] Resuming pending first-run restart (session_id=%s, permissions=%s, batch=%d/%d, is_last=%s)",
+            "[PERMISSION_RESTART] Scheduling first-run completion restart in %.1fs (session_id=%s)",
+            self._config.restart_delay_sec,
             session_id,
-            permissions,
-            batch_index + 1,
-            total_batches,
-            is_last_batch,
         )
-
-        await self._on_first_run_restart_pending(
-            {
-                "type": "permissions.first_run_restart_pending",
-                "data": {
-                    "session_id": session_id,
-                    "source": "permission_restart_resume",
-                    "permissions": permissions,
-                    "batch_index": batch_index,
-                    "total_batches": total_batches,
-                    "is_last_batch": is_last_batch,
-                },
-            }
-        )
+        self._attach_restart_task(asyncio.create_task(self._execute_scheduled_restart(reason, permissions)))
+        return True
 
     async def _handle_transition(self, transition: PermissionTransition) -> None:
         if self._v2_enabled:
@@ -423,17 +279,14 @@ class PermissionRestartIntegration(BaseIntegration):
                 transition.permission.value,
             )
             return
-        # GUARD: Блокируем перезапуск во время first_run
-        # Если first_run активен и restart_pending еще не true (т.е. first_run_restart_pending не публиковался),
-        # значит flow разрешений еще не завершён — не планируем рестарт, чтобы не прервать flow
+        # GUARD: Блокируем перезапуск во время active first_run flow.
         try:
             snapshot = create_snapshot_from_state(self.state_manager)
-            if snapshot.first_run and not snapshot.restart_pending:
+            if snapshot.first_run:
                 logger.info(
                     "[PERMISSION_RESTART] Restart blocked during first_run "
-                    "(first_run=%s, restart_pending=%s, permission=%s)",
+                    "(first_run=%s, permission=%s)",
                     snapshot.first_run,
-                    snapshot.restart_pending,
                     transition.permission.value,
                 )
                 return
@@ -465,9 +318,8 @@ class PermissionRestartIntegration(BaseIntegration):
                     decision = decide_permission_restart_safety(snapshot)
                     if decision == Decision.ABORT:
                         logger.info(
-                            "[PERMISSION_RESTART] Restart blocked by gateway (update_in_progress=%s, first_run_restart_pending=%s)",
+                            "[PERMISSION_RESTART] Restart blocked by gateway (update_in_progress=%s)",
                             snapshot.update_in_progress,
-                            snapshot.first_run and snapshot.restart_pending,
                         )
                         return  # Don't schedule restart
             except Exception as exc:
@@ -492,9 +344,7 @@ class PermissionRestartIntegration(BaseIntegration):
             critical_perms
         )
 
-        self._restart_task = asyncio.create_task(
-            self._execute_scheduled_restart(reason, critical_perms)
-        )
+        self._attach_restart_task(asyncio.create_task(self._execute_scheduled_restart(reason, critical_perms)))
 
     async def _execute_scheduled_restart(self, reason: str, permissions: list[str]) -> None:
         try:
@@ -516,6 +366,27 @@ class PermissionRestartIntegration(BaseIntegration):
                     permissions,
                 )
                 return
+
+            if self._was_restarted_this_session or self._has_recent_restart_flag():
+                logger.info(
+                    "[PERMISSION_RESTART] Restart aborted: recent restart already detected (reason=%s, permissions=%s)",
+                    reason,
+                    permissions,
+                )
+                return
+
+            try:
+                snapshot = create_snapshot_from_state(self.state_manager)
+                if snapshot.first_run:
+                    logger.info(
+                        "[PERMISSION_RESTART] Restart aborted: first_run still active "
+                        "(reason=%s, permissions=%s)",
+                        reason,
+                        permissions,
+                    )
+                    return
+            except Exception as exc:
+                logger.debug("[PERMISSION_RESTART] Failed to revalidate state before restart: %s", exc)
 
             if self._restart_handler:
                 await self._restart_handler.trigger_restart(
@@ -578,10 +449,15 @@ class PermissionRestartIntegration(BaseIntegration):
         Инициализирует детектор текущим состоянием разрешений, чтобы избежать
         ложных срабатываний на уже выданные разрешения.
         """
-        # КРИТИЧНО: Предотвращаем повторную публикацию system.ready_to_greet
+        # КРИТИЧНО: Предотвращаем повторную публикацию readiness-событий
         # если async обработка завершается после первой публикации
         if self._ready_emitted:
             logger.debug("[PERMISSION_RESTART] Skipping app_startup handler - already emitted ready")
+            return
+
+        if self._v2_enabled:
+            logger.info("[PERMISSION_RESTART] V2 enabled - skipping legacy startup detector initialization")
+            await self._publish_ready_if_applicable(source="app_startup")
             return
         
         # Инициализируем детектор текущим состоянием разрешений
@@ -618,22 +494,14 @@ class PermissionRestartIntegration(BaseIntegration):
         
         await self._publish_ready_if_applicable(source="app_startup")
 
-    def _get_current_permission_statuses(self) -> dict[PermissionType, PermissionStatus]:
-        status_map: dict[PermissionType, PermissionStatus] = {}
-        for permission in self._config.critical_permissions:
-            status = PermissionStatus.GRANTED
-            status_map[permission] = status
-        return status_map
-
-
     async def _publish_ready_if_applicable(self, *, source: str) -> None:
         if self._ready_emitted:
             return
 
-        # V2 FIX: Если V2 включён, НЕ публикуем ready_to_greet здесь!
-        # V2 Orchestrator отвечает за публикацию после завершения pipeline
+        # V2 FIX: Если V2 включён, НЕ публикуем readiness здесь.
+        # V2 Orchestrator — единственный владелец system.ready_to_greet.
         if self._v2_enabled:
-            logger.info("[PERMISSION_RESTART] V2 enabled, deferring ready_to_greet to V2 Orchestrator")
+            logger.info("[PERMISSION_RESTART] V2 enabled, deferring readiness to V2 Orchestrator")
             return
 
         # Для запусков не из основного bundle считаем готовым, без TCC-запросов
@@ -651,12 +519,8 @@ class PermissionRestartIntegration(BaseIntegration):
                         "bundle_id": bundle_id,
                     },
                 )
-                await self.event_bus.publish(
-                    "system.ready_to_greet",
-                    {"source": source, "assumed": True, "bundle_id": bundle_id},
-                )
                 logger.info(
-                    "[PERMISSION_RESTART] Published system.ready_to_greet for non-bundle launch (bundle_id=%s)",
+                    "[PERMISSION_RESTART] Published system.permissions_ready for non-bundle launch (bundle_id=%s)",
                     bundle_id,
                 )
             except Exception as exc:
@@ -667,8 +531,9 @@ class PermissionRestartIntegration(BaseIntegration):
         if os.environ.get("NEXY_BYPASS_PERMISSION_READY", "").strip().lower() in {"1", "true", "yes"}:
             if is_production_env():
                 logger.warning(
-                    "[PERMISSION_RESTART] NEXY_BYPASS_PERMISSION_READY used in production - forcing readiness bypass"
+                    "[PERMISSION_RESTART] NEXY_BYPASS_PERMISSION_READY ignored in production"
                 )
+                return
             self._ready_emitted = True
             self._ready_pending_update = False
             logger.info("[PERMISSION_RESTART] Bypassing permission readiness checks via env override")
@@ -677,11 +542,7 @@ class PermissionRestartIntegration(BaseIntegration):
                     "system.permissions_ready",
                     {"source": source, "permissions": ["accessibility", "input_monitoring", "screen_capture"], "bypassed": True},
                 )
-                await self.event_bus.publish(
-                    "system.ready_to_greet",
-                    {"source": source, "bypassed": True},
-                )
-                logger.info("[PERMISSION_RESTART] Published system.ready_to_greet (bypassed)")
+                logger.info("[PERMISSION_RESTART] Published system.permissions_ready (bypassed)")
             except Exception as exc:
                 logger.debug("[PERMISSION_RESTART] Failed to publish readiness events (bypass): %s", exc)
             return
@@ -721,11 +582,7 @@ class PermissionRestartIntegration(BaseIntegration):
                     "assumed": assumed_permissions,
                 },
             )
-            await self.event_bus.publish(
-                "system.ready_to_greet",
-                {"source": source, "assumed": assumed_permissions},
-            )
-            logger.info("[PERMISSION_RESTART] Published system.ready_to_greet (source=%s)", source)
+            logger.info("[PERMISSION_RESTART] Published system.permissions_ready (source=%s)", source)
         except Exception as exc:
             logger.debug("[PERMISSION_RESTART] Failed to publish readiness events: %s", exc)
 

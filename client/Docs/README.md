@@ -1,126 +1,47 @@
 # Nexy Client Documentation Index
 
-**Версия:** 2.0 (обновлено 2026-01-13)  
-**Источник истины:** Этот файл является индексом всех канонических документов проекта.
+**Версия:** 3.0 (обновлено 2026-02-11)  
+**Источник истины:** `client/Docs/DOCS_INDEX.md`
 
-> **ВАЖНО:** Актуальные документы находятся в `Docs/`. Архивные документы в `_Docs_ARCHIVED/` используются только для исторической справки.
-
----
-
-## Активные документы (Docs/)
-
-**Эти документы актуальны и используются в текущей работе:**
+## Актуальные документы (canonical)
 
 ### Архитектура и требования
-- **`Docs/ARCHITECTURE_OVERVIEW.md`** — связь модулей и интеграций, обзор архитектуры
-- **`Docs/FLOW_INTERACTION_SPEC.md`** — канон взаимодействий и контракты событий
-- **`Docs/PROJECT_REQUIREMENTS.md`** — единый snapshot требований (обязательно при изменении логики)
-- **`Docs/REQUIREMENTS_SOURCE_MAP.md`** — карта всех документов требований с их статусом
-- **`Docs/PRODUCT_CONCEPT.md`** — пользовательские сценарии и режимы
-- **`Docs/STATE_CATALOG.md`** — единый источник истины для всех осей состояния
-- **`Docs/DOCUMENTATION_MAP.md`** — карта документации и навигатор
+- `client/Docs/ARCHITECTURE_OVERVIEW.md`
+- `client/Docs/FLOW_INTERACTION_SPEC.md`
+- `client/Docs/PROJECT_REQUIREMENTS.md`
+- `client/Docs/REQUIREMENTS_SOURCE_MAP.md`
+- `client/Docs/PRODUCT_CONCEPT.md`
+- `client/Docs/STATE_CATALOG.md`
+- `client/Docs/DOCUMENTATION_MAP.md`
 
-### Первый запуск и разрешения
-- **`Docs/first_run_flow_spec.md`** — детальная логика запроса разрешений и перезапуска
+### Процесс изменений
+- `client/AGENTS.md`
+- `client/Docs/PRE_CHANGE_CHECKLIST.md`
+- `client/Docs/DOCS_INDEX.md`
+- `Docs/PRE_CHANGE_CHECKLIST.md` (global process)
+- `Docs/DOCS_INDEX.md` (global index)
 
-### Упаковка и сборка
-- **`Docs/PACKAGING_FINAL_GUIDE.md`** — **ЕДИНСТВЕННЫЙ источник истины** для канонического процесса упаковки (раздел 0). Все изменения обязаны следовать обязательному процессу из раздела 0.2.
-- `Docs/PRE_PACKAGING_VERIFICATION.md` — чек-лист проверки перед упаковкой
-- `Docs/PACKAGING_READINESS_CHECKLIST.md` — фиксация результатов проверки упаковки
-- `Docs/PREFLIGHT_CHECKS.md` — система предварительных проверок перед сборкой
-- `Docs/PREFLIGHT_IMPLEMENTATION_PLAN.md` — план реализации системы preflight проверок
-
-### Quality Gates (скрипты)
-- `scripts/pre_build_gate.sh` — базовый pre-build gate
-- `scripts/quality_strict.sh` — строгий алиас pre-build gate (`--require-basedpyright`)
-- `scripts/problem_scan.sh` — consolidated scan + priority report
-- `scripts/problem_scan_gate.sh` — release/CI gate (blocking issues only)
-- `scripts/problem_scan_prioritize.py` — генерация приоритетного отчёта
-- `scripts/setup_dev_env.sh` — bootstrap dev-окружения для quality checks
+### Упаковка и релиз
+- `client/Docs/PACKAGING_FINAL_GUIDE.md`
+- `client/Docs/PRE_PACKAGING_VERIFICATION.md`
+- `client/Docs/PACKAGING_READINESS_CHECKLIST.md`
 
 ### Feature Flags
-- `Docs/FEATURE_FLAGS.md` — единый источник истины для всех feature flags/kill-switches
+- `client/Docs/FEATURE_FLAGS.md`
 
-### Обмен между ассистентами
-- `Docs/assistant_exchange/` — директория для документов обмена между ассистентами
-  - `codex/` — документы от ассистента Codex
-  - `cursor/` — документы от ассистента Cursor
-  - `antigravity/` — документы от ассистента Antigravity (если используется)
+### Координация ассистентов (global)
+- `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`
+- `Docs/ANTIGRAVITY_PROMPT.md`
+- `Docs/CODEX_PROMPT.md`
+- `Docs/assistant_exchange/TEMPLATE.md`
 
----
+## Архивные документы (reference only)
+- `client/_Docs_ARCHIVED/*`
+- `client/Docs/_archive/*`
 
-## Архивные документы (_Docs_ARCHIVED/)
+Архивы не являются Source of Truth и используются только для исторической справки.
 
-**Эти документы находятся в архиве и используются только для исторической справки:**
-
-### Отчёты и планы (исторические)
-- `_Docs_ARCHIVED/CURRENT_STATUS_REPORT.md` — исторические отчёты о статусе
-- `_Docs_ARCHIVED/GLOBAL_DELIVERY_PLAN.md` — исторические планы доставки
-- `_Docs_ARCHIVED/TAL_TESTING_CHECKLIST.md` — исторические чек-листы тестирования
-
-### Другие документы
-- `_Docs_ARCHIVED/README.md` — общий README архива
-- `_Docs_ARCHIVED/assistant_exchange/` — архивные документы обмена между ассистентами
-
----
-
-## Отсутствующие документы
-
-**Эти документы упоминаются в правилах, но не найдены в репозитории:**
-
-### Протоколы координации ассистентов
-- `ASSISTANT_COORDINATION_PROTOCOL.md` — протокол координации между ассистентами
-- `ANTIGRAVITY_PROMPT.md` — prompt-файл для ассистента Antigravity
-- `CODEX_PROMPT.md` — prompt-файл для ассистента Codex
-- `TEMPLATE.md` — шаблон для документов обмена между ассистентами
-
-### CRM Task Management
-- `Docs/CRM_CONSOLIDATED_RULES.md` — полные правила CRM Task Management (упоминается в `.cursorrules` раздел 22.7)
-- `Docs/CRM_ASSISTANT_INSTRUCTIONS.md` — инструкция для ассистентов по CRM (упоминается в `.cursorrules` раздел 22.7)
-
-**Рекомендация:** Если эти документы необходимы, их следует создать или восстановить из архива. До восстановления используйте существующие примеры в `Docs/assistant_exchange/` для формата документов обмена.
-
----
-
-## Требования окружения
-
-**Актуальные требования (синхронизированы с `Docs/PACKAGING_FINAL_GUIDE.md`):**
-
-- **macOS:** 13+ (для Rosetta 2 на Apple Silicon, сборка Universal 2)
-- **Python:** 3.13.7 Universal 2 (установлен через официальный `python-3.13.7-macos11.pkg`)
-  - Путь: `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3`
-  - **ВАЖНО:** Не использовать arm64-only Python из pyenv
-- **Минимальная версия для приложения:** 12.0 (Monterey) - указано в Info.plist
-
----
-
-## Правила использования документации
-
-1. **Активные документы** (`Docs/`) — используются в текущей работе, регулярно обновляются
-2. **Архивные документы** (`_Docs_ARCHIVED/`) — исторические документы, но все еще используются в правилах
-3. **Единый источник истины:**
-   - Упаковка: `Docs/PACKAGING_FINAL_GUIDE.md` (раздел 0)
-   - Требования: `Docs/PROJECT_REQUIREMENTS.md`
-   - Архитектура: `Docs/ARCHITECTURE_OVERVIEW.md`
-   - Состояние: `Docs/STATE_CATALOG.md`
-   - Feature Flags: `Docs/FEATURE_FLAGS.md`
-
-4. **Обновление ссылок:** При изменении местоположения документов обновлять:
-   - `.cursorrules` — все ссылки на документы
-   - `AGENTS.md` — ссылки в разделе "Контекст клиента"
-   - Этот файл (`Docs/README.md`) — индекс документов
-
----
-
-## Связанные документы
-
-- `.cursorrules` — правила разработки клиента
-- `AGENTS.md` — базовые правила проекта
-- `Docs/PACKAGING_FINAL_GUIDE.md` — канонический процесс упаковки
-- `_Docs_ARCHIVED/README.md` — общий README архива
-
----
-
-**Последнее обновление:** 2026-01-13  
-**Ответственный:** Cursor Assistant  
-**Изменения:** Перемещены актуальные документы из `_Docs_ARCHIVED/` в `Docs/`
+## Правила обновления ссылок
+1. При изменении пути обновлять `client/Docs/DOCS_INDEX.md`.
+2. Затем синхронизировать `client/Docs/DOCUMENTATION_MAP.md`.
+3. Если затронут общий процесс, обновлять `Docs/DOCS_INDEX.md` и `Docs/PRE_CHANGE_CHECKLIST.md`.

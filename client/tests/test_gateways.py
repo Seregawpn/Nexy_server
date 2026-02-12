@@ -73,7 +73,6 @@ def _make_snapshot(
     network: NetworkStatus = NetworkStatus.ONLINE,
     first_run: bool = False,
     app_mode: AppMode = AppMode.SLEEPING,
-    restart_pending: bool = False,
     update_in_progress: bool = False,
     whatsapp_status: WhatsappStatus = WhatsappStatus.DISCONNECTED,
 ) -> Snapshot:
@@ -85,7 +84,6 @@ def _make_snapshot(
         network=network,
         first_run=first_run,
         app_mode=app_mode,
-        restart_pending=restart_pending,
         update_in_progress=update_in_progress,
         whatsapp_status=whatsapp_status,
     )
@@ -117,7 +115,7 @@ def test_decide_process_audio_degrade_offline() -> None:
 
 
 def test_decide_continue_integration_startup_abort_integration_startup() -> None:
-    snapshot = _make_snapshot(first_run=True, restart_pending=True)
+    snapshot = _make_snapshot(first_run=True)
     assert decide_continue_integration_startup(snapshot) == Decision.ABORT
 
 

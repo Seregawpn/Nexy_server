@@ -248,7 +248,6 @@ class ProcessingWorkflow(BaseWorkflow):
             
             # Сброс флагов
             self.completed_stages.clear()
-            self.completed_stages.clear()
             self.screenshot_captured = False
             self.grpc_completed = False
             self.recognition_failed = False
@@ -315,7 +314,7 @@ class ProcessingWorkflow(BaseWorkflow):
         try:
             data = event.get("data", {})
             session_id = data.get("session_id")
-            screenshot_path = data.get("path")
+            screenshot_path = data.get("image_path") or data.get("path")
             
             logger.info(f"📸 ProcessingWorkflow: скриншот захвачен, path={screenshot_path}")
             

@@ -77,8 +77,6 @@ class ScreenshotCaptureIntegration:
         self._screen_permission_task: asyncio.Task[Any] | None = None
         # Ранний захват: отслеживаем активные задачи захвата по session_id
         self._early_capture_tasks: dict[SessionId, asyncio.Task[Any]] = {}
-        # Кэш данных последнего захваченного скриншота для переопубликации
-        self._captured_screenshot_data: dict[str, Any] | None = None
         # Session-scoped idempotency/replay contract for screenshot.captured
         self._published_sessions: set[str] = set()
         self._captured_by_session: dict[str, dict[str, Any]] = {}
@@ -139,7 +137,6 @@ class ScreenshotCaptureIntegration:
             self._captured_by_session[session_key] = dict(screenshot_data)
             self._evict_published_cache_if_needed()
 
-        self._captured_screenshot_data = dict(screenshot_data)
         self._captured_for_session = screenshot_data.get("session_id")
         return True
 
@@ -379,10 +376,13 @@ class ScreenshotCaptureIntegration:
                     "(reason=processing_entry_after_early_capture)",
                     sid,
                 )
-                await self._publish_captured(
-                    cached_payload,
-                    force_replay=True,
-                    replay_reason="processing_entry_after_early_capture",
+                # Даем остальным subscribers app.mode_changed перейти в ACTIVE,
+                # чтобы replay не терялся из-за преждевременной фильтрации.
+                asyncio.create_task(
+                    self._publish_replay_after_mode_tick(
+                        cached_payload,
+                        replay_reason="processing_entry_after_early_capture",
+                    )
                 )
                 return
             logger.info(f"📸 ScreenshotCaptureIntegration: app entered PROCESSING, session_id={sid}")
@@ -400,6 +400,22 @@ class ScreenshotCaptureIntegration:
                 await self._capture_once(session_id=sid)
         except Exception as e:
             logger.error(f"ScreenshotCaptureIntegration: error in mode_changed: {e}")
+
+    async def _publish_replay_after_mode_tick(
+        self,
+        cached_payload: dict[str, Any],
+        *,
+        replay_reason: str,
+    ) -> None:
+        try:
+            await asyncio.sleep(0)
+            await self._publish_captured(
+                cached_payload,
+                force_replay=True,
+                replay_reason=replay_reason,
+            )
+        except Exception as e:
+            logger.error("ScreenshotCaptureIntegration: delayed replay failed: %s", e)
 
     async def _capture_once_early(self, session_id: SessionId | None):
         """Ранний захват скриншота (не блокирует, может быть отменен)"""
@@ -506,6 +522,14 @@ class ScreenshotCaptureIntegration:
         }
 
     async def _schedule_preparation(self, session_id: SessionId):
+        session_key = self._session_key(session_id)
+        if session_key is not None and session_key in self._captured_by_session:
+            return
+        if session_id == self._captured_for_session:
+            return
+        task = self._early_capture_tasks.get(session_id)
+        if task is not None and not task.done():
+            return
         if session_id in self._prepare_tasks and not self._prepare_tasks[session_id].done():
             return
         if self._enforce_permissions and not self._is_screen_permission_granted():

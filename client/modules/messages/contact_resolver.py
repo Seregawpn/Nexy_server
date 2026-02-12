@@ -32,8 +32,41 @@ _CONTACT_CACHE: dict[str, dict[str, Any]] = {}
 _CONTACT_NAME_CACHE: dict[str, tuple[list[dict[str, Any]], float]] = {}
 _CACHE_TTL = 300  # 5 минут в секундах
 
+# Защита от шторминга системного Contacts helper при transient/system errors
+# (например Code=7 / Full Sync Required / Invalid Change History Anchor).
+_CONTACTS_HELPER_BACKOFF_UNTIL: float = 0.0
+_CONTACTS_HELPER_BACKOFF_REASON: str | None = None
+_CONTACTS_HELPER_BACKOFF_SEC: float = 120.0
+
 # Путь к базе данных контактов
 CONTACTS_DB_PATH = Path.home() / "Library" / "Application Support" / "AddressBook" / "AddressBook-v22.abcddb"
+
+
+def _contacts_helper_backoff_active() -> bool:
+    return time.time() < _CONTACTS_HELPER_BACKOFF_UNTIL
+
+
+def _activate_contacts_helper_backoff(reason: str) -> None:
+    global _CONTACTS_HELPER_BACKOFF_UNTIL, _CONTACTS_HELPER_BACKOFF_REASON
+    _CONTACTS_HELPER_BACKOFF_UNTIL = time.time() + _CONTACTS_HELPER_BACKOFF_SEC
+    _CONTACTS_HELPER_BACKOFF_REASON = reason
+    logger.warning(
+        "Contacts helper backoff enabled for %.0fs (reason=%s)",
+        _CONTACTS_HELPER_BACKOFF_SEC,
+        reason,
+    )
+
+
+def _is_contacts_transient_error(stderr: str) -> bool:
+    msg = (stderr or "").lower()
+    markers = (
+        "code=7",
+        "full sync required",
+        "invalid change history anchor",
+        "store registration failed",
+        "acmonitoredaccountstore",
+    )
+    return any(m in msg for m in markers)
 
 
 def normalize_identifier(identifier: str) -> str:
@@ -206,6 +239,13 @@ def get_name_from_contacts_framework(identifier: str) -> dict[str, Any] | None:
     """
     # Путь к Swift helper
     helper_path = Path(__file__).parent / "contacts_helper"
+
+    if _contacts_helper_backoff_active():
+        logger.warning(
+            "Contacts helper suppressed by backoff (reason=%s)",
+            _CONTACTS_HELPER_BACKOFF_REASON or "transient_error",
+        )
+        return None
     
     if not helper_path.exists():
         # Fallback на AppleScript, если Swift helper не найден
@@ -241,6 +281,8 @@ def get_name_from_contacts_framework(identifier: str) -> dict[str, Any] | None:
         else:
             error = result.stderr.strip()
             if error:
+                if _is_contacts_transient_error(error):
+                    _activate_contacts_helper_backoff("contacts_framework_transient_error")
                 logger.warning(f"Swift helper вернул ошибку: {error}")
     except subprocess.TimeoutExpired:
         logger.warning("Таймаут при получении имени через Contacts.framework (Swift)")
@@ -377,9 +419,17 @@ def find_contacts_by_name(name: str) -> list[dict[str, Any]]:
     
     # Поиск через Swift helper
     helper_path = Path(__file__).parent / "find_contacts_by_name_swift"
-    
+
     if not helper_path.exists():
         logger.warning("Swift helper для поиска по имени не найден")
+        return []
+
+    if _contacts_helper_backoff_active():
+        logger.warning(
+            "find_contacts_by_name suppressed by helper backoff (reason=%s)",
+            _CONTACTS_HELPER_BACKOFF_REASON or "transient_error",
+        )
+        _CONTACT_NAME_CACHE[cache_key] = ([], current_time)
         return []
     
     try:
@@ -402,6 +452,12 @@ def find_contacts_by_name(name: str) -> list[dict[str, Any]]:
                         return contacts
                 except json.JSONDecodeError as e:
                     logger.error(f"Ошибка парсинга JSON: {e}")
+        else:
+            stderr = result.stderr.strip()
+            if stderr and _is_contacts_transient_error(stderr):
+                _activate_contacts_helper_backoff("find_contacts_transient_error")
+            if stderr:
+                logger.warning(f"Swift helper stderr: {stderr}")
     except subprocess.TimeoutExpired:
         logger.warning("Таймаут при поиске контактов по имени")
     except Exception as e:
@@ -529,4 +585,3 @@ def clear_expired_cache() -> int:
 def get_cache_size() -> int:
     """Возвращает общий размер кэша (резолвинг + поиск по имени)"""
     return len(_CONTACT_CACHE) + len(_CONTACT_NAME_CACHE)
-

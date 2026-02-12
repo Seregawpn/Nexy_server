@@ -238,6 +238,7 @@ python3 scripts/validate_release_bundle.py dist/Nexy.app dist/Nexy.pkg
 ## 1. Требования окружения
 
 ### Обязательные компоненты:
+
 - **macOS:** 13+ (для Rosetta 2 на Apple Silicon, сборка Universal 2)
 - **Минимальная версия для приложения:** 12.0 (Monterey) - указано в Info.plist
 - **Python:** 3.13.7 Universal 2 (установлен через официальный `python-3.13.7-macos11.pkg`)

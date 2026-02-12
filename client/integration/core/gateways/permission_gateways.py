@@ -12,18 +12,8 @@ from integration.core.gateways.base import create_ctx_from_snapshot
 from integration.core.gateways.common import _log_decision
 from integration.core.gateways.engine_loader import get_engine
 from integration.core.gateways.types import Decision
-from integration.core.selectors import Snapshot, is_first_run_restart_pending, is_update_in_progress
-from integration.core.state_manager import ApplicationStateManager
-
-try:  # pragma: no cover - defensive fallback for tooling contexts
-    from integration.core.state_manager import AppMode  # type: ignore
-except Exception:  # pragma: no cover
-    from enum import Enum
-
-    class AppMode(Enum):
-        SLEEPING = "sleeping"
-        LISTENING = "listening"
-        PROCESSING = "processing"
+from integration.core.selectors import Snapshot, is_update_in_progress
+from integration.core.state_manager import ApplicationStateManager, AppMode
 
 from modules.permission_restart.core.config import PermissionRestartConfig
 from modules.permission_restart.core.types import PermissionType
@@ -213,16 +203,6 @@ def decide_permission_restart_safety(
             f"ctx={create_ctx_from_snapshot(snapshot).to_log_string()} "
             f"error={exc} fallback_to=legacy"
         )
-        # Hard stop: first_run restart pending blocks all restarts
-        if is_first_run_restart_pending(snapshot):
-            _log_decision(
-                level="info",
-                decision=Decision.ABORT,
-                s=snapshot,
-                source="permission_restart_gateway",
-                reason="first_run_restart_pending",
-            )
-            return Decision.ABORT
         # Graceful: update in progress blocks restart
         if snapshot.update_in_progress:
             _log_decision(

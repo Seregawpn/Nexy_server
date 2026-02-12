@@ -89,6 +89,18 @@ permission_restart:
 export NEXY_DISABLE_AUTO_RESTART=1
 ```
 
+### AVFoundation (canonical resolver)
+
+AVFoundation флаги читаются только через:
+- `config/unified_config_loader.py::UnifiedConfigLoader.get_avfoundation_flags()`
+
+Порядок приоритета:
+1. `NEXY_FEATURE_AVFOUNDATION_*` / `NEXY_KS_AVFOUNDATION_*` (env)
+2. `audio_system.avfoundation_*` / `audio_system.ks_avfoundation_*` (config)
+
+Resolver возвращает `features`, `kill_switches`, `effective`, `source`.
+Runtime-интеграции не должны самостоятельно смешивать env и config.
+
 ## Правила добавления
 
 **ОБЯЗАТЕЛЬНО**: Перед использованием любого флага в коде выполните следующие шаги:

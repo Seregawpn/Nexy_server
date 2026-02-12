@@ -135,7 +135,6 @@ class WelcomeMessageIntegration:
             await self.event_bus.subscribe("permissions.changed", self._on_permission_event, EventPriority.HIGH)
             await self.event_bus.subscribe("permissions.requested", self._on_permission_event, EventPriority.MEDIUM)
             await self.event_bus.subscribe("permissions.integration_ready", self._on_permissions_ready, EventPriority.MEDIUM)
-            await self.event_bus.subscribe("permissions.first_run_completed", self._on_first_run_completed, EventPriority.MEDIUM)
             await self.event_bus.subscribe("playback.ready", self._on_playback_ready, EventPriority.MEDIUM)
             
             self._initialized = True
@@ -192,11 +191,13 @@ class WelcomeMessageIntegration:
             await self._handle_error(e, where="welcome.on_ready_to_greet", severity="warning")
 
     async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
-        """Legacy fallback: поддерживаем completion-триггер без локального defer-state."""
+        """Legacy no-op: welcome trigger is centralized on system.ready_to_greet."""
         try:
             if not self.config.enabled:
                 return
-            await self._request_welcome_play("permissions_first_run_completed")
+            logger.info(
+                "ℹ️ [WELCOME_INTEGRATION] Ignoring permissions.first_run_completed; waiting for system.ready_to_greet"
+            )
         except Exception as e:
             await self._handle_error(e, where="welcome.on_first_run_completed", severity="warning")
 
@@ -253,14 +254,6 @@ class WelcomeMessageIntegration:
 
             # Обновляем gRPC клиент непосредственно перед воспроизведением
             self._refresh_grpc_client()
-            
-            # 🆕 ПЕРЕХОД В PROCESSING РЕЖИМ
-            logger.info("🔄 [WELCOME_INTEGRATION] Переход в режим PROCESSING для приветствия")
-            await self.event_bus.publish("mode.request", {
-                "target": "PROCESSING",
-                "source": "welcome_message",
-                "reason": "welcome_playback"
-            })
             
             # Воспроизводим через плеер
             logger.info("TRACE [WELCOME_INT] calling welcome_player.play_welcome()")

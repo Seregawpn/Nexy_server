@@ -389,6 +389,18 @@ class PermissionsRestartHandler:
             "permissions": list(data.permissions),
         }
 
+    def consume_recent_restart_flag(self) -> dict[str, object] | None:
+        """Atomically read and remove fresh restart flag, if present."""
+        data = self._restart_flag.read_and_remove()
+        if not data:
+            return None
+        return {
+            "timestamp": data.timestamp,
+            "pid": data.pid,
+            "reason": data.reason,
+            "permissions": list(data.permissions),
+        }
+
     def _launch_packaged_app(self) -> bool:
         """
         Try to relaunch a packaged Nexy.app. Returns True on success,

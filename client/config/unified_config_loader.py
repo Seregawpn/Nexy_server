@@ -711,6 +711,98 @@ class UnifiedConfigLoader:
         )
         
         return result
+
+    @staticmethod
+    def _parse_env_bool(var_name: str) -> bool | None:
+        """Parse boolean env var, returning None if env is not set."""
+        raw = os.getenv(var_name)
+        if raw is None:
+            return None
+        value = raw.strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off"}:
+            return False
+        logger.warning("Invalid boolean env %s=%r, ignoring override", var_name, raw)
+        return None
+
+    def get_avfoundation_flags(self) -> dict[str, Any]:
+        """
+        Canonical AVFoundation flags resolver.
+
+        Precedence:
+        1) Environment vars (`NEXY_FEATURE_*`, `NEXY_KS_*`)
+        2) `audio_system.*` in unified config
+        """
+        config = self._load_config()
+        audio_system = config.get("audio_system", {})
+        if not isinstance(audio_system, dict):
+            audio_system = {}
+
+        cfg_feature_master = bool(audio_system.get("avfoundation_enabled", False))
+        cfg_feature_input = bool(audio_system.get("avfoundation_input_monitor_enabled", False))
+        cfg_feature_output = bool(audio_system.get("avfoundation_output_enabled", False))
+        cfg_feature_route = bool(audio_system.get("avfoundation_route_manager_enabled", False))
+
+        cfg_ks_input = bool(audio_system.get("ks_avfoundation_input_monitor", False))
+        cfg_ks_output = bool(audio_system.get("ks_avfoundation_output", False))
+        cfg_ks_route = bool(audio_system.get("ks_avfoundation_route_manager", False))
+
+        env_feature_master = self._parse_env_bool("NEXY_FEATURE_AVFOUNDATION_AUDIO_V2")
+        env_feature_input = self._parse_env_bool("NEXY_FEATURE_AVFOUNDATION_INPUT_MONITOR_V2")
+        env_feature_output = self._parse_env_bool("NEXY_FEATURE_AVFOUNDATION_OUTPUT_V2")
+        env_feature_route = self._parse_env_bool("NEXY_FEATURE_AVFOUNDATION_ROUTE_MANAGER_V2")
+
+        env_ks_master = self._parse_env_bool("NEXY_KS_AVFOUNDATION_AUDIO_V2")
+        env_ks_input = self._parse_env_bool("NEXY_KS_AVFOUNDATION_INPUT_MONITOR_V2")
+        env_ks_output = self._parse_env_bool("NEXY_KS_AVFOUNDATION_OUTPUT_V2")
+        env_ks_route = self._parse_env_bool("NEXY_KS_AVFOUNDATION_ROUTE_MANAGER_V2")
+
+        feature_master = cfg_feature_master if env_feature_master is None else env_feature_master
+        feature_input = cfg_feature_input if env_feature_input is None else env_feature_input
+        feature_output = cfg_feature_output if env_feature_output is None else env_feature_output
+        feature_route = cfg_feature_route if env_feature_route is None else env_feature_route
+
+        ks_master = False if env_ks_master is None else env_ks_master
+        ks_input = cfg_ks_input if env_ks_input is None else env_ks_input
+        ks_output = cfg_ks_output if env_ks_output is None else env_ks_output
+        ks_route = cfg_ks_route if env_ks_route is None else env_ks_route
+
+        effective_master = feature_master and not ks_master
+        effective_input = effective_master and feature_input and not ks_input
+        effective_output = effective_master and feature_output and not ks_output
+        effective_route = effective_master and feature_route and not ks_route
+
+        return {
+            "features": {
+                "master": feature_master,
+                "input_monitor": feature_input,
+                "output": feature_output,
+                "route_manager": feature_route,
+            },
+            "kill_switches": {
+                "master": ks_master,
+                "input_monitor": ks_input,
+                "output": ks_output,
+                "route_manager": ks_route,
+            },
+            "effective": {
+                "master": effective_master,
+                "input_monitor": effective_input,
+                "output": effective_output,
+                "route_manager": effective_route,
+            },
+            "source": {
+                "feature_master": "env" if env_feature_master is not None else "config",
+                "feature_input_monitor": "env" if env_feature_input is not None else "config",
+                "feature_output": "env" if env_feature_output is not None else "config",
+                "feature_route_manager": "env" if env_feature_route is not None else "config",
+                "ks_master": "env" if env_ks_master is not None else "default",
+                "ks_input_monitor": "env" if env_ks_input is not None else "config",
+                "ks_output": "env" if env_ks_output is not None else "config",
+                "ks_route_manager": "env" if env_ks_route is not None else "config",
+            },
+        }
     
     def get_mcp_config(self) -> dict[str, dict[str, Any]]:
         """

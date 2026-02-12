@@ -33,7 +33,7 @@ app:
   version: 1.6.1.27
 focus:
   force_activate_on_startup: false
-  allow_tray_startup_fallback: true
+  allow_tray_startup_fallback: false
   tray_fallback_timeout_sec: 6.0
 default_audio:
   target_sample_rate: 16000
@@ -156,7 +156,7 @@ integrations:
     priority: 9
     server: production
     aggregate_timeout_sec: 1.5
-    request_timeout_sec: 0.0
+    request_timeout_sec: 30.0
     max_retries: 3
     retry_delay: 1.0
     use_network_gate: true
@@ -195,22 +195,6 @@ integrations:
   network_manager:
     enabled: true
     priority: 6
-  permissions:
-    auto_open_preferences: false
-    check_interval: 30.0
-    enabled: true
-    priority: 0
-    retry_attempts: 3
-    retry_delay: 5.0
-    show_instructions: false
-    required_permissions:
-    # Порядок унифицирован с permissions_v2.order
-    - microphone
-    - screen_capture
-    - contacts
-    - input_monitoring
-    - accessibility
-    - full_disk_access
   permission_restart:
     enabled: true
     critical_permissions:
@@ -224,24 +208,18 @@ integrations:
     max_restart_attempts: 3
     respect_active_sessions: true
     respect_updates: true
-    polling_enabled: false
-    poll_interval_sec: 3.0
   
   # Permission System V2 - Pipeline Mode
   permissions_v2:
     enabled: true
-    advance_on_timeout: false
-    default_step_timeout_s: 20.0
-    
-    # No batching - single pipeline
-    batching:
-      enabled: false
+    advance_on_timeout: true
+    default_step_timeout_s: 15.0
     
     # Restart only if: all HARD pass + any needs_restart
     restart:
       delay_sec: 1.0
       require_all_hard_pass: true
-      require_needs_restart: false
+      require_needs_restart: true
       settings_safety_window_sec: 30.0
     
     # Order: dialogs first, input_monitoring before settings
@@ -255,72 +233,58 @@ integrations:
       - accessibility
       - full_disk_access
 
-    # Pause between steps to avoid TCC prompt overlap
-    inter_step_pause_s: 3.0
+    # No extra pause between steps: exactly per-step timeout budget
+    inter_step_pause_s: 0.0
     
     # Per-step configuration
     steps:
       microphone:
         mode: auto_dialog
-        grace_s: 13.0
-        poll_s: 1.0
+        step_timeout_s: 15.0
         supports_needs_restart: false
         criticality: hard
         
       screen_capture:
         mode: auto_dialog
-        grace_s: 13.0
-        poll_s: 2.0
+        step_timeout_s: 15.0
         supports_needs_restart: false
         criticality: hard
         
       network:
         mode: auto_dialog
-        grace_s: 13.0
-        poll_s: 2.0
+        step_timeout_s: 15.0
         supports_needs_restart: false
         criticality: hard
 
       contacts:
         mode: auto_dialog
-        grace_s: 13.0
-        poll_s: 2.0
+        step_timeout_s: 15.0
         supports_needs_restart: false
         criticality: hard
         
       messages:
         mode: auto_dialog
-        grace_s: 13.0
-        poll_s: 2.0
+        step_timeout_s: 15.0
         supports_needs_restart: false
         criticality: hard
         
       input_monitoring:
         mode: auto_dialog
-        grace_s: 13.0
-        poll_s: 2.0
+        step_timeout_s: 15.0
         supports_needs_restart: true
-        post_restart_verify_window_s: 20.0
-        post_restart_verify_tick_s: 2.0
         criticality: hard
         
       accessibility:
         mode: auto_dialog
         # settings_target: accessibility  <-- disabled to prevent auto-open
-        grace_s: 13.0
-        poll_s: 2.0
-        waiting_long_after_s: 300.0
-        waiting_long_poll_s: 15.0
+        step_timeout_s: 15.0
         supports_needs_restart: false
         criticality: hard
         
       full_disk_access:
         mode: open_settings
         settings_target: full_disk_access
-        grace_s: 13.0
-        poll_s: 10.0
-        waiting_long_after_s: 600.0
-        waiting_long_poll_s: 30.0
+        step_timeout_s: 15.0
         supports_needs_restart: false
         criticality: hard
   
@@ -342,7 +306,25 @@ integrations:
   signals:
     enabled: true
     priority: 11
+    suppress_listen_start_for_ptt: false
+    suppress_cancel_for_keyboard_interrupt: true
     patterns:
+      listen_start:
+        tone_hz: 1200
+        duration_ms: 220
+        volume: 0.65
+      done:
+        tone_hz: 880
+        duration_ms: 140
+        volume: 0.28
+      error:
+        tone_hz: 740
+        duration_ms: 180
+        volume: 0.32
+      cancel:
+        tone_hz: 660
+        duration_ms: 140
+        volume: 0.3
       update_start:
         tone_hz: 880
         duration_ms: 200
@@ -607,13 +589,6 @@ features:
   use_events_for_update_status:
     enabled: true
     rollout_percentage: 1
-  use_events_for_restart_pending:
-    enabled: true
-  critical_subscriptions_fix:
-    enabled: true
-    rollout_percentage: 100
-    description: Prevent race condition in permissions event handling by subscribing
-      before integration initialization
   ks_first_run_normalization:
     enabled: false
   template_feature:

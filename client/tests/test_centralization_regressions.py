@@ -11,35 +11,15 @@ from integration.integrations.whatsapp_integration import WhatsappIntegration
 
 
 @pytest.mark.asyncio
-async def test_permission_restart_does_not_write_restart_pending_state():
-    """restart_pending is coordinator-owned; integration must not write it."""
-    state_manager = Mock()
-    state_manager.set_restart_pending = Mock()
-
+async def test_permission_restart_has_no_legacy_restart_pending_handler():
+    """Legacy restart_pending flow must stay removed from PermissionRestartIntegration."""
     integration = PermissionRestartIntegration(
         event_bus=Mock(),
-        state_manager=state_manager,
+        state_manager=Mock(),
         error_handler=Mock(),
         config={"enabled": True},
     )
-    integration._config = SimpleNamespace(enabled=True)
-    integration._v2_enabled = False
-    integration._was_restarted_this_session = False
-    integration._restart_handler = None
-
-    await integration._on_first_run_restart_pending(
-        {
-            "data": {
-                "session_id": "test-session",
-                "permissions": ["accessibility"],
-                "is_last_batch": False,
-                "batch_index": 0,
-                "total_batches": 2,
-            }
-        }
-    )
-
-    state_manager.set_restart_pending.assert_not_called()
+    assert not hasattr(integration, "_on_first_run_restart_pending")
 
 
 @pytest.mark.asyncio

@@ -35,6 +35,7 @@ EventBus публикует событие как:
 - Завершение PROCESSING: только по `playback.completed` или `grpc.request_completed` (без фиксированных таймаутов).
 - Прерывания: единый канал отмены аудио — `playback.cancelled` (publisher только `SpeechPlaybackIntegration`).
 - `grpc.request_cancel` публикуется только `InterruptManagementIntegration`.
+- Cancel side effects (stop/clear/guard/session cleanup) выполняются только одним owner-обработчиком в `SpeechPlaybackIntegration` по событию `playback.cancelled`.
 - Любые локальные стейты не заменяют централизованные оси (`STATE_CATALOG.md`).
 
 ## 3) Контракты событий (канонические)
@@ -514,7 +515,7 @@ required:
   source: str
 ```
 
-Event: `browser.completion`
+Event: `browser.completed`
 Payload:
 ```yaml
 required:
@@ -549,7 +550,7 @@ required:
   progress_percent: int
 ```
 
-Event: `browser.task_request` (клиент -> интеграция)
+Event: `browser.task_request` (клиент -> интеграция, canonical)
 Payload:
 ```yaml
 required:
@@ -673,13 +674,18 @@ Source of Truth: `ApplicationStateManager` (mode + session_id)
 
 Sequence:
 1. LONG_PRESS → `voice.recording_start` + `mode.request(LISTENING)`.
-2. `ModeManagementIntegration` → `app.mode_changed(LISTENING)`.
-3. `VoiceRecognitionIntegration` → `voice.recognition_started`.
-4. `ListeningWorkflow` следит за debounce/таймаутами и при необходимости публикует `mode.request(SLEEPING)`.
+2. `VoiceRecognitionIntegration` выполняет runtime-gate `decide_route_manager_reconcile(snapshot)` перед фактическим стартом микрофона.
+3. При `abort`/`retry->abort`/`retry->retry` публикуются terminal события `voice.mic_closed` + `voice.recognition_failed`, запуск записи не продолжается.
+4. `ModeManagementIntegration` → `app.mode_changed(LISTENING)`.
+5. `SignalIntegration` на `app.mode_changed(LISTENING)` публикует `playback.signal(pattern=listen_start)`.
+6. `SpeechPlaybackIntegration` воспроизводит сигнал и публикует `playback.started(signal=true)`.
+7. `VoiceRecognitionIntegration` → `voice.recognition_started`.
+8. `ListeningWorkflow` следит за debounce/таймаутами и при необходимости публикует `mode.request(SLEEPING)`.
 
 Requirements:
 - `voice.recording_start` публикуется до установки локальных флагов записи.
 - `session_id` берется из `ApplicationStateManager`.
+- Keyboard monitor работает в observe-only режиме (не блокирует системные шорткаты).
 
 ### 4.5 Processing Flow (LISTENING → PROCESSING → SLEEPING)
 
@@ -705,8 +711,9 @@ Source of Truth: `InterruptCoordinator`
 Sequence:
 1. `keyboard.short_press` или программный вызов публикует `interrupt.request`.
 2. `InterruptManagementIntegration` при `type="speech_stop"` публикует `grpc.request_cancel`.
-3. `SpeechPlaybackIntegration` при `grpc.request_cancel` публикует `playback.cancelled`.
-4. Дополнительно публикуется `mode.request(SLEEPING)` как гарантия возврата.
+3. `SpeechPlaybackIntegration` при `grpc.request_cancel` публикует канонический `playback.cancelled` (без прямых side effects в этом шаге).
+4. `SpeechPlaybackIntegration` обрабатывает `playback.cancelled` как единый owner cancel side effects.
+5. Дополнительно публикуется `mode.request(SLEEPING)` как гарантия возврата.
 
 Requirements:
 - `interrupt.request.type` обязателен.
@@ -721,8 +728,9 @@ Sequence:
 1. Триггер: `app.startup` (если `check_on_startup`), периодический таймер, или `updater.check_manual`.
 2. Сначала `check_for_updates`; если нет обновлений → `updater.update_skipped`.
 3. Если есть обновление → `updater.update_started`, затем прогресс `updater.download_progress`, `updater.install_progress`.
-4. По завершению → `updater.update_completed` и `relaunch_app`.
-5. `updater.in_progress.changed` публикуется при изменении состояния (shadow-mode).
+4. По завершению → `updater.update_completed`.
+5. `relaunch_app` выполняется только если `USER_QUIT_INTENT=false`; при `USER_QUIT_INTENT=true` relaunch пропускается.
+6. `updater.in_progress.changed` публикуется при изменении состояния (shadow-mode).
 
 Requirements:
 - `update_in_progress` блокирует permission_restart (через gateway).

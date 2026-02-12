@@ -133,7 +133,11 @@ class ApplicationStateManager:
             loop = getattr(event_bus, "_loop", None)
             
             async def _publish_changes():
-                event_data = {"mode": mode}
+                event_data = {
+                    "mode": mode,
+                    "old_mode": previous_mode,
+                    "new_mode": mode,
+                }
                 if session_id is not None:
                     event_data["session_id"] = session_id
                 await event_bus.publish("app.mode_changed", event_data)
@@ -231,21 +235,9 @@ class ApplicationStateManager:
         self.set_state_data(StateKeys.FIRST_RUN_REQUIRED, required)
         self.set_state_data(StateKeys.FIRST_RUN_COMPLETED, completed)
         
-    def set_restart_pending(self, pending: bool):
-        """Update restart pending flag."""
-        self.set_state_data(StateKeys.PERMISSIONS_RESTART_PENDING, pending)
-        
     def set_update_in_progress(self, in_progress: bool):
         """Update update in progress status."""
         self.set_state_data(StateKeys.UPDATE_IN_PROGRESS, in_progress)
-        
-    def set_restart_completed_fallback(self, completed: bool):
-        """Update restart completed fallback flag."""
-        self.set_state_data(StateKeys.PERMISSIONS_RESTART_COMPLETED_FALLBACK, completed)
-
-    def get_restart_completed_fallback(self) -> bool:
-        """Get restart completed fallback flag."""
-        return self.get_state_data(StateKeys.PERMISSIONS_RESTART_COMPLETED_FALLBACK, False)
 
     def _get_timestamp(self) -> float:
         """Получить текущий timestamp"""

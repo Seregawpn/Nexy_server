@@ -49,10 +49,11 @@
 #### 4) Device.input (alias: device.input)
 - **владелец**: InputProcessing module owner
 - **пишет**: `input_processing`
-- **читает**: `voice_recognition`, `listening_workflow`
+- **читает**: `voice_recognition`, `listening_workflow`, `route_manager_gateway`
 - **источник истины**: локальный драйвер/статус (CGEvent)
 - **метрики**: `device_busy_rate`
 - **правила в interaction_matrix.yaml**: `graceful` при `busy` → `retry_backoff`
+- **runtime owner route reconcile**: `VoiceRecognitionIntegration` вызывает `decide_route_manager_reconcile(snapshot)` на входе `recording_start`.
 
 #### 5) Network (alias: network, network.offline, network.online)
 - **владелец**: NetworkManager module owner
@@ -199,6 +200,7 @@
 | `process.lifecycle: restarting` **[НОВАЯ]** | Блокирует интеграции | `hard_stop` | через `restart_pending` |
 | `update_in_progress: true` **[НОВАЯ]** | Блокирует permission restart | `graceful` | `decide_permission_restart_safety()` **[Phase 2]** |
 | `update_in_progress: true` + `appMode: LISTENING|PROCESSING` **[НОВАЯ]** | Блокирует запуск обновления | `hard_stop` | `UpdaterIntegration._can_update()` |
+| `device.input: busy` + `appMode: LISTENING` **[route_reconcile]** | Retry reconcile перед стартом записи | `graceful` | `decide_route_manager_reconcile()` (runtime owner: `VoiceRecognitionIntegration`) |
 
 **Правило обновления**: При изменении оси или добавлении нового правила:
 1. Обновить `STATE_CATALOG.md` (этот документ)
@@ -269,6 +271,7 @@ decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=
 | `permission_restart` | Tech Lead клиента | `permission_restart_integration` | Все интеграции, влияющие на перезапуск | `modules/permission_restart/core/restart_scheduler.py` | Tech Lead клиента |
 | `update_in_progress` | UpdaterIntegration owner | `updater_integration` | `permission_restart_integration`, `simple_module_coordinator` | `UpdaterIntegration.is_update_in_progress()` | Tech Lead клиента |
 | `session_id` | Tech Lead клиента | `input_processing_integration`, `voice_recognition_integration`, `speech_playback_integration` | Все интеграции через `state_manager.get_current_session_id()` | `ApplicationStateManager.current_session_id` | Tech Lead клиента |
+| `avfoundation.flags` | Audio owner | `UnifiedConfigLoader.get_avfoundation_flags()` | `speech_playback_integration`, `voice_recognition_integration` | `config/unified_config_loader.py` (`env > config`, effective flags) | Tech Lead клиента |
 
 **Правило разрешения споров**: При любом разногласии по оси/артефакту — окончательное решение принимает Owner из этой таблицы.
 

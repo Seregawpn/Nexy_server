@@ -19,6 +19,7 @@ from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager, AppMode
 from integration.integrations.input_processing_integration import InputProcessingIntegration
+from integration.integrations.input_processing_integration import PTTState
 from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
 
 
@@ -85,7 +86,6 @@ class TestMicrophoneActivation:
         input_integration._pending_session_id = "test_session_123"
         input_integration._recording_started = False
         input_integration._mic_active = False
-        input_integration._current_session_id = None
         
         # Собираем опубликованные события
         published_events = []
@@ -107,7 +107,7 @@ class TestMicrophoneActivation:
         )
         
         # Мокируем методы ожидания
-        input_integration._ensure_playback_idle = AsyncMock()
+        input_integration._wait_for_playback_finished = AsyncMock()
         input_integration._wait_for_mic_closed = AsyncMock()
         
         # Мокируем keyboard_monitor для проверки key_pressed
@@ -151,13 +151,13 @@ class TestMicrophoneActivation:
         )
         
         # Мокируем методы ожидания с таймаутом
-        async def mock_ensure_playback_idle():
+        async def mock_wait_for_playback_finished():
             await asyncio.sleep(3.0)  # Симулируем таймаут
         
         async def mock_wait_for_mic_closed():
             await asyncio.sleep(2.0)  # Симулируем таймаут
         
-        input_integration._ensure_playback_idle = mock_ensure_playback_idle
+        input_integration._wait_for_playback_finished = mock_wait_for_playback_finished
         input_integration._wait_for_mic_closed = mock_wait_for_mic_closed
         
         # Вызываем обработчик LONG_PRESS с таймаутом
@@ -212,7 +212,7 @@ class TestMicrophoneActivation:
         input_integration._wait_for_mic_closed = AsyncMock()
         
         # Вызываем обработчик RELEASE
-        await input_integration._handle_key_release(release_event)
+        await input_integration._handle_release(release_event)
         
         # Даем время на обработку асинхронных событий
         await asyncio.sleep(0.1)
@@ -240,7 +240,6 @@ class TestMicrophoneActivation:
         state_manager.set_mode(AppMode.SLEEPING)
         
         # Инициализируем состояние: запись не начата
-        input_integration._current_session_id = None
         input_integration._recording_started = False
         input_integration._mic_active = False
         
@@ -264,7 +263,7 @@ class TestMicrophoneActivation:
         )
         
         # Вызываем обработчик RELEASE
-        await input_integration._handle_key_release(release_event)
+        await input_integration._handle_release(release_event)
         
         # Даем время на обработку асинхронных событий
         await asyncio.sleep(0.1)
@@ -279,6 +278,56 @@ class TestMicrophoneActivation:
         # В нашей реализации RELEASE всегда публикует voice.recording_stop для безопасности
         # Но проверяем, что событие корректно обработано
         assert len(recording_stop_events) >= 0, "RELEASE без записи может не публиковать voice.recording_stop"
+
+    @pytest.mark.asyncio
+    async def test_release_fail_safe_recovers_dropped_release(self, input_integration, state_manager, event_bus):
+        """Тест: release fail-safe завершает цикл при потере RELEASE callback."""
+        state_manager.set_mode(
+            AppMode.LISTENING,
+            session_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        )
+
+        input_integration._state = PTTState.RECORDING
+        input_integration._recording_started = True
+        input_integration._mic_active = True
+        input_integration._active_press_id = "press_fail_safe"
+        input_integration._wait_for_mic_closed = AsyncMock()
+
+        input_integration.keyboard_monitor = Mock()
+        input_integration.keyboard_monitor.get_status.return_value = {
+            "key_pressed": False,
+            "combo_active": False,
+            "control_pressed": False,
+            "n_pressed": False,
+            "combo_blocked_by_modifiers": False,
+        }
+
+        published_events = []
+
+        async def capture_any(event):
+            event_type = event.get("type") if isinstance(event, dict) else None
+            payload = event.get("data") if isinstance(event, dict) else event
+            published_events.append((event_type, payload))
+
+        await event_bus.subscribe("voice.recording_stop", capture_any)
+        await event_bus.subscribe("mode.request", capture_any)
+
+        input_integration._release_inactive_since_monotonic = (
+            time.monotonic() - input_integration._release_fail_safe_grace_sec - 0.05
+        )
+        await input_integration._check_release_fail_safe()
+        await asyncio.sleep(0.05)
+
+        stop_events = [e for e in published_events if e[0] == "voice.recording_stop"]
+        processing_requests = [
+            e
+            for e in published_events
+            if e[0] == "mode.request" and isinstance(e[1], dict) and e[1].get("target") == AppMode.PROCESSING
+        ]
+
+        assert stop_events, f"Ожидаем voice.recording_stop через fail-safe, получили: {published_events}"
+        assert processing_requests, f"Ожидаем mode.request PROCESSING через fail-safe, получили: {published_events}"
+        assert input_integration._state == PTTState.WAITING_GRPC
         
         print("✅ Тест пройден: RELEASE без активной записи обрабатывается корректно")
 
@@ -308,7 +357,194 @@ class TestMicrophoneActivation:
         
         print("✅ Тест пройден: правильность управления состоянием _mic_active")
 
+    @pytest.mark.asyncio
+    async def test_mic_open_watchdog_resets_stuck_recording(self, input_integration, state_manager, event_bus):
+        """Тест: watchdog возвращает в SLEEPING, если mic_opened не пришел."""
+        state_manager.set_mode(AppMode.SLEEPING)
+        input_integration._pending_session_id = "11111111-1111-4111-8111-111111111111"
+        input_integration._mic_open_timeout_sec = 0.05
+        input_integration._wait_for_playback_finished = AsyncMock()
+        input_integration._wait_for_mic_closed = AsyncMock()
+
+        mode_requests = []
+
+        async def capture_mode_request(event):
+            mode_requests.append((event or {}).get("data", {}))
+
+        await event_bus.subscribe("mode.request", capture_mode_request)
+
+        long_press_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.LONG_PRESS,
+            timestamp=time.time(),
+            duration=0.7,
+        )
+        await input_integration._handle_long_press(long_press_event)
+        await asyncio.sleep(0.12)
+
+        assert input_integration._state == PTTState.IDLE
+        assert input_integration._get_active_session_id() is None
+        assert any(
+            data.get("source") == "input_processing.watchdog"
+            and data.get("reason") == "mic_open_timeout"
+            and data.get("target") == AppMode.SLEEPING
+            for data in mode_requests
+        )
+
+    @pytest.mark.asyncio
+    async def test_mic_open_watchdog_cancelled_by_mic_opened(self, input_integration, state_manager, event_bus):
+        """Тест: watchdog отменяется при реальном mic_opened."""
+        state_manager.set_mode(AppMode.SLEEPING)
+        input_integration._pending_session_id = "22222222-2222-4222-8222-222222222222"
+        input_integration._mic_open_timeout_sec = 0.12
+        input_integration._wait_for_playback_finished = AsyncMock()
+        input_integration._wait_for_mic_closed = AsyncMock()
+
+        mode_requests = []
+
+        async def capture_mode_request(event):
+            mode_requests.append((event or {}).get("data", {}))
+
+        await event_bus.subscribe("mode.request", capture_mode_request)
+
+        long_press_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.LONG_PRESS,
+            timestamp=time.time(),
+            duration=0.7,
+        )
+        await input_integration._handle_long_press(long_press_event)
+        await input_integration._on_mic_opened({"data": {"session_id": "22222222-2222-4222-8222-222222222222"}})
+        await asyncio.sleep(0.18)
+
+        assert input_integration._state == PTTState.RECORDING
+        assert not any(data.get("source") == "input_processing.watchdog" for data in mode_requests)
+
+    @pytest.mark.asyncio
+    async def test_mic_open_watchdog_ignores_stale_mic_opened(self, input_integration, state_manager, event_bus):
+        """Тест: stale mic_opened не должен отменять watchdog текущей сессии."""
+        state_manager.set_mode(AppMode.SLEEPING)
+        input_integration._pending_session_id = "33333333-3333-4333-8333-333333333333"
+        input_integration._mic_open_timeout_sec = 0.06
+        input_integration._wait_for_playback_finished = AsyncMock()
+        input_integration._wait_for_mic_closed = AsyncMock()
+
+        mode_requests = []
+
+        async def capture_mode_request(event):
+            mode_requests.append((event or {}).get("data", {}))
+
+        await event_bus.subscribe("mode.request", capture_mode_request)
+
+        long_press_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.LONG_PRESS,
+            timestamp=time.time(),
+            duration=0.7,
+        )
+        await input_integration._handle_long_press(long_press_event)
+        await input_integration._on_mic_opened({"data": {"session_id": "44444444-4444-4444-8444-444444444444"}})
+        await asyncio.sleep(0.12)
+
+        assert input_integration._state == PTTState.IDLE
+        assert any(
+            data.get("source") == "input_processing.watchdog"
+            and data.get("reason") == "mic_open_timeout"
+            for data in mode_requests
+        )
+
+    @pytest.mark.asyncio
+    async def test_spurious_release_does_not_cancel_watchdog(self, input_integration, state_manager, event_bus):
+        """Тест: spurious RELEASE не должен снимать watchdog."""
+        state_manager.set_mode(AppMode.SLEEPING)
+        input_integration._pending_session_id = "55555555-5555-4555-8555-555555555555"
+        input_integration._mic_open_timeout_sec = 0.06
+        input_integration._wait_for_playback_finished = AsyncMock()
+        input_integration._wait_for_mic_closed = AsyncMock()
+        input_integration._is_spurious_early_release = lambda _event: True
+
+        mode_requests = []
+
+        async def capture_mode_request(event):
+            mode_requests.append((event or {}).get("data", {}))
+
+        await event_bus.subscribe("mode.request", capture_mode_request)
+
+        long_press_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.LONG_PRESS,
+            timestamp=time.time(),
+            duration=0.7,
+        )
+        await input_integration._handle_long_press(long_press_event)
+
+        release_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.RELEASE,
+            timestamp=time.time(),
+            duration=0.7,
+        )
+        await input_integration._handle_release(release_event)
+        assert input_integration._mic_open_watchdog_task is not None
+        await asyncio.sleep(0.12)
+
+        assert input_integration._state == PTTState.IDLE
+        assert any(
+            data.get("source") == "input_processing.watchdog"
+            and data.get("reason") == "mic_open_timeout"
+            for data in mode_requests
+        )
+
+    @pytest.mark.asyncio
+    async def test_recognition_failed_while_recording_finalized_on_release(
+        self, input_integration, state_manager, event_bus
+    ):
+        """Тест: если STT fail приходит в RECORDING, RELEASE не должен переводить в WAITING_GRPC."""
+        sid = "d6300595-e95a-401e-a095-634c2bb3e9f5"
+        state_manager.set_mode(AppMode.LISTENING, session_id=sid)
+        input_integration._set_state(PTTState.RECORDING, "test_setup")
+        input_integration._recording_started = True
+        input_integration._mic_active = True
+        input_integration._wait_for_mic_closed = AsyncMock()
+
+        mode_requests = []
+
+        async def capture_mode_request(event):
+            mode_requests.append((event or {}).get("data", {}))
+
+        await event_bus.subscribe("mode.request", capture_mode_request)
+
+        await input_integration._on_recognition_failed(
+            {"data": {"session_id": sid, "error": "unknown_value"}}
+        )
+        assert input_integration._deferred_recognition_failed_session_id == sid
+
+        release_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.RELEASE,
+            timestamp=time.time(),
+            duration=0.9,
+        )
+        await input_integration._handle_release(release_event)
+        await asyncio.sleep(0.05)
+
+        assert input_integration._state == PTTState.IDLE
+        assert input_integration._session_waiting_grpc is False
+        assert input_integration._active_grpc_session_id is None
+
+        sleep_reasons = [
+            data.get("reason")
+            for data in mode_requests
+            if data.get("target") == AppMode.SLEEPING
+        ]
+        processing_requests = [
+            data
+            for data in mode_requests
+            if data.get("target") == AppMode.PROCESSING
+        ]
+        assert "recognition_failed_after_release" in sleep_reasons
+        assert processing_requests == []
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

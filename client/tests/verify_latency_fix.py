@@ -50,8 +50,8 @@ async def verify_fix():
         source = data.get('source', '')
         print(f"🗣️ TTS REQUEST: '{text}' (Source: {source})")
         
-        if source == "browser_latency_mask":
-            print("✅ FILLER PHRASE DETECTED! The fix is working.")
+        if source in {"browser_latency_mask", "browser_step"}:
+            print("✅ IMMEDIATE FEEDBACK DETECTED! The fix is working.")
             detected_feedback = True
 
     await event_bus.subscribe("grpc.tts_request", on_tts_request)
@@ -60,7 +60,7 @@ async def verify_fix():
     task = "Go to google.com and tell me the title."
     print(f"📋 Task: {task}")
     
-    await event_bus.publish("browser.use.request", {
+    await event_bus.publish("browser.task_request", {
         "task": task,
         "session_id": "test-verify-fix",
         "config_preset": "fast"

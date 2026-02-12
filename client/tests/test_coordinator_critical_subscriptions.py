@@ -91,7 +91,7 @@ class TestCoordinatorCriticalSubscriptions:
         - permissions.first_run_started
         - permissions.first_run_completed
         - permissions.first_run_failed
-        - permissions.first_run_restart_pending
+        - permissions.changed
         """
         # Создаём mock EventBus
         coordinator.event_bus = Mock(spec=EventBus)
@@ -100,12 +100,12 @@ class TestCoordinatorCriticalSubscriptions:
         # Вызываем метод настройки критичных подписок
         await coordinator._setup_critical_subscriptions()
         
-        # Проверяем что все 4 критичных события подписаны
+        # Проверяем что все критичные события подписаны
         expected_events = [
             "permissions.first_run_started",
             "permissions.first_run_completed",
             "permissions.first_run_failed",
-            "permissions.first_run_restart_pending",
+            "permissions.changed",
         ]
         
         subscribe_calls = coordinator.event_bus.subscribe.call_args_list
@@ -115,14 +115,14 @@ class TestCoordinatorCriticalSubscriptions:
             assert event in subscribed_events, \
                 f"Event '{event}' not subscribed. Subscribed events: {subscribed_events}"
         
-        # Проверяем что permissions.first_run_restart_pending имеет CRITICAL приоритет
-        restart_pending_call = next(
-            (call for call in subscribe_calls if call[0][0] == "permissions.first_run_restart_pending"),
+        # permissions.changed должен быть HIGH, чтобы не терять UX-обновления
+        changed_call = next(
+            (call for call in subscribe_calls if call[0][0] == "permissions.changed"),
             None
         )
-        assert restart_pending_call is not None, "permissions.first_run_restart_pending not found in subscriptions"
-        assert restart_pending_call[0][2] == EventPriority.CRITICAL, \
-            "permissions.first_run_restart_pending must have CRITICAL priority"
+        assert changed_call is not None, "permissions.changed not found in subscriptions"
+        assert changed_call[0][2] == EventPriority.HIGH, \
+            "permissions.changed must have HIGH priority"
 
     @pytest.mark.asyncio
     async def test_event_handlers_registered(self, coordinator):
@@ -141,7 +141,7 @@ class TestCoordinatorCriticalSubscriptions:
             "permissions.first_run_started": coordinator._on_permissions_started,
             "permissions.first_run_completed": coordinator._on_permissions_completed,
             "permissions.first_run_failed": coordinator._on_permissions_failed,
-            "permissions.first_run_restart_pending": coordinator._on_permissions_restart_pending,
+            "permissions.changed": coordinator._on_permissions_changed,
         }
         
         subscribe_calls = coordinator.event_bus.subscribe.call_args_list
@@ -200,45 +200,17 @@ class TestCoordinatorCriticalSubscriptions:
         )
 
     @pytest.mark.asyncio
-    async def test_restart_pending_flag_set(self, coordinator):
+    async def test_legacy_restart_pending_not_subscribed(self, coordinator):
         """
-        Тест: Флаг restart_pending устанавливается при получении события
-        
-        Проверяет что при получении permissions.first_run_restart_pending:
-        1. Флаг _restart_pending устанавливается в True
-        2. state_data обновляется (legacy support)
-        3. Публикуется событие permissions.restart_pending.changed
+        Тест: Legacy-событие permissions.first_run_restart_pending больше не подписывается.
         """
         coordinator.event_bus = EventBus()
-        coordinator.state_manager = Mock()
-        coordinator.state_manager.set_state_data = Mock()
-        coordinator.state_manager.set_restart_pending = Mock()
-        coordinator.state_manager.get_state_data = Mock(return_value=False)
-        coordinator.config = Mock()
-        coordinator.config._load_config = Mock(return_value={"features": {}})
-        
-        # Настраиваем критичные подписки
         await coordinator._setup_critical_subscriptions()
-        await asyncio.sleep(0.1)
-        
-        # Публикуем событие restart_pending
-        await coordinator.event_bus.publish(
-            "permissions.first_run_restart_pending",
-            {
-                "session_id": "test-restart-session",
-                "source": "first_run_permissions_integration",
-                "permissions": ["accessibility", "input_monitoring"],
-                "priority": EventPriority.CRITICAL
-            }
-        )
-        
-        # Даём время на обработку
-        await asyncio.sleep(0.2)
-        
-        # Проверяем что state_data обновлён (legacy support)
-        coordinator.state_manager.set_restart_pending.assert_called_with(True)
+        await asyncio.sleep(0.05)
+
+        subscribed_events = [event for event in coordinator.event_bus.subscribers.keys()]
+        assert "permissions.first_run_restart_pending" not in subscribed_events
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
-

@@ -9,22 +9,7 @@ from enum import Enum
 import logging
 from typing import Any
 
-# Импорт режимов из централизованного источника
-# Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
-try:
-    # Preferred: top-level import (packaged or PYTHONPATH includes modules)
-    from mode_management import AppMode  # type: ignore[reportMissingImports]
-except Exception:
-    # Fallback: explicit modules path if repository layout is used
-    try:
-        from modules.mode_management.core.types import AppMode  # type: ignore[reportMissingImports]
-    except Exception:
-        # Last resort: create a minimal AppMode enum
-        from enum import Enum
-        class AppMode(Enum):  # type: ignore[no-redef]
-            SLEEPING = "sleeping"
-            LISTENING = "listening" 
-            PROCESSING = "processing"
+from integration.core.state_manager import AppMode
 
 from integration.core.event_bus import EventBus, EventPriority
 

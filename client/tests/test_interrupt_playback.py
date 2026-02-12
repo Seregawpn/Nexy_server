@@ -10,7 +10,7 @@
 import asyncio
 import logging
 import time
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import numpy as np
 import pytest
@@ -246,6 +246,50 @@ class TestInterruptPlayback:
         )
 
     @pytest.mark.asyncio
+    async def test_press_clears_stale_waiting_grpc_in_sleeping_without_interrupt(
+        self, input_integration, state_manager, event_bus
+    ):
+        """Тест: stale waiting_grpc в SLEEPING очищается без interrupt.request."""
+        sid = "d6300595-e95a-401e-a095-634c2bb3e9f5"
+        state_manager.set_mode(AppMode.SLEEPING, session_id=sid)
+        input_integration._session_waiting_grpc = True
+        input_integration._active_grpc_session_id = sid
+        input_integration._playback_active = False
+        input_integration._recording_started = False
+        input_integration._mic_active = False
+        input_integration._set_state(input_integration._state.__class__.WAITING_GRPC, "test_setup")
+
+        published_events = []
+
+        async def capture_event(event):
+            event_type = event.get("type") if isinstance(event, dict) else None
+            payload = event.get("data") if isinstance(event, dict) else event
+            published_events.append((event_type, payload))
+
+        await event_bus.subscribe("interrupt.request", capture_event)
+
+        from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
+
+        press_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.PRESS,
+            timestamp=1234567892.5,
+            duration=0.0,
+        )
+
+        await input_integration._handle_press(press_event)
+        await asyncio.sleep(0.05)
+
+        interrupt_events = [
+            (event_type, payload)
+            for event_type, payload in published_events
+            if event_type == "interrupt.request"
+        ]
+        assert interrupt_events == []
+        assert input_integration._session_waiting_grpc is False
+        assert input_integration._active_grpc_session_id is None
+
+    @pytest.mark.asyncio
     async def test_press_and_long_press_same_press_id_publish_single_interrupt_request(
         self, input_integration, state_manager, event_bus
     ):
@@ -335,6 +379,75 @@ class TestInterruptPlayback:
         assert input_integration._playback_active is False
         assert input_integration._active_grpc_session_id is None
         assert state_manager.get_current_session_id() is None
+
+    @pytest.mark.asyncio
+    async def test_release_suppressed_when_combo_still_pressed_early_after_start(
+        self, input_integration, state_manager
+    ):
+        """Тест: ранний ложный RELEASE игнорируется, если combo физически еще зажата."""
+        sid = "a1d6d26a-95c7-496b-8097-23f346d9834c"
+        state_manager.set_mode(AppMode.LISTENING, session_id=sid)
+        input_integration._recording_started = True
+        input_integration._recording_start_time = time.time()
+        input_integration._active_press_id = "press-spurious-1"
+        input_integration.keyboard_monitor = Mock()
+        input_integration.keyboard_monitor.get_status.return_value = {
+            "combo_active": True,
+            "control_pressed": True,
+            "n_pressed": True,
+            "combo_blocked_by_modifiers": False,
+        }
+        input_integration._request_terminal_stop = AsyncMock(return_value=True)
+
+        from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
+
+        release_event = KeyEvent(
+            key="ctrl_n",
+            event_type=KeyEventType.RELEASE,
+            timestamp=input_integration._recording_start_time + 0.02,
+            duration=0.7,
+            data={"press_id": "press-spurious-1"},
+        )
+
+        await input_integration._handle_release(release_event)
+
+        input_integration._request_terminal_stop.assert_not_called()
+        assert state_manager.get_state_data(StateKeys.PTT_PRESSED) is True
+        assert input_integration._recording_started is True
+
+    @pytest.mark.asyncio
+    async def test_release_not_suppressed_when_combo_not_pressed(
+        self, input_integration, state_manager
+    ):
+        """Тест: ранний RELEASE проходит в terminal stop, если combo уже не зажата."""
+        sid = "9f10de7d-04ac-4099-a552-bbc94e5512bf"
+        state_manager.set_mode(AppMode.LISTENING, session_id=sid)
+        input_integration._recording_started = True
+        input_integration._recording_start_time = time.time()
+        input_integration._active_press_id = "press-real-release-1"
+        input_integration.keyboard_monitor = Mock()
+        input_integration.keyboard_monitor.get_status.return_value = {
+            "combo_active": False,
+            "control_pressed": False,
+            "n_pressed": False,
+            "combo_blocked_by_modifiers": False,
+        }
+        input_integration._request_terminal_stop = AsyncMock(return_value=True)
+        input_integration._wait_for_mic_closed = AsyncMock()
+
+        from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
+
+        release_event = KeyEvent(
+            key="ctrl_n",
+            event_type=KeyEventType.RELEASE,
+            timestamp=input_integration._recording_start_time + 0.02,
+            duration=0.7,
+            data={"press_id": "press-real-release-1"},
+        )
+
+        await input_integration._handle_release(release_event)
+
+        input_integration._request_terminal_stop.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_speech_playback_handles_interrupt_idempotently(
@@ -561,6 +674,81 @@ class TestInterruptPlayback:
         assert state_manager.get_current_session_id() is None
 
     @pytest.mark.asyncio
+    async def test_external_interrupt_does_not_publish_sleep_from_input_owner(
+        self, input_integration, state_manager, event_bus
+    ):
+        """Тест: external interrupt path не публикует mode.request из InputProcessing owner."""
+        sid = "b636f80d-e08a-40f4-a2fb-26f06561d68a"
+        state_manager.set_mode(AppMode.PROCESSING, session_id=sid)
+        input_integration._set_state(input_integration._state.__class__.RECORDING, "test_setup")
+        input_integration._recording_started = True
+
+        published_events = []
+
+        async def capture_event(event):
+            event_type = event.get("type") if isinstance(event, dict) else None
+            payload = event.get("data") if isinstance(event, dict) else event
+            published_events.append((event_type, payload))
+
+        await event_bus.subscribe("mode.request", capture_event)
+        await input_integration._on_interrupt_request(
+            {
+                "data": {
+                    "type": "speech_stop",
+                    "source": "interrupt_management",
+                    "session_id": sid,
+                    "timestamp": time.time(),
+                }
+            }
+        )
+        await asyncio.sleep(0.05)
+
+        input_owner_sleep = [
+            payload
+            for event_type, payload in published_events
+            if event_type == "mode.request"
+            and isinstance(payload, dict)
+            and payload.get("source") == "input_processing.external_interrupt"
+        ]
+        assert input_owner_sleep == []
+
+    @pytest.mark.asyncio
+    async def test_recognition_failed_fallback_ignores_stale_session(
+        self, input_integration, state_manager, event_bus
+    ):
+        """Тест: fallback recognition_failed не переводит в sleep по stale session."""
+        active_sid = "f6744127-2f4f-4513-b087-f1fb0d27f582"
+        stale_sid = "a83af568-851e-4c20-8fbc-c14bbec57d85"
+        state_manager.set_mode(AppMode.PROCESSING, session_id=active_sid)
+        input_integration._active_grpc_session_id = active_sid
+        input_integration._session_waiting_grpc = False
+        input_integration._set_state(input_integration._state.__class__.IDLE, "test_setup")
+
+        published_events = []
+
+        async def capture_event(event):
+            event_type = event.get("type") if isinstance(event, dict) else None
+            payload = event.get("data") if isinstance(event, dict) else event
+            published_events.append((event_type, payload))
+
+        await event_bus.subscribe("mode.request", capture_event)
+        await input_integration._on_recognition_failed(
+            {"data": {"session_id": stale_sid, "error": "unknown_value"}}
+        )
+        await asyncio.sleep(0.05)
+
+        sleep_requests = [
+            payload
+            for event_type, payload in published_events
+            if event_type == "mode.request"
+            and isinstance(payload, dict)
+            and payload.get("target") == AppMode.SLEEPING
+        ]
+        assert sleep_requests == []
+        assert input_integration._active_grpc_session_id == active_sid
+        assert state_manager.get_current_session_id() == active_sid
+
+    @pytest.mark.asyncio
     async def test_first_grpc_audio_chunk_does_not_force_stop_start_restart(
         self, speech_playback_integration
     ):
@@ -596,6 +784,42 @@ class TestInterruptPlayback:
         mock_player.stop_playback.assert_not_called()
         mock_player.start_playback.assert_not_called()
         mock_player.add_audio_data.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_grpc_cancel_publishes_playback_cancelled_with_source_payload(
+        self, speech_playback_integration, event_bus
+    ):
+        """Регрессия: grpc_cancel не должен падать с NameError и обязан публиковать playback.cancelled."""
+        published_events = []
+
+        async def capture_event(event):
+            event_type = event.get("type") if isinstance(event, dict) else None
+            payload = event.get("data") if isinstance(event, dict) else event
+            published_events.append((event_type, payload))
+
+        await event_bus.subscribe("playback.cancelled", capture_event)
+
+        sid = "c5c344fe-544e-4ff7-8a78-aeca171e4fe2"
+        await speech_playback_integration._on_grpc_cancel(
+            {
+                "data": {
+                    "session_id": sid,
+                    "source": "keyboard.press_preempt",
+                    "reason": "user_interrupt",
+                    "initiator": "keyboard",
+                }
+            }
+        )
+        await asyncio.sleep(0.05)
+
+        cancelled = [
+            payload for event_type, payload in published_events if event_type == "playback.cancelled"
+        ]
+        assert len(cancelled) == 1
+        assert cancelled[0]["session_id"] == sid
+        assert cancelled[0]["source"] == "keyboard.press_preempt"
+        assert cancelled[0]["reason"] == "user_interrupt"
+        assert cancelled[0]["initiator"] == "keyboard"
 
 
 if __name__ == "__main__":

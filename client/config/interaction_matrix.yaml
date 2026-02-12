@@ -19,8 +19,6 @@ axes:
   Network: [online, offline]
   FirstRun: [true, false]
   appMode: [SLEEPING, LISTENING, PROCESSING]
-  permissions.restart_pending: [true, false]  # NEW - Phase 2
-  process.lifecycle: [running, restarting, terminated]  # NEW - Phase 2
   update_in_progress: [true, false]  # NEW - Phase 2
   permissions.full_disk_access: [granted, denied, prompt_blocked] # NEW - Messages
   subscription.status: [active, inactive, trial, expired, payment_failed] # NEW - Payment
@@ -65,19 +63,11 @@ rules:
   # See Docs/ADR-001-first-run-restart-hotfix.md and Docs/change_impact.yaml
   # ============================================================================
 
-  # Hard stop: first_run + restart_pending blocks all integration startup
-  - when: {app.first_run: true, app.restart_pending: true}
+  # Hard stop: first_run blocks all integration startup
+  - when: {app.first_run: true}
     decision: abort_integration_startup
     priority: hard_stop
-    description: First run restart pending - stop launching remaining integrations until restart completes
-    gateway: decide_continue_integration_startup
-    source: Docs/change_impact.yaml
-
-  # Hard stop: restarting lifecycle blocks integrations (via first_run_restart_pending selector)
-  - when: {app.first_run_restart_pending: true}
-    decision: abort_integration_startup
-    priority: hard_stop
-    description: First run restart pending - do not launch new integrations
+    description: First run in progress - stop launching remaining integrations
     gateway: decide_continue_integration_startup
     source: Docs/change_impact.yaml
 
@@ -148,14 +138,6 @@ rules:
   # See Docs/STATE_CATALOG.md section 10 (update_in_progress axis)
   # ============================================================================
 
-  # Hard stop: first_run + restart_pending blocks permission restart
-  - when: {app.first_run_restart_pending: true}
-    decision: abort_permission_restart
-    priority: hard_stop
-    description: First run restart pending - block permission restart
-    gateway: decide_permission_restart_safety
-    source: STATE_CATALOG.md (restart_pending + update_in_progress)
-
   # Graceful: update_in_progress blocks permission restart
   # Rule: If update_in_progress=true → abort permission restart (graceful)
   # Reason: Avoid interrupting update installation process
@@ -205,13 +187,6 @@ rules:
     decision: abort_integration_startup
     priority: hard_stop
     description: First run in progress - block RouteManager reconcile
-    gateway: decide_route_manager_reconcile
-
-  # Hard stop: RouteManager блокируется во время permission_restart
-  - when: {app.restart_pending: true}
-    decision: abort_integration_startup
-    priority: hard_stop
-    description: Permission restart pending - block RouteManager reconcile
     gateway: decide_route_manager_reconcile
 
   # Hard stop: RouteManager блокируется во время update

@@ -122,6 +122,16 @@
 - **Implementation**: Все интеграции при публикации событий
 - **Verification**: Логи событий, проверка наличия session_id
 
+### REQ-009A: Keyboard monitor не подавляет системные шорткаты
+- **Домен**: Client Runtime / Input Processing
+- **Критичность**: MUST
+- **Описание**: Глобальный keyboard monitor работает только в observe-only режиме и не должен перехватывать/подавлять системные шорткаты macOS (например, `Cmd+Space`).
+- **Источник**: `Docs/ARCHITECTURE_OVERVIEW.md`, `Docs/FLOW_INTERACTION_SPEC.md`
+- **Owner**: Input Processing Owner
+- **Ожидаемый результат**: PTT работает, при этом системные хоткеи продолжают работать штатно.
+- **Implementation**: `modules/input_processing/keyboard/mac/quartz_monitor.py`, `integration/integrations/input_processing_integration.py`
+- **Verification**: ручная проверка `Cmd+Space` при включенном input monitoring + runtime логи `keyboard.press/short_press/long_press`.
+
 ---
 
 ## 2. Permissions/TCC
@@ -129,7 +139,7 @@
 ### REQ-010: First-run permissions flow
 - **Домен**: Permissions/TCC
 - **Критичность**: MUST
-- **Описание**: При первом запуске приложение последовательно активирует разрешения в порядке, заданном `integrations.permissions.required_permissions` (config-driven, fallback‑списка нет), с паузами между запросами и фиксированным удержанием `activation_hold_duration_sec`. Проверка статусов в first-run не выполняется — activators вызываются по списку. Full Disk Access открывается через System Settings (settings-only). Остальные разрешения запрашиваются через системные диалоги. Список разрешений для рестарта берётся из `integrations.permission_restart.critical_permissions`. Пропуск first-run по dev‑флагам не допускается. Флаг `permissions_first_run_completed.flag` является кешем и не используется для принятия решения о запуске wizard — решение принимает V2 orchestrator по `permission_ledger.json`.
+- **Описание**: При первом запуске используется V2 orchestrator (`integrations.permissions_v2`). В режиме `advance_on_timeout=true` шаг после истечения `step_timeout_s` трактуется как условно выданный (`assumed_by_timeout=true`) без проверки системного статуса. Full Disk Access открывается через System Settings (settings-only). Флаг `permissions_first_run_completed.flag` является кешем и не используется как decision gate — решение принимает V2 orchestrator по `permission_ledger.json`.
 - **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`
 - **Owner**: Permissions SWAT
 - **Ожидаемый результат**: Все разрешения запрашиваются последовательно, флаг `permissions_first_run_completed.flag` создаётся после завершения
@@ -139,10 +149,10 @@
 ### REQ-011: Permission restart после выдачи разрешений
 - **Домен**: Permissions/TCC
 - **Критичность**: MUST
-- **Описание**: После выдачи критических разрешений приложение автоматически перезапускается для применения новых разрешений.
+- **Описание**: После завершения V2 first-run допускается не более одного автоматического перезапуска для применения разрешений (one-restart contract). Дальнейшие рестарты по этому сценарию в той же цепочке не выполняются.
 - **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`, `Docs/TAL_TESTING_CHECKLIST.md`
 - **Owner**: Permissions SWAT
-- **Ожидаемый результат**: Приложение перезапускается после выдачи разрешений, флаг `restart_completed.flag` создаётся в новом процессе
+- **Ожидаемый результат**: Приложение выполняет максимум один автоперезапуск по first-run цепочке; после возврата повторный restart из того же сценария не инициируется
 - **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `integration/core/simple_module_coordinator.py`, `integration/integrations/permission_restart_integration.py`, `modules/permission_restart/core/restart_scheduler.py`, `modules/permission_restart/macos/permissions_restart_handler.py`
 - **Verification**: `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py`, `scripts/test_restart_priority.sh`
 
@@ -234,15 +244,15 @@
 - **Implementation**: `modules/tray_controller/macos/menu_handler.py::applicationShouldTerminate()`, `main.py::create_app()`
 - **Verification**: `scripts/test_tray_termination.py`, `Docs/PRE_PACKAGING_VERIFICATION.md`
 
-### REQ-020: Quit handler установлен до app.run()
+### REQ-020: Quit handler и quit-intent guard
 - **Домен**: Application Termination
 - **Критичность**: MUST
-- **Описание**: Quit handler (`_setup_quit_handler()`) должен быть установлен до вызова `app.run()`.
+- **Описание**: Quit handler (`_setup_quit_handler()`) должен быть установлен до вызова `app.run()`. При пользовательском выходе обязан выставляться `USER_QUIT_INTENT=true`; авто-relaunch после обновления при этом запрещён.
 - **Источник**: `Docs/TRAY_TERMINATION_FIX.md`, `Docs/PRE_PACKAGING_VERIFICATION.md`
 - **Owner**: Tray Controller Owner
-- **Ожидаемый результат**: Quit handler работает корректно, приложение завершается только через меню
-- **Implementation**: `main.py::run()`, `modules/tray_controller/macos/menu_handler.py::_setup_quit_handler()`
-- **Verification**: `scripts/test_tray_termination.py`, `Docs/PRE_PACKAGING_VERIFICATION.md`
+- **Ожидаемый результат**: Quit handler работает корректно, приложение завершается только через меню, после user quit не происходит relaunch от updater.
+- **Implementation**: `main.py::run()`, `modules/tray_controller/macos/menu_handler.py::_setup_quit_handler()`, `integration/integrations/tray_controller_integration.py`, `integration/integrations/updater_integration.py`
+- **Verification**: `scripts/test_tray_termination.py`, ручной сценарий: user quit во время/после update → relaunch skipped в логах.
 
 ---
 

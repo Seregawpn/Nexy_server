@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import queue
 import threading
 import time
 from typing import Any, Callable
@@ -22,6 +23,8 @@ class KeyboardMonitor:
         self.long_press_threshold = config.long_press_threshold
         self.event_cooldown = config.event_cooldown
         self.hold_check_interval = config.hold_check_interval
+        self.combo_timeout_sec = max(0.5, float(config.combo_timeout_sec))
+        self.key_state_timeout_sec = max(0.5, float(config.key_state_timeout_sec))
         
         # Состояние
         self.is_monitoring = False
@@ -33,8 +36,10 @@ class KeyboardMonitor:
         # Threading
         self.monitor_thread = None
         self.hold_monitor_thread = None
+        self.callback_dispatch_thread = None
         self.stop_event = threading.Event()
         self.state_lock = threading.RLock()
+        self._callback_queue: "queue.Queue[tuple[Callable[[KeyEvent], Any], KeyEvent] | None]" = queue.Queue()
         
         # Callbacks
         self.event_callbacks: dict[KeyEventType, Callable[[KeyEvent], Any]] = {}
@@ -106,7 +111,10 @@ class KeyboardMonitor:
                 daemon=True
             )
             self.monitor_thread.start()
-            
+
+            # Централизованный ordered dispatch для callback'ов
+            self._start_callback_dispatcher()
+
             # Запускаем поток мониторинга удержания
             self.hold_monitor_thread = threading.Thread(
                 target=self._run_hold_monitor,
@@ -138,6 +146,8 @@ class KeyboardMonitor:
                 
             if self.hold_monitor_thread and self.hold_monitor_thread.is_alive():
                 self.hold_monitor_thread.join(timeout=2.0)
+
+            self._stop_callback_dispatcher()
                 
             logger.info("🛑 Мониторинг клавиатуры остановлен")
             
@@ -183,12 +193,14 @@ class KeyboardMonitor:
         while not self.stop_event.is_set():
             try:
                 with self.state_lock:
+                    now = time.time()
+                    self._reconcile_stale_state_locked(now)
                     # Для комбинации используем combo_active, для одиночной клавиши - key_pressed
                     is_active = self._combo_active if self._is_combo else self.key_pressed
                     start_time = self._combo_start_time if self._is_combo else self.press_start_time
                     
                     if is_active and start_time:
-                        duration = time.time() - start_time
+                        duration = now - start_time
                         
                         # Проверяем долгое нажатие (только один раз!)
                         if not self._long_sent and duration >= self.long_press_threshold:
@@ -207,6 +219,116 @@ class KeyboardMonitor:
             except Exception as e:
                 logger.error(f"❌ Ошибка в мониторе удержания: {e}")
                 time.sleep(0.1)
+
+    def _reconcile_stale_state_locked(self, now: float) -> None:
+        """Heal stuck states when keyup/flags edges are missed by backend."""
+        if self._is_combo:
+            if self._combo_active and self._combo_start_time:
+                combo_duration = now - self._combo_start_time
+                if combo_duration >= self.combo_timeout_sec:
+                    logger.warning(
+                        "combo timeout reconcile (pynput): duration=%.3fs threshold=%.3fs",
+                        combo_duration,
+                        self.combo_timeout_sec,
+                    )
+                    self._force_combo_release_locked(now, reason="combo_timeout")
+                    return
+
+            if (
+                (not self._combo_active)
+                and (self._control_pressed or self._n_pressed)
+                and (now - self.last_event_time) >= self.key_state_timeout_sec
+            ):
+                logger.warning(
+                    "combo partial-state reconcile (pynput): control=%s n=%s idle=%.3fs threshold=%.3fs",
+                    self._control_pressed,
+                    self._n_pressed,
+                    now - self.last_event_time,
+                    self.key_state_timeout_sec,
+                )
+                self._control_pressed = False
+                self._n_pressed = False
+                self._other_modifier_pressed = False
+                self.last_event_time = now
+            return
+
+        if self.key_pressed and self.press_start_time:
+            key_duration = now - self.press_start_time
+            if key_duration >= self.key_state_timeout_sec:
+                logger.warning(
+                    "single-key timeout reconcile (pynput): duration=%.3fs threshold=%.3fs",
+                    key_duration,
+                    self.key_state_timeout_sec,
+                )
+                self._force_single_key_release_locked(now, reason="key_state_timeout")
+
+    def _force_combo_release_locked(self, now: float, reason: str) -> None:
+        if not self._combo_active:
+            return
+        duration = now - (self._combo_start_time or now)
+        self._combo_active = False
+        self._combo_start_time = None
+        self.key_pressed = False
+        self.press_start_time = None
+        self._control_pressed = False
+        self._n_pressed = False
+        self._other_modifier_pressed = False
+        self.last_event_time = now
+        logger.debug("combo forced release (pynput): reason=%s duration=%.3fs", reason, duration)
+        event = KeyEvent(
+            key=self.key_to_monitor,
+            event_type=KeyEventType.RELEASE,
+            timestamp=now,
+            duration=duration,
+        )
+        self._trigger_event(KeyEventType.RELEASE, duration, event)
+
+    def _force_single_key_release_locked(self, now: float, reason: str) -> None:
+        if not self.key_pressed:
+            return
+        duration = now - (self.press_start_time or now)
+        self.key_pressed = False
+        self.press_start_time = None
+        self.last_event_time = now
+        logger.debug("single-key forced release (pynput): reason=%s duration=%.3fs", reason, duration)
+        event = KeyEvent(
+            key=self.key_to_monitor,
+            event_type=KeyEventType.RELEASE,
+            timestamp=now,
+            duration=duration,
+        )
+        self._trigger_event(KeyEventType.RELEASE, duration, event)
+
+    def _cancel_single_key_for_modifier_block_locked(self, now: float) -> None:
+        """Stop current single-key press when non-PTT modifiers become active."""
+        if not self.key_pressed:
+            return
+        duration = now - (self.press_start_time or now)
+        self.key_pressed = False
+        self.press_start_time = None
+        self.last_event_time = now
+        out_type = KeyEventType.RELEASE if self._long_sent else KeyEventType.SHORT_PRESS
+        self._trigger_event(
+            out_type,
+            duration,
+            KeyEvent(
+                key=self.key_to_monitor,
+                event_type=out_type,
+                timestamp=now,
+                duration=duration,
+            ),
+        )
+        if out_type != KeyEventType.RELEASE:
+            self._trigger_event(
+                KeyEventType.RELEASE,
+                duration,
+                KeyEvent(
+                    key=self.key_to_monitor,
+                    event_type=KeyEventType.RELEASE,
+                    timestamp=now,
+                    duration=duration,
+                ),
+            )
     
     def _on_key_press(self, key: Any) -> None:
         """Обработка нажатия клавиши"""
@@ -242,6 +364,11 @@ class KeyboardMonitor:
                     self._update_combo_state()
             else:
                 # Обработка одиночной клавиши (left_control)
+                if self._is_other_modifier_key(key):
+                    with self.state_lock:
+                        self._other_modifier_pressed = True
+                        self._cancel_single_key_for_modifier_block_locked(current_time)
+                    return
                 # Проверяем cooldown
                 if current_time - self.last_event_time < self.event_cooldown:
                     return
@@ -251,6 +378,8 @@ class KeyboardMonitor:
                     return
                     
                 with self.state_lock:
+                    if self._other_modifier_pressed:
+                        return
                     # Если клавиша уже нажата, игнорируем
                     if self.key_pressed:
                         return
@@ -302,6 +431,10 @@ class KeyboardMonitor:
                     self._update_combo_state()
             else:
                 # Обработка одиночной клавиши (left_control)
+                if self._is_other_modifier_key(key):
+                    with self.state_lock:
+                        self._other_modifier_pressed = False
+                    return
                 # Проверяем, что это наша клавиша
                 if not self._is_target_key(key):
                     return
@@ -447,14 +580,41 @@ class KeyboardMonitor:
                         duration=duration
                     )
                 
-                # Запускаем callback в отдельном потоке
-                threading.Thread(
-                    target=lambda: self._run_callback(callback, event),
-                    daemon=True
-                ).start()
+                self._callback_queue.put((callback, event))
                 
         except Exception as e:
             logger.error(f"❌ Ошибка запуска события: {e}")
+
+    def _start_callback_dispatcher(self) -> None:
+        if self.callback_dispatch_thread and self.callback_dispatch_thread.is_alive():
+            return
+        try:
+            while True:
+                self._callback_queue.get_nowait()
+        except queue.Empty:
+            pass
+        self.callback_dispatch_thread = threading.Thread(
+            target=self._run_callback_dispatcher,
+            name="KeyboardCallbackDispatcher",
+            daemon=True,
+        )
+        self.callback_dispatch_thread.start()
+
+    def _stop_callback_dispatcher(self) -> None:
+        try:
+            self._callback_queue.put(None)
+        except Exception:
+            pass
+        if self.callback_dispatch_thread and self.callback_dispatch_thread.is_alive():
+            self.callback_dispatch_thread.join(timeout=2.0)
+
+    def _run_callback_dispatcher(self) -> None:
+        while True:
+            item = self._callback_queue.get()
+            if item is None:
+                return
+            callback, event = item
+            self._run_callback(callback, event)
     
     def _run_callback(self, callback: Callable[[KeyEvent], Any], event: KeyEvent) -> None:
         """Запуск callback с правильной обработкой async/sync функций"""

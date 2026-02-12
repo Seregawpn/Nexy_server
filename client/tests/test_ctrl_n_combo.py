@@ -30,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class TestCtrlNCombo:
+class CtrlNComboTester:
     """Тест комбинации Control+N"""
     
     def __init__(self):
@@ -234,7 +234,7 @@ async def main():
     print("=" * 70)
     print()
     
-    tester = TestCtrlNCombo()
+    tester = CtrlNComboTester()
     
     # Тестируем Quartz монитор
     print("Выберите тест:")
@@ -274,5 +274,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n⚠️ Тест прерван пользователем")
         sys.exit(0)
-
 

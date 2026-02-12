@@ -60,6 +60,7 @@ class AVFoundationPlayer:
         self._audio_diag_verbose = bool(self.config.audio_diag_verbose)
         self._audio_diag_log_every = max(1, int(self.config.audio_diag_log_every))
         self._diag_chunk_counter = 0
+        self._session_enqueue_count: dict[str, int] = {}
         
         self._engine = None
         self._player_node = None
@@ -227,6 +228,31 @@ class AVFoundationPlayer:
             "data": audio_copy,
             "metadata": metadata
         })
+        if isinstance(metadata, dict):
+            sid = metadata.get("session_id")
+            kind = str(metadata.get("kind") or "grpc")
+            sid_key = str(sid) if sid is not None else ""
+            if sid_key:
+                count = self._session_enqueue_count.get(sid_key, 0) + 1
+                self._session_enqueue_count[sid_key] = count
+                should_log = count <= 3 or (count % self._audio_diag_log_every) == 0
+            else:
+                count = 0
+                should_log = kind == "signal"
+            if should_log and audio_copy.size > 0:
+                abs_arr = np.abs(audio_copy)
+                peak_f = float(np.max(abs_arr))
+                rms_f = float(np.sqrt(np.mean(np.square(abs_arr))))
+                logger.info(
+                    "ROOTCAUSE[AVF_ENQUEUE] kind=%s session=%s count=%s samples=%s peak_f=%.5f rms_f=%.5f queue=%s",
+                    kind,
+                    sid,
+                    count,
+                    int(audio_copy.size),
+                    peak_f,
+                    rms_f,
+                    self._audio_queue.qsize(),
+                )
         if isinstance(metadata, dict) and metadata.get("kind") == "signal":
             logger.info(
                 "CUE_TRACE phase=avf.queue_push cue_id=%s pattern=%s chunk_id=%s samples=%s queue_size=%s",
@@ -259,7 +285,14 @@ class AVFoundationPlayer:
                 # Idempotent fast-path: avoid spawning duplicate playback threads.
                 thread_alive = self._playback_thread.is_alive() if self._playback_thread else False
                 if self._playing and thread_alive and engine.isRunning() and player_node.isPlaying():
-                    logger.debug("▶️ Playback already active, start_playback is a no-op")
+                    logger.info(
+                        "ROOTCAUSE[START_NOOP] queue_empty=%s buffered_sec=%.3f thread_alive=%s engine=%s player=%s",
+                        self._audio_queue.empty(),
+                        self.get_buffered_audio_seconds(),
+                        thread_alive,
+                        engine.isRunning(),
+                        player_node.isPlaying(),
+                    )
                     return True
 
                 # КРИТИЧНО: Устанавливаем volume=1.0 для гарантии слышимого вывода
@@ -555,87 +588,36 @@ class AVFoundationPlayer:
                 if self._audio_diag_verbose:
                     logger.debug(f"📊 Pre-copy peak (FULL): {pre_peak:.4f}, samples={frame_count}")
                 
-                # CRITICAL FIX: Copy audio data to buffer
-                # PyObjC objc.varlist indexed assignment doesn't actually write to memory
-                # We need an alternative approach
+                # Copy float32 samples into AVAudioPCMBuffer channel-0 memory.
+                # Single owner for this conversion is AVFoundationPlayer.
+                copy_ok = False
+                audio_contiguous = np.ascontiguousarray(audio_data, dtype=np.float32)
                 try:
-                    import objc
-                    import struct
-                    
-                    # Prepare contiguous float32 array
-                    audio_contiguous = np.ascontiguousarray(audio_data, dtype=np.float32)
-                    
-                    # Method 1: Try to get actual memory pointer from objc.varlist
-                    # Each element in floatChannelData is a pointer to float buffer
-                    # In PyObjC, we can try to get the underlying pointer address
-                    
-                    buffer_ptr = None
-                    
-                    # Try __pyobjc_object__ which returns raw pointer address  
-                    if hasattr(ptr, '__pyobjc_object__'):
-                        buffer_ptr = ptr.__pyobjc_object__
-                    
-                    # Try getting pointer from buffer directly
-                    if buffer_ptr is None:
-                        # Get the internal pointer via objc internals
-                        # floatChannelData returns float** (array of pointers)
-                        # We need the first pointer (channel 0)
-                        try:
-                            # Use the buffer object's internal float pointer
-                            # AVAudioPCMBuffer stores floatChannelData as float** at a known offset
-                            import Foundation
-                            
-                            # Get NSData representation of float buffer for direct access
-                            # Alternative: use mutableBytes on a wrapper
-                            
-                            # Last resort: iterate and hope assignment works (it doesn't but let's verify)
-                            # Find a non-zero sample for testing
-                            test_idx = 0
-                            test_value = 0.5  # Use a known non-zero test value
-                            for i in range(min(1000, frame_count)):
-                                if abs(audio_contiguous[i]) > 0.01:
-                                    test_idx = i
-                                    test_value = float(audio_contiguous[i])
-                                    break
-                            else:
-                                # No non-zero found in first 1000, use a known test value
-                                test_value = 0.5
-                            
-                            # Write test value
-                            ptr[test_idx] = test_value
-                            
-                            # Check if it actually wrote
-                            read_back = float(ptr[test_idx])
-                            if self._audio_diag_verbose:
-                                logger.debug(f"📊 Test write: idx={test_idx}, wrote {test_value:.6f}, read back {read_back:.6f}")
-                            
-                            if abs(read_back - test_value) < 0.0001:
-                                # It works! Do full copy
-                                for i in range(frame_count):
-                                    ptr[i] = float(audio_contiguous[i])
-                                if self._audio_diag_verbose:
-                                    logger.info(f"✅ PyObjC indexed assignment worked for {frame_count} samples")
-                            else:
-                                # Indexed assignment doesn't work, try struct pack
-                                logger.warning(f"⚠️ Indexed assignment failed - read back {test_val}, expected {float(audio_contiguous[0])}")
-                                raise RuntimeError("Indexed assignment doesn't work")
-                                
-                        except Exception as direct_e:
-                            logger.warning(f"⚠️ Direct pointer access failed: {direct_e}")
-                            raise
-                    
-                    if buffer_ptr is not None and isinstance(buffer_ptr, int):
-                        # Use ctypes.memmove with the pointer address
+                    buffer_ptr = getattr(ptr, "__pyobjc_object__", None)
+                    if isinstance(buffer_ptr, int) and buffer_ptr != 0:
                         ctypes.memmove(
                             buffer_ptr,
                             audio_contiguous.ctypes.data,
-                            frame_count * 4
+                            frame_count * ctypes.sizeof(ctypes.c_float),
                         )
-                        logger.debug(f"📊 memmove completed: {frame_count} samples")
-                    
+                        copy_ok = True
+                        if self._audio_diag_verbose:
+                            logger.debug(f"📊 memmove completed: {frame_count} samples")
                 except Exception as copy_e:
-                    logger.error(f"❌ All copy methods failed: {copy_e}")
-                    logger.error("❌ AUDIO WILL BE SILENT - unable to write to AVAudioPCMBuffer")
+                    if self._audio_diag_verbose:
+                        logger.warning(f"⚠️ memmove copy failed: {copy_e}")
+
+                if not copy_ok:
+                    try:
+                        for i in range(frame_count):
+                            ptr[i] = float(audio_contiguous[i])
+                        copy_ok = True
+                        if self._audio_diag_verbose:
+                            logger.debug(f"📊 indexed copy completed: {frame_count} samples")
+                    except Exception as copy_e:
+                        logger.error(f"❌ Failed to copy samples into AVAudioPCMBuffer: {copy_e}")
+                        logger.error("❌ AUDIO WILL BE SILENT - unable to write to AVAudioPCMBuffer")
+                        continue
                 
                 # Ensure engine is running before scheduling buffer
                 if not self._ensure_engine_running():
@@ -665,8 +647,9 @@ class AVFoundationPlayer:
                     
                     # Check buffer amplitude - use middle of buffer since beginning may be silent
                     mid = frame_count // 2
-                    check_range = range(max(0, mid - 50), min(frame_count, mid + 50))
-                    peak = max(abs(ptr[i]) for i in check_range) if len(list(check_range)) > 0 else 0.0
+                    start = max(0, mid - 50)
+                    end = min(frame_count, mid + 50)
+                    peak = max(abs(ptr[i]) for i in range(start, end)) if end > start else 0.0
                     
                     # Check output format (only first time)
                     if frame_count > 0 and not hasattr(self, '_format_logged'):
@@ -686,6 +669,16 @@ class AVFoundationPlayer:
                         logger.debug(
                             "▶️ Scheduled chunk progress: chunks=%s engine=%s player=%s",
                             self._diag_chunk_counter,
+                            engine_running,
+                            player_playing,
+                        )
+                    if cue_id is not None or (self._diag_chunk_counter % self._audio_diag_log_every) == 0:
+                        logger.info(
+                            "ROOTCAUSE[AVF_RENDER] cue_id=%s pattern=%s frames=%s mid_peak_f=%.5f engine=%s player=%s",
+                            cue_id,
+                            cue_pattern,
+                            frame_count,
+                            float(peak),
                             engine_running,
                             player_playing,
                         )

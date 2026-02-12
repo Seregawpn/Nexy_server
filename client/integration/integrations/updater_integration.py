@@ -13,9 +13,11 @@ from config.updater_manager import get_updater_manager
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.selectors import (
     get_current_mode,
+    get_state_value,
     is_first_run_in_progress,
     is_update_in_progress as selector_is_update_in_progress,
 )
+from integration.core.state_keys import StateKeys
 from integration.core.state_manager import ApplicationStateManager
 from integration.utils.logging_setup import get_logger
 
@@ -325,6 +327,10 @@ class UpdaterIntegration:
             })
 
             # relaunch
+            # Respect explicit user quit intent: do not force relaunch if user decided to exit.
+            if bool(get_state_value(self.state_manager, StateKeys.USER_QUIT_INTENT, False)):
+                logger.info("⏭️ Updater relaunch skipped: USER_QUIT_INTENT=true")
+                return True
             await asyncio.to_thread(self.updater.relaunch_app)
             return True
 

@@ -5,6 +5,7 @@ HTTP клиент для системы обновлений
 
 import logging
 import os
+import ssl
 from typing import Any, Callable
 
 import urllib3
@@ -48,7 +49,7 @@ class UpdateHTTPClient:
             # На urllib3 2.x параметр assert_hostname удалён – отключаем проверку через SSLContext
             try:
                 from urllib3.util import ssl_
-                ssl_context = ssl_.create_urllib3_context(cert_reqs='CERT_NONE')  # type: ignore
+                ssl_context = ssl_.create_urllib3_context(cert_reqs=ssl.CERT_NONE)
                 ssl_context.check_hostname = False
                 pool_kwargs['ssl_context'] = ssl_context
             except Exception as exc:

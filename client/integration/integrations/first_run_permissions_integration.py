@@ -67,18 +67,7 @@ class FirstRunPermissionsIntegration:
         self._running = False
         self._advance_on_timeout = False
         self._timeout_wait_s: float | None = None
-        
-        # Flag file path (cache only, not a decision gate)
-        self._flag_path = get_user_data_dir() / "permissions_first_run_completed.flag"
-    
-    def _mark_first_run_completed(self) -> None:
-        """Create flag file to mark first-run as completed."""
-        try:
-            self._flag_path.parent.mkdir(parents=True, exist_ok=True)
-            self._flag_path.write_text("completed")
-            logger.info("✅ [FIRST_RUN_PERMISSIONS] Флаг first-run создан: %s", self._flag_path)
-        except Exception as e:
-            logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Не удалось создать флаг: %s", e)
+        self._timeout_wait_task: asyncio.Task[Any] | None = None
 
     @property
     def are_all_granted(self) -> bool:
@@ -116,8 +105,8 @@ class FirstRunPermissionsIntegration:
                         total_s += float(step_timeout)
                 if order:
                     total_s += max(len(order) - 1, 0) * inter_step_pause_s
-                # Small buffer to allow completion event to propagate
-                self._timeout_wait_s = total_s + 5.0 if total_s > 0 else 300.0
+                # Strict timeout budget: exactly the configured per-step total.
+                self._timeout_wait_s = total_s if total_s > 0 else 300.0
             
             if permissions_v2_config.get("enabled", False) and V2_AVAILABLE:
                 logger.info(
@@ -136,6 +125,7 @@ class FirstRunPermissionsIntegration:
                     event_bus=self.event_bus,
                     config=full_config,  # Полный конфиг
                     ledger_path=ledger_path,
+                    state_manager=self.state_manager,
                     restart_handler=PermissionsRestartHandler(),
                     is_gui_process=True,
                     advance_on_timeout=self._advance_on_timeout,
@@ -175,108 +165,86 @@ class FirstRunPermissionsIntegration:
             return True
 
         self._running = True
+        success = False
 
-        # Если V2 активен - запускаем его и ЖДЁМ завершения
-        if self._v2_enabled and self._v2_integration:
-            # Check if already completed
-            completed = self._v2_integration.is_first_run_complete()
-            if completed is True:
-                logger.info(
-                    "ℹ️ [FIRST_RUN_PERMISSIONS] Ledger shows completed - starting orchestrator to re-emit events"
-                )
-            else:
-                logger.info("🆕 [FIRST_RUN_PERMISSIONS] Запускаем V2 систему разрешений")
-            
-            try:
-                # Запускаем V2 orchestrator (will handle completed state internally)
-                await self._v2_integration.start()
-                if self._advance_on_timeout:
-                    logger.info("⏭️ [FIRST_RUN_PERMISSIONS] advance_on_timeout=true — не блокируем startup")
-                    asyncio.create_task(self._await_timeout_completion())
-                    return True
-                logger.info("⏳ [FIRST_RUN_PERMISSIONS] Ожидаем завершения V2 pipeline...")
-                
-                # КРИТИЧНО: ЖДЁМ завершения pipeline!
-                # Это блокирует startup других модулей до получения разрешений
-                all_granted = await self._v2_integration.wait_for_completion(timeout=300.0)
-                
-                all_steps_passed = False
-                try:
-                    orchestrator = self._v2_integration._orchestrator
-                    if orchestrator and orchestrator.ledger:
-                        allowed = {"pass", "needs_restart", "skipped"}
-                        all_steps_passed = all(
-                            (step.state.value in allowed)
-                            for step in orchestrator.ledger.steps.values()
-                        )
-                except Exception as e:
-                    logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Не удалось вычислить состояние шагов: %s", e)
-
-                if all_granted and all_steps_passed:
-                    logger.info("✅ [FIRST_RUN_PERMISSIONS] V2 pipeline завершён, все разрешения получены")
-                    self._mark_first_run_completed()
-                    return True
+        try:
+            # Если V2 активен - запускаем его и ЖДЁМ завершения
+            if self._v2_enabled and self._v2_integration:
+                # Check if already completed
+                completed = self._v2_integration.is_first_run_complete()
+                if completed is True:
+                    logger.info(
+                        "ℹ️ [FIRST_RUN_PERMISSIONS] Ledger shows completed - starting orchestrator to re-emit events"
+                    )
                 else:
-                    logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] V2 pipeline завершён, не все разрешения получены. FORCING STARTUP.")
-                    # FORCED: Return True anyway to prevent blocking
-                    return True
+                    logger.info("🆕 [FIRST_RUN_PERMISSIONS] Запускаем V2 систему разрешений")
+                
+                try:
+                    # Запускаем V2 orchestrator (will handle completed state internally)
+                    await self._v2_integration.start()
+                    if self._advance_on_timeout:
+                        logger.info("⏭️ [FIRST_RUN_PERMISSIONS] advance_on_timeout=true — не блокируем startup")
+                        if self._timeout_wait_task is None or self._timeout_wait_task.done():
+                            self._timeout_wait_task = asyncio.create_task(self._await_timeout_completion())
+                        else:
+                            logger.info("ℹ️ [FIRST_RUN_PERMISSIONS] Timeout waiter already active - reusing existing task")
+                        success = True
+                        return True
+                    logger.info("⏳ [FIRST_RUN_PERMISSIONS] Ожидаем завершения V2 pipeline...")
+                    
+                    # КРИТИЧНО: ЖДЁМ завершения pipeline!
+                    # Это блокирует startup других модулей до получения разрешений
+                    all_granted = await self._v2_integration.wait_for_completion(timeout=300.0)
+                    
+                    if all_granted:
+                        logger.info("✅ [FIRST_RUN_PERMISSIONS] V2 pipeline завершён, все разрешения получены")
+                        success = True
+                        return True
+                    logger.warning(
+                        "⚠️ [FIRST_RUN_PERMISSIONS] V2 pipeline завершён, не все разрешения получены "
+                        "(startup остаётся ограниченным до завершения flow)"
+                    )
+                    return False
 
-            except Exception as e:
-                logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Ошибка запуска V2: {e}")
-                # FORCED: Return True even on error
+                except Exception as e:
+                    logger.error(f"❌ [FIRST_RUN_PERMISSIONS] Ошибка запуска V2: {e}")
+                    return False
+            else:
+                logger.info("⏭️ [FIRST_RUN_PERMISSIONS] V2 не активна - пропускаем")
+                success = True
                 return True
-        else:
-             logger.info("⏭️ [FIRST_RUN_PERMISSIONS] V2 не активна - пропускаем")
-
-        return True
+        finally:
+            if not success:
+                self._running = False
 
     async def stop(self) -> bool:
         """Остановка интеграции"""
         self._running = False
+        if self._timeout_wait_task and not self._timeout_wait_task.done():
+            self._timeout_wait_task.cancel()
+            try:
+                await self._timeout_wait_task
+            except asyncio.CancelledError:
+                logger.debug("ℹ️ [FIRST_RUN_PERMISSIONS] Timeout waiter cancelled on stop")
+        self._timeout_wait_task = None
         return True
 
     async def _await_timeout_completion(self) -> None:
-        """Wait for timeout-based pipeline completion, then mark first-run."""
+        """Wait for timeout-based pipeline completion and mirror completion flag."""
         if not self._v2_integration:
             return
-        timeout = self._timeout_wait_s or 300.0
         try:
-            await self._v2_integration.wait_for_completion(timeout=timeout)
-        except Exception as e:
-            logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode wait failed: %s", e)
-        
-        self._mark_first_run_completed()
-        
-        # CHECK: Было ли уже опубликовано ready_to_greet от V2?
-        # Если да - пропускаем дубль
-        if hasattr(self._v2_integration, '_ready_published') and self._v2_integration._ready_published:
-            logger.info("⏭️ [FIRST_RUN_PERMISSIONS] ready_to_greet already published by V2, skipping timeout publish")
-            # Still publish permissions.first_run_completed for legacy compatibility
+            timeout = self._timeout_wait_s or 300.0
             try:
-                await self.event_bus.publish("permissions.first_run_completed", {
-                    "session_id": "timeout_mode",
-                    "source": "permissions_v2_timeout",
-                    "all_granted": False,
-                    "missing": [],
-                })
+                await self._v2_integration.wait_for_completion(timeout=timeout)
             except Exception as e:
-                logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode legacy event publish failed: %s", e)
-            return
-        
-        try:
-            await self.event_bus.publish("permissions.first_run_completed", {
-                "session_id": "timeout_mode",
-                "source": "permissions_v2_timeout",
-                "all_granted": False,
-                "missing": [],
-            })
-            await self.event_bus.publish("system.ready_to_greet", {
-                "source": "permissions_v2_timeout",
-                "phase": "timeout_mode",
-                "permissions": {},
-                "v2": True,
-            })
-            logger.info("✅ [FIRST_RUN_PERMISSIONS] Timeout-mode events published")
-        except Exception as e:
-            logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode publish failed: %s", e)
+                logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode wait failed: %s", e)
 
+            completed = self._v2_integration.is_first_run_complete()
+            if completed is not True:
+                logger.warning(
+                    "⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode completion not confirmed (completed=%s)",
+                    completed,
+                )
+        finally:
+            self._timeout_wait_task = None

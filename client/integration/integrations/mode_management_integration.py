@@ -78,16 +78,6 @@ class ModeManagementIntegration:
         self._listening_timeout_sec = 0.0
         self._listening_timeout_task: asyncio.Task[Any] | None = None
 
-        # Приоритеты источников (чем больше — тем важнее)
-        self._priorities = {
-            'interrupt': 100,
-            'keyboard.short_press': 80,
-            'keyboard.release': 60,
-            'keyboard.long_press': 60,
-            'playback': 50,
-            'grpc': 50,
-            'fallback': 10,
-        }
         # Сессии, в которых воспроизведение уже стартовало и еще не завершено.
         self._active_playback_sessions: set[str] = set()
         # Сессии, для которых уже был отложен переход в SLEEPING до завершения playback.
@@ -139,21 +129,7 @@ class ModeManagementIntegration:
                     logger.error(f"StateManager bridging failed: {e}")
             self.controller.register_mode_change_callback(_on_controller_mode_changed)
 
-            # Мост с существующими событиями (на время миграции)
-            # Отключено, чтобы избежать дублей mode.request (источник — InputProcessingIntegration)
-            # await self.event_bus.subscribe("keyboard.long_press", self._bridge_keyboard_long, EventPriority.MEDIUM)
-            # await self.event_bus.subscribe("keyboard.release", self._bridge_keyboard_release, EventPriority.MEDIUM)
-            # await self.event_bus.subscribe("keyboard.short_press", self._bridge_keyboard_short, EventPriority.MEDIUM)
-
             # Внимание: не возвращаем SLEEPING по завершению gRPC — ждём завершения воспроизведения
-            # Доп. подписки для контекста (без публикации режимов)
-            try:
-                await self.event_bus.subscribe("voice.recording_start", self._on_voice_recording_start, EventPriority.MEDIUM)
-            except Exception:
-                pass
-            # await self.event_bus.subscribe("grpc.request_completed", self._bridge_grpc_done, EventPriority.MEDIUM)
-            # await self.event_bus.subscribe("grpc.request_failed", self._bridge_grpc_done, EventPriority.MEDIUM)
-
             await self.event_bus.subscribe("playback.completed", self._bridge_playback_done, EventPriority.MEDIUM)
             await self.event_bus.subscribe("playback.failed", self._bridge_playback_done, EventPriority.MEDIUM)
             await self.event_bus.subscribe("playback.started", self._on_playback_started, EventPriority.MEDIUM)
@@ -234,7 +210,8 @@ class ModeManagementIntegration:
                     priority = 0
             else:
                 priority = 0
-            source = str(data.get("source", "unknown"))
+            source_raw = str(data.get("source", "unknown"))
+            source = self._normalize_mode_request_source(source_raw)
             session_id = data.get("session_id")
             normalized_session_id = self._normalize_session_id(session_id)
 
@@ -337,10 +314,14 @@ class ModeManagementIntegration:
                 current_session_id = selectors.get_current_session_id(self.state_manager)
                 if session_id is not None and current_session_id is not None:
                     if session_id != current_session_id:
-                        # КРИТИЧНО: Просто вызываем set_mode() с новым session_id
-                        # set_mode() сам опубликует app.mode_changed если session_id изменился
-                        logger.info(f"🔄 MODE_REQUEST: новый запрос на PROCESSING с другим session_id (active={current_session_id}, request={session_id}) - разрешаем")
-                        self.state_manager.set_mode(target, session_id=session_id)
+                        # PROCESSING уже активен: синхронизируем только session_id без второго пути mode transition.
+                        logger.info(
+                            "🔄 MODE_REQUEST: обновляем session_id в активном PROCESSING "
+                            "(active=%s, request=%s)",
+                            current_session_id,
+                            session_id,
+                        )
+                        self.state_manager.update_session_id(normalized_session_id)
                         return
                     else:
                         # Тот же session_id - идемпотентность
@@ -348,8 +329,12 @@ class ModeManagementIntegration:
                         return
                 elif session_id is not None:
                     # Новый запрос без активной сессии - разрешаем
-                    logger.info(f"🔄 MODE_REQUEST: новый запрос на PROCESSING без активной сессии (request={session_id}) - разрешаем")
-                    self.state_manager.set_mode(target, session_id=session_id)
+                    logger.info(
+                        "🔄 MODE_REQUEST: синхронизируем session_id для активного PROCESSING "
+                        "(request=%s)",
+                        session_id,
+                    )
+                    self.state_manager.update_session_id(normalized_session_id)
                     return
                 else:
                     # Нет session_id - идемпотентность
@@ -394,7 +379,7 @@ class ModeManagementIntegration:
                     )
                     return
             
-            if current_mode == AppMode.PROCESSING and source != 'interrupt':
+            if current_mode == AppMode.PROCESSING and not self._is_interrupt_source(source):
                 current_session_id = selectors.get_current_session_id(self.state_manager)
                 logger.info(f"🔄 MODE_REQUEST: в PROCESSING, проверяем session_id (active={current_session_id}, request={session_id})")
                 if current_session_id is not None and session_id is not None:
@@ -404,7 +389,7 @@ class ModeManagementIntegration:
 
             # Приоритеты: если заявка из более низкого приоритета — применяем только если нет конфликтов
             # Упрощённая модель: interrupt всегда применяется, остальное — напрямую
-            if source == 'interrupt' or priority >= 90:
+            if self._is_interrupt_source(source) or priority >= 90:
                 logger.info(f"🔄 MODE_REQUEST: применяем как interrupt (source={source}, priority={priority}) → {target}")
                 # КРИТИЧНО: Все изменения идут через set_mode() - единый источник истины
                 await self._apply_mode(target, source="interrupt", session_id=session_id)
@@ -453,51 +438,6 @@ class ModeManagementIntegration:
                     self._processing_timeout_task.cancel()
                 if self._listening_timeout_task and not self._listening_timeout_task.done():
                     self._listening_timeout_task.cancel()
-        except Exception:
-            pass
-
-    async def _on_voice_recording_start(self, event):
-        """Фиксируем session_id для контекста LISTENING/PROCESSING."""
-        # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager
-        # Не нужно обновлять дублирующие переменные
-        pass
-
-    # --------------- Bridges (temporary during migration) ---------------
-    async def _bridge_keyboard_long(self, event):
-        try:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.LISTENING,
-                "source": "keyboard.long_press"
-            })
-        except Exception:
-            pass
-
-    async def _bridge_keyboard_release(self, event):
-        try:
-            data = (event or {}).get("data", {})
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.PROCESSING,
-                "source": "keyboard.release",
-                "session_id": data.get("session_id")
-            })
-        except Exception:
-            pass
-
-    async def _bridge_keyboard_short(self, event):
-        try:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "keyboard.short_press"
-            })
-        except Exception:
-            pass
-
-    async def _bridge_grpc_done(self, event):
-        try:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "grpc"
-            })
         except Exception:
             pass
 
@@ -679,16 +619,6 @@ class ModeManagementIntegration:
         except Exception:
             pass
 
-    async def _bridge_interrupt(self, event):
-        try:
-            await self.event_bus.publish("mode.request", {
-                "target": AppMode.SLEEPING,
-                "source": "interrupt",
-                "priority": self._priorities.get('interrupt', 100)
-            })
-        except Exception:
-            pass
-
     # ---------------- Internals ----------------
     async def _apply_mode(self, target: AppMode, *, source: str, session_id: str | None = None):
         try:
@@ -809,3 +739,13 @@ class ModeManagementIntegration:
         if session_id is None:
             return None
         return str(session_id)
+
+    @staticmethod
+    def _is_interrupt_source(source: str) -> bool:
+        return source in {"interrupt", "interrupt_management"}
+
+    @staticmethod
+    def _normalize_mode_request_source(source: str) -> str:
+        if source == "interrupt_management":
+            return "interrupt"
+        return source
