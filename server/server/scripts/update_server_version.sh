@@ -12,8 +12,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Параметры Azure
-AZURE_RESOURCE_GROUP="Nexy"
-AZURE_VM_NAME="nexy-regular"
+AZURE_RESOURCE_GROUP="NETWORKWATCHERRG"
+AZURE_VM_NAME="Nexy"
 SERVER_PATH="/home/azureuser/voice-assistant"
 CONFIG_FILE="$SERVER_PATH/server/config.env"
 MANIFEST_DIR="$SERVER_PATH/server/updates/manifests"
