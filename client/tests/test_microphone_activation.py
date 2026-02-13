@@ -18,7 +18,10 @@ from config.unified_config_loader import InputProcessingConfig, KeyboardConfig
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager, AppMode
-from integration.integrations.input_processing_integration import InputProcessingIntegration
+from integration.integrations.input_processing_integration import (
+    InputProcessingIntegration,
+    PTTState,
+)
 from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
 
 
@@ -296,6 +299,60 @@ class TestMicrophoneActivation:
         )
 
         print("✅ Тест пройден: RELEASE без активной записи обрабатывается корректно")
+
+    @pytest.mark.asyncio
+    async def test_stale_release_does_not_override_new_press_cycle(
+        self, input_integration, state_manager, event_bus
+    ):
+        """Тест: stale release-хвост не переводит новый press-cycle в WAITING_GRPC."""
+        old_session_id = "old-session"
+        state_manager.set_mode(AppMode.LISTENING, session_id=old_session_id)
+        input_integration._recording_started = True
+        input_integration._mic_active = True
+        input_integration._active_press_id = "old_press"
+        input_integration._session_waiting_grpc = False
+        input_integration._active_grpc_session_id = None
+
+        processing_mode_requests = []
+
+        async def capture_mode_request(event):
+            payload = (event or {}).get("data", {})
+            if payload.get("target") == AppMode.PROCESSING:
+                processing_mode_requests.append(payload)
+
+        await event_bus.subscribe("mode.request", capture_mode_request)
+
+        release_started = asyncio.Event()
+        release_continue = asyncio.Event()
+
+        async def blocking_terminal_stop(*args, **kwargs):
+            release_started.set()
+            await release_continue.wait()
+            return True
+
+        input_integration._request_terminal_stop = blocking_terminal_stop
+
+        release_event = KeyEvent(
+            key="left_shift",
+            event_type=KeyEventType.RELEASE,
+            timestamp=time.time(),
+            duration=0.7,
+            data={"press_id": "old_press"},
+        )
+        release_task = asyncio.create_task(input_integration._handle_release(release_event))
+        await asyncio.wait_for(release_started.wait(), timeout=1.0)
+
+        # Симулируем новый цикл, начавшийся пока старый release еще в await.
+        input_integration._active_press_id = "new_press"
+        input_integration._set_state(PTTState.ARMED, "test_new_press_cycle")
+
+        release_continue.set()
+        await asyncio.wait_for(release_task, timeout=1.0)
+        await asyncio.sleep(0.05)
+
+        assert processing_mode_requests == []
+        assert input_integration._state == PTTState.ARMED
+        assert input_integration._session_waiting_grpc is False
 
     @pytest.mark.asyncio
     async def test_mic_active_state_management(self, input_integration):

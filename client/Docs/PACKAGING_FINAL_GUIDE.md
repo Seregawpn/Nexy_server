@@ -105,7 +105,7 @@ NEXY_SKIP_NOTARIZATION=1 ./packaging/build_final.sh
 ./packaging/build_final.sh --speed-check
 ```
 
-**Важно про окружение:** если существует `.venv`, `build_final.sh` использует `./.venv/bin/python` для всех стадий (preflight + PyInstaller). Для x86_64 этапа можно создать отдельный `./.venv_x86` — скрипт использует его автоматически, если найден. Убедитесь, что зависимости (включая `playwright`) установлены в этих окружениях, а `playwright` имеет driver.
+**Важно про окружение:** если существует `.venv`, `build_final.sh` использует `./.venv/bin/python` для preflight + arm64 PyInstaller. Для x86_64 этапа обязателен отдельный `./.venv_x86`; запуск x86 идёт через `arch -x86_64 ./.venv_x86/bin/python`. Это устраняет `IncompatibleBinaryArchError` на arm64 wheel'ах (например `zstandard/_cffi`).
 
 **Что делает `build_final.sh` автоматически:**
 1. ✅ Packaging readiness gate (`scripts/verify_packaging_readiness.py`)

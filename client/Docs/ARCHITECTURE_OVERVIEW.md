@@ -557,9 +557,9 @@ _macOS автоматически управляет активными ауди
 
 - `permission_restart_integration.py`
   - Назначение: автоматический перезапуск клиента после выдачи критических разрешений (микрофон, accessibility, input monitoring, screen capture).
-  - Подписки: `permissions.changed`, `permissions.status_checked`.
+  - Подписки: `permissions.changed`, `permissions.status_checked`, `updater.update_*`, `app.startup`, `app.shutdown`.
   - Публикует: `permission_restart.scheduled`, `permission_restart.executing`.
-  - Логика: использует `modules.permission_restart` для детекции и планирования, ждёт окончания LISTENING/PROCESSING и отсутствия обновлений (`UpdaterIntegration`).
+  - Логика: использует `modules.permission_restart` для детекции и планирования, ждёт окончания LISTENING/PROCESSING и отсутствия обновлений (`UpdaterIntegration`), отменяет запланированный restart на `app.shutdown` и перед `trigger_restart()` проверяет `USER_QUIT_INTENT`.
 
 - `screenshot_capture_integration.py`
   - Назначение: один скриншот при входе в PROCESSING; CLI‑fallback при отсутствии модуля.
@@ -573,8 +573,9 @@ _macOS автоматически управляет активными ауди
 
 - `speech_playback_integration.py`
   - Назначение: воспроизведение аудио чанков ответа, корректное завершение/отмена.
-  - Подписки: `grpc.response.audio`, `grpc.request_completed|failed`, `keyboard.short_press`, `interrupt.request`, `app.shutdown`.
-  - Публикует: `playback.started|completed|failed|cancelled`, `mode.request(SLEEPING)` по завершению/ошибке/тишине.
+  - Подписки: `grpc.response.audio`, `grpc.request_completed|failed`, `playback.raw_audio`, `playback.signal`, `grpc.request_cancel`, `playback.cancelled`, `voice.mic_closed`, `app.shutdown`.
+  - Публикует: `playback.ready`, `playback.started|completed|failed|cancelled`.
+  - Логика: единый путь постановки аудио в AVF для gRPC и welcome (`_queue_session_audio`), подтверждение старта gRPC playback (`AUDIO_GRPC_START_CONFIRMED` + watchdog reassert), recovery output-пайплайна на `voice.mic_closed`.
 
 - `tray_controller_integration.py`
   - Назначение: отображение статуса/меню в трее.
@@ -685,7 +686,8 @@ sequenceDiagram
     Bus-->>Speech: play chunks
     Grpc-->>Bus: grpc.request_completed
     Speech-->>Bus: playback.completed
-    Speech-->>Bus: mode.request(SLEEPING)
+    Bus-->>Workflow: terminal event (grpc/playback)
+    Workflow-->>Bus: mode.request(SLEEPING)
     Bus->>ModeMgmt: mode.request
     ModeMgmt->>Ctrl: switch_mode(SLEEPING)
     Ctrl-->>ModeMgmt: on_mode_changed(SLEEPING)
@@ -699,14 +701,17 @@ sequenceDiagram
 sequenceDiagram
     participant Input as InputProcessingIntegration
     participant Bus as EventBus
+    participant Interrupt as InterruptManagementIntegration
     participant ModeMgmt as ModeManagementIntegration
     participant Ctrl as ModeController
     participant State as ApplicationStateManager
     participant Speech as SpeechPlaybackIntegration
 
     Input->>Bus: keyboard.short_press
+    Bus->>Interrupt: interrupt.request
+    Interrupt-->>Bus: grpc.request_cancel
     Speech-->>Bus: playback.cancelled (stop)
-    Bus->>Bus: publish mode.request(SLEEPING)
+    Interrupt-->>Bus: mode.request(SLEEPING)
     Bus->>ModeMgmt: mode.request(SLEEPING)
     ModeMgmt->>Ctrl: switch_mode(SLEEPING)
     Ctrl-->>ModeMgmt: on_mode_changed
@@ -721,7 +726,7 @@ flowchart LR
     subgraph Integrations
       A[InputProcessing] -->|mode.request| MM
       B[VoiceRecognition] -->|mode.request| MM
-      C[SpeechPlayback] -->|mode.request| MM
+      C[ProcessingWorkflow] -->|mode.request| MM
       D[Permissions] -->|mode.request| MM
       E[Interrupts] -->|mode.request| MM
     end

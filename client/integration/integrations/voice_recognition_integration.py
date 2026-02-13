@@ -701,7 +701,7 @@ class VoiceRecognitionIntegration:
         try:
             # Используем state_manager как единственный источник истины для session_id
             session_id = self._get_active_session_id()
-            logger.warning(f"⚠️ [AUDIO_V2] Recognition failed: {error}")
+            logger.info(f"⚠️ [AUDIO_V2] Recognition failed: {error}")
 
             # Publish event via asyncio (we're in a thread)
             import asyncio

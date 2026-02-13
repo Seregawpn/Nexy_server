@@ -212,23 +212,20 @@ def activate_nsapplication_for_menu_bar(force_activate: bool = False):
 
 # Настройка логирования (через unified_config.yaml)
 # ВАЖНО: Для .app bundle логи должны писаться в файл, т.к. stdout недоступен
-from integration.utils.logging_setup import setup_logging
+from integration.utils.logging_setup import get_effective_log_file_path, setup_logging
 
 setup_logging()
 
 log_file = None
 try:
-    from config.unified_config_loader import UnifiedConfigLoader
-
-    raw_config = UnifiedConfigLoader.get_instance()._load_config()
-    log_file = raw_config.get("logging", {}).get("file_path")
+    log_file = get_effective_log_file_path()
 except Exception:
     log_file = None
 
 if not log_file:
     log_file = os.path.join(tempfile.gettempdir(), "nexy_debug.log")
 
-log_file = os.path.abspath(log_file)
+log_file = os.path.abspath(os.path.expanduser(log_file))
 
 try:
     from logging.handlers import RotatingFileHandler

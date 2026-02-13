@@ -276,12 +276,19 @@ class WelcomeMessageIntegration:
 
             # Обновляем gRPC клиент непосредственно перед воспроизведением
             self._refresh_grpc_client()
+            welcome_session_id = str(uuid.uuid4())
+            self._welcome_playback_session_id = welcome_session_id
 
             # 🆕 ПЕРЕХОД В PROCESSING РЕЖИМ
             logger.info("🔄 [WELCOME_INTEGRATION] Переход в режим PROCESSING для приветствия")
             await self.event_bus.publish(
                 "mode.request",
-                {"target": "PROCESSING", "source": "welcome_message", "reason": "welcome_playback"},
+                {
+                    "target": "PROCESSING",
+                    "source": "welcome_message",
+                    "reason": "welcome_playback",
+                    "session_id": welcome_session_id,
+                },
             )
 
             # Воспроизводим через плеер
@@ -304,7 +311,9 @@ class WelcomeMessageIntegration:
                         "(method=%s, async context)",
                         result.method,
                     )
-                    playback_session_id = await self._send_audio_to_playback(audio_data)
+                    playback_session_id = await self._send_audio_to_playback(
+                        audio_data, session_id=welcome_session_id
+                    )
 
                     # Ждём завершения воспроизведения
                     logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
@@ -477,7 +486,9 @@ class WelcomeMessageIntegration:
                 f"❌ [WELCOME_INTEGRATION] Ошибка в _return_to_sleeping_after_playback: {e}"
             )
 
-    async def _send_audio_to_playback(self, audio_data: np.ndarray) -> str:
+    async def _send_audio_to_playback(
+        self, audio_data: np.ndarray, session_id: str | None = None
+    ) -> str:
         """Отправляет аудио данные в SpeechPlaybackIntegration для воспроизведения"""
         try:
             audio_samples = audio_data.size if hasattr(audio_data, "size") else len(audio_data)
@@ -520,7 +531,7 @@ class WelcomeMessageIntegration:
                     f"config_duration={config_duration:.3f}s"
                 )
 
-            welcome_session_id = str(uuid.uuid4())
+            welcome_session_id = session_id or str(uuid.uuid4())
             self._welcome_playback_session_id = welcome_session_id
 
             # ✅ ПРАВИЛЬНО: Передаем numpy массив напрямую в плеер

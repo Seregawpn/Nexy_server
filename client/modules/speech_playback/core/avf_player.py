@@ -7,7 +7,6 @@ Plays raw PCM audio data from server.
 
 from __future__ import annotations
 
-import ctypes
 from dataclasses import dataclass
 import logging
 import queue
@@ -41,6 +40,12 @@ AVAudioSessionRouteChangeNotification = getattr(
 )
 AVAudioSessionCategoryOptionAllowBluetoothA2DP = getattr(
     _AVFoundation, "AVAudioSessionCategoryOptionAllowBluetoothA2DP", 0
+)
+AVAudioSessionCategoryPlayAndRecord = getattr(
+    _AVFoundation, "AVAudioSessionCategoryPlayAndRecord", None
+)
+AVAudioSessionCategoryOptionDefaultToSpeaker = getattr(
+    _AVFoundation, "AVAudioSessionCategoryOptionDefaultToSpeaker", 0
 )
 NSNotificationCenter = getattr(_Foundation, "NSNotificationCenter", None)
 
@@ -84,6 +89,14 @@ class AVFoundationPlayer:
         self._last_audio_session_signature: tuple[str | None, str | None, int, str | None] | None = (
             None
         )
+        self._audio_session_unavailable_logged = False
+        self._last_render_heal_ts = 0.0
+        self._write_mismatch_streak = 0
+        self._add_audio_warn_cooldown_sec = 5.0
+        self._last_silent_warn_ts = 0.0
+        self._last_quiet_warn_ts = 0.0
+        self._silent_warn_suppressed = 0
+        self._quiet_warn_suppressed = 0
 
     def initialize(self) -> bool:
         """Initialize AVAudioEngine and player node."""
@@ -125,6 +138,7 @@ class AVFoundationPlayer:
                 self._engine.prepare()
 
                 self._initialized = True
+                self._diag_tone_played = False
                 logger.info("✅ AVFoundationPlayer initialized (AVAudioEngine)")
 
                 # Register for route change notifications
@@ -200,11 +214,9 @@ class AVFoundationPlayer:
                     f"📊 [ADD_AUDIO] INPUT peak={peak:.4f}, min={min_val:.4f}, max={max_val:.4f}"
                 )
             if peak == 0:
-                if self._audio_diag_verbose:
-                    logger.warning("⚠️ [ADD_AUDIO] Incoming audio is TOTALLY SILENT")
+                self._log_add_audio_level_warning(silent=True, peak=peak)
             elif peak < 0.0001:
-                if self._audio_diag_verbose:
-                    logger.warning(f"⚠️ [ADD_AUDIO] Incoming audio is very quiet (peak: {peak:.6f})")
+                self._log_add_audio_level_warning(silent=False, peak=peak)
 
         chunk_id = f"chunk_{id(audio_data)}"
 
@@ -247,6 +259,41 @@ class AVFoundationPlayer:
             )
         return chunk_id
 
+    def _log_add_audio_level_warning(self, silent: bool, peak: float) -> None:
+        """Rate-limit verbose input-level warnings to avoid log spam."""
+        if not self._audio_diag_verbose:
+            return
+
+        now = time.monotonic()
+        cooldown = self._add_audio_warn_cooldown_sec
+        if silent:
+            suppressed = self._silent_warn_suppressed
+            if (now - self._last_silent_warn_ts) < cooldown:
+                self._silent_warn_suppressed = suppressed + 1
+                return
+            extra = (
+                f" (suppressed {suppressed} similar in {cooldown:.1f}s)"
+                if suppressed > 0
+                else ""
+            )
+            logger.warning("⚠️ [ADD_AUDIO] Incoming audio is TOTALLY SILENT%s", extra)
+            self._last_silent_warn_ts = now
+            self._silent_warn_suppressed = 0
+            return
+
+        suppressed = self._quiet_warn_suppressed
+        if (now - self._last_quiet_warn_ts) < cooldown:
+            self._quiet_warn_suppressed = suppressed + 1
+            return
+        extra = (
+            f" (suppressed {suppressed} similar in {cooldown:.1f}s)"
+            if suppressed > 0
+            else ""
+        )
+        logger.warning("⚠️ [ADD_AUDIO] Incoming audio is very quiet (peak: %.6f)%s", peak, extra)
+        self._last_quiet_warn_ts = now
+        self._quiet_warn_suppressed = 0
+
     def start_playback(self) -> bool:
         """Start playback."""
         if not self._initialized:
@@ -261,6 +308,10 @@ class AVFoundationPlayer:
                     logger.error("❌ Player internals unavailable")
                     return False
 
+                # Always re-assert playback audio session profile, even if playback
+                # fast-path returns no-op. Mic/STT path may have changed session state.
+                self._ensure_playback_audio_session(reason="start_playback")
+
                 # Idempotent fast-path: avoid spawning duplicate playback threads.
                 thread_alive = self._playback_thread.is_alive() if self._playback_thread else False
                 if (
@@ -269,6 +320,24 @@ class AVFoundationPlayer:
                     and engine.isRunning()
                     and player_node.isPlaying()
                 ):
+                    # Keep output chain unmuted even on no-op path.
+                    # Route/mic interactions can leave node or mixer volume altered
+                    # while playback state still looks healthy.
+                    try:
+                        player_node.setVolume_(1.0)
+                        mixer = engine.mainMixerNode()
+                        mixer.setOutputVolume_(1.0)
+                    except Exception:
+                        pass
+                    try:
+                        if AVAudioSession:
+                            snap = self._capture_audio_session_runtime(AVAudioSession.sharedInstance())
+                            logger.info(
+                                "AUDIO_SESSION_RUNTIME reason=start_playback_noop snapshot=%s",
+                                snap,
+                            )
+                    except Exception:
+                        pass
                     logger.debug("▶️ Playback already active, start_playback is a no-op")
                     return True
 
@@ -280,12 +349,37 @@ class AVFoundationPlayer:
                     f"🔊 [AVF_PLAYER] Volume set to 1.0 at playback start (mixer and player_node)"
                 )
 
-                # Ensure Audio Session is active
-                self._ensure_playback_audio_session(reason="start_playback")
-
                 # Start engine if not running
                 # Note: mainMixerNode -> outputNode connection is AUTOMATIC in AVAudioEngine
                 if not engine.isRunning():
+                    # CRITICAL FIX: When engine was stopped (e.g. by macOS audio
+                    # interruption from microphone/PyAudio), the player_node→mixer
+                    # connection can become invalid. Re-attach and reconnect the
+                    # player node to the engine graph before restarting.
+                    try:
+                        fmt = AVAudioFormat.alloc().initWithCommonFormat_sampleRate_channels_interleaved_(
+                            1,  # AVAudioPCMFormatFloat32
+                            self.config.sample_rate,
+                            self.config.channels,
+                            False,
+                        )
+                        # Disconnect any stale connections first
+                        engine.disconnectNodeOutput_(player_node)
+                        # Re-connect player → mixer
+                        mixer_node = engine.mainMixerNode()
+                        engine.connect_to_format_(player_node, mixer_node, fmt)
+                        mixer_node.setOutputVolume_(1.0)
+                        player_node.setVolume_(1.0)
+                        engine.prepare()
+                        logger.info(
+                            "🔄 [AVF_PLAYER] Re-connected player→mixer after engine stop"
+                        )
+                    except Exception as reconnect_err:
+                        logger.warning(
+                            "⚠️ [AVF_PLAYER] Failed to reconnect player node: %s",
+                            reconnect_err,
+                        )
+
                     success, error = engine.startAndReturnError_(None)
                     if success:
                         logger.info("🔊 AVAudioEngine started successfully")
@@ -297,6 +391,12 @@ class AVFoundationPlayer:
 
                 # Route snapshot on every playback start to diagnose "audio scheduled but not audible".
                 self._log_output_route_snapshot()
+                try:
+                    if AVAudioSession:
+                        snap = self._capture_audio_session_runtime(AVAudioSession.sharedInstance())
+                        logger.info("AUDIO_SESSION_RUNTIME reason=start_playback snapshot=%s", snap)
+                except Exception:
+                    pass
 
                 # Start the player node
                 player_node.play()
@@ -319,6 +419,28 @@ class AVFoundationPlayer:
             except Exception as e:
                 logger.error(f"❌ Start playback failed: {e}")
                 return False
+
+    def get_playback_runtime_status(self) -> dict[str, Any]:
+        """Return runtime playback status for integration-level diagnostics."""
+        with self._lock:
+            engine = self._engine
+            player_node = self._player_node
+            status: dict[str, Any] = {
+                "playing_flag": bool(self._playing),
+                "thread_alive": bool(self._playback_thread and self._playback_thread.is_alive()),
+                "engine_running": bool(engine and engine.isRunning()),
+                "player_playing": bool(player_node and player_node.isPlaying()),
+                "route": None,
+                "session_snapshot": None,
+            }
+            try:
+                if AVAudioSession:
+                    session = AVAudioSession.sharedInstance()
+                    status["route"] = self._current_route_signature(session)
+                    status["session_snapshot"] = self._capture_audio_session_runtime(session)
+            except Exception:
+                pass
+            return status
 
     def _log_output_route_snapshot(self) -> None:
         """Log current output format/device each time playback starts."""
@@ -369,17 +491,59 @@ class AVFoundationPlayer:
         except Exception:
             return None
 
+    def _capture_audio_session_runtime(self, session) -> dict[str, Any]:
+        snap: dict[str, Any] = {}
+        try:
+            if hasattr(session, "category"):
+                snap["category"] = str(session.category())
+            if hasattr(session, "mode"):
+                snap["mode"] = str(session.mode())
+            if hasattr(session, "otherAudioPlaying"):
+                snap["other_audio_playing"] = bool(session.otherAudioPlaying())
+            if hasattr(session, "secondaryAudioShouldBeSilencedHint"):
+                snap["secondary_should_be_silenced"] = bool(
+                    session.secondaryAudioShouldBeSilencedHint()
+                )
+            if hasattr(session, "outputVolume"):
+                snap["output_volume"] = float(session.outputVolume())
+        except Exception:
+            pass
+        snap["route"] = self._current_route_signature(session)
+        return snap
+
     def _ensure_playback_audio_session(self, *, reason: str) -> None:
         """Centralized owner for playback audio session profile."""
         if not AVAudioSession or AVAudioSessionCategoryPlayback is None:
+            if not self._audio_session_unavailable_logged:
+                logger.warning(
+                    "AUDIO_SESSION_PROFILE reason=%s applied=false unavailable=true has_session=%s has_playback_category=%s",
+                    reason,
+                    bool(AVAudioSession),
+                    bool(AVAudioSessionCategoryPlayback is not None),
+                )
+                self._audio_session_unavailable_logged = True
             return
         try:
             session = AVAudioSession.sharedInstance()
             route_sig = self._current_route_signature(session)
-            target_category = str(AVAudioSessionCategoryPlayback)
+
+            # Detect Bluetooth output — use PlayAndRecord to avoid A2DP/HFP conflict
+            is_bluetooth = route_sig and "Bluetooth" in route_sig
+            if is_bluetooth and AVAudioSessionCategoryPlayAndRecord is not None:
+                chosen_category_obj = AVAudioSessionCategoryPlayAndRecord
+                target_category = str(AVAudioSessionCategoryPlayAndRecord)
+                target_options = (
+                    int(AVAudioSessionCategoryOptionAllowBluetoothA2DP or 0)
+                    | int(AVAudioSessionCategoryOptionDefaultToSpeaker or 0)
+                )
+            else:
+                chosen_category_obj = AVAudioSessionCategoryPlayback
+                target_category = str(AVAudioSessionCategoryPlayback)
+                target_options = int(AVAudioSessionCategoryOptionAllowBluetoothA2DP or 0)
+
             target_mode = str(AVAudioSessionModeDefault) if AVAudioSessionModeDefault else None
-            target_options = int(AVAudioSessionCategoryOptionAllowBluetoothA2DP or 0)
             target_signature = (target_category, target_mode, target_options, route_sig)
+            before = self._capture_audio_session_runtime(session)
             current_category = None
             current_mode = None
             try:
@@ -404,31 +568,40 @@ class AVFoundationPlayer:
                 )
                 return
 
+            if is_bluetooth:
+                logger.info(
+                    "🎧 Bluetooth output detected, using PlayAndRecord category for route=%s",
+                    route_sig,
+                )
+
             if (
                 target_mode is not None
                 and hasattr(session, "setCategory_mode_options_error_")
             ):
                 session.setCategory_mode_options_error_(
-                    AVAudioSessionCategoryPlayback,
+                    chosen_category_obj,
                     AVAudioSessionModeDefault,
                     target_options,
                     None,
                 )
             elif hasattr(session, "setCategory_withOptions_error_"):
                 session.setCategory_withOptions_error_(
-                    AVAudioSessionCategoryPlayback, target_options, None
+                    chosen_category_obj, target_options, None
                 )
             else:
-                session.setCategory_error_(AVAudioSessionCategoryPlayback, None)
+                session.setCategory_error_(chosen_category_obj, None)
             session.setActive_error_(True, None)
             self._last_audio_session_signature = target_signature
+            after = self._capture_audio_session_runtime(session)
             logger.info(
-                "AUDIO_SESSION_PROFILE reason=%s applied=true category=%s mode=%s options=%s route=%s",
+                "AUDIO_SESSION_PROFILE reason=%s applied=true category=%s mode=%s options=%s route=%s before=%s after=%s",
                 reason,
                 target_category,
                 target_mode,
                 target_options,
                 route_sig,
+                before,
+                after,
             )
         except Exception as e:
             logger.warning(
@@ -468,7 +641,9 @@ class AVFoundationPlayer:
                     self._engine_restart_last_warn = now
 
                 # CRITICAL: Reconnect playerNode to mixer before starting
-                # Connection may be lost when engine stops
+                # Connection may be lost when engine stops.
+                # Must disconnect first to clear stale connections that silently
+                # swallow scheduled buffers without rendering them.
                 try:
                     mixer = self._engine.mainMixerNode()
                     fmt = (
@@ -479,8 +654,13 @@ class AVFoundationPlayer:
                             False,
                         )
                     )
+                    # Disconnect stale output first
+                    try:
+                        self._engine.disconnectNodeOutput_(self._player_node)
+                    except Exception:
+                        pass
                     self._engine.connect_to_format_(self._player_node, mixer, fmt)
-                    logger.info("🔗 Reconnected playerNode to mixer")
+                    logger.info("🔗 Reconnected playerNode to mixer (with disconnect)")
                 except Exception as conn_e:
                     logger.warning(f"⚠️ Connection warning (may already exist): {conn_e}")
 
@@ -518,6 +698,23 @@ class AVFoundationPlayer:
             logger.error(traceback.format_exc())
             if getattr(self, "_engine_restart_in_progress", False):
                 self._engine_restart_in_progress = False
+            return False
+
+    def _maybe_recreate_for_render_stall(self, *, reason: str) -> bool:
+        """
+        Best-effort self-heal for runtime render stalls.
+        Rate-limited to avoid recreate storms.
+        """
+        now = time.monotonic()
+        if (now - self._last_render_heal_ts) < 2.0:
+            return False
+        self._last_render_heal_ts = now
+        try:
+            logger.warning("⚠️ Render stall detected (%s), recreating AVF player", reason)
+            self.recreate()
+            return True
+        except Exception as e:
+            logger.error(f"❌ Render self-heal failed ({reason}): {e}")
             return False
 
     def stop_playback(self) -> None:
@@ -562,8 +759,15 @@ class AVFoundationPlayer:
             logger.debug(
                 f"🔍 is_playing check: _playing={self._playing}, thread_alive={thread_alive}, engine_running={engine_running}, player_playing={player_playing}"
             )
-        # Consider active only when there is queued/scheduled audio.
-        return self._playing and thread_alive and (queue_non_empty or buffered_sec > 0.02)
+        # Consider active only when render path is actually alive.
+        # This prevents false-ready state where chunks are queued but player node is not rendering.
+        return (
+            self._playing
+            and thread_alive
+            and engine_running
+            and player_playing
+            and (queue_non_empty or buffered_sec > 0.02)
+        )
 
     def is_queue_empty(self) -> bool:
         """Check if audio queue is empty."""
@@ -631,8 +835,10 @@ class AVFoundationPlayer:
                         f"📊 [QUEUE_EXTRACT] peak={queue_peak:.6f}, first_10={first_10[:5]}"
                     )
                     if queue_peak == 0:
-                        logger.error(
-                            "❌ [QUEUE_EXTRACT] Audio data is ZERO after extraction from queue!"
+                        # Zero-valued chunks are expected on silence tails in streaming TTS.
+                        # Keep this as debug telemetry to avoid noisy false-positive errors.
+                        logger.debug(
+                            "🔇 [QUEUE_EXTRACT] Audio data is ZERO after extraction from queue"
                         )
 
                 if frame_count == 0:
@@ -659,6 +865,7 @@ class AVFoundationPlayer:
 
                 # Log pre-copy peak for diagnostics (use full array, not just first 100)
                 pre_peak = float(np.max(np.abs(audio_data)))
+                write_peak = pre_peak
                 if self._audio_diag_verbose and (chunk_kind == "grpc_audio" or (self._diag_chunk_counter % self._audio_diag_log_every) == 0):
                     try:
                         pre_rms = float(np.sqrt(np.mean(np.square(audio_data.astype(np.float32)))))
@@ -675,99 +882,90 @@ class AVFoundationPlayer:
                 if self._audio_diag_verbose:
                     logger.debug(f"📊 Pre-copy peak (FULL): {pre_peak:.4f}, samples={frame_count}")
 
-                # CRITICAL FIX: Copy audio data to buffer
-                # PyObjC objc.varlist indexed assignment doesn't actually write to memory
-                # We need an alternative approach
+                # Write float32 samples directly into AVAudioPCMBuffer channel memory.
+                # objc.varlist supports `as_buffer(count)` which exposes writable memoryview.
                 try:
-                    # Prepare contiguous float32 array
                     audio_contiguous = np.ascontiguousarray(audio_data, dtype=np.float32)
+                    raw = ptr.as_buffer(frame_count)
+                    dst = np.frombuffer(raw, dtype=np.float32, count=frame_count)
+                    dst[:] = audio_contiguous
+                    write_peak = float(np.max(np.abs(dst))) if dst.size else 0.0
 
-                    # Method 1: Try to get actual memory pointer from objc.varlist
-                    # Each element in floatChannelData is a pointer to float buffer
-                    # In PyObjC, we can try to get the underlying pointer address
+                    if self._audio_diag_verbose:
+                        test_idx = 0
+                        for i in range(min(1000, frame_count)):
+                            if abs(audio_contiguous[i]) > 0.01:
+                                test_idx = i
+                                break
+                        read_back = float(ptr[test_idx])
+                        logger.debug(
+                            "📊 Buffer write check: idx=%s wrote=%.6f read=%.6f",
+                            test_idx,
+                            float(audio_contiguous[test_idx]),
+                            read_back,
+                        )
 
-                    buffer_ptr = None
-
-                    # Try __pyobjc_object__ which returns raw pointer address
-                    if hasattr(ptr, "__pyobjc_object__"):
-                        buffer_ptr = ptr.__pyobjc_object__
-
-                    # Try getting pointer from buffer directly
-                    if buffer_ptr is None:
-                        # Get the internal pointer via objc internals
-                        # floatChannelData returns float** (array of pointers)
-                        # We need the first pointer (channel 0)
-                        try:
-                            # Use the buffer object's internal float pointer
-                            # AVAudioPCMBuffer stores floatChannelData as float** at a known offset
-
-                            # Get NSData representation of float buffer for direct access
-                            # Alternative: use mutableBytes on a wrapper
-
-                            # Last resort: iterate and hope assignment works (it doesn't but let's verify)
-                            # Find a non-zero sample for testing
-                            test_idx = 0
-                            test_value = 0.5  # Use a known non-zero test value
-                            for i in range(min(1000, frame_count)):
-                                if abs(audio_contiguous[i]) > 0.01:
-                                    test_idx = i
-                                    test_value = float(audio_contiguous[i])
-                                    break
-                            else:
-                                # No non-zero found in first 1000, use a known test value
-                                test_value = 0.5
-
-                            # Write test value
-                            ptr[test_idx] = test_value
-
-                            # Check if it actually wrote
-                            read_back = float(ptr[test_idx])
-                            if self._audio_diag_verbose:
-                                logger.debug(
-                                    f"📊 Test write: idx={test_idx}, wrote {test_value:.6f}, read back {read_back:.6f}"
-                                )
-
-                            if abs(read_back - test_value) < 0.0001:
-                                # It works! Do full copy
-                                for i in range(frame_count):
-                                    ptr[i] = float(audio_contiguous[i])
-                                if self._audio_diag_verbose:
-                                    logger.info(
-                                        f"✅ PyObjC indexed assignment worked for {frame_count} samples"
-                                    )
-                            else:
-                                # Indexed assignment doesn't work, try struct pack
-                                logger.warning(
-                                    f"⚠️ Indexed assignment failed - read back {read_back}, expected {test_value}"
-                                )
-                                raise RuntimeError("Indexed assignment doesn't work")
-
-                        except Exception as direct_e:
-                            logger.warning(f"⚠️ Direct pointer access failed: {direct_e}")
-                            raise
-
-                    if buffer_ptr is not None and isinstance(buffer_ptr, int):
-                        # Use ctypes.memmove with the pointer address
-                        ctypes.memmove(buffer_ptr, audio_contiguous.ctypes.data, frame_count * 4)
-                        logger.debug(f"📊 memmove completed: {frame_count} samples")
+                    # Guard against silent/corrupted writes with non-silent source.
+                    if pre_peak > 0.02 and write_peak < (pre_peak * 0.15):
+                        self._write_mismatch_streak += 1
+                        logger.warning(
+                            "⚠️ Buffer write mismatch: src_peak=%.4f write_peak=%.4f streak=%s",
+                            pre_peak,
+                            write_peak,
+                            self._write_mismatch_streak,
+                        )
+                    else:
+                        self._write_mismatch_streak = 0
 
                 except Exception as copy_e:
-                    logger.error(f"❌ All copy methods failed: {copy_e}")
-                    logger.error("❌ AUDIO WILL BE SILENT - unable to write to AVAudioPCMBuffer")
+                    logger.error(f"❌ Buffer memory write failed: {copy_e}")
+                    logger.error("❌ AUDIO MAY BE SILENT - unable to write AVAudioPCMBuffer memory")
 
                 # Ensure engine is running before scheduling buffer
                 if not self._ensure_engine_running():
                     logger.warning("⚠️ Engine not running, waiting before retry...")
+                    # Do not drop chunk on transient engine outage.
+                    self._audio_queue.put(chunk)
                     time.sleep(0.2)  # Prevent tight loop when engine is down
                     continue
 
                 player_node = self._player_node
                 if player_node is None:
                     logger.error("❌ Cannot schedule buffer - player node unavailable")
+                    # Preserve chunk and try recovery.
+                    self._audio_queue.put(chunk)
+                    self._maybe_recreate_for_render_stall(reason="player_node_unavailable")
+                    continue
+
+                # Guard against a stale node state: engine may run while node is paused/stopped.
+                try:
+                    if not player_node.isPlaying():
+                        player_node.play()
+                        logger.warning("⚠️ Player node was not playing; resumed before scheduling chunk")
+                    if not player_node.isPlaying():
+                        logger.error("❌ Player node still not playing after resume")
+                        self._audio_queue.put(chunk)
+                        if self._maybe_recreate_for_render_stall(reason="player_not_playing"):
+                            time.sleep(0.1)
+                        continue
+                except Exception as play_e:
+                    logger.warning(f"⚠️ Could not resume player node: {play_e}")
+                    self._audio_queue.put(chunk)
+                    if self._maybe_recreate_for_render_stall(reason="player_resume_exception"):
+                        time.sleep(0.1)
                     continue
 
                 # Schedule buffer for playback
-                player_node.scheduleBuffer_completionHandler_(buffer, None)
+                def _on_buffer_consumed(chunk_num=self._diag_chunk_counter, fc=frame_count):
+                    logger.info(f"✅ [BUFFER_CONSUMED] chunk={chunk_num} frames={fc} — engine rendered this buffer")
+
+                player_node.scheduleBuffer_completionHandler_(buffer, _on_buffer_consumed)
+                if self._write_mismatch_streak >= 3:
+                    logger.error("❌ Repeated buffer write mismatches, attempting self-heal recreate")
+                    self._write_mismatch_streak = 0
+                    if self._maybe_recreate_for_render_stall(reason="write_peak_mismatch"):
+                        time.sleep(0.1)
+                        continue
                 if cue_id is not None:
                     logger.info(
                         "CUE_TRACE phase=avf.render_start cue_id=%s pattern=%s frames=%s",
@@ -780,13 +978,6 @@ class AVFoundationPlayer:
                 try:
                     engine_running = self._engine.isRunning() if self._engine else False
                     player_playing = player_node.isPlaying() if player_node else False
-
-                    # Check buffer amplitude - use middle of buffer since beginning may be silent
-                    mid = frame_count // 2
-                    check_range = range(max(0, mid - 50), min(frame_count, mid + 50))
-                    peak = (
-                        max(abs(ptr[i]) for i in check_range) if len(list(check_range)) > 0 else 0.0
-                    )
 
                     # Check output format (only first time)
                     if frame_count > 0 and not hasattr(self, "_format_logged"):
@@ -804,7 +995,12 @@ class AVFoundationPlayer:
 
                     if self._audio_diag_verbose:
                         logger.debug(
-                            f"▶️ Scheduled chunk: {frame_count} frames | peak={peak:.4f} | engine={engine_running}, player={player_playing}"
+                            "▶️ Scheduled chunk: %s frames | src_peak=%.4f written_peak=%.4f | engine=%s, player=%s",
+                            frame_count,
+                            pre_peak,
+                            write_peak,
+                            engine_running,
+                            player_playing,
                         )
                     elif (self._diag_chunk_counter % self._audio_diag_log_every) == 0:
                         logger.debug(
@@ -828,6 +1024,41 @@ class AVFoundationPlayer:
         # Выход из цикла
         logger.info(f"🛑 _playback_loop exited. _playing={self._playing}")
 
+    def _play_diagnostic_tone(self, engine, player_node) -> None:
+        """Play a short diagnostic beep through the RUNNING engine to verify output works."""
+        import math
+        sr = self.config.sample_rate
+        duration = 0.3  # 300ms beep
+        freq = 880.0  # A5 — clearly audible
+        frame_count = int(sr * duration)
+        t = np.arange(frame_count, dtype=np.float32) / sr
+        tone = (0.3 * np.sin(2.0 * math.pi * freq * t)).astype(np.float32)
+
+        fmt = AVAudioFormat.alloc().initWithCommonFormat_sampleRate_channels_interleaved_(
+            1, sr, self.config.channels, False
+        )
+        buf = AVAudioPCMBuffer.alloc().initWithPCMFormat_frameCapacity_(fmt, frame_count)
+        buf.setFrameLength_(frame_count)
+        ptr = buf.floatChannelData()[0]
+        raw = ptr.as_buffer(frame_count)
+        dst = np.frombuffer(raw, dtype=np.float32, count=frame_count)
+        dst[:] = tone
+
+        peak = float(np.max(np.abs(dst)))
+        out_fmt = engine.outputNode().outputFormatForBus_(0)
+        logger.info(
+            "🔔 [DIAG_TONE] Playing 300ms test tone: freq=%sHz, peak=%.4f, "
+            "output=%sHz/%sch, engine=%s, player=%s",
+            freq, peak, out_fmt.sampleRate(), out_fmt.channelCount(),
+            engine.isRunning(), player_node.isPlaying(),
+        )
+
+        def _on_diag_done():
+            logger.info("✅ [DIAG_TONE] Diagnostic tone buffer was consumed by engine")
+
+        player_node.scheduleBuffer_completionHandler_(buf, _on_diag_done)
+        logger.info("🔔 [DIAG_TONE] Scheduled — if you hear a beep, engine works!")
+
     def recreate(self) -> None:
         """Recreate engine for new output device."""
         with self._lock:
@@ -843,6 +1074,9 @@ class AVFoundationPlayer:
 
             self._engine = None
             self._player_node = None
+
+        # Reset audio session cache so category is re-evaluated for new device type
+        self._last_audio_session_signature = None
 
         # Reinitialize
         if self.initialize() and was_playing:

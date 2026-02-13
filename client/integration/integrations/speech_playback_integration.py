@@ -75,10 +75,14 @@ class SpeechPlaybackIntegration:
         self._audio_diag_verbose = bool(self.config.get("audio_diag_verbose", False))
         self._audio_diag_log_every = max(1, int(self.config.get("audio_diag_log_every", 50)))
         self._signal_max_age_ms = max(0, int(self.config.get("signal_max_age_ms", 1200)))
-        self._tts_auto_gain_enabled = bool(self.config.get("tts_auto_gain_enabled", True))
+        self._tts_auto_gain_enabled = bool(self.config.get("tts_auto_gain_enabled", False))
         self._tts_target_peak = float(self.config.get("tts_target_peak", 0.35))
         self._tts_max_gain = float(self.config.get("tts_max_gain", 6.0))
         self._tts_min_peak_for_gain = float(self.config.get("tts_min_peak_for_gain", 0.01))
+        # Anti-clipping defaults for streamed TTS chunks.
+        self._tts_safe_max_gain = float(self.config.get("tts_safe_max_gain", 2.5))
+        self._tts_headroom_peak = float(self.config.get("tts_headroom_peak", 0.90))
+        self._tts_gain_ema_alpha = float(self.config.get("tts_gain_ema_alpha", 0.25))
 
         self._avf_player: Any | None = None  # type: ignore[type-arg]
 
@@ -110,7 +114,15 @@ class SpeechPlaybackIntegration:
 
         # Session switch detection - prevents audio overlap
         self._current_session_id: str | None = None
-        self._tts_gain_by_session: dict[str, float] = {}
+        self._active_output_session_id: str | None = None
+        self._tts_peak_ema_by_session: dict[str, float] = {}
+        # gRPC playback start confirmation (single owner diagnostics).
+        self._grpc_start_confirmed_sessions: set[str] = set()
+        self._grpc_start_reasserted_sessions: set[str] = set()
+        self._grpc_start_watchdogs: dict[str, asyncio.Task[Any]] = {}
+        self._grpc_start_watchdog_timeout_sec: float = float(
+            self.config.get("grpc_start_watchdog_timeout_sec", 0.25)
+        )
 
     async def initialize(self) -> bool:
         try:
@@ -228,10 +240,13 @@ class SpeechPlaybackIntegration:
                     else:
                         logger.error("❌ [AUDIO] AVFoundationPlayer on-demand init failed")
                         return False
-                if not self._avf_player.is_playing():
-                    if not self._avf_player.start_playback():
-                        logger.error("❌ [AUDIO] Failed to start AVFoundationPlayer playback")
-                        return False
+                # IMPORTANT: always call start_playback().
+                # AVFoundationPlayer.start_playback() is idempotent and re-asserts
+                # playback AVAudioSession profile even on no-op path. This restores
+                # output after microphone/input path may have reconfigured session.
+                if not self._avf_player.start_playback():
+                    logger.error("❌ [AUDIO] Failed to (re)start AVFoundationPlayer playback")
+                    return False
                 return True
             except Exception as e:
                 logger.error(f"❌ [AUDIO] Ensure player ready failed: {e}")
@@ -256,6 +271,7 @@ class SpeechPlaybackIntegration:
         audio_data: np.ndarray,
         metadata: dict[str, Any],
         trace_extra: str,
+        source: str,
         started_payload: dict[str, Any] | None = None,
     ) -> bool:
         """Single owner for enqueue/start semantics across grpc and raw_audio paths."""
@@ -280,8 +296,30 @@ class SpeechPlaybackIntegration:
                 pass
 
         async with self._playback_op_lock:
+            # Fresh-start policy for streamed gRPC sessions:
+            # first chunk of a new session must reset output graph to avoid
+            # stale/no-audio path after input/mic reconfiguration.
+            sid_key = str(session_id) if session_id is not None else None
+            first_chunk_of_new_grpc_session = (
+                source == "grpc_audio"
+                and sid_key is not None
+                and self._active_output_session_id is not None
+                and not self._had_audio_for_session.get(session_id)
+                and sid_key != self._active_output_session_id
+            )
+            if first_chunk_of_new_grpc_session:
+                logger.info(
+                    "AUDIO_FRESH_START session=%s prev_session=%s reason=grpc_session_first_chunk",
+                    sid_key,
+                    self._active_output_session_id,
+                )
+                self._stop_player_locked()
+
             if not await self._ensure_player_ready():
                 return False
+
+            if source == "grpc_audio":
+                self._confirm_grpc_start_locked(session_id)
 
             if not self._had_audio_for_session.get(session_id):
                 ts_ms = int(time.monotonic() * 1000)
@@ -295,12 +333,75 @@ class SpeechPlaybackIntegration:
 
             self._avf_player.add_audio_data(audio_data, metadata=metadata)
             self._had_audio_for_session[session_id] = True
+            if sid_key is not None:
+                self._active_output_session_id = sid_key
 
             try:
                 self._last_audio_ts = self._loop.time() if self._loop else time.time()
             except Exception:
                 pass
         return True
+
+    def _confirm_grpc_start_locked(self, session_id: Any) -> None:
+        sid = str(session_id) if session_id is not None else "None"
+        if sid in self._grpc_start_confirmed_sessions:
+            return
+        route = None
+        engine_running = None
+        player_playing = None
+        try:
+            if self._avf_player and hasattr(self._avf_player, "get_playback_runtime_status"):
+                snap = self._avf_player.get_playback_runtime_status()
+                route = snap.get("route")
+                engine_running = snap.get("engine_running")
+                player_playing = snap.get("player_playing")
+        except Exception:
+            pass
+        logger.info(
+            "AUDIO_GRPC_START_CONFIRMED session=%s route=%s engine_running=%s player_playing=%s",
+            sid,
+            route,
+            engine_running,
+            player_playing,
+        )
+        self._grpc_start_confirmed_sessions.add(sid)
+        task = self._grpc_start_watchdogs.pop(sid, None)
+        if task and not task.done():
+            task.cancel()
+
+    async def _grpc_start_watchdog(self, session_id: Any) -> None:
+        sid = str(session_id) if session_id is not None else "None"
+        try:
+            await asyncio.sleep(self._grpc_start_watchdog_timeout_sec)
+            if sid in self._grpc_start_confirmed_sessions:
+                return
+            if sid in self._grpc_start_reasserted_sessions:
+                return
+            self._grpc_start_reasserted_sessions.add(sid)
+            async with self._playback_op_lock:
+                ready = await self._ensure_player_ready()
+                logger.warning(
+                    "AUDIO_GRPC_START_REASSERT session=%s ready=%s timeout_sec=%.3f",
+                    sid,
+                    ready,
+                    self._grpc_start_watchdog_timeout_sec,
+                )
+                if ready:
+                    self._confirm_grpc_start_locked(session_id)
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            await self._handle_error(e, where="speech.grpc_start_watchdog", severity="warning")
+
+    def _clear_grpc_start_tracking(self, session_id: Any) -> None:
+        sid = str(session_id) if session_id is not None else None
+        if sid is None:
+            return
+        self._grpc_start_confirmed_sessions.discard(sid)
+        self._grpc_start_reasserted_sessions.discard(sid)
+        task = self._grpc_start_watchdogs.pop(sid, None)
+        if task and not task.done():
+            task.cancel()
 
     async def _emit_terminal_playback_event(
         self,
@@ -364,6 +465,13 @@ class SpeechPlaybackIntegration:
 
             if sid is not None:
                 self.state_manager.update_session_id(str(sid))
+                sid_key = str(sid)
+                if sid_key not in self._grpc_start_confirmed_sessions:
+                    task = self._grpc_start_watchdogs.get(sid_key)
+                    if task is None or task.done():
+                        self._grpc_start_watchdogs[sid_key] = asyncio.create_task(
+                            self._grpc_start_watchdog(sid)
+                        )
 
             audio_bytes: bytes = data.get("bytes") or b""
             dtype: str = (data.get("dtype") or "int16").lower()
@@ -495,30 +603,46 @@ class SpeechPlaybackIntegration:
                 sid_key = str(sid) if sid is not None else None
                 if self._tts_auto_gain_enabled and arr_play.size > 0:
                     peak = float(np.max(np.abs(arr_play)))
-                    if peak > 0.0:
-                        gain = self._tts_gain_by_session.get(sid_key) if sid_key else None
-                        if gain is None:
-                            if peak >= self._tts_min_peak_for_gain:
-                                gain = min(
-                                    self._tts_max_gain, self._tts_target_peak / max(peak, 1e-6)
-                                )
-                                gain = max(1.0, gain)
-                                if sid_key is not None:
-                                    self._tts_gain_by_session[sid_key] = gain
-                            else:
-                                # Do not pin session gain from near-silent leading chunk.
-                                # Re-evaluate on next meaningful chunk.
-                                gain = 1.0
-                        if gain > 1.0:
-                            arr_play = np.clip(arr_play * gain, -0.98, 0.98)
-                            if self._audio_diag_verbose:
-                                logger.info(
-                                    "🔊 [AUDIO_GAIN] session=%s gain=%.2f peak_before=%.4f target_peak=%.2f",
-                                    sid,
-                                    gain,
-                                    peak,
-                                    self._tts_target_peak,
-                                )
+                    gain = 1.0
+                    if peak >= self._tts_min_peak_for_gain:
+                        max_gain = max(1.0, min(self._tts_max_gain, self._tts_safe_max_gain))
+                        prev_ema = self._tts_peak_ema_by_session.get(sid_key, peak) if sid_key else peak
+                        alpha = min(1.0, max(0.01, self._tts_gain_ema_alpha))
+                        ema_peak = (1.0 - alpha) * prev_ema + alpha * peak
+                        if sid_key is not None:
+                            self._tts_peak_ema_by_session[sid_key] = float(ema_peak)
+
+                        gain = min(max_gain, self._tts_target_peak / max(float(ema_peak), 1e-6))
+                        gain = max(1.0, gain)
+
+                        # Keep headroom by constraining gain with current chunk peak.
+                        headroom_limit = max(0.1, min(0.98, self._tts_headroom_peak))
+                        if peak * gain > headroom_limit:
+                            gain = min(gain, headroom_limit / max(peak, 1e-6))
+                            gain = max(1.0, gain)
+                    elif sid_key is not None:
+                        # Keep EMA stable during near-silent chunks, but avoid stale growth.
+                        self._tts_peak_ema_by_session[sid_key] = float(
+                            self._tts_peak_ema_by_session.get(sid_key, peak) * 0.9
+                        )
+
+                    if gain > 1.0:
+                        arr_play = arr_play * gain
+                    arr_play = np.clip(arr_play, -0.98, 0.98)
+
+                    if self._audio_diag_verbose:
+                        clipped_samples = int(np.count_nonzero(np.abs(arr_play) >= 0.979))
+                        clip_ratio = (
+                            float(clipped_samples) / float(arr_play.size) if arr_play.size > 0 else 0.0
+                        )
+                        logger.info(
+                            "🔊 [AUDIO_GAIN] session=%s gain=%.2f peak_before=%.4f target_peak=%.2f clip_ratio=%.4f",
+                            sid,
+                            gain,
+                            peak,
+                            self._tts_target_peak,
+                            clip_ratio,
+                        )
 
                 metadata = {
                     "kind": "grpc_audio",
@@ -532,6 +656,7 @@ class SpeechPlaybackIntegration:
                     audio_data=arr_play,
                     metadata=metadata,
                     trace_extra=f"chunk_size={len(audio_bytes)}",
+                    source="grpc_audio",
                 )
 
             except Exception as e:
@@ -541,9 +666,49 @@ class SpeechPlaybackIntegration:
             await self._handle_error(e, where="speech.on_audio_chunk", severity="warning")
 
     async def _on_voice_mic_closed(self, event):
-        # AVFoundation handles route changes automatically
-        # No manual resync needed
-        pass
+        if not self._running or not self._avf_player:
+            return
+
+        # Centralized post-mic recovery hook.
+        # Mic path may transiently reconfigure route/session; playback owner
+        # re-asserts runtime profile through idempotent start path.
+        is_playing = False
+        try:
+            is_playing = bool(self._avf_player.is_playing())
+        except Exception:
+            is_playing = False
+        if not (is_playing or self._current_session_id):
+            return
+
+        sid = None
+        try:
+            data = (event or {}).get("data", {}) if isinstance(event, dict) else {}
+            sid = data.get("session_id")
+        except Exception:
+            data = {}
+
+        try:
+            status_before = self._avf_player.get_playback_runtime_status()
+        except Exception:
+            status_before = {}
+
+        try:
+            async with self._playback_op_lock:
+                recovered = await self._ensure_player_ready()
+                try:
+                    status_after = self._avf_player.get_playback_runtime_status()
+                except Exception:
+                    status_after = {}
+
+            logger.info(
+                "AUDIO_MIC_RECOVERY session=%s recovered=%s before=%s after=%s",
+                sid,
+                recovered,
+                status_before,
+                status_after,
+            )
+        except Exception as e:
+            await self._handle_error(e, where="speech.on_voice_mic_closed", severity="warning")
 
     async def _on_raw_audio(self, event: dict[str, Any]):
         try:
@@ -586,6 +751,7 @@ class SpeechPlaybackIntegration:
                 audio_data=audio_data,
                 metadata=meta,
                 trace_extra=f"pattern={pattern}, raw_audio=true",
+                source="raw_audio",
                 started_payload={"pattern": pattern},
             )
             if not queued:
@@ -740,68 +906,15 @@ class SpeechPlaybackIntegration:
             sid = data.get("session_id")
             now = time.monotonic()
 
-            # Немедленная остановка плеера
             async with self._playback_op_lock:
-                if self._avf_player:
-                    try:
-                        self._avf_player.clear_queue()
-                        self._avf_player.stop_playback()
-                        logger.info("🛑 SpeechPlayback: плеер остановлен синхронно")
-                    except Exception as e:
-                        logger.error(f"❌ SpeechPlayback: ошибка остановки плеера: {e}")
+                self._stop_player_locked()
 
-            # Guard: дедуп отмены для одного sid в коротком окне
-            if (
-                sid is not None
-                and self._last_cancel_sid == sid
-                and (now - self._last_cancel_ts) < self._cancel_guard_window_sec
-            ):
+            if self._is_cancel_dedup(sid, now):
                 logger.debug("🛑 SpeechPlayback: cancel dedup (sid=%s)", sid)
                 return
 
-            # Обновляем cancel guard
-            self._cancel_in_flight = True
-            self._last_cancel_sid = sid
-            self._last_cancel_ts = now
-            self._signal_block_until_ts = now + self._cancel_guard_window_sec
-            if self._cancel_guard_task and not self._cancel_guard_task.done():
-                self._cancel_guard_task.cancel()
-            self._cancel_guard_task = asyncio.create_task(self._reset_cancel_guard())
-
-            if sid:
-                # КРИТИЧНО: Добавляем в cancelled_sessions ТОЛЬКО если для этой сессии
-                # уже было получено аудио (had_audio_for_session check).
-                had_audio = self._had_audio_for_session.get(sid, False)
-                if had_audio:
-                    self._cancelled_sessions.add(sid)
-                    logger.debug(
-                        f"🛑 SpeechPlayback: session {sid} added to cancelled_sessions (had_audio=True)"
-                    )
-                else:
-                    logger.debug(
-                        f"🛑 SpeechPlayback: skip cancelled_sessions for {sid} (no audio yet)"
-                    )
-                self._terminal_event_by_session[str(sid)] = "playback.cancelled"
-
-            # Cancel silence task if any
-            if self._silence_task and not self._silence_task.done():
-                self._silence_task.cancel()
-
-            # КРИТИЧНО: Сохраняем had_audio ДО очистки для корректного логирования
-            had_audio_before_cleanup = False
-            if sid is not None:
-                had_audio_before_cleanup = self._had_audio_for_session.get(sid, False)
-
-            # Сброс локальных флагов воспроизведения
-            if sid:
-                self._had_audio_for_session.pop(sid, None)
-                self._tts_gain_by_session.pop(str(sid), None)
-                # Отмена — терминальное состояние, помечаем finalized чтобы не допустить completed позже.
-                self._finalized_sessions[sid] = True
-                self._raw_sessions.discard(str(sid))
-                # Reset current session on cancel
-                if self._current_session_id == sid:
-                    self._current_session_id = None
+            self._arm_cancel_guard(sid, now)
+            had_audio_before_cleanup = self._apply_cancel_state(sid, source="unified_interrupt")
 
             # КРИТИЧНО: На cancel НЕ публикуем playback.completed.
             # Terminal событие уже playback.cancelled (source of truth для cancel-ветки).
@@ -831,61 +944,82 @@ class SpeechPlaybackIntegration:
         finally:
             self._cancel_in_flight = False
 
+    def _stop_player_locked(self) -> None:
+        if not self._avf_player:
+            return
+        try:
+            self._avf_player.clear_queue()
+            self._avf_player.stop_playback()
+            logger.info("🛑 SpeechPlayback: плеер остановлен синхронно")
+        except Exception as e:
+            logger.error(f"❌ SpeechPlayback: ошибка остановки плеера: {e}")
+
+    def _is_cancel_dedup(self, sid: Any, now: float) -> bool:
+        return (
+            sid is not None
+            and self._last_cancel_sid == sid
+            and (now - self._last_cancel_ts) < self._cancel_guard_window_sec
+        )
+
+    def _arm_cancel_guard(self, sid: Any, now: float) -> None:
+        self._cancel_in_flight = True
+        self._last_cancel_sid = sid
+        self._last_cancel_ts = now
+        self._signal_block_until_ts = now + self._cancel_guard_window_sec
+        if self._cancel_guard_task and not self._cancel_guard_task.done():
+            self._cancel_guard_task.cancel()
+        self._cancel_guard_task = asyncio.create_task(self._reset_cancel_guard())
+
+    def _apply_cancel_state(self, sid: Any, *, source: str) -> bool:
+        if self._silence_task and not self._silence_task.done():
+            self._silence_task.cancel()
+
+        had_audio_before_cleanup = False
+        if sid is not None:
+            had_audio_before_cleanup = self._had_audio_for_session.get(sid, False)
+
+        if sid:
+            if had_audio_before_cleanup:
+                self._cancelled_sessions.add(sid)
+                logger.info(
+                    "🛑 SpeechPlayback: session %s added to cancelled_sessions (had_audio=True, source=%s)",
+                    sid,
+                    source,
+                )
+            else:
+                logger.info(
+                    "🛑 SpeechPlayback: skip cancelled_sessions for %s (no audio yet, source=%s)",
+                    sid,
+                    source,
+                )
+
+            self._had_audio_for_session.pop(sid, None)
+            self._tts_peak_ema_by_session.pop(str(sid), None)
+            self._clear_grpc_start_tracking(sid)
+            self._finalized_sessions[sid] = True
+            self._raw_sessions.discard(str(sid))
+            if self._current_session_id == sid:
+                self._current_session_id = None
+            if self._active_output_session_id == str(sid):
+                self._active_output_session_id = None
+
+        return had_audio_before_cleanup
+
     async def _on_grpc_cancel(self, event: dict[str, Any]):
         """Отмена активного воспроизведения по запросу gRPC."""
         try:
-            async with self._playback_op_lock:
-                if self._avf_player:
-                    try:
-                        self._avf_player.clear_queue()
-                        self._avf_player.stop_playback()
-                    except Exception:
-                        pass
-
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             now = time.monotonic()
-            if sid:
-                self._tts_gain_by_session.pop(str(sid), None)
-                # КРИТИЧНО: Добавляем в cancelled_sessions ТОЛЬКО если для этой сессии
-                # уже было получено аудио. Иначе cancel пришёл раньше аудио и заблокирует воспроизведение.
-                had_audio = self._had_audio_for_session.get(sid, False)
-                if had_audio:
-                    self._cancelled_sessions.add(sid)
-                    # Terminal cancel path: mark finalized to prevent later duplicate terminal events.
-                    self._finalized_sessions[sid] = True
-                    logger.info(
-                        f"🛑 SpeechPlayback: session {sid} added to cancelled_sessions (had_audio=True)"
-                    )
-                else:
-                    logger.info(
-                        f"🛑 SpeechPlayback: skip cancelled_sessions for {sid} (no audio received yet, cancel before playback)"
-                    )
+            async with self._playback_op_lock:
+                self._stop_player_locked()
 
-            # Guard: не публикуем повторный playback.cancelled для того же sid в коротком окне
-            if (
-                sid is not None
-                and self._last_cancel_sid == sid
-                and (now - self._last_cancel_ts) < self._cancel_guard_window_sec
-            ):
+            if self._is_cancel_dedup(sid, now):
                 logger.debug("🛑 SpeechPlayback: grpc_cancel dedup (sid=%s)", sid)
                 return
 
-            # Guard: if cancel is already in-flight, avoid emitting another playback.cancelled.
-            if sid is not None and self._cancel_in_flight:
-                logger.debug(
-                    "🛑 SpeechPlayback: grpc_cancel skipped (cancel_in_flight, sid=%s)", sid
-                )
-                return
-
-            # Update dedup window on grpc_cancel path as well.
-            self._cancel_in_flight = True
-            self._last_cancel_sid = sid
-            self._last_cancel_ts = now
-            self._signal_block_until_ts = now + self._cancel_guard_window_sec
-            if self._cancel_guard_task and not self._cancel_guard_task.done():
-                self._cancel_guard_task.cancel()
-            self._cancel_guard_task = asyncio.create_task(self._reset_cancel_guard())
+            self._arm_cancel_guard(sid, now)
+            self._apply_cancel_state(sid, source="grpc_cancel")
 
             await self._emit_terminal_playback_event(
                 "playback.cancelled",
@@ -940,7 +1074,8 @@ class SpeechPlaybackIntegration:
                             logger.info(
                                 f"SpeechPlayback: finalized session {sid} (no audio received)"
                             )
-                        self._tts_gain_by_session.pop(str(sid), None)
+                        self._tts_peak_ema_by_session.pop(str(sid), None)
+                        self._clear_grpc_start_tracking(sid)
         except Exception as e:
             await self._handle_error(e, where="speech.grpc_completed", severity="warning")
 
@@ -955,7 +1090,8 @@ class SpeechPlaybackIntegration:
 
             if sid:
                 self._grpc_done_sessions[sid] = True
-                self._tts_gain_by_session.pop(str(sid), None)
+                self._tts_peak_ema_by_session.pop(str(sid), None)
+                self._clear_grpc_start_tracking(sid)
 
             # TRACE: завершение воспроизведения с ошибкой
             ts_ms = int(time.monotonic() * 1000)
@@ -1059,7 +1195,8 @@ class SpeechPlaybackIntegration:
                 if published:
                     logger.info(f"SpeechPlayback: finalized session {session_id}")
                 self._raw_sessions.discard(session_id)
-                self._tts_gain_by_session.pop(str(session_id), None)
+                self._tts_peak_ema_by_session.pop(str(session_id), None)
+                self._clear_grpc_start_tracking(session_id)
 
         except asyncio.CancelledError:
             return

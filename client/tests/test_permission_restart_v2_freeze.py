@@ -37,6 +37,7 @@ async def test_v2_enabled_does_not_subscribe_legacy_restart_events() -> None:
     assert "updater.update_skipped" in subscribed
     assert "updater.update_failed" in subscribed
     assert "app.startup" in subscribed
+    assert "app.shutdown" in subscribed
     integration._resume_pending_first_run_restart.assert_not_awaited()
 
 
@@ -91,10 +92,28 @@ async def test_initialize_logs_legacy_freeze_warning_when_v2_enabled(
     )
     monkeypatch.setattr(integration, "_is_v2_enabled", lambda: True)
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("INFO"):
         initialized = await integration._do_initialize()
 
     assert initialized is True
     assert any(
         "legacy permission restart paths are frozen" in record.message for record in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_app_shutdown_cancels_scheduled_restart() -> None:
+    integration = PermissionRestartIntegration(
+        event_bus=Mock(),
+        state_manager=Mock(),
+        error_handler=Mock(),
+        config={"enabled": True},
+    )
+    task = Mock()
+    task.done.return_value = False
+    task.cancel = Mock()
+    integration._restart_task = task
+
+    await integration._on_app_shutdown_event({"data": {"source": "user.quit"}})
+
+    task.cancel.assert_called_once()

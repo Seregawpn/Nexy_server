@@ -32,6 +32,7 @@ class MacOSTrayMenu:
         # Путь к иконке для отложенной установки (после создания StatusItem)
         self._pending_icon_path: str | None = None
         self._icon_timer: rumps.Timer | None = None
+        self._pending_menu: TrayMenu | None = None
 
         # Менеджер создания NSStatusItem с single-flight и circuit-breaker
         # Загружаем конфиг из unified_config.yaml
@@ -82,7 +83,7 @@ class MacOSTrayMenu:
 
                 nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[reportAttributeAccessIssue]
                 if nsapp.activationPolicy() != AppKit.NSApplicationActivationPolicyAccessory:  # type: ignore[reportAttributeAccessIssue]
-                    logger.warning(
+                    logger.info(
                         "⚠️ NSApplication activation policy не установлен, устанавливаем..."
                     )
                     nsapp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)  # type: ignore[reportAttributeAccessIssue]
@@ -159,6 +160,12 @@ class MacOSTrayMenu:
             # Это предотвращает автоматическое завершение приложения
             # _setup_quit_handler() сам установит fallback если нужно
             self._setup_quit_handler()
+
+            # Если меню пытались обновить до готовности app, применяем отложенный снимок.
+            if self._pending_menu is not None:
+                pending_menu = self._pending_menu
+                self._pending_menu = None
+                self.update_menu(pending_menu)
 
             return self.app
 
@@ -267,7 +274,9 @@ class MacOSTrayMenu:
     def update_menu(self, menu: TrayMenu):
         """Обновить меню"""
         if not self.app:
-            logger.warning("⚠️ update_menu: self.app is None")
+            # Startup-safe path: интеграция может попытаться применить меню до create_app().
+            self._pending_menu = menu
+            logger.debug("Tray menu update deferred: app is not ready yet")
             return
 
         # КРИТИЧНО: Проверяем готовность меню перед обновлением

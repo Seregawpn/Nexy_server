@@ -62,19 +62,32 @@ class WelcomeAudioGenerator:
             return None
 
         try:
+            effective_timeout = float(self._grpc_timeout)
+            try:
+                # Startup fast-fail: when transport is not connected yet, do not block welcome path
+                # for full server timeout; fallback should start quickly.
+                if hasattr(client, "is_connected") and not bool(client.is_connected()):
+                    effective_timeout = min(effective_timeout, 5.0)
+                    logger.info(
+                        "⏱️ [WELCOME_AUDIO] gRPC not connected yet, using reduced welcome timeout=%.1fs",
+                        effective_timeout,
+                    )
+            except Exception:
+                pass
+
             logger.info(
-                f"TRACE [WELCOME_GEN] calling client.generate_welcome_audio(timeout={self._grpc_timeout})"
+                f"TRACE [WELCOME_GEN] calling client.generate_welcome_audio(timeout={effective_timeout})"
             )
             # Hard timeout на уровне интеграции: защищаемся от подвисаний cross-loop/future bridge.
             # Небольшой запас поверх RPC timeout оставляем на десериализацию/переключение loop.
-            bridge_timeout = float(self._grpc_timeout) + 5.0
+            bridge_timeout = float(effective_timeout) + 5.0
             result = await asyncio.wait_for(
                 client.generate_welcome_audio(
                     text=text,
                     voice=self.config.voice,
                     language=None,
                     server_name=self._grpc_server_name,
-                    timeout=self._grpc_timeout,
+                    timeout=effective_timeout,
                 ),
                 timeout=bridge_timeout,
             )
@@ -132,7 +145,7 @@ class WelcomeAudioGenerator:
         except asyncio.TimeoutError:
             logger.error(
                 "❌ [WELCOME_AUDIO] Таймаут ожидания generate_welcome_audio (%.1fs)",
-                float(self._grpc_timeout) + 5.0,
+                bridge_timeout,
             )
             return None
         except ImportError as e:

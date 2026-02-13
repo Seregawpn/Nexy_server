@@ -11,6 +11,10 @@ The "first run" experience prepares the Nexy client for normal operation by:
 
 The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionRestartIntegration`, with the `SimpleModuleCoordinator` orchestrating state.
 
+Runtime ownership note (current):
+- When `integrations.permissions_v2.enabled=true`, restart lifecycle owner is V2 orchestrator/ledger.
+- Legacy `permissions.first_run_restart_pending` event remains compatibility-only and is not used as coordinator owner path in V2 mode.
+
 ---
 
 ## Permission Activation APIs (Updated 2026-01-13)
@@ -82,7 +86,8 @@ Notes:
    - After all permissions are processed, the integration:
      - writes `permissions_first_run_completed.flag` after the sequential loop;  
      - sets `permissions_restart_pending` in `ApplicationStateManager`;  
-     - publishes `permissions.first_run_restart_pending` (eventBus) if any critical permission was newly granted (`integrations.permission_restart.critical_permissions`).
+     - for V2 owner path: advances ledger restart phase and delegates restart execution to `PermissionRestartIntegration`;
+     - `permissions.first_run_restart_pending` remains legacy compatibility signal.
 
 5. **Restart Initiation**  
    - V2 orchestrator triggers restart via `PermissionsRestartHandler`.  
@@ -90,6 +95,9 @@ Notes:
      1. If running from a PyInstaller bundle (`sys.frozen`), call `open -n -a /Applications/Nexy.app`.  
      2. Otherwise run dev fallback (python command).  
      3. Persist `restart_completed.flag` in the user data directory when the new instance comes up.
+   - Runtime guards:
+      - scheduled restart is cancelled on `app.shutdown`;
+      - right before `trigger_restart()`, `USER_QUIT_INTENT` is re-checked, and restart is aborted if user quit is active.
 
 6. **Post-Restart Launch**  
    - On the next start, the integration clears `restart_completed.flag` and emits `permissions.first_run_completed`.

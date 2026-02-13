@@ -18,7 +18,15 @@ import shutil
 import subprocess
 from typing import Any
 
-EXCLUDED_PATH_FRAGMENTS = ("/Docs/_archive/",)
+EXCLUDED_PATH_FRAGMENTS = (
+    "/Docs/_archive/",
+    "/dist/",
+    "/build/",
+    "/dist-",
+    "/build-",
+    "/.venv/",
+    "/.venv_x86/",
+)
 
 
 def _is_excluded_issue_file(file_path: str | None) -> bool:

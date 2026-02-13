@@ -67,6 +67,7 @@ class ProcessingWorkflow(BaseWorkflow):
         self.grpc_started = False
         self._terminal_outcome_session_id: str | None = None
         self._terminal_outcome_reason: str | None = None
+        self._pending_screenshot_by_session: dict[str, dict[str, Any]] = {}
 
         # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager
         # EventBus уже обеспечивает последовательную обработку событий, блокировки не нужны
@@ -259,6 +260,7 @@ class ProcessingWorkflow(BaseWorkflow):
 
             # Переходим к этапу захвата
             await self._transition_to_stage(ProcessingStage.CAPTURING)
+            await self._consume_pending_screenshot_for_session(session_id)
 
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка начала цепочки - {e}")
@@ -294,13 +296,24 @@ class ProcessingWorkflow(BaseWorkflow):
 
     async def _on_screenshot_captured(self, event):
         """Скриншот захвачен успешно"""
-        if not self._is_relevant_event(event):
-            return
-
         try:
             data = event.get("data", {})
             session_id = data.get("session_id")
             screenshot_path = data.get("path")
+            normalized_session_id = str(session_id) if session_id is not None else None
+
+            if not self.is_active():
+                if normalized_session_id:
+                    self._pending_screenshot_by_session[normalized_session_id] = data
+                    logger.debug(
+                        "📸 ProcessingWorkflow: buffered early screenshot for session=%s (path=%s)",
+                        normalized_session_id,
+                        screenshot_path,
+                    )
+                return
+
+            if not self._is_relevant_event(event):
+                return
 
             logger.info(f"📸 ProcessingWorkflow: скриншот захвачен, path={screenshot_path}")
 
@@ -312,6 +325,22 @@ class ProcessingWorkflow(BaseWorkflow):
 
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки screenshot.captured - {e}")
+
+    async def _consume_pending_screenshot_for_session(self, session_id: str | None):
+        if session_id is None:
+            return
+        normalized_session_id = str(session_id)
+        cached = self._pending_screenshot_by_session.pop(normalized_session_id, None)
+        if not cached:
+            return
+
+        logger.info(
+            "📸 ProcessingWorkflow: using buffered screenshot for session=%s",
+            normalized_session_id,
+        )
+        self.screenshot_captured = True
+        if self.current_stage == ProcessingStage.CAPTURING:
+            await self._transition_to_stage(ProcessingStage.SENDING_GRPC)
 
     async def _on_screenshot_error(self, event):
         """Ошибка захвата скриншота"""

@@ -375,15 +375,29 @@ class TrayControllerIntegration:
 
     async def _on_tray_quit(self, event_type: str, data: dict[str, Any]):
         """Корректное завершение приложения по пункту меню Quit."""
-        # КРИТИЧНО: фиксируем quit-intent синхронно в SoT до любых async публикаций.
-        # Это защищает от гонки между завершением UI-процесса и обработкой EventBus.
         try:
+            # Set the user quit intent state
             self.state_manager.set_state_data(StateKeys.USER_QUIT_INTENT, True)
-        except Exception:
-            pass
-        try:
-            # Публикуем событие пользовательского завершения
-            await self.event_bus.publish("tray.quit_clicked", {"source": "tray.quit"})
+
+            # Публикуем событие пользовательского завершения неблокирующе:
+            # quit path не должен ожидать полный обход subscriber'ов.
+            async def _publish_tray_quit_clicked():
+                try:
+                    await self.event_bus.publish("tray.quit_clicked", {"source": "tray.quit"})
+                except Exception as exc:
+                    logger.warning("⚠️ tray.quit_clicked publish failed: %s", exc)
+
+            loop = self.event_bus.get_loop()
+            if loop and loop.is_running():
+                if loop == asyncio.get_running_loop():
+                    task = asyncio.create_task(_publish_tray_quit_clicked())
+                    task.add_done_callback(lambda t: t.exception())
+                else:
+                    loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(_publish_tray_quit_clicked())
+                    )
+            else:
+                asyncio.create_task(_publish_tray_quit_clicked())
         except Exception:
             pass
         # Завершение приложения выполняет модуль TrayController (см. _on_quit_clicked)

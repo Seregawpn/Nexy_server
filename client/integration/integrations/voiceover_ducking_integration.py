@@ -24,6 +24,7 @@ class VoiceOverDuckingIntegration(BaseIntegration):
         self._controller_ready = False
         self._awaiting_permissions = False
         self._awaiting_first_run = False
+        self._keyboard_press_subscribed = False
 
     async def _do_initialize(self) -> bool:
         """Инициализация интеграции VoiceOver Ducking."""
@@ -65,9 +66,8 @@ class VoiceOverDuckingIntegration(BaseIntegration):
 
             # Подписываемся на события
             await self.event_bus.subscribe("app.mode_changed", self.handle_mode_change)
-            await self.event_bus.subscribe("keyboard.press", self.handle_keyboard_press)
+            await self._ensure_keyboard_press_subscription()
             await self.event_bus.subscribe("app.shutdown", self.handle_shutdown)
-            await self.event_bus.subscribe("system.permissions_ready", self._on_permissions_ready)
             await self.event_bus.subscribe(
                 "permissions.first_run_completed", self._on_first_run_completed
             )
@@ -238,7 +238,19 @@ class VoiceOverDuckingIntegration(BaseIntegration):
         if not self.controller:
             settings = VoiceOverControlSettings(**self.config)
             self.controller = VoiceOverController(settings)
+        await self._ensure_keyboard_press_subscription()
         if await self._maybe_initialize_controller():
             logger.info(
                 "✅ VoiceOverDuckingIntegration: controller initialized after first_run_completed"
             )
+
+    async def _ensure_keyboard_press_subscription(self) -> None:
+        """Подписываемся на keyboard.press только при явном opt-in и только один раз."""
+        if self._keyboard_press_subscribed:
+            return
+        if not self.controller:
+            return
+        if not self.controller.settings.engage_on_keyboard_events:
+            return
+        await self.event_bus.subscribe("keyboard.press", self.handle_keyboard_press)
+        self._keyboard_press_subscribed = True

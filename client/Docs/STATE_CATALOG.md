@@ -137,10 +137,10 @@
 - **правила управления**:
   - `set_mode(mode, session_id)` - для изменения режима с установкой session_id (публикует `app.mode_changed`)
   - `update_session_id(session_id)` - для синхронизации session_id БЕЗ публикации событий (предотвращает ложные прерывания)
-  - Все интеграции используют `state_manager.get_current_session_id()` вместо локальных переменных
-- **миграция завершена (09.11.2025)**:
-  - Удалены локальные переменные `_current_session_id` из `InputProcessingIntegration`, `SpeechPlaybackIntegration`, `VoiceRecognitionIntegration`
-  - Все интеграции используют `ApplicationStateManager` как единый источник истины
+  - `ApplicationStateManager` остаётся единственным источником истины; локальные runtime-cache в интеграциях допустимы только как анти-гонка/диагностика и не должны принимать owner-решения
+- **практика runtime (обновлено)**:
+  - `InputProcessingIntegration`, `SpeechPlaybackIntegration`, `VoiceRecognitionIntegration` могут хранить локальные служебные session-поля для debounce/anti-race/single-flight
+  - Все owner-решения (mode/request lifecycle, cross-integration sync) читают canonical `session_id` из `ApplicationStateManager`
   - При получении `audio_chunk` session_id синхронизируется через `update_session_id()` БЕЗ публикации `app.mode_changed`
 - **защита от ложных прерываний**:
   - `ProcessingWorkflow` нормализует session_id для корректного сравнения (str vs float)

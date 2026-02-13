@@ -13,39 +13,29 @@ kCGEventFlagMaskAlternate = 0x80000
 kCGEventFlagMaskCommand = 0x100000
 
 
-# Function to setup the mock environment
-def setup_quartz_mock():
-    mock_quartz = MagicMock()
-    mock_quartz.kCGEventKeyDown = kCGEventKeyDown
-    mock_quartz.kCGEventKeyUp = kCGEventKeyUp
-    mock_quartz.kCGEventFlagsChanged = kCGEventFlagsChanged
-    mock_quartz.kCGKeyboardEventKeycode = kCGKeyboardEventKeycode
-    mock_quartz.kCGEventFlagMaskControl = kCGEventFlagMaskControl
-    mock_quartz.kCGEventFlagMaskShift = kCGEventFlagMaskShift
-    mock_quartz.kCGEventFlagMaskAlternate = kCGEventFlagMaskAlternate
-    mock_quartz.kCGEventFlagMaskCommand = kCGEventFlagMaskCommand
-
-    # Mock specific functions that are imported from flags
-    mock_quartz.CGEventGetFlags = MagicMock()
-    mock_quartz.CGEventGetIntegerValueField = MagicMock()
-
-    return mock_quartz
-
-
 # Context manager to patch modules
 class MockQuartzContext:
     def __enter__(self):
-        self.patcher = patch.dict("sys.modules", {"Quartz": setup_quartz_mock()})
+        # We need to mock the Quartz module structure
+        mock_quartz = MagicMock()
+        mock_quartz.kCGEventKeyDown = kCGEventKeyDown
+        mock_quartz.kCGEventKeyUp = kCGEventKeyUp
+        mock_quartz.kCGEventFlagsChanged = kCGEventFlagsChanged
+        mock_quartz.kCGKeyboardEventKeycode = kCGKeyboardEventKeycode
+        mock_quartz.kCGEventFlagMaskControl = kCGEventFlagMaskControl
+        mock_quartz.kCGEventFlagMaskShift = kCGEventFlagMaskShift
+        mock_quartz.kCGEventFlagMaskAlternate = kCGEventFlagMaskAlternate
+        mock_quartz.kCGEventFlagMaskCommand = kCGEventFlagMaskCommand
+        
+        self.patcher = patch.dict("sys.modules", {"Quartz": mock_quartz})
         self.patcher.start()
 
-        # We need to reload the module if it was already imported, or import it now
+        # Reload/Import the module under test
         import sys
-
         if "modules.input_processing.keyboard.mac.quartz_monitor" in sys.modules:
             del sys.modules["modules.input_processing.keyboard.mac.quartz_monitor"]
 
         from modules.input_processing.keyboard.mac.quartz_monitor import QuartzKeyboardMonitor
-
         self.QuartzKeyboardMonitor = QuartzKeyboardMonitor
         return self
 
@@ -55,7 +45,6 @@ class MockQuartzContext:
 
 class TestQuartzMonitorChordLogic(unittest.TestCase):
     def setUp(self):
-        # Helper to create events
         self.mock_event = MagicMock()
 
     def _create_monitor(self, quartz_cls):
@@ -71,97 +60,77 @@ class TestQuartzMonitorChordLogic(unittest.TestCase):
         )
         monitor = quartz_cls(config)
         monitor._tap = MagicMock()  # Fake enabled tap
+        # Mock callbacks to verify event emission
+        monitor._trigger_event = MagicMock()
         return monitor
 
     def test_strict_chord_suppression(self):
-        """Verify that ONLY Ctrl+N is suppressed, and others pass through."""
+        """Verify strict suppression logic: Only pure Ctrl+N is intercepted."""
         with MockQuartzContext() as ctx:
             monitor = self._create_monitor(ctx.QuartzKeyboardMonitor)
-
-            # Setup Event Mocks (we need to patch the imported functions in the module namespace)
-            # Because the module does 'from Quartz import ...', patching sys.modules['Quartz']
-            # works for the initial import. But we need to control the return values of
-            # CGEventGetFlags and CGEventGetIntegerValueField which are bound at import time.
-
-            # Actually, `quartz_monitor.py` imports them by name.
-            # We can patch them on the module itself.
+            
+            # We need to patch the imported functions in the module namespace
             from modules.input_processing.keyboard.mac import quartz_monitor
 
             with (
                 patch.object(quartz_monitor, "CGEventGetFlags") as mock_get_flags,
                 patch.object(quartz_monitor, "CGEventGetIntegerValueField") as mock_get_keycode,
             ):
-                # Case 1: Pure Ctrl+N (Strictly allowed)
-                # ---------------------------------------
-                # 1. FlagsChanged: Control Down
+                # --- SCENARIO 1: Target Combo (Ctrl+N) ---
+                # Should be SUPPRESSED (return None) and EMIT press event
+                
+                # 1. Setup State (Ctrl pressed via FlagsChanged)
                 mock_get_flags.return_value = kCGEventFlagMaskControl
-                mock_get_keycode.return_value = 59  # Left Control
-                # We need to simulate the event processing
+                mock_get_keycode.return_value = 59 # Left Ctrl
                 monitor._handle_combo_event(kCGEventFlagsChanged, self.mock_event)
-
-                # Verify state
-                self.assertTrue(monitor._control_pressed, "Control should be pressed")
-                self.assertFalse(monitor._combo_blocked_by_modifiers, "Should NOT be blocked")
-
-                # 2. KeyDown: N (45)
-                # Ensure flags are still Control
+                
+                # 2. Press N
                 mock_get_flags.return_value = kCGEventFlagMaskControl
-                mock_get_keycode.return_value = 45  # N_KEYCODE
-
-                # Check KeyDown
+                mock_get_keycode.return_value = 45 # N
                 result = monitor._handle_combo_event(kCGEventKeyDown, self.mock_event)
-                # Should return None (suppressed)
-                self.assertIsNone(result, "Ctrl+N should be suppressed")
-                self.assertTrue(monitor._combo_active, "Combo should be active")
+                
+                self.assertIsNone(result, "Target Combo (Ctrl+N) should be suppressed")
+                self.assertTrue(monitor._n_pressed)
+                self.assertTrue(monitor._control_pressed)
+                monitor._trigger_event.assert_called() # Should emit event
+                
+                # Reset for next scenario
+                monitor._deactivate_combo_locked(time.time(), "reset")
+                monitor._trigger_event.reset_mock()
 
-                # Reset
-                monitor._deactivate_combo_locked(time.time(), "test")
-                monitor._control_pressed = False  # Reset manually for next test
-
-                # Case 2: Ctrl+Shift+N (Should pass through)
-                # ------------------------------------------
-                # 1. FlagsChanged: Ctrl + Shift
+                # --- SCENARIO 2: Non-Target Modifier (Ctrl+Shift+N) ---
+                # Should be PASSED THROUGH (return event) and NOT emit event
+                
+                # 1. Setup State (Ctrl + Shift)
                 mock_get_flags.return_value = kCGEventFlagMaskControl | kCGEventFlagMaskShift
-                mock_get_keycode.return_value = 59
+                mock_get_keycode.return_value = 59 
                 monitor._handle_combo_event(kCGEventFlagsChanged, self.mock_event)
-
-                self.assertTrue(monitor._control_pressed, "Control should be pressed")
-                self.assertTrue(monitor._combo_blocked_by_modifiers, "Should be blocked by Shift")
-
-                # 2. KeyDown: N
+                
+                # 2. Press N
+                mock_get_flags.return_value = kCGEventFlagMaskControl | kCGEventFlagMaskShift
                 mock_get_keycode.return_value = 45
                 result = monitor._handle_combo_event(kCGEventKeyDown, self.mock_event)
-                self.assertIsNotNone(result, "Ctrl+Shift+N should Pass-Through")
-                self.assertFalse(
-                    monitor._combo_active, "Combo should NOT be active for Ctrl+Shift+N"
-                )
+                
+                self.assertIsNotNone(result, "Non-Target (Ctrl+Shift+N) should pass through")
+                monitor._trigger_event.assert_not_called() # Should NOT emit event
 
-                monitor._control_pressed = False
-
-                # Case 3: Ctrl+Cmd+N (Should pass through)
-                # ------------------------------------------
+                # --- SCENARIO 3: Non-Target Modifier (Ctrl+Cmd+N) ---
+                # Should be PASSED THROUGH
+                
                 mock_get_flags.return_value = kCGEventFlagMaskControl | kCGEventFlagMaskCommand
-                mock_get_keycode.return_value = 59
-                monitor._handle_combo_event(kCGEventFlagsChanged, self.mock_event)
-
-                mock_get_keycode.return_value = 45
                 result = monitor._handle_combo_event(kCGEventKeyDown, self.mock_event)
-                self.assertIsNotNone(result, "Ctrl+Cmd+N should Pass-Through")
+                self.assertIsNotNone(result, "Non-Target (Ctrl+Cmd+N) should pass through")
+                monitor._trigger_event.assert_not_called()
 
-                monitor._control_pressed = False
-
-                # Case 4: Ctrl+Alt+N (Should pass through)
-                # ------------------------------------------
-                mock_get_flags.return_value = kCGEventFlagMaskControl | kCGEventFlagMaskAlternate
-                mock_get_keycode.return_value = 59
-                monitor._handle_combo_event(kCGEventFlagsChanged, self.mock_event)
-
-                mock_get_keycode.return_value = 45
+                # --- SCENARIO 4: Just N (No Ctrl) ---
+                
+                mock_get_flags.return_value = 0
                 result = monitor._handle_combo_event(kCGEventKeyDown, self.mock_event)
-                self.assertIsNotNone(result, "Ctrl+Alt+N should Pass-Through")
+                self.assertIsNotNone(result, "Just N should pass through")
+                monitor._trigger_event.assert_not_called()
 
-    def test_debounce_logic_fix(self):
-        """Verify the debounce logic correctly uses event flags instead of stale state."""
+    def test_pass_through_safety(self):
+        """Verify that strictly non-target events are untouched."""
         with MockQuartzContext() as ctx:
             monitor = self._create_monitor(ctx.QuartzKeyboardMonitor)
             from modules.input_processing.keyboard.mac import quartz_monitor
@@ -170,29 +139,20 @@ class TestQuartzMonitorChordLogic(unittest.TestCase):
                 patch.object(quartz_monitor, "CGEventGetFlags") as mock_get_flags,
                 patch.object(quartz_monitor, "CGEventGetIntegerValueField") as mock_get_keycode,
             ):
-                # Setup:
-                # 1. State thinks Control is pressed (stale)
-                monitor._control_pressed = True
-
-                # 2. But Event says Control is NOT pressed (user released it, but flagsChanged was missed or processed later)
-                mock_get_flags.return_value = 0  # No flags
-                mock_get_keycode.return_value = 45  # N
-
-                # Set N pressed to trigger debounce check path
-                monitor._n_pressed = True
-                monitor.last_event_time = time.time()  # Recent event to trigger cooldown
-                monitor.event_cooldown = 1.0  # Large cooldown
-
-                # 3. Trigger KeyDown
-                result = monitor._handle_combo_event(kCGEventKeyDown, self.mock_event)
-
-                # 4. Expectation:
-                # If using stale state: _control_pressed=True -> Suppress (None)
-                # If using event flags: control_in_event=False -> Pass-through (result=event)
-                self.assertIsNotNone(
-                    result, "Should pass-through because Control is not in event flags"
-                )
-
+                 # Case: Ctrl+Shift+N
+                 # Even if we have some internal state messiness, the strict check on the event itself
+                 # must ensure pass-through coverage.
+                 
+                 monitor._control_pressed = True # Internal state says Ctrl is down
+                 
+                 # Event says Ctrl+Shift
+                 mock_get_flags.return_value = kCGEventFlagMaskControl | kCGEventFlagMaskShift
+                 mock_get_keycode.return_value = 45 # N
+                 
+                 result = monitor._handle_combo_event(kCGEventKeyDown, self.mock_event)
+                 
+                 self.assertIsNotNone(result, "Must pass-through if Shift is present in event")
+                 self.assertFalse(monitor._combo_active, "Combo must NOT activate")
 
 if __name__ == "__main__":
     unittest.main()

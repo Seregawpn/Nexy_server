@@ -3,6 +3,7 @@
 """
 
 import asyncio
+from concurrent.futures import TimeoutError as FutureTimeoutError
 import logging
 import threading
 from typing import Any, Callable
@@ -38,13 +39,15 @@ class TrayController:
         self._stop_event = threading.Event()
         # Loop для dispatch событий из rumps callback (должен совпадать с EventBus loop)
         self._dispatch_loop: asyncio.AbstractEventLoop | None = None
+        self._quit_dispatch_timeout_sec: float = 1.5
 
     async def initialize(self) -> bool:
         """Инициализация контроллера трея"""
         try:
             logger.info("🔧 Инициализация TrayController")
-            # Fallback loop (может быть переопределён через set_dispatch_loop из интеграции).
-            self._dispatch_loop = asyncio.get_running_loop()
+            # Fallback loop: выставляем только если loop не был задан интеграцией заранее.
+            if self._dispatch_loop is None:
+                self._dispatch_loop = asyncio.get_running_loop()
 
             # Создаем компоненты
             self.tray_icon = MacOSTrayIcon(status=self.current_status, size=self.config.icon_size)
@@ -275,36 +278,52 @@ class TrayController:
     def _on_quit_clicked(self, sender):
         """Обработчик клика по выходу"""
         # 1) Сообщаем слушателям (например, интеграции), что пользователь инициировал выход.
-        # КРИТИЧНО: rumps callback может выполняться вне asyncio loop.
-        # Доставляем событие в dispatch-loop без блокирующего ожидания UI callback.
+        # КРИТИЧНО: сначала пытаемся доставить quit_clicked в owner-loop, затем завершаем UI.
         try:
             logger.info("🔚 Quit requested via tray menu (user action)")
-            if self._dispatch_loop and self._dispatch_loop.is_running():
-                fut = asyncio.run_coroutine_threadsafe(
-                    self._publish_event("quit_clicked", {}),
-                    self._dispatch_loop,
-                )
-
-                def _log_quit_dispatch_result(done_fut):
-                    try:
-                        done_fut.result()
-                    except Exception as exc:
-                        logger.warning("⚠️ quit_clicked dispatch failed: %s", exc)
-
-                fut.add_done_callback(_log_quit_dispatch_result)
-            else:
-                try:
-                    asyncio.create_task(self._publish_event("quit_clicked", {}))
-                except RuntimeError as exc:
-                    logger.warning(
-                        "⚠️ quit_clicked event was not dispatched (no running loop): %s", exc
-                    )
+            self._dispatch_quit_clicked_with_ack()
 
             # 2) Завершаем приложение через rumps
             if self.tray_menu:
                 self.tray_menu.quit()
         except Exception as e:
             logger.debug(f"⚠️ Error in _on_quit_clicked: {e}")
+
+    def _dispatch_quit_clicked_with_ack(self) -> None:
+        """Доставляет quit_clicked в owner-loop с коротким timeout для устранения гонки перед quit."""
+        dispatch_timeout_sec = self._quit_dispatch_timeout_sec
+
+        if self._dispatch_loop and self._dispatch_loop.is_running():
+            fut = asyncio.run_coroutine_threadsafe(
+                self._publish_event("quit_clicked", {}),
+                self._dispatch_loop,
+            )
+            try:
+                fut.result(timeout=dispatch_timeout_sec)
+                logger.info(
+                    "✅ quit_clicked dispatched before UI quit (timeout=%.2fs)",
+                    dispatch_timeout_sec,
+                )
+            except FutureTimeoutError:
+                logger.warning(
+                    "⚠️ quit_clicked dispatch timed out (%.2fs), proceeding with quit",
+                    dispatch_timeout_sec,
+                )
+            except Exception as exc:
+                logger.warning("⚠️ quit_clicked dispatch failed, proceeding with quit: %s", exc)
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._publish_event("quit_clicked", {}))
+            logger.warning(
+                "⚠️ quit_clicked scheduled on current loop without ack (dispatch loop unavailable)"
+            )
+        except RuntimeError as exc:
+            logger.warning(
+                "⚠️ quit_clicked event was not dispatched (no running loop): %s",
+                exc,
+            )
 
     async def _publish_event(self, event_type: str, data: dict[str, Any]):
         """Публиковать событие"""

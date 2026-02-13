@@ -130,7 +130,7 @@ class ConnectionManager:
                     self.channel = grpc.aio.secure_channel(address, credentials, options=options)
                 else:
                     # Для self-signed сертификата загружаем сертификат и используем secure_channel
-                    logger.warning(
+                    logger.info(
                         f"⚠️ SSL verification disabled for {address} - используется self-signed сертификат"
                     )
                     logger.info(f"🔌 [DEBUG] Attempting to load self-signed certificate...")

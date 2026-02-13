@@ -89,6 +89,9 @@ class AutostartManagerIntegration:
         self.is_initialized = False
         self.is_running = False
         self._monitor_task: asyncio.Task[Any] | None = None
+        self._status_check_lock = asyncio.Lock()
+        self._startup_check_done = False
+        self._last_launch_agent_exists: bool | None = None
 
         logger.info("AutostartManagerIntegration created (мониторинг LaunchAgent)")
 
@@ -125,7 +128,8 @@ class AutostartManagerIntegration:
             logger.info("🚀 Запуск AutostartManagerIntegration")
 
             # Проверяем текущий статус автозапуска
-            await self._check_autostart_status()
+            await self._check_autostart_status(trigger="start")
+            self._startup_check_done = True
 
             # Запускаем мониторинг если включен
             if self.config.monitor_enabled:
@@ -166,66 +170,79 @@ class AutostartManagerIntegration:
     async def _on_app_startup(self, event):
         """Обработка события запуска приложения"""
         try:
+            if self._startup_check_done:
+                logger.debug("Autostart startup check already done - skip app.startup duplicate")
+                return
             logger.info("📱 App startup - проверяем статус автозапуска")
-            await self._check_autostart_status()
+            await self._check_autostart_status(trigger="app.startup")
+            self._startup_check_done = True
         except Exception as e:
             logger.error(f"❌ Ошибка обработки app.startup: {e}")
 
     async def _on_check_status(self, event):
         """Обработка запроса проверки статуса"""
         try:
-            await self._check_autostart_status()
+            await self._check_autostart_status(trigger="manual")
         except Exception as e:
             logger.error(f"❌ Ошибка проверки статуса: {e}")
 
-    async def _check_autostart_status(self):
+    async def _check_autostart_status(self, trigger: str = "unknown"):
         """Проверка статуса автозапуска"""
         try:
-            # Проверяем LaunchAgent
-            launch_agent_path = os.path.expanduser(self.config.launch_agent_path)
-            launch_agent_exists = os.path.exists(launch_agent_path)
-            legacy_launch_agent_path = os.path.expanduser(self.config.legacy_launch_agent_path)
-            legacy_launch_agent_exists = os.path.exists(legacy_launch_agent_path)
+            async with self._status_check_lock:
+                # Проверяем LaunchAgent
+                launch_agent_path = os.path.expanduser(self.config.launch_agent_path)
+                launch_agent_exists = os.path.exists(launch_agent_path)
+                legacy_launch_agent_path = os.path.expanduser(self.config.legacy_launch_agent_path)
+                legacy_launch_agent_exists = os.path.exists(legacy_launch_agent_path)
 
-            # Публикуем статус
-            status_data = {
-                "launch_agent_exists": launch_agent_exists,
-                "launch_agent_path": launch_agent_path,
-                "method": "launch_agent",
-                "managed_by": "PKG installer",
-                "legacy_launch_agent_exists": legacy_launch_agent_exists,
-                "legacy_launch_agent_path": legacy_launch_agent_path,
-                "legacy_cleanup_enabled": bool(self.config.cleanup_legacy_launch_agent),
-            }
+                # Публикуем статус
+                status_data = {
+                    "launch_agent_exists": launch_agent_exists,
+                    "launch_agent_path": launch_agent_path,
+                    "method": "launch_agent",
+                    "managed_by": "PKG installer",
+                    "legacy_launch_agent_exists": legacy_launch_agent_exists,
+                    "legacy_launch_agent_path": legacy_launch_agent_path,
+                    "legacy_cleanup_enabled": bool(self.config.cleanup_legacy_launch_agent),
+                    "trigger": trigger,
+                }
 
-            await self.event_bus.publish("autostart.status_checked", status_data)
+                await self.event_bus.publish("autostart.status_checked", status_data)
 
-            if launch_agent_exists:
-                logger.info("✅ LaunchAgent автозапуск настроен корректно")
-            else:
-                logger.warning("⚠️ LaunchAgent автозапуск не найден")
-            if legacy_launch_agent_exists:
-                logger.warning(
-                    "⚠️ Detected legacy LaunchAgent (duplicate autostart): %s",
-                    legacy_launch_agent_path,
+                # Логируем только изменения состояния или явную ручную проверку.
+                status_changed = self._last_launch_agent_exists is None or (
+                    self._last_launch_agent_exists != launch_agent_exists
                 )
-                if self.config.cleanup_legacy_launch_agent:
-                    logger.info("🧹 Attempting legacy LaunchAgent cleanup")
-                    removed = await self._autostart_manager.cleanup_legacy_launch_agent(
-                        legacy_path=legacy_launch_agent_path,
-                        legacy_label=self.config.legacy_launch_agent_label,
+                if status_changed or trigger == "manual":
+                    if launch_agent_exists:
+                        logger.info("✅ LaunchAgent автозапуск настроен корректно")
+                    else:
+                        logger.warning("⚠️ LaunchAgent автозапуск не найден")
+                self._last_launch_agent_exists = launch_agent_exists
+
+                if legacy_launch_agent_exists:
+                    logger.warning(
+                        "⚠️ Detected legacy LaunchAgent (duplicate autostart): %s",
+                        legacy_launch_agent_path,
                     )
-                    if removed:
-                        logger.info("✅ Legacy LaunchAgent removed")
-                    else:
-                        logger.warning("⚠️ Legacy LaunchAgent removal failed (permissions?)")
-                if self.config.auto_repair:
-                    logger.info("🔧 Пытаемся восстановить LaunchAgent (auto_repair=true)")
-                    result = await self._autostart_manager.enable_autostart()
-                    if result == AutostartStatus.ENABLED:
-                        logger.info("✅ LaunchAgent восстановлен")
-                    else:
-                        logger.warning("⚠️ Не удалось восстановить LaunchAgent")
+                    if self.config.cleanup_legacy_launch_agent:
+                        logger.info("🧹 Attempting legacy LaunchAgent cleanup")
+                        removed = await self._autostart_manager.cleanup_legacy_launch_agent(
+                            legacy_path=legacy_launch_agent_path,
+                            legacy_label=self.config.legacy_launch_agent_label,
+                        )
+                        if removed:
+                            logger.info("✅ Legacy LaunchAgent removed")
+                        else:
+                            logger.warning("⚠️ Legacy LaunchAgent removal failed (permissions?)")
+                    if self.config.auto_repair:
+                        logger.info("🔧 Пытаемся восстановить LaunchAgent (auto_repair=true)")
+                        result = await self._autostart_manager.enable_autostart()
+                        if result == AutostartStatus.ENABLED:
+                            logger.info("✅ LaunchAgent восстановлен")
+                        else:
+                            logger.warning("⚠️ Не удалось восстановить LaunchAgent")
 
         except Exception as e:
             logger.error(f"❌ Ошибка проверки автозапуска: {e}")

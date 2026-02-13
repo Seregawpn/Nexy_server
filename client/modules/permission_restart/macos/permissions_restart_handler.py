@@ -40,6 +40,7 @@ class PermissionsRestartHandler:
     _restart_guard = threading.Lock()
     _restart_in_progress = False
     _restart_lock_fd: int | None = None  # file descriptor for restart_in_progress.lock
+    _abort_flag_name = "restart_abort.flag"
 
     @classmethod
     def _acquire_restart_guard(cls) -> bool:
@@ -59,6 +60,62 @@ class PermissionsRestartHandler:
         except RuntimeError:
             # Guard was not acquired or already released; keep silent.
             pass
+
+    @classmethod
+    def _restart_control_dir(cls) -> Path:
+        control_dir = get_user_data_dir("Nexy")
+        control_dir.mkdir(parents=True, exist_ok=True)
+        return control_dir
+
+    @classmethod
+    def _restart_abort_flag_path(cls) -> Path:
+        return cls._restart_control_dir() / cls._abort_flag_name
+
+    @classmethod
+    def mark_user_quit_abort(cls, *, source: str = "unknown") -> bool:
+        """Persist quit abort marker for detached restart helper checks."""
+        flag_path = cls._restart_abort_flag_path()
+        payload = f"{time.time():.6f}|{os.getpid()}|{source}\n"
+        try:
+            flag_path.write_text(payload, encoding="utf-8")
+            logger.info("[PERMISSION_RESTART] Set restart abort marker: %s", flag_path)
+            return True
+        except Exception as exc:
+            logger.warning(
+                "[PERMISSION_RESTART] Failed to set restart abort marker (%s): %s",
+                flag_path,
+                exc,
+            )
+            return False
+
+    @classmethod
+    def clear_user_quit_abort(cls, *, source: str = "unknown") -> bool:
+        """Clear stale quit abort marker (startup/reset path)."""
+        flag_path = cls._restart_abort_flag_path()
+        try:
+            if flag_path.exists():
+                flag_path.unlink()
+                logger.info(
+                    "[PERMISSION_RESTART] Cleared restart abort marker (%s): %s",
+                    source,
+                    flag_path,
+                )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "[PERMISSION_RESTART] Failed to clear restart abort marker (%s): %s",
+                flag_path,
+                exc,
+            )
+            return False
+
+    @classmethod
+    def is_user_quit_abort_active(cls) -> bool:
+        """Return True when restart abort marker is present."""
+        try:
+            return cls._restart_abort_flag_path().exists()
+        except Exception:
+            return False
 
     def __init__(
         self,
@@ -552,6 +609,7 @@ class PermissionsRestartHandler:
             LOG_TAG={shlex.quote(log_tag)}
             LOCK_FILE={shlex.quote(os.path.expanduser(self._lock_file_path))}
             LOCK_GRACE_MS={int(self._lock_grace_ms)}
+            ABORT_FLAG={shlex.quote(str(self._restart_abort_flag_path()))}
 
             log() {{
                 /usr/bin/logger -t "$LOG_TAG" "$1" 2>/dev/null || echo "$LOG_TAG: $1" >&2
@@ -617,6 +675,10 @@ class PermissionsRestartHandler:
             EXISTING=$(pgrep -f "Nexy.app/Contents/MacOS/Nexy" 2>/dev/null | head -1 || true)
             if [ -n "$EXISTING" ] && [ "$EXISTING" != "$TARGET_PID" ]; then
                 log "another Nexy instance already running (pid=$EXISTING); skipping launch"
+                exit 0
+            fi
+            if [ -f "$ABORT_FLAG" ]; then
+                log "restart abort marker present ($ABORT_FLAG) - skipping launch"
                 exit 0
             fi
             {env_exports}log "launching: {command_str}"

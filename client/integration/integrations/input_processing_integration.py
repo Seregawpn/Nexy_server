@@ -70,8 +70,6 @@ class InputProcessingIntegration:
         self._session_waiting_grpc = False
 
         self._recording_started = False
-        self._recording_start_time = 0.0
-        self._session_recognized = False
 
         self._playback_active = False
         self._playback_waiters: list[asyncio.Future[Any]] = []
@@ -318,6 +316,12 @@ class InputProcessingIntegration:
         self._terminal_stop_press_id = effective
         return True
 
+    def _is_stale_release_cycle(self, release_press_id: str | None) -> bool:
+        if not release_press_id:
+            return False
+        current_press_id = self._active_press_id
+        return current_press_id is not None and current_press_id != release_press_id
+
     async def _publish_interrupt_and_cancel(
         self,
         session_id: str | None,
@@ -528,7 +532,6 @@ class InputProcessingIntegration:
         self._terminal_stop_press_id = None
         self._pending_session_id = None
         self._recording_started = False
-        self._session_recognized = False
         current_sid = self._get_active_session_id()
         if current_sid == session_id or session_id is None:
             self._set_session_id(None, "grpc_failed")
@@ -543,7 +546,6 @@ class InputProcessingIntegration:
         self._session_waiting_grpc = False
         self._active_grpc_session_id = None
         self._recording_started = False
-        self._session_recognized = False
         self._set_session_id(None, reason)
 
     async def _handle_press(self, event: KeyEvent):
@@ -658,7 +660,6 @@ class InputProcessingIntegration:
             self._pending_session_id = None
             self._set_session_id(session_id, "long_press")
             self._recording_started = True
-            self._recording_start_time = time.time()
             self._set_state(PTTState.RECORDING, "long_press")
             self._start_in_flight = True
 
@@ -752,6 +753,7 @@ class InputProcessingIntegration:
         press_id = self._extract_press_id(event)
         if self._active_press_id and press_id and press_id != self._active_press_id:
             return
+        release_press_id = press_id or self._active_press_id
 
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
 
@@ -771,6 +773,14 @@ class InputProcessingIntegration:
                 timestamp=event.timestamp,
                 reason="release",
             )
+            if self._is_stale_release_cycle(release_press_id):
+                logger.debug(
+                    "INPUT: stale release tail skipped after terminal_stop "
+                    "(release_press_id=%s, active_press_id=%s)",
+                    release_press_id,
+                    self._active_press_id,
+                )
+                return
             if self._secure_input_active:
                 await self.event_bus.publish(
                     "mode.request",
@@ -792,16 +802,23 @@ class InputProcessingIntegration:
                     "session_id": session_id,
                 },
             )
+            if self._is_stale_release_cycle(release_press_id):
+                logger.debug(
+                    "INPUT: stale release tail skipped after mode.request "
+                    "(release_press_id=%s, active_press_id=%s)",
+                    release_press_id,
+                    self._active_press_id,
+                )
+                return
             self._active_grpc_session_id = session_id
             self._session_waiting_grpc = True
             self._set_state(PTTState.WAITING_GRPC, "release_to_processing")
 
-        self._active_press_id = None
+        if self._active_press_id == release_press_id:
+            self._active_press_id = None
 
     async def _on_recognition_completed(self, event):
-        data = (event or {}).get("data", {})
-        if data.get("session_id") == self._get_active_session_id():
-            self._session_recognized = True
+        return
 
     async def _on_recognition_failed(self, event):
         if self._state in {PTTState.RECORDING, PTTState.STOPPING}:
@@ -846,7 +863,6 @@ class InputProcessingIntegration:
                 self._pending_session_id = None
                 self._session_waiting_grpc = False
                 self._recording_started = False
-                self._session_recognized = False
                 self._active_grpc_session_id = sid
                 return
             self._reset("grpc_completed")

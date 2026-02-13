@@ -14,9 +14,41 @@
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import sys
 
 # Singleton flag для однократной настройки
 _logging_configured: bool = False
+
+
+def _is_terminal_dev_launch() -> bool:
+    """Detect plain dev launch from interactive terminal (non-bundled run)."""
+    if getattr(sys, "frozen", False):
+        return False
+    try:
+        return bool(sys.stdin and sys.stdin.isatty() and os.getenv("TERM"))
+    except Exception:
+        return False
+
+
+def _resolve_log_file_path(config_path: str | None) -> str | None:
+    """
+    Resolve effective log file path.
+
+    Rule:
+    - packaged/default flow uses config path as-is;
+    - dev launch from terminal writes to sibling `nexy-dev.log`.
+    """
+    if not config_path:
+        return None
+
+    abs_path = os.path.abspath(os.path.expanduser(config_path))
+    if not _is_terminal_dev_launch():
+        return abs_path
+
+    log_dir = os.path.dirname(abs_path)
+    ext = os.path.splitext(abs_path)[1] or ".log"
+    dev_name = f"nexy-dev{ext}"
+    return os.path.join(log_dir, dev_name)
 
 
 def setup_logging(force: bool = False) -> None:
@@ -71,7 +103,9 @@ def setup_logging(force: bool = False) -> None:
         # File handler
         file_path = logging_section.get("file_path")
         if file_path:
-            abs_path = os.path.abspath(os.path.expanduser(file_path))
+            abs_path = _resolve_log_file_path(file_path)
+            if not abs_path:
+                return
             try:
                 log_dir = os.path.dirname(abs_path)
                 if log_dir:
@@ -159,6 +193,18 @@ def get_logger(name: str) -> logging.Logger:
 def is_logging_configured() -> bool:
     """Проверяет, была ли выполнена централизованная настройка."""
     return _logging_configured
+
+
+def get_effective_log_file_path() -> str | None:
+    """Return current effective log file path using centralized resolution rules."""
+    try:
+        from config.unified_config_loader import UnifiedConfigLoader
+
+        raw_config = UnifiedConfigLoader.get_instance()._load_config()
+        configured_path = raw_config.get("logging", {}).get("file_path")
+        return _resolve_log_file_path(configured_path)
+    except Exception:
+        return None
 
 
 def reset_logging_state() -> None:

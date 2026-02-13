@@ -261,6 +261,7 @@ class WelcomePlayer:
         Запасной вариант: воспроизведение через macOS 'say'
         """
         import asyncio
+        import shutil
 
         try:
             text = self.config.text
@@ -269,19 +270,40 @@ class WelcomePlayer:
 
             logger.info(f"🗣️ [WELCOME_PLAYER] Запуск локального синтеза: '{text}'")
 
-            # Запускаем 'say' в отдельном процессе, чтобы не блокировать loop
-            # Используем asyncio.create_subprocess_exec для асинхронности
+            say_path = shutil.which("say") or "/usr/bin/say"
+            args = [say_path, text]
+
+            # Запускаем 'say' в отдельном процессе (не блокирует event loop).
             process = await asyncio.create_subprocess_exec(
-                "say", text, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
-            # Ждем завершения (это блокирует текущую задачу, но не loop, пока 'say' говорит)
-            # 'say' завершается только когда договорит.
-            await process.wait()
+            max_fallback_sec = max(8.0, min(30.0, len(text) * 0.25))
+            try:
+                stdout_data, stderr_data = await asyncio.wait_for(
+                    process.communicate(), timeout=max_fallback_sec
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.communicate()
+                error_msg = (
+                    f"Local 'say' timeout after {max_fallback_sec:.1f}s "
+                    f"(cmd={say_path})"
+                )
+                logger.error(f"❌ [WELCOME_PLAYER] {error_msg}")
+                return WelcomeResult(False, "local", 0.0, error_msg)
 
             if process.returncode != 0:
-                stderr_data = await process.stderr.read() if process.stderr else b""
-                error_msg = f"Local 'say' command failed: {stderr_data.decode().strip()}"
+                stderr_text = (stderr_data or b"").decode(errors="replace").strip()
+                stdout_text = (stdout_data or b"").decode(errors="replace").strip()
+                if process.returncode < 0:
+                    reason = f"terminated by signal {-process.returncode}"
+                else:
+                    reason = f"exit_code={process.returncode}"
+                error_msg = (
+                    f"Local 'say' command failed ({reason}, cmd={say_path}) "
+                    f"stderr='{stderr_text}' stdout='{stdout_text}'"
+                )
                 logger.error(f"❌ [WELCOME_PLAYER] {error_msg}")
                 return WelcomeResult(False, "local", 0.0, error_msg)
 
@@ -292,7 +314,7 @@ class WelcomePlayer:
                 success=True,
                 method="local_fallback",
                 duration_sec=approx_duration,
-                metadata={"cmd": "say", "text": text},
+                metadata={"cmd": say_path, "text": text},
             )
 
         except Exception as e:

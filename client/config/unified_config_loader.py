@@ -535,7 +535,7 @@ class UnifiedConfigLoader:
             "signal_max_age_ms": speech_playback_config.get("signal_max_age_ms", 2500),
             "audio_diag_verbose": speech_playback_config.get("audio_diag_verbose", False),
             "audio_diag_log_every": speech_playback_config.get("audio_diag_log_every", 50),
-            "tts_auto_gain_enabled": speech_playback_config.get("tts_auto_gain_enabled", True),
+            "tts_auto_gain_enabled": speech_playback_config.get("tts_auto_gain_enabled", False),
             "tts_target_peak": speech_playback_config.get("tts_target_peak", 0.35),
             "tts_max_gain": speech_playback_config.get("tts_max_gain", 6.0),
             "tts_min_peak_for_gain": speech_playback_config.get("tts_min_peak_for_gain", 0.01),

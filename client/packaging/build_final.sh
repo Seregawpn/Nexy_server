@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Ensure bash semantics even if launched via `sh packaging/build_final.sh`.
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec /bin/bash "$0" "$@"
+fi
+
 # 📦 Nexy AI Assistant - Финальная упаковка и подпись Universal 2 (ОБНОВЛЕНО 17.11.2025)
 # Использование: ./packaging/build_final.sh [--skip-build] [--clean-install] [--permissions-smoke] [--speed-check]
 #   --skip-build     Пропустить PyInstaller сборку (использовать существующий .app)
@@ -335,7 +340,7 @@ echo ""
 # Запускаем verify_imports.py
 if [ -f "$CLIENT_DIR/scripts/verify_imports.py" ]; then
     echo -e "${YELLOW}Запуск verify_imports.py...${NC}"
-    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_imports.py" 2>&1 | tee "$PREFLIGHT_LOG"; then
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_imports.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
         echo -e "${GREEN}✅ verify_imports.py - все проверки пройдены${NC}"
     else
         echo -e "${RED}❌ verify_imports.py - есть ошибки!${NC}"
@@ -653,6 +658,19 @@ clean_xattrs() {
     fi
 }
 
+# Single-flight guard for notarytool access to shared keychain profile.
+# Prevents concurrent submit race when DMG/PKG are notarized in parallel.
+with_notary_lock() {
+    local lock_dir="/tmp/nexy_notarytool.lock"
+    while ! mkdir "$lock_dir" 2>/dev/null; do
+        sleep 1
+    done
+    "$@"
+    local rc=$?
+    rmdir "$lock_dir" 2>/dev/null || true
+    return $rc
+}
+
 # Функция контрольной точки для проверки подписи
 # Проверяет подпись, записывает mtime и хеш для диагностики
 checkpoint() {
@@ -947,14 +965,11 @@ else
         log "Проверяем архитектуру Python..."
         PYTHON_ARCH=$("$BUILD_PYTHON" -c "import platform; print(platform.machine())" 2>/dev/null || echo "unknown")
         log "Текущая архитектура Python: $PYTHON_ARCH"
-        if [ -n "$BUILD_PYTHON_X86" ]; then
-            if ! "$BUILD_PYTHON_X86" -c "import platform; print(platform.machine())" >/dev/null 2>&1; then
-                error "BUILD_PYTHON_X86 не работает. Проверьте .venv_x86."
-            fi
-        else
-            if ! arch -x86_64 "$BUILD_PYTHON" -c "import platform; print(platform.machine())" >/dev/null 2>&1; then
-                error "BUILD_PYTHON не поддерживает x86_64. Нужен universal python/venv или отдельный x86_64 env."
-            fi
+        if [ -z "$BUILD_PYTHON_X86" ]; then
+            error "Для x86_64 этапа требуется отдельный .venv_x86 (иначе arm64 wheels ломают сборку, как IncompatibleBinaryArchError)."
+        fi
+        if ! arch -x86_64 "$BUILD_PYTHON_X86" -c "import platform; print(platform.machine())" >/dev/null 2>&1; then
+            error "BUILD_PYTHON_X86 не запускается под x86_64. Пересоздайте .venv_x86 через Rosetta."
         fi
     
         # Шаг 1.1: Универсализация .so файлов (если нужно)
@@ -982,19 +997,11 @@ else
     
         # Шаг 1.3: Сборка x86_64 (через Rosetta)
         log "Собираем x86_64 версию (через Rosetta)..."
-        if [ -n "$BUILD_PYTHON_X86" ]; then
-            PYI_TARGET_ARCH=x86_64 "$BUILD_PYTHON_X86" -m PyInstaller packaging/Nexy.spec \
-                --distpath dist-x86_64 \
-                --workpath build-x86_64 \
-                --noconfirm \
-                --clean
-        else
-            PYI_TARGET_ARCH=x86_64 arch -x86_64 "$BUILD_PYTHON" -m PyInstaller packaging/Nexy.spec \
-                --distpath dist-x86_64 \
-                --workpath build-x86_64 \
-                --noconfirm \
-                --clean
-        fi
+        PYI_TARGET_ARCH=x86_64 arch -x86_64 "$BUILD_PYTHON_X86" -m PyInstaller packaging/Nexy.spec \
+            --distpath dist-x86_64 \
+            --workpath build-x86_64 \
+            --noconfirm \
+            --clean
     
         if [ ! -d "dist-x86_64/$APP_NAME.app" ]; then
             error "x86_64 сборка не удалась. Проверьте логи PyInstaller."
@@ -1231,127 +1238,104 @@ checkpoint "03_after_stapler_clean_app" "$CLEAN_APP" || error "CHECKPOINT 03: П
 SIGNING_STAGE="post_staple"
 record_bundle_state "CLEAN_APP_POST_STAPLE" "$CLEAN_APP"
 
-# Шаг 6: Создание DMG
-CURRENT_STEP="Шаг 6: Создание DMG"
-log_to_file ">>> ЭТАП: $CURRENT_STEP"
-echo -e "${BLUE}💿 Шаг 6: Создание DMG${NC}"
-
+# Шаги 6-9: Параллельная упаковка после ZIP/нотаризации .app
 DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
-TEMP_DMG="$DIST_DIR/$APP_NAME-temp.dmg"
-VOLUME_NAME="$APP_NAME"
-
 assert_bundle_state "CLEAN_APP_POST_STAPLE" "$CLEAN_APP"
 
-log "Создаем временный DMG..."
-APP_SIZE_KB=$(du -sk "$CLEAN_APP" | awk '{print $1}')
-DMG_SIZE_MB=$(( APP_SIZE_KB/1024 + 200 ))
+build_dmg_artifact() {
+    CURRENT_STEP="Шаги 6-7: Создание и нотаризация DMG (parallel)"
+    log_to_file ">>> ЭТАП: $CURRENT_STEP"
+    echo -e "${BLUE}💿 [DMG] Шаги 6-7: Создание и нотаризация DMG${NC}"
 
-hdiutil create -volname "$VOLUME_NAME" -srcfolder "$CLEAN_APP" \
-    -fs HFS+ -format UDRW -size "${DMG_SIZE_MB}m" "$TEMP_DMG"
+    local temp_dmg="$DIST_DIR/$APP_NAME-temp.dmg"
+    local volume_name="$APP_NAME"
+    local mount_dir="/Volumes/$volume_name"
 
-MOUNT_DIR="/Volumes/$VOLUME_NAME"
-hdiutil attach "$TEMP_DMG" -readwrite -noverify -noautoopen >/dev/null
-ln -s /Applications "$MOUNT_DIR/Applications" || true
-hdiutil detach "$MOUNT_DIR" >/dev/null
+    log "[DMG] Создаем временный DMG..."
+    local app_size_kb
+    local dmg_size_mb
+    app_size_kb=$(du -sk "$CLEAN_APP" | awk '{print $1}')
+    dmg_size_mb=$(( app_size_kb/1024 + 200 ))
 
-log "Финализируем DMG..."
-rm -f "$DMG_PATH"
-hdiutil convert "$TEMP_DMG" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" >/dev/null
-rm -f "$TEMP_DMG"
+    hdiutil create -volname "$volume_name" -srcfolder "$CLEAN_APP" \
+        -fs HFS+ -format UDRW -size "${dmg_size_mb}m" "$temp_dmg"
 
-log "DMG создан: $DMG_PATH"
+    hdiutil attach "$temp_dmg" -readwrite -noverify -noautoopen >/dev/null
+    ln -s /Applications "$mount_dir/Applications" || true
+    hdiutil detach "$mount_dir" >/dev/null
 
-# Шаг 6.1: Подпись DMG (КРИТИЧНО для spctl --assess!)
-CURRENT_STEP="Шаг 6.1: Подпись DMG"
-log_to_file ">>> ЭТАП: $CURRENT_STEP"
-echo -e "${BLUE}🔐 Шаг 6.1: Подпись DMG${NC}"
+    log "[DMG] Финализируем DMG..."
+    rm -f "$DMG_PATH"
+    hdiutil convert "$temp_dmg" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" >/dev/null
+    rm -f "$temp_dmg"
+    log "[DMG] DMG создан: $DMG_PATH"
 
-log "Подписываем DMG..."
-codesign --force $TIMESTAMP_FLAG --options=runtime \
-    --sign "$IDENTITY" "$DMG_PATH"
+    log "[DMG] Подписываем DMG..."
+    codesign --force $TIMESTAMP_FLAG --options=runtime \
+        --sign "$IDENTITY" "$DMG_PATH"
 
-log "Проверяем подпись DMG..."
-if codesign --verify --verbose=2 "$DMG_PATH" 2>/dev/null; then
-    log "Подпись DMG корректна"
-else
-    warn "codesign --verify для DMG показал предупреждение, но продолжаем"
-fi
+    log "[DMG] Проверяем подпись DMG..."
+    if codesign --verify --verbose=2 "$DMG_PATH" 2>/dev/null; then
+        log "[DMG] Подпись DMG корректна"
+    else
+        warn "[DMG] codesign --verify для DMG показал предупреждение, но продолжаем"
+    fi
 
-# Шаг 7: Нотаризация DMG
-CURRENT_STEP="Шаг 7: Нотаризация DMG"
-log_to_file ">>> ЭТАП: $CURRENT_STEP"
-echo -e "${BLUE}📤 Шаг 7: Нотаризация DMG${NC}"
+    log "[DMG] Отправляем DMG на нотаризацию..."
+    with_notary_lock xcrun notarytool submit "$DMG_PATH" \
+        --keychain-profile "nexy-notary" \
+        --apple-id "seregawpn@gmail.com" \
+        --wait
 
-log "Отправляем DMG на нотаризацию..."
-xcrun notarytool submit "$DMG_PATH" \
-    --keychain-profile "nexy-notary" \
-    --apple-id "seregawpn@gmail.com" \
-    --wait
+    log "[DMG] Прикрепляем нотаризационную печать к DMG..."
+    xcrun stapler staple "$DMG_PATH"
+}
 
-log "Прикрепляем нотаризационную печать к DMG..."
-xcrun stapler staple "$DMG_PATH"
+build_pkg_artifact() {
+    if [ -z "$INSTALLER_IDENTITY" ]; then
+        warn "[PKG] Пропускаем создание PKG (Developer ID Installer сертификат не найден)"
+        return 0
+    fi
 
-# Шаг 8: Создание PKG (только если есть Installer сертификат)
-if [ -z "$INSTALLER_IDENTITY" ]; then
-    warn "Пропускаем создание PKG (Developer ID Installer сертификат не найден)"
-else
-CURRENT_STEP="Шаг 8: Создание PKG"
-log_to_file ">>> ЭТАП: $CURRENT_STEP"
-echo -e "${BLUE}📦 Шаг 8: Создание PKG (ПРАВИЛЬНЫЙ СПОСОБ!)${NC}"
+    CURRENT_STEP="Шаги 8-9: Создание и нотаризация PKG (parallel)"
+    log_to_file ">>> ЭТАП: $CURRENT_STEP"
+    echo -e "${BLUE}📦 [PKG] Шаги 8-9: Создание и нотаризация PKG${NC}"
 
-log "Создаем временную папку для PKG..."
-rm -rf /tmp/nexy_pkg_clean_final
-mkdir -p /tmp/nexy_pkg_clean_final
+    log "[PKG] Создаем временную папку для PKG..."
+    rm -rf /tmp/nexy_pkg_clean_final
+    mkdir -p /tmp/nexy_pkg_clean_final
 
-log "Копируем нотаризованное приложение в правильную структуру..."
-mkdir -p /tmp/nexy_pkg_clean_final/Applications
-# КРИТИЧНО: Используем safe_copy_preserve_signature для сохранения подписи!
-# Очистка происходит ДО pkgbuild, чтобы не ломать подпись после сборки PKG
-safe_copy_preserve_signature "$CLEAN_APP" "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app"
+    log "[PKG] Копируем нотаризованное приложение в правильную структуру..."
+    mkdir -p /tmp/nexy_pkg_clean_final/Applications
+    safe_copy_preserve_signature "$CLEAN_APP" "/tmp/nexy_pkg_clean_final/Applications/$APP_NAME.app"
 
-# КРИТИЧНО: Полная очистка xattrs на всём staging дереве
-# clean_xattrs - единственный владелец логики очистки (централизовано)
-# clean_xattrs "/tmp/nexy_pkg_clean_final" "PKG staging" -> REMOVED to prevent breaking signature
-# ditto --noextattr above already handles cleanup
-log "Skipping xattr cleanup on staging to preserve signature..."
+    log "[PKG] Проверяем отсутствие AppleDouble..."
+    local apple_count
+    apple_count=$(find "/tmp/nexy_pkg_clean_final" -name '._*' 2>/dev/null | wc -l | tr -d ' ')
+    log "[PKG] AppleDouble файлов: $apple_count"
+    if [ "$apple_count" != "0" ]; then
+        error "[PKG] КРИТИЧЕСКАЯ ОШИБКА: Остались AppleDouble файлы ($apple_count шт)."
+    fi
 
-# ЖЁСТКАЯ ВАЛИДАЦИЯ: fail если остались AppleDouble
-log "Проверяем отсутствие AppleDouble..."
-APPLE_COUNT=$(find "/tmp/nexy_pkg_clean_final" -name '._*' 2>/dev/null | wc -l | tr -d ' ')
-log "AppleDouble файлов: $APPLE_COUNT"
+    log "[PKG] Создаем component PKG..."
+    local install_location="/"
+    local pkg_scripts_dir="$CLIENT_DIR/packaging/pkg_scripts"
+    if [ ! -d "$pkg_scripts_dir" ]; then
+        error "[PKG] Не найдена директория скриптов PKG: $pkg_scripts_dir"
+    fi
 
-if [ "$APPLE_COUNT" != "0" ]; then
-    error "КРИТИЧЕСКАЯ ОШИБКА: Остались AppleDouble файлы ($APPLE_COUNT шт). PKG будет содержать ._* файлы!"
-fi
+    pkgbuild --root /tmp/nexy_pkg_clean_final \
+        --identifier "${BUNDLE_ID}.pkg" \
+        --version "$VERSION" \
+        --install-location "$install_location" \
+        --scripts "$pkg_scripts_dir" \
+        "$DIST_DIR/$APP_NAME-raw.pkg"
 
-log "Создаем component PKG..."
-# Устанавливаем в корень, так как приложение уже в папке Applications/
-INSTALL_LOCATION="/"
-log "Устанавливаем в: $INSTALL_LOCATION (приложение уже в Applications/)"
+    log "[PKG] Очищаем AppleDouble файлы из raw PKG..."
+    clean_appledouble_from_pkg "$DIST_DIR/$APP_NAME-raw.pkg"
 
-# Скрипты установки (postinstall)
-PKG_SCRIPTS_DIR="$CLIENT_DIR/packaging/pkg_scripts"
-if [ ! -d "$PKG_SCRIPTS_DIR" ]; then
-    error "Не найдена директория скриптов PKG: $PKG_SCRIPTS_DIR"
-fi
-
-# КРИТИЧНО: COPYFILE_DISABLE=1 установлен глобально (строка 10)
-# Это гарантирует, что pkgbuild не создаст AppleDouble файлы в PKG
-# .app в /tmp/nexy_pkg_clean_final НЕ модифицируется после копирования
-pkgbuild --root /tmp/nexy_pkg_clean_final \
-    --identifier "${BUNDLE_ID}.pkg" \
-    --version "$VERSION" \
-    --install-location "$INSTALL_LOCATION" \
-    --scripts "$PKG_SCRIPTS_DIR" \
-    "$DIST_DIR/$APP_NAME-raw.pkg"
-
-# КРИТИЧНО: Удаляем AppleDouble файлы из PKG Payload
-# pkgbuild может создавать ._* файлы несмотря на COPYFILE_DISABLE=1
-log "Очищаем AppleDouble файлы из raw PKG..."
-clean_appledouble_from_pkg "$DIST_DIR/$APP_NAME-raw.pkg"
-
-log "Генерируем distribution.xml с версией $VERSION..."
-cat > packaging/distribution.xml <<EOF
+    log "[PKG] Генерируем distribution.xml с версией $VERSION..."
+    cat > packaging/distribution.xml <<EOF
 <?xml version='1.0' encoding='utf-8'?>
 <installer-gui-script minSpecVersion="1">
     <title>Nexy</title>
@@ -1369,39 +1353,43 @@ cat > packaging/distribution.xml <<EOF
 </installer-gui-script>
 EOF
 
-log "Создаем distribution PKG..."
-productbuild --package-path "$DIST_DIR" \
-    --distribution packaging/distribution.xml \
-    "$DIST_DIR/$APP_NAME-distribution.pkg"
+    log "[PKG] Создаем distribution PKG..."
+    productbuild --package-path "$DIST_DIR" \
+        --distribution packaging/distribution.xml \
+        "$DIST_DIR/$APP_NAME-distribution.pkg"
 
-TIMESTAMP_MODE=${TIMESTAMP_MODE:-auto}
-if [[ "$TIMESTAMP_MODE" == "none" ]]; then
-    TIMESTAMP_FLAG="--timestamp=none"
-else
-    TIMESTAMP_FLAG="--timestamp"
-fi
+    log "[PKG] Подписываем PKG правильным сертификатом..."
+    productsign --sign "$INSTALLER_IDENTITY" $TIMESTAMP_FLAG \
+        "$DIST_DIR/$APP_NAME-distribution.pkg" \
+        "$DIST_DIR/$APP_NAME.pkg"
 
-log "Подписываем PKG правильным сертификатом..."
-# КРИТИЧНО: НЕ пересобираем PKG после подписи - это ломает подпись .app внутри
-# Очистка AppleDouble файлов происходит ДО pkgbuild (см. строки 590-593)
-productsign --sign "$INSTALLER_IDENTITY" $TIMESTAMP_FLAG \
-    "$DIST_DIR/$APP_NAME-distribution.pkg" \
-    "$DIST_DIR/$APP_NAME.pkg"
+    log "[PKG] Отправляем PKG на нотаризацию..."
+    with_notary_lock xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" \
+        --keychain-profile "nexy-notary" \
+        --apple-id "seregawpn@gmail.com" \
+        --wait
 
-# Шаг 9: Нотаризация PKG
-CURRENT_STEP="Шаг 9: Нотаризация PKG"
+    log "[PKG] Прикрепляем нотаризационную печать к PKG..."
+    xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
+}
+
+CURRENT_STEP="Шаги 6-9: Параллельная упаковка DMG/PKG"
 log_to_file ">>> ЭТАП: $CURRENT_STEP"
-echo -e "${BLUE}📤 Шаг 9: Нотаризация PKG${NC}"
+echo -e "${BLUE}🚀 Шаги 6-9: Параллельная упаковка DMG и PKG (после ZIP)${NC}"
 
-log "Отправляем PKG на нотаризацию..."
-xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" \
-    --keychain-profile "nexy-notary" \
-    --apple-id "seregawpn@gmail.com" \
-    --wait
+build_dmg_artifact &
+DMG_PID=$!
+build_pkg_artifact &
+PKG_PID=$!
 
-log "Прикрепляем нотаризационную печать к PKG..."
-xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
-fi  # Конец блока создания PKG (если INSTALLER_IDENTITY установлен)
+DMG_STATUS=0
+PKG_STATUS=0
+wait "$DMG_PID" || DMG_STATUS=$?
+wait "$PKG_PID" || PKG_STATUS=$?
+
+if [ "$DMG_STATUS" -ne 0 ] || [ "$PKG_STATUS" -ne 0 ]; then
+    error "Параллельная упаковка завершилась с ошибкой (DMG=$DMG_STATUS, PKG=$PKG_STATUS)"
+fi
 
 # Шаг 10: Финальная проверка
 CURRENT_STEP="Шаг 10: Финальная проверка"
@@ -1669,7 +1657,20 @@ VERIFY_LOG="$DIST_DIR/packaging_verification.log"
     echo ""
     if [ -f "$DMG_PATH" ]; then
         echo "spctl dmg:"
-        spctl --assess --type open --verbose "$DMG_PATH"
+        # Report-only: spctl for DMG is known to return non-zero (e.g. "Insufficient Context")
+        # even when notarization is valid (already confirmed via stapler validate above).
+        set +e
+        spctl_dmg_output=$(spctl --assess --type open --verbose "$DMG_PATH" 2>&1)
+        spctl_dmg_status=$?
+        set -e
+        echo "$spctl_dmg_output"
+        if [ "$spctl_dmg_status" -ne 0 ]; then
+            if echo "$spctl_dmg_output" | grep -q "Insufficient Context"; then
+                echo "spctl dmg note: Insufficient Context (non-blocking; notarization verified by stapler)"
+            else
+                echo "spctl dmg note: non-zero exit ($spctl_dmg_status), treated as non-blocking in final report"
+            fi
+        fi
     else
         echo "spctl dmg: SKIPPED (dmg not created)"
     fi

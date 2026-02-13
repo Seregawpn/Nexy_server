@@ -90,6 +90,9 @@ class SimpleModuleCoordinator:
         self._launch_activity_token = None
         self._xpc_transaction_active = False
         self._user_quit_task: asyncio.Task[Any] | None = None
+        self._quit_in_flight: bool = False
+        self._stop_in_flight: bool = False
+        self._shutdown_event_published: bool = False
 
         # NSApplication activator callback (устанавливается из main.py)
         self.nsapp_activator: Callable[..., bool] | None = None
@@ -122,6 +125,14 @@ class SimpleModuleCoordinator:
             )
         return self._bg_loop
 
+    async def _publish_app_shutdown_once(self, payload: dict[str, Any]) -> None:
+        """Публикует app.shutdown один раз за жизненный цикл coordinator."""
+        if self._shutdown_event_published:
+            logger.debug("app.shutdown already published - skip duplicate publish")
+            return
+        await self._ensure_event_bus().publish("app.shutdown", payload)
+        self._shutdown_event_published = True
+
     def _get_focus_config(self) -> dict[str, Any]:
         """Возвращает конфиг управления фокусом с дефолтами."""
         try:
@@ -137,6 +148,10 @@ class SimpleModuleCoordinator:
 
     def _force_focus_activation_for_tray_once(self, reason: str) -> bool:
         """Однократный fallback: форс-активация NSApplication при задержке tray."""
+        if self._tray_ready:
+            logger.info("[FOCUS] Tray already ready - skip fallback (reason=%s)", reason)
+            return False
+
         if self._focus_fallback_done:
             logger.info("[FOCUS] Fallback already used once - skip (reason=%s)", reason)
             return False
@@ -347,11 +362,14 @@ class SimpleModuleCoordinator:
                 self._on_permissions_completed,
                 EventPriority.HIGH,
             )
-            await self._ensure_event_bus().subscribe(
-                "permissions.first_run_restart_pending",
-                self._on_permissions_restart_pending,
-                EventPriority.CRITICAL,
-            )
+            # V2 orchestrator is the single owner of restart lifecycle.
+            # Legacy restart_pending event is subscribed only when V2 is disabled.
+            if not self._is_permissions_v2_enabled():
+                await self._ensure_event_bus().subscribe(
+                    "permissions.first_run_restart_pending",
+                    self._on_permissions_restart_pending,
+                    EventPriority.CRITICAL,
+                )
             await self._ensure_event_bus().subscribe(
                 "permissions.first_run_failed", self._on_permissions_failed, EventPriority.HIGH
             )
@@ -364,6 +382,19 @@ class SimpleModuleCoordinator:
         except Exception as e:
             logger.error(f"[COORDINATOR] Ошибка настройки критичных подписок: {e}")
             raise
+
+    def _is_permissions_v2_enabled(self) -> bool:
+        try:
+            raw = self.config._load_config()
+            integrations_cfg = raw.get("integrations", {}) if isinstance(raw, dict) else {}
+            permissions_v2_cfg = (
+                integrations_cfg.get("permissions_v2", {})
+                if isinstance(integrations_cfg, dict)
+                else {}
+            )
+            return bool(permissions_v2_cfg.get("enabled", False))
+        except Exception:
+            return False
 
     async def _setup_coordination(self):
         """Настройка координации между модулями"""
@@ -684,9 +715,14 @@ class SimpleModuleCoordinator:
 
     async def stop(self) -> bool:
         """Остановка всех интеграций"""
+        if self._stop_in_flight:
+            logger.info("⏹️ stop() already in flight - skip duplicate call")
+            return True
+        self._stop_in_flight = True
         try:
             if not self.is_running:
                 logger.warning("⚠️ Компоненты не запущены")
+                self._quit_in_flight = False
                 return True
 
             logger.info("⏹️ Остановка всех интеграций...")
@@ -705,10 +741,8 @@ class SimpleModuleCoordinator:
                 )
                 self._release_tal_hold(reason=reason)
 
-            # Публикуем событие остановки
-            await self._ensure_event_bus().publish(
-                "app.shutdown", {"coordinator": "simple_module_coordinator"}
-            )
+            # Публикуем событие остановки один раз (SoT owner: coordinator.stop)
+            await self._publish_app_shutdown_once({"source": "coordinator.stop"})
 
             # Останавливаем все интеграции
             for name, integration in self.integrations.items():
@@ -727,7 +761,6 @@ class SimpleModuleCoordinator:
                 logger.info(f"✅ Workflow {name} остановлен")
 
             self.is_running = False
-            self.is_running = False
             logger.info("✅ Все интеграции и workflows остановлены")
             # Останавливаем фоновый loop
             try:
@@ -737,11 +770,15 @@ class SimpleModuleCoordinator:
                     self._bg_thread.join(timeout=1.0)
             except Exception:
                 pass
+            self._quit_in_flight = False
             return True
 
         except Exception as e:
             logger.error(f"❌ Ошибка остановки интеграций: {e}")
+            self._quit_in_flight = False
             return False
+        finally:
+            self._stop_in_flight = False
 
     async def run(self):
         """Запуск приложения"""
@@ -829,7 +866,6 @@ class SimpleModuleCoordinator:
                 logger.info("✅ [ANTI_TAL] _hold_tal_until_tray_ready() завершён успешно")
             except Exception as e:
                 logger.error(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
-                logger.error(f"❌ [ANTI_TAL] Ошибка в _hold_tal_until_tray_ready(): {e}")
                 import traceback
 
                 traceback.print_exc()
@@ -848,7 +884,6 @@ class SimpleModuleCoordinator:
             # Запускаем приложение rumps (блокирующий вызов)
             # ВАЖНО: Используем tray_controller.run_app() который настраивает
             # отложенную установку иконки ПОСЛЕ создания StatusItem
-            tray_controller = tray_integration.get_tray_controller()
             tray_controller = tray_integration.get_tray_controller()
             if tray_controller:
                 logger.info("✅ CRITICAL: Вызываем tray_controller.run_app()")
@@ -928,33 +963,22 @@ class SimpleModuleCoordinator:
         """Обработка пользовательского завершения через Quit в меню"""
         global _user_initiated_shutdown
         try:
+            if self._quit_in_flight:
+                logger.info("👤 User quit already in flight - skip duplicate handling")
+                return
             if bool(self._ensure_state_manager().get_state_data(StateKeys.USER_QUIT_INTENT, False)):
                 logger.info("👤 User quit already acknowledged - skip duplicate handling")
                 return
 
+            self._quit_in_flight = True
             logger.info("👤 Пользователь инициировал завершение приложения через Quit")
             _user_initiated_shutdown = True
             self._ensure_state_manager().set_state_data(StateKeys.USER_QUIT_INTENT, True)
             logger.info("✅ [QUIT_ACK] USER_QUIT_INTENT set=True")
 
-            # Best-effort уведомление о пользовательском shutdown без блокировки quit callback.
-            # Полный stop выполняется в run().finally после выхода из app.run().
-            if self._user_quit_task is None or self._user_quit_task.done():
-                self._user_quit_task = asyncio.create_task(
-                    self._ensure_event_bus().publish(
-                        "app.shutdown", {"source": "user.quit", "user_initiated": True}
-                    )
-                )
-
-                def _log_quit_task_result(task: asyncio.Task[Any]) -> None:
-                    try:
-                        task.result()
-                    except Exception as exc:
-                        logger.warning(
-                            "⚠️ [QUIT_ACK] Failed to publish app.shutdown from user quit: %s", exc
-                        )
-
-                self._user_quit_task.add_done_callback(_log_quit_task_result)
+            # Ранний deterministic cleanup: снимаем TAL до завершения UI цикла.
+            if self._tal_hold_active:
+                self._release_tal_hold(reason="user_quit_intent")
 
         except Exception as e:
             logger.error(f"❌ Ошибка обработки пользовательского завершения: {e}")
@@ -1155,6 +1179,17 @@ class SimpleModuleCoordinator:
         только обновляет assertion и логирует повторный вызов.
         """
         try:
+            # Tray already ready: TAL hold is not needed anymore.
+            # This prevents stale hold setup when startup event ordering is reversed.
+            if self._tray_ready:
+                if self._tal_hold_active:
+                    self._release_tal_hold(reason="tray_already_ready")
+                else:
+                    logger.debug(
+                        "🛡️ [ANTI_TAL] Skip TAL hold: tray already ready and hold is inactive"
+                    )
+                return
+
             import time
 
             import Foundation

@@ -106,7 +106,7 @@ class PermissionRestartIntegration(BaseIntegration):
                 self._config.max_restart_attempts,
             )
             if self._legacy_restart_paths_frozen():
-                logger.warning(
+                logger.info(
                     "[PERMISSION_RESTART] V2 enabled: legacy permission restart paths are frozen "
                     "(permissions.changed/first_run_restart_pending ignored)"
                 )
@@ -153,6 +153,9 @@ class PermissionRestartIntegration(BaseIntegration):
                 "updater.update_failed", self._on_update_completed, EventPriority.HIGH
             )
             await self._subscribe("app.startup", self._on_app_startup_event, EventPriority.MEDIUM)
+            await self._subscribe("app.shutdown", self._on_app_shutdown_event, EventPriority.HIGH)
+            await self._subscribe("tray.quit_clicked", self._on_tray_quit_clicked, EventPriority.HIGH)
+            PermissionsRestartHandler.clear_user_quit_abort(source="permission_restart.start")
             logger.info("[PERMISSION_RESTART] Subscribed to integration events")
             if legacy_frozen:
                 logger.info(
@@ -553,6 +556,14 @@ class PermissionRestartIntegration(BaseIntegration):
                 return
 
             if self._restart_handler:
+                if self._is_user_quit_intent():
+                    logger.info(
+                        "[PERMISSION_RESTART] Restart aborted right before trigger: user quit intent active "
+                        "(reason=%s, permissions=%s)",
+                        reason,
+                        permissions,
+                    )
+                    return
                 await self._restart_handler.trigger_restart(reason=reason, permissions=permissions)
         except asyncio.CancelledError:
             logger.info("[PERMISSION_RESTART] Scheduled restart cancelled")
@@ -599,6 +610,17 @@ class PermissionRestartIntegration(BaseIntegration):
     async def _on_update_completed(self, event: dict[str, Any]) -> None:
         self._ready_pending_update = False
         await self._publish_ready_if_applicable(source="update_completed")
+
+    async def _on_app_shutdown_event(self, event: dict[str, Any]) -> None:
+        if self._restart_task and not self._restart_task.done():
+            self._restart_task.cancel()
+            logger.info("[PERMISSION_RESTART] Cancelled scheduled restart: app.shutdown")
+        if self._is_user_quit_intent():
+            PermissionsRestartHandler.mark_user_quit_abort(source="app.shutdown:user_quit")
+
+    async def _on_tray_quit_clicked(self, event: dict[str, Any]) -> None:
+        """Owner-path hook: persist abort marker for detached restart helper."""
+        PermissionsRestartHandler.mark_user_quit_abort(source="tray.quit_clicked")
 
     async def _on_app_startup_event(self, event: dict[str, Any]) -> None:
         """

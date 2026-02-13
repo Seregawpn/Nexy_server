@@ -41,9 +41,11 @@ def is_allowed(path: Path) -> bool:
 
 def iter_py_files(root: Path) -> Iterable[Path]:
     for path in root.rglob("*.py"):
-        if "/.venv" in str(path) or "/.venv_x86" in str(path):
+        rel_parts = path.relative_to(root).parts
+        top = rel_parts[0] if rel_parts else ""
+        if top in {".venv", ".venv_x86"}:
             continue
-        if "/dist/" in str(path) or "/build/" in str(path):
+        if top == "build" or top == "dist" or top.startswith("build-") or top.startswith("dist-"):
             continue
         yield path
 

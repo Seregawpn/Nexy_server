@@ -319,117 +319,144 @@ class QuartzKeyboardMonitor:
         logger.debug("combo release (%s), duration=%.3f", reason, duration)
         self._trigger_event(KeyEventType.RELEASE, duration, ev)
 
+    # ---------- Internal: strict target predicate ----------
+    def _is_target_combo(self, flags: int, keycode: int | None) -> bool:
+        """
+        Strict target predicate:
+        - Control MUST be pressed.
+        - Command, Option/Alt, Shift MUST NOT be pressed.
+        - If keycode is provided, it must be N.
+        """
+        # 1. Check strict modifiers
+        modifiers_ok = (flags & kCGEventFlagMaskControl) and not (
+            flags
+            & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
+        )
+        if not modifiers_ok:
+            return False
+
+        # 2. If keycode is relevant (not a global flags change), check it
+        if keycode is not None and keycode != self.N_KEYCODE:
+            return False
+
+        return True
+
+    def _log_decision(self, event_type_str: str, keycode: int, flags: int, decision: str, reason: str):
+        """Canonical decision log."""
+        ctrl = bool(flags & kCGEventFlagMaskControl)
+        shift = bool(flags & kCGEventFlagMaskShift)
+        cmd = bool(flags & kCGEventFlagMaskCommand)
+        alt = bool(flags & kCGEventFlagMaskAlternate)
+        logger.debug(
+            "QUARTZ_DECISION event=%s key=%s mods=[ctrl=%d shift=%d cmd=%d alt=%d] -> %s (reason=%s)",
+            event_type_str,
+            keycode,
+            int(ctrl),
+            int(shift),
+            int(cmd),
+            int(alt),
+            decision,
+            reason,
+        )
+
     def _handle_combo_event(self, event_type, event):
         now = time.time()
+        flags = CGEventGetFlags(event)
+        keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
 
+        # 1. FlagsChanged logic
         if event_type == kCGEventFlagsChanged:
-            flags = CGEventGetFlags(event)
-            # Strict chord policy: ANY non-control modifier (Shift, Command, Option/Alt) blocks the combo.
-            blocked_by_modifiers = bool(
-                flags
-                & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
-            )
-            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
-            if keycode in self.CONTROL_KEYCODES:
-                control_pressed = bool(flags & kCGEventFlagMaskControl)
-                with self.state_lock:
-                    self._combo_blocked_by_modifiers = blocked_by_modifiers
-                    self._control_pressed = control_pressed
-                    self.last_event_time = now
-                    # Healing for lost N keyup: stale n_pressed must not re-activate combo
-                    # on control flagsChanged without a recent real N keydown edge.
-                    if self._control_pressed and self._n_pressed and (not self._combo_active):
-                        n_age = now - self._last_n_keydown_ts if self._last_n_keydown_ts else None
-                        if n_age is None or n_age > self._stale_n_pressed_reset_sec:
-                            logger.debug(
-                                "combo stale n_pressed reset (n_age=%s)",
-                                f"{n_age:.3f}s" if n_age is not None else "unknown",
-                            )
-                            self._n_pressed = False
-                    if self._control_pressed:
-                        self._clear_pending_release_locked()
-                    if self._combo_active and self._combo_blocked_by_modifiers:
-                        self._deactivate_combo_locked(now, reason="blocked_modifiers")
-                    if self._combo_active and (not self._control_pressed or not self._n_pressed):
-                        # flagsChanged может прислать ложный "up" при подавлении событий.
-                        # Подтверждаем release с задержкой.
-                        self._schedule_pending_release_locked(
-                            now, reason="control_flags_changed_confirmed"
-                        )
-                # Control сам по себе не блокируем: это ломает обычные shortcuts/input.
-                # Combo suppression делаем только на N key events ниже.
-                return event
+            # We track Control state to handle pending releases and debounce,
+            # but suppression decision is STRICTLY based on current event flags.
+
+            # Only care about modifiers relevant to our combo
+            is_control_change = keycode in self.CONTROL_KEYCODES
+            
             with self.state_lock:
-                self._combo_blocked_by_modifiers = blocked_by_modifiers
+                # Update local state for debounce/healing
+                self._control_pressed = bool(flags & kCGEventFlagMaskControl)
+                self._combo_blocked_by_modifiers = bool(
+                    flags
+                    & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
+                )
+
+                if is_control_change:
+                    self.last_event_time = now
+                    # Healing: if control released, ensure we don't have stuck N
+                    if not self._control_pressed:
+                        self._clear_pending_release_locked()
+                        if self._combo_active:
+                            # Confirm release on Control UP if combo was active
+                            self._schedule_pending_release_locked(
+                                now, reason="control_up_confirmed"
+                            )
+                        # Reset stale N logic
+                        if self._n_pressed and (not self._combo_active):
+                             self._n_pressed = False
+
                 if self._combo_active and self._combo_blocked_by_modifiers:
-                    self._deactivate_combo_locked(now, reason="blocked_modifiers")
+                     self._deactivate_combo_locked(now, reason="blocked_modifiers_flags_changed")
+
+            # PASS-THROUGH: We never suppress FlagsChanged in isolation,
+            # as it breaks system modifier handling.
             return event
 
+        # 2. KeyDown/KeyUp logic
         if event_type in (kCGEventKeyDown, kCGEventKeyUp):
-            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            # FAST PASS: If not N, pass through immediately
             if keycode != self.N_KEYCODE:
                 return event
 
-            flags = CGEventGetFlags(event)
-            # Strict chord policy again on key event to be safe against race conditions
-            blocked_by_modifiers = bool(
-                flags
-                & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
-            )
+            is_target = self._is_target_combo(flags, self.N_KEYCODE)
+            
             with self.state_lock:
-                self._combo_blocked_by_modifiers = blocked_by_modifiers
-                control_in_event = bool(flags & kCGEventFlagMaskControl)
+                self._combo_blocked_by_modifiers = bool(
+                     flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
+                )
+                
                 if event_type == kCGEventKeyDown:
-                    if (now - self.last_event_time) < self.event_cooldown and self._n_pressed:
-                        # Debounce only if active; otherwise pass-through.
-                        should_suppress = self._combo_active or (
-                            control_in_event and not self._combo_blocked_by_modifiers
-                        )
-                        if should_suppress:
-                            logger.debug(
-                                "combo suppress: reason=debounce active=%s control_in_event=%s blocked=%s",
-                                self._combo_active,
-                                control_in_event,
-                                self._combo_blocked_by_modifiers,
-                            )
-                            return None
-                        return event
+                    # Strict decision: ONLY intercept if it IS the target combo
+                    if not is_target:
+                         # Non-target N (e.g. Ctrl+Shift+N, or just N): Pass-through
+                         # Also ensure we don't think we are active
+                         if self._combo_active:
+                             self._deactivate_combo_locked(now, reason="non_target_interruption")
+                         self._log_decision("KeyDown", keycode, flags, "PASS", "non_target_combo")
+                         return event
+
+                    # It IS target combo (Ctrl+N with no other mods)
+                    
+                    # Anti-repeat / Debounce
+                    if self._n_pressed and (now - self.last_event_time) < self.event_cooldown:
+                        self._log_decision("KeyDown", keycode, flags, "SUPPRESS", "rapid_repeat_debounce")
+                        return None
+                    
                     self._n_pressed = True
                     self._last_n_keydown_ts = now
-                    self._clear_pending_release_locked()
                     self.last_event_time = now
-                    if self._control_pressed and (not control_in_event):
-                        logger.debug(
-                            "combo activation blocked: stale control state (control_in_event=%s, control_state=%s)",
-                            control_in_event,
-                            self._control_pressed,
-                        )
-                    if (
-                        control_in_event
-                        and self._n_pressed
-                        and not self._combo_blocked_by_modifiers
-                    ):
-                        self._control_pressed = True
-                        self._activate_combo_locked(now)
-                        logger.debug(
-                            "combo suppress: reason=strict_ctrl_n control_in_event=%s blocked=%s",
-                            control_in_event,
-                            self._combo_blocked_by_modifiers,
-                        )
-                        return None
-                    # Single N press pass-through.
-                    return event
-                else:
+                    self._clear_pending_release_locked()
+                    
+                    # Activate (Emit PRESS)
+                    self._control_pressed = True # Confirmed by is_target check
+                    self._activate_combo_locked(now)
+                    self._log_decision("KeyDown", keycode, flags, "SUPPRESS+EMIT", "target_combo_activation")
+                    return None
+
+                elif event_type == kCGEventKeyUp:
                     self._n_pressed = False
                     self.last_event_time = now
+                    
                     if self._combo_active:
-                        # Even if Control is "up", n_keyup might be transient or fake if suppressed.
-                        # Confirm release with delay.
-                        self._schedule_pending_release_locked(now, reason="n_keyup_confirmed")
-                        logger.debug("combo suppress: reason=n_keyup_confirm combo_active=true")
-                        return None
-            # N keyup without active combo pass-through.
-            return event
+                         # Target combo release logic
+                         self._schedule_pending_release_locked(now, reason="n_keyup_confirmed")
+                         self._log_decision("KeyUp", keycode, flags, "SUPPRESS", "target_combo_release_wait")
+                         return None
+                    
+                    # If not active, pass through N up (it might be Ctrl+Shift+N release)
+                    # Note: if we just suppressed KeyDown, _combo_active is True, so we suppressed KeyUp above.
+                    # If we passed through KeyDown (Ctrl+Shift+N), _combo_active is False, so we pass through KeyUp here.
+                    self._log_decision("KeyUp", keycode, flags, "PASS", "non_active_combo_pass")
+                    return event
 
         return event
 

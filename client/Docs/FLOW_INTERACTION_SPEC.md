@@ -249,18 +249,17 @@ optional:
 Event: `playback.started`  
 Payload:
 ```yaml
-required:
-  session_id: str|float
 optional:
+  session_id: str|float|None
   pattern: str
+  signal: bool
 ```
 
 Event: `playback.completed`  
 Payload:
 ```yaml
-required:
-  session_id: str|float
 optional:
+  session_id: str|float|None
   pattern: str
 ```
 
@@ -268,8 +267,9 @@ Event: `playback.failed`
 Payload:
 ```yaml
 required:
-  session_id: str|float
   error: str
+optional:
+  session_id: str|float|None
 ```
 
 Event: `playback.cancelled` (единый канал прерывания)  
@@ -357,6 +357,10 @@ required:
   source: str
   reason: str
 ```
+
+Примечание:
+- При `integrations.permissions_v2.enabled=true` owner restart-cycle — V2 orchestrator/ledger.
+- Legacy `permissions.first_run_restart_pending` остаётся только для совместимости и игнорируется coordinator'ом в V2 режиме.
 
 Event: `permissions.first_run_completed`  
 Payload:
@@ -500,8 +504,17 @@ required:
 Event: `app.shutdown`  
 Payload:
 ```yaml
-required:
+optional:
   coordinator: str
+  source: str
+  user_initiated: bool
+```
+
+Event: `tray.quit_clicked`
+Payload:
+```yaml
+required:
+  source: str
 ```
 
 ### 3.13 Браузер (Browser Automation)
@@ -634,33 +647,35 @@ Requirements:
 ### 4.2 First-Run Permissions Flow
 
 Coordinator: `FirstRunPermissionsIntegration`  
-Source of Truth: флаги `permissions_first_run_completed.flag`, `restart_completed.flag`  
+Source of Truth: V2 ledger (`permission_ledger.json`), флаги — cache only
 
 Sequence:
-1. Проверить флаг `permissions_first_run_completed.flag`. Если есть — публикуется `permissions.first_run_completed`, flow завершается.
+1. Проверить V2 ledger phase (`COMPLETED|LIMITED_MODE` → first-run skip).
 2. Публиковать `permissions.first_run_started`.
 3. Для каждого permission:
-   - `permissions.status_checked` (до запроса)
-   - инициировать запрос (TCC)
-   - `permissions.status_checked` (после изменения)
-   - при изменении — `permissions.changed`
-4. Если требуется перезапуск → публиковать `permissions.first_run_restart_pending` и передать управление `PermissionRestartIntegration`.
-5. После рестарта второй процесс публикует `permissions.first_run_completed`.
+   - инициировать запрос (TCC/system settings) по config order,
+   - выдержать grace window,
+   - выполнить single post-trigger probe,
+   - при изменении публиковать `permissions.changed`.
+4. Если требуется restart, V2 owner переводит ledger в restart phase и передает выполнение `PermissionRestartIntegration`.
+5. После restart/post-verify V2 owner публикует `permissions.first_run_completed`.
 
 Requirements:
-- Без таймаута ожидания GRANTED (infinite polling).
+- Без pre-check/polling-loop в рамках шага: single post-trigger probe.
 - Все события содержат `session_id` и `source`.
 
 ### 4.3 Permission Restart Flow
 
 Coordinator: `PermissionRestartIntegration`  
-Source of Truth: `decide_permission_restart_safety()` (gateway) + flags  
+Source of Truth: `decide_permission_restart_safety()` (gateway) + V2 ledger/state
 
 Sequence:
 1. Получить `permissions.changed` и детектировать переход GRANTED для критических permissions.
 2. Проверить безопасность (нет активных сессий, нет обновлений, appMode=SLEEPING).
 3. Публиковать `permission_restart.scheduled` (delay).
 4. По истечении delay — `permission_restart.executing` и выполнить restart (execv/open -n -a).
+5. На `app.shutdown` отменять запланированный restart task.
+6. Перед `trigger_restart()` повторно проверять `USER_QUIT_INTENT`; при `true` restart abort.
 
 Requirements:
 - Respect `update_in_progress`.
@@ -734,8 +749,8 @@ Source of Truth: `WelcomeMessageIntegration`
 
 Sequence:
 1. Триггеры: `app.startup`, `speech_playback.ready`.
-2. `mode.request(PROCESSING)` для воспроизведения приветствия.
-3. Отправка аудио в `SpeechPlaybackIntegration` и ожидание `playback.completed`.
+2. `mode.request(PROCESSING)` публикуется с `session_id`.
+3. Отправка аудио в `SpeechPlaybackIntegration` с тем же `session_id` и ожидание `playback.completed`.
 4. `mode.request(SLEEPING)` по завершению или ошибке.
 
 Requirements:
@@ -758,6 +773,21 @@ Source of Truth: `VoiceOverController`
 Sequence:
 1. На `app.mode_changed(LISTENING|PROCESSING)` — отключить VoiceOver.
 2. На `app.mode_changed(SLEEPING)` — восстановить исходное состояние.
+
+### 4.11 User Quit Flow
+
+Coordinator: `SimpleModuleCoordinator` (owner shutdown path), `TrayControllerIntegration` (intent ingress)
+Source of Truth: `StateKeys.USER_QUIT_INTENT` + coordinator single-flight guards
+
+Sequence:
+1. Tray dispatches `quit_clicked` в owner loop с ACK timeout, затем вызывает UI quit.
+2. `TrayControllerIntegration` сразу выставляет `USER_QUIT_INTENT=true` и публикует `tray.quit_clicked` неблокирующе.
+3. `SimpleModuleCoordinator._on_user_quit()` подтверждает intent (single-flight) и делает ранний `TAL release`.
+4. `SimpleModuleCoordinator.stop()` публикует `app.shutdown` ровно один раз (single owner).
+
+Requirements:
+- Нет дублирующих publish путей `app.shutdown`.
+- Quit path не должен блокироваться на полном обходе subscriber'ов EventBus.
 
 ## 5) Запреты и совместимость
 

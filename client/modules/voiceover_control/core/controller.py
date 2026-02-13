@@ -58,7 +58,9 @@ class VoiceOverControlSettings:
     use_apple_script_fallback: bool = True
     mode: Literal["stop", "mute_speech"] = "stop"
     hard_toggle_enabled: bool = False
-    engage_on_keyboard_events: bool = True
+    # Safe default: VoiceOver ducking must not hook into generic keyboard path
+    # unless explicitly enabled via config.
+    engage_on_keyboard_events: bool = False
     # Настройки детального логирования для диагностики
     debug_logging: bool = False
     log_osascript_commands: bool = False
@@ -397,7 +399,7 @@ class VoiceOverController:
             return True
 
     def _run_osascript(
-        self, script: str, capture_output: bool = False
+        self, script: str, capture_output: bool = False, quiet_errors: bool = False
     ) -> tuple[bool, str | None, str | None]:
         """Run a short AppleScript command."""
         try:
@@ -443,7 +445,9 @@ class VoiceOverController:
 
         except subprocess.CalledProcessError as exc:
             error_msg = f"🔍 VoiceOver: CalledProcessError - exit_code={exc.returncode}, stderr='{exc.stderr}'"
-            if self.settings.log_osascript_commands:
+            if quiet_errors:
+                logger.debug(error_msg)
+            elif self.settings.log_osascript_commands:
                 logger.error(error_msg)
             else:
                 logger.warning(error_msg)
@@ -451,7 +455,9 @@ class VoiceOverController:
 
         except subprocess.TimeoutExpired as exc:
             error_msg = "🔍 VoiceOver: TimeoutExpired - команда превысила 1 секунду"
-            if self.settings.log_osascript_commands:
+            if quiet_errors:
+                logger.debug(error_msg)
+            elif self.settings.log_osascript_commands:
                 logger.error(error_msg)
             else:
                 logger.warning(error_msg)
@@ -459,7 +465,9 @@ class VoiceOverController:
 
         except Exception as exc:
             error_msg = f"🔍 VoiceOver: Неожиданная ошибка: {type(exc).__name__}: {exc}"
-            if self.settings.log_osascript_commands:
+            if quiet_errors:
+                logger.debug(error_msg)
+            elif self.settings.log_osascript_commands:
                 logger.error(error_msg)
             else:
                 logger.warning(error_msg)
@@ -470,7 +478,9 @@ class VoiceOverController:
             return None
 
         success, output, stderr = self._run_osascript(
-            'tell application "VoiceOver" to return speechMuted', capture_output=True
+            'tell application "VoiceOver" to return |speech muted|',
+            capture_output=True,
+            quiet_errors=True,
         )
         if not success or output is None:
             if stderr:
@@ -499,7 +509,8 @@ class VoiceOverController:
             return True
 
         success, _, stderr = self._run_osascript(
-            f'tell application "VoiceOver" to set speechMuted to {str(muted).lower()}'
+            f'tell application "VoiceOver" to set |speech muted| to {str(muted).lower()}',
+            quiet_errors=True,
         )
         if success:
             if muted:
@@ -622,9 +633,11 @@ class VoiceOverController:
                 status["errors"].append(f"Не удалось получить список процессов: {stderr}")
 
             # Проверим состояние speechMuted, если платформа его поддерживает
-            if self._speech_muted_supported:
+            if self._speech_muted_supported and status["voiceover_running"]:
                 success, output, stderr = self._run_osascript(
-                    'tell application "VoiceOver" to return speechMuted', capture_output=True
+                    'tell application "VoiceOver" to return |speech muted|',
+                    capture_output=True,
+                    quiet_errors=True,
                 )
 
                 if success and output:
@@ -639,6 +652,8 @@ class VoiceOverController:
                 else:
                     status["errors"].append(f"Не удалось получить speechMuted: {stderr}")
                     self._handle_speech_muted_unsupported(stderr)
+            elif not status["voiceover_running"]:
+                status["errors"].append("speechMuted check skipped: VoiceOver not running")
             else:
                 status["errors"].append("speechMuted недоступен на этой системе")
 

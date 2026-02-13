@@ -186,8 +186,10 @@ class GoogleSRController:
                     try:
                         # Проверяем _stop перед блокирующим вызовом
                         if self._stop.is_set():
+                            # Stop-path must not emit terminal no_speech immediately.
+                            # VoiceRecognitionIntegration owns delayed fallback terminal
+                            # to avoid racing with final chunk recognition completion.
                             logger.info("🛑 Stop flag detected, breaking loop")
-                            self._emit_no_speech_terminal()
                             break
 
                         current_limit = self._phrase_limit  # None is allowed
@@ -228,8 +230,10 @@ class GoogleSRController:
 
                     except sr.WaitTimeoutError:
                         if self._stop.is_set():
+                            # Stop-path: do not emit immediate no_speech here.
+                            # Integration fallback will publish terminal no_speech
+                            # only if no completion arrives in the grace window.
                             logger.info("🛑 Stop requested while waiting for speech")
-                            self._emit_no_speech_terminal()
                             break
                         # Timeout ожидания речи — продолжаем слушать
                         logger.debug("⏳ No speech detected, continuing...")
@@ -264,13 +268,6 @@ class GoogleSRController:
             # Разрешаем последующий start_listening после завершения сессии
             self._listening.clear()
 
-    def _emit_no_speech_terminal(self) -> None:
-        """Emit terminal 'no_speech' when stop happens before any captured chunk."""
-        self.last_error = "no_speech"
-        self.failed += 1
-        if self._on_failed:
-            self._on_failed("no_speech")
-
     def _recognize_audio_chunk(self, audio) -> None:
         """
         Распознать аудио-чанк в фоновом потоке.
@@ -299,7 +296,7 @@ class GoogleSRController:
                     self._on_failed("empty_result")
 
         except sr.UnknownValueError:
-            logger.warning("⚠️ Google could not understand audio")
+            logger.info("⚠️ Google could not understand audio")
             self.last_error = "unknown_value"
             self.failed += 1
             if self._on_failed:
