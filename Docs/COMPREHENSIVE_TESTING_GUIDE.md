@@ -57,10 +57,10 @@ python server/scripts/run_all_tests.py
 pytest server/tests/ -v
 
 # 2. Smoke тесты
-python server/scripts/grpc_smoke.py 20.151.51.172 443
+python server/scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # 3. Health checks
-python server/scripts/check_grpc_health.py 20.151.51.172 443
+python server/scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # 4. E2E тесты
 python server/scripts/test_full_pipeline_e2e.py
@@ -141,7 +141,7 @@ pytest server/tests/test_pr2_1_coordinator.py::TestModuleCoordinatorIntegration:
 #### **gRPC Smoke Test:**
 ```bash
 # Production сервер
-python server/scripts/grpc_smoke.py 20.151.51.172 443
+python server/scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Локальный сервер
 python server/scripts/grpc_smoke.py localhost 50051
@@ -156,7 +156,7 @@ python server/scripts/grpc_smoke.py localhost 50051
 
 **Ожидаемый результат:**
 ```
-✅ Подключение к 20.151.51.172:443 установлено
+✅ Подключение к nexy-server.canadacentral.cloudapp.azure.com:443 установлено
 🧪 Тестирование InterruptSession...
 ✅ InterruptSession успешен: success=True
 🧪 Тестирование StreamAudio...
@@ -173,7 +173,7 @@ python server/scripts/grpc_smoke.py localhost 50051
 #### **Запуск:**
 ```bash
 # Production сервер
-python server/scripts/check_grpc_health.py 20.151.51.172 443
+python server/scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Локальный сервер
 python server/scripts/check_grpc_health.py localhost 8080
@@ -243,7 +243,7 @@ python server/scripts/test_mcp_full_integration.py
 
 #### **Backpressure:**
 ```bash
-python server/scripts/test_backpressure.py 20.151.51.172 443
+python server/scripts/test_backpressure.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 **Что проверяет:**
@@ -254,7 +254,7 @@ python server/scripts/test_backpressure.py 20.151.51.172 443
 
 #### **Interceptor:**
 ```bash
-python server/scripts/test_interceptor_errors.py 20.151.51.172 443
+python server/scripts/test_interceptor_errors.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 **Что проверяет:**
@@ -279,7 +279,7 @@ python server/scripts/test_welcome_audio.py
 
 #### **gRPC Contract:**
 ```bash
-python server/scripts/grpc_contract_tests.py 20.151.51.172 443
+python server/scripts/grpc_contract_tests.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 **Что проверяет:**
@@ -294,7 +294,7 @@ python server/scripts/grpc_contract_tests.py 20.151.51.172 443
 
 #### **Chaos Smoke:**
 ```bash
-python server/scripts/chaos_smoke.py 20.151.51.172 443
+python server/scripts/chaos_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 **Что проверяет:**
@@ -373,8 +373,8 @@ python server/scripts/run_all_tests.py --level e2e
 ### **Быстрая проверка:**
 ```bash
 # Только smoke тесты (1-2 минуты)
-python server/scripts/grpc_smoke.py 20.151.51.172 443
-python server/scripts/check_grpc_health.py 20.151.51.172 443
+python server/scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
+python server/scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 ### **Полная проверка:**
@@ -387,9 +387,9 @@ python server/scripts/run_all_tests.py
 ```bash
 # Критический путь
 pytest server/tests/ -v
-python server/scripts/grpc_smoke.py 20.151.51.172 443
-python server/scripts/check_grpc_health.py 20.151.51.172 443
-python server/scripts/test_backpressure.py 20.151.51.172 443
+python server/scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
+python server/scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
+python server/scripts/test_backpressure.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 ---

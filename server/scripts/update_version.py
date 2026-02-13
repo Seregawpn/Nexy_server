@@ -98,17 +98,7 @@ def update_unified_config_py(version: str):
         content
     )
     
-    # Обновляем в from_env методе
-    content = re.sub(
-        r"os\.getenv\('SERVER_VERSION',\s*'[\d.]+'\)",
-        f"os.getenv('SERVER_VERSION', '{version}')",
-        content
-    )
-    content = re.sub(
-        r"os\.getenv\('SERVER_BUILD',\s*os\.getenv\('SERVER_VERSION',\s*'[\d.]+'\)\)",
-        f"os.getenv('SERVER_BUILD', os.getenv('SERVER_VERSION', '{version}'))",
-        content
-    )
+    # Не фиксируем SERVER_VERSION/SERVER_BUILD в коде, чтобы источник истины оставался единым.
     
     # Обновляем ServerMetadataConfig
     content = re.sub(
@@ -150,6 +140,27 @@ def update_config_env_example(version: str):
     env_file.write_text(content)
     print(f"✅ Обновлен {env_file}")
 
+
+def update_local_manifest(version: str):
+    """Обновляет локальный manifest.json под новую версию"""
+    manifest_file = SERVER_ROOT / "updates" / "manifests" / "manifest.json"
+    if not manifest_file.exists():
+        print(f"⚠️ Локальный манифест не найден: {manifest_file}")
+        return
+
+    with open(manifest_file, 'r', encoding='utf-8') as f:
+        manifest = json.load(f)
+
+    manifest['version'] = version
+    manifest['build'] = version
+    manifest['release_date'] = datetime.now(timezone.utc).isoformat()
+
+    with open(manifest_file, 'w', encoding='utf-8') as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+        f.write('\n')
+
+    print(f"✅ Обновлен {manifest_file}")
+
 def update_server_manifest(version: str, server_ip: str = None):
     """Обновляет манифест на сервере (требует Azure CLI)"""
     if not server_ip:
@@ -173,7 +184,7 @@ if manifest_file.exists():
     with open(manifest_file, 'r') as f:
         manifest = json.load(f)
 else:
-    manifest = {{'version': '1.0.0', 'build': '1.0.0', 'artifact': {{'type': 'dmg', 'url': '', 'size': 0, 'sha256': '', 'arch': 'universal2', 'min_os': '11.0', 'ed25519': ''}}}}
+    manifest = {{'version': new_version, 'build': new_build, 'artifact': {{'type': 'dmg', 'url': '', 'size': 0, 'sha256': '', 'arch': 'universal2', 'min_os': '11.0', 'ed25519': ''}}}}
 
 manifest['version'] = new_version
 manifest['build'] = new_build
@@ -249,6 +260,7 @@ def main():
         update_unified_config_yaml(new_version)
         update_unified_config_py(new_version)
         update_config_env_example(new_version)
+        update_local_manifest(new_version)
         
         print()
         print("=" * 60)

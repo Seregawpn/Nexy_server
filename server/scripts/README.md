@@ -57,7 +57,7 @@ chmod +x deploy.sh
 curl -I https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
 
 # Проверить AppCast XML
-curl -s http://20.151.51.172:8081/appcast.xml | grep -A 5 "enclosure"
+curl -s http://nexy-server.canadacentral.cloudapp.azure.com:8081/appcast.xml | grep -A 5 "enclosure"
 ```
 
 ---
@@ -172,7 +172,7 @@ sed -i 's/\"build\": 1001/\"build\": \"1.0.1\"/' manifest_1.0.0.json
 "
 ```
 
-**Проверка:** `curl -s http://20.151.51.172:8081/appcast.xml | grep sparkle:version`
+**Проверка:** `curl -s http://nexy-server.canadacentral.cloudapp.azure.com:8081/appcast.xml | grep sparkle:version`
 
 ---
 
@@ -211,7 +211,7 @@ rm -f /home/azureuser/voice-assistant/updates/downloads/*.dmg
 
 #### 4. **Всегда проверяйте AppCast XML после деплоя**
 ```bash
-curl -s http://20.151.51.172:8081/appcast.xml | grep -E "(sparkle:version|length)"
+curl -s http://nexy-server.canadacentral.cloudapp.azure.com:8081/appcast.xml | grep -E "(sparkle:version|length)"
 ```
 
 ### 🧪 Чеклист перед деплоем:
@@ -250,12 +250,12 @@ curl -s http://20.151.51.172:8081/appcast.xml | grep -E "(sparkle:version|length
    📏 Размер: 97368441 байт (проверен на GitHub)
    🔐 SHA256: e62a4571190d94e68a0c95a793729c96610e5c5267945b794f7dfa45bb9cf480
    🔗 GitHub: https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
-   🖥️  Сервер: http://20.151.51.172:8081
+   🖥️  Сервер: http://nexy-server.canadacentral.cloudapp.azure.com:8081
 
 🔗 Ссылки:
    📥 Скачать: https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
-   📰 AppCast: http://20.151.51.172:8081/appcast.xml
-   📋 Манифест: http://20.151.51.172:8081/manifests/manifest_1.0.0.json
+   📰 AppCast: http://nexy-server.canadacentral.cloudapp.azure.com:8081/appcast.xml
+   📋 Манифест: http://nexy-server.canadacentral.cloudapp.azure.com:8081/manifests/manifest_1.0.0.json
    📁 Релиз: https://github.com/Seregawpn/Nexy_production/releases/tag/Update
 
 ✅ Система обновлений готова!

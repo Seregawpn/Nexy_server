@@ -12,9 +12,9 @@ Session Management Module - Управление сессиями
 
 from .core.session_manager import SessionManager
 from .config import SessionManagementConfig
+from .._version import get_module_version
 
 __all__ = ['SessionManager', 'SessionManagementConfig']
-__version__ = '1.0.0'
-
+__version__ = get_module_version()
 
 

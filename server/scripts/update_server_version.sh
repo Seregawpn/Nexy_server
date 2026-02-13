@@ -1,7 +1,7 @@
 #!/bin/bash
 # 🚀 Скрипт для обновления версии сервера на Azure
 # Использование: ./update_server_version.sh [VERSION] [BUILD]
-# Пример: ./update_server_version.sh 1.0.1 1.0.1
+# Пример: ./update_server_version.sh 1.6.1.33 1.6.1.33
 
 set -e
 
@@ -18,9 +18,19 @@ SERVER_PATH="/home/azureuser/voice-assistant"
 CONFIG_FILE="$SERVER_PATH/server/config.env"
 MANIFEST_DIR="$SERVER_PATH/server/updates/manifests"
 MANIFEST_FILE="$MANIFEST_DIR/manifest.json"
+VERSION_FILE="$(cd "$(dirname "$0")/../.." && pwd)/VERSION"
 
 # Параметры версии
-VERSION="${1:-1.0.1}"
+if [ -n "${1:-}" ]; then
+    VERSION="$1"
+elif [ -f "$VERSION_FILE" ]; then
+    VERSION="$(tr -d '\n\r ' < "$VERSION_FILE")"
+else
+    echo -e "${RED}❌ VERSION файл не найден: $VERSION_FILE${NC}"
+    echo "Передайте версию аргументом: $0 <VERSION> [BUILD]"
+    exit 1
+fi
+
 BUILD="${2:-$VERSION}"
 
 echo "=========================================="
@@ -163,8 +173,8 @@ try:
             manifest = json.load(f)
     else:
         manifest = {
-            \"version\": \"1.0.0\",
-            \"build\": \"1.0.0\",
+            \"version\": new_version,
+            \"build\": new_build,
             \"artifact\": {
                 \"type\": \"dmg\",
                 \"url\": \"\",
@@ -261,7 +271,7 @@ echo -e "${YELLOW}🔍 ШАГ 4: Проверка результата...${NC}"
 sleep 5
 
 echo "Проверка /health endpoint..."
-HEALTH_RESPONSE=$(curl -sk "https://20.151.51.172/health" 2>/dev/null || echo "")
+HEALTH_RESPONSE=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/health" 2>/dev/null || echo "")
 if [ -n "$HEALTH_RESPONSE" ]; then
     HEALTH_VERSION=$(echo "$HEALTH_RESPONSE" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('latest_version', 'N/A'))" 2>/dev/null || echo "N/A")
     HEALTH_BUILD=$(echo "$HEALTH_RESPONSE" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('latest_build', 'N/A'))" 2>/dev/null || echo "N/A")
@@ -276,7 +286,7 @@ else
 fi
 
 echo "Проверка /updates/health endpoint..."
-UPDATES_HEALTH_RESPONSE=$(curl -sk "https://20.151.51.172/updates/health" 2>/dev/null || echo "")
+UPDATES_HEALTH_RESPONSE=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/updates/health" 2>/dev/null || echo "")
 if [ -n "$UPDATES_HEALTH_RESPONSE" ]; then
     UPDATES_VERSION=$(echo "$UPDATES_HEALTH_RESPONSE" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('latest_version', 'N/A'))" 2>/dev/null || echo "N/A")
     UPDATES_BUILD=$(echo "$UPDATES_HEALTH_RESPONSE" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('latest_build', 'N/A'))" 2>/dev/null || echo "N/A")
@@ -291,7 +301,7 @@ else
 fi
 
 echo "Проверка /appcast.xml..."
-APPCAST_VERSION=$(curl -sk "https://20.151.51.172/appcast.xml" 2>/dev/null | grep -o 'sparkle:version="[^"]*"' | head -1 | cut -d'"' -f2 || echo "N/A")
+APPCAST_VERSION=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/appcast.xml" 2>/dev/null | grep -o 'sparkle:version="[^"]*"' | head -1 | cut -d'"' -f2 || echo "N/A")
 if [ "$APPCAST_VERSION" = "$BUILD" ]; then
     echo -e "${GREEN}✅ /appcast.xml версия корректна: $APPCAST_VERSION${NC}"
 else
@@ -306,9 +316,8 @@ echo "Версия: $VERSION"
 echo "Build: $BUILD"
 echo ""
 echo "Проверьте эндпоинты:"
-echo "  - https://20.151.51.172/health"
-echo "  - https://20.151.51.172/status"
-echo "  - https://20.151.51.172/updates/health"
-echo "  - https://20.151.51.172/appcast.xml"
+echo "  - https://nexy-server.canadacentral.cloudapp.azure.com/health"
+echo "  - https://nexy-server.canadacentral.cloudapp.azure.com/status"
+echo "  - https://nexy-server.canadacentral.cloudapp.azure.com/updates/health"
+echo "  - https://nexy-server.canadacentral.cloudapp.azure.com/appcast.xml"
 echo ""
-

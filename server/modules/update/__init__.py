@@ -13,9 +13,9 @@ Update Module - Система управления обновлениями
 
 from .core.update_manager import UpdateManager
 from .config import UpdateConfig
+from .._version import get_module_version
 
 __all__ = ['UpdateManager', 'UpdateConfig']
-__version__ = '1.0.0'
-
+__version__ = get_module_version()
 
 

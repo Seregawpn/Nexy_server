@@ -28,7 +28,7 @@ log_info "🔍 Полная проверка и исправление appcast..
 
 # Проверка текущего appcast
 log_info "Шаг 1: Проверка appcast через HTTPS..."
-APPCAST_URL=$(curl -sk "https://20.151.51.172/updates/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)
+APPCAST_URL=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)
 log_info "Текущий URL в appcast: $APPCAST_URL"
 
 if echo "$APPCAST_URL" | grep -qE '(localhost|127\.0\.0\.1|:8080)'; then
@@ -82,7 +82,7 @@ with open('$MANIFEST_FILE', 'r') as f:
 
 # Исправляем URL
 old_url = manifest.get('artifact', {}).get('url', '')
-new_url = 'https://20.151.51.172/updates/downloads/test-update.txt'
+new_url = 'https://nexy-server.canadacentral.cloudapp.azure.com/updates/downloads/test-update.txt'
 
 manifest['artifact']['url'] = new_url
 manifest['notes_url'] = new_url
@@ -126,7 +126,7 @@ log_success "Сервер перезапущен"
 log_info "Шаг 4: Финальная проверка..."
 sleep 3
 
-FINAL_APPCAST=$(curl -sk "https://20.151.51.172/updates/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)
+FINAL_APPCAST=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)
 log_info "Финальный URL в appcast: $FINAL_APPCAST"
 
 if echo "$FINAL_APPCAST" | grep -qE '(localhost|127\.0\.0\.1|:8080)'; then
@@ -143,6 +143,6 @@ echo "  • Манифест: проверен и исправлен"
 echo "  • Сервер: перезапущен"
 echo ""
 log_info "🔍 Проверка:"
-echo "  curl -sk \"https://20.151.51.172/updates/appcast.xml\" | grep url"
+echo "  curl -sk \"https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml\" | grep url"
 
 

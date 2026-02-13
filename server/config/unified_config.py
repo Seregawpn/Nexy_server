@@ -45,8 +45,13 @@ def get_version_from_file() -> str:
         except Exception as e:
             logger.warning(f"Не удалось прочитать VERSION файл: {e}")
     
-    # Fallback: используем переменную окружения или дефолт
-    return os.getenv('SERVER_VERSION', '1.6.1.17')
+    # Fallback: используем переменную окружения без закрепления конкретной версии в коде
+    env_version = os.getenv('SERVER_VERSION', '').strip()
+    if env_version:
+        return env_version
+
+    logger.warning("VERSION и SERVER_VERSION не найдены, используется техническая версия 0.0.0.0")
+    return "0.0.0.0"
 
 @dataclass
 class DatabaseConfig:

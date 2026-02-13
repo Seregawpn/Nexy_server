@@ -180,7 +180,7 @@ async def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Тест backpressure")
-    parser.add_argument("host", nargs="?", default="20.151.51.172", help="Хост сервера")
+    parser.add_argument("host", nargs="?", default="nexy-server.canadacentral.cloudapp.azure.com", help="Хост сервера")
     parser.add_argument("port", nargs="?", type=int, default=443, help="Порт сервера")
     parser.add_argument("--max-streams", type=int, default=50, help="Максимальное количество стримов")
     

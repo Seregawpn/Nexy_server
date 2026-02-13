@@ -248,9 +248,9 @@
    - Валидация ответа
 
 2. **CI проверки:**
-   - Health endpoint: `curl http://20.151.51.172/health` → 200 OK
-   - Status endpoint: `curl http://20.151.51.172/status` → JSON
-   - Port check: `nc -zv 20.151.51.172 50051` → порт слушает
+   - Health endpoint: `curl http://nexy-server.canadacentral.cloudapp.azure.com/health` → 200 OK
+   - Status endpoint: `curl http://nexy-server.canadacentral.cloudapp.azure.com/status` → JSON
+   - Port check: `nc -zv nexy-server.canadacentral.cloudapp.azure.com 50051` → порт слушает
 
 3. **Версии и размеры:**
    - Health версии совпадают с AppCast

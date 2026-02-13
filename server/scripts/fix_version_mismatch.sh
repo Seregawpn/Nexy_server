@@ -28,7 +28,14 @@ MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"
 MANIFEST_FILE="manifest.json"
 
 # Параметры
-CLIENT_VERSION="${1:-1.0.0}"
+VERSION_FILE="$(cd "$(dirname "$0")/../.." && pwd)/VERSION"
+if [ -n "${1:-}" ]; then
+    CLIENT_VERSION="$1"
+elif [ -f "$VERSION_FILE" ]; then
+    CLIENT_VERSION="$(tr -d '\n\r ' < "$VERSION_FILE")"
+else
+    CLIENT_VERSION="0.0.0.0"
+fi
 ACTION="${2:-sync}"
 
 log_header "ИСПРАВЛЕНИЕ НЕСООТВЕТСТВИЯ ВЕРСИЙ"
@@ -179,7 +186,7 @@ fi
 log_info "Проверка результата..."
 sleep 3
 
-NEW_APPCAST=$(curl -sk "https://20.151.51.172/updates/appcast.xml" | grep -o 'sparkle:version="[^"]*"' | cut -d'"' -f2)
+NEW_APPCAST=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml" | grep -o 'sparkle:version="[^"]*"' | cut -d'"' -f2)
 log_info "Версия в appcast: $NEW_APPCAST"
 
 if [ "$NEW_APPCAST" = "$CLIENT_VERSION" ]; then
@@ -201,5 +208,4 @@ else
 fi
 echo ""
 log_info "🔍 Проверка:"
-echo "  curl -sk \"https://20.151.51.172/updates/appcast.xml\" | grep sparkle:version"
-
+echo "  curl -sk \"https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml\" | grep sparkle:version"

@@ -85,7 +85,7 @@ az vm run-command invoke \
         if [ -f \"\$CONFIG_FILE\" ]; then
             echo \"✅ unified_config.py обновлен\"
             echo \"📋 Проверка версии в файле:\"
-            grep -A 2 'default_version.*1.0.1' \"\$CONFIG_FILE\" | head -3 || echo \"⚠️  Версия не найдена в ожидаемом формате\"
+            grep -A 2 'default_version' \"\$CONFIG_FILE\" | head -3 || echo \"⚠️  Версия не найдена в ожидаемом формате\"
         else
             echo \"❌ Ошибка обновления unified_config.py\"
             exit 1
@@ -245,9 +245,9 @@ echo "Проверка, что все эндпоинты используют в
 echo ""
 
 # Проверяем, что версии совпадают
-HEALTH_RESPONSE=$(curl -sk "https://20.151.51.172/health" 2>/dev/null || echo "")
-UPDATES_HEALTH_RESPONSE=$(curl -sk "https://20.151.51.172/updates/health" 2>/dev/null || echo "")
-APPCAST_VERSION=$(curl -sk "https://20.151.51.172/appcast.xml" 2>/dev/null | grep -o 'sparkle:version="[^"]*"' | head -1 | cut -d'"' -f2 || echo "N/A")
+HEALTH_RESPONSE=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/health" 2>/dev/null || echo "")
+UPDATES_HEALTH_RESPONSE=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/updates/health" 2>/dev/null || echo "")
+APPCAST_VERSION=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/appcast.xml" 2>/dev/null | grep -o 'sparkle:version="[^"]*"' | head -1 | cut -d'"' -f2 || echo "N/A")
 
 if [ -n "$HEALTH_RESPONSE" ] && [ -n "$UPDATES_HEALTH_RESPONSE" ]; then
     HEALTH_VERSION=$(echo "$HEALTH_RESPONSE" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('latest_version', 'N/A'))" 2>/dev/null || echo "N/A")

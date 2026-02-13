@@ -12,9 +12,9 @@ Database Module - Управление базой данных
 
 from .core.database_manager import DatabaseManager
 from .config import DatabaseConfig
+from .._version import get_module_version
 
 __all__ = ['DatabaseManager', 'DatabaseConfig']
-__version__ = '1.0.0'
-
+__version__ = get_module_version()
 
 

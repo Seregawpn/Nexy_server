@@ -136,19 +136,12 @@ class UpdateServerProvider:
             if latest_manifest and "artifact" in latest_manifest:
                 expected_size = latest_manifest["artifact"].get("size", 0)
             
-            # Логируем несоответствие размера
+            # Runtime не должен изменять release-метаданные манифеста.
             if expected_size > 0 and actual_size != expected_size:
-                logger.warning(f"⚠️ Размер файла не совпадает: ожидалось {expected_size}, фактический {actual_size} (разница: {actual_size - expected_size:+d} байт)")
-                
-                # Обновляем манифест с актуальным размером
-                try:
-                    self.manifest_provider.update_manifest(
-                        f"manifest_{latest_manifest['version']}.json",
-                        {"artifact": {"size": actual_size}}
-                    )
-                    logger.info(f"✅ Манифест обновлен с актуальным размером: {actual_size} байт")
-                except Exception as e:
-                    logger.error(f"❌ Ошибка обновления манифеста: {e}")
+                logger.warning(
+                    f"⚠️ Размер файла не совпадает: ожидалось {expected_size}, "
+                    f"фактический {actual_size} (разница: {actual_size - expected_size:+d} байт)"
+                )
             
             if self.config.log_downloads:
                 logger.info(f"📥 Загрузка файла: {filename} (размер: {actual_size} байт)")
@@ -302,7 +295,7 @@ class UpdateServerProvider:
             <enclosure 
                 url="{artifact.get("url", "")}"
                 sparkle:version="{manifest.get("build", 0)}"
-                sparkle:shortVersionString="{manifest.get("version", "1.0.0")}"
+                sparkle:shortVersionString="{manifest.get("version", self.config.default_version)}"
                 length="{artifact.get("size", 0)}"
                 type="application/octet-stream"
                 sparkle:dsaSignature="{artifact.get("ed25519", "")}"
@@ -458,6 +451,4 @@ class UpdateServerProvider:
                 "api_versions": f"http://{self.config.host}:{self.config.port}/api/versions"
             }
         }
-
-
 

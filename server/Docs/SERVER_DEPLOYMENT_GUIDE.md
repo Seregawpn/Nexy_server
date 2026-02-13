@@ -604,6 +604,6 @@ cd scripts/
 
 ### **🔗 Ссылки:**
 - **📥 Скачать:** `https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg`
-- **📰 AppCast (PUBLIC через 443):** `https://20.151.51.172/appcast.xml`
-- **📋 Манифест (PUBLIC через 443):** `https://20.151.51.172/manifests/manifest_1.0.0.json`
+- **📰 AppCast (PUBLIC через 443):** `https://nexy-server.canadacentral.cloudapp.azure.com/appcast.xml`
+- **📋 Манифест (PUBLIC через 443):** `https://nexy-server.canadacentral.cloudapp.azure.com/manifests/manifest_1.0.0.json`
 - **📁 Релиз:** `https://github.com/Seregawpn/Nexy_production/releases/tag/Update`

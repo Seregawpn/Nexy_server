@@ -98,14 +98,14 @@ log_info "Проверка доступности endpoints..."
 sleep 1
 
 # Проверка appcast
-if curl -sk -o /dev/null -w "%{http_code}" "https://20.151.51.172/updates/appcast.xml" | grep -q "200"; then
+if curl -sk -o /dev/null -w "%{http_code}" "https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml" | grep -q "200"; then
     log_success "Appcast доступен"
 else
     log_warning "Appcast недоступен"
 fi
 
 # Проверка health
-if curl -sk -o /dev/null -w "%{http_code}" "https://20.151.51.172/updates/health" | grep -q "200"; then
+if curl -sk -o /dev/null -w "%{http_code}" "https://nexy-server.canadacentral.cloudapp.azure.com/updates/health" | grep -q "200"; then
     log_success "Health endpoint доступен"
 else
     log_warning "Health endpoint недоступен"

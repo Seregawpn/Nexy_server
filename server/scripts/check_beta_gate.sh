@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Параметры
-HOST="${1:-20.151.51.172}"
+HOST="${1:-nexy-server.canadacentral.cloudapp.azure.com}"
 PORT="${2:-443}"
 
 echo "🔍 Beta Gate Checklist Check"

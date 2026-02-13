@@ -35,7 +35,7 @@ log_error() {
 # Конфигурация
 AZURE_RESOURCE_GROUP="Nexy"
 AZURE_VM_NAME="nexy-regular"
-SERVER_IP="20.151.51.172"
+SERVER_IP="nexy-server.canadacentral.cloudapp.azure.com"
 MANIFEST_DIR="/home/azureuser/voice-assistant/updates/manifests"
 MANIFEST_FILE="manifest.json"
 

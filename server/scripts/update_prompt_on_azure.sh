@@ -378,7 +378,7 @@ if [ $? -eq 0 ]; then
     log_info "✅ Новый промт активен"
     echo ""
     log_info "🔗 Проверка:"
-    echo "   curl -sk https://20.151.51.172/health"
+    echo "   curl -sk https://nexy-server.canadacentral.cloudapp.azure.com/health"
 else
     log_error "Ошибка замены промта"
     exit 1

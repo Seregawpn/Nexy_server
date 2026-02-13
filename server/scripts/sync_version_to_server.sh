@@ -50,8 +50,8 @@ if manifest_file.exists():
         manifest = json.load(f)
 else:
     manifest = {
-        'version': '1.0.0',
-        'build': '1.0.0',
+        'version': new_version,
+        'build': new_build,
         'artifact': {
             'type': 'dmg',
             'url': '',

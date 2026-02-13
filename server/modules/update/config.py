@@ -25,7 +25,11 @@ except ImportError:
                 return version_file.read_text().strip()
             except Exception as e:
                 logger.warning(f"Failed to read VERSION file: {e}")
-        return os.getenv('SERVER_VERSION', '1.6.0.35')
+        env_version = os.getenv('SERVER_VERSION', '').strip()
+        if env_version:
+            return env_version
+        logger.warning("VERSION и SERVER_VERSION не найдены, используется техническая версия 0.0.0.0")
+        return "0.0.0.0"
 
 
 @dataclass
@@ -145,5 +149,4 @@ class UpdateConfig:
         except Exception as e:
             logger.warning(f"Config validation failed: {e}")
             return False
-
 

@@ -12,6 +12,7 @@ Text Processing Module - Обработка текста с использова
 
 from .core.text_processor import TextProcessor
 from .config import TextProcessingConfig
+from .._version import get_module_version
 
 __all__ = ['TextProcessor', 'TextProcessingConfig']
-__version__ = '1.0.0'
+__version__ = get_module_version()

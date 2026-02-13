@@ -2,7 +2,7 @@
 # Скрипт проверки ingress и сетевого входа
 # Проверяет: /health, /status, /updates/health, certificate SAN
 # Использование: ./scripts/check_ingress.sh [HOST] [PORT]
-# Пример: ./scripts/check_ingress.sh 20.151.51.172 443
+# Пример: ./scripts/check_ingress.sh nexy-server.canadacentral.cloudapp.azure.com 443
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Параметры по умолчанию
-HOST="${1:-20.151.51.172}"
+HOST="${1:-nexy-server.canadacentral.cloudapp.azure.com}"
 PORT="${2:-443}"
 PROTOCOL="https"
 

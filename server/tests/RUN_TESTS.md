@@ -6,7 +6,7 @@
 
 ```bash
 # Production сервер
-python scripts/grpc_smoke.py 20.151.51.172 443
+python scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Локальный сервер
 python scripts/grpc_smoke.py localhost 50051
@@ -29,7 +29,7 @@ python scripts/grpc_smoke.py localhost 50051
 ### Ожидаемый результат
 
 ```
-✅ Подключение к 20.151.51.172:443 установлено
+✅ Подключение к nexy-server.canadacentral.cloudapp.azure.com:443 установлено
 🧪 Тестирование InterruptSession...
 ✅ InterruptSession успешен: success=True
 🧪 Тестирование StreamAudio...
@@ -47,7 +47,7 @@ python scripts/grpc_smoke.py localhost 50051
 
 ```bash
 # Production сервер
-python scripts/check_grpc_health.py 20.151.51.172 443
+python scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Локальный сервер
 python scripts/check_grpc_health.py localhost 8080
@@ -187,7 +187,7 @@ server/tests/test_memory_single_call_smoke.py::TestMemorySingleCallSmoke::test_n
 
 ```bash
 # Production сервер
-./scripts/check_ingress.sh 20.151.51.172 443
+./scripts/check_ingress.sh nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Локальный сервер
 ./scripts/check_ingress.sh localhost 8080
@@ -213,17 +213,17 @@ python -m pytest tests/test_config_drift.py -v
 # Пример шага для smoke-теста
 - name: gRPC Smoke Test
   run: |
-    python scripts/grpc_smoke.py 20.151.51.172 443
+    python scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Пример шага для health check
 - name: Health/Status Check
   run: |
-    python scripts/check_grpc_health.py 20.151.51.172 443
+    python scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Пример шага для проверки порта
 - name: Port Check
   run: |
-    nc -zv 20.151.51.172 50051 || echo "Port check skipped (Nginx reverse proxy)"
+    nc -zv nexy-server.canadacentral.cloudapp.azure.com 50051 || echo "Port check skipped (Nginx reverse proxy)"
 ```
 
 ---

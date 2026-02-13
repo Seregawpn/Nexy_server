@@ -1,10 +1,10 @@
 {
-  "version": "1.0.1",
-  "build": "1.0.1",
-  "release_date": "2025-09-20T00:30:06.034643Z",
+  "version": "1.6.1.33",
+  "build": "1.6.1.33",
+  "release_date": "2026-02-13T16:39:17.156045+00:00",
   "artifact": {
     "type": "txt",
-    "url": "https://20.151.51.172/updates/appcast.xml",
+    "url": "https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml",
     "size": 33,
     "sha256": "82563569ade22e35d4344ab9e2aa31028c0b39766d2dd76c18ae0d8f0a7aca31",
     "arch": "universal2",
@@ -13,5 +13,5 @@
   },
   "critical": false,
   "auto_install": true,
-  "notes_url": "https://20.151.51.172/updates/appcast.xml"
+  "notes_url": "https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml"
 }

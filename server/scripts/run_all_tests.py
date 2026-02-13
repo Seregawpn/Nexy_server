@@ -13,7 +13,7 @@
     python server/scripts/run_all_tests.py --level unit
     
     # Только smoke тесты
-    python server/scripts/run_all_tests.py --level smoke --host 20.151.51.172 --port 443
+    python server/scripts/run_all_tests.py --level smoke --host nexy-server.canadacentral.cloudapp.azure.com --port 443
 """
 
 import sys
@@ -227,7 +227,7 @@ def main():
     )
     parser.add_argument(
         "--host",
-        default="20.151.51.172",
+        default="nexy-server.canadacentral.cloudapp.azure.com",
         help="Хост сервера для тестирования"
     )
     parser.add_argument(

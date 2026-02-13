@@ -3,13 +3,17 @@
 Генерация манифеста обновлений
 """
 
+import argparse
 import os
 import json
 import hashlib
 import sys
+import re
 from typing import Optional
 from datetime import datetime
 from sign_file import sign_file
+
+VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 def calculate_sha256(file_path: str) -> str:
     """Вычисление SHA256 хеша файла"""
@@ -19,7 +23,7 @@ def calculate_sha256(file_path: str) -> str:
             sha256_hash.update(chunk)
     return sha256_hash.hexdigest()
 
-def generate_manifest(artifact_path: str, version: str, build: int, 
+def generate_manifest(artifact_path: str, version: str, build: str,
                      artifact_type: str = "dmg", private_key_path: Optional[str] = None,
                      notes_url: Optional[str] = None, critical: bool = False) -> dict:
     """
@@ -28,7 +32,7 @@ def generate_manifest(artifact_path: str, version: str, build: int,
     Args:
         artifact_path: Путь к артефакту (DMG/ZIP)
         version: Версия приложения (например, "2.6.0")
-        build: Номер сборки (например, 20600)
+        build: Номер сборки (по умолчанию равен версии)
         artifact_type: Тип артефакта ("dmg" или "zip")
         private_key_path: Путь к приватному ключу для подписи
         notes_url: URL с заметками о версии
@@ -93,18 +97,53 @@ def save_manifest(manifest: dict, output_path: str):
     
     print(f"✅ Манифест сохранен: {output_path}")
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Генерация update-манифеста (size/sha256 вычисляются автоматически)"
+    )
+    parser.add_argument("artifact_path", help="Путь к артефакту (DMG/ZIP)")
+    parser.add_argument("version", help="Версия приложения в формате X.Y.Z")
+    parser.add_argument(
+        "--build",
+        help="Номер сборки. Если не указан, используется значение version.",
+    )
+    parser.add_argument(
+        "--type",
+        dest="artifact_type",
+        default="dmg",
+        help="Тип артефакта (по умолчанию: dmg)",
+    )
+    parser.add_argument(
+        "--private-key",
+        dest="private_key_path",
+        help="Путь к приватному ключу для Ed25519 подписи",
+    )
+    parser.add_argument(
+        "--notes-url",
+        dest="notes_url",
+        help="URL заметок к релизу",
+    )
+    parser.add_argument(
+        "--critical",
+        action="store_true",
+        help="Пометить обновление как критическое",
+    )
+    return parser.parse_args()
+
+
 def main():
-    if len(sys.argv) < 4:
-        print("Использование: python3 generate_manifest.py <артефакт> <версия> <сборка> [тип] [приватный_ключ] [заметки_url]")
-        print("Пример: python3 generate_manifest.py Nexy-2.6.0.dmg 2.6.0 20600 dmg keys/ed25519_private.key")
+    args = parse_args()
+    artifact_path = args.artifact_path
+    version = args.version
+    build = args.build or version
+    artifact_type = args.artifact_type
+    private_key_path = args.private_key_path
+    notes_url = args.notes_url
+    critical = args.critical
+
+    if not VERSION_PATTERN.match(version):
+        print(f"❌ Неверный формат версии: {version}. Ожидается X.Y.Z")
         sys.exit(1)
-    
-    artifact_path = sys.argv[1]
-    version = sys.argv[2]
-    build = int(sys.argv[3])
-    artifact_type = sys.argv[4] if len(sys.argv) > 4 else "dmg"
-    private_key_path = sys.argv[5] if len(sys.argv) > 5 else None
-    notes_url = sys.argv[6] if len(sys.argv) > 6 else None
     
     try:
         # Генерируем манифест
@@ -114,7 +153,8 @@ def main():
             build=build,
             artifact_type=artifact_type,
             private_key_path=private_key_path,
-            notes_url=notes_url
+            notes_url=notes_url,
+            critical=critical,
         )
         
         # Сохраняем манифест
@@ -123,6 +163,7 @@ def main():
         save_manifest(manifest, output_path)
         
         print(f"📋 Манифест для версии {version} (сборка {build}) создан")
+        print("ℹ️ Поля artifact.size и artifact.sha256 рассчитаны автоматически")
         
     except Exception as e:
         print(f"❌ Ошибка генерации манифеста: {e}")

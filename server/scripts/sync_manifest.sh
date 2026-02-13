@@ -42,9 +42,18 @@ log_header() {
 
 # Конфигурация
 REPO="Seregawpn/Nexy_production"
-RELEASE_TAG="Update"
+VERSION_FILE="$(cd "$(dirname "$0")/../.." && pwd)/VERSION"
+if [ -z "${RELEASE_TAG:-}" ]; then
+    if [ -f "$VERSION_FILE" ]; then
+        RELEASE_VERSION="$(tr -d '\n\r ' < "$VERSION_FILE")"
+        RELEASE_TAG="v$RELEASE_VERSION"
+    else
+        log_error "VERSION файл не найден: $VERSION_FILE и RELEASE_TAG не задан"
+        exit 1
+    fi
+fi
 FILE_NAME="Nexy.dmg"
-MANIFEST_FILE="manifest_1.0.0.json"
+MANIFEST_FILE="${MANIFEST_FILE:-manifest.json}"
 MANIFEST_DIR="/home/azureuser/voice-assistant/updates/manifests"
 AZURE_RESOURCE_GROUP="Nexy"
 AZURE_VM_NAME="nexy-regular"
@@ -277,7 +286,7 @@ check_appcast() {
     log_info "Проверка AppCast XML..."
     
     local appcast_data
-    appcast_data=$(curl -s "http://20.151.51.172:8081/appcast.xml")
+    appcast_data=$(curl -s "http://nexy-server.canadacentral.cloudapp.azure.com:8081/appcast.xml")
     
     if [ -z "$appcast_data" ]; then
         log_error "Не удалось получить AppCast XML"
@@ -305,8 +314,8 @@ final_verification() {
     echo "🧪 ФИНАЛЬНАЯ ПРОВЕРКА:"
     echo "   🔗 GitHub: $GITHUB_FILE_SIZE байт"
     echo "   📄 Манифест: $GITHUB_FILE_SIZE байт"
-    echo "   📋 AppCast: $(curl -s "http://20.151.51.172:8081/appcast.xml" | grep -o 'length="[^"]*"' | cut -d'"' -f2) байт"
-    echo "   🔗 URLs: $(curl -s "http://20.151.51.172:8081/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)"
+    echo "   📋 AppCast: $(curl -s "http://nexy-server.canadacentral.cloudapp.azure.com:8081/appcast.xml" | grep -o 'length="[^"]*"' | cut -d'"' -f2) байт"
+    echo "   🔗 URLs: $(curl -s "http://nexy-server.canadacentral.cloudapp.azure.com:8081/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)"
     
     log_success "Синхронизация завершена успешно!"
 }

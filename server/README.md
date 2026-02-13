@@ -57,13 +57,13 @@ python server/main.py
 
 ```bash
 # Общая проверка
-./scripts/preflight_check.sh 20.151.51.172 443
+./scripts/preflight_check.sh nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Проверка интерсепторов
-python scripts/test_interceptor_errors.py 20.151.51.172 443
+python scripts/test_interceptor_errors.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Проверка backpressure
-python scripts/test_backpressure.py 20.151.51.172 443
+python scripts/test_backpressure.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 ### Мониторинг
@@ -89,7 +89,7 @@ pytest server/tests/test_pr2_1_coordinator.py
 python server/scripts/grpc_smoke.py localhost 50051
 
 # Smoke-тест продового инстанса
-python scripts/grpc_smoke.py 20.151.51.172 443
+python scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 ---
@@ -127,7 +127,7 @@ Docs/
 
 - `NEXY_ENV` управляет значениями по умолчанию для `grpc.host`, `http.host` и `update.host`: в `dev` слушаем `0.0.0.0` для локальных тестов, в `stage/prod` автоматически переключаемся на `127.0.0.1`, а наружный трафик идёт через Nginx.
 - Значение `auto` в `GRPC_HOST`/`HTTP_HOST`/`UPDATE_HOST` означает «использовать дефолт для текущего окружения».
-- Публичная точка входа продакшена — `https://20.151.51.172` (443/HTTP2). Внутренние сервисы (`50051`, `8080`, `8081`) не слушают внешние интерфейсы в проде.
+- Публичная точка входа продакшена — `https://nexy-server.canadacentral.cloudapp.azure.com` (443/HTTP2). Внутренние сервисы (`50051`, `8080`, `8081`) не слушают внешние интерфейсы в проде.
 
 ### Backpressure конфигурация
 
@@ -161,23 +161,23 @@ backpressure:
 
 ```bash
 # gRPC smoke test
-python scripts/grpc_smoke.py 20.151.51.172 443
+python scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Health check
-python scripts/check_grpc_health.py 20.151.51.172 443
+python scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Contract tests
-python scripts/grpc_contract_tests.py 20.151.51.172 443
+python scripts/grpc_contract_tests.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Chaos test
-python scripts/chaos_smoke.py 20.151.51.172 443
+python scripts/chaos_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 ### Валидация обновлений
 
 ```bash
 # Проверка версий и размеров
-bash scripts/validate_updates.sh 20.151.51.172 443
+bash scripts/validate_updates.sh nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 ### Финальный smoke перед релизом

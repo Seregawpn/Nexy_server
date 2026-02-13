@@ -113,7 +113,7 @@ else
             ls -lh \"$DOWNLOADS_DIR/$FILENAME\"
         " > /dev/null
     
-    ARTIFACT_URL="https://20.151.51.172/updates/downloads/$FILENAME"
+    ARTIFACT_URL="https://nexy-server.canadacentral.cloudapp.azure.com/updates/downloads/$FILENAME"
     log_success "Файл загружен на сервер"
 fi
 
@@ -211,8 +211,8 @@ sleep 3
 
 # Проверка appcast
 log_info "Проверка appcast..."
-APPCAST_URL=$(curl -sk "https://20.151.51.172/updates/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)
-APPCAST_TYPE=$(curl -sk "https://20.151.51.172/updates/appcast.xml" | grep -o 'type="[^"]*"' | cut -d'"' -f2)
+APPCAST_URL=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)
+APPCAST_TYPE=$(curl -sk "https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml" | grep -o 'type="[^"]*"' | cut -d'"' -f2)
 
 log_info "URL в appcast: $APPCAST_URL"
 log_info "Тип в appcast: $APPCAST_TYPE"
@@ -246,6 +246,6 @@ echo "  • Размер: $FILE_SIZE байт"
 echo "  • Сервер: перезапущен"
 echo ""
 log_info "🔍 Проверка:"
-echo "  curl -sk \"https://20.151.51.172/updates/appcast.xml\" | grep url"
+echo "  curl -sk \"https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml\" | grep url"
 
 

@@ -12,9 +12,9 @@ Audio Generation Module - Генерация аудио
 
 from .core.audio_processor import AudioProcessor
 from .config import AudioGenerationConfig
+from .._version import get_module_version
 
 __all__ = ['AudioProcessor', 'AudioGenerationConfig']
-__version__ = '1.0.0'
-
+__version__ = get_module_version()
 
 

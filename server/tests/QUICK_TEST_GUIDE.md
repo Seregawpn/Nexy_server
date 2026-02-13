@@ -17,7 +17,7 @@ pytest server/tests/ -v
 ### 2. Smoke тесты (1-2 минуты)
 ```bash
 # Production сервер
-python server/scripts/grpc_smoke.py 20.151.51.172 443
+python server/scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # Локальный сервер
 python server/scripts/grpc_smoke.py localhost 50051
@@ -25,7 +25,7 @@ python server/scripts/grpc_smoke.py localhost 50051
 
 ### 3. Health checks (30 секунд)
 ```bash
-python server/scripts/check_grpc_health.py 20.151.51.172 443
+python server/scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 ### 4. E2E тесты (3-5 минут)
@@ -40,10 +40,10 @@ python server/scripts/test_full_pipeline_e2e.py
 pytest server/tests/ -v
 
 # 2. Smoke тест
-python server/scripts/grpc_smoke.py 20.151.51.172 443
+python server/scripts/grpc_smoke.py nexy-server.canadacentral.cloudapp.azure.com 443
 
 # 3. Health check
-python server/scripts/check_grpc_health.py 20.151.51.172 443
+python server/scripts/check_grpc_health.py nexy-server.canadacentral.cloudapp.azure.com 443
 ```
 
 ## 📊 Полное тестирование
@@ -56,7 +56,7 @@ python server/scripts/run_all_tests.py --level all
 python server/scripts/run_all_tests.py --level unit
 
 # Только smoke тесты
-python server/scripts/run_all_tests.py --level smoke --host 20.151.51.172 --port 443
+python server/scripts/run_all_tests.py --level smoke --host nexy-server.canadacentral.cloudapp.azure.com --port 443
 ```
 
 ## ✅ Ожидаемые результаты
