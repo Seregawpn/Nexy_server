@@ -44,8 +44,8 @@ CHANNEL="stable"
 OVERRIDE_VERSION=""
 REPO="Seregawpn/Nexy_production"
 PUBLIC_HOST="nexy-server.canadacentral.cloudapp.azure.com"
-AZURE_RESOURCE_GROUP="Nexy"
-AZURE_VM_NAME="nexy-regular"
+AZURE_RESOURCE_GROUP="NETWORKWATCHERRG"
+AZURE_VM_NAME="Nexy"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -180,7 +180,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-manifests_dir = Path('updates/manifests')
+manifests_dir = Path('server/updates/manifests')
 manifests_dir.mkdir(parents=True, exist_ok=True)
 manifest_current = manifests_dir / 'manifest.json'
 manifest_versioned = manifests_dir / 'manifest_${VERSION}.json'

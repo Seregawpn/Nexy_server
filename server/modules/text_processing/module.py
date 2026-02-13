@@ -63,11 +63,19 @@ class TextProcessingModule(UniversalModuleInterface):
             self._processor = TextProcessor(config, token_usage_tracker=token_tracker)
             
             # Инициализируем процессор
+            # Инициализируем процессор
             if await self._processor.initialize():
                 self._status = ModuleStatus(state=ModuleState.READY, health="ok")
                 logger.info(f"✅ Модуль {self.name} инициализирован")
             else:
-                raise Exception("Не удалось инициализировать TextProcessor")
+                # ВНИМАНИЕ: Если провайдер не инициализировался (например, 429 quota),
+                # мы НЕ роняем сервер, а переходим в degraded state.
+                self._status = ModuleStatus(
+                    state=ModuleState.READY, 
+                    health="degraded",
+                    last_error="TextProcessor initialization failed (provider error)"
+                )
+                logger.warning(f"⚠️ Модуль {self.name} инициализирован в ограниченном режиме (провайдер недоступен)")
                 
         except Exception as e:
             self._status = ModuleStatus(

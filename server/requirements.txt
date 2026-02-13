@@ -20,9 +20,10 @@ python-dotenv
 
 # gRPC и Protocol Buffers
 grpcio
-grpcio-tools
+# Note: google-ai-generativelanguage requires protobuf < 6.0
+grpcio-tools<1.69
 grpcio-status
-protobuf
+protobuf<6.0
 
 # Edge TTS
 edge-tts
@@ -54,3 +55,5 @@ stripe
 
 # Тестирование
 pytest-asyncio
+# NLP Processing
+nltk

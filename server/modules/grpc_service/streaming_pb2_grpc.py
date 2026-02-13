@@ -3,9 +3,9 @@
 import grpc
 import warnings
 
-import streaming_pb2 as streaming__pb2
+from modules.grpc_service import streaming_pb2 as modules_dot_grpc__service_dot_streaming__pb2
 
-GRPC_GENERATED_VERSION = '1.75.1'
+GRPC_GENERATED_VERSION = '1.68.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in streaming_pb2_grpc.py depends on'
+        + f' but the generated code in modules/grpc_service/streaming_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -37,23 +37,23 @@ class StreamingServiceStub(object):
         """
         self.StreamAudio = channel.unary_stream(
                 '/streaming.StreamingService/StreamAudio',
-                request_serializer=streaming__pb2.StreamRequest.SerializeToString,
-                response_deserializer=streaming__pb2.StreamResponse.FromString,
+                request_serializer=modules_dot_grpc__service_dot_streaming__pb2.StreamRequest.SerializeToString,
+                response_deserializer=modules_dot_grpc__service_dot_streaming__pb2.StreamResponse.FromString,
                 _registered_method=True)
         self.InterruptSession = channel.unary_unary(
                 '/streaming.StreamingService/InterruptSession',
-                request_serializer=streaming__pb2.InterruptRequest.SerializeToString,
-                response_deserializer=streaming__pb2.InterruptResponse.FromString,
+                request_serializer=modules_dot_grpc__service_dot_streaming__pb2.InterruptRequest.SerializeToString,
+                response_deserializer=modules_dot_grpc__service_dot_streaming__pb2.InterruptResponse.FromString,
                 _registered_method=True)
         self.GenerateWelcomeAudio = channel.unary_stream(
                 '/streaming.StreamingService/GenerateWelcomeAudio',
-                request_serializer=streaming__pb2.WelcomeRequest.SerializeToString,
-                response_deserializer=streaming__pb2.WelcomeResponse.FromString,
+                request_serializer=modules_dot_grpc__service_dot_streaming__pb2.WelcomeRequest.SerializeToString,
+                response_deserializer=modules_dot_grpc__service_dot_streaming__pb2.WelcomeResponse.FromString,
                 _registered_method=True)
         self.ReportUsage = channel.unary_unary(
                 '/streaming.StreamingService/ReportUsage',
-                request_serializer=streaming__pb2.UsageRequest.SerializeToString,
-                response_deserializer=streaming__pb2.UsageResponse.FromString,
+                request_serializer=modules_dot_grpc__service_dot_streaming__pb2.UsageRequest.SerializeToString,
+                response_deserializer=modules_dot_grpc__service_dot_streaming__pb2.UsageResponse.FromString,
                 _registered_method=True)
 
 
@@ -94,23 +94,23 @@ def add_StreamingServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'StreamAudio': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamAudio,
-                    request_deserializer=streaming__pb2.StreamRequest.FromString,
-                    response_serializer=streaming__pb2.StreamResponse.SerializeToString,
+                    request_deserializer=modules_dot_grpc__service_dot_streaming__pb2.StreamRequest.FromString,
+                    response_serializer=modules_dot_grpc__service_dot_streaming__pb2.StreamResponse.SerializeToString,
             ),
             'InterruptSession': grpc.unary_unary_rpc_method_handler(
                     servicer.InterruptSession,
-                    request_deserializer=streaming__pb2.InterruptRequest.FromString,
-                    response_serializer=streaming__pb2.InterruptResponse.SerializeToString,
+                    request_deserializer=modules_dot_grpc__service_dot_streaming__pb2.InterruptRequest.FromString,
+                    response_serializer=modules_dot_grpc__service_dot_streaming__pb2.InterruptResponse.SerializeToString,
             ),
             'GenerateWelcomeAudio': grpc.unary_stream_rpc_method_handler(
                     servicer.GenerateWelcomeAudio,
-                    request_deserializer=streaming__pb2.WelcomeRequest.FromString,
-                    response_serializer=streaming__pb2.WelcomeResponse.SerializeToString,
+                    request_deserializer=modules_dot_grpc__service_dot_streaming__pb2.WelcomeRequest.FromString,
+                    response_serializer=modules_dot_grpc__service_dot_streaming__pb2.WelcomeResponse.SerializeToString,
             ),
             'ReportUsage': grpc.unary_unary_rpc_method_handler(
                     servicer.ReportUsage,
-                    request_deserializer=streaming__pb2.UsageRequest.FromString,
-                    response_serializer=streaming__pb2.UsageResponse.SerializeToString,
+                    request_deserializer=modules_dot_grpc__service_dot_streaming__pb2.UsageRequest.FromString,
+                    response_serializer=modules_dot_grpc__service_dot_streaming__pb2.UsageResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -139,8 +139,8 @@ class StreamingService(object):
             request,
             target,
             '/streaming.StreamingService/StreamAudio',
-            streaming__pb2.StreamRequest.SerializeToString,
-            streaming__pb2.StreamResponse.FromString,
+            modules_dot_grpc__service_dot_streaming__pb2.StreamRequest.SerializeToString,
+            modules_dot_grpc__service_dot_streaming__pb2.StreamResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -166,8 +166,8 @@ class StreamingService(object):
             request,
             target,
             '/streaming.StreamingService/InterruptSession',
-            streaming__pb2.InterruptRequest.SerializeToString,
-            streaming__pb2.InterruptResponse.FromString,
+            modules_dot_grpc__service_dot_streaming__pb2.InterruptRequest.SerializeToString,
+            modules_dot_grpc__service_dot_streaming__pb2.InterruptResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -193,8 +193,8 @@ class StreamingService(object):
             request,
             target,
             '/streaming.StreamingService/GenerateWelcomeAudio',
-            streaming__pb2.WelcomeRequest.SerializeToString,
-            streaming__pb2.WelcomeResponse.FromString,
+            modules_dot_grpc__service_dot_streaming__pb2.WelcomeRequest.SerializeToString,
+            modules_dot_grpc__service_dot_streaming__pb2.WelcomeResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -220,8 +220,8 @@ class StreamingService(object):
             request,
             target,
             '/streaming.StreamingService/ReportUsage',
-            streaming__pb2.UsageRequest.SerializeToString,
-            streaming__pb2.UsageResponse.FromString,
+            modules_dot_grpc__service_dot_streaming__pb2.UsageRequest.SerializeToString,
+            modules_dot_grpc__service_dot_streaming__pb2.UsageResponse.FromString,
             options,
             channel_credentials,
             insecure,
