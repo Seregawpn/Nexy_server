@@ -52,14 +52,17 @@ class UpdaterIntegration:
             retries=updater_config_data.network.get("retries", 3),
             show_notifications=updater_config_data.ui.get("show_notifications", True),
             auto_download=updater_config_data.ui.get("auto_download", True),
-            ssl_verify=updater_config_data.security.get("ssl_verify", True)
+            ssl_verify=updater_config_data.security.get("ssl_verify", True),
+            allow_insecure_artifact_url=updater_config_data.security.get("allow_insecure_artifact_url", False),
         )
         
         self.updater = Updater(updater_config)
         self.check_task = None
         self.is_running = False
         self._update_in_progress: bool = False
+        self._update_lock = asyncio.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._last_check_ts: float | None = None
         self._last_download_percent: int = 0
         self._last_install_percent: int = 0
         # Поведение миграции регулируется конфигом/ENV
@@ -70,6 +73,8 @@ class UpdaterIntegration:
         self._config_loader = UnifiedConfigLoader.get_instance()
         # Current app mode (tracked via events instead of direct state access)
         self._current_mode: AppMode = AppMode.SLEEPING
+        self._strict_startup_gate: bool = bool((config or {}).get("strict_startup_gate", False))
+        self._startup_update_status: str = "not_checked"
     
     async def initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -110,7 +115,9 @@ class UpdaterIntegration:
     async def start(self) -> bool:
         """Запуск интеграции"""
         try:
+            self._startup_update_status = "not_checked"
             if not self.updater.config.enabled:
+                self._startup_update_status = "disabled"
                 logger.info("⏭️ Пропускаю запуск UpdaterIntegration - отключен")
                 return True
             
@@ -124,6 +131,7 @@ class UpdaterIntegration:
                     try:
                         update_performed = await self._execute_update(trigger="startup")
                     except Exception as exc:
+                        self._startup_update_status = "failed_retry_later"
                         logger.error(
                             "❌ Ошибка проверки/установки обновления при запуске (trigger=startup). "
                             "Продолжаем работу без авто-обновления: %s",
@@ -132,7 +140,19 @@ class UpdaterIntegration:
                         )
                         update_performed = False
                     if update_performed:
+                        self._startup_update_status = "updated_and_relaunching"
                         return True  # Приложение перезапустится
+                    if self._startup_update_status != "failed_retry_later":
+                        self._startup_update_status = "no_update_or_skipped"
+                else:
+                    self._startup_update_status = "blocked_by_runtime_state"
+                # Фикс: startup-проверка уже выполнена, не запускаем scheduled немедленно.
+                try:
+                    self._last_check_ts = asyncio.get_running_loop().time()
+                except RuntimeError:
+                    self._last_check_ts = None
+            else:
+                self._startup_update_status = "startup_check_disabled"
             
             # Запускаем периодическую проверку
             self.check_task = asyncio.create_task(self._check_loop())
@@ -149,13 +169,19 @@ class UpdaterIntegration:
         """Цикл проверки обновлений"""
         while self.is_running:
             try:
+                # Соблюдаем интервал между проверками даже после startup-check.
+                loop = asyncio.get_running_loop()
+                now = loop.time()
+                if self._last_check_ts is not None:
+                    remaining = self.updater.config.check_interval - (now - self._last_check_ts)
+                    if remaining > 0:
+                        await asyncio.sleep(remaining)
+                self._last_check_ts = loop.time()
+
                 # Проверяем, можно ли обновляться
                 if await self._can_update():
                     if await self._execute_update(trigger="scheduled"):
                         return  # Приложение перезапустится
-                
-                # Ждем до следующей проверки
-                await asyncio.sleep(self.updater.config.check_interval)
                 
             except asyncio.CancelledError:
                 break
@@ -252,95 +278,96 @@ class UpdaterIntegration:
         и только если обновление есть, публикуется updater.update_started.
         Это предотвращает ложные уведомления при старте приложения с актуальной версией.
         """
-        if self._update_in_progress:
-            logger.info("⏳ Обновление уже выполняется (trigger=%s)", trigger)
-            return False
+        async with self._update_lock:
+            if self._update_in_progress:
+                logger.info("⏳ Обновление уже выполняется (trigger=%s)", trigger)
+                return False
 
-        # ШАГ 1: Сначала ПРОВЕРЯЕМ, есть ли обновление (БЕЗ изменения состояния)
-        manifest = await asyncio.to_thread(self.updater.check_for_updates)
+            # ШАГ 1: Сначала ПРОВЕРЯЕМ, есть ли обновление (БЕЗ изменения состояния)
+            manifest = await asyncio.to_thread(self.updater.check_for_updates)
 
-        if not manifest:
-            # НЕТ обновления - публикуем update_skipped и выходим
-            await self._safe_publish("updater.update_skipped", {
-                "trigger": trigger,
-                "reason": "no_updates_available",
-                "current_version": self.updater.get_current_build()
-            })
-            logger.info("✅ Обновления не требуются (trigger=%s)", trigger)
-            return False
+            if not manifest:
+                # НЕТ обновления - публикуем update_skipped и выходим
+                await self._safe_publish("updater.update_skipped", {
+                    "trigger": trigger,
+                    "reason": "no_updates_available",
+                    "current_version": self.updater.get_current_build()
+                })
+                logger.info("✅ Обновления не требуются (trigger=%s)", trigger)
+                return False
 
-        # ШАГ 2: Обновление ЕСТЬ - теперь публикуем update_started
-        version = manifest.get("version", "unknown")
-        logger.info(f"🔄 Найдено обновление до версии {version} (trigger={trigger})")
+            # ШАГ 2: Обновление ЕСТЬ - теперь публикуем update_started
+            version = manifest.get("version", "unknown")
+            logger.info(f"🔄 Найдено обновление до версии {version} (trigger={trigger})")
 
-        self._set_update_state(True, trigger=trigger)
-        await self._safe_publish("updater.update_started", {
-            "trigger": trigger,
-            "version": version
-        })
-
-        # ШАГ 3: Настраиваем callbacks для прогресса
-        try:
-            loop = self._loop if (self._loop is not None and self._loop.is_running()) else asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        self._last_download_percent = 0
-        self._last_install_percent = 0
-        if loop is not None:
-            self.updater.on_download_progress = lambda downloaded, total: asyncio.run_coroutine_threadsafe(  # type: ignore[assignment]
-                self._handle_download_progress(downloaded, total, trigger),
-                loop,
-            )
-            self.updater.on_install_progress = lambda stage, percent: asyncio.run_coroutine_threadsafe(  # type: ignore[assignment]
-                self._handle_install_progress(stage, percent, trigger),
-                loop,
-            )
-        else:
-            # Fallback: if no loop available, use async call directly (for tests)
-            # In production, loop should always be available
-            logger.debug("[UPDATER] No loop available for progress callbacks (test mode?)")
-            # Use simple async call - will be handled by event loop when available
-            self.updater.on_download_progress = lambda downloaded, total: None  # type: ignore[assignment]  # Skip in test mode
-            self.updater.on_install_progress = lambda stage, percent: None  # type: ignore[assignment]  # Skip in test mode
-
-        # ШАГ 4: Выполняем скачивание и установку (проверка уже выполнена!)
-        try:
-            # download_and_verify
-            artifact_path = await asyncio.to_thread(
-                self.updater.download_and_verify,
-                manifest["artifact"]
-            )
-
-            # install_update
-            await asyncio.to_thread(
-                self.updater.install_update,
-                artifact_path,
-                manifest["artifact"]
-            )
-
-            # ШАГ 5: Успешно завершено
-            await self._safe_publish("updater.update_completed", {
+            self._set_update_state(True, trigger=trigger)
+            await self._safe_publish("updater.update_started", {
                 "trigger": trigger,
                 "version": version
             })
 
-            # relaunch
-            await asyncio.to_thread(self.updater.relaunch_app)
-            return True
+            # ШАГ 3: Настраиваем callbacks для прогресса
+            try:
+                loop = self._loop if (self._loop is not None and self._loop.is_running()) else asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            self._last_download_percent = 0
+            self._last_install_percent = 0
+            if loop is not None:
+                self.updater.on_download_progress = lambda downloaded, total: asyncio.run_coroutine_threadsafe(  # type: ignore[assignment]
+                    self._handle_download_progress(downloaded, total, trigger),
+                    loop,
+                )
+                self.updater.on_install_progress = lambda stage, percent: asyncio.run_coroutine_threadsafe(  # type: ignore[assignment]
+                    self._handle_install_progress(stage, percent, trigger),
+                    loop,
+                )
+            else:
+                # Fallback: if no loop available, use async call directly (for tests)
+                # In production, loop should always be available
+                logger.debug("[UPDATER] No loop available for progress callbacks (test mode?)")
+                # Use simple async call - will be handled by event loop when available
+                self.updater.on_download_progress = lambda downloaded, total: None  # type: ignore[assignment]  # Skip in test mode
+                self.updater.on_install_progress = lambda stage, percent: None  # type: ignore[assignment]  # Skip in test mode
 
-        except Exception as exc:
-            reason_code = self._classify_update_error(exc)
-            await self._safe_publish("updater.update_failed", {
-                "trigger": trigger,
-                "error": str(exc),
-                "version": version,
-                "reason_code": reason_code,
-            })
-            raise
-        finally:
-            self.updater.on_download_progress = None
-            self.updater.on_install_progress = None
-            self._set_update_state(False, trigger=trigger)
+            # ШАГ 4: Выполняем скачивание и установку (проверка уже выполнена!)
+            try:
+                # download_and_verify
+                artifact_path = await asyncio.to_thread(
+                    self.updater.download_and_verify,
+                    manifest["artifact"]
+                )
+
+                # install_update
+                await asyncio.to_thread(
+                    self.updater.install_update,
+                    artifact_path,
+                    manifest["artifact"]
+                )
+
+                # ШАГ 5: Успешно завершено
+                await self._safe_publish("updater.update_completed", {
+                    "trigger": trigger,
+                    "version": version
+                })
+
+                # relaunch
+                await asyncio.to_thread(self.updater.relaunch_app)
+                return True
+
+            except Exception as exc:
+                reason_code = self._classify_update_error(exc)
+                await self._safe_publish("updater.update_failed", {
+                    "trigger": trigger,
+                    "error": str(exc),
+                    "version": version,
+                    "reason_code": reason_code,
+                })
+                raise
+            finally:
+                self.updater.on_download_progress = None
+                self.updater.on_install_progress = None
+                self._set_update_state(False, trigger=trigger)
 
     async def stop(self):
         """Остановка интеграции"""
@@ -383,6 +410,20 @@ class UpdaterIntegration:
         """Возвращает текущий статус установки обновления."""
         return self._update_in_progress
 
+    def get_startup_update_status(self) -> str:
+        """Статус startup-check для coordinator gate."""
+        return self._startup_update_status
+
+    def should_block_startup_after_update_failure(self) -> bool:
+        """
+        В strict режиме блокируем дальнейший startup, если startup-update завершился ошибкой.
+        """
+        return (
+            self._strict_startup_gate
+            and self.updater.config.check_on_startup
+            and self._startup_update_status == "failed_retry_later"
+        )
+
     @staticmethod
     def _classify_update_error(exc: Exception) -> str:
         """Возвращает стабильный reason-code для updater.update_failed."""
@@ -391,6 +432,8 @@ class UpdaterIntegration:
             return "install_permission_denied"
         if "too many redirects" in text:
             return "download_redirect_error"
+        if "404" in text and "not found" in text:
+            return "download_not_found"
         if "read timed out" in text or "connect timeout" in text or "timed out" in text:
             return "network_timeout"
         if "ssl" in text or "certificate" in text:

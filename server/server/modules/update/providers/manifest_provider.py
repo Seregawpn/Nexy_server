@@ -126,15 +126,20 @@ class ManifestProvider:
             Optional[Dict[str, Any]]: Последний манифест или None
         """
         try:
+            # Канонический источник истины для runtime.
+            canonical_manifest = self.manifests_dir / "manifest.json"
+            if canonical_manifest.exists():
+                manifest = self.load_manifest(canonical_manifest.name)
+                if manifest:
+                    return manifest
+
             manifest_files = list(self.manifests_dir.glob("manifest_*.json"))
-            
             if not manifest_files:
                 logger.info("📄 Манифесты не найдены")
                 return None
-            
-            # Сортируем по времени модификации (новые сначала)
+
+            # Fallback: исторические versioned-манифесты.
             manifest_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-            
             latest_file = manifest_files[0]
             return self.load_manifest(latest_file.name)
             
@@ -153,6 +158,9 @@ class ManifestProvider:
         
         try:
             manifest_files = list(self.manifests_dir.glob("manifest_*.json"))
+            canonical_manifest = self.manifests_dir / "manifest.json"
+            if canonical_manifest.exists():
+                manifest_files.append(canonical_manifest)
             
             for manifest_file in manifest_files:
                 manifest = self.load_manifest(manifest_file.name)
@@ -161,12 +169,14 @@ class ManifestProvider:
             
             # Сортируем по версии (новые сначала)
             def version_key(data: Dict[str, Any]) -> tuple:
-                version_str = str(data.get("version", "0.0.0"))
+                version_str = str(data.get("version", "0.0.0.0"))
                 try:
-                    major, minor, patch = [int(part) for part in version_str.split('.')]
-                    return major, minor, patch
+                    parts = [int(part) for part in version_str.split('.')]
+                    while len(parts) < 4:
+                        parts.append(0)
+                    return tuple(parts[:4])
                 except ValueError:
-                    return 0, 0, 0
+                    return 0, 0, 0, 0
 
             manifests.sort(key=version_key, reverse=True)
             
@@ -210,8 +220,8 @@ class ManifestProvider:
             return False
         
         # Проверяем номер сборки
-        build = manifest.get("build", 0)
-        if not isinstance(build, int) or build <= 0:
+        build = str(manifest.get("build", "")).strip()
+        if not build:
             logger.error("❌ Неверный номер сборки")
             return False
         
@@ -312,6 +322,5 @@ class ManifestProvider:
                 "provider": "manifest",
                 "error": str(e)
             }
-
 
 

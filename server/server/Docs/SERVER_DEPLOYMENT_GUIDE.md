@@ -3,7 +3,7 @@
 **Дата создания:** 1 октября 2025  
 **Версия:** 2.3  
 **Статус:** ✅ Активно используется  
-**Последнее обновление:** 11 января 2026 - Обновлена информация о текущей конфигурации сервера, backpressure настройках и структурированном логировании
+**Последнее обновление:** 14 февраля 2026 - Добавлены обязательные DB safety gates (backup/restore-drill/hardening)
 
 ---
 
@@ -15,12 +15,32 @@
 - **Client Artifacts pipeline:** `https://github.com/Seregawpn/Nexy_production/releases`
   - Для загрузки `Nexy.dmg`/`Nexy.pkg` и клиентских обновлений.
   - Канон для этого pipeline: `../../Docs/RELEASE_AND_UPDATE_GUIDE.md`.
+  - Для update-only публикации обязательно: после upload скрипт должен считать фактические `size/sha256` по release URL и только потом обновлять манифест.
 
 Запрещено смешивать pipeline: артефакты клиента не деплоятся как source-код, а server code не публикуется в release-тегах клиента.
 
 ---
 
 ## 📋 **ОБЯЗАТЕЛЬНЫЕ ТРЕБОВАНИЯ**
+
+### **🔒 Update Manifest Consistency Gate (ОБЯЗАТЕЛЬНО):**
+
+Перед любым deploy/update запуском:
+
+```bash
+python3 server/scripts/sync_update_manifests.py
+python3 server/scripts/sync_update_manifests.py --check
+bash server/scripts/validate_updates.sh nexy-server.canadacentral.cloudapp.azure.com 443
+```
+
+Что гарантирует gate:
+- runtime-пути манифестов синхронизированы:
+  - `server/updates/manifests/`
+  - `server/server/updates/manifests/`
+- `artifact.url` строго `https` и использует фиксированный `Update` tag в `Nexy_production`;
+- `artifact.size`/`sha256` консистентны с appcast.
+
+Если gate падает, deploy запрещён до исправления drift.
 
 ### **🔐 GitHub Secrets (КРИТИЧНО):**
 
@@ -78,91 +98,70 @@ RUN_WEB_SEARCH_SMOKE=true bash server/scripts/prod_ready_check.sh
 
 Источник правил: `server/Docs/PRE_PRODUCTION_TESTING.md`.
 
-### **ШАГ 1: ПОДГОТОВКА (1-2 минуты)**
+### **ШАГ 0.1: DATABASE SAFETY GATE (ОБЯЗАТЕЛЬНО)**
 
-**1.1. Убедитесь, что изменения готовы:**
+Перед production deploy обязательно:
+
 ```bash
-# Проверьте, что все изменения сохранены
-cd /Users/sergiyzasorin/Library/Mobile\ Documents/com~apple~CloudDocs/Development/Nexy/server
+# 1) Backup перед релизом
+./server/scripts/db_backup.sh
+
+# 2) Проверить, что последний restore-drill не старше 7 дней
+# (если лога нет или drill старше — выполнить drill)
+./server/scripts/db_restore_drill.sh
+```
+
+Канон DB-операций: `server/Docs/DB_BACKUP_AND_RESTORE_RUNBOOK.md`.
+
+### **ШАГ 1: PRE-PUSH ПРОВЕРКА**
+
+```bash
+git remote -v
 git status
 ```
 
-**1.2. Создайте временную директорию:**
-```bash
-cd /tmp
-rm -rf nexy_server_temp  # Очистить, если существует
-```
+Требования:
+- серверный код пушится только в `server_repo` (`https://github.com/Seregawpn/Nexy_server`).
+- `release_inbox/` и клиентские артефакты не коммитятся в code repo.
 
-### **ШАГ 2: КЛОНИРОВАНИЕ РЕПОЗИТОРИЯ (30 секунд)**
+### **ШАГ 2: COMMIT И PUSH КОДА**
 
 ```bash
-# Клонируем серверный репозиторий
-git clone https://github.com/Seregawpn/Nexy_server.git nexy_server_temp
-cd nexy_server_temp
-```
-
-### **ШАГ 3: ОЧИСТКА И КОПИРОВАНИЕ (1 минута)**
-
-```bash
-# ОБЯЗАТЕЛЬНО: Очистить все старые файлы
-rm -rf * .* 2>/dev/null || true
-
-# ОБЯЗАТЕЛЬНО: Скопировать только серверные файлы
-cp -r /Users/sergiyzasorin/Library/Mobile\ Documents/com~apple~CloudDocs/Development/Nexy/server/* .
-# НЕ копируем скрытые файлы из корня проекта (они могут содержать клиентские данные)
-
-**Что копируется:**
-- ✅ `main.py` - основной файл сервера
-- ✅ `modules/` - все 8 модулей сервера (text_processing, audio_generation, session_management, memory_management, interrupt_handling, text_filtering, update, grpc_service)
-- ✅ `integrations/` - интеграции сервера
-- ✅ `config/` - конфигурация сервера
-- ✅ `requirements.txt` - зависимости
-- ✅ `.github/` - GitHub Actions
-- ✅ `Docs/` - серверная документация
-- ✅ `monitoring/` - система мониторинга
-
-**Что НЕ копируется:**
-- ❌ `client/` - клиентская часть (остается в nexy_new)
-- ❌ Скрытые файлы из корня проекта
-- ❌ Клиентские конфигурации
-```
-
-### **ШАГ 4: НАСТРОЙКА GIT (30 секунд)**
-
-```bash
-# ОБЯЗАТЕЛЬНО: Инициализировать git
-git init
-
-# ОБЯЗАТЕЛЬНО: Добавить remote
-git remote add origin https://github.com/Seregawpn/Nexy_server.git
-```
-
-### **ШАГ 5: COMMIT И PUSH (1 минута)**
-
-```bash
-# ОБЯЗАТЕЛЬНО: Добавить все файлы
 git add .
+git commit -m "server: <краткое описание>"
+git push server_repo <branch>
+```
 
-# ОБЯЗАТЕЛЬНО: Commit с описательным сообщением
-git commit -m "🚀 Обновление сервера: [ОПИСАНИЕ ИЗМЕНЕНИЙ]
-
-- Дата: $(date '+%d.%m.%Y %H:%M')
-- Изменения: [краткое описание]
-- Модули: [список затронутых модулей]"
-
-# ОБЯЗАТЕЛЬНО: Обычный push
-git push origin main
+Для версии:
+```bash
+git tag vX.Y.Z.BUILD
+git push server_repo vX.Y.Z.BUILD
 ```
 
 `--force` допускается только в аварийном сценарии с явным подтверждением команды.
 
-### **ШАГ 6: ОЧИСТКА (10 секунд)**
+### **ШАГ 3: DEPLOY НА AZURE (RUN-COMMAND)**
+
+Рекомендуемый путь (единая точка входа):
 
 ```bash
-# ОБЯЗАТЕЛЬНО: Очистить временную директорию
-cd /tmp
-rm -rf nexy_server_temp
+bash server/scripts/deploy_azure_guarded.sh vX.Y.Z.BUILD
 ```
+
+Скрипт автоматически обрабатывает:
+- retry при `Run command extension execution is in progress`
+- fallback путей `requirements`/`update_server_version.sh`
+- `. venv/bin/activate` (POSIX shell)
+- sync `GEMINI_API_KEY` + `SERVER_VERSION/SERVER_BUILD`
+- регенерацию gRPC stubs
+- проверку `systemctl is-active` и `/health`
+
+Ручной fallback:
+используйте каноничную команду из `../../Docs/RELEASE_AND_UPDATE_GUIDE.md` (Phase 3).  
+Ключевые требования:
+- `--resource-group "NetworkWatcherRG"` и `--name "Nexy"`
+- shell-активация только `. venv/bin/activate`
+- после деплоя обязательно `systemctl is-active` и `/health`.
 
 ---
 
@@ -372,8 +371,8 @@ sudo chmod -R 755 server/updates
 ```bash
 # Проверить, что изменения применились
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "
     cd /home/azureuser/voice-assistant
@@ -396,6 +395,8 @@ az vm run-command invoke \
 - ✅ Всегда очищайте старые файлы перед копированием
 - ✅ Всегда используйте описательные commit сообщения
 - ✅ Всегда проверяйте health endpoint после деплоя
+- ✅ Всегда выполнять DB backup до деплоя и регулярный restore-drill
+- ✅ После restore всегда применять `./server/scripts/harden_database_protection.sh`
 
 ---
 
@@ -414,8 +415,8 @@ az vm run-command invoke \
 2. Запустить обновление вручную на сервере:
 ```bash
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "/home/azureuser/update-server.sh"
 ```
@@ -432,7 +433,7 @@ az vm run-command invoke \
 ```bash
 # На сервере выполнить:
 cd /home/azureuser/voice-assistant
-source venv/bin/activate
+. venv/bin/activate
 python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. modules/grpc_service/streaming.proto
 sudo systemctl restart voice-assistant.service
 ```
@@ -444,7 +445,7 @@ sudo systemctl restart voice-assistant.service
 # Скрипт автоматически решает эту проблему:
 git stash  # Сохраняет локальные изменения
 git clean -fd --exclude=venv/  # Очищает неотслеживаемые файлы
-git pull origin main  # Получает обновления
+git pull server_repo main  # Получает обновления
 ```
 
 ### **Проблема: Сервис не запускается после обновления**
@@ -468,7 +469,7 @@ sudo journalctl -u voice-assistant.service --no-pager -n 20
 # 1. Подготовьте тег (локально)
 TAG="v1.6.1.36"
 git tag $TAG
-git push origin $TAG
+git push server_repo $TAG
 
 # 2. Запустите деплой на Azure
 az vm run-command invoke \
@@ -489,13 +490,29 @@ az vm run-command invoke \
         git checkout -f $TAG
         
         # Обновление зависимостей (КРИТИЧНО для новых версий)
-        source venv/bin/activate
-        pip install --upgrade -r server/requirements.txt
+        . venv/bin/activate
+        if [ -f server/server/requirements.txt ]; then
+          REQ_FILE=server/server/requirements.txt
+        elif [ -f server/requirements.txt ]; then
+          REQ_FILE=server/requirements.txt
+        else
+          REQ_FILE=requirements.txt
+        fi
+        pip install --upgrade -r $REQ_FILE
         
         # Обновление версии сервера
-        chmod +x server/scripts/update_server_version.sh
+        if [ -f server/server/scripts/update_server_version.sh ]; then
+          UPDATE_SCRIPT=server/server/scripts/update_server_version.sh
+        else
+          UPDATE_SCRIPT=server/scripts/update_server_version.sh
+        fi
+        chmod +x $UPDATE_SCRIPT
         VERSION=\${TAG#v} # Удаляем 'v' из тега
-        ./server/scripts/update_server_version.sh \$VERSION
+        $UPDATE_SCRIPT \$VERSION || true
+        sudo systemctl restart voice-assistant.service
+        sleep 10
+        sudo systemctl is-active voice-assistant.service
+        curl -s http://127.0.0.1:8080/health
         
         echo '✅ Deployment completed successfully.'
     "
@@ -514,10 +531,8 @@ az vm run-command invoke \
 | Этап | Время | Описание |
 |------|-------|----------|
 | Подготовка | 1-2 мин | Проверка изменений |
-| Клонирование | 30 сек | Скачивание репозитория |
-| Копирование | 1 мин | Синхронизация файлов |
-| Git операции | 1 мин | Commit и push |
-| Очистка | 10 сек | Удаление временных файлов |
+| Git операции | 1-2 мин | Commit, push, tag |
+| Azure deploy | 2-4 мин | Run-command + install + restart |
 | **Автоматический деплой** | **2-3 мин** | **GitHub Actions → Azure** |
 | **ИТОГО** | **5-7 мин** | **Полный цикл** |
 
@@ -555,8 +570,8 @@ git commit -m "changes"
 ```bash
 # Статус сервиса
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "systemctl status voice-assistant.service"
 
@@ -565,8 +580,8 @@ curl -sk https://nexy-server.canadacentral.cloudapp.azure.com/health
 
 # Логи сервиса
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "sudo journalctl -u voice-assistant.service --no-pager -n 20"
 ```
@@ -575,22 +590,22 @@ az vm run-command invoke \
 ```bash
 # Перезапуск сервиса
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "sudo systemctl restart voice-assistant.service"
 
 # Остановка сервиса
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "sudo systemctl stop voice-assistant.service"
 
 # Запуск сервиса
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "sudo systemctl start voice-assistant.service"
 ```
@@ -599,15 +614,15 @@ az vm run-command invoke \
 ```bash
 # Проверить последний коммит на сервере
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "cd /home/azureuser/voice-assistant && git log --oneline -1"
 
 # Проверить статус git
 az vm run-command invoke \
-  --resource-group Nexy \
-  --name nexy-regular \
+  --resource-group "NetworkWatcherRG" \
+  --name "Nexy" \
   --command-id RunShellScript \
   --scripts "cd /home/azureuser/voice-assistant && git status"
 ```

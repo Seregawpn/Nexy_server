@@ -18,6 +18,18 @@ Do not mix these pipelines:
 - Server source deployment must go only through `Nexy_server`.
 - Client update artifacts (`Nexy.dmg`, `Nexy.pkg`) must go only through `Nexy_production/releases`.
 
+## Mandatory Consistency Gate
+
+Before publish/deploy, always run:
+
+```bash
+python3 server/scripts/sync_update_manifests.py
+python3 server/scripts/sync_update_manifests.py --check
+bash server/scripts/validate_updates.sh nexy-server.canadacentral.cloudapp.azure.com 443
+```
+
+If any check fails, deploy is blocked until drift is fixed.
+
 ## Versioning Priority
 
 For runtime version behavior, use:

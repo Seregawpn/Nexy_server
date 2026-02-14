@@ -29,6 +29,12 @@
 - Не нарушай существующие границы модулей.
 - GitHub routing и release-процесс описаны централизованно в `../Docs/RELEASE_AND_UPDATE_GUIDE.md` (Single Source of Truth).
 - Локальное правило: перед `push/tag` всегда проверяй `git remote -v` и используй явный remote `server_repo` для серверного кода.
+- Update-инвариант: всегда держать синхронно оба runtime-пути манифеста:
+  - `../server/updates/manifests/`
+  - `../server/server/updates/manifests/`
+- Обязательные pre-deploy проверки:
+  - `python3 ../server/scripts/sync_update_manifests.py`
+  - `bash ../server/scripts/validate_updates.sh <host> <port>`
 
 ## CRM Task Management (Server)
 - Единый алгоритм: `../../Docs/_archive/CRM_ASSISTANT_INSTRUCTIONS.md`.

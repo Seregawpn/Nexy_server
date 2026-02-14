@@ -41,6 +41,15 @@
    - Серверные версии фиксируются git-тегами вида `vX.Y.Z.BUILD` в `Nexy_server`.
    - Release-артефакты (`Nexy.dmg`, `Nexy.pkg`) публикуются только в `https://github.com/Seregawpn/Nexy_production` (теги `Update` и `App`).
    - Запрещено делать GitHub Release в `Nexy_server`.
+5. **Update Manifest Invariants (обязательно)**:
+   - Перед deploy/update всегда синхронизировать манифесты между runtime-путями:
+     - `server/updates/manifests/`
+     - `server/server/updates/manifests/`
+   - Канонический URL артефакта: только `https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg`.
+   - Перед публикацией/деплоем обязательно запускать:
+     - `python3 server/scripts/sync_update_manifests.py`
+     - `bash server/scripts/validate_updates.sh <host> <port>`
+   - Если найден drift (`manifest/appcast/url/size/sha256`) — деплой блокируется до исправления.
 
 ## Быстрая самопроверка источников
 Перед задачей проверь, что обязательные пути существуют. Если путь недоступен, сначала зафиксируй это в отчете и используй ближайший валидный источник из списка выше.

@@ -2,18 +2,18 @@
 """
 Automated Release Script (Production)
 =====================================
-Uploads artifacts from `server/release_inbox` to `Seregawpn/Nexy_production` releases.
+Uploads artifacts from `release_inbox` (repo root) to `Seregawpn/Nexy_production` releases.
 
 Changes:
     - Nexy.dmg  ->  Tag: Update  (https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg)
     - Nexy.pkg  ->  Tag: App     (https://github.com/Seregawpn/Nexy_production/releases/download/App/Nexy.pkg)
 
 Usage:
-    python3 server/server/scripts/publish_assets_and_sync.py [--dry-run]
+    python3 server/scripts/publish_assets_and_sync.py [--dry-run]
 
 Requirements:
     - GitHub CLI (`gh`) installed and authenticated
-    - `server/release_inbox` contains artifacts
+    - `release_inbox` contains artifacts
 """
 
 import os
@@ -22,6 +22,9 @@ import json
 import hashlib
 import subprocess
 import argparse
+import time
+import urllib.request
+import urllib.error
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -33,11 +36,14 @@ RED = '\033[0;31m'
 NC = '\033[0m'
 
 # Paths
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-SERVER_ROOT = PROJECT_ROOT / "server"
-RELEASE_INBOX = SERVER_ROOT / "release_inbox"
-MANIFEST_FILE = SERVER_ROOT / "server" / "updates" / "manifests" / "manifest.json"
-VERSION_FILE = SERVER_ROOT / "VERSION"
+APP_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = APP_ROOT.parent
+RELEASE_INBOX = REPO_ROOT / "release_inbox"
+VERSION_FILE = REPO_ROOT / "VERSION"
+MANIFEST_DIR_CANDIDATES = [
+    APP_ROOT / "updates" / "manifests",
+    REPO_ROOT / "updates" / "manifests",
+]
 
 # Target configuration
 TARGET_REPO = "Seregawpn/Nexy_production"
@@ -88,6 +94,73 @@ def run_command(command, dry_run=False):
         log_error(f"Command failed: {' '.join(command)}")
         print(e.stderr)
         return False, e.stderr
+
+
+def run_command_or_exit(command, *, dry_run=False, error_message: str):
+    success, out = run_command(command, dry_run=dry_run)
+    if not success and not dry_run:
+        log_error(error_message)
+        sys.exit(1)
+    return success, out
+
+
+def load_base_manifest():
+    for manifests_dir in MANIFEST_DIR_CANDIDATES:
+        manifest_file = manifests_dir / "manifest.json"
+        if manifest_file.exists():
+            with open(manifest_file, "r") as f:
+                return json.load(f)
+    return {
+        "version": "0.0.0.0",
+        "build": "0.0.0.0",
+        "artifact": {},
+        "critical": False,
+        "auto_install": True,
+    }
+
+
+def fetch_remote_artifact_metadata(download_url, retries=3, timeout=120):
+    request = urllib.request.Request(
+        download_url,
+        headers={
+            "User-Agent": "nexy-publish-assets/1.0",
+            "Accept": "application/octet-stream",
+        },
+    )
+
+    attempt = 1
+    while attempt <= retries:
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"HTTP {response.status} for {download_url}")
+
+                sha256_hash = hashlib.sha256()
+                total_size = 0
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total_size += len(chunk)
+                    sha256_hash.update(chunk)
+
+                if total_size <= 0:
+                    raise RuntimeError(f"Downloaded artifact is empty: {download_url}")
+
+                return {
+                    "size": total_size,
+                    "sha256": sha256_hash.hexdigest(),
+                }
+        except (urllib.error.HTTPError, urllib.error.URLError, RuntimeError) as error:
+            if attempt >= retries:
+                raise RuntimeError(f"Failed to verify remote artifact: {error}") from error
+            sleep_seconds = attempt * 2
+            log_warning(
+                f"Remote artifact verification failed (attempt {attempt}/{retries}): {error}. "
+                f"Retrying in {sleep_seconds}s."
+            )
+            time.sleep(sleep_seconds)
+            attempt += 1
 
 def main():
     parser = argparse.ArgumentParser(description="Upload production artifacts and update manifest")
@@ -143,13 +216,26 @@ def main():
             # Construct permanent URL
             download_url = f"https://github.com/{TARGET_REPO}/releases/download/{tag_name}/{filename}"
             log_success(f"  Uploaded. URL: {download_url}")
+            log_info("  Verifying uploaded artifact from release URL...")
+            remote_metadata = fetch_remote_artifact_metadata(download_url)
+            log_info(f"  Remote size: {remote_metadata['size']} bytes")
+            log_info(f"  Remote SHA256: {remote_metadata['sha256']}")
+
+            if remote_metadata["size"] != file_size or remote_metadata["sha256"] != file_sha256:
+                log_error("  Remote artifact metadata mismatch with local file. Aborting.")
+                log_error(f"  Local size/SHA256: {file_size} / {file_sha256}")
+                log_error(
+                    f"  Remote size/SHA256: {remote_metadata['size']} / {remote_metadata['sha256']}"
+                )
+                if not args.dry_run:
+                    sys.exit(1)
 
             # Store data for manifest update (only if it's the DMG/main artifact)
             if config["type"] == "dmg":
                 manifest_updates = {
                     "url": download_url,
-                    "size": file_size,
-                    "sha256": file_sha256,
+                    "size": remote_metadata["size"],
+                    "sha256": remote_metadata["sha256"],
                     "type": "dmg",
                     "notes_url": f"https://github.com/{TARGET_REPO}/releases/tag/{tag_name}"
                 }
@@ -168,17 +254,7 @@ def main():
     # 3. Update Manifest
     log_info("Updating manifest.json...")
     
-    if MANIFEST_FILE.exists():
-        with open(MANIFEST_FILE, "r") as f:
-            manifest = json.load(f)
-    else:
-        manifest = {
-            "version": "0.0.0.0",
-            "build": "0.0.0.0",
-            "artifact": {},
-            "critical": False,
-            "auto_install": True
-        }
+    manifest = load_base_manifest()
 
     # Update fields
     manifest["version"] = version
@@ -203,15 +279,36 @@ def main():
     if args.dry_run:
         log_info(f"[DRY RUN] Would write manifest:\n{json.dumps(manifest, indent=2)}")
     else:
-        with open(MANIFEST_FILE, "w") as f:
-            json.dump(manifest, f, indent=2)
-        log_success(f"Manifest updated at {MANIFEST_FILE}")
+        changed_manifest_paths = []
+        for manifests_dir in MANIFEST_DIR_CANDIDATES:
+            manifests_dir.mkdir(parents=True, exist_ok=True)
+            manifest_file = manifests_dir / "manifest.json"
+            versioned_manifest_file = manifests_dir / f"manifest_{version}.json"
+            with open(manifest_file, "w") as f:
+                json.dump(manifest, f, indent=2)
+            with open(versioned_manifest_file, "w") as f:
+                json.dump(manifest, f, indent=2)
+            changed_manifest_paths.extend([manifest_file, versioned_manifest_file])
+            log_success(f"Manifest updated at {manifest_file}")
+            log_success(f"Versioned manifest updated at {versioned_manifest_file}")
 
         # 4. Git Sync (To origin, which is the code repo, NOT the release repo)
         log_info("Committing manifest changes to code repo...")
-        run_command(["git", "add", str(MANIFEST_FILE)])
-        run_command(["git", "commit", "-m", f"Update manifest for {version} (Production)"])
-        run_command(["git", "push"])
+        run_command_or_exit(
+            ["git", "add", *[str(path) for path in changed_manifest_paths]],
+            dry_run=args.dry_run,
+            error_message="Failed to stage manifest changes.",
+        )
+        run_command_or_exit(
+            ["git", "commit", "-m", f"Update manifest for {version} (Production)"],
+            dry_run=args.dry_run,
+            error_message="Failed to commit manifest changes.",
+        )
+        run_command_or_exit(
+            ["git", "push"],
+            dry_run=args.dry_run,
+            error_message="Failed to push manifest changes.",
+        )
         log_success("Manifest changes pushed to remote")
 
     log_header = f"{GREEN}RELEASE COMPLETE{NC}"

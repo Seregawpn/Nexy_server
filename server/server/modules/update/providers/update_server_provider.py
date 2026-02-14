@@ -72,8 +72,7 @@ class UpdateServerProvider:
             # Получаем последний манифест
             latest_manifest = self.manifest_provider.get_latest_manifest()
             
-            # Единый источник истины - версия из конфига (централизованное управление)
-            # Создаем манифест для AppCast с версией из конфига
+            # Единый источник истины для appcast: runtime-манифест.
             if latest_manifest:
                 manifest_for_appcast = latest_manifest.copy()
             else:
@@ -84,10 +83,14 @@ class UpdateServerProvider:
                     "artifact": {}
                 }
                 logger.warning("⚠️ Манифесты не найдены, используется версия из конфига")
-            
-            # Всегда используем версию из конфига (единый источник истины)
-            manifest_for_appcast["version"] = self.config.default_version
-            manifest_for_appcast["build"] = self.config.default_build
+
+            # Fallback только для отсутствующих полей.
+            manifest_for_appcast["version"] = str(
+                manifest_for_appcast.get("version") or self.config.default_version
+            )
+            manifest_for_appcast["build"] = str(
+                manifest_for_appcast.get("build") or self.config.default_build
+            )
             
             # Генерируем AppCast XML с версией из конфига
             appcast_xml = self._generate_appcast_xml(manifest_for_appcast)
@@ -136,19 +139,10 @@ class UpdateServerProvider:
             if latest_manifest and "artifact" in latest_manifest:
                 expected_size = latest_manifest["artifact"].get("size", 0)
             
-            # Логируем несоответствие размера
+            # Логируем несоответствие размера.
+            # Важно: runtime download path не должен менять manifest source-of-truth.
             if expected_size > 0 and actual_size != expected_size:
                 logger.warning(f"⚠️ Размер файла не совпадает: ожидалось {expected_size}, фактический {actual_size} (разница: {actual_size - expected_size:+d} байт)")
-                
-                # Обновляем манифест с актуальным размером
-                try:
-                    self.manifest_provider.update_manifest(
-                        f"manifest_{latest_manifest['version']}.json",
-                        {"artifact": {"size": actual_size}}
-                    )
-                    logger.info(f"✅ Манифест обновлен с актуальным размером: {actual_size} байт")
-                except Exception as e:
-                    logger.error(f"❌ Ошибка обновления манифеста: {e}")
             
             if self.config.log_downloads:
                 logger.info(f"📥 Загрузка файла: {filename} (размер: {actual_size} байт)")
@@ -467,6 +461,4 @@ class UpdateServerProvider:
                 "api_versions": f"http://{self.config.host}:{self.config.port}/api/versions"
             }
         }
-
-
 

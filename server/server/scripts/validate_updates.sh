@@ -21,6 +21,8 @@ if [ "$PORT" = "80" ]; then
 fi
 
 BASE_URL="${PROTOCOL}://${HOST}:${PORT}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "🔍 Validation of Updates (PR-8)"
 echo "=================================="
@@ -39,7 +41,7 @@ check_version_string() {
     local source=$2
     
     # Проверяем, что версия - строка (не число)
-    if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+    if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]]; then
         # Это нормально - строка версии
         echo -e "${GREEN}✓${NC} $source version: $version (string)"
         return 0
@@ -99,6 +101,7 @@ if [ -z "$APPCAST_XML" ]; then
 else
     # Извлекаем версию из AppCast
     APPCAST_VERSION=$(echo "$APPCAST_XML" | grep -oP 'sparkle:version="\K[^"]+' | head -1 || echo "")
+    APPCAST_URL_VALUE=$(echo "$APPCAST_XML" | grep -oP 'url="\K[^"]+' | head -1 || echo "")
     APPCAST_SIZE=$(echo "$APPCAST_XML" | grep -oP 'length="\K[^"]+' | head -1 || echo "")
     
     if [ -n "$APPCAST_VERSION" ]; then
@@ -113,6 +116,26 @@ else
         fi
     else
         echo -e "${YELLOW}⚠${NC} AppCast version not found"
+        warnings=$((warnings + 1))
+    fi
+
+    # Проверяем URL артефакта в AppCast
+    if [ -n "$APPCAST_URL_VALUE" ]; then
+        if [[ "$APPCAST_URL_VALUE" == https://* ]]; then
+            echo -e "${GREEN}✓${NC} AppCast URL is HTTPS"
+        else
+            echo -e "${RED}✗${NC} AppCast URL is not HTTPS: $APPCAST_URL_VALUE"
+            errors=$((errors + 1))
+        fi
+
+        if [[ "$APPCAST_URL_VALUE" == *"/releases/download/Update/"* ]]; then
+            echo -e "${GREEN}✓${NC} AppCast URL uses fixed Update tag"
+        else
+            echo -e "${RED}✗${NC} AppCast URL does not use Update tag: $APPCAST_URL_VALUE"
+            errors=$((errors + 1))
+        fi
+    else
+        echo -e "${YELLOW}⚠${NC} AppCast artifact URL not found"
         warnings=$((warnings + 1))
     fi
     
@@ -143,12 +166,24 @@ fi
 echo ""
 
 # 3. Проверка manifest (если доступен локально)
-if [ -f "updates/manifests/manifest.json" ]; then
+# 3. Проверка local manifests (оба runtime-пути)
+LOCAL_MANIFEST_A="$REPO_ROOT/server/updates/manifests/manifest.json"
+LOCAL_MANIFEST_B="$REPO_ROOT/server/server/updates/manifests/manifest.json"
+if [ -f "$LOCAL_MANIFEST_A" ] || [ -f "$LOCAL_MANIFEST_B" ]; then
     echo "3. Checking local manifest..."
     
     if command -v jq >/dev/null 2>&1; then
-        MANIFEST_VERSION=$(jq -r '.version // empty' updates/manifests/manifest.json 2>/dev/null || echo "")
-        MANIFEST_BUILD=$(jq -r '.build // empty' updates/manifests/manifest.json 2>/dev/null || echo "")
+        # Выбираем источник (предпочтительно nested runtime путь)
+        if [ -f "$LOCAL_MANIFEST_B" ]; then
+            LOCAL_MANIFEST="$LOCAL_MANIFEST_B"
+        else
+            LOCAL_MANIFEST="$LOCAL_MANIFEST_A"
+        fi
+        MANIFEST_VERSION=$(jq -r '.version // empty' "$LOCAL_MANIFEST" 2>/dev/null || echo "")
+        MANIFEST_BUILD=$(jq -r '.build // empty' "$LOCAL_MANIFEST" 2>/dev/null || echo "")
+        MANIFEST_URL=$(jq -r '.artifact.url // empty' "$LOCAL_MANIFEST" 2>/dev/null || echo "")
+        MANIFEST_SIZE=$(jq -r '.artifact.size // empty' "$LOCAL_MANIFEST" 2>/dev/null || echo "")
+        MANIFEST_SHA256=$(jq -r '.artifact.sha256 // empty' "$LOCAL_MANIFEST" 2>/dev/null || echo "")
         
         if [ -n "$MANIFEST_VERSION" ] && [ -n "$MANIFEST_BUILD" ]; then
             check_version_string "$MANIFEST_VERSION" "Manifest"
@@ -172,9 +207,48 @@ if [ -f "updates/manifests/manifest.json" ]; then
                 echo -e "${RED}✗${NC} Manifest version doesn't match AppCast: manifest=$MANIFEST_VERSION, appcast=$APPCAST_VERSION"
                 errors=$((errors + 1))
             fi
+
+            if [ -n "$MANIFEST_URL" ]; then
+                if [[ "$MANIFEST_URL" == https://* ]]; then
+                    echo -e "${GREEN}✓${NC} Manifest URL is HTTPS"
+                else
+                    echo -e "${RED}✗${NC} Manifest URL is not HTTPS: $MANIFEST_URL"
+                    errors=$((errors + 1))
+                fi
+                if [[ "$MANIFEST_URL" == *"/releases/download/Update/"* ]]; then
+                    echo -e "${GREEN}✓${NC} Manifest URL uses fixed Update tag"
+                else
+                    echo -e "${RED}✗${NC} Manifest URL does not use Update tag: $MANIFEST_URL"
+                    errors=$((errors + 1))
+                fi
+            fi
+
+            if [ -n "$MANIFEST_SIZE" ] && [ -n "${APPCAST_SIZE:-}" ] && [ "$MANIFEST_SIZE" != "$APPCAST_SIZE" ]; then
+                echo -e "${RED}✗${NC} Manifest size doesn't match AppCast: manifest=$MANIFEST_SIZE, appcast=$APPCAST_SIZE"
+                errors=$((errors + 1))
+            fi
+
+            if [[ ! "$MANIFEST_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]; then
+                echo -e "${RED}✗${NC} Manifest SHA256 format invalid: $MANIFEST_SHA256"
+                errors=$((errors + 1))
+            else
+                echo -e "${GREEN}✓${NC} Manifest SHA256 format is valid"
+            fi
         else
             echo -e "${YELLOW}⚠${NC} Manifest doesn't contain version information"
             warnings=$((warnings + 1))
+        fi
+
+        # Если оба manifest пути есть, они должны совпадать побайтно
+        if [ -f "$LOCAL_MANIFEST_A" ] && [ -f "$LOCAL_MANIFEST_B" ]; then
+            SHA_A=$(shasum -a 256 "$LOCAL_MANIFEST_A" | awk '{print $1}')
+            SHA_B=$(shasum -a 256 "$LOCAL_MANIFEST_B" | awk '{print $1}')
+            if [ "$SHA_A" = "$SHA_B" ]; then
+                echo -e "${GREEN}✓${NC} Local manifest paths are synchronized"
+            else
+                echo -e "${RED}✗${NC} Local manifest drift detected between paths"
+                errors=$((errors + 1))
+            fi
         fi
     else
         echo -e "${YELLOW}⚠${NC} jq not installed, skipping manifest check"
@@ -204,4 +278,3 @@ else
     fi
     exit 1
 fi
-
