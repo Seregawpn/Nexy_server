@@ -5,5 +5,5 @@ Welcome Message Module — серверная генерация приветс�
 from .core.types import WelcomeConfig, WelcomeResult, WelcomeState
 from .core.welcome_player import WelcomePlayer
 
-__version__ = "1.6.1.35"
+__version__ = "1.6.1.36"
 __all__ = ["WelcomePlayer", "WelcomeConfig", "WelcomeState", "WelcomeResult"]
