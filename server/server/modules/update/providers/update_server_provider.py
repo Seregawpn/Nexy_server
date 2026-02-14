@@ -285,6 +285,14 @@ class UpdateServerProvider:
                 content_type='text/plain'
             )
     
+    def _check_https_url(self, url: str) -> str:
+        """Helper to enforce HTTPS security check"""
+        if not url.startswith("https://"):
+            msg = f"Security Violation: Artifact URL is not HTTPS ({url}). Appcast generation aborted."
+            logger.error(f"❌ {msg}")
+            raise ValueError(msg)
+        return ""
+
     def _generate_appcast_xml(self, manifest: Dict[str, Any]) -> str:
         """Генерация AppCast XML для Sparkle"""
         artifact = manifest.get("artifact", {})
@@ -299,6 +307,7 @@ class UpdateServerProvider:
             <title>Version {manifest.get("version", "Unknown")}</title>
             <description>Update to version {manifest.get("version", "Unknown")}</description>
             <pubDate>{datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
+            {self._check_https_url(artifact.get("url", ""))}
             <enclosure 
                 url="{artifact.get("url", "")}"
                 sparkle:version="{manifest.get("build", 0)}"

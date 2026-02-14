@@ -97,17 +97,41 @@ case $choice in
     2)
         log_info "Исправление манифеста на сервере..."
         
-        # Запрашиваем правильный URL
-        read -p "Введите правильный URL для артефакта (или нажмите Enter для использования https://${SERVER_IP}/updates/downloads/): " ARTIFACT_URL
-        
-        if [ -z "$ARTIFACT_URL" ]; then
-            # Используем тестовый файл или запрашиваем имя файла
-            read -p "Введите имя файла артефакта (например, test-update.txt): " FILENAME
-            if [ -z "$FILENAME" ]; then
-                FILENAME="test-update.txt"
+        # Запрашиваем правильный URL с валидацией
+        while true; do
+            read -p "Введите правильный URL для артефакта (или нажмите Enter для использования https://${SERVER_IP}/updates/downloads/): " ARTIFACT_URL
+            
+            if [ -z "$ARTIFACT_URL" ]; then
+                read -p "Введите имя файла артефакта (например, test-update.txt): " FILENAME
+                if [ -z "$FILENAME" ]; then
+                    FILENAME="test-update.txt"
+                fi
+                ARTIFACT_URL="https://${SERVER_IP}/updates/downloads/${FILENAME}"
             fi
-            ARTIFACT_URL="https://${SERVER_IP}/updates/downloads/${FILENAME}"
-        fi
+
+            # 1. Проверка префикса
+            if [[ "$ARTIFACT_URL" != https://* ]]; then
+                log_error "❌ Ошибка: URL должен начинаться с https://"
+                continue
+            fi
+
+            # 2. Проверка эффективного URL (redirects)
+            log_info "Проверка эффективного URL..."
+            EFFECTIVE_URL=$(curl -sS -L -o /dev/null -w "%{url_effective}" "$ARTIFACT_URL" || echo "")
+            
+            if [ -z "$EFFECTIVE_URL" ]; then
+                log_error "❌ Ошибка: Не удалось проверить URL (сетевая ошибка)"
+                continue
+            fi
+
+            if [[ "$EFFECTIVE_URL" != https://* ]]; then
+                log_error "❌ Security Risk: URL редиректит на не-HTTPS: $EFFECTIVE_URL"
+                continue
+            fi
+
+            log_success "URL проверен и безопасен: $EFFECTIVE_URL"
+            break
+        done
         
         log_info "Обновление манифеста с URL: $ARTIFACT_URL"
         
@@ -127,7 +151,7 @@ case $choice in
                 if [ -f \"$MANIFEST_FILE\" ]; then
                     # Используем jq для обновления, если доступен
                     if command -v jq &> /dev/null; then
-                        jq \".artifact.url = \\\"$ARTIFACT_URL\\\" | .artifact.notes_url = \\\"$ARTIFACT_URL\\\"\" \"$MANIFEST_FILE\" > \"${MANIFEST_FILE}.tmp\" && mv \"${MANIFEST_FILE}.tmp\" \"$MANIFEST_FILE\"
+                        jq \".artifact.url = \\\"$ARTIFACT_URL\\\" | .notes_url = \\\"$ARTIFACT_URL\\\"\" \"$MANIFEST_FILE\" > \"${MANIFEST_FILE}.tmp\" && mv \"${MANIFEST_FILE}.tmp\" \"$MANIFEST_FILE\"
                     else
                         # Используем sed как fallback
                         sed -i 's|\"url\": \".*\"|\"url\": \"'$ARTIFACT_URL'\"|g' \"$MANIFEST_FILE\"
@@ -177,5 +201,3 @@ case $choice in
 esac
 
 log_success "Готово!"
-
-
