@@ -16,6 +16,18 @@ This document is the Single Source of Truth for Nexy release publication and upd
 
 These pipelines have different owners and must not be mixed.
 
+### 0.1 GitHub Routing Guard (Mandatory)
+- Server repository only: all server `git push` and server version `git tag vX.Y.Z.BUILD` go to `Seregawpn/Nexy_server`.
+- Production artifacts only: all binary release publication (`Nexy.dmg`/`Nexy.pkg`) goes to `Seregawpn/Nexy_production`.
+- Never create GitHub Release in `Seregawpn/Nexy_server`.
+- Before any publish step, verify remotes:
+  ```bash
+  git remote -v
+  ```
+  Expected:
+  - server code remote points to `https://github.com/Seregawpn/Nexy_server.git`
+  - artifact release target remains `Seregawpn/Nexy_production`
+
 ---
 
 ## 1. Release Infrastructure Rules (Golden Rules)
@@ -29,6 +41,7 @@ These pipelines have different owners and must not be mixed.
 - Code Repo (source + deploy): `Seregawpn/Nexy_server`.
 - Release Repo (binary assets): `Seregawpn/Nexy_production`.
 - Never upload artifacts to the code repo release page.
+- Never create GitHub Release in `Seregawpn/Nexy_server`.
 
 ### 1.3 Fixed Production Tags
 - `Nexy.dmg` -> tag `Update`.
