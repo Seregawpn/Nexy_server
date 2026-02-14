@@ -5,11 +5,14 @@
 ## Контекст Сервера
 - **Базовые правила проекта**: `AGENTS.md` (в корне).
 - **Обязательные источники**:
-  - `Docs/Antigravity/PROMPT.md`
-  - `Docs/Codex/PROMPT.md`
-  - `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`
-  - `server/docs/RELEASE_AND_UPDATE_GUIDE.md` (Процесс релиза и обновлений)
-- **Архитектура**: `Docs/ARCHITECTURE_OVERVIEW.md`.
+  - `../Docs/PROJECT_REQUIREMENTS.md`
+  - `../Docs/ARCHITECTURE_OVERVIEW.md`
+  - `../Docs/_archive/ASSISTANT_COORDINATION_PROTOCOL.md`
+  - `../Docs/_archive/ANTIGRAVITY_PROMPT.md`
+  - `../Docs/_archive/CODEX_PROMPT.md`
+  - `../Docs/_archive/assistant_exchange/TEMPLATE.md`
+  - `Docs/RELEASE_AND_UPDATE_GUIDE.md` (Процесс релиза и обновлений)
+- **Архитектура (server)**: `server/Docs/ARCHITECTURE_OVERVIEW.md`.
 - **API Контракты**: `server/modules/grpc_service/streaming.proto`.
 
 ## Фокус Области (Server Scope)
@@ -26,10 +29,13 @@
 ## Инструкции по Задачам (CRM)
 - При создании задач используй префикс `SRV-` (например, `SRV-001`).
 - Файл задач: `server/.crm/TASKS.json`.
-- Единый алгоритм: `Docs/CRM_ASSISTANT_INSTRUCTIONS.md`.
+- Единый алгоритм: `../Docs/_archive/CRM_ASSISTANT_INSTRUCTIONS.md`.
 - После изменений: `python3 scripts/task_aggregator.py`.
 
 ## Правила
 1. **gRPC First**: Любые изменения API должны начинаться с `.proto` файлов и обновления стабов.
 2. **Стабильность**: Сервер должен быть stateless (по возможности) и отказоустойчивым.
 3. **Изоляция**: Модули сервера не должны зависеть от клиента.
+
+## Быстрая самопроверка источников
+Перед задачей проверь, что обязательные пути существуют. Если путь недоступен, сначала зафиксируй это в отчете и используй ближайший валидный источник из списка выше.

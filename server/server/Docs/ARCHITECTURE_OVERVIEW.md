@@ -2,9 +2,9 @@
 
 Документ — канон для серверной части Nexy. Он закрепляет владельцев архитектурных осей, структуру каталогов, контракты модулей и обязательные проверки перед релизом. Любые изменения в этих разделах должны обновлять данный документ вместе с профильными канонами.
 
-Исторические планы и отчеты перенесены в `server/server/Docs/_archive` и не используются как источник истины.
+Исторические планы и отчеты перенесены в `server/Docs/_archive` и не используются как источник истины.
 
-**Flow Interaction Spec (канон взаимодействий):** `Docs/FLOW_INTERACTION_SPEC.md`
+**Flow Interaction Spec (канон взаимодействий):** `server/Docs/FLOW_INTERACTION_SPEC.md`
 
 ---
 
@@ -12,16 +12,16 @@
 
 | Ось | Canon | Ответственный |
 | --- | --- | --- |
-| gRPC и протокол | `Docs/GRPC_PROTOCOL_AUDIT.md` | @grpc-core |
-| Обновления и AppCast | `Docs/UPDATE_SYSTEM_FIXES.md` | @release-ops |
-| Backpressure и лимиты | `Docs/BACKPRESSURE_README.md` | @reliability |
-| Health/наблюдаемость | `Docs/CI_GRPC_CHECKS.md` | @sre-duty |
+| gRPC и протокол | `server/Docs/GRPC_PROTOCOL_AUDIT.md` | @grpc-core |
+| Обновления и AppCast | `Docs/RELEASE_AND_UPDATE_GUIDE.md` | @release-ops |
+| Backpressure и лимиты | `server/Docs/BACKPRESSURE_README.md` | @reliability |
+| Health/наблюдаемость | `server/Docs/CI_GRPC_CHECKS.md` | @sre-duty |
 | Конфигурация | `config/unified_config.py` + `config/unified_config.yaml` | @server-platform |
-| State Catalog | `Docs/STATE_CATALOG.md` | Tech Lead клиента |
-| Flow Interaction Spec | `Docs/FLOW_INTERACTION_SPEC.md` | Tech Lead клиента |
+| State Catalog | `server/Docs/STATE_CATALOG.md` | Tech Lead клиента |
+| Flow Interaction Spec | `server/Docs/FLOW_INTERACTION_SPEC.md` | Tech Lead клиента |
 
 - Один документ-канон на ось, один владелец. Ссылки в PR должны указывать на обновление соответствующего канона.
-- `Docs/ADR_TEMPLATE.md` используется для фиксации изменений модулей/матриц/протокола (микро-ADR ≥7 строк).
+- `server/Docs/ADR_TEMPLATE.md` используется для фиксации изменений модулей/матриц/протокола (микро-ADR ≥7 строк).
 
 ---
 
@@ -61,7 +61,7 @@ server/server/
   - **Прямая реализация:** `text_processing` использует `module.py` (напрямую реализует интерфейс)
   - **Адаптеры:** Остальные модули используют `adapter.py` (обёртка над существующими процессорами), предоставляющие единый `initialize/process/cleanup/status`
 - gRPC слой не импортирует интеграции напрямую; связь через `GrpcServiceManager` → `ModuleCoordinator`, а создание модулей выполняет `ModuleFactory`.
-- Workflow-интеграции (`streaming`, `memory`, `interrupt`) работают с capability через `module.process()`. Запрос внутренних `get_processor()` допускается только как временный workaround и фиксируется в ADR + `Docs/SERVER_DEVELOPMENT_RULES.md`.
+- Workflow-интеграции (`streaming`, `memory`, `interrupt`) работают с capability через `module.process()`. Запрос внутренних `get_processor()` допускается только как временный workaround и фиксируется в ADR + `server/Docs/SERVER_DEVELOPMENT_RULES.md`.
 - **Опциональные модули:** `database`, `audio_generation`, `text_filtering`, `interrupt_handling` - сервер может работать без них при ошибке инициализации (graceful degradation).
 - Все порты/лимиты/таймауты читаются из `unified_config`; в коде отсутствуют «магические числа».
 
@@ -69,7 +69,7 @@ server/server/
 
 ## 2.2 Как добавить новый функционал (Server Route)
 
-**Единый источник истины**: `Docs/guides/COOKBOOK_ADD_FEATURE.md` (серверный маршрут).  
+**Единый источник истины**: `server/Docs/SERVER_DEVELOPMENT_RULES.md` (серверный маршрут).  
 Здесь фиксируем только краткий путь:
 
 1. **Module** → `server/server/modules/<feature>/`
@@ -78,8 +78,8 @@ server/server/
 2. **ModuleFactory** → регистрация capability в `_MODULE_REGISTRY` (`integrations/core/module_factory.py`)
    - Формат: `'capability': 'modules.<feature>.module:ClassName'` или `'modules.<feature>.adapter:AdapterName'`
 3. **ModuleCoordinator** → инициализация/доступ (автоматически через `GrpcServiceManager`)
-4. **Config/Flags** → `server/server/config/unified_config.yaml` + `server/server/Docs/FEATURE_FLAGS.md`
-5. **gRPC Contract** → `Docs/GRPC_PROTOCOL_AUDIT.md` (если требуется)
+4. **Config/Flags** → `server/server/config/unified_config.yaml` + `server/Docs/FEATURE_FLAGS.md`
+5. **gRPC Contract** → `server/Docs/GRPC_PROTOCOL_AUDIT.md` (если требуется)
 
 ---
 
@@ -177,8 +177,8 @@ server/server/
 - Kill-switch: `kill_switches.disable_forward_assistant_actions` — немедленное отключение без релиза
 
 **Документация:**
-- Канон: `Docs/MCP_INTEGRATION_SUMMARY.md` (итоговый summary)
-- Исторический план: `Docs/MCP_COMMAND_INTEGRATION_PLAN.md` (для справки, не канон)
+- Канон процесса release/update: `Docs/RELEASE_AND_UPDATE_GUIDE.md`
+- Исторический план MCP: `server/Docs/_archive/MCP_COMMAND_INTEGRATION_PLAN.md` (для справки, не канон)
 - Решения об action принимает ассистент (LLM), сервер только транслирует
 
 ### 3.2 Browser Automation (`browser_use`)
@@ -260,12 +260,12 @@ server/server/
   cd server/server/modules/grpc_service
   python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. streaming.proto
   ```
-- Любое breaking-изменение → новый `StreamingServiceV2` + feature-flag + 2 релиза параллельной поддержки (описано в `Docs/GRPC_PROTOCOL_AUDIT.md`).
+- Любое breaking-изменение → новый `StreamingServiceV2` + feature-flag + 2 релиза параллельной поддержки (описано в `server/Docs/GRPC_PROTOCOL_AUDIT.md`).
 
 ### 4.2 Стабильность API
 
 - RPC: `StreamAudio` (bidirectional stream), `InterruptSession` (unary-unary).
-- Контракт совместимости фиксируется в `Docs/GRPC_PROTOCOL_AUDIT.md`; CI (`Docs/CI_GRPC_CHECKS.md`) блокирует регресс по регенерации proto и smoke-тестам.
+- Контракт совместимости фиксируется в `server/Docs/GRPC_PROTOCOL_AUDIT.md`; CI (`server/Docs/CI_GRPC_CHECKS.md`) блокирует регресс по регенерации proto и smoke-тестам.
 - Любое добавление поля требует обновления таблицы совместимости в каноне.
 
 ### 4.3 Error Taxonomy
@@ -285,7 +285,7 @@ server/server/
 - Файл: `modules/grpc_service/core/grpc_interceptor.py`. Оборачивает callables через `_replace`, не модифицируя сериализаторы (`rpc_method_handler` — namedtuple).
 - В логах обязателен контекст: `scope=grpc`, `method=/streaming.StreamingService/...`, `decision=start|abort|complete`, `ctx` со служебными полями.
 - Ошибки классифицируются через `ErrorCodeMapper`; transient ошибки фиксируются как `decision=error`, `error_classified=transient`.
-- Любой новый RPC обязан регистрироваться через LoggingInterceptor. В обходных сценариях требуется ADR + обновление `Docs/CI_GRPC_CHECKS.md`.
+- Любой новый RPC обязан регистрироваться через LoggingInterceptor. В обходных сценариях требуется ADR + обновление `server/Docs/CI_GRPC_CHECKS.md`.
 
 Таблица дублируется комментариями в `server/server/modules/grpc_service/core/grpc_interceptor.py`. Любое изменение — синхронное обновление двух мест.
 
@@ -312,7 +312,7 @@ server/server/
 
 > Stage наследует prod значения, если не указано иное. Значения по умолчанию для `grpc.host`/`http.host`/`update.host` определяются `NEXY_ENV`: dev → `0.0.0.0` для локальных тестов, stage/prod → `127.0.0.1` (все запросы идут через Nginx на 443). Значение `auto` в `config.env` означает «использовать дефолт по окружению». Все overrides проходят через unified_config + env, прямых setdefault в коде нет.
 
-Backpressure лимиты, error-коды и рекомендации по отладке — в `Docs/BACKPRESSURE_README.md`.
+Backpressure лимиты, error-коды и рекомендации по отладке — в `server/Docs/BACKPRESSURE_README.md`.
 
 ### 5.1 Feature Flags Architecture (Server-Side)
 
@@ -345,7 +345,7 @@ Backpressure лимиты, error-коды и рекомендации по от�
   - Реализация: `utils/metrics_collector.py`
   - Периодическое логирование каждые 60 секунд
   - Итоговые метрики при graceful shutdown
-- **Гвардрайлы CI** (`Docs/CI_GRPC_CHECKS.md`):
+- **Гвардрайлы CI** (`server/Docs/CI_GRPC_CHECKS.md`):
   - regen proto → diff запретов
   - smoke-тесты (`python scripts/grpc_smoke.py --host 127.0.0.1 --port 50051`)
   - health/порт/версия (`python scripts/check_grpc_health.py`)
@@ -369,7 +369,7 @@ Backpressure лимиты, error-коды и рекомендации по от�
 - **Конфигурация Nginx (критично):**
   - `location /health` и `/status` должны быть **перед** `location /`
   - Иначе запросы попадут в gRPC прокси вместо HTTP прокси, что вызовет ошибку 502 Bad Gateway
-  - Подробности: `Docs/SERVER_DEPLOYMENT_GUIDE.md`
+  - Подробности: `server/Docs/SERVER_DEPLOYMENT_GUIDE.md`
 - **Cache-Control**: `/appcast.xml` — `max-age=60`, `/updates/health` — `max-age=30`, `/health` — `max-age=30`. Проверяется вручную (curl) и автоматически `server/server/scripts/verify_cache_control_headers.py`.
 - **Backpressure**: ошибки `stream_limit_exceeded`/`rate_limit_exceeded` мапятся на `RESOURCE_EXHAUSTED` (см. таблицу). Лимиты берутся из unified_config.
   - **Текущие настройки (prod):**
@@ -401,9 +401,9 @@ Backpressure лимиты, error-коды и рекомендации по от�
 
 ## 9. Ссылки
 
-- `Docs/SERVER_DEVELOPMENT_RULES.md` — подробные гейты разработки
-- `Docs/SERVER_DEPLOYMENT_GUIDE.md` — деплой, HTTPS ingress, smoke-проверки
-- `Docs/BACKPRESSURE_README.md` — детальные лимиты и отладка
-- `Docs/STATE_CATALOG.md` — карта состояний и владельцы
-- `Docs/CI_GRPC_CHECKS.md` — обязательные CI-стадии
-- `Docs/ARCHITECTURE_ALIGNMENT_CHECK.md` — проверка соответствия архитектуры и кода
+- `server/Docs/SERVER_DEVELOPMENT_RULES.md` — подробные гейты разработки
+- `server/Docs/SERVER_DEPLOYMENT_GUIDE.md` — деплой, HTTPS ingress, smoke-проверки
+- `server/Docs/BACKPRESSURE_README.md` — детальные лимиты и отладка
+- `server/Docs/STATE_CATALOG.md` — карта состояний и владельцы
+- `server/Docs/CI_GRPC_CHECKS.md` — обязательные CI-стадии
+- `server/Docs/_archive/ARCHITECTURE_ALIGNMENT_CHECK.md` — историческая проверка соответствия архитектуры и кода
