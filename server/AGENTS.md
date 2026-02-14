@@ -8,6 +8,7 @@
   - `Docs/Antigravity/PROMPT.md`
   - `Docs/Codex/PROMPT.md`
   - `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`
+  - `server/docs/RELEASE_AND_UPDATE_GUIDE.md` (Процесс релиза и обновлений)
 - **Архитектура**: `Docs/ARCHITECTURE_OVERVIEW.md`.
 - **API Контракты**: `server/modules/grpc_service/streaming.proto`.
 
