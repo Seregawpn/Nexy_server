@@ -1,7 +1,8 @@
 
 import sys
+
 import qrcode
-from PIL import Image
+
 
 def generate_qr(data, filename="whatsapp_qr.png"):
     qr = qrcode.QRCode(
@@ -23,7 +24,6 @@ if __name__ == "__main__":
         sys.exit(1)
     
     data = sys.argv[1]
-    import os
     # Save to artifacts directory or current directory
     output_path = "/Users/sergiyzasorin/.gemini/antigravity/brain/2d8b56ac-c774-4e66-9fa4-0db4ba606863/whatsapp_qr.png" 
     generate_qr(data, output_path)

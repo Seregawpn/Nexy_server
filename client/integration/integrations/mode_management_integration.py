@@ -15,9 +15,9 @@ import logging
 import time
 from typing import Any
 
+from integration.core import selectors
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core import selectors
 from integration.core.state_manager import ApplicationStateManager
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)

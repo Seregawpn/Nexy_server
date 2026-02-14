@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import logging
 import time
 from typing import Any
+import uuid
 
 from integration.core.base_integration import BaseIntegration
 from integration.core.error_handler import ErrorHandler
@@ -276,7 +277,7 @@ class UpdateNotificationIntegration(BaseIntegration):
         try:
             # Отправляем текст на сервер для генерации TTS через GrpcClientIntegration
             # GrpcClientIntegration обработает этот запрос и вернет аудио через grpc.response.audio
-            session_id = f"update_notification_{int(time.time() * 1000)}"
+            session_id = str(uuid.uuid4())
 
             logger.info(f"[UPDATE_NOTIFY] Отправляем текст для озвучки через gRPC TTS: '{text[:50]}...'")
 

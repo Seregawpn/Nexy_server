@@ -17,8 +17,8 @@ import logging
 import queue
 import threading
 import time
+from typing import Any, Callable
 import uuid
-from typing import Any, Callable, Dict, Optional
 
 try:
     from Quartz import (  # type: ignore
@@ -32,9 +32,9 @@ try:
         CGEventTapEnable,
         CGEventTapIsEnabled,
         kCFRunLoopCommonModes,
-        kCGEventFlagMaskControl,
         kCGEventFlagMaskAlternate,
         kCGEventFlagMaskCommand,
+        kCGEventFlagMaskControl,
         kCGEventFlagsChanged,
         kCGEventKeyDown,
         kCGEventKeyUp,
@@ -42,16 +42,30 @@ try:
         kCGEventTapDisabledByUserInput,
         kCGEventTapOptionDefault,
         kCGEventTapOptionListenOnly,
-        kCGHIDEventTap,
         kCGHeadInsertEventTap,
+        kCGHIDEventTap,
         kCGKeyboardEventKeycode,
     )
 
     QUARTZ_AVAILABLE = True
 except Exception:
     QUARTZ_AVAILABLE = False
+    # Mock constants for type checking/fallback
+    kCGEventKeyDown = 0
+    kCGEventKeyUp = 0
+    kCGEventFlagsChanged = 0
+    kCGEventFlagMaskAlternate = 0
+    kCGEventFlagMaskCommand = 0
+    kCGEventFlagMaskControl = 0
+    kCGEventTapDisabledByTimeout = 0
+    kCGEventTapDisabledByUserInput = 0
+    kCGEventTapOptionDefault = 0
+    kCGEventTapOptionListenOnly = 0
+    kCGHeadInsertEventTap = 0
+    kCGHIDEventTap = 0
+    kCGKeyboardEventKeycode = 0
 
-from ..types import KeyEvent, KeyEventType, KeyboardConfig
+from ..types import KeyboardConfig, KeyEvent, KeyEventType
 
 logger = logging.getLogger(__name__)
 
@@ -83,19 +97,19 @@ class QuartzKeyboardMonitor:
             self.keyboard_available = False
 
         self.key_pressed = False
-        self.press_start_time: Optional[float] = None
+        self.press_start_time: float | None = None
         self.last_event_time = 0.0
         self._long_sent = False
 
         self._control_pressed = False
         self._n_pressed = False
         self._combo_active = False
-        self._combo_start_time: Optional[float] = None
-        self._combo_press_id: Optional[str] = None
-        self._pending_release_deadline: Optional[float] = None
-        self._pending_release_reason: Optional[str] = None
+        self._combo_start_time: float | None = None
+        self._combo_press_id: str | None = None
+        self._pending_release_deadline: float | None = None
+        self._pending_release_reason: str | None = None
         self._release_confirm_delay_sec: float = 0.09
-        self._last_n_keydown_ts: Optional[float] = None
+        self._last_n_keydown_ts: float | None = None
         self._stale_n_pressed_reset_sec: float = 0.8
 
         self._previous_modifier_pressed = False
@@ -105,14 +119,14 @@ class QuartzKeyboardMonitor:
         self._tap_source = None
         self._tap_recovery_count = 0
 
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self.event_callbacks: Dict[KeyEventType, Callable] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.event_callbacks: dict[KeyEventType, Callable] = {}
 
         self.state_lock = threading.RLock()
         self.stop_event = threading.Event()
-        self.hold_monitor_thread: Optional[threading.Thread] = None
-        self.callback_dispatch_thread: Optional[threading.Thread] = None
-        self._callback_queue: "queue.Queue[Optional[tuple[Callable, KeyEvent]]]" = queue.Queue()
+        self.hold_monitor_thread: threading.Thread | None = None
+        self.callback_dispatch_thread: threading.Thread | None = None
+        self._callback_queue: "queue.Queue[tuple[Callable, KeyEvent] | None]" = queue.Queue()
 
     # ---------- Public API ----------
     def register_callback(self, event_type, callback: Callable):
@@ -209,9 +223,9 @@ class QuartzKeyboardMonitor:
                 pass
             self._tap = None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         with self.state_lock:
-            status: Dict[str, Any] = {
+            status: dict[str, Any] = {
                 "is_monitoring": self.is_monitoring,
                 "keyboard_available": self.keyboard_available,
                 "fallback_mode": self.fallback_mode,
@@ -587,7 +601,7 @@ class QuartzKeyboardMonitor:
             callback, event = item
             self._run_callback(callback, event)
 
-    def _trigger_event(self, event_type: KeyEventType, duration: float, event: Optional[KeyEvent] = None):
+    def _trigger_event(self, event_type: KeyEventType, duration: float, event: KeyEvent | None = None):
         callback = self.event_callbacks.get(event_type)
         if not callback:
             return

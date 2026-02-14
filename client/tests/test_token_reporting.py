@@ -1,7 +1,7 @@
-import sys
-import os
 import asyncio
-from unittest.mock import MagicMock, AsyncMock
+import os
+import sys
+from unittest.mock import AsyncMock, MagicMock
 
 # Add client to path so imports work
 current_dir = os.getcwd()
@@ -39,8 +39,12 @@ views.ChatInvokeCompletion = MockChatInvokeCompletion
 views.ChatInvokeUsage = MockChatInvokeUsage
 
 # Now import the module
-from modules.browser_automation.module import GeminiLLMAdapter
+from modules.browser_automation.module import GeminiLLMAdapter  # noqa: I001
 
+
+import pytest
+
+@pytest.mark.asyncio
 async def test_token_extraction():
     print("=== Testing Token Usage Extraction in GeminiLLMAdapter ===")
     

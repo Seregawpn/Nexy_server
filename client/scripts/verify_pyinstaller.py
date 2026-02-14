@@ -260,7 +260,7 @@ def check_runtime_hooks(config: dict[str, Any]) -> list[str]:
     
     if EXPECTED_RUNTIME_HOOK not in runtime_hooks:
         # Проверяем, есть ли хотя бы часть пути
-        found = any(EXPECTED_RUNTIME_HOOK.split("/")[-1] in hook for hook in runtime_hooks)
+        found = any(EXPECTED_RUNTIME_HOOK.rsplit("/", maxsplit=1)[-1] in hook for hook in runtime_hooks)
         if not found:
             errors.append(f"Отсутствует runtime hook: {EXPECTED_RUNTIME_HOOK}")
     

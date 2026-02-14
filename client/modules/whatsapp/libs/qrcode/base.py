@@ -1,4 +1,5 @@
 from typing import NamedTuple
+
 from qrcode import constants
 
 EXP_TABLE = list(range(256))
@@ -280,7 +281,7 @@ class Polynomial:
 
         num = [
             item ^ gexp(glog(other_item) + ratio)
-            for item, other_item in zip(self, other)
+            for item, other_item in zip(self, other, strict=False)
         ]
         if difference:
             num.extend(self[-difference:])
@@ -297,8 +298,7 @@ class RSBlock(NamedTuple):
 def rs_blocks(version, error_correction):
     if error_correction not in RS_BLOCK_OFFSET:  # pragma: no cover
         raise Exception(
-            "bad rs block @ version: %s / error_correction: %s"
-            % (version, error_correction)
+            f"bad rs block @ version: {version} / error_correction: {error_correction}"
         )
     offset = RS_BLOCK_OFFSET[error_correction]
     rs_block = RS_BLOCK_TABLE[(version - 1) * 4 + offset]

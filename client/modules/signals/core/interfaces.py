@@ -10,11 +10,11 @@ No external dependencies. Safe for macOS packaging, signing and notarization.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 
-class SignalPattern(str, Enum):
+class SignalPattern(StrEnum):
     """Logical signal patterns to standardize user cues.
 
     - LISTEN_START: play when app enters LISTENING (user can speak now)
@@ -31,7 +31,7 @@ class SignalPattern(str, Enum):
     CANCEL = "cancel"
 
 
-class SignalKind(str, Enum):
+class SignalKind(StrEnum):
     AUDIO = "audio"
     VISUAL = "visual"
 

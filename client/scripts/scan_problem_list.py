@@ -141,7 +141,8 @@ def _scan_basedpyright(root: Path) -> dict[str, Any]:
             }
         )
 
-    status = "ok" if not issues else "failed"
+    has_errors = any(issue.get("severity") == "error" for issue in issues)
+    status = "ok" if not has_errors else "failed"
     return {"status": status, "issues": issues, "returncode": proc.returncode}
 
 

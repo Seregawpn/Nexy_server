@@ -81,7 +81,7 @@ class QRColorMask:
     # find the interpolation coefficient between two numbers
     def extrap_color(self, col1, col2, interped_color):
         normed = []
-        for c1, c2, ci in zip(col1, col2, interped_color):
+        for c1, c2, ci in zip(col1, col2, interped_color, strict=False):
             extrap = self.extrap_num(c1, c2, ci)
             if extrap is not None:
                 normed.append(extrap)

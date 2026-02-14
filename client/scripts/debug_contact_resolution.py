@@ -1,8 +1,8 @@
 
 import asyncio
 import logging
-import sys
 import os
+import sys
 
 # Add client directory to sys.path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))

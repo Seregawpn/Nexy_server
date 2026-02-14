@@ -4,10 +4,10 @@ from unittest import mock
 import pytest
 
 import qrcode
-import qrcode.util
 from qrcode.exceptions import DataOverflowError
 from qrcode.image.base import BaseImage
 from qrcode.tests.consts import UNICODE_TEXT
+import qrcode.util
 from qrcode.util import MODE_8BIT_BYTE, MODE_ALPHA_NUM, MODE_NUMBER, QRData
 
 

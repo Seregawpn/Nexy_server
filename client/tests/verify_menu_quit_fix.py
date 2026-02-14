@@ -1,15 +1,15 @@
-import sys
-import os
 import logging
+import os
+import sys
 import unittest
 
 # Add current directory to path
 sys.path.insert(0, os.getcwd())
 
 # Mock rumps BEFORE importing menu_handler
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
 sys.modules['rumps'] = MagicMock()
-import rumps
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +17,7 @@ logging.basicConfig(level=logging.INFO)
 # Mock config loader to avoid dependency issues
 sys.modules['config.unified_config_loader'] = MagicMock()
 from config.unified_config_loader import UnifiedConfigLoader
+
 UnifiedConfigLoader.get_instance = MagicMock()
 
 # Import the class to test
@@ -24,6 +25,7 @@ UnifiedConfigLoader.get_instance = MagicMock()
 sys.modules['modules.tray_controller.macos.tray_icon'] = MagicMock()
 
 from modules.tray_controller.macos.menu_handler import MacOSTrayMenu
+
 
 class TestMenuQuitLogic(unittest.TestCase):
     def setUp(self):

@@ -212,7 +212,7 @@ class TestMicrophoneActivation:
         input_integration._wait_for_mic_closed = AsyncMock()
         
         # Вызываем обработчик RELEASE
-        await input_integration._handle_key_release(release_event)
+        await input_integration._handle_release(release_event)
         
         # Даем время на обработку асинхронных событий
         await asyncio.sleep(0.1)
@@ -264,7 +264,7 @@ class TestMicrophoneActivation:
         )
         
         # Вызываем обработчик RELEASE
-        await input_integration._handle_key_release(release_event)
+        await input_integration._handle_release(release_event)
         
         # Даем время на обработку асинхронных событий
         await asyncio.sleep(0.1)

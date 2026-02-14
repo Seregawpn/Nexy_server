@@ -559,8 +559,6 @@ class AVFoundationPlayer:
                 # PyObjC objc.varlist indexed assignment doesn't actually write to memory
                 # We need an alternative approach
                 try:
-                    import objc
-                    import struct
                     
                     # Prepare contiguous float32 array
                     audio_contiguous = np.ascontiguousarray(audio_data, dtype=np.float32)
@@ -583,7 +581,6 @@ class AVFoundationPlayer:
                         try:
                             # Use the buffer object's internal float pointer
                             # AVAudioPCMBuffer stores floatChannelData as float** at a known offset
-                            import Foundation
                             
                             # Get NSData representation of float buffer for direct access
                             # Alternative: use mutableBytes on a wrapper

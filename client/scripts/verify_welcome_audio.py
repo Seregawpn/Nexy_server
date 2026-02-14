@@ -1,7 +1,7 @@
-import sys
 import asyncio
 import logging
 from pathlib import Path
+import sys
 
 # Add project root to path (client/scripts/.. -> client)
 ROOT_DIR = Path(__file__).resolve().parent.parent

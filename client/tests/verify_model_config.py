@@ -1,7 +1,8 @@
-import sys
 import os
+import sys
+from unittest.mock import MagicMock, patch
+
 import yaml
-from unittest.mock import patch, MagicMock
 
 # Add client to path so imports work
 current_dir = os.getcwd()
@@ -15,8 +16,8 @@ sys.modules['langchain_google_genai'] = MagicMock()
 # Import the module under test
 # We need to handle potential import errors if other dependencies are missing
 try:
-    from modules.browser_automation.module import BrowserUseModule
     from config.unified_config_loader import unified_config
+    from modules.browser_automation.module import BrowserUseModule
 except ImportError as e:
     print(f"ImportError: {e}")
     print("Make sure you are running from the project root and client/ is accessible.")

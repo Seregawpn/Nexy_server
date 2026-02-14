@@ -10,25 +10,28 @@ InputProcessingIntegration V2
 from __future__ import annotations
 
 import asyncio
+from enum import StrEnum
 import logging
 import time
+from typing import Any
 import uuid
-from enum import Enum
-from typing import Any, Dict, List, Optional
 
 from config.unified_config_loader import InputProcessingConfig
 from integration.core import selectors
 from integration.core.error_handler import ErrorCategory, ErrorHandler, ErrorSeverity
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_keys import StateKeys
-from integration.core.state_manager import AppMode, ApplicationStateManager  # type: ignore[attr-defined]
+from integration.core.state_manager import (  # type: ignore[attr-defined]
+    ApplicationStateManager,
+    AppMode,
+)
 from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
 from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
 
 logger = logging.getLogger(__name__)
 
 
-class PTTState(str, Enum):
+class PTTState(StrEnum):
     IDLE = "idle"
     ARMED = "armed"
     RECORDING = "recording"
@@ -55,15 +58,15 @@ class InputProcessingIntegration:
         self.is_running = False
         self.ptt_available = True
 
-        self.keyboard_monitor: Optional[Any] = None
+        self.keyboard_monitor: Any | None = None
         self._using_quartz = False
 
         self._state: PTTState = PTTState.IDLE
-        self._active_press_id: Optional[str] = None
-        self._terminal_stop_press_id: Optional[str] = None
+        self._active_press_id: str | None = None
+        self._terminal_stop_press_id: str | None = None
 
-        self._pending_session_id: Optional[str] = None
-        self._active_grpc_session_id: Optional[str] = None
+        self._pending_session_id: str | None = None
+        self._active_grpc_session_id: str | None = None
         self._session_waiting_grpc = False
 
         self._recording_started = False
@@ -71,21 +74,21 @@ class InputProcessingIntegration:
         self._session_recognized = False
 
         self._playback_active = False
-        self._playback_waiters: List[asyncio.Future] = []
+        self._playback_waiters: list[asyncio.Future] = []
         self._playback_wait_timeout = max(0.5, float(self.config.playback_wait_timeout_sec))
 
         self._mic_active = False
-        self._mic_waiters: List[asyncio.Future] = []
+        self._mic_waiters: list[asyncio.Future] = []
         self._mic_wait_timeout = max(0.5, float(self.config.playback_wait_timeout_sec))
         self._lifecycle_lock = asyncio.Lock()
         self._start_in_flight = False
 
-        self._health_check_task: Optional[asyncio.Task] = None
+        self._health_check_task: asyncio.Task | None = None
         self._secure_input_active = False
         self._last_secure_input_force_stop_ts = 0.0
         self._secure_input_force_stop_cooldown_sec = 1.5
-        self._last_interrupt_event_id: Optional[str] = None
-        self._preempt_sent_press_id: Optional[str] = None
+        self._last_interrupt_event_id: str | None = None
+        self._preempt_sent_press_id: str | None = None
 
     async def initialize(self) -> bool:
         try:
@@ -127,7 +130,9 @@ class InputProcessingIntegration:
 
         if is_macos and backend in ("auto", "quartz"):
             try:
-                from modules.input_processing.keyboard.mac.quartz_monitor import QuartzKeyboardMonitor
+                from modules.input_processing.keyboard.mac.quartz_monitor import (
+                    QuartzKeyboardMonitor,
+                )
 
                 self.keyboard_monitor = QuartzKeyboardMonitor(self.config.keyboard)  # type: ignore[assignment]
                 use_quartz = True
@@ -240,7 +245,7 @@ class InputProcessingIntegration:
         self._state = new_state
         logger.info("PTT_STATE: %s -> %s (reason=%s, press_id=%s, session=%s)", old.value, new_state.value, reason, self._active_press_id, self._get_active_session_id())
 
-    def _extract_press_id(self, event: KeyEvent) -> Optional[str]:
+    def _extract_press_id(self, event: KeyEvent) -> str | None:
         data = getattr(event, "data", None)
         if isinstance(data, dict):
             pid = data.get("press_id")
@@ -248,16 +253,16 @@ class InputProcessingIntegration:
                 return pid
         return None
 
-    def _get_active_session_id(self) -> Optional[str]:
+    def _get_active_session_id(self) -> str | None:
         return selectors.get_current_session_id(self.state_manager)
 
-    def _set_session_id(self, session_id: Optional[str], reason: str):
+    def _set_session_id(self, session_id: str | None, reason: str):
         current = selectors.get_current_session_id(self.state_manager)
         if current != session_id:
             self.state_manager.update_session_id(session_id)
             logger.debug("Session id update: %s -> %s (%s)", current, session_id, reason)
 
-    def _try_mark_terminal_stop(self, press_id: Optional[str]) -> bool:
+    def _try_mark_terminal_stop(self, press_id: str | None) -> bool:
         effective = press_id or self._active_press_id
         if not effective:
             return True
@@ -268,10 +273,10 @@ class InputProcessingIntegration:
 
     async def _publish_interrupt_and_cancel(
         self,
-        session_id: Optional[str],
+        session_id: str | None,
         source: str,
         timestamp: float,
-        press_id: Optional[str] = None,
+        press_id: str | None = None,
     ):
         event_id = str(uuid.uuid4())
         self._last_interrupt_event_id = event_id
@@ -358,7 +363,7 @@ class InputProcessingIntegration:
             if waiter in self._playback_waiters:
                 self._playback_waiters.remove(waiter)
 
-    async def _terminal_stop(self, *, press_id: Optional[str], session_id: Optional[str], source: str, timestamp: float, reason: str):
+    async def _terminal_stop(self, *, press_id: str | None, session_id: str | None, source: str, timestamp: float, reason: str):
         self._set_state(PTTState.STOPPING, reason)
         if not self._try_mark_terminal_stop(press_id):
             return False
@@ -375,8 +380,8 @@ class InputProcessingIntegration:
     async def _request_terminal_stop(
         self,
         *,
-        press_id: Optional[str],
-        session_id: Optional[str],
+        press_id: str | None,
+        session_id: str | None,
         source: str,
         timestamp: float,
         reason: str,
@@ -434,7 +439,7 @@ class InputProcessingIntegration:
             })
         self._reset(reason)
 
-    async def _finalize_grpc_failed(self, session_id: Optional[str]):
+    async def _finalize_grpc_failed(self, session_id: str | None):
         """Terminal path для grpc_failed: только финализация input state без force-stop side effects."""
         self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
         self._set_state(PTTState.IDLE, "grpc_failed_terminal")
@@ -782,7 +787,7 @@ class InputProcessingIntegration:
             if not fut.done():
                 fut.set_result(True)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "is_initialized": self.is_initialized,
             "is_running": self.is_running,

@@ -14,13 +14,14 @@ import uuid
 
 import numpy as np
 
+from integration.core import selectors
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core import selectors
 from integration.core.state_keys import StateKeys
 from integration.core.state_manager import (  # type: ignore[attr-defined]
     ApplicationStateManager,
 )
+
 try:
     from mode_management import AppMode  # type: ignore[reportMissingImports]
 except Exception:
@@ -501,7 +502,7 @@ class SpeechPlaybackIntegration:
                     pattern,
                 )
                 return
-            if bool(self.state_manager.get_state_data(StateKeys.USER_QUIT_INTENT, False)):
+            if bool(selectors.get_state_value(self.state_manager, StateKeys.USER_QUIT_INTENT, False)):
                 logger.info(
                     "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=user_quit_intent",
                     cue_id,

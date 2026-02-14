@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 import logging
 import os
 import time
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # UI Events
 # -----------------------------
 
-class UIEventType(str, Enum):
+class UIEventType(StrEnum):
     PHASE_CHANGED = "phase_changed"
     STEP_CHANGED = "step_changed"
     STEP_STATE_CHANGED = "step_state_changed"

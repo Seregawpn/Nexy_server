@@ -1,9 +1,8 @@
 
 import asyncio
 import logging
-import sys
-import os
 from pathlib import Path
+import sys
 
 # Adjust path to include client root
 current_dir = Path(__file__).parent
@@ -11,8 +10,8 @@ client_root = current_dir.parent.parent
 sys.path.append(str(client_root))
 
 from client.modules.whatsapp.config import WhatsappConfig
-from client.modules.whatsapp.service_manager import WhatsappServiceManager
 from client.modules.whatsapp.mcp_client import WhatsappMCPClient
+from client.modules.whatsapp.service_manager import WhatsappServiceManager
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

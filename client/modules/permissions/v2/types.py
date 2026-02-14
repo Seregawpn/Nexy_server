@@ -7,11 +7,11 @@ All enums, dataclasses, and type definitions for the permission orchestration sy
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 
-class Phase(str, Enum):
+class Phase(StrEnum):
     """Lifecycle phases of the permission wizard."""
     FIRST_RUN = "first_run"
     RESTART_PENDING = "restart_pending"
@@ -20,7 +20,7 @@ class Phase(str, Enum):
     LIMITED_MODE = "limited_mode"
 
 
-class PermissionId(str, Enum):
+class PermissionId(StrEnum):
     """Identifiers for all supported permissions."""
     MICROPHONE = "microphone"
     SCREEN_CAPTURE = "screen_capture"
@@ -32,13 +32,13 @@ class PermissionId(str, Enum):
     NETWORK = "network"
 
 
-class StepMode(str, Enum):
+class StepMode(StrEnum):
     """How a permission is requested."""
     AUTO_DIALOG = "auto_dialog"      # System TCC dialog
     OPEN_SETTINGS = "open_settings"  # Manual toggle in System Settings
 
 
-class StepState(str, Enum):
+class StepState(StrEnum):
     """States a permission step can be in."""
     UNKNOWN = "unknown"
     TRIGGERED = "triggered"
@@ -53,7 +53,7 @@ class StepState(str, Enum):
     SKIPPED = "skipped"
 
 
-class OutcomeKind(str, Enum):
+class OutcomeKind(StrEnum):
     """Classification outcomes from probers."""
     PASS_ = "pass"
     FAIL = "fail"
@@ -64,7 +64,7 @@ class OutcomeKind(str, Enum):
     SKIP = "skip"
 
 
-class PermissionCriticality(str, Enum):
+class PermissionCriticality(StrEnum):
     """How critical a permission is to app functionality."""
     HARD = "hard"      # App won't work without it
     SOFT = "soft"      # Degraded but usable

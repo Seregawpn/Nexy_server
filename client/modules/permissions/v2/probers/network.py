@@ -17,7 +17,6 @@ from .base import BaseProber
 logger = logging.getLogger(__name__)
 
 
-import subprocess
 
 class NetworkProber(BaseProber):
     """Prober for Network permission (Firewall/Local Network)."""

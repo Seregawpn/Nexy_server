@@ -1,11 +1,15 @@
 
 import asyncio
 import logging
+
 from modules.permissions.v2.probers.messages import MessagesProber
-from modules.permissions.v2.types import StepConfig, PermissionId, StepTiming
+from modules.permissions.v2.types import PermissionId, StepConfig, StepTiming
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.DEBUG, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 async def test_messages_prober():
     print("--- Starting Messages Prober Test ---")

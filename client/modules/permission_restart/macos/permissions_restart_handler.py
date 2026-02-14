@@ -18,10 +18,9 @@ import threading
 import time
 from typing import Sequence
 
-from integration.utils.env_detection import is_production_env
 from config.unified_config_loader import UnifiedConfigLoader
+from integration.utils.env_detection import is_production_env
 from integration.utils.resource_path import get_user_data_dir
-from modules.instance_manager import InstanceManager, InstanceManagerConfig
 from modules.permission_restart.core.atomic_flag import AtomicRestartFlag
 from modules.permission_restart.core.config import PermissionRestartConfig
 from modules.updater.migrate import get_user_app_path

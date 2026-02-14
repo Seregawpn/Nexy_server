@@ -1,5 +1,5 @@
 import abc
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from qrcode.image.styles.moduledrawers.base import QRModuleDrawer
 
@@ -15,8 +15,8 @@ class BaseImage:
     Base QRCode image output class.
     """
 
-    kind: Optional[str] = None
-    allowed_kinds: Optional[tuple[str]] = None
+    kind: str | None = None
+    allowed_kinds: tuple[str] | None = None
     needs_context = False
     needs_processing = False
     needs_drawrect = True
@@ -125,8 +125,8 @@ class BaseImageWithDrawer(BaseImage):
     def __init__(
         self,
         *args,
-        module_drawer: Union[QRModuleDrawer, str, None] = None,
-        eye_drawer: Union[QRModuleDrawer, str, None] = None,
+        module_drawer: QRModuleDrawer | str | None = None,
+        eye_drawer: QRModuleDrawer | str | None = None,
         **kwargs,
     ):
         self.module_drawer = (
@@ -139,8 +139,8 @@ class BaseImageWithDrawer(BaseImage):
         super().__init__(*args, **kwargs)
 
     def get_drawer(
-        self, drawer: Union[QRModuleDrawer, str, None]
-    ) -> Optional[QRModuleDrawer]:
+        self, drawer: QRModuleDrawer | str | None
+    ) -> QRModuleDrawer | None:
         if not isinstance(drawer, str):
             return drawer
         drawer_cls, kwargs = self.drawer_aliases[drawer]
@@ -155,7 +155,7 @@ class BaseImageWithDrawer(BaseImage):
     def drawrect_context(self, row: int, col: int, qr: "QRCode"):
         box = self.pixel_box(row, col)
         drawer = self.eye_drawer if self.is_eye(row, col) else self.module_drawer
-        is_active: Union[bool, ActiveWithNeighbors] = (
+        is_active: bool | ActiveWithNeighbors = (
             qr.active_with_neighbors(row, col)
             if drawer.needs_neighbors
             else bool(qr.modules[row][col])

@@ -832,6 +832,9 @@ class UnifiedConfigLoader:
         if resolved is not None:
             return resolved
 
+        return self._check_aliases(config, feature_name, default)
+
+    def _check_aliases(self, config: dict[str, Any], feature_name: str, default: bool) -> bool:
         aliases: list[str] = [feature_name]
         if feature_name == "browser":
             aliases.append("browser_use")

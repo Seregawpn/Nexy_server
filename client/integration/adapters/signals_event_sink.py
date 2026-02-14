@@ -8,8 +8,8 @@ decoupled from playback internals and improves reliability.
 
 from __future__ import annotations
 
-import time
 import logging
+import time
 
 from integration.core.event_bus import EventBus
 from modules.signals.core.interfaces import AudioSink

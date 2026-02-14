@@ -8,45 +8,43 @@ API совместим с KeyboardMonitor: register_callback, set_loop, start_mo
 # PyObjC imports are dynamically loaded and cannot be statically analyzed
 
 import asyncio
+from collections.abc import Callable
 import logging
+import queue
 import threading
 import time
+from typing import Any
 import uuid
-import queue
-from typing import Optional, Callable, Dict, Any
 
 try:
     from Quartz import (  # type: ignore
+        CFMachPortCreateRunLoopSource,
+        CFRunLoopAddSource,
+        CFRunLoopGetMain,
+        CFRunLoopSourceInvalidate,
+        CGEventGetFlags,
+        CGEventGetIntegerValueField,
         CGEventTapCreate,
         CGEventTapEnable,
-        CFRunLoopAddSource,
-        CFRunLoopGetCurrent,
-        CFRunLoopGetMain,
-        CFRunLoopRunInMode,
-        CFRunLoopSourceInvalidate,
-        CFMachPortCreateRunLoopSource,
-        kCGHIDEventTap,
-        kCGHeadInsertEventTap,
-        kCGEventTapOptionListenOnly,
-        kCGEventTapOptionDefault,
+        kCFRunLoopCommonModes,
+        kCGEventFlagMaskControl,
+        kCGEventFlagMaskShift,
+        kCGEventFlagsChanged,
         kCGEventKeyDown,
         kCGEventKeyUp,
-        kCGEventFlagsChanged,
-        kCFRunLoopCommonModes,
-        kCFRunLoopDefaultMode,
-        CGEventGetIntegerValueField,
-        CGEventGetFlags,
-        kCGKeyboardEventKeycode,
-        kCGEventFlagMaskShift,
-        kCGEventFlagMaskControl,
         kCGEventTapDisabledByTimeout,
         kCGEventTapDisabledByUserInput,
+        kCGEventTapOptionDefault,
+        kCGEventTapOptionListenOnly,
+        kCGHeadInsertEventTap,
+        kCGHIDEventTap,
+        kCGKeyboardEventKeycode,
     )
     QUARTZ_AVAILABLE = True
-except Exception as e:  # pragma: no cover
+except Exception:  # pragma: no cover
     QUARTZ_AVAILABLE = False
 
-from ..types import KeyEvent, KeyEventType, KeyboardConfig
+from ..types import KeyboardConfig, KeyEvent, KeyEventType
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +76,7 @@ class QuartzKeyboardMonitor:
         # Состояние
         self.is_monitoring = False
         self.key_pressed = False
-        self.press_start_time: Optional[float] = None
+        self.press_start_time: float | None = None
         self.last_event_time = 0.0
         self._long_sent = False
         # КРИТИЧНО: Флаг для предотвращения двойной обработки между flagsChanged и keyUp
@@ -86,17 +84,17 @@ class QuartzKeyboardMonitor:
         self._last_event_timestamp = 0.0
 
         # Потоки
-        self.hold_monitor_thread: Optional[threading.Thread] = None
-        self.callback_dispatch_thread: Optional[threading.Thread] = None
+        self.hold_monitor_thread: threading.Thread | None = None
+        self.callback_dispatch_thread: threading.Thread | None = None
         self.stop_event = threading.Event()
-        self._callback_queue: "queue.Queue[Optional[tuple[Callable, KeyEvent]]]" = queue.Queue()
+        self._callback_queue: queue.Queue[tuple[Callable, KeyEvent] | None] = queue.Queue()
         self.state_lock = threading.RLock()
 
         # Callbacks
-        self.event_callbacks: Dict[KeyEventType, Callable] = {}
+        self.event_callbacks: dict[KeyEventType, Callable] = {}
 
         # Async loop для async-колбэков
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
         # Quartz объекты
         self._tap = None
@@ -106,7 +104,7 @@ class QuartzKeyboardMonitor:
         self._last_tap_check_time: float = 0.0
         self._tap_check_interval: float = 2.0  # Проверка каждые 2 секунды
         self._tap_recovery_count: int = 0  # Счётчик восстановлений
-        self._tap_recovered_at: Optional[float] = None
+        self._tap_recovered_at: float | None = None
         self._tap_recovery_guard_sec: float = 0.8
         
         # Отслеживание предыдущего состояния модификаторов (для kCGEventFlagsChanged)
@@ -116,22 +114,22 @@ class QuartzKeyboardMonitor:
         self._control_pressed = False
         self._n_pressed = False
         self._combo_active = False
-        self._combo_start_time: Optional[float] = None
-        self._combo_press_id: Optional[str] = None
+        self._combo_start_time: float | None = None
+        self._combo_press_id: str | None = None
         # Время последнего события для каждой клавиши (для защиты от залипания)
-        self._control_last_event_time: Optional[float] = None
-        self._n_last_event_time: Optional[float] = None
+        self._control_last_event_time: float | None = None
+        self._n_last_event_time: float | None = None
         # Защита от случайной реактивации комбинации после деактивации
         # (когда пользователь отпускает Ctrl, но N ещё нажат, и случайно снова нажимает Ctrl)
-        self._combo_deactivation_time: Optional[float] = None
+        self._combo_deactivation_time: float | None = None
         self._combo_reactivation_cooldown: float = 0.3  # 0.3s cooldown (защита от случайных двойных нажатий)
         # Anti-race для ложных keyUp N: сначала ставим pending-release, потом подтверждаем в watchdog.
-        self._pending_n_release_at: Optional[float] = None
+        self._pending_n_release_at: float | None = None
         self._n_release_confirm_delay_sec: float = 0.09
         # Минимальная пауза автоповтора N для подтверждения реального отпускания.
         self._n_repeat_stall_release_sec: float = 0.35
         # Anti-race для ложных flagsChanged Control-up при активной combo.
-        self._pending_control_release_at: Optional[float] = None
+        self._pending_control_release_at: float | None = None
         self._control_release_confirm_delay_sec: float = 0.09
         # Корреляция pending release между Control и N.
         self._pending_release_pair_max_gap_sec: float = 0.35
@@ -176,8 +174,8 @@ class QuartzKeyboardMonitor:
             from Quartz import (
                 CGEventSourceFlagsState,
                 CGEventSourceKeyState,
-                kCGEventSourceStateHIDSystemState,
                 kCGEventFlagMaskControl,
+                kCGEventSourceStateHIDSystemState,
             )  # type: ignore
             
             # Проверяем реальное состояние Control через флаги
@@ -600,7 +598,6 @@ class QuartzKeyboardMonitor:
         # Любой вызов AX API может вызвать crash при первом запуске после сброса разрешений.
         # Вместо этого полагаемся на CGEventTapCreate - он вернёт None если разрешений нет.
         logger.info("🔐 Quartz: пропускаем проверку AX API (может вызвать crash)")
-        has_accessibility = None  # Unknown - проверим через CGEventTapCreate
 
         try:
             # Создаем Event Tap
@@ -641,7 +638,7 @@ class QuartzKeyboardMonitor:
                             # Отслеживаем изменение состояния: нажатие (False → True) или отпускание (True → False)
                             if shift_pressed and not self._previous_left_shift_pressed:
                                 # Это keyDown для Левого Shift (состояние изменилось с False на True)
-                                logger.info(f"✅ Найден Левый Shift через FlagsChanged (keyDown)")
+                                logger.info("✅ Найден Левый Shift через FlagsChanged (keyDown)")
                                 with self.state_lock:
                                     if not self.key_pressed:  # Защита от повторных событий
                                         self.key_pressed = True
@@ -659,12 +656,12 @@ class QuartzKeyboardMonitor:
                                         self._trigger_event(KeyEventType.PRESS, 0.0, ev)
                             elif not shift_pressed and self._previous_left_shift_pressed:
                                 # Это keyUp для Левого Shift (состояние изменилось с True на False)
-                                logger.info(f"✅ Отпущен Левый Shift через FlagsChanged (keyUp)")
+                                logger.info("✅ Отпущен Левый Shift через FlagsChanged (keyUp)")
                                 with self.state_lock:
                                     # КРИТИЧНО: Защита от двойной обработки - проверяем, что событие не было обработано через keyUp
                                     now = time.time()
                                     if self._event_processed and (now - self._last_event_timestamp) < 0.1:
-                                        logger.debug(f"🔒 FlagsChanged keyUp: событие уже обработано через keyUp, пропускаем")
+                                        logger.debug("🔒 FlagsChanged keyUp: событие уже обработано через keyUp, пропускаем")
                                         # Обновляем состояние, но не генерируем события
                                         if keycode == 56:
                                             self._previous_left_shift_pressed = shift_pressed
@@ -686,7 +683,7 @@ class QuartzKeyboardMonitor:
                                         # При keyUp НЕ генерируем LONG_PRESS - только SHORT_PRESS или RELEASE
                                         if long_sent_snapshot:
                                             # LONG_PRESS уже был отправлен из hold_monitor - генерируем только RELEASE
-                                            logger.info(f"🔑 keyUp: short suppressed (long_sent=true) - генерируем только RELEASE")
+                                            logger.info("🔑 keyUp: short suppressed (long_sent=true) - генерируем только RELEASE")
                                             event_type_out = KeyEventType.RELEASE
                                         else:
                                             # Если LONG_PRESS не был отправлен из hold_monitor, значит это было короткое нажатие
@@ -768,7 +765,7 @@ class QuartzKeyboardMonitor:
                         with self.state_lock:
                             # КРИТИЧНО: Защита от двойной обработки - проверяем, что событие не было обработано через flagsChanged
                             if self._event_processed and (now - self._last_event_timestamp) < 0.1:
-                                logger.debug(f"🔒 keyUp: событие уже обработано через flagsChanged, пропускаем")
+                                logger.debug("🔒 keyUp: событие уже обработано через flagsChanged, пропускаем")
                                 return event
                             
                             if not self.key_pressed:
@@ -789,7 +786,7 @@ class QuartzKeyboardMonitor:
                             # Если уже отправили LONG_PRESS из hold_monitor — это RELEASE
                             # Иначе (короткое нажатие) — это SHORT_PRESS
                             if long_sent_snapshot:
-                                logger.info(f"🔑 keyUp: short suppressed (long_sent=true) - генерируем только RELEASE")
+                                logger.info("🔑 keyUp: short suppressed (long_sent=true) - генерируем только RELEASE")
                             event_type_out = (
                                 KeyEventType.RELEASE if long_sent_snapshot
                                 else KeyEventType.SHORT_PRESS
@@ -959,7 +956,7 @@ class QuartzKeyboardMonitor:
                             # КРИТИЧНО: Проверяем еще раз, что комбинация/клавиша все еще активна
                             is_still_active = self._combo_active if self._is_combo else self.key_pressed
                             if not is_still_active or not start_time:
-                                logger.debug(f"HOLD_MONITOR: комбинация/клавиша была отпущена во время проверки, пропускаем LONG_PRESS")
+                                logger.debug("HOLD_MONITOR: комбинация/клавиша была отпущена во время проверки, пропускаем LONG_PRESS")
                                 continue
 
                             import threading
@@ -993,7 +990,7 @@ class QuartzKeyboardMonitor:
             return
         
         try:
-            from Quartz import CGEventTapIsEnabled, CGEventTapEnable  # type: ignore
+            from Quartz import CGEventTapEnable, CGEventTapIsEnabled  # type: ignore
             
             is_enabled = CGEventTapIsEnabled(self._tap)
             
@@ -1016,11 +1013,11 @@ class QuartzKeyboardMonitor:
                 # Проверяем, удалось ли восстановить
                 if CGEventTapIsEnabled(self._tap):
                     self._tap_recovered_at = now
-                    logger.info(f"✅ WATCHDOG: CGEventTap восстановлен успешно!")
+                    logger.info("✅ WATCHDOG: CGEventTap восстановлен успешно!")
                 else:
                     logger.error(
-                        f"❌ WATCHDOG: Не удалось восстановить CGEventTap! "
-                        f"Возможно, требуется перезапуск приложения или проверка Accessibility разрешений."
+                        "❌ WATCHDOG: Не удалось восстановить CGEventTap! "
+                        "Возможно, требуется перезапуск приложения или проверка Accessibility разрешений."
                     )
         except Exception as e:
             logger.debug(f"⚠️ WATCHDOG: Ошибка проверки CGEventTap: {e}")
@@ -1086,12 +1083,12 @@ class QuartzKeyboardMonitor:
                 )
                 return
 
-            actual_control_pressed: Optional[bool] = None
+            actual_control_pressed: bool | None = None
             try:
                 from Quartz import (
                     CGEventSourceFlagsState,
-                    kCGEventSourceStateHIDSystemState,
                     kCGEventFlagMaskControl,
+                    kCGEventSourceStateHIDSystemState,
                 )  # type: ignore
                 actual_flags = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
                 actual_control_pressed = bool(actual_flags & kCGEventFlagMaskControl)
@@ -1120,12 +1117,12 @@ class QuartzKeyboardMonitor:
             and self._control_pressed
             and (now - self._pending_n_release_at) >= self._n_release_confirm_delay_sec
         ):
-            actual_control_pressed: Optional[bool] = None
+            actual_control_pressed: bool | None = None
             try:
                 from Quartz import (
                     CGEventSourceFlagsState,
-                    kCGEventSourceStateHIDSystemState,
                     kCGEventFlagMaskControl,
+                    kCGEventSourceStateHIDSystemState,
                 )  # type: ignore
                 actual_flags = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
                 actual_control_pressed = bool(actual_flags & kCGEventFlagMaskControl)
@@ -1237,7 +1234,7 @@ class QuartzKeyboardMonitor:
             )
             self._trigger_event(KeyEventType.RELEASE, 0.0, ev)
 
-    def _trigger_event(self, event_type: KeyEventType, duration: float, event: Optional[KeyEvent] = None):
+    def _trigger_event(self, event_type: KeyEventType, duration: float, event: KeyEvent | None = None):
         try:
             callback = self.event_callbacks.get(event_type)
             if not callback:
@@ -1290,7 +1287,7 @@ class QuartzKeyboardMonitor:
         except Exception as e:
             logger.error(f"❌ Ошибка выполнения callback: {e}")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         with self.state_lock:
             status = {
                 "is_monitoring": self.is_monitoring,

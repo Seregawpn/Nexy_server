@@ -1,17 +1,16 @@
 
 import asyncio
 import logging
-import sys
-import os
 from pathlib import Path
+import sys
 
 # Add client directory to sys.path
 # Add client directory to sys.path
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 
-from integration.integrations.whatsapp_integration import WhatsappIntegration
-from integration.core.state_manager import ApplicationStateManager
 from integration.core.event_bus import EventBus
+from integration.core.state_manager import ApplicationStateManager
+from integration.integrations.whatsapp_integration import WhatsappIntegration
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

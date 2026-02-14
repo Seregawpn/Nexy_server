@@ -15,9 +15,9 @@ Exit codes:
 """
 
 import importlib.util
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
 
 # ANSI colors
 RED = "\033[0;31m"
@@ -92,7 +92,7 @@ def check_module(module_name: str) -> tuple[bool, str | None]:
     Returns (is_available, error_message)
     """
     # Skip built-in or project modules
-    base_module = module_name.split(".")[0]
+    base_module = module_name.split(".", maxsplit=1)[0]
     if base_module in SKIP_MODULES or module_name in SKIP_MODULES:
         return True, None
     
@@ -104,7 +104,7 @@ def check_module(module_name: str) -> tuple[bool, str | None]:
             try:
                 spec = importlib.util.find_spec(parent)
                 return spec is not None, None
-            except:
+            except Exception:
                 return False, f"Parent module {parent} not found"
     
     try:
@@ -123,7 +123,7 @@ def get_pip_package(module_name: str) -> str:
         return MODULE_TO_PACKAGE[module_name]
     
     # Check base module
-    base = module_name.split(".")[0]
+    base = module_name.split(".", maxsplit=1)[0]
     if base in MODULE_TO_PACKAGE:
         return MODULE_TO_PACKAGE[base]
     

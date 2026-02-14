@@ -329,10 +329,12 @@ class UpdaterIntegration:
             return True
 
         except Exception as exc:
+            reason_code = self._classify_update_error(exc)
             await self._safe_publish("updater.update_failed", {
                 "trigger": trigger,
                 "error": str(exc),
-                "version": version
+                "version": version,
+                "reason_code": reason_code,
             })
             raise
         finally:
@@ -380,6 +382,24 @@ class UpdaterIntegration:
     def is_update_in_progress(self) -> bool:
         """Возвращает текущий статус установки обновления."""
         return self._update_in_progress
+
+    @staticmethod
+    def _classify_update_error(exc: Exception) -> str:
+        """Возвращает стабильный reason-code для updater.update_failed."""
+        text = str(exc).lower()
+        if isinstance(exc, PermissionError) or "permission denied" in text:
+            return "install_permission_denied"
+        if "too many redirects" in text:
+            return "download_redirect_error"
+        if "read timed out" in text or "connect timeout" in text or "timed out" in text:
+            return "network_timeout"
+        if "ssl" in text or "certificate" in text:
+            return "network_ssl_error"
+        if "manifest" in text or "appcast" in text:
+            return "manifest_error"
+        if "codesign" in text or "gatekeeper" in text or "signature" in text:
+            return "artifact_verification_failed"
+        return "update_failed_unknown"
 
     def _set_update_state(self, active: bool, trigger: str = "unknown") -> None:
         if self._update_in_progress == active:

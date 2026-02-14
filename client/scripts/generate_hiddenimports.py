@@ -20,9 +20,9 @@ Exit codes:
 
 import importlib.metadata
 import importlib.util
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
 
 # ANSI colors
 RED = "\033[0;31m"
@@ -172,7 +172,7 @@ def is_module_available(module_name: str) -> bool:
     try:
         spec = importlib.util.find_spec(module_name)
         return spec is not None
-    except:
+    except Exception:
         return False
 
 
@@ -257,7 +257,6 @@ def main():
         browser_related = {m for m in recommended if not m.startswith(("integration.", "modules."))}
         
         missing_in_spec = browser_related - current
-        extra_in_spec = set()  # Don't report extras, spec may have project-specific imports
         
         if missing_in_spec:
             print(f"{YELLOW}Missing from Nexy.spec ({len(missing_in_spec)}):{NC}")

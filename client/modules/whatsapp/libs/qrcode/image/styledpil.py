@@ -1,5 +1,6 @@
-import qrcode.image.base
 from PIL import Image
+
+import qrcode.image.base
 from qrcode.image.styles.colormasks import QRColorMask, SolidFillColorMask
 from qrcode.image.styles.moduledrawers import SquareModuleDrawer
 

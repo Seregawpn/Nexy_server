@@ -7,7 +7,7 @@ hard_stop → graceful → preference.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 import logging
 import time
 from typing import Any, Callable, Iterable
@@ -21,7 +21,7 @@ from .types import Decision
 logger = logging.getLogger(__name__)
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     """Priority levels for rules."""
     HARD_STOP = "hard_stop"
     GRACEFUL = "graceful"

@@ -6,74 +6,36 @@ SimpleModuleCoordinator - Центральный координатор моду
 
 import asyncio
 import ctypes
-import logging
-import os
-import sys
 import time
-from pathlib import Path
-from typing import Optional, Dict, Any, Callable
+from typing import Any, Callable
 
-# Пути уже добавлены в main.py - не дублируем
-
-# Импорты интеграций (НЕ модулей напрямую!)
-from integration.integrations.instance_manager_integration import InstanceManagerIntegration
-from integration.integrations.autostart_manager_integration import AutostartManagerIntegration
-from integration.integrations.tray_controller_integration import TrayControllerIntegration
-from integration.integrations.mode_management_integration import ModeManagementIntegration
-from integration.integrations.hardware_id_integration import HardwareIdIntegration, HardwareIdIntegrationConfig
-from integration.integrations.grpc_client_integration import GrpcClientIntegration
-from integration.integrations.speech_playback_integration import SpeechPlaybackIntegration
-from modules.tray_controller.core.tray_types import TrayConfig
-from integration.integrations.input_processing_integration import InputProcessingIntegration, InputProcessingConfig
-from integration.integrations.voice_recognition_integration import VoiceRecognitionIntegration, VoiceRecognitionConfig
-from integration.integrations.updater_integration import UpdaterIntegration
-from integration.integrations.permission_restart_integration import PermissionRestartIntegration
-from integration.integrations.update_notification_integration import UpdateNotificationIntegration
-from integration.integrations.network_manager_integration import NetworkManagerIntegration
-from modules.network_manager.core.config import NetworkManagerConfig
-# DefaultAudioIntegration удален - используем audio_default напрямую
-from integration.integrations.interrupt_management_integration import InterruptManagementIntegration, InterruptManagementIntegrationConfig
-from modules.input_processing.keyboard.types import KeyboardConfig
-from integration.integrations.screenshot_capture_integration import ScreenshotCaptureIntegration
-from integration.integrations.signal_integration import SignalIntegration
-from modules.signals.config.types import PatternConfig
-from integration.integrations.signal_integration import SignalsIntegrationConfig
-from integration.integrations.welcome_message_integration import WelcomeMessageIntegration
-from integration.integrations.voiceover_ducking_integration import VoiceOverDuckingIntegration
-from integration.integrations.first_run_permissions_integration import FirstRunPermissionsIntegration
-from integration.integrations.action_execution_integration import ActionExecutionIntegration
-from integration.core.selectors import (
-    Snapshot,
-    PermissionStatus,
-    DeviceStatus,
-    NetworkStatus,
-)
-from integration.core.gateways import decide_continue_integration_startup, Decision
+from integration.core.error_handler import ErrorHandler
 
 # Импорты core компонентов
 from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_keys import StateKeys
 from integration.core.event_types import EventTypes
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
 from integration.core.integration_factory import IntegrationFactory
+from integration.core.state_keys import StateKeys
+from integration.core.state_manager import ApplicationStateManager
+
+# Пути уже добавлены в main.py - не дублируем
+# Импорты интеграций (НЕ модулей напрямую!)
+# DefaultAudioIntegration удален - используем audio_default напрямую
 
 # Import AppMode with fallback mechanism (same as state_manager.py and selectors.py)
 try:
     # Preferred: top-level import (packaged or PYTHONPATH includes modules)
-    from mode_management import AppMode  # type: ignore[reportMissingImports]
+    pass  # type: ignore[reportMissingImports]
 except Exception:
     # Fallback: explicit modules path if repository layout is used
-    from modules.mode_management import AppMode  # type: ignore[reportMissingImports]
+    pass  # type: ignore[reportMissingImports]
 
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
-
-# Импорт Workflows
-from integration.workflows import ListeningWorkflow, ProcessingWorkflow
-
 from integration.utils.logging_setup import get_logger
 from integration.utils.resource_path import get_user_data_dir
+
+# Импорт Workflows
 
 logger = get_logger(__name__)
 
@@ -87,21 +49,21 @@ class SimpleModuleCoordinator:
 
     def __init__(self):
         # Core компоненты (центральные)
-        self.event_bus: Optional[EventBus] = None
-        self.state_manager: Optional[ApplicationStateManager] = None
-        self.error_handler: Optional[ErrorHandler] = None
+        self.event_bus: EventBus | None = None
+        self.state_manager: ApplicationStateManager | None = None
+        self.error_handler: ErrorHandler | None = None
 
         # Интеграции (обертки для модулей)
-        self.integrations: Dict[str, Any] = {}
+        self.integrations: dict[str, Any] = {}
 
         # Workflows (координаторы режимов)
-        self.workflows: Dict[str, Any] = {}
+        self.workflows: dict[str, Any] = {}
 
         # Конфигурация
         self.config = UnifiedConfigLoader.get_instance()
 
         # Очередь разрешений (по умолчанию отсутствует)
-        self.permissions_queue: Optional[Any] = None
+        self.permissions_queue: Any | None = None
 
         # Состояние
         self.is_initialized = False
@@ -119,16 +81,16 @@ class SimpleModuleCoordinator:
         self._tray_ready = False
         self._tray_start_time = None
         self._focus_fallback_done = False
-        self._tal_hold_start: Optional[float] = None  # Время начала TAL удержания
+        self._tal_hold_start: float | None = None  # Время начала TAL удержания
         self._tal_hold_active: bool = False  # Флаг активного TAL hold (для идемпотентности)
-        self._tal_refresh_task: Optional[asyncio.Task] = None  # Задача периодического обновления
-        self._idle_metrics_task: Optional[asyncio.Task] = None  # Задача периодического сбора idle метрик
+        self._tal_refresh_task: asyncio.Task | None = None  # Задача периодического обновления
+        self._idle_metrics_task: asyncio.Task | None = None  # Задача периодического сбора idle метрик
         self._launch_activity_token = None
         self._xpc_transaction_active = False
-        self._user_quit_task: Optional[asyncio.Task] = None
+        self._user_quit_task: asyncio.Task | None = None
 
         # NSApplication activator callback (устанавливается из main.py)
-        self.nsapp_activator: Optional[Callable[..., bool]] = None
+        self.nsapp_activator: Callable[..., bool] | None = None
     
     def _ensure_event_bus(self) -> EventBus:
         """Гарантирует, что event_bus инициализирован"""
@@ -1059,8 +1021,9 @@ class SimpleModuleCoordinator:
         только обновляет assertion и логирует повторный вызов.
         """
         try:
-            import Foundation
             import time
+
+            import Foundation
             
             print(f"🛡️ [ANTI_TAL] _hold_tal_until_tray_ready() ВХОД (tal_hold_active={self._tal_hold_active})")
             logger.info(f"🛡️ [ANTI_TAL] _hold_tal_until_tray_ready() ВХОД (tal_hold_active={self._tal_hold_active})")
@@ -1189,8 +1152,9 @@ class SimpleModuleCoordinator:
             reason: Причина снятия TAL hold (tray_ready, fatal_before_tray, timeout, duplicate_call)
         """
         try:
-            import Foundation
             import time
+
+            import Foundation
             
             # ИДЕМПОТЕНТНОСТЬ: Если TAL hold уже снят, только логируем
             if not self._tal_hold_active:
@@ -1328,8 +1292,9 @@ class SimpleModuleCoordinator:
         Собирает каждые 30 секунд после tray.ready.
         """
         try:
-            import psutil
             import os
+
+            import psutil
             
             # Ждём 30 секунд после tray.ready для стабилизации idle-режима
             await asyncio.sleep(30.0)
@@ -1476,7 +1441,7 @@ class SimpleModuleCoordinator:
         except Exception as e:
             logger.error(f"❌ [PERMISSIONS] Error handling permissions.first_run_restart_pending: {e}")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус всех компонентов"""
         from integration.core.selectors import is_first_run_in_progress
         
@@ -1504,7 +1469,8 @@ class SimpleModuleCoordinator:
 
     def _start_background_loop(self):
         """Запускает отдельный поток с asyncio loop, чтобы не блокироваться на app.run()."""
-        import asyncio, threading
+        import asyncio
+        import threading
         if self._bg_loop and self._bg_thread:
             return
         self._bg_loop = asyncio.new_event_loop()

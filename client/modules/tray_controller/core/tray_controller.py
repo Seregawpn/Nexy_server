@@ -5,36 +5,38 @@
 import asyncio
 import logging
 import threading
-from typing import Optional, Callable, Dict, Any
-from .tray_types import TrayStatus, TrayConfig, TrayMenu, TrayMenuItem, TrayEvent
-from .config import TrayConfigManager
-from ..macos.tray_icon import MacOSTrayIcon
-from ..macos.menu_handler import MacOSTrayMenu
+from typing import Any, Callable
+
 from config.unified_config_loader import UnifiedConfigLoader
+
+from ..macos.menu_handler import MacOSTrayMenu
+from ..macos.tray_icon import MacOSTrayIcon
+from .config import TrayConfigManager
+from .tray_types import TrayMenu, TrayMenuItem, TrayStatus
 
 logger = logging.getLogger(__name__)
 
 class TrayController:
     """Основной контроллер трея"""
     
-    def __init__(self, config_manager: Optional[TrayConfigManager] = None):
+    def __init__(self, config_manager: TrayConfigManager | None = None):
         self.config_manager = config_manager or TrayConfigManager()
         self.config = self.config_manager.get_config()
         
         # Компоненты
-        self.tray_icon: Optional[MacOSTrayIcon] = None
-        self.tray_menu: Optional[MacOSTrayMenu] = None
+        self.tray_icon: MacOSTrayIcon | None = None
+        self.tray_menu: MacOSTrayMenu | None = None
         
         # Состояние
         self.current_status = TrayStatus.SLEEPING
         self.is_running = False
-        self.event_callbacks: Dict[str, Callable] = {}
+        self.event_callbacks: dict[str, Callable] = {}
         
         # Поток для macOS приложения
-        self._menu_thread: Optional[threading.Thread] = None
+        self._menu_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         # Loop для dispatch событий из rumps callback (должен совпадать с EventBus loop)
-        self._dispatch_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._dispatch_loop: asyncio.AbstractEventLoop | None = None
     
     async def initialize(self) -> bool:
         """Инициализация контроллера трея"""
@@ -305,7 +307,7 @@ class TrayController:
         except Exception as e:
             logger.debug(f"⚠️ Error in _on_quit_clicked: {e}")
     
-    async def _publish_event(self, event_type: str, data: Dict[str, Any]):
+    async def _publish_event(self, event_type: str, data: dict[str, Any]):
         """Публиковать событие"""
         try:
             if event_type in self.event_callbacks:

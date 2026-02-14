@@ -8,26 +8,24 @@ WelcomeMessageIntegration — интеграция модуля приветст
 
 import asyncio
 import contextlib
-import logging
-import sys
-import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any
+import sys
+from typing import Any
+import uuid
+
 import numpy as np
-
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.state_manager import ApplicationStateManager
-from integration.core.error_handler import ErrorHandler
-
-# Импорт модуля приветствия
-from modules.welcome_message.core.welcome_player import WelcomePlayer
-from modules.welcome_message.core.types import WelcomeConfig, WelcomeResult
-from modules.welcome_message.config.welcome_config import WelcomeConfigLoader
 
 # Импорт конфигурации
 from config.unified_config_loader import UnifiedConfigLoader
-
+from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_manager import ApplicationStateManager
 from integration.utils.logging_setup import get_logger
+from modules.welcome_message.config.welcome_config import WelcomeConfigLoader
+from modules.welcome_message.core.types import WelcomeConfig, WelcomeResult
+
+# Импорт модуля приветствия
+from modules.welcome_message.core.welcome_player import WelcomePlayer
 
 logger = get_logger(__name__)
 
@@ -85,15 +83,15 @@ class WelcomeMessageIntegration:
         self._initialized = False
         self._running = False
         # Состояние разрешения микрофона (granted/denied/not_determined/None)
-        self._microphone_status: Optional[str] = None
+        self._microphone_status: str | None = None
         self._pending_welcome = False
         self._permission_prompted = False
-        self._permission_recheck_task: Optional[asyncio.Task] = None
+        self._permission_recheck_task: asyncio.Task | None = None
         self._welcome_played = False
         self._welcome_lock = asyncio.Lock()
         self._playback_ready = False
         self._playback_ready_event = asyncio.Event()
-        self._welcome_playback_session_id: Optional[str] = None
+        self._welcome_playback_session_id: str | None = None
 
         # Блокировки по разрешениям отключены по умолчанию
         self._enforce_permissions = bool(
@@ -191,7 +189,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             await self._handle_error(e, where="welcome.on_ready_to_greet", severity="warning")
 
-    async def _on_first_run_completed(self, event: Dict[str, Any]) -> None:
+    async def _on_first_run_completed(self, event: dict[str, Any]) -> None:
         """Legacy fallback: поддерживаем completion-триггер без локального defer-state."""
         try:
             if not self.config.enabled:
@@ -200,7 +198,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             await self._handle_error(e, where="welcome.on_first_run_completed", severity="warning")
 
-    async def _on_playback_ready(self, event: Dict[str, Any]) -> None:
+    async def _on_playback_ready(self, event: dict[str, Any]) -> None:
         """Получили готовность playback — можно воспроизводить приветствие."""
         if self._playback_ready:
             return
@@ -254,13 +252,12 @@ class WelcomeMessageIntegration:
             # Обновляем gRPC клиент непосредственно перед воспроизведением
             self._refresh_grpc_client()
             
-            # 🆕 ПЕРЕХОД В PROCESSING РЕЖИМ
-            logger.info("🔄 [WELCOME_INTEGRATION] Переход в режим PROCESSING для приветствия")
-            await self.event_bus.publish("mode.request", {
-                "target": "PROCESSING",
-                "source": "welcome_message",
-                "reason": "welcome_playback"
-            })
+            # Welcome playback не является пользовательской processing-сессией.
+            # Не публикуем mode.request -> PROCESSING без валидного session_id.
+            logger.info(
+                "⏭️ [WELCOME_INTEGRATION] Пропускаю mode.request(PROCESSING) "
+                "для welcome playback (no processing session)"
+            )
             
             # Воспроизводим через плеер
             logger.info("TRACE [WELCOME_INT] calling welcome_player.play_welcome()")
@@ -349,7 +346,7 @@ class WelcomeMessageIntegration:
         """Коллбек ошибки воспроизведения приветствия (вызывается из sync контекста)"""
         logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка приветствия: {error}")
             
-    async def _wait_for_playback_completion(self, session_id: Optional[str]):
+    async def _wait_for_playback_completion(self, session_id: str | None):
         """Ожидает завершения воспроизведения приветствия"""
         try:
             if not session_id:
@@ -488,7 +485,7 @@ class WelcomeMessageIntegration:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка отправки аудио: {e}")
             return ""
 
-    async def _on_permission_event(self, event: Dict[str, Any]):
+    async def _on_permission_event(self, event: dict[str, Any]):
         """Обработка событий статуса разрешений"""
         try:
             data = (event or {}).get("data") or {}
@@ -508,7 +505,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка обработки события разрешений: {e}")
 
-    async def _on_permissions_ready(self, event: Dict[str, Any]):
+    async def _on_permissions_ready(self, event: dict[str, Any]):
         """Получение начального статуса разрешений микрофона"""
         try:
             data = (event or {}).get("data") or {}
@@ -518,7 +515,7 @@ class WelcomeMessageIntegration:
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка обработки permissions.integration_ready: {e}")
 
-    def _process_permissions_map(self, permissions_map: Dict[Any, Any], source: str):
+    def _process_permissions_map(self, permissions_map: dict[Any, Any], source: str):
         """Обновить статусы из словаря"""
         try:
             for perm_key, status_value in permissions_map.items():
@@ -740,7 +737,7 @@ class WelcomeMessageIntegration:
         else:
             logger.error(f"Welcome message error at {where}: {e}")
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус интеграции"""
         return {
             "initialized": self._initialized,

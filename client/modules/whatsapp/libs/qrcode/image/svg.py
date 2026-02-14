@@ -1,9 +1,9 @@
 import decimal
 from decimal import Decimal
-from typing import Optional, Union, overload, Literal
+from typing import Literal, overload
 
-import qrcode.image.base
 from qrcode.compat.etree import ET
+import qrcode.image.base
 from qrcode.image.styles.moduledrawers import svg as svg_drawers
 from qrcode.image.styles.moduledrawers.base import QRModuleDrawer
 
@@ -27,10 +27,10 @@ class SvgFragmentImage(qrcode.image.base.BaseImageWithDrawer):
         self.unit_size = self.units(self.box_size)
 
     @overload
-    def units(self, pixels: Union[int, Decimal], text: Literal[False]) -> Decimal: ...
+    def units(self, pixels: int | Decimal, text: Literal[False]) -> Decimal: ...
 
     @overload
-    def units(self, pixels: Union[int, Decimal], text: Literal[True] = True) -> str: ...
+    def units(self, pixels: int | Decimal, text: Literal[True] = True) -> str: ...
 
     def units(self, pixels, text=True):
         """
@@ -81,7 +81,7 @@ class SvgImage(SvgFragmentImage):
     Creates a QR-code image as a standalone SVG document.
     """
 
-    background: Optional[str] = None
+    background: str | None = None
     drawer_aliases: qrcode.image.base.DrawerAliases = {
         "circle": (svg_drawers.SvgCircleDrawer, {}),
         "gapped-circle": (svg_drawers.SvgCircleDrawer, {"size_ratio": Decimal(0.8)}),
@@ -122,7 +122,7 @@ class SvgPathImage(SvgImage):
     }
 
     needs_processing = True
-    path: Optional[ET.Element] = None
+    path: ET.Element | None = None
     default_drawer_class: type[QRModuleDrawer] = svg_drawers.SvgPathSquareDrawer
     drawer_aliases = {
         "circle": (svg_drawers.SvgPathCircleDrawer, {}),
@@ -143,7 +143,7 @@ class SvgPathImage(SvgImage):
     def _svg(self, viewBox=None, **kwargs):
         if viewBox is None:
             dimension = self.units(self.pixel_size, text=False)
-            viewBox = "0 0 {d} {d}".format(d=dimension)
+            viewBox = f"0 0 {dimension} {dimension}"
         return super()._svg(viewBox=viewBox, **kwargs)
 
     def process(self):

@@ -8,12 +8,12 @@ Maps error domains/codes/messages to categories: OK, TRANSIENT, DENIED, NEEDS_RE
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from .types import PermissionId, ProbeEvidence
 
 
-class NormCategory(str, Enum):
+class NormCategory(StrEnum):
     """Normalized error categories."""
     OK = "ok"
     TRANSIENT = "transient"

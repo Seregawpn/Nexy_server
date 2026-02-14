@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from typing import Any
 
+from modules.instance_manager import InstanceManager, InstanceManagerConfig
 from packaging import version
 
 from .config import UpdaterConfig
@@ -18,7 +19,6 @@ from .net import UpdateHTTPClient
 from .pkg import install_pkg, verify_pkg_signature
 from .replace import atomic_replace_app
 from .verify import sha256_checksum, verify_app_signature, verify_ed25519_signature
-from modules.instance_manager import InstanceManager, InstanceManagerConfig
 
 logger = logging.getLogger(__name__)
 

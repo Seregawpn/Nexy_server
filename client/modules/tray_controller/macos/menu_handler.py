@@ -2,13 +2,15 @@
 macOS реализация меню трея
 """
 
+import logging
 import os
 import time
+from typing import Callable
+
 import rumps
-import logging
-from typing import List, Optional, Callable, Dict, Any
-from ..core.tray_types import TrayMenuItem, TrayMenu, TrayStatus
-from .status_item_manager import StatusItemManager, CircuitState
+
+from ..core.tray_types import TrayMenu, TrayMenuItem
+from .status_item_manager import CircuitState, StatusItemManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,18 +19,18 @@ class MacOSTrayMenu:
     
     def __init__(self, app_name: str = ""):
         self.app_name = app_name
-        self.app: Optional[rumps.App] = None
-        self.menu_items: List[TrayMenuItem] = []
-        self.status_callbacks: Dict[str, Callable] = {}
+        self.app: rumps.App | None = None
+        self.menu_items: list[TrayMenuItem] = []
+        self.status_callbacks: dict[str, Callable] = {}
         # Ссылки на изменяемые пункты меню
-        self._status_item: Optional[rumps.MenuItem] = None
-        self._output_item: Optional[rumps.MenuItem] = None
+        self._status_item: rumps.MenuItem | None = None
+        self._output_item: rumps.MenuItem | None = None
         # UI таймер/очередь не используются на уровне модуля (обновления делает интеграция)
         # Callback для обработки завершения приложения
-        self._quit_callback: Optional[Callable] = None
+        self._quit_callback: Callable | None = None
         # Путь к иконке для отложенной установки (после создания StatusItem)
-        self._pending_icon_path: Optional[str] = None
-        self._icon_timer: Optional[rumps.Timer] = None
+        self._pending_icon_path: str | None = None
+        self._icon_timer: rumps.Timer | None = None
         
         # Менеджер создания NSStatusItem с single-flight и circuit-breaker
         # Загружаем конфиг из unified_config.yaml

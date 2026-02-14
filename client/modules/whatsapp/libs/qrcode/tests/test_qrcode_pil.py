@@ -3,8 +3,8 @@ import io
 import pytest
 
 import qrcode
-import qrcode.util
 from qrcode.tests.consts import BLACK, RED, UNICODE_TEXT, WHITE
+import qrcode.util
 
 Image = pytest.importorskip("PIL.Image", reason="PIL is not installed")
 

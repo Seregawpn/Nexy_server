@@ -6,9 +6,9 @@ Probes Messages permission (Automation) using AppleScript.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import subprocess
-import asyncio
 from typing import Literal
 
 from ..error_matrix import apply_normalization_to_evidence

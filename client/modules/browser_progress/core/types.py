@@ -5,11 +5,11 @@ Types for browser automation progress events.
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class BrowserProgressType(str, Enum):
+class BrowserProgressType(StrEnum):
     """Browser progress event types from server"""
     TASK_STARTED = "BROWSER_TASK_STARTED"
     STEP_COMPLETED = "BROWSER_STEP_COMPLETED"

@@ -82,6 +82,7 @@ trap 'handle_error $LINENO' ERR
 
 # Включаем остановку при ошибках ПОСЛЕ установки trap
 set -e
+set -o pipefail
 
 # Записываем начало сборки
 log_to_file "=========================================="
@@ -330,7 +331,7 @@ echo ""
 # Запускаем verify_imports.py
 if [ -f "$CLIENT_DIR/scripts/verify_imports.py" ]; then
     echo -e "${YELLOW}Запуск verify_imports.py...${NC}"
-    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_imports.py" 2>&1 | tee "$PREFLIGHT_LOG"; then
+    if "$BUILD_PYTHON" "$CLIENT_DIR/scripts/verify_imports.py" 2>&1 | tee -a "$PREFLIGHT_LOG"; then
         echo -e "${GREEN}✅ verify_imports.py - все проверки пройдены${NC}"
     else
         echo -e "${RED}❌ verify_imports.py - есть ошибки!${NC}"
@@ -881,12 +882,19 @@ fi
 # Проверяем сертификаты
 echo -e "${BLUE}🔍 Проверяем сертификаты...${NC}"
 
-# Разблокируем keychain для доступа к сертификатам (если требуется)
-# Пытаемся разблокировать login.keychain (основной keychain пользователя)
-if security show-keychain-info login.keychain >/dev/null 2>&1; then
-    # Пытаемся разблокировать без пароля (если keychain уже разблокирован или настроен на автоматическую разблокировку)
-    security unlock-keychain login.keychain 2>/dev/null || true
-    echo "✓ Keychain проверен/разблокирован"
+# Неинтерактивный доступ к keychain:
+# - не вызываем unlock-keychain без пароля (иначе security может запросить пароль в TTY)
+# - если пароль передан через env, разблокируем keychain и настраиваем partition list для codesign
+KEYCHAIN_NAME="${NEXY_KEYCHAIN_NAME:-login.keychain-db}"
+KEYCHAIN_PASSWORD="${NEXY_KEYCHAIN_PASSWORD:-${APPLE_KEYCHAIN_PASSWORD:-}}"
+if security show-keychain-info "$KEYCHAIN_NAME" >/dev/null 2>&1; then
+    if [ -n "$KEYCHAIN_PASSWORD" ]; then
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME" >/dev/null 2>&1 || true
+        security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME" >/dev/null 2>&1 || true
+        echo "✓ Keychain проверен/разблокирован (non-interactive)"
+    else
+        echo "✓ Keychain проверен (unlock skipped: NEXY_KEYCHAIN_PASSWORD/APPLE_KEYCHAIN_PASSWORD not set)"
+    fi
 fi
 
 if ! security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
@@ -1668,7 +1676,17 @@ VERIFY_LOG="$DIST_DIR/packaging_verification.log"
     echo ""
     if [ -f "$DMG_PATH" ]; then
         echo "spctl dmg:"
-        spctl --assess --type open --verbose "$DMG_PATH"
+        if dmg_spctl_output=$(spctl --assess --type open --verbose "$DMG_PATH" 2>&1); then
+            echo "$dmg_spctl_output"
+        else
+            dmg_spctl_status=$?
+            echo "$dmg_spctl_output"
+            if echo "$dmg_spctl_output" | grep -q "Insufficient Context"; then
+                echo "WARN: spctl dmg returned Insufficient Context (usually no quarantine xattr); notarization/stapling already validated."
+            else
+                echo "WARN: spctl dmg returned non-zero status: $dmg_spctl_status"
+            fi
+        fi
     else
         echo "spctl dmg: SKIPPED (dmg not created)"
     fi

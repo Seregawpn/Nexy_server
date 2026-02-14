@@ -30,13 +30,24 @@ class UpdateHTTPClient:
         self.ssl_verify = ssl_verify
 
         # Создаем отдельный HTTP клиент для обновлений с поддержкой редиректов
+        # Важно: redirect budget должен быть независим от retries.
+        # Иначе при retries=0 (dev-профиль) любой 302 может падать как "too many redirects".
+        retry_policy = urllib3.Retry(
+            total=None,
+            connect=retries,
+            read=retries,
+            status=retries,
+            other=retries,
+            backoff_factor=0.5,
+            status_forcelist=[500, 502, 503, 504],
+            redirect=10,
+            allowed_methods=frozenset(["GET", "HEAD", "OPTIONS"]),
+            raise_on_redirect=True,
+            raise_on_status=False,
+        )
+
         pool_kwargs = {
-            'retries': urllib3.Retry(
-                total=retries,
-                backoff_factor=0.5,
-                status_forcelist=[500, 502, 503, 504],
-                redirect=5  # Поддержка до 5 редиректов
-            ),
+            'retries': retry_policy,
             'timeout': urllib3.Timeout(total=timeout)
         }
 

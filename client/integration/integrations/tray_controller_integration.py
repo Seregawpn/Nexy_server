@@ -5,29 +5,29 @@ TrayController Integration
 """
 
 import asyncio
-import logging
 import os
-from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from typing import Any
 
-# Импорты модулей (НЕ дублируем логику!)
-from modules.tray_controller import TrayController, TrayStatus
-from modules.tray_controller.core.tray_types import TrayConfig, TrayEvent
-
-# Импорт конфигурации
-from config.unified_config_loader import UnifiedConfigLoader
-
-# Импорты интеграции
-from integration.core.event_bus import EventBus, EventPriority
-from integration.core.event_types import EventTypes
-from integration.core.state_keys import StateKeys
-from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[reportAttributeAccessIssue]
-from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
-from integration.core import selectors
 from PyObjCTools import AppHelper
 import rumps
 
+# Импорт конфигурации
+from config.unified_config_loader import UnifiedConfigLoader
+from integration.core import selectors
+from integration.core.error_handler import ErrorHandler
+
+# Импорты интеграции
+from integration.core.event_bus import EventBus, EventPriority
+from integration.core.state_keys import StateKeys
+from integration.core.state_manager import (  # type: ignore[reportAttributeAccessIssue]
+    ApplicationStateManager,
+    AppMode,
+)
 from integration.utils.logging_setup import get_logger
+
+# Импорты модулей (НЕ дублируем логику!)
+from modules.tray_controller import TrayController, TrayStatus
+from modules.tray_controller.core.tray_types import TrayConfig
 
 logger = get_logger(__name__)
 
@@ -37,7 +37,7 @@ class TrayControllerIntegration:
     """Интеграция TrayController с EventBus и ApplicationStateManager"""
     
     def __init__(self, event_bus: EventBus, state_manager: ApplicationStateManager, 
-                 error_handler: ErrorHandler, config: Optional[TrayConfig] = None):
+                 error_handler: ErrorHandler, config: TrayConfig | None = None):
         self.event_bus = event_bus
         self.state_manager = state_manager
         self.error_handler = error_handler
@@ -81,7 +81,7 @@ class TrayControllerIntegration:
             )
 
         # TrayController (обертываем существующий модуль)
-        self.tray_controller: Optional[TrayController] = None
+        self.tray_controller: TrayController | None = None
         
         # Состояние интеграции
         self.is_initialized = False
@@ -90,8 +90,8 @@ class TrayControllerIntegration:
         self._init_failures: int = 0
         self._start_failures: int = 0
         # Желаемый статус трея (прямое применение в UI-треде при смене режима)
-        self._desired_status: Optional[TrayStatus] = None
-        self._ui_timer: Optional[rumps.Timer] = None
+        self._desired_status: TrayStatus | None = None
+        self._ui_timer: rumps.Timer | None = None
         self._ui_timer_started: bool = False
         self._ui_dirty: bool = False
         
@@ -318,7 +318,7 @@ class TrayControllerIntegration:
         except Exception as e:
             logger.error(f"❌ Ошибка настройки обработчиков событий: {e}")
 
-    async def _on_tray_quit(self, event_type: str, data: Dict[str, Any]):
+    async def _on_tray_quit(self, event_type: str, data: dict[str, Any]):
         """Корректное завершение приложения по пункту меню Quit."""
         # КРИТИЧНО: фиксируем quit-intent синхронно в SoT до любых async публикаций.
         # Это защищает от гонки между завершением UI-процесса и обработкой EventBus.
@@ -641,7 +641,7 @@ class TrayControllerIntegration:
         except Exception as e:
             logger.error(f"❌ Ошибка обработки завершения приложения: {e}")
     
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получить статус интеграции"""
         return {
             "is_initialized": self.is_initialized,

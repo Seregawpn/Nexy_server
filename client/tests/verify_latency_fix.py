@@ -8,12 +8,10 @@ import time
 # Add client directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from integration.core.event_bus import EventBus
-from integration.integrations.browser_use_integration import BrowserUseIntegration
-from integration.integrations.grpc_client_integration import GrpcClientIntegration
-from integration.integrations.speech_playback_integration import SpeechPlaybackIntegration
-from integration.core.state_manager import ApplicationStateManager
 from integration.core.error_handler import ErrorHandler
+from integration.core.event_bus import EventBus
+from integration.core.state_manager import ApplicationStateManager
+from integration.integrations.browser_use_integration import BrowserUseIntegration
 
 # Configure logging
 logging.basicConfig(

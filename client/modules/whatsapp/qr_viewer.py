@@ -1,8 +1,8 @@
+import io
 import logging
-import webbrowser
 import os
 import sys
-import io
+import webbrowser
 
 logger = logging.getLogger(__name__)
 

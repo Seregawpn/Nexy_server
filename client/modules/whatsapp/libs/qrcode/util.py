@@ -559,8 +559,7 @@ def create_data(version, error_correction, data_list):
     bit_limit = sum(block.data_count * 8 for block in rs_blocks)
     if len(buffer) > bit_limit:
         raise exceptions.DataOverflowError(
-            "Code length overflow. Data size (%s) > size available (%s)"
-            % (len(buffer), bit_limit)
+            f"Code length overflow. Data size ({len(buffer)}) > size available ({bit_limit})"
         )
 
     # Terminate the bits (add up to four 0s).

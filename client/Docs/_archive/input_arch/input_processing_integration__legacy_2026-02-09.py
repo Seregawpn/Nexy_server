@@ -3,31 +3,34 @@
 """
 
 import asyncio
+from enum import StrEnum
 import logging
-from typing import Dict, Any, Optional, List
 import time
+from typing import Any
 import uuid
-from enum import Enum
 
-# Импорты модулей input_processing
-from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
-from modules.input_processing.keyboard.types import KeyEvent, KeyEventType, KeyboardConfig
+from config.unified_config_loader import InputProcessingConfig
+from integration.core import selectors
+from integration.core.error_handler import ErrorCategory, ErrorHandler, ErrorSeverity
 
 # Импорты интеграции
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_keys import StateKeys
-from integration.core.state_manager import ApplicationStateManager, AppMode  # type: ignore[attr-defined]
-from integration.core.error_handler import ErrorHandler, ErrorSeverity, ErrorCategory
-from integration.core import selectors
-from config.unified_config_loader import InputProcessingConfig
+from integration.core.state_manager import (  # type: ignore[attr-defined]
+    ApplicationStateManager,
+    AppMode,
+)
 
+# Импорты модулей input_processing
+from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
+from modules.input_processing.keyboard.types import KeyEvent, KeyEventType
 
 logger = logging.getLogger(__name__)
 
 # InputProcessingConfig теперь импортируется из unified_config_loader
 
 
-class PTTLifecycleState(str, Enum):
+class PTTLifecycleState(StrEnum):
     IDLE = "idle"
     ARMED = "armed"
     RECORDING = "recording"
@@ -49,7 +52,7 @@ class InputProcessingIntegration:
         self._secure_input_active: bool = False
 
         # Компоненты
-        self.keyboard_monitor: Optional[Any] = None  # type: ignore[assignment]  # Может быть KeyboardMonitor или QuartzKeyboardMonitor
+        self.keyboard_monitor: Any | None = None  # type: ignore[assignment]  # Может быть KeyboardMonitor или QuartzKeyboardMonitor
         
         # Состояние
         self.is_initialized = False
@@ -63,51 +66,51 @@ class InputProcessingIntegration:
         self._last_short_ts: float = 0.0
         # Текущее состояние gRPC-потока
         self._session_waiting_grpc: bool = False
-        self._active_grpc_session_id: Optional[str] = None
+        self._active_grpc_session_id: str | None = None
         # Подготовленная, но ещё не подтверждённая (LONG_PRESS) сессия
-        self._pending_session_id: Optional[str] = None
+        self._pending_session_id: str | None = None
         # Последний валидный session_id для отмены текущего gRPC/плеера
-        self._cancel_session_id: Optional[str] = None
+        self._cancel_session_id: str | None = None
         # Время начала записи для проверки минимальной длительности
         self._recording_start_time: float = 0.0
         # Минимальная длительность записи
         self._min_recording_duration: float = max(0.1, float(self.config.min_recording_duration_sec))
         # Состояние воспроизведения/микрофона
         self._playback_active: bool = False
-        self._playback_waiters: List[asyncio.Future] = []
+        self._playback_waiters: list[asyncio.Future] = []
         self._last_playback_stop_ts: float = time.monotonic()
         self._playback_wait_timeout: float = max(0.5, float(self.config.playback_wait_timeout_sec))
         self._playback_idle_grace: float = max(0.0, float(self.config.playback_idle_grace_sec))
         self._recording_prestart_delay: float = max(0.0, float(self.config.recording_prestart_delay_sec))
         self._mic_active: bool = False
-        self._mic_waiters: List[asyncio.Future] = []
+        self._mic_waiters: list[asyncio.Future] = []
         self._last_mic_closed_ts: float = time.monotonic()
         self._mic_wait_timeout: float = max(0.5, float(self.config.playback_wait_timeout_sec))
         # Время начала активности микрофона для мониторинга таймаута
-        self._mic_active_start_time: Optional[float] = None
+        self._mic_active_start_time: float | None = None
         # Таймаут для принудительного сброса состояния микрофона
         self._mic_reset_timeout: float = max(0.0, float(self.config.mic_reset_timeout_sec))
         # Фоновая задача для мониторинга таймаута микрофона
-        self._mic_monitor_task: Optional[asyncio.Task] = None
+        self._mic_monitor_task: asyncio.Task | None = None
         # КРИТИЧНО: Флаг для отмены pending записи при RELEASE до завершения LONG_PRESS
         self._pending_recording_cancelled: bool = False
         # Флаг для отмены текущего нажатия (short-tap cancel)
         self._cancelled_this_press: bool = False
         # Идентификатор текущего цикла нажатия (PRESS -> LONG/RELEASE).
-        self._active_press_id: Optional[str] = None
+        self._active_press_id: str | None = None
         # Последний press_id, для которого уже отправили terminal stop (idempotency guard).
-        self._terminal_stop_press_id: Optional[str] = None
+        self._terminal_stop_press_id: str | None = None
         # Единый lifecycle PTT (архитектурный Source of Truth для input-цикла).
         self._lifecycle_state: PTTLifecycleState = PTTLifecycleState.IDLE
         
         # Задача проверки состояния клавиатуры (Secure Input detection)
-        self._health_check_task: Optional[asyncio.Task] = None
+        self._health_check_task: asyncio.Task | None = None
         self._hidden_hotkey_item: Any = None
-        self._last_sleep_mode_request_sig: Optional[tuple[Optional[str], str, str]] = None
+        self._last_sleep_mode_request_sig: tuple[str | None, str, str] | None = None
         self._last_sleep_mode_request_ts: float = 0.0
         self._sleep_mode_request_dedup_window_sec: float = 0.35
 
-    def _track_task(self, coro: Any) -> Optional[asyncio.Task]:
+    def _track_task(self, coro: Any) -> asyncio.Task | None:
         """Безопасно запускает фоновую coroutine в доступном loop."""
         try:
             loop = asyncio.get_running_loop()
@@ -164,7 +167,9 @@ class InputProcessingIntegration:
 
             if is_macos and backend in ("auto", "quartz"):
                 try:
-                    from modules.input_processing.keyboard.mac.quartz_monitor import QuartzKeyboardMonitor
+                    from modules.input_processing.keyboard.mac.quartz_monitor import (
+                        QuartzKeyboardMonitor,
+                    )
                     self.keyboard_monitor = QuartzKeyboardMonitor(self.config.keyboard)  # type: ignore[assignment]
                     # НЕ тестируем Quartz во время инициализации - откладываем до start()
                     # Это предотвращает запрос разрешений до FirstRunPermissionsIntegration
@@ -248,7 +253,7 @@ class InputProcessingIntegration:
                 )
 
             # Публикуем событие press чтобы другие модули (например VoiceOver) могли отреагировать мгновенно
-            logger.info(f"🔑 [INPUT] Публикую keyboard.press событие...")
+            logger.info("🔑 [INPUT] Публикую keyboard.press событие...")
             await self.event_bus.publish(
                 "keyboard.press",
                 {
@@ -263,7 +268,7 @@ class InputProcessingIntegration:
                     "timestamp": event.timestamp,
                 }
             )
-            logger.info(f"🔑 [INPUT] ✅ keyboard.press событие опубликовано")
+            logger.info("🔑 [INPUT] ✅ keyboard.press событие опубликовано")
         except Exception as e:
             await self.error_handler.handle_error(
                 severity=ErrorSeverity.MEDIUM,
@@ -448,7 +453,7 @@ class InputProcessingIntegration:
         """
         return self._is_recording_active() or self._has_active_session()
 
-    def _extract_press_id(self, event: KeyEvent) -> Optional[str]:
+    def _extract_press_id(self, event: KeyEvent) -> str | None:
         """Извлекает press_id из KeyEvent.data."""
         data = getattr(event, "data", None)
         if isinstance(data, dict):
@@ -472,7 +477,7 @@ class InputProcessingIntegration:
             self._get_active_session_id(),
         )
 
-    def _try_mark_terminal_stop(self, press_id: Optional[str]) -> bool:
+    def _try_mark_terminal_stop(self, press_id: str | None) -> bool:
         """
         Idempotency guard для terminal stop по press_id.
         Возвращает True только для первого terminal stop в рамках одного press.
@@ -489,7 +494,7 @@ class InputProcessingIntegration:
     async def _publish_interrupt_and_cancel(
         self,
         *,
-        session_id: Optional[str],
+        session_id: str | None,
         timestamp: float,
         source: str,
     ) -> None:
@@ -511,7 +516,7 @@ class InputProcessingIntegration:
     async def _publish_sleeping_mode_request_once(
         self,
         *,
-        session_id: Optional[str],
+        session_id: str | None,
         source: str,
         reason: str,
     ) -> bool:
@@ -542,7 +547,7 @@ class InputProcessingIntegration:
         )
         return True
     
-    def _get_active_session_id(self) -> Optional[str]:
+    def _get_active_session_id(self) -> str | None:
         """
         Получить активный session_id из state_manager (единый источник истины).
         
@@ -551,7 +556,7 @@ class InputProcessingIntegration:
         """
         return selectors.get_current_session_id(self.state_manager)
     
-    def _set_session_id(self, session_id: Optional[str], reason: str = "unknown"):
+    def _set_session_id(self, session_id: str | None, reason: str = "unknown"):
         """
         Установить session_id в state_manager (единый источник истины).
         
@@ -571,13 +576,12 @@ class InputProcessingIntegration:
                 # Это предотвращает ложные прерывания в ProcessingWorkflow
                 self.state_manager.update_session_id(session_id)
                 logger.debug(f"🔄 Session ID синхронизирован с state_manager: {session_id} (reason: {reason})")
-        else:
-            # Сбрасываем session_id в state_manager только если он был установлен
-            if self.state_manager.get_current_session_id() is not None:
-                # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
-                # Это предотвращает ложные прерывания в ProcessingWorkflow
-                self.state_manager.update_session_id(None)
-                logger.debug(f"🔄 Session ID сброшен в state_manager (reason: {reason})")
+        # Сбрасываем session_id в state_manager только если он был установлен
+        elif self.state_manager.get_current_session_id() is not None:
+            # КРИТИЧНО: Используем update_session_id() БЕЗ публикации app.mode_changed
+            # Это предотвращает ложные прерывания в ProcessingWorkflow
+            self.state_manager.update_session_id(None)
+            logger.debug(f"🔄 Session ID сброшен в state_manager (reason: {reason})")
 
     async def _on_grpc_completed(self, event):
         """Сбрасывает сессию при штатном завершении gRPC."""
@@ -749,7 +753,7 @@ class InputProcessingIntegration:
             self._playback_waiters.append(waiter)
             try:
                 await asyncio.wait_for(waiter, self._playback_wait_timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "⚠️ Timeout %.1fs ожидания остановки воспроизведения",
                     self._playback_wait_timeout,
@@ -785,7 +789,7 @@ class InputProcessingIntegration:
         self._mic_waiters.append(waiter)
         try:
             await asyncio.wait_for(waiter, self._mic_wait_timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "⚠️ [INPUT_PROCESSING] Timeout %.1fs ожидания закрытия микрофона - принудительно сбрасываем состояние",
                 self._mic_wait_timeout,
@@ -1059,7 +1063,7 @@ class InputProcessingIntegration:
 
             try:
                 await asyncio.wait_for(self._wait_for_mic_closed(), timeout=1.5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("⚠️ [INPUT_PROCESSING] Force stop: mic close timeout, reset internal state")
                 self._force_reset_mic_state(f"{reason}:mic_close_timeout")
 
@@ -1077,7 +1081,7 @@ class InputProcessingIntegration:
 
     async def start(self) -> bool:
         """Запуск input_processing"""
-        logger.debug(f"InputProcessingIntegration.start() вызван")
+        logger.debug("InputProcessingIntegration.start() вызван")
         try:
             if not self.is_initialized:
                 logger.warning("⚠️ input_processing не инициализирован")
@@ -1143,7 +1147,9 @@ class InputProcessingIntegration:
                         else:
                             # Для других клавиш (например, left_shift) разрешаем fallback на pynput
                             logger.warning("⚠️ QuartzKeyboardMonitor не запустился (нет прав). Фоллбек на pynput")
-                            from modules.input_processing.keyboard.keyboard_monitor import KeyboardMonitor
+                            from modules.input_processing.keyboard.keyboard_monitor import (
+                                KeyboardMonitor,
+                            )
                             self.keyboard_monitor = KeyboardMonitor(self.config.keyboard)  # type: ignore[assignment]
                             self._using_quartz = False
                             
@@ -1273,7 +1279,7 @@ class InputProcessingIntegration:
             "key": event.key if hasattr(event, 'key') else None,
             "reason": reason
         })
-        logger.info(f"🔑 Short tap cancel: keyboard.short_press опубликовано для совместимости")
+        logger.info("🔑 Short tap cancel: keyboard.short_press опубликовано для совместимости")
         
         # Переход в SLEEPING (отмена)
         # КРИТИЧНО: Всегда используем keyboard.short_press как source для сохранения приоритетов
@@ -1283,7 +1289,7 @@ class InputProcessingIntegration:
             "source": "keyboard.short_press",
             "reason": reason
         })
-        logger.info(f"Short tap cancel: запрос на SLEEPING отправлен (отмена)")
+        logger.info("Short tap cancel: запрос на SLEEPING отправлен (отмена)")
         
         # Полный сброс всех состояний сессии
         self._recording_started = False
@@ -1316,15 +1322,15 @@ class InputProcessingIntegration:
             # игнорируем его для combo, чтобы избежать гонки с RELEASE
             is_combo = event.key == "ctrl_n" if hasattr(event, 'key') else False
             if is_combo:
-                logger.debug(f"🔑 SHORT_PRESS для combo ctrl_n игнорируется (short tap вычисляется в RELEASE)")
+                logger.debug("🔑 SHORT_PRESS для combo ctrl_n игнорируется (short tap вычисляется в RELEASE)")
                 # КРИТИЧНО: Проверяем, не был ли уже отправлен LONG_PRESS
                 # Если был LONG_PRESS, значит это ложный SHORT_PRESS из-за гонки - игнорируем
                 if self._recording_started or self._mic_active:
-                    logger.warning(f"⚠️ SHORT_PRESS для combo при активной записи - игнорируем (гонка с RELEASE)")
+                    logger.warning("⚠️ SHORT_PRESS для combo при активной записи - игнорируем (гонка с RELEASE)")
                     return
                 # Если запись не началась, это может быть старый SHORT_PRESS - игнорируем
                 # "Short tap" будет обработан в RELEASE
-                logger.debug(f"🔑 SHORT_PRESS для combo без записи - игнорируем (будет обработан в RELEASE)")
+                logger.debug("🔑 SHORT_PRESS для combo без записи - игнорируем (будет обработан в RELEASE)")
                 return
 
             # ЗАЩИТА 1: Отменяем pending session при SHORT_PRESS БЕЗ записи
@@ -1433,7 +1439,7 @@ class InputProcessingIntegration:
                 # Для не-combo SHORT_PRESS может прийти без RELEASE, поэтому нужно сбросить здесь
                 # Для combo ptt_pressed сбрасывается в _handle_key_release (RELEASE всегда приходит)
                 self.state_manager.set_state_data(StateKeys.PTT_PRESSED, False)
-                logger.debug(f"🔑 SHORT_PRESS (с записью): ptt_pressed сброшен")
+                logger.debug("🔑 SHORT_PRESS (с записью): ptt_pressed сброшен")
 
                 # Состояние сбросится по событию завершения gRPC
                 logger.debug("SHORT_PRESS: удерживаем session_id=%s до завершения gRPC", active_session_id)
@@ -1517,7 +1523,7 @@ class InputProcessingIntegration:
 
             # ЗАЩИТА 4: Проверяем, что микрофон НЕ активен (защита от повторных LONG_PRESS)
             if self._mic_active:
-                logger.warning(f"⚠️ LONG_PRESS пришел, но микрофон УЖЕ активен (_mic_active=True) - игнорируем повторную активацию")
+                logger.warning("⚠️ LONG_PRESS пришел, но микрофон УЖЕ активен (_mic_active=True) - игнорируем повторную активацию")
                 # КРИТИЧНО: Используем _get_active_session_id для получения session_id
                 active_session_id = self._get_active_session_id()
                 logger.warning(f"⚠️ LONG_PRESS: _recording_started={self._recording_started}, active_session_id={active_session_id}")
@@ -1526,7 +1532,7 @@ class InputProcessingIntegration:
 
             # ЗАЩИТА 5: Проверяем, что запись НЕ начата (защита от повторных LONG_PRESS)
             if self._recording_started:
-                logger.warning(f"⚠️ LONG_PRESS пришел, но запись УЖЕ начата (_recording_started=True) - игнорируем повторную активацию")
+                logger.warning("⚠️ LONG_PRESS пришел, но запись УЖЕ начата (_recording_started=True) - игнорируем повторную активацию")
                 # КРИТИЧНО: Используем _get_active_session_id для получения session_id
                 active_session_id = self._get_active_session_id()
                 logger.warning(f"⚠️ LONG_PRESS: _mic_active={self._mic_active}, active_session_id={active_session_id}")
@@ -1584,7 +1590,7 @@ class InputProcessingIntegration:
                 # Опционально: короткое неблокирующее ожидание остановки плеера (0.2s)
                 try:
                     await asyncio.wait_for(self._ensure_playback_idle(), timeout=0.2)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass  # Игнорируем таймаут - запись уже запущена, не блокируем
 
                 # Запрашиваем переход в LISTENING централизованно (PTT должен переводить режим в LISTENING)
@@ -1697,7 +1703,7 @@ class InputProcessingIntegration:
                         logger.info("RELEASE: terminal stop dedup, повторный voice.recording_stop пропущен")
                 elif self._mic_active or self._recording_started:
                     # Если нет активной сессии, но микрофон активен - принудительно закрываем
-                    logger.warning(f"⚠️ RELEASE: микрофон активен, но нет активной сессии - принудительно закрываем микрофон")
+                    logger.warning("⚠️ RELEASE: микрофон активен, но нет активной сессии - принудительно закрываем микрофон")
                     if self._try_mark_terminal_stop(press_id):
                         # КРИТИЧНО: Публикуем voice.recording_stop даже без session_id для гарантированного закрытия микрофона
                         await self.event_bus.publish("voice.recording_stop", {
@@ -1717,7 +1723,7 @@ class InputProcessingIntegration:
                 # КРИТИЧНО: Используем таймаут для предотвращения блокировки RELEASE
                 try:
                     await asyncio.wait_for(self._wait_for_mic_closed(), timeout=2.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning("⚠️ RELEASE: таймаут ожидания закрытия микрофона, принудительно сбрасываем состояние")
                     if self._mic_active:
                         self._reset_mic_state_internal()
@@ -1822,7 +1828,7 @@ class InputProcessingIntegration:
     # События клавиатуры обрабатываются напрямую:
     # QuartzKeyboardMonitor → InputProcessingIntegration (без EventBus hop)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Получение статуса интеграции"""
         return {
             "is_initialized": self.is_initialized,
