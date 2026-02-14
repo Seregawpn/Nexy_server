@@ -27,11 +27,8 @@
 ## Фокус сервера
 - Работай внутри текущих модулей и интеграций сервера.
 - Не нарушай существующие границы модулей.
-- GitHub routing:
-  - `commit/push/tag` сервера выполняются только в `https://github.com/Seregawpn/Nexy_server`.
-  - Версии сервера должны быть доступны через git-теги `vX.Y.Z.BUILD` в `Nexy_server`.
-  - Публикация release-артефактов (`Nexy.dmg`/`Nexy.pkg`) выполняется только в `https://github.com/Seregawpn/Nexy_production`.
-  - В `Nexy_server` GitHub Release не создаются.
+- GitHub routing и release-процесс описаны централизованно в `../Docs/RELEASE_AND_UPDATE_GUIDE.md` (Single Source of Truth).
+- Локальное правило: перед `push/tag` всегда проверяй `git remote -v` и используй явный remote `server_repo` для серверного кода.
 
 ## CRM Task Management (Server)
 - Единый алгоритм: `../../Docs/_archive/CRM_ASSISTANT_INSTRUCTIONS.md`.

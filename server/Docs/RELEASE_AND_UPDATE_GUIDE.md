@@ -76,7 +76,7 @@ If `SERVER_VERSION` / `SERVER_BUILD` on VM are stale, `/health` can show old ver
    ```bash
    git commit -m "Release vX.Y.Z.Build"
    git tag vX.Y.Z.Build
-   git push origin vX.Y.Z.Build
+   git push server_repo vX.Y.Z.Build
    ```
 
 ### Phase 2: Artifact Publication & Sync (Detailed)
