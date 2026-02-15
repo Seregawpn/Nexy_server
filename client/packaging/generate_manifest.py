@@ -121,8 +121,8 @@ def main():
         print("  python3 generate_manifest.py <dmg_path> <version> <build> [private_key_path]")
         print("")
         print("Примеры:")
-        print("  python3 generate_manifest.py dist/Nexy.dmg 1.71.0 171")
-        print("  python3 generate_manifest.py dist/Nexy.dmg 1.71.0 171 private_key.pem")
+        print("  python3 generate_manifest.py dist/Nexy.dmg 1.6.0.37 16037")
+        print("  python3 generate_manifest.py dist/Nexy.dmg 1.6.0.37 16037 private_key.pem")
         print("")
         sys.exit(1)
 

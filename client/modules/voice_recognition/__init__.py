@@ -9,7 +9,7 @@ ARCHITECTURE:
 from .core.audio_route_monitor import AudioRouteMonitor
 from .core.google_sr_controller import GoogleSRController, GoogleSRResult
 
-__version__ = "1.6.1.34"
+__version__ = "1.6.0.37"
 __author__ = "Nexy AI Voice Assistant Team"
 
 # Export main classes
