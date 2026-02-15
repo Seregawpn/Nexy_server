@@ -17,10 +17,15 @@
 
 ## 2. Source of Truth
 
-Для версии клиента source of truth:
-- `config/unified_config.yaml` -> `app.version`
+Единый source of truth для релизной версии:
+- `../VERSION` (корень workspace)
 
-Остальные файлы должны быть синхронизированы с этим значением.
+Обновление версии выполнять только owner-скриптом:
+```bash
+python3 ../server/scripts/update_version.py X.Y.Z.W
+```
+
+Этот скрипт обновляет `../config/unified_config.yaml` и запускает `../config/auto_sync.py`, который синхронизирует все производные client-файлы.
 
 ---
 
@@ -48,12 +53,12 @@
 
 ## 4. Обязательный процесс обновления версии
 
-1. Выбрать новую версию (например, `1.6.0.38`).
-2. Обновить `config/unified_config.yaml` (`app.version`).
-3. Запустить централизованный синк производных файлов:
+1. Выбрать новую версию (например, `1.6.1.39`).
+2. Запустить owner-скрипт:
 ```bash
-python3 config/auto_sync.py --scope version
+python3 ../server/scripts/update_version.py 1.6.1.39
 ```
+3. Проверить, что синк client-файлов выполнен (`../config/auto_sync.py` запускается автоматически).
 4. Проверить, что старой версии в клиенте не осталось:
 ```bash
 rg -n "OLD_VERSION" . -S -g '!**/*.pyc' -g '!.venv/**' -g '!build_logs/**'
