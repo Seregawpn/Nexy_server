@@ -23,7 +23,7 @@
 - Code deploy на Azure выполняется только из `Nexy_server`.
 - `Nexy_server` обновляется только server-subtree из корневого репозитория:
   - `git subtree push --prefix=server server_repo <branch>`
-- Для клиентских артефактов использовать: `server/Docs/RELEASE_AND_UPDATE_GUIDE.md`.
+- Для клиентских артефактов использовать: `Docs/RELEASE_AND_UPDATE_GUIDE.md`.
 
 ---
 
@@ -144,11 +144,11 @@ Fix:
 - `systemctl restart voice-assistant`.
 
 ### 5.4 Wrong runtime version in `/health`
-- Primary source: `server/VERSION` (не `SERVER_VERSION` в env).
-- Синхронизировать `server/VERSION` и `server/updates/manifests/manifest.json`.
+- Primary source: `VERSION` (корень workspace; не `SERVER_VERSION` в env).
+- Синхронизировать `VERSION` и `server/updates/manifests/manifest.json`.
 
 Полный runbook:
-- `server/Docs/DEPLOY_INCIDENT_RUNBOOK.md`
+- `Docs/DEPLOY_INCIDENT_RUNBOOK.md`
 
 ---
 
