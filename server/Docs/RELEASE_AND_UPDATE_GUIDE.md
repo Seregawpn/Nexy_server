@@ -39,9 +39,22 @@
 
 ## 2) Version Source of Truth
 
-Runtime версия сервера (для `/health` и `/status`):
-1. `server/VERSION` (primary source)
-2. `SERVER_VERSION` env fallback (если `VERSION` недоступен)
+Единый Source of Truth:
+1. `VERSION` (в корне workspace)
+
+Автосинхронизация всех версионных точек:
+```bash
+python3 scripts/update_version.py X.Y.Z.W
+```
+
+Скрипт обновляет:
+- `VERSION`
+- `server/config/unified_config.yaml`
+- `server/config/unified_config.py` (env fallback)
+- `server/config.env.example`
+- `server/updates/manifests/manifest.json` (`version`, `build`)
+- `server/Docs/SERVER_DEPLOYMENT_GUIDE.md` и `server/Docs/RELEASE_AND_UPDATE_GUIDE.md` (marker)
+- `client/config/unified_config.yaml` + производные client-файлы через `client/config/auto_sync.py` (если доступен client workspace)
 
 Update metadata:
 1. `server/updates/manifests/manifest.json` (`version`, `build`, `artifact.*`)

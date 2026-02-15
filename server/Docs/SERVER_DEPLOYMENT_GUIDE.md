@@ -30,6 +30,8 @@
 ## 1) Preconditions
 
 - Azure CLI авторизован: `az login`
+- Локальная версия синхронизирована owner-скриптом:
+  - `python3 scripts/update_version.py X.Y.Z.W`
 - Проверен target VM:
   - `az vm show --resource-group NetworkWatcherRG --name Nexy -o table`
 - Перед прод-деплоем пройден pre-production gate:
