@@ -2,6 +2,7 @@
 
 **Статус:** Active Rulebook  
 **Обновлено:** 15 February 2026
+**Текущий релиз документации:** `v1.6.1.38`
 
 Канон публикации клиентских артефактов и синхронизации update-канала.
 
@@ -28,7 +29,7 @@
 ## 1) Release Infrastructure Rules
 
 - `release_inbox` должен существовать в корне репозитория.
-- Каноничный скрипт публикации: `server/scripts/publish_assets_and_sync.py`.
+- Каноничный скрипт публикации: `scripts/publish_assets_and_sync.py`.
 - Манифест update-канала: `server/updates/manifests/manifest.json`.
 - Fixed tags в `Nexy_production`:
   - `Nexy.dmg` -> `Update`
@@ -68,7 +69,7 @@ gh auth status
 ### 3.2 Publish
 
 ```bash
-python3 server/scripts/publish_assets_and_sync.py
+python3 scripts/publish_assets_and_sync.py
 ```
 
 Ожидаемые лог-маркеры:
@@ -79,7 +80,7 @@ python3 server/scripts/publish_assets_and_sync.py
 
 Dry-run:
 ```bash
-python3 server/scripts/publish_assets_and_sync.py --dry-run
+python3 scripts/publish_assets_and_sync.py --dry-run
 ```
 
 ### 3.3 Verify
@@ -104,7 +105,7 @@ ls -la release_inbox
 ### 4.2 Script not found
 Корректно:
 ```bash
-python3 server/scripts/publish_assets_and_sync.py
+python3 scripts/publish_assets_and_sync.py
 ```
 
 ### 4.3 GH CLI auth issues
@@ -115,7 +116,7 @@ gh auth login
 ```
 
 ### 4.4 Wrong target repo/tags
-Проверить в `server/scripts/publish_assets_and_sync.py`:
+Проверить в `scripts/publish_assets_and_sync.py`:
 - `TARGET_REPO = "Seregawpn/Nexy_production"`
 - `DMG_TAG = "Update"`
 - `PKG_TAG = "App"`
@@ -126,7 +127,7 @@ gh auth login
 
 - Артефакты: `release_inbox/`
 - Манифест: `server/updates/manifests/manifest.json`
-- Логи публикации: stdout/stderr `python3 server/scripts/publish_assets_and_sync.py`
+- Логи публикации: stdout/stderr `python3 scripts/publish_assets_and_sync.py`
 - Remote check: release URLs `Update` и `App`
 
 ---

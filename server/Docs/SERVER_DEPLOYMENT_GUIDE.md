@@ -2,6 +2,7 @@
 
 **Статус:** Active Rulebook  
 **Обновлено:** 15 February 2026
+**Текущий релиз документации:** `v1.6.1.38`
 
 Канон деплоя серверного кода на Azure VM.
 
@@ -34,7 +35,7 @@
 - Перед прод-деплоем пройден pre-production gate:
 
 ```bash
-bash server/scripts/prod_ready_check.sh
+bash scripts/prod_ready_check.sh
 ```
 
 ---
@@ -88,7 +89,7 @@ az vm run-command invoke \
 
 # Centralized owner for runtime version + manifest sync:
 VERSION="${TAG_NAME#v}"
-bash server/scripts/update_server_version.sh "$VERSION"
+bash scripts/update_server_version.sh "$VERSION"
 ```
 
 ---
