@@ -53,14 +53,14 @@ python3 scripts/update_version.py X.Y.Z.W
 - `server/config/unified_config.py` (env fallback)
 - `server/config.env.example`
 - `server/updates/manifests/manifest.json` (`version`, `build`)
-- `server/Docs/SERVER_DEPLOYMENT_GUIDE.md` и `server/Docs/RELEASE_AND_UPDATE_GUIDE.md` (marker)
+- `Docs/SERVER_DEPLOYMENT_GUIDE.md` и `Docs/RELEASE_AND_UPDATE_GUIDE.md` (marker)
 - `client/config/unified_config.yaml` + производные client-файлы через `client/config/auto_sync.py` (если доступен client workspace)
 
 Update metadata:
 1. `server/updates/manifests/manifest.json` (`version`, `build`, `artifact.*`)
 
 Правило:
-- `server/VERSION` и `manifest.json` должны быть синхронизированы при релизе.
+- `VERSION` (корень workspace) и `manifest.json` должны быть синхронизированы при релизе.
 - Обновление `manifest.json` выполнять только через owner-скрипты (`publish_assets_and_sync.py` или `update_manifest_remote_locked.sh`), без ручного inline-редактирования.
 
 ---

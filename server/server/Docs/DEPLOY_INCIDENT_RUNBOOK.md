@@ -13,8 +13,8 @@
 - Artifact release pipeline: `Seregawpn/Nexy_production/releases`
 
 Каноны:
-- `server/Docs/SERVER_DEPLOYMENT_GUIDE.md`
-- `server/Docs/RELEASE_AND_UPDATE_GUIDE.md`
+- `Docs/SERVER_DEPLOYMENT_GUIDE.md`
+- `Docs/RELEASE_AND_UPDATE_GUIDE.md`
 
 ---
 
@@ -98,12 +98,12 @@ az vm run-command invoke \
   --resource-group NetworkWatcherRG \
   --name Nexy \
   --command-id RunShellScript \
-  --scripts "cd /home/azureuser/voice-assistant && cat server/VERSION && cat server/updates/manifests/manifest.json"
+  --scripts "cd /home/azureuser/voice-assistant && cat VERSION && cat server/updates/manifests/manifest.json"
 ```
 
 ### Fix
 ```bash
-bash server/scripts/update_server_version.sh X.Y.Z.Build
+bash scripts/update_server_version.sh X.Y.Z.Build
 ```
 
 ### Verify
@@ -176,7 +176,7 @@ mkdir -p release_inbox
 
 ### Verify
 ```bash
-python3 server/scripts/publish_assets_and_sync.py --dry-run
+python3 scripts/publish_assets_and_sync.py --dry-run
 ```
 
 ---
@@ -216,7 +216,7 @@ cat server/updates/manifests/manifest.json
 
 ### Fix
 ```bash
-python3 server/scripts/publish_assets_and_sync.py
+python3 scripts/publish_assets_and_sync.py
 ```
 
 ### Verify

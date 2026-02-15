@@ -1,7 +1,7 @@
 #!/bin/bash
-# Update runtime version on Azure VM (VERSION + manifest + service restart).
+# Update runtime version on Azure VM (root VERSION + manifest + service restart).
 # Usage:
-#   ./server/scripts/update_server_version.sh <VERSION> [BUILD]
+#   ./scripts/update_server_version.sh <VERSION> [BUILD]
 
 set -euo pipefail
 
@@ -21,6 +21,7 @@ if [ -z "$VERSION_ARG" ]; then
   if [ -f "VERSION" ]; then
     VERSION_ARG="$(tr -d ' \n\r' < VERSION)"
   elif [ -f "server/VERSION" ]; then
+    # Backward compatibility fallback for legacy layouts.
     VERSION_ARG="$(tr -d ' \n\r' < server/VERSION)"
   else
     echo -e "${RED}❌ VERSION argument is required (and no local VERSION file found)${NC}"
@@ -57,7 +58,7 @@ az vm run-command invoke \
     cd \"$REMOTE_BASE\"
 
     mkdir -p server/updates/manifests
-    printf '%s\n' \"$VERSION_ARG\" > server/VERSION
+    printf '%s\n' \"$VERSION_ARG\" > VERSION
 
     python3 - <<'PYEOF'
 import json
