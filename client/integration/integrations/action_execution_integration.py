@@ -366,10 +366,6 @@ class ActionExecutionIntegration(BaseIntegration):
                     command,
                 )
 
-                # Для payment просто игнорируем (так как PaymentIntegration не запущена)
-                if feature_name == "payment":
-                    return
-
                 # Strict check: if feature is disabled, return failure
                 # This ensures "silent" commands are avoided as requested in diagnosis
                 await self._publish_failure(

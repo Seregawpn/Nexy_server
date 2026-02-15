@@ -108,6 +108,9 @@ class SpeechPlaybackIntegration:
         self._cancel_guard_window_sec: float = 0.5
         self._signal_block_until_ts: float = 0.0
         self._cancel_guard_task: asyncio.Task[Any] | None = None
+        self._last_cancel_signal_cue_id: str | None = None
+        self._last_cancel_signal_ts: float = 0.0
+        self._cancel_signal_dedup_window_sec: float = 0.30
         self._shutdown_requested: bool = False
         # Single source of serialization for player operations (start/stop/queue).
         self._playback_op_lock = asyncio.Lock()
@@ -827,16 +830,36 @@ class SpeechPlaybackIntegration:
             # Do not re-decide them here based on current mode, otherwise
             # quick LISTENING re-entry can suppress legitimate SLEEPING/error cues.
 
-            # Anti-race guard: block only duplicate/late CANCEL cue in cancel window.
-            # Do not suppress mode cues (listen_start/done/error), otherwise UX signal
-            # becomes flaky right after interrupts.
-            if self._cancel_in_flight and now < self._signal_block_until_ts and pattern == "cancel":
-                logger.info(
-                    "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=cancel_in_flight",
-                    cue_id,
-                    pattern,
-                )
-                return
+            # Cancel cue dedup is centralized here (single playback owner):
+            # allow the first valid cancel cue even during cancel_in_flight window,
+            # and drop only duplicates by cue_id/time window.
+            if pattern == "cancel":
+                cue_id_str = str(cue_id) if cue_id is not None else None
+                if cue_id_str is not None and cue_id_str == self._last_cancel_signal_cue_id:
+                    logger.info(
+                        "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=cancel_signal_duplicate_cue_id",
+                        cue_id,
+                        pattern,
+                    )
+                    return
+                dt = now - self._last_cancel_signal_ts
+                if dt < self._cancel_signal_dedup_window_sec:
+                    logger.info(
+                        "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=cancel_signal_dedup_window dt=%.3f window=%.3f",
+                        cue_id,
+                        pattern,
+                        dt,
+                        self._cancel_signal_dedup_window_sec,
+                    )
+                    return
+                self._last_cancel_signal_cue_id = cue_id_str
+                self._last_cancel_signal_ts = now
+                if self._cancel_in_flight and now < self._signal_block_until_ts:
+                    logger.debug(
+                        "CUE_TRACE phase=playback_signal.accepted cue_id=%s pattern=%s reason=cancel_in_flight_first_cue",
+                        cue_id,
+                        pattern,
+                    )
             if not self._avf_player:
                 logger.info(
                     "CUE_TRACE phase=playback_signal.dropped cue_id=%s pattern=%s drop_reason=player_unavailable",

@@ -5,7 +5,7 @@ accessibility:
   success_sound: true
   voice_feedback: true
   voiceover_control:
-    enabled: true
+    enabled: false
     mode: stop
     hard_toggle_enabled: false
     duck_modes:
@@ -154,7 +154,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: production
+    server: local
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 0.0
     max_retries: 3
@@ -332,6 +332,7 @@ integrations:
     speak_progress: true
     speak_complete: true
     speak_error: true
+    announce_on_startup: true
     progress_interval_sec: 30.0
     progress_step_percent: 50
     use_signals: true
@@ -402,12 +403,7 @@ permissions:
     pause_between_requests_sec: 15.0
     activation_hold_duration_sec: 15.0
     mode: smart
-    # TCC Rate Limiting Fix: Batch permissions to avoid macOS blocking dialogs
-    # When requesting 4+ permissions, macOS blocks the last ones
-    # Solution: Request 2 permissions per session, then restart
-    batch_size: 3                    # Permissions per batch (3 = fewer restarts)
-    enable_batching: true            # ENABLED: batch permissions to avoid macOS blocking
-    batch_restart_delay_sec: 2.0     # Delay before restart after batch (unused)
+    # V2 orchestrator is the active first-run owner. Legacy batching fields removed.
   sequential: false
   request_timeout_sec: 120.0
   auto_open_settings: false
@@ -548,7 +544,7 @@ updater:
     enabled: true
     auto_check: true
     check_on_startup: true
-    auto_install: false
+    auto_install: true
     network:
       timeout: 10
       retries: 0

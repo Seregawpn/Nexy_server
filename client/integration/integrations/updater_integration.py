@@ -5,6 +5,7 @@
 
 import asyncio
 from pathlib import Path
+import time
 import sys
 from typing import Any
 
@@ -12,6 +13,7 @@ from config.unified_config_loader import UnifiedConfigLoader
 from config.updater_manager import get_updater_manager
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.selectors import (
+    create_snapshot_from_state,
     get_current_mode,
     is_first_run_in_progress,
     is_update_in_progress as selector_is_update_in_progress,
@@ -65,6 +67,13 @@ class UpdaterIntegration:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._last_download_percent: int = 0
         self._last_install_percent: int = 0
+        # После startup-попытки не запускаем немедленный scheduled-check (anti double-trigger).
+        self._last_startup_attempt_ts: float = 0.0
+        self._startup_retry_block_sec: float = 120.0
+        # Session-level guard: if installation failed due to permissions,
+        # suppress automatic retries until next app restart.
+        self._suppress_auto_update_until_restart: bool = False
+        self._last_update_fail_reason_code: str | None = None
         # Поведение миграции регулируется конфигом/ENV
         # Отключаем миграцию в ~/Applications (стратегия: системная установка в /Applications)
         self._migrate_mode: str = "never"
@@ -125,6 +134,7 @@ class UpdaterIntegration:
                 if await self._can_update():
                     update_performed = False
                     try:
+                        self._last_startup_attempt_ts = time.monotonic()
                         update_performed = await self._execute_update(trigger="startup")
                     except Exception as exc:
                         logger.error(
@@ -152,6 +162,13 @@ class UpdaterIntegration:
         """Цикл проверки обновлений"""
         while self.is_running:
             try:
+                # Не повторяем update-check сразу после startup-попытки.
+                if self._last_startup_attempt_ts > 0:
+                    elapsed = time.monotonic() - self._last_startup_attempt_ts
+                    if elapsed < self._startup_retry_block_sec:
+                        await asyncio.sleep(self._startup_retry_block_sec - elapsed)
+                        continue
+
                 # Проверяем, можно ли обновляться
                 if await self._can_update():
                     if await self._execute_update(trigger="scheduled"):
@@ -182,6 +199,20 @@ class UpdaterIntegration:
                 return False
         except Exception as exc:
             logger.debug("[UPDATER] first_run guard check failed: %s", exc)
+
+        # Block updates while first-run is required or restart is pending.
+        # This prevents updater from racing with permissions pipeline/restart handoff.
+        try:
+            snapshot = create_snapshot_from_state(self.state_manager)
+            if snapshot.first_run or snapshot.restart_pending:
+                logger.info(
+                    "[UPDATER] Update blocked: first_run=%s restart_pending=%s",
+                    snapshot.first_run,
+                    snapshot.restart_pending,
+                )
+                return False
+        except Exception as exc:
+            logger.debug("[UPDATER] snapshot guard check failed: %s", exc)
 
         # Use tracked mode from events (updated in _on_mode_changed/_on_mode_changed_via_gateway)
         current_mode = self._current_mode
@@ -261,6 +292,26 @@ class UpdaterIntegration:
             logger.info("⏳ Обновление уже выполняется (trigger=%s)", trigger)
             return False
 
+        # Avoid repeated auto-update loops in the same session after permission failure.
+        if (
+            self._suppress_auto_update_until_restart
+            and trigger in {"startup", "scheduled"}
+        ):
+            await self._safe_publish(
+                "updater.update_skipped",
+                {
+                    "trigger": trigger,
+                    "reason": "auto_update_suppressed_after_permission_denied",
+                    "reason_code": "permission_denied_suppressed",
+                    "last_failure_reason_code": self._last_update_fail_reason_code,
+                },
+            )
+            logger.info(
+                "[UPDATER] Auto-update suppressed after permission_denied (trigger=%s)",
+                trigger,
+            )
+            return False
+
         # ШАГ 1: Сначала ПРОВЕРЯЕМ, есть ли обновление (БЕЗ изменения состояния)
         manifest = await asyncio.to_thread(self.updater.check_for_updates)
 
@@ -333,14 +384,27 @@ class UpdaterIntegration:
             await self._safe_publish(
                 "updater.update_completed", {"trigger": trigger, "version": version}
             )
+            # Successful installation clears session suppression state.
+            self._suppress_auto_update_until_restart = False
+            self._last_update_fail_reason_code = None
 
             # relaunch
             await asyncio.to_thread(self.updater.relaunch_app)
             return True
 
         except Exception as exc:
+            reason_code = self._classify_update_error(exc)
+            self._last_update_fail_reason_code = reason_code
+            if reason_code == "permission_denied":
+                self._suppress_auto_update_until_restart = True
             await self._safe_publish(
-                "updater.update_failed", {"trigger": trigger, "error": str(exc), "version": version}
+                "updater.update_failed",
+                {
+                    "trigger": trigger,
+                    "error": str(exc),
+                    "version": version,
+                    "reason_code": reason_code,
+                },
             )
             raise
         finally:
@@ -578,3 +642,23 @@ class UpdaterIntegration:
                     logger.debug("[UPDATER] No running loop for _safe_publish (test mode?)")
         except Exception as exc:
             logger.debug("UpdaterIntegration: не удалось опубликовать %s: %s", event_type, exc)
+
+    def _classify_update_error(self, exc: Exception) -> str:
+        """
+        Классификация ошибки обновления для стабильного контракта UI/логики.
+        """
+        if isinstance(exc, PermissionError):
+            return "permission_denied"
+
+        text = str(exc).lower()
+        if "permission denied" in text or "errno 13" in text or "operation not permitted" in text:
+            return "permission_denied"
+        if "https" in text or "ssl" in text or "certificate" in text:
+            return "network_security_error"
+        if "http" in text or "connection" in text or "timeout" in text or "redirect" in text:
+            return "network_error"
+        if "signature" in text or "codesign" in text or "gatekeeper" in text or "sha256" in text:
+            return "verification_failed"
+        if "dmg" in text or "mount" in text or "pkg" in text or "artifact" in text:
+            return "install_artifact_error"
+        return "unknown_error"

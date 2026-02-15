@@ -471,8 +471,13 @@ class VoiceRecognitionIntegration:
                 ):
                     logger.debug(f"VOICE: mode changed to {new_mode}, ensuring listening stopped")
                     await self._cancel_recognition(reason="mode_changed")
-                    if active_session_id is not None:
-                        self._cancel_stop_terminal_fallback(active_session_id)
+                    # Не отменяем stop-terminal fallback при входе в PROCESSING:
+                    # иначе при stop-while-waiting можем потерять terminal no-speech событие
+                    # и оставить PROCESSING в ожидании grpc до общего таймаута.
+                    if new_mode == AppMode.SLEEPING and active_session_id is not None:
+                        self._cancel_stop_terminal_fallback(
+                            active_session_id, reason="mode_changed_sleeping"
+                        )
 
                     if not self.config.simulate and self._google_sr_controller:
                         # Пытаемся мягко отменить прослушивание
@@ -653,7 +658,7 @@ class VoiceRecognitionIntegration:
             if result.text:
                 if not self._try_mark_terminal_recognition(session_id, "completed"):
                     return
-                self._cancel_stop_terminal_fallback(session_id)
+                self._cancel_stop_terminal_fallback(session_id, reason="v2_completed")
                 # TRACE: распознавание завершено успешно
                 logger.info(
                     f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(result.text)}, confidence={result.confidence:.2f}, still_listening={is_still_listening}}}"
@@ -678,7 +683,7 @@ class VoiceRecognitionIntegration:
                 else:
                     if not self._try_mark_terminal_recognition(session_id, "failed_empty"):
                         return
-                    self._cancel_stop_terminal_fallback(session_id)
+                    self._cancel_stop_terminal_fallback(session_id, reason="failed_empty")
                     logger.info(
                         f"TRACE phase=stt.fail ts={ts_ms} session={session_id} extra={{error={result.error or 'empty_result'}}}"
                     )
@@ -740,7 +745,7 @@ class VoiceRecognitionIntegration:
             else:
                 if not self._try_mark_terminal_recognition(session_id, "failed"):
                     return
-                self._cancel_stop_terminal_fallback(session_id)
+                self._cancel_stop_terminal_fallback(session_id, reason="v2_failed")
                 # PTT отпущен — публикуем ошибку и закрываем микрофон
                 self._recording_active = False
                 await self._publish_mic_closed(session_id, source="v2_failed")
@@ -865,11 +870,16 @@ class VoiceRecognitionIntegration:
 
         self._pending_stop_terminal_tasks[session_id] = asyncio.create_task(_emit_if_missing())
 
-    def _cancel_stop_terminal_fallback(self, session_id: str | None) -> None:
+    def _cancel_stop_terminal_fallback(self, session_id: str | None, *, reason: str) -> None:
         if session_id is None:
             return
         task = self._pending_stop_terminal_tasks.pop(session_id, None)
         if task and not task.done():
+            logger.debug(
+                "VOICE: stop-terminal fallback cancelled (session=%s, reason=%s)",
+                session_id,
+                reason,
+            )
             task.cancel()
 
     def _try_mark_terminal_recognition(self, session_id: str | None, source: str) -> bool:

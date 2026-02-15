@@ -91,6 +91,7 @@ class VoiceOverController:
         self._speech_muted_by_us = False
         self._hard_toggled_by_us = False
         self._speech_muted_supported = True
+        self._stop_speaking_supported = True
         self._voiceover_was_running = False  # Был ли VoiceOver запущен изначально
         self._voiceover_currently_running = False  # Текущее состояние VoiceOver
 
@@ -382,18 +383,28 @@ class VoiceOverController:
         return False
 
     def _stop_voiceover_speaking(self, context: str) -> bool:
-        success, _, stderr = self._run_osascript('tell application "VoiceOver" to stop speaking')
+        if not self._stop_speaking_supported:
+            return self._press_control_key()
+
+        was_supported = self._stop_speaking_supported
+        success, _, stderr = self._run_osascript(
+            'tell application "VoiceOver" to stop speaking',
+            quiet_errors=True,
+        )
         if not success:
-            logger.warning(
-                "VoiceOverController: stop speaking failed (%s) context=%s",
-                (stderr or "no error").strip(),
-                context,
-            )
-            fallback_ok = False
-            if self.settings.mode != "stop":
-                # Fallback to control key tap when AppleScript fails
-                fallback_ok = self._press_control_key()
-            return fallback_ok
+            self._handle_stop_speaking_unsupported(stderr)
+            # Capability errors are logged once in _handle_stop_speaking_unsupported.
+            if self._stop_speaking_supported:
+                logger.warning(
+                    "VoiceOverController: stop speaking failed (%s) context=%s",
+                    (stderr or "no error").strip(),
+                    context,
+                )
+            elif was_supported:
+                logger.debug(
+                    "VoiceOverController: stop speaking command disabled after capability check"
+                )
+            return self._press_control_key()
         else:
             logger.debug("VoiceOverController: stop speaking succeeded (context=%s)", context)
             return True
@@ -584,12 +595,40 @@ class VoiceOverController:
             "VoiceOverController: speechMuted AppleScript commands unavailable - using control key fallback"
         )
 
+    def _handle_stop_speaking_unsupported(self, stderr: str | None) -> None:
+        if not self._stop_speaking_supported:
+            return
+
+        message = (stderr or "").strip().lower()
+        if not message:
+            return
+
+        if (
+            "syntax error" in message
+            or "not defined" in message
+            or "doesn't understand" in message
+            or "can’t go after" in message
+            or "can't go after" in message
+        ):
+            self._stop_speaking_supported = False
+            logger.info(
+                "VoiceOverController: stop speaking AppleScript unavailable - using control key fallback"
+            )
+
     def _apply_voiceover_silence_fallback(self, muted: bool, reason: str) -> bool:
         if not muted:
             return True
 
         logger.debug("VoiceOverController: applying fallback VoiceOver silence (%s)", reason)
-        success, _, stderr = self._run_osascript('tell application "VoiceOver" to stop speaking')
+        success = False
+        stderr: str | None = None
+        if self._stop_speaking_supported:
+            success, _, stderr = self._run_osascript(
+                'tell application "VoiceOver" to stop speaking',
+                quiet_errors=True,
+            )
+            if not success:
+                self._handle_stop_speaking_unsupported(stderr)
         control_sent = self._press_control_key()
         if success or control_sent:
             self._speech_muted_by_us = False

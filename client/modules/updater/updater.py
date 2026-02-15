@@ -14,7 +14,7 @@ from packaging import version
 
 from .config import UpdaterConfig
 from .dmg import find_app_in_dmg, mount_dmg, unmount_dmg
-from .migrate import get_user_app_path
+from .migrate import get_current_app_path, get_user_app_path
 from .net import UpdateHTTPClient
 from .pkg import install_pkg, verify_pkg_signature
 from .replace import atomic_replace_app
@@ -33,6 +33,7 @@ class Updater:
         )
         self.on_download_progress = None
         self.on_install_progress = None
+        self._last_installed_app_path: str | None = None
         # Настраиваем файловый логгер для апдейтера
         try:
             log_file = Path(self.config.get_log_path())
@@ -55,7 +56,9 @@ class Updater:
         try:
             import plistlib
 
-            info_plist_path = os.path.join(get_user_app_path(), "Contents", "Info.plist")
+            # Source-of-truth for local version is the currently running app bundle.
+            app_path = get_current_app_path() or get_user_app_path()
+            info_plist_path = os.path.join(app_path, "Contents", "Info.plist")
             with open(info_plist_path, "rb") as f:
                 plist = plistlib.load(f)
             build_value = plist.get("CFBundleVersion", "0")
@@ -130,6 +133,7 @@ class Updater:
         """Установка обновления"""
         artifact_type = artifact_info.get("type", "dmg")
         user_app_path = get_user_app_path()
+        install_target_app_path = user_app_path
 
         self._report_install_progress("start", 0)
 
@@ -144,9 +148,20 @@ class Updater:
                 if not verify_app_signature(new_app_path):
                     raise RuntimeError("Подпись нового приложения неверна")
 
+                # Для DMG не используем replace в /Applications:
+                # ставим в ~/Applications, чтобы избежать permission-denied loops.
+                if os.path.realpath(user_app_path).startswith("/Applications/"):
+                    install_target_app_path = self.config.get_user_app_path()
+                    logger.info(
+                        "DMG install target switched to user scope: %s -> %s",
+                        user_app_path,
+                        install_target_app_path,
+                    )
+
                 # Атомарно заменяем приложение
                 self._report_install_progress("copy", 50)
-                atomic_replace_app(new_app_path, user_app_path)
+                atomic_replace_app(new_app_path, install_target_app_path)
+                self._last_installed_app_path = install_target_app_path
 
             finally:
                 self._report_install_progress("unmount", 80)
@@ -180,7 +195,7 @@ class Updater:
         """Перезапуск приложения"""
         import time
 
-        user_app_path = get_user_app_path()
+        user_app_path = self._last_installed_app_path or get_user_app_path()
         logger.info("🔁 Updater: relaunching app after update, exiting current process")
 
         if self._is_other_instance_running():

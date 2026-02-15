@@ -92,17 +92,6 @@ class IntegrationFactory:
         "autostart_manager",
     ]
 
-    PERMISSIONS_ONLY_ORDER = [
-        "instance_manager",
-        "tray",
-        "hardware_id",
-        "first_run_permissions",
-        "permission_restart",
-        "grpc",
-        "speech_playback",
-        "welcome_message",
-    ]
-
     @classmethod
     def get_startup_order(
         cls,
@@ -110,8 +99,10 @@ class IntegrationFactory:
         restrict_to_permissions: bool,
         available: set[str],
     ) -> list[str]:
-        order = cls.PERMISSIONS_ONLY_ORDER if restrict_to_permissions else cls.STARTUP_ORDER
-        return [name for name in order if name in available]
+        # Canonical startup path is single-owner STARTUP_ORDER.
+        # restrict_to_permissions is kept for backward-compatible call sites.
+        _ = restrict_to_permissions
+        return [name for name in cls.STARTUP_ORDER if name in available]
 
     def __init__(
         self,

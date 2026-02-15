@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 from pathlib import Path
 import sys
+import time
 from typing import Any
 import uuid
 
@@ -92,6 +93,11 @@ class WelcomeMessageIntegration:
         self._playback_ready = False
         self._playback_ready_event = asyncio.Event()
         self._welcome_playback_session_id: str | None = None
+        # Startup update guard: avoid welcome overlap with update announcements.
+        self._startup_update_in_progress = False
+        self._startup_update_terminal_ts: float | None = None
+        self._startup_update_cooldown_sec = 8.0
+        self._startup_update_retry_task: asyncio.Task[Any] | None = None
 
         # Блокировки по разрешениям отключены по умолчанию
         self._enforce_permissions = bool(getattr(self.config, "force_permission_checks", False))
@@ -156,6 +162,18 @@ class WelcomeMessageIntegration:
             await self.event_bus.subscribe(
                 "playback.ready", self._on_playback_ready, EventPriority.MEDIUM
             )
+            await self.event_bus.subscribe(
+                "updater.update_started", self._on_update_started, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "updater.update_completed", self._on_update_terminal, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "updater.update_failed", self._on_update_terminal, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "updater.update_skipped", self._on_update_terminal, EventPriority.MEDIUM
+            )
 
             self._initialized = True
             logger.info("✅ [WELCOME_INTEGRATION] Инициализирован")
@@ -187,6 +205,10 @@ class WelcomeMessageIntegration:
         try:
             self._running = False
             await self._cancel_permission_recheck_task()
+            if self._startup_update_retry_task and not self._startup_update_retry_task.done():
+                self._startup_update_retry_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._startup_update_retry_task
             logger.info("✅ [WELCOME_INTEGRATION] Остановлен")
             self._welcome_played = False
             return True
@@ -252,6 +274,16 @@ class WelcomeMessageIntegration:
                 )
                 return
 
+            if self._is_startup_update_window_active():
+                self._pending_welcome = True
+                logger.info(
+                    "⏳ [WELCOME_INTEGRATION] Delaying welcome due to startup update window "
+                    "(in_progress=%s)",
+                    self._startup_update_in_progress,
+                )
+                self._ensure_retry_after_startup_update()
+                return
+
             logger.info("🚀 [WELCOME_INTEGRATION] Обработка события готовности к приветствию")
             self._pending_welcome = True
             self._welcome_played = True
@@ -266,6 +298,48 @@ class WelcomeMessageIntegration:
                 raise
             finally:
                 self._pending_welcome = False
+
+    def _is_startup_update_window_active(self) -> bool:
+        if self._startup_update_in_progress:
+            return True
+        if self._startup_update_terminal_ts is None:
+            return False
+        return (time.monotonic() - self._startup_update_terminal_ts) < self._startup_update_cooldown_sec
+
+    def _ensure_retry_after_startup_update(self) -> None:
+        if self._startup_update_retry_task and not self._startup_update_retry_task.done():
+            return
+        self._startup_update_retry_task = asyncio.create_task(self._retry_welcome_after_startup_update())
+
+    async def _retry_welcome_after_startup_update(self) -> None:
+        try:
+            while self._is_startup_update_window_active():
+                await asyncio.sleep(0.5)
+            if self._pending_welcome and self._running and self._playback_ready and not self._welcome_played:
+                await self._request_welcome_play("startup_update_terminal", allow_pending=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug("WELCOME: retry after startup update failed: %s", e)
+
+    async def _on_update_started(self, event: dict[str, Any]) -> None:
+        data = event.get("data") or {}
+        trigger = str(data.get("trigger") or "")
+        if trigger != "startup":
+            return
+        self._startup_update_in_progress = True
+        self._startup_update_terminal_ts = None
+        logger.info("[WELCOME_INTEGRATION] Startup update started - welcome deferred")
+
+    async def _on_update_terminal(self, event: dict[str, Any]) -> None:
+        data = event.get("data") or {}
+        trigger = str(data.get("trigger") or "")
+        if trigger != "startup":
+            return
+        self._startup_update_in_progress = False
+        self._startup_update_terminal_ts = time.monotonic()
+        logger.info("[WELCOME_INTEGRATION] Startup update terminal event - applying welcome cooldown")
+        self._ensure_retry_after_startup_update()
 
     async def _play_welcome_message(self, trigger: str = "app_startup"):
         """Воспроизводит приветственное сообщение"""

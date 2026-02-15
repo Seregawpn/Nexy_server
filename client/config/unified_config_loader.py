@@ -62,13 +62,32 @@ class NetworkConfig:
 class LoggingConfig:
     """Настройки логирования"""
 
-    level: str
-    file: str
+    console_level: str
+    file_level: str
+    file_path: str
     error_file: str
-    max_size: str
-    backup_count: int
+    max_file_size: int
+    max_files: int
+    rotation: bool
     format: str
     loggers: dict[str, str]
+
+    # Backward-compatible aliases for legacy call sites.
+    @property
+    def level(self) -> str:
+        return self.console_level
+
+    @property
+    def file(self) -> str:
+        return self.file_path
+
+    @property
+    def max_size(self) -> int:
+        return self.max_file_size
+
+    @property
+    def backup_count(self) -> int:
+        return self.max_files
 
 
 @dataclass
@@ -441,15 +460,23 @@ class UnifiedConfigLoader:
     def get_logging_config(self) -> LoggingConfig:
         """Получает настройки логирования"""
         config = self._load_config()
-        logging_data = config["logging"]
+        logging_data = config.get("logging", {})
+        file_path = logging_data.get("file_path") or logging_data.get("file") or ""
         return LoggingConfig(
-            level=logging_data["level"],
-            file=logging_data["file"],
-            error_file=logging_data["error_file"],
-            max_size=logging_data["max_size"],
-            backup_count=logging_data["backup_count"],
-            format=logging_data["format"],
-            loggers=logging_data["loggers"],
+            console_level=logging_data.get("console_level", logging_data.get("level", "INFO")),
+            file_level=logging_data.get(
+                "file_level",
+                logging_data.get("console_level", logging_data.get("level", "INFO")),
+            ),
+            file_path=file_path,
+            error_file=logging_data.get("error_file", file_path),
+            max_file_size=int(logging_data.get("max_file_size", logging_data.get("max_size", 0))),
+            max_files=int(logging_data.get("max_files", logging_data.get("backup_count", 0))),
+            rotation=bool(logging_data.get("rotation", True)),
+            format=logging_data.get(
+                "format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            ),
+            loggers=logging_data.get("loggers", {}),
         )
 
     def get_log_file(self) -> str:

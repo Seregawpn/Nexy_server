@@ -206,9 +206,6 @@ class UpdateNotificationIntegration(BaseIntegration):
         if not self._suppress_announcements and self.config.speak_complete:
             await self._speak("Update completed. Nexy will restart to apply changes.")
 
-        # Отписываемся от событий после завершения обновления
-        logger.info("[UPDATE_NOTIFY] Отписываемся от событий после завершения обновления")
-        await self._unsubscribe_all()
         self._suppress_announcements = False
 
     async def _on_update_failed(self, event: dict[str, Any]) -> None:
@@ -224,12 +221,9 @@ class UpdateNotificationIntegration(BaseIntegration):
             await self._play_signal("update_error")
 
         if not self._suppress_announcements and self.config.speak_error:
-            reason = str(data.get("error") or "unknown error")
-            await self._speak(f"Nexy update failed. Reason: {reason}. Please try again later.")
+            reason_code = str(data.get("reason_code") or "unknown_error")
+            await self._speak(self._error_phrase_for_reason(reason_code))
 
-        # Отписываемся от событий после ошибки обновления
-        logger.info("[UPDATE_NOTIFY] Отписываемся от событий после ошибки обновления")
-        await self._unsubscribe_all()
         self._suppress_announcements = False
 
     def _should_announce(self, percent: int, stage: str) -> bool:
@@ -311,3 +305,18 @@ class UpdateNotificationIntegration(BaseIntegration):
         self._last_percent = 0
         self._last_stage = None
         self._last_announce_ts = 0.0
+
+    def _error_phrase_for_reason(self, reason_code: str) -> str:
+        code = reason_code.lower().strip()
+        if code == "permission_denied":
+            return (
+                "Nexy update could not be installed due to missing system permission. "
+                "Please install Nexy from Applications or run update with administrator approval."
+            )
+        if code in {"network_error", "network_security_error"}:
+            return "Nexy update failed because of a network issue. Please try again later."
+        if code == "verification_failed":
+            return "Nexy update failed because package verification did not pass."
+        if code == "install_artifact_error":
+            return "Nexy update failed while preparing installation files."
+        return "Nexy update failed. Please try again later."

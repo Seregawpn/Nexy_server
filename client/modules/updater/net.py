@@ -34,10 +34,15 @@ class UpdateHTTPClient:
         # Создаем отдельный HTTP клиент для обновлений с поддержкой редиректов
         pool_kwargs = {
             "retries": urllib3.Retry(
-                total=retries,
+                # Redirect budget should not depend on connect/read retry budget.
+                total=None,
+                connect=retries,
+                read=retries,
+                status=retries,
+                redirect=10,
                 backoff_factor=0.5,
                 status_forcelist=[500, 502, 503, 504],
-                redirect=5,  # Поддержка до 5 редиректов
+                raise_on_redirect=False,
             ),
             "timeout": urllib3.Timeout(total=timeout),
         }

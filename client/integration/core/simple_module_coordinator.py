@@ -458,20 +458,7 @@ class SimpleModuleCoordinator:
 
             print("🚀 Запуск всех интеграций...")
 
-            full_config = self.config._load_config()
-            integrations_config = (
-                full_config.get("integrations", {}) if isinstance(full_config, dict) else {}
-            )
-            permissions_v2_config = integrations_config.get("permissions_v2", {})
-            advance_on_timeout = bool(permissions_v2_config.get("advance_on_timeout", False))
-
-            first_run = self.integrations.get("first_run_permissions")
-            restrict_to_permissions = bool(first_run and not first_run.are_all_granted)
-            if restrict_to_permissions:
-                logger.info(
-                    "[PERMISSIONS_GATE] First-run not completed, limiting startup to permissions flow only"
-                )
-                print("⛔ [PERMISSIONS] First-run не завершён — запускаем только permissions flow")
+            restrict_to_permissions = False
 
             # Single source of startup order lives in IntegrationFactory.
             startup_order = IntegrationFactory.get_startup_order(
@@ -673,11 +660,6 @@ class SimpleModuleCoordinator:
                     print(f"✅ {name} запущен")
 
             # Запускаем оставшиеся интеграции (если есть)
-            if restrict_to_permissions:
-                logger.info("[PERMISSIONS_GATE] First-run mode: skipping remaining integrations")
-                print("🛑 [PERMISSIONS] First-run режим — остальные модули не запускаются")
-                return True
-
             for name, integration in self.integrations.items():
                 if name not in startup_order:
                     print(f"🚀 Запуск {name}...")

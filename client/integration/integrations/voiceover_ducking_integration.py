@@ -3,6 +3,7 @@
 Тонкая обертка над VoiceOverController для интеграции с EventBus
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -25,6 +26,8 @@ class VoiceOverDuckingIntegration(BaseIntegration):
         self._awaiting_permissions = False
         self._awaiting_first_run = False
         self._keyboard_press_subscribed = False
+        self._mode_apply_lock = asyncio.Lock()
+        self._last_applied_mode: str | None = None
 
     async def _do_initialize(self) -> bool:
         """Инициализация интеграции VoiceOver Ducking."""
@@ -117,12 +120,30 @@ class VoiceOverDuckingIntegration(BaseIntegration):
                 logger.warning("VoiceOverDuckingIntegration: No mode in event data")
                 return
 
-            # Обновляем состояние VoiceOver перед применением режима
-            await self.controller.update_voiceover_status()
+            mode_value = getattr(mode, "value", mode)
+            mode_text = str(mode_value).lower()
 
-            # Применяем режим к контроллеру
-            await self.controller.apply_mode(mode.value)
-            logger.debug("VoiceOverDuckingIntegration: Applied mode %s", mode.value)
+            if mode_text == self._last_applied_mode:
+                logger.debug("VoiceOverDuckingIntegration: Skip duplicate mode %s", mode_text)
+                return
+
+            # app.mode_changed публикуется fast-path через create_task,
+            # поэтому сериализуем обработку и повторно проверяем dedup.
+            async with self._mode_apply_lock:
+                if mode_text == self._last_applied_mode:
+                    logger.debug(
+                        "VoiceOverDuckingIntegration: Skip duplicate mode after lock %s",
+                        mode_text,
+                    )
+                    return
+
+                # Обновляем состояние VoiceOver перед применением режима
+                await self.controller.update_voiceover_status()
+
+                # Применяем режим к контроллеру
+                await self.controller.apply_mode(mode_text)
+                self._last_applied_mode = mode_text
+                logger.debug("VoiceOverDuckingIntegration: Applied mode %s", mode_text)
 
         except Exception as exc:
             await self.error_handler.handle(
