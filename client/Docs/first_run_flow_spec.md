@@ -2,9 +2,9 @@
 
 ## Overview
 The "first run" experience prepares the Nexy client for normal operation by:
-- requesting all required macOS privacy permissions sequentially (no pre-checks, no polling loops);
+- requesting all required macOS privacy permissions sequentially (no pre-checks);
 - enforcing a permission order defined by `integrations.permissions_v2.order` (config-driven);
-- activating each permission with a fixed grace window (`integrations.permissions_v2.steps.*.grace_s`) and a single post-trigger check;
+- activating each permission with a fixed grace window (`integrations.permissions_v2.steps.*.grace_s`) and post-trigger verification;
 - using dialog-only activators for promptable permissions; Full Disk Access uses Settings-only;
 - persisting flags as a cache (not a hard stop) for completed permission attempts;
 - restarting the app after newly granted critical permissions so subsystems observe the new state.
@@ -46,7 +46,7 @@ flowchart TD
     A[App start] --> B[Ledger indicates all required granted?]
     B -- Yes --> C[Skip first-run flow]
     B -- No --> D[Publish permissions.first_run_started]
-    D --> E[Iterate required_permissions in order]
+    D --> E[Iterate permissions_v2.order]
     E --> F[Activate permission + hold_duration]
     F --> G[Optional Settings-only for Full Disk Access]
     G --> H[Pause between requests]
@@ -57,7 +57,8 @@ flowchart TD
 
 Notes:
 - No status pre-checks are performed during first-run.
-- Each permission is probed once after the grace window (no polling loop).
+- For `AUTO_DIALOG` steps V2 orchestrator uses polling (`poll_s`) until terminal outcome/timeout.
+- For `OPEN_SETTINGS` steps verification also uses polling with long-wait mode.
 - Restart is blocked during first-run until `restart_pending` is set.
 
 ---
@@ -77,7 +78,7 @@ Notes:
    - For each permission in order, the integration:
      1. Calls the activation helper to trigger the **system dialog** (dialog-only).  
      2. Holds for `steps.*.grace_s`.  
-     3. Performs a single post-trigger probe (no polling).  
+     3. Performs post-trigger verification (polling for `AUTO_DIALOG`/`OPEN_SETTINGS`).  
      4. Proceeds to the next permission.
    - **Full Disk Access**: opens System Settings only (no dialog available).
    - The integration requests **all** permissions in the list (no pre-checks).

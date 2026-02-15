@@ -166,7 +166,7 @@ client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS
 
 1. **Core Independence**: `integration/core` (EventBus, StateManager) НЕ зависит от конкретных интеграций.
 2. **Integrations Layering**: Интеграции зависят от Core и Modules, но НЕ друг от друга.
-3. **Modules Isolation**: Модули (`client/modules/*`) изолированы и не знают про EventBus/Integrations.
+3. **Modules Isolation**: Модули (`modules/*`) изолированы и не знают про EventBus/Integrations.
 4. **Runtime Enforcement**: (Планируется) Runtime-проверка импортов при старте.
 
 ## 3.1) Quality Gates (Lint/CI)
@@ -409,26 +409,26 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
 - **interaction_matrix.yaml** — правила взаимодействия осей с приоритетами (hard_stop, graceful, preference)
   - Синхронизирован с STATE_CATALOG.md
   - См. `config/interaction_matrix.yaml`
-- **gateways.py** — логика принятия решений на основе осей
+- **gateways/** — логика принятия решений на основе осей
   - Реализует правила из interaction_matrix.yaml
-  - См. `integration/core/gateways.py`
+  - См. `integration/core/gateways/`
 
 ---
 
-- **Текущий статус:** `Docs/CURRENT_STATUS_REPORT.md`
-- **План развертывания:** `Docs/GLOBAL_DELIVERY_PLAN.md`
+- **Текущий статус:** `log.md`, `Docs/assistant_exchange/codex/`
+- **План развертывания:** `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`
 - **Права и first-run:** `PERMISSIONS_REPORT.md`, `Docs/first_run_flow_spec.md`
 - **План упаковки:** `Docs/PACKAGING_FINAL_GUIDE.md` + `Docs/PRE_PACKAGING_VERIFICATION.md`
 - **Концепция продукта:** `Docs/PRODUCT_CONCEPT.md`
 - **STATE_CATALOG (оси состояния):** `Docs/STATE_CATALOG.md` — единый источник истины для осей состояния и таблица ownership
 - **Interaction Matrix (правила):** `config/interaction_matrix.yaml` — правила взаимодействия осей с приоритетами (синхронизирован с STATE_CATALOG.md)
-- **ADR: AVFoundation миграция:** `Docs/ADRs/ADR_2025-01-XX_avfoundation_audio_migration.md`
+- **Релизный регламент:** `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`
 
 ### 🏗️ **Клиентская архитектура:**
-- **Workflows документация:** `client/integration/workflows/README.md`
-- **Координатор:** `client/integration/core/simple_module_coordinator.py`
-- **Контроллер режимов:** `client/modules/mode_management/core/mode_controller.py`
-- **Менеджер состояния:** `client/integration/core/state_manager.py`
+- **Workflows документация:** `integration/workflows/README.md`
+- **Координатор:** `integration/core/simple_module_coordinator.py`
+- **Контроллер режимов:** `modules/mode_management/core/mode_controller.py`
+- **Менеджер состояния:** `integration/core/state_manager.py`
 - **Конфигурация:** `config/unified_config.yaml`
 
 ### 🖥️ **Серверная архитектура:**

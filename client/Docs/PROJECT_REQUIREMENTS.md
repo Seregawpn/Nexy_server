@@ -126,41 +126,41 @@
 
 ## 2. Permissions/TCC
 
-### REQ-010: First-run permissions flow
+### REQ-010: First-run permissions flow (V2)
 - **Домен**: Permissions/TCC
 - **Критичность**: MUST
-- **Описание**: При первом запуске приложение последовательно активирует разрешения в порядке, заданном `integrations.permissions.required_permissions` (config-driven, fallback‑списка нет), с паузами между запросами и фиксированным удержанием `activation_hold_duration_sec`. Проверка статусов в first-run не выполняется — activators вызываются по списку. Full Disk Access открывается через System Settings (settings-only). Остальные разрешения запрашиваются через системные диалоги. Список разрешений для рестарта берётся из `integrations.permission_restart.critical_permissions`. Пропуск first-run по dev‑флагам не допускается. Флаг `permissions_first_run_completed.flag` является кешем и не используется для принятия решения о запуске wizard — решение принимает V2 orchestrator по `permission_ledger.json`.
+- **Описание**: При первом запуске приложение работает только через V2 pipeline: порядок шагов задаётся `integrations.permissions_v2.order` (fallback‑списка нет), шаги конфигурируются через `integrations.permissions_v2.steps.*` (grace/poll/criticality), source-of-truth по необходимости first-run — `permission_ledger.json`. Full Disk Access — settings-only. Флаг `permissions_first_run_completed.flag` является кешем и не owner-источником решения о запуске wizard.
 - **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`
 - **Owner**: Permissions SWAT
 - **Ожидаемый результат**: Все разрешения запрашиваются последовательно, флаг `permissions_first_run_completed.flag` создаётся после завершения
-- **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `modules/permissions/first_run/*`
-- **Verification**: `scripts/test_first_run_integration.sh`, `scripts/clear_first_run_flags.py`, логи first-run
+- **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `modules/permissions/v2/orchestrator.py`, `modules/permissions/v2/integration.py`
+- **Verification**: `tests/test_first_run_orchestrator_single_restart.py`, `tests/test_permissions_v2_completion_gate.py`, `scripts/clear_first_run_flags.py`
 
 ### REQ-011: Permission restart после выдачи разрешений
 - **Домен**: Permissions/TCC
 - **Критичность**: MUST
 - **Описание**: После выдачи критических разрешений приложение автоматически перезапускается для применения новых разрешений.
-- **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`, `Docs/TAL_TESTING_CHECKLIST.md`
+- **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`, `Docs/PACKAGING_FINAL_GUIDE.md`
 - **Owner**: Permissions SWAT
 - **Ожидаемый результат**: Приложение перезапускается после выдачи разрешений, флаг `restart_completed.flag` создаётся в новом процессе
-- **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `integration/core/simple_module_coordinator.py`, `integration/integrations/permission_restart_integration.py`, `modules/permission_restart/core/restart_scheduler.py`, `modules/permission_restart/macos/permissions_restart_handler.py`
-- **Verification**: `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py`, `scripts/test_restart_priority.sh`
+- **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `integration/core/simple_module_coordinator.py`, `integration/integrations/permission_restart_integration.py`, `modules/permission_restart/macos/permissions_restart_handler.py`
+- **Verification**: `tests/test_first_run_orchestrator_single_restart.py`, `tests/test_permission_restart_v2_freeze.py`, runtime-логи TAL (`TAL=hold|refresh|released`)
 
 ### REQ-012: TAL hold до tray.ready
 - **Домен**: Permissions/TCC / TAL
 - **Критичность**: MUST
 - **Описание**: Приложение удерживает TAL (Termination Avoidance Lock) до момента готовности tray (`tray.ready`), обновляя hold каждые 30 секунд, таймаут 120 секунд.
-- **Источник**: `Docs/TAL_TESTING_CHECKLIST.md`, `.cursorrules` раздел 9
+- **Источник**: `Docs/PACKAGING_FINAL_GUIDE.md`, `.cursorrules` раздел 9
 - **Owner**: Permissions SWAT
 - **Ожидаемый результат**: В логах видны `TAL=hold`, периодические `TAL=refresh`, `TAL=released (reason=tray_ready)`, нет `Assertion did invalidate due to timeout` до tray.ready
 - **Implementation**: `integration/core/simple_module_coordinator.py::_hold_tal_until_tray_ready()`
-- **Verification**: `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py`, логи runningboardd
+- **Verification**: `tests/test_user_quit_ack.py`, runtime-логи `TAL=hold|refresh|released`, логи runningboardd
 
 ### REQ-013: Проверка разрешений через публичные API
 - **Домен**: Permissions/TCC
 - **Критичность**: SHOULD (TCC-AX-001)
 - **Описание**: Проверка Accessibility разрешения должна использовать безопасный публичный API `AXIsProcessTrusted` (без prompt‑опций); prompt‑попытки отключены, используется Settings‑only.
-- **Источник**: `PERMISSIONS_REPORT.md` (TCC-AX-001), `Docs/EXIT_HANDLER_ISSUE_ANALYSIS.md`
+- **Источник**: `PERMISSIONS_REPORT.md` (TCC-AX-001), `Docs/first_run_flow_spec.md`
 - **Owner**: Permissions SWAT
 - **Ожидаемый результат**: Проверка статуса без TCC prompt; открытие System Settings при отсутствии доступа
 - **Implementation**: `modules/permission_restart/macos/permissions_restart_handler.py` (замена приватного API)
@@ -173,7 +173,7 @@
 - **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`
 - **Owner**: Permissions SWAT
 - **Ожидаемый результат**: Флаги создаются в правильной директории
-- **Implementation**: `modules/permissions/first_run/*`, `modules/permission_restart/core/atomic_flag.py`
+- **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `modules/permission_restart/core/atomic_flag.py`
 - **Verification**: `scripts/clear_first_run_flags.py`, проверка наличия флагов
 
 ---
@@ -228,21 +228,21 @@
 - **Домен**: Application Termination
 - **Критичность**: MUST
 - **Описание**: Метод `applicationShouldTerminate` должен возвращать `False` для предотвращения автоматического завершения приложения.
-- **Источник**: `Docs/TRAY_TERMINATION_FIX.md`, `Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/TERMINAL_VS_APP_BUNDLE_DIFFERENCES.md`
+- **Источник**: `Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/ARCHITECTURE_OVERVIEW.md`
 - **Owner**: Tray Controller Owner
 - **Ожидаемый результат**: Приложение не завершается автоматически при отображении иконки
 - **Implementation**: `modules/tray_controller/macos/menu_handler.py::applicationShouldTerminate()`, `main.py::create_app()`
-- **Verification**: `scripts/test_tray_termination.py`, `Docs/PRE_PACKAGING_VERIFICATION.md`
+- **Verification**: `tests/test_tray_quit_dispatch.py`, `tests/test_tray_quit_integration_ack.py`
 
 ### REQ-020: Quit handler установлен до app.run()
 - **Домен**: Application Termination
 - **Критичность**: MUST
 - **Описание**: Quit handler (`_setup_quit_handler()`) должен быть установлен до вызова `app.run()`.
-- **Источник**: `Docs/TRAY_TERMINATION_FIX.md`, `Docs/PRE_PACKAGING_VERIFICATION.md`
+- **Источник**: `Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/ARCHITECTURE_OVERVIEW.md`
 - **Owner**: Tray Controller Owner
 - **Ожидаемый результат**: Quit handler работает корректно, приложение завершается только через меню
 - **Implementation**: `main.py::run()`, `modules/tray_controller/macos/menu_handler.py::_setup_quit_handler()`
-- **Verification**: `scripts/test_tray_termination.py`, `Docs/PRE_PACKAGING_VERIFICATION.md`
+- **Verification**: `tests/test_tray_quit_dispatch.py`, `tests/test_user_quit_ack.py`
 
 ---
 
@@ -265,7 +265,7 @@
 - **Источник**: `Docs/FEATURE_FLAGS.md`, `.cursorrules` раздел 6.1
 - **Owner**: Tech Lead клиента
 - **Ожидаемый результат**: Флаги работают, kill-switches позволяют мгновенный откат
-- **Implementation**: `config/unified_config.yaml`, `integration/integrations/first_run_permissions_integration.py`, `modules/permission_restart/core/restart_scheduler.py`
+- **Implementation**: `config/unified_config.yaml`, `integration/integrations/first_run_permissions_integration.py`, `integration/integrations/permission_restart_integration.py`
 - **Verification**: Тесты feature flags, проверка kill-switches
 
 ---
@@ -310,11 +310,11 @@
 - **Домен**: Logging
 - **Критичность**: MUST
 - **Описание**: Формат логов: `YYYY-MM-DD HH:MM:SS - Nexy - LEVEL - [session_id] - Message`. Структурированные события: `module.start|ok|fail` с session_id, duration_ms, контекстом.
-- **Источник**: `.cursorrules` раздел 8, `client/main.py`
+- **Источник**: `.cursorrules` раздел 8, `main.py`
 - **Owner**: Tech Lead клиента
 - **Ожидаемый результат**: Все логи в едином формате
-- **Implementation**: `client/main.py` (настройка логирования), все модули
-- **Verification**: Проверка формата логов, `Docs/AUDIO_LOGGING_CHECKLIST.md`
+- **Implementation**: `main.py` (настройка логирования), все модули
+- **Verification**: Проверка формата логов, `log.md`
 
 ### REQ-027: Метрики с SLO порогами
 - **Домен**: Observability
@@ -330,15 +330,15 @@
 
 ## 8. Deployment
 
-### REQ-028: GLOBAL_DELIVERY_PLAN актуален
+### REQ-028: Release versioning и publish policy актуальны
 - **Домен**: Deployment
-- **Критичность**: SHOULD (GAP-001)
-- **Описание**: `Docs/GLOBAL_DELIVERY_PLAN.md` должен содержать детали Azure/AppCast rollout и deployment шагов.
-- **Источник**: `Docs/GLOBAL_DELIVERY_PLAN.md`, `Docs/CURRENT_STATUS_REPORT.md` (DELIVERY-002)
+- **Критичность**: MUST
+- **Описание**: Процедура версионирования и публикации клиента должна быть зафиксирована и использоваться из единого документа.
+- **Источник**: `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`
 - **Owner**: Release/Delivery
-- **Ожидаемый результат**: План содержит все детали deployment
-- **Implementation**: `Docs/GLOBAL_DELIVERY_PLAN.md`
-- **Verification**: Ревью документа, проверка полноты
+- **Ожидаемый результат**: Команда использует единый регламент release/publish без альтернативных инструкций.
+- **Implementation**: `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`
+- **Verification**: Ревью документа, проверка ссылок из `Docs/README.md`
 
 ---
 
@@ -357,25 +357,25 @@
 | REQ-007 | README модулей, `integration/integrations/*.py` | Ревью кода | Tech Lead клиента |
 | REQ-008 | `integration/core/error_handler.py` | Логи ошибок | Tech Lead клиента |
 | REQ-009 | Все интеграции | Логи событий | Tech Lead клиента |
-| REQ-010 | `integration/integrations/first_run_permissions_integration.py` | `scripts/test_first_run_integration.sh`, `scripts/clear_first_run_flags.py` | Permissions SWAT |
-| REQ-011 | `integration/integrations/first_run_permissions_integration.py`, `integration/core/simple_module_coordinator.py`, `integration/integrations/permission_restart_integration.py`, `modules/permission_restart/` | `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py` | Permissions SWAT |
-| REQ-012 | `integration/core/simple_module_coordinator.py` | `Docs/TAL_TESTING_CHECKLIST.md`, `scripts/check_tal_after_restart.py` | Permissions SWAT |
+| REQ-010 | `integration/integrations/first_run_permissions_integration.py`, `modules/permissions/v2/` | `tests/test_first_run_orchestrator_single_restart.py`, `tests/test_permissions_v2_completion_gate.py`, `scripts/clear_first_run_flags.py` | Permissions SWAT |
+| REQ-011 | `integration/integrations/first_run_permissions_integration.py`, `integration/core/simple_module_coordinator.py`, `integration/integrations/permission_restart_integration.py`, `modules/permission_restart/macos/permissions_restart_handler.py` | `tests/test_first_run_orchestrator_single_restart.py`, `tests/test_permission_restart_v2_freeze.py` | Permissions SWAT |
+| REQ-012 | `integration/core/simple_module_coordinator.py` | `tests/test_user_quit_ack.py`, runtime-логи TAL | Permissions SWAT |
 | REQ-013 | `modules/permission_restart/macos/permissions_restart_handler.py` | Unit тесты | Permissions SWAT |
-| REQ-014 | `modules/permissions/first_run/*`, `modules/permission_restart/core/atomic_flag.py` | `scripts/clear_first_run_flags.py` | Permissions SWAT |
+| REQ-014 | `integration/integrations/first_run_permissions_integration.py`, `modules/permission_restart/core/atomic_flag.py` | `scripts/clear_first_run_flags.py` | Permissions SWAT |
 | REQ-015 | `Docs/PACKAGING_FINAL_GUIDE.md`, `packaging/build_final.sh` | `Docs/PRE_PACKAGING_VERIFICATION.md`, `scripts/run_release_suite.py` | Release/Delivery |
 | REQ-016 | `packaging/Nexy.spec`, `rebuild_from_scratch.sh` | Проверка содержимого `.app` | Release/Delivery |
 | REQ-017 | `packaging/build_final.sh` | `codesign -vvv`, `spctl -a -vv` | Release/Delivery |
 | REQ-018 | `Docs/PRE_PACKAGING_VERIFICATION.md`, `Docs/PACKAGING_READINESS_CHECKLIST.md` | `scripts/problem_scan_gate.sh`, `scripts/run_release_suite.py`, проверка checklist в PR | Release/Delivery |
-| REQ-019 | `modules/tray_controller/macos/menu_handler.py`, `main.py` | `scripts/test_tray_termination.py` | Tray Controller Owner |
-| REQ-020 | `main.py`, `modules/tray_controller/macos/menu_handler.py` | `scripts/test_tray_termination.py` | Tray Controller Owner |
+| REQ-019 | `modules/tray_controller/macos/menu_handler.py`, `main.py` | `tests/test_tray_quit_dispatch.py`, `tests/test_tray_quit_integration_ack.py` | Tray Controller Owner |
+| REQ-020 | `main.py`, `modules/tray_controller/macos/menu_handler.py` | `tests/test_tray_quit_dispatch.py`, `tests/test_user_quit_ack.py` | Tray Controller Owner |
 | REQ-021 | `Docs/FEATURE_FLAGS.md` | Ревью кода | Tech Lead клиента |
 | REQ-022 | `config/unified_config.yaml`, `integration/integrations/first_run_permissions_integration.py` | Тесты feature flags | Tech Lead клиента |
-| REQ-023 | `.github/workflows/ci.yml`, `scripts/verify_*.py` | CI logs | Tech Lead клиента |
+| REQ-023 | `.github/workflows/ci.yml`, `scripts/verify_no_direct_state_access.py`, `scripts/validate_schemas.py` | CI logs | Tech Lead клиента |
 | REQ-024 | `tests/test_gateways.py` | `pytest tests/test_gateways.py` | Tech Lead клиента |
 | REQ-025 | `scripts/verify_4_artifacts_invariant.py`, `scripts/verify_rule_coverage.py` | Скрипты проверки | Tech Lead клиента |
-| REQ-026 | `client/main.py`, все модули | Проверка формата логов | Tech Lead клиента |
+| REQ-026 | `main.py`, все модули | Проверка формата логов | Tech Lead клиента |
 | REQ-027 | `client/metrics/registry.md` | `tests/perf/test_slo.py` | Tech Lead клиента |
-| REQ-028 | `Docs/GLOBAL_DELIVERY_PLAN.md` | Ревью документа | Release/Delivery |
+| REQ-028 | `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md` | Ревью документа и ссылок | Release/Delivery |
 
 ---
 
@@ -391,7 +391,7 @@
 2. Обновить исходный документ (если требуется)
 3. Обновить код/тесты согласно требованию
 4. Запустить `scripts/update_requirements_snapshot.py` для валидации
-5. Запустить `scripts/check_requirements_mapping.py` для проверки соответствия
+5. Выполнить выборочную проверку ссылок и соответствия Implementation/Verification вручную (или локальным скриптом проверки ссылок)
 
 ### After: Проверка синхронизации
 1. ✅ Все требования из исходных документов присутствуют в snapshot
@@ -406,7 +406,7 @@
 | Requirement ID | Описание | Приоритет | Владелец | Статус |
 |----------------|----------|-----------|----------|--------|
 | REQ-013 | Замена приватного API на публичный для Accessibility | High | Permissions SWAT | Открыто (TCC-AX-001) |
-| REQ-028 | Детализация GLOBAL_DELIVERY_PLAN | Medium | Release/Delivery | Открыто (DELIVERY-002) |
+| REQ-028 | Проверка единого release/publish регламента | Low | Release/Delivery | Закрыто |
 
 ---
 

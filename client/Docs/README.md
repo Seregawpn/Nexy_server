@@ -25,10 +25,9 @@
 
 ### Упаковка и сборка
 - **`Docs/PACKAGING_FINAL_GUIDE.md`** — **ЕДИНСТВЕННЫЙ источник истины** для канонического процесса упаковки (раздел 0). Все изменения обязаны следовать обязательному процессу из раздела 0.2.
+- **`Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`** — канонический регламент обновления версии клиента и правильной заливки в GitHub (`Nexy_client_test` only).
 - `Docs/PRE_PACKAGING_VERIFICATION.md` — чек-лист проверки перед упаковкой
 - `Docs/PACKAGING_READINESS_CHECKLIST.md` — фиксация результатов проверки упаковки
-- `Docs/PREFLIGHT_CHECKS.md` — система предварительных проверок перед сборкой
-- `Docs/PREFLIGHT_IMPLEMENTATION_PLAN.md` — план реализации системы preflight проверок
 
 ### Quality Gates (скрипты)
 - `scripts/pre_build_gate.sh` — базовый pre-build gate
@@ -121,6 +120,6 @@
 
 ---
 
-**Последнее обновление:** 2026-01-13  
+**Последнее обновление:** 2026-02-15  
 **Ответственный:** Cursor Assistant  
 **Изменения:** Перемещены актуальные документы из `_Docs_ARCHIVED/` в `Docs/`

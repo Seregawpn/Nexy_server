@@ -94,7 +94,7 @@
   3. Coordinator триггерит перезапуск
   4. Новый процесс в `initialize()` читает ledger (`POST_RESTART_VERIFY`)
   5. После верификации — `COMPLETED`, `permissions.first_run_completed`
-- **связанные документы**: `Docs/ADRs/ADR_2025-01-XX_avfoundation_audio_migration.md`
+- **связанные документы**: `Docs/first_run_flow_spec.md`, `integration/integrations/permission_restart_integration.py`
 
 #### 9) process.lifecycle **[НОВАЯ ОСЬ - Phase 2]**
 - **владелец**: Tech Lead клиента
@@ -217,7 +217,7 @@
 | `respect_active_sessions: true` + `appMode != SLEEPING` | Откладывает перезапуск | `graceful` | Ждёт до 10 минут, затем принудительно |
 | `update_in_progress: true` | Откладывает перезапуск | `graceful` | Ждёт завершения установки (до 10 минут) |
 
-Эти правила реализованы в `modules/permission_restart/core/restart_scheduler.py` и должны быть отражены в `interaction_matrix.yaml` для полной обозримости поведения системы.
+Эти правила реализованы в `integration/integrations/permission_restart_integration.py` и `modules/permission_restart/macos/permissions_restart_handler.py` и должны быть отражены в `interaction_matrix.yaml` для полной обозримости поведения системы.
 
 ### Таблица читателей/писателей осей
 
@@ -261,12 +261,12 @@ decision=<start|abort|retry|degrade> ctx={mic=...,screen=...,device=...,network=
 | `permissions.accessibility` | Permissions module owner | `permissions` интеграции (первый запуск + мониторинг) | `input_processing`, `voice_recognition`, `permission_restart` | TCC (macOS) через `AXIsProcessTrusted()` | Tech Lead клиента |
 | `device.input` | InputProcessing module owner | `input_processing` | `voice_recognition`, `listening_workflow` | Локальный драйвер/статус (CGEvent) | Tech Lead клиента |
 | `network` | NetworkManager module owner | `network_manager` | `grpc_client`, `voice_recognition`, `processing_workflow` | Сетевые пробы (TCP/53, HTTP проверки) | Tech Lead клиента |
-| `firstRun` | Tech Lead клиента | `first_run_permissions_integration` (флаг `permissions_first_run_completed.flag`) | Все интеграции, влияющие на UX первого запуска | Локальное хранилище (`~/Library/Application Support/Nexy/permissions_first_run_completed.flag`) | Tech Lead клиента |
+| `firstRun` | Tech Lead клиента | `permissions` V2 orchestrator (ledger phase), `first_run_permissions_integration` (cache flag) | Все интеграции, влияющие на UX первого запуска | V2 ledger (`~/Library/Application Support/Nexy/permission_ledger.json`) | Tech Lead клиента |
 | `appMode` | ModeManagement module owner | `mode_management` (единственный источник изменения режима) | Все интеграции, `permission_restart` | `ApplicationStateManager` (централизованное состояние) | Tech Lead клиента |
 | `STATE_CATALOG.md` | Tech Lead клиента | Tech Lead клиента | Все разработчики | Этот документ | Tech Lead клиента |
 | `interaction_matrix.yaml` | Tech Lead клиента | Разработчики (после синхронизации с STATE_CATALOG.md) | Все разработчики, gateways | `config/interaction_matrix.yaml` | Tech Lead клиента |
 | **Gateway layer** | Tech Lead клиента | Разработчики (после синхронизации с interaction_matrix.yaml) | Все интеграции | `integration/core/gateways/` (decision_engine.py, rule_loader.py, predicates.py, base.py, common.py, permission_gateways.py) | Tech Lead клиента |
-| `permission_restart` | Tech Lead клиента | `permission_restart_integration` | Все интеграции, влияющие на перезапуск | `modules/permission_restart/core/restart_scheduler.py` | Tech Lead клиента |
+| `permission_restart` | Tech Lead клиента | `permission_restart_integration` | Все интеграции, влияющие на перезапуск | `integration/integrations/permission_restart_integration.py`, `modules/permission_restart/macos/permissions_restart_handler.py` | Tech Lead клиента |
 | `update_in_progress` | UpdaterIntegration owner | `updater_integration` | `permission_restart_integration`, `simple_module_coordinator` | `UpdaterIntegration.is_update_in_progress()` | Tech Lead клиента |
 | `session_id` | Tech Lead клиента | `input_processing_integration`, `voice_recognition_integration`, `speech_playback_integration` | Все интеграции через `state_manager.get_current_session_id()` | `ApplicationStateManager.current_session_id` | Tech Lead клиента |
 

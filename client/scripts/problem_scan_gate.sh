@@ -42,4 +42,9 @@ if [ "$BLOCKING_ISSUES" -gt 0 ]; then
   exit 1
 fi
 
+if ! ./.venv/bin/python scripts/verify_doc_links.py; then
+  echo "[ERROR] documentation link check failed"
+  exit 1
+fi
+
 echo "[INFO] problem scan gate passed (blocking: 0, total: $TOTAL_ISSUES)"

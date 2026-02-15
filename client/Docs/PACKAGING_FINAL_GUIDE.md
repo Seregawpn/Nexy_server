@@ -7,7 +7,7 @@
 
 **Связанные документы:**
 - `client/metrics/registry.md` — метрики и SLO пороги (включая power/battery метрики)
-- `Docs/TAL_TESTING_CHECKLIST.md` — детальная проверка TAL subsystem
+- Раздел 11 этого документа — детальная проверка TAL subsystem
 - `packaging/build_final.sh` — полная каноническая цепочка упаковки (см. `Docs/PACKAGING_FINAL_GUIDE.md`)
 - `scripts/validate_release_bundle.py` — проверка метаданных артефакта (см. `.cursorrules` раздел 11.7)
 - `.cursorrules` — правила разработки и Packaging Regression Checklist (раздел 11.2)
@@ -436,8 +436,8 @@ arch -x86_64 ./.venv/bin/python -m pip install pyobjc-framework-Contacts
 # 1. Установить пакеты для x86_64 в временную директорию
 arch -x86_64 python3 -m pip install --target /tmp/x86_64_site_packages -r requirements.txt
 
-# 2. Объединить .so файлы
-python3 scripts/merge_so_from_x86_64.py
+# 2. Универсализировать бинарники через staging-скрипт
+python3 scripts/stage_universal_binaries.py
 ```
 
 **Примечание:** Если x86_64 сборка PyInstaller упадет с `IncompatibleBinaryArchError`, выполните этот шаг.
@@ -716,7 +716,7 @@ arch -x86_64 open dist/Nexy.app
 
 **Автоматизированные тесты:**
 ```bash
-python3 scripts/smoke_test_universal_app.py dist/Nexy.app
+python3 scripts/run_release_suite.py
 ```
 
 **Проверка архитектур:**
@@ -752,7 +752,7 @@ pmset -g assertions | grep -i "com.nexy.assistant"
 - ✅ Idle CPU/RAM соответствуют лимитам (CPU < 5%, RAM < 200 MB)
 
 **Детальная проверка TAL subsystem:**
-См. `Docs/TAL_TESTING_CHECKLIST.md` и `scripts/check_tal_after_restart.py` для полной верификации TAL логики.
+Используйте чеклист из раздела 11 этого документа и анализ `log.md` на события `TAL=hold|refresh|released`.
 
 ---
 
@@ -790,8 +790,8 @@ grep first_run $(python3 -c "import tempfile; import os; print(os.path.join(temp
 
 **Автоматизированный просмотр:**
 ```bash
-# Использовать готовый скрипт для просмотра всех логов
-bash scripts/view_nexy_logs.sh
+# Последние строки основного лога
+tail -n 200 log.md
 ```
 
 ### 12.2. Crash лог
@@ -845,8 +845,8 @@ log show --last 10m --predicate 'process == "Nexy" OR process == "tccd"'
 # Установить пакеты для x86_64
 arch -x86_64 python3 -m pip install --target /tmp/x86_64_site_packages -r requirements.txt
 
-# Объединить .so файлы
-python3 scripts/merge_so_from_x86_64.py
+# Универсализировать бинарники через staging-скрипт
+python3 scripts/stage_universal_binaries.py
 ```
 
 ### 13.2. ~~Потеря печати нотаризации при копировании~~ (УСТАРЕЛО)
