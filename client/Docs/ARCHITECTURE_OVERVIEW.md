@@ -522,7 +522,8 @@ _macOS автоматически управляет активными ауди
 - `grpc_client_integration.py`
   - Назначение: агрегирует `text + screenshot + hardware_id`, отправляет StreamRequest, транслирует ответы в события.
   - Подписки: `voice.recognition_completed`, `screenshot.captured`, `hardware.id_*`, `keyboard.short_press` (cancel), `interrupt.request`, `network.status_changed`, `app.shutdown`.
-  - Публикует: `grpc.request_started|completed|failed`, `grpc.response.audio`.
+  - Публикует: `grpc.request_started|completed|failed`, `grpc.response.audio|text|action`.
+  - Совместимость: owner-путь действий — `ActionMessage`; временно поддерживается compatibility-извлечение action из `text_chunk` с маркером `source=text_chunk_legacy`.
 
 - `hardware_id_integration.py`
   - Назначение: получение и кэширование hardware_id; ответы по запросу.
@@ -583,7 +584,7 @@ _macOS автоматически управляет активными ауди
   - Публикует: `tray.status_updated`.
 
 - `tts_integration.py`
-  - Назначение: legacy-совместимость для события `speech.playback.request`.
+  - Назначение: compatibility ingress для события `speech.playback.request`.
   - Локальный `say` fallback **отключён**; в runtime событие логируется и игнорируется.
   - Канонический путь TTS: `grpc.tts_request` → `GrpcClientIntegration` → серверный TTS (`grpc.response.audio`).
 

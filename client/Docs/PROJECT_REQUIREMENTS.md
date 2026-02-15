@@ -95,7 +95,7 @@
 ### REQ-007: EventBus контракты для интеграций
 - **Домен**: Client Runtime / Integration
 - **Критичность**: MUST
-- **Описание**: Каждая интеграция должна иметь четкий контракт EventBus с документацией входных/выходных событий и payload схем. `grpc.tts_request` выполняется только через серверный TTS (локальный fallback отключен).
+- **Описание**: Каждая интеграция должна иметь четкий контракт EventBus с документацией входных/выходных событий и payload схем. `grpc.tts_request` выполняется только через серверный TTS (локальный fallback отключен). Для `grpc.response.action` owner-путь — `ActionMessage`; compatibility-путь через `text_chunk` допустим только как временный bridge с явной маркировкой `source=text_chunk_legacy`.
 - **Источник**: `.cursorrules` раздел 16, `Docs/ARCHITECTURE_OVERVIEW.md`
 - **Owner**: Tech Lead клиента
 - **Ожидаемый результат**: Все интеграции имеют документированные контракты EventBus

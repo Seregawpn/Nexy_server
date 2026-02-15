@@ -232,7 +232,7 @@ required:
 ```
 
 Event: `grpc.response.action` (MCP)  
-Publisher: `GrpcClientIntegration` (только ActionMessage; legacy text‑tunneling отключен)  
+Publisher: `GrpcClientIntegration` (primary: `ActionMessage`; compatibility: `text_chunk` с `source=text_chunk_legacy`)  
 Payload:
 ```yaml
 required:
@@ -795,3 +795,10 @@ Requirements:
 - Запрещено менять режим напрямую через `state_manager.set_mode()` вне `ModeManagementIntegration`.
 - Запрещено вводить новые события без добавления в этот документ и без синхронизации с `STATE_CATALOG.md`.
 - При добавлении новых полей в payload — документ должен быть обновлен синхронно.
+
+### 5.1 Активные compatibility-пути (runtime)
+
+- `app.state_changed` — активный bridge-сигнал режима для legacy подписчиков; owner-путь смены режима остаётся `mode.request -> app.mode_changed`.
+- `permissions.first_run_restart_pending` — compatibility-событие; при `integrations.permissions_v2.enabled=true` coordinator его не использует как owner restart-path.
+- `grpc.response.action` — primary через `ActionMessage`; временно активен compatibility-путь через `text_chunk` (`source=text_chunk_legacy`) при извлечении валидного action payload.
+- `speech.playback.request` — compatibility ingress; `tts_integration` принимает событие, но локальный `say` fallback отключен (runtime: лог + ignore).

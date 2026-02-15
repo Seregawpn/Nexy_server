@@ -30,7 +30,7 @@ app:
   debug: true
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.0.37
+  version: 1.6.1.38
 focus:
   force_activate_on_startup: false
   allow_tray_startup_fallback: true
@@ -154,7 +154,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: local
+    server: production
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 0.0
     max_retries: 3
@@ -572,7 +572,7 @@ stt:
   wake_word: nexy
 welcome_message:
   enabled: true
-  text: Hi! Nexy is here. How can I help you?
+  text: Hi! Nexy is here. How can I help you today?
   use_server: true
   server_timeout_sec: 20
   delay_sec: 0.3
