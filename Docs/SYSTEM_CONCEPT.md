@@ -22,7 +22,7 @@
 
 ## Границы и контракты
 
-- Граница между клиентом и сервером проходит по gRPC протоколу (`modules/grpc_service/streaming.proto`).
+- Граница между клиентом и сервером проходит по gRPC протоколу (`server/server/modules/grpc_service/streaming.proto`).
 - Клиент и сервер имеют свои отдельные каноны flow.
 - Изменения протокола фиксируются в `server/server/Docs/GRPC_PROTOCOL_AUDIT.md`.
 

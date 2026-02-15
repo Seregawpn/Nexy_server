@@ -342,6 +342,50 @@
 
 ---
 
+## 9. Architecture Governance (Client-only)
+
+### REQ-029: One event, one owner (critical events)
+- **Домен**: Architecture Governance / Event Ownership
+- **Критичность**: MUST
+- **Описание**: Критичные события имеют одного publisher-owner. Для `app.mode_changed` owner — `ApplicationStateManager`; для terminal processing intent owner — `ProcessingWorkflow` (`processing.terminal`).
+- **Источник**: `Docs/ARCHITECTURE_OVERVIEW.md`, `AGENTS.md`
+- **Owner**: Tech Lead клиента
+- **Ожидаемый результат**: Нет повторной публикации одного и того же critical intent из разных компонентов.
+- **Implementation**: `integration/core/state_manager.py`, `integration/workflows/processing_workflow.py`, `integration/integrations/mode_management_integration.py`, `scripts/verify_architecture_guards.py`
+- **Verification**: `scripts/verify_architecture_guards.py`, `tests/test_mode_management_mode_request_dedup.py`
+
+### REQ-030: Архитектурные guard-гейты в CI и local pre-build
+- **Домен**: Architecture Governance / CI
+- **Критичность**: MUST
+- **Описание**: В client CI и local pre-build обязателен запуск архитектурных guard-гейтов, блокирующих новые нарушения owner-policy, `sys.path` и legacy/flag инвариантов.
+- **Источник**: `AGENTS.md`, `.github/workflows/ci.yml`
+- **Owner**: Tech Lead клиента
+- **Ожидаемый результат**: CI/локальный gate блокирует PR с новыми архитектурными нарушениями.
+- **Implementation**: `.github/workflows/ci.yml`, `scripts/pre_build_gate.sh`, `scripts/verify_architecture_guards.py`, `scripts/architecture_guard_baseline.json`
+- **Verification**: CI logs, локальный запуск `python scripts/verify_architecture_guards.py`
+
+### REQ-031: Legacy/fallback runtime path требует expiry
+- **Домен**: Architecture Governance / Runtime Safety
+- **Критичность**: MUST
+- **Описание**: Любая runtime legacy/fallback ветка обязана иметь явный срок удаления (`LEGACY_EXPIRY: <version/date>`). Новые ветки без expiry запрещены.
+- **Источник**: `AGENTS.md`, `Docs/ARCHITECTURE_OVERVIEW.md`
+- **Owner**: Tech Lead клиента
+- **Ожидаемый результат**: Нет новых runtime legacy/fallback путей без плана удаления.
+- **Implementation**: `integration/**`, `scripts/verify_architecture_guards.py`
+- **Verification**: `scripts/verify_architecture_guards.py`
+
+### REQ-032: Feature flags без runtime usage запрещены
+- **Домен**: Architecture Governance / Feature Flags
+- **Критичность**: MUST
+- **Описание**: Конфигурационный feature flag должен иметь runtime usage и запись в `Docs/FEATURE_FLAGS.md`. Новые dead flags запрещены.
+- **Источник**: `Docs/FEATURE_FLAGS.md`, `AGENTS.md`
+- **Owner**: Tech Lead клиента
+- **Ожидаемый результат**: Новые flags без runtime effect не проходят gate.
+- **Implementation**: `config/unified_config.yaml`, `config/unified_config_loader.py`, `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py`
+- **Verification**: `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py`
+
+---
+
 ## Implementation Map
 
 Таблица соответствия требований реализации и тестам:
@@ -376,6 +420,10 @@
 | REQ-026 | `main.py`, все модули | Проверка формата логов | Tech Lead клиента |
 | REQ-027 | `client/metrics/registry.md` | `tests/perf/test_slo.py` | Tech Lead клиента |
 | REQ-028 | `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md` | Ревью документа и ссылок | Release/Delivery |
+| REQ-029 | `integration/core/state_manager.py`, `integration/workflows/processing_workflow.py`, `integration/integrations/mode_management_integration.py`, `scripts/verify_architecture_guards.py` | `scripts/verify_architecture_guards.py`, `tests/test_mode_management_mode_request_dedup.py` | Tech Lead клиента |
+| REQ-030 | `.github/workflows/ci.yml`, `scripts/pre_build_gate.sh`, `scripts/verify_architecture_guards.py`, `scripts/architecture_guard_baseline.json` | CI logs, локальный запуск `python scripts/verify_architecture_guards.py` | Tech Lead клиента |
+| REQ-031 | `integration/**`, `scripts/verify_architecture_guards.py` | `scripts/verify_architecture_guards.py` | Tech Lead клиента |
+| REQ-032 | `config/unified_config.yaml`, `config/unified_config_loader.py`, `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py` | `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py` | Tech Lead клиента |
 
 ---
 
@@ -410,5 +458,5 @@
 
 ---
 
-**Последнее обновление**: 2026-01-14  
-**Следующая ревизия**: 2026-01-21
+**Последнее обновление**: 2026-02-15  
+**Следующая ревизия**: 2026-02-22

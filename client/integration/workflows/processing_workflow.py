@@ -11,7 +11,7 @@ from typing import Any
 
 from integration.core.event_bus import EventPriority
 
-from .base_workflow import AppMode, BaseWorkflow, WorkflowState  # type: ignore
+from .base_workflow import BaseWorkflow, WorkflowState  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +69,7 @@ class ProcessingWorkflow(BaseWorkflow):
         self._terminal_outcome_reason: str | None = None
         self._pending_screenshot_by_session: dict[str, dict[str, Any]] = {}
 
-        # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager
-        # EventBus уже обеспечивает последовательную обработку событий, блокировки не нужны
+        # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager.
 
     async def _setup_subscriptions(self):
         """Подписка на события цепочки PROCESSING"""
@@ -150,8 +149,7 @@ class ProcessingWorkflow(BaseWorkflow):
 
     async def _on_mode_changed(self, event):
         """Обработка смены режима"""
-        # КРИТИЧНО: Все изменения идут через единый источник истины (ApplicationStateManager)
-        # EventBus уже обеспечивает последовательную обработку событий, блокировки не нужны
+        # КРИТИЧНО: Все изменения идут через единый источник истины (ApplicationStateManager).
         try:
             data = event.get("data", {})
             new_mode = data.get("mode")
@@ -760,12 +758,11 @@ class ProcessingWorkflow(BaseWorkflow):
                     },
                 )
 
-            logger.info(f"⚙️ ProcessingWorkflow: возврат в SLEEPING, reason={reason}")
-
-            await self._publish_mode_request(
-                AppMode.SLEEPING,  # type: ignore[arg-type]
-                f"processing_{reason}",
-                priority=90,  # Очень высокий приоритет для завершения
+            logger.info(
+                "⚙️ ProcessingWorkflow: terminal outcome emitted, "
+                "mode.request SLEEPING делегирован ModeManagementIntegration "
+                "(reason=%s)",
+                reason,
             )
 
             await self._cleanup_processing()

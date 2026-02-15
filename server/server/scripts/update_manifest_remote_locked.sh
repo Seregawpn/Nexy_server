@@ -69,7 +69,7 @@ az vm run-command invoke \
   --name "$VM_NAME" \
   --command-id RunShellScript \
   --scripts "
-set -euo pipefail
+set -eu
 MANIFEST_DIR=\"$MANIFEST_DIR\"
 MANIFEST_FILE=\"$MANIFEST_FILE\"
 mkdir -p \"\$MANIFEST_DIR\"

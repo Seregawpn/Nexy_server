@@ -79,7 +79,7 @@ class DatabaseAdapter(UniversalModuleInterface):
         
         Args:
             request: Запрос на работу с БД
-                - action: str - действие (query, insert, update, delete)
+                - action: str - действие (query, insert, update)
                 - query: str (опционально) - SQL запрос
                 - data: dict (опционально) - данные
         
@@ -163,4 +163,3 @@ class DatabaseAdapter(UniversalModuleInterface):
             Экземпляр DatabaseManager или None
         """
         return self._manager
-

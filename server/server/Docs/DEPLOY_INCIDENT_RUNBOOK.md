@@ -18,6 +18,18 @@
 
 ---
 
+## 0.1 Incident Guardrails (Mandatory)
+
+- `az vm run-command invoke` выполнять последовательно (без параллельных запусков).
+- Для `RunShellScript` использовать POSIX-режим (`set -eu`), либо явно `bash -lc`.
+- Любой restart сервиса разрешён только после preflight:
+  - `/home/azureuser/voice-assistant/config.env` существует;
+  - `GEMINI_API_KEY` присутствует и не placeholder;
+  - `config.env` доступен для чтения пользователем `azureuser`;
+  - `ExecStart` указывает на `server/main.py`.
+
+---
+
 ## 1) Azure Auth / Access
 
 ### Symptom
@@ -132,6 +144,11 @@ az vm run-command invoke \
 ### Verify
 - `systemctl is-active voice-assistant` -> `active`.
 
+### Fast Branching
+- Если `PermissionError` по `config.env` -> перейти в раздел 6.1.
+- Если `can't open file ...` -> перейти в раздел 6.2.
+- Если `TextProcessor` initialization failed -> перейти в раздел 6.3.
+
 ---
 
 ## 6) Gemini API Key Expired
@@ -149,12 +166,88 @@ az vm run-command invoke \
 ```
 
 ### Fix
-- Update `GEMINI_API_KEY` in `/home/azureuser/voice-assistant/server/config.env`.
+- Update `GEMINI_API_KEY` in `/home/azureuser/voice-assistant/config.env`.
 - `systemctl restart voice-assistant`.
+
+Mandatory preflight:
+```bash
+grep -q '^GEMINI_API_KEY=' /home/azureuser/voice-assistant/config.env
+```
 
 ### Verify
 - No API key errors in new logs.
 - Health endpoints are stable.
+
+### 6.1 Config Permission Denied
+
+#### Symptom
+- `PermissionError: [Errno 13] Permission denied: '/home/azureuser/voice-assistant/config.env'`
+
+#### Fix
+```bash
+sudo chown root:azureuser /home/azureuser/voice-assistant/config.env
+sudo chmod 640 /home/azureuser/voice-assistant/config.env
+sudo systemctl restart voice-assistant
+```
+
+#### Verify
+```bash
+systemctl is-active voice-assistant
+curl -fsS http://127.0.0.1:8080/health
+```
+
+### 6.2 ExecStart Path Drift
+
+#### Symptom
+- `can't open file '/home/azureuser/voice-assistant/server/server/main.py'`
+- `can't open file '/home/azureuser/voice-assistant/main.py'`
+
+#### Check
+```bash
+systemctl cat voice-assistant | grep '^ExecStart='
+```
+
+#### Fix
+```bash
+sudo sed -i 's|^ExecStart=.*|ExecStart=/home/azureuser/voice-assistant/venv/bin/python3 server/main.py|' /etc/systemd/system/voice-assistant.service
+sudo systemctl daemon-reload
+sudo systemctl restart voice-assistant
+```
+
+#### Verify
+```bash
+systemctl is-active voice-assistant
+curl -fsS http://127.0.0.1:8080/health
+```
+
+### 6.3 TextProcessor Init Failure (LLM Startup)
+
+#### Symptom
+- `Не удалось инициализировать TextProcessor`
+- gRPC service initialization failed right after startup.
+
+#### Check
+```bash
+journalctl -u voice-assistant -n 200 --no-pager | grep -E 'TextProcessor|LangChain|google.genai|API_KEY_INVALID|expired|invalid' || true
+```
+
+#### Fix
+1. Обновить `GEMINI_API_KEY` в `/home/azureuser/voice-assistant/config.env`.
+2. Проверить минимальный Gemini smoke (до restart).
+3. Перезапустить сервис.
+
+#### Verify
+- Нет ошибок `google.genai` в новых логах.
+- `8080/8081` health стабильно отвечают.
+
+### 6.4 Run Command Conflict
+
+#### Symptom
+- `Run command extension execution is in progress`
+
+#### Fix
+- Дождаться завершения активной команды.
+- Повторить команду после освобождения run-command канала.
 
 ---
 
@@ -230,3 +323,4 @@ python3 scripts/publish_assets_and_sync.py
 2. Minimal architecture-compatible fix applied.
 3. Post-fix verify completed (`health`, `status`, `updates/health`).
 4. Rulebook updated if new edge-case found.
+5. Added/updated prevention gate to avoid recurrence.

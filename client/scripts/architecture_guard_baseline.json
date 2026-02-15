@@ -1,0 +1,51 @@
+{
+  "dead_feature_flag": [
+    "actions",
+    "browser_use",
+    "critical_subscriptions_fix",
+    "ks_first_run_normalization",
+    "ks_serial_tcc",
+    "ks_template_feature",
+    "serial_tcc_prompts",
+    "template_feature",
+    "use_events_for_restart_pending",
+    "use_events_for_update_status"
+  ],
+  "legacy_runtime_without_expiry": [
+    "integration/core/gateways/common.py:129",
+    "integration/core/gateways/common.py:160",
+    "integration/core/gateways/common.py:196",
+    "integration/core/gateways/common.py:237",
+    "integration/core/gateways/common.py:87",
+    "integration/core/gateways/permission_gateways.py:217",
+    "integration/core/gateways/permission_gateways.py:267",
+    "integration/core/gateways/permission_gateways.py:297",
+    "integration/integrations/grpc_client_integration.py:1030",
+    "integration/integrations/grpc_client_integration.py:1034"
+  ],
+  "sys_path_insert_outside_entrypoint": [
+    "integration/core/gateways/rule_loader.py:17",
+    "modules/grpc_client/core/grpc_client.py:696",
+    "modules/mcp_action/tests/test_close_safari.py:17",
+    "modules/mcp_action/tests/test_executor_integration.py:18",
+    "scripts/_legacy/manual_diagnostics/debug_whatsapp_session.py:16",
+    "scripts/_legacy/manual_diagnostics/manual_open_portal.py:7",
+    "scripts/_legacy/manual_diagnostics/manual_verify_whatsapp.py:20",
+    "scripts/_legacy/manual_diagnostics/v2_verify_whatsapp_gateway.py:15",
+    "scripts/_legacy/run_diagnostics.py:15",
+    "scripts/_legacy/run_diagnostics.py:21",
+    "scripts/_legacy/run_diagnostics.py:22",
+    "scripts/_legacy/run_diagnostics.py:23",
+    "scripts/_legacy/test_first_run_centralization.py:18",
+    "scripts/_legacy/verify_path_resolution.py:6",
+    "scripts/_legacy/verify_path_resolution.py:7",
+    "scripts/clear_first_run_flags.py:14",
+    "scripts/clear_first_run_flags.py:15",
+    "scripts/force_login_whatsapp.py:16",
+    "scripts/run_release_suite.py:363",
+    "scripts/run_release_suite.py:414",
+    "scripts/verify_imports.py:39",
+    "scripts/verify_imports.py:41",
+    "scripts/verify_imports.py:43"
+  ]
+}

@@ -155,13 +155,25 @@ class TestGrpcServiceManagerWithCoordinator:
                     mock_init.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_grpc_manager_legacy_path_when_kill_switch_active(self, grpc_manager):
-        """Тест, что GrpcServiceManager использует legacy путь при активном kill-switch"""
+    async def test_grpc_manager_keeps_coordinator_when_kill_switch_active(self, grpc_manager):
+        """Тест, что GrpcServiceManager остается на coordinator-path без emergency override"""
         with patch.object(grpc_manager.unified_config, 'is_feature_enabled', return_value=True):
             with patch.object(grpc_manager.unified_config, 'is_kill_switch_active', return_value=True):
-                with patch.object(grpc_manager, '_initialize_legacy', new_callable=AsyncMock) as mock_legacy:
+                with patch.object(grpc_manager, '_initialize_with_coordinator', new_callable=AsyncMock) as mock_coord:
+                    with patch.object(grpc_manager, '_initialize_legacy', new_callable=AsyncMock) as mock_legacy:
+                        await grpc_manager.initialize({})
+                        mock_coord.assert_called_once()
+                        mock_legacy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_grpc_manager_legacy_path_when_emergency_flag_active(self, grpc_manager):
+        """Тест, что legacy-path включается только через emergency env-флаг"""
+        with patch.dict('os.environ', {'NEXY_FORCE_LEGACY_GRPC_INIT': 'true'}):
+            with patch.object(grpc_manager, '_initialize_legacy', new_callable=AsyncMock) as mock_legacy:
+                with patch.object(grpc_manager, '_initialize_with_coordinator', new_callable=AsyncMock) as mock_coord:
                     await grpc_manager.initialize({})
                     mock_legacy.assert_called_once()
+                    mock_coord.assert_not_called()
     
     @pytest.mark.asyncio
     async def test_grpc_manager_status(self, grpc_manager):

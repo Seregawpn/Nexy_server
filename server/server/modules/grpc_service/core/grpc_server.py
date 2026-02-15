@@ -11,6 +11,7 @@ import grpc.aio
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import time
+import sys
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional, AsyncGenerator
@@ -18,31 +19,22 @@ from typing import Dict, Any, Optional, AsyncGenerator
 from config.unified_config import get_config
 
 # Protobuf файлы генерируются автоматически из streaming.proto
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-import streaming_pb2  # type: ignore
-import streaming_pb2_grpc  # type: ignore
+from .. import streaming_pb2  # type: ignore
+# grpcio-tools генерирует абсолютный импорт `import streaming_pb2` в *_pb2_grpc.py.
+# Регистрируем модуль под ожидаемым именем без sys.path-хака.
+sys.modules.setdefault("streaming_pb2", streaming_pb2)
+from .. import streaming_pb2_grpc  # type: ignore
 
 # Импорт новых модулей
 from .grpc_service_manager import GrpcServiceManager
 
-# Импорты мониторинга (относительные пути)
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 from monitoring import record_request, set_active_connections, get_metrics, get_status
 
 # Структурированное логирование (PR-4)
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 from utils.logging_formatter import (
     log_rpc_error,
     log_decision,
     log_degradation
-)
-from utils.metrics_collector import (
-    record_metric,
-    record_decision_metric
 )
 
 # gRPC Interceptor (PR-7)
@@ -572,7 +564,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             response_time = time.time() - start_time
             is_error = True if metrics_is_error is None else metrics_is_error
             record_request(response_time, is_error=is_error)
-            record_metric("StreamAudio", response_time * 1000, is_error=is_error)
     
     async def InterruptSession(self, request: streaming_pb2.InterruptRequest, context) -> streaming_pb2.InterruptResponse:  # type: ignore
         """Обработка InterruptRequest через Interrupt Manager"""
@@ -636,8 +627,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                         "interrupted_sessions": interrupt_result.get('cleaned_sessions', [])
                     }
                 )
-                record_decision_metric("InterruptSession", "complete")
-                record_metric("InterruptSession", dur_ms, is_error=False)
                 
                 return streaming_pb2.InterruptResponse(  # type: ignore
                     success=True,
@@ -660,8 +649,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                     method="InterruptSession",
                     ctx={"hardware_id": hardware_id, "reason": interrupt_result.get('message')}
                 )
-                record_decision_metric("InterruptSession", "fail")
-                record_metric("InterruptSession", dur_ms, is_error=True)
                 
                 return streaming_pb2.InterruptResponse(  # type: ignore
                     success=False,
@@ -687,9 +674,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 'decision': 'error',
                 'ctx': {'error': str(e)}
             })
-            
-            record_decision_metric("InterruptSession", "error")
-            record_metric("InterruptSession", dur_ms, is_error=True)
             
             return streaming_pb2.InterruptResponse(  # type: ignore
                 success=False,
@@ -808,8 +792,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 dur_ms=dur_ms,
                 ctx={"session_id": session_id, "chunks_sent": chunk_count}
             )
-            record_decision_metric("GenerateWelcomeAudio", "complete")
-            record_metric("GenerateWelcomeAudio", dur_ms, is_error=False)
             
             yield streaming_pb2.WelcomeResponse(end_message="Welcome audio generation completed")  # type: ignore
         
@@ -821,8 +803,6 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 'decision': 'error',
                 'ctx': {'error': str(e)}
             })
-            record_decision_metric("GenerateWelcomeAudio", "error")
-            record_metric("GenerateWelcomeAudio", dur_ms, is_error=True)
             
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"Ошибка генерации приветственного аудио: {str(e)}")

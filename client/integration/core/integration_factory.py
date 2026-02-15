@@ -359,12 +359,16 @@ class IntegrationFactory:
         )
 
         voiceover_config = config_data.get("accessibility", {}).get("voiceover_control", {})
-        integrations["voiceover_ducking"] = VoiceOverDuckingIntegration(
-            event_bus=self.event_bus,
-            state_manager=self.state_manager,
-            error_handler=self.error_handler,
-            config=voiceover_config,
-        )
+        if bool(voiceover_config.get("enabled", True)):
+            integrations["voiceover_ducking"] = VoiceOverDuckingIntegration(
+                event_bus=self.event_bus,
+                state_manager=self.state_manager,
+                error_handler=self.error_handler,
+                config=voiceover_config,
+            )
+            logger.info("✅ VoiceOverDuckingIntegration registered (enabled=True)")
+        else:
+            logger.info("⚠️ VoiceOverDuckingIntegration disabled via accessibility.voiceover_control.enabled=false")
 
         # Payment system - config-driven feature (typically disabled in packaged builds)
         if self.config.is_feature_enabled("payment", default=False):

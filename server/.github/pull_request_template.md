@@ -3,6 +3,13 @@
 - What changed:
 - Why:
 
+## Single Owner Check (Required)
+
+- Owner (SoT):
+- Duplicate Removed:
+- No Second Path Rationale:
+- Legacy Removal Date:
+
 ## Server Quality Checklist
 
 - [ ] `bash server/scripts/full_quality_scan.sh` passed locally

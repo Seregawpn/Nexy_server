@@ -1,48 +1,103 @@
 {
-  "timestamp": "2025-12-29T14:08:28.679606",
+  "status": "ok",
+  "log_file": "/Users/sergiyzasorin/Fix_new/downloads/Nexy_v1.6.1.27/client/log.md",
   "metrics": {
-    "idle_cpu_pct": {
-      "count": 6,
-      "min": 1.89,
-      "max": 2.34,
-      "avg": 2.0799999999999996,
-      "p50": 2.01,
-      "p95": 2.34,
-      "p99": 2.34
+    "pid": {
+      "count": 230.0,
+      "min": 391.0,
+      "max": 98347.0,
+      "avg": 71050.51304347826
     },
-    "idle_ram_mb": {
-      "count": 6,
-      "min": 156.78,
-      "max": 158.12,
-      "avg": 157.45000000000002,
-      "p50": 157.45,
-      "p95": 158.12,
-      "p99": 158.12
+    "auid": {
+      "count": 216.0,
+      "min": 0.0,
+      "max": 501.0,
+      "avg": 382.5138888888889
     },
-    "tal_hold_duration_ms": {
-      "count": 2,
-      "min": 1234.56,
-      "max": 1234.56,
-      "avg": 1234.56,
-      "p50": 1234.56,
-      "p95": 1234.56,
-      "p99": 1234.56
+    "euid": {
+      "count": 216.0,
+      "min": 0.0,
+      "max": 501.0,
+      "avg": 382.5138888888889
     },
-    "tal_refresh_interval_ms": {
-      "count": 2,
-      "min": 30000.0,
-      "max": 30000.0,
-      "avg": 30000.0,
-      "p50": 30000.0,
-      "p95": 30000.0,
-      "p99": 30000.0
+    "foreground": {
+      "count": 3.0,
+      "min": 0.0,
+      "max": 0.0,
+      "avg": 0.0
+    },
+    "seed": {
+      "count": 2.0,
+      "min": 0.0,
+      "max": 0.0,
+      "avg": 0.0
+    },
+    "ipver": {
+      "count": 12.0,
+      "min": 4.0,
+      "max": 4.0,
+      "avg": 4.0
+    },
+    "token": {
+      "count": 12.0,
+      "min": 38.0,
+      "max": 41.0,
+      "avg": 39.333333333333336
+    },
+    "period": {
+      "count": 10.0,
+      "min": 10.0,
+      "max": 10.0,
+      "avg": 10.0
+    },
+    "rate": {
+      "count": 10.0,
+      "min": 24000.0,
+      "max": 24000.0,
+      "avg": 24000.0
+    },
+    "score": {
+      "count": 12.0,
+      "min": 200.0,
+      "max": 501.0,
+      "avg": 225.5
+    },
+    "length": {
+      "count": 6.0,
+      "min": 32.0,
+      "max": 160.0,
+      "avg": 96.0
+    },
+    "issue_detected_sample_time": {
+      "count": 6.0,
+      "min": 0.0,
+      "max": 81600.0,
+      "avg": 20960.0
+    },
+    "result": {
+      "count": 1.0,
+      "min": 0.0,
+      "max": 0.0,
+      "avg": 0.0
     }
   },
-  "slo_violations": [],
-  "summary": {
-    "total_metrics": 4,
-    "metrics_with_data": 4,
-    "slo_violations_count": 0,
-    "slo_compliance": true
-  }
+  "slo_limits": {
+    "decision_latency_ms": 10.0,
+    "tcc_prompt_duration_ms": 5.0,
+    "permission_restart_latency_ms": 15.0,
+    "start_listening_latency_ms": 600.0,
+    "grpc_request_latency_ms": 1000.0,
+    "mode_transition_latency_ms": 100.0,
+    "device_discovery_latency_ms{source}": 2000.0,
+    "input_switch_duration_ms{transport}": 1200.0,
+    "output_recreate_duration_ms": 600.0,
+    "mapping_confidence_distribution": 5.0,
+    "reconcile_duration_ms": 50.0,
+    "reconcile_pending_count": 1.0,
+    "idle_cpu_pct": 5.0,
+    "idle_ram_mb": 200.0,
+    "tal_hold_duration_ms": 120.0,
+    "tal_refresh_interval_ms": 35.0
+  },
+  "violations": []
 }

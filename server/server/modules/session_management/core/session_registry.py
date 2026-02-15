@@ -46,6 +46,8 @@ class SessionRegistry:
         self._lock = threading.RLock()
         self._active_sessions: Dict[str, SessionData] = {}
         self._interrupted_sessions: Set[str] = set()
+        self._inflight_sessions: Set[str] = set()
+        self._inflight_hardware_sessions: Dict[str, Set[str]] = {}
         self.initialized = True
         
         logger.info("SessionRegistry initialized")
@@ -109,9 +111,70 @@ class SessionRegistry:
         with self._lock:
             return list(self._active_sessions.values())
 
+    def try_acquire_inflight(
+        self,
+        session_id: str,
+        hardware_id: str,
+        prevent_concurrent_hardware: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Атомарная регистрация in-flight запроса.
+        Возвращает решение и контекст для диагностики/ошибки.
+        """
+        with self._lock:
+            if session_id in self._inflight_sessions:
+                return {
+                    "ok": False,
+                    "reason": "concurrent_request",
+                    "active_sessions": [session_id]
+                }
+
+            active_sessions = list(self._inflight_hardware_sessions.get(hardware_id, set()))
+            if prevent_concurrent_hardware and active_sessions:
+                return {
+                    "ok": False,
+                    "reason": "concurrent_hardware_id",
+                    "active_sessions": active_sessions
+                }
+
+            self._inflight_sessions.add(session_id)
+            if hardware_id not in self._inflight_hardware_sessions:
+                self._inflight_hardware_sessions[hardware_id] = set()
+            self._inflight_hardware_sessions[hardware_id].add(session_id)
+
+            return {"ok": True, "active_sessions": active_sessions}
+
+    def release_inflight(self, session_id: str, hardware_id: Optional[str]) -> bool:
+        """
+        Освобождает in-flight регистрацию.
+        Возвращает True, если session_id присутствовал.
+        """
+        with self._lock:
+            was_present = session_id in self._inflight_sessions
+            self._inflight_sessions.discard(session_id)
+
+            if hardware_id and hardware_id in self._inflight_hardware_sessions:
+                self._inflight_hardware_sessions[hardware_id].discard(session_id)
+                if not self._inflight_hardware_sessions[hardware_id]:
+                    del self._inflight_hardware_sessions[hardware_id]
+
+            return was_present
+
+    def get_inflight_sessions_by_hardware_id(self, hardware_id: str) -> List[str]:
+        """Возвращает копию in-flight session_id для hardware_id."""
+        with self._lock:
+            return list(self._inflight_hardware_sessions.get(hardware_id, set()))
+
+    def get_inflight_session_ids(self) -> List[str]:
+        """Возвращает копию всех in-flight session_id."""
+        with self._lock:
+            return list(self._inflight_sessions)
+
     def clear(self):
         """Очистка всех сессий"""
         with self._lock:
             self._active_sessions.clear()
             self._interrupted_sessions.clear()
+            self._inflight_sessions.clear()
+            self._inflight_hardware_sessions.clear()
             logger.info("SessionRegistry cleared")

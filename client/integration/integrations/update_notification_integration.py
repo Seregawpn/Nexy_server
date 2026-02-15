@@ -106,6 +106,9 @@ class UpdateNotificationIntegration(BaseIntegration):
             "updater.update_completed", self._on_update_completed, EventPriority.MEDIUM
         )
         await self._subscribe("updater.update_failed", self._on_update_failed, EventPriority.MEDIUM)
+        await self._subscribe(
+            "updater.update_skipped", self._on_update_skipped, EventPriority.MEDIUM
+        )
 
         logger.info("[UPDATE_NOTIFY] Подписки на события обновления зарегистрированы")
         return True
@@ -225,6 +228,24 @@ class UpdateNotificationIntegration(BaseIntegration):
             await self._speak(self._error_phrase_for_reason(reason_code))
 
         self._suppress_announcements = False
+
+    async def _on_update_skipped(self, event: dict[str, Any]) -> None:
+        """
+        Skip не является пользовательским событием обновления.
+        Ничего не озвучиваем и не сигналим, только синхронизируем состояние.
+        """
+        async with self._lock:
+            self._reset_progress()
+            self._update_in_progress = False
+            self._update_completed = False
+            self._suppress_announcements = False
+
+        data = event.get("data") or {}
+        logger.info(
+            "[UPDATE_NOTIFY] Update skipped (trigger=%s, reason=%s) — announcements disabled",
+            data.get("trigger"),
+            data.get("reason") or data.get("reason_code"),
+        )
 
     def _should_announce(self, percent: int, stage: str) -> bool:
         # Озвучиваем только при достижении 50% (точное совпадение с progress_step_percent)

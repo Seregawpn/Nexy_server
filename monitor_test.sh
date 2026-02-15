@@ -1,18 +1,25 @@
 #!/bin/bash
-# Мониторинг теста клиент-сервер
+# Root-level monitor helper (legacy-safe).
+# Не зависит от удалённых legacy-тестов.
 
-echo "Проверка статуса теста..."
+set -euo pipefail
+
+echo "Root monitor check"
 echo ""
 
-# Проверяем, запущен ли процесс
-if pgrep -f "test_client_server_full.py" > /dev/null; then
-    echo "✅ Тест запущен и работает"
-    echo ""
-    echo "Информация о процессе:"
-    ps aux | grep test_client_server_full | grep -v grep
-    echo ""
-    echo "Проверка доступности сервера:"
-    python3 test_server_quick.py
-else
-    echo "❌ Тест не запущен"
-fi
+echo "1) Проверка root-файлов:"
+for f in main.py verify_imports.py requirements.txt AGENTS.md; do
+  if [[ -f "$f" ]]; then
+    echo "   OK: $f"
+  else
+    echo "   MISSING: $f"
+  fi
+done
+
+echo ""
+echo "2) Быстрая проверка синтаксиса root Python:"
+python3 -m py_compile main.py verify_imports.py && echo "   OK: py_compile passed"
+
+echo ""
+echo "3) Legacy client/server test runners в root больше не используются."
+echo "   Канонические проверки запускаются из профильных каталогов (client/server)."

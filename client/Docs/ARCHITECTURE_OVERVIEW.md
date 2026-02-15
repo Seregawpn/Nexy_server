@@ -397,6 +397,28 @@ await event_bus.subscribe(EventTypes.APP_MODE_CHANGED, handler)  # ✅
 - [ ] Импорт `AppMode` — только из `modules/mode_management`
 - [ ] Подписки/публикации соответствуют контракту событий
 - [ ] Новые переходы зарегистрированы в ModeManagementIntegration
+- [ ] Для критичных событий соблюдено правило `one event -> one publisher-owner`
+- [ ] Для `app.mode_changed` publisher-owner только `ApplicationStateManager`
+- [ ] Для terminal processing intent publisher-owner только `ProcessingWorkflow` (`processing.terminal`)
+- [ ] Runtime legacy/fallback path имеет явный `LEGACY_EXPIRY: <version/date>`
+- [ ] Не добавлены новые `sys.path.insert(...)` вне `main.py`
+- [ ] Новый feature flag имеет runtime usage и запись в `Docs/FEATURE_FLAGS.md`
+
+### 10.1) Архитектурные гейты (client-only)
+
+- Machine-enforced check: `scripts/verify_architecture_guards.py`
+- Покрытие гейтов:
+  - `sys.path.insert` outside entrypoint
+  - critical event owner policy
+  - legacy runtime markers without expiry
+  - dead feature flags (declared in config, unused in runtime)
+- CI owner-gate:
+  - `.github/workflows/ci.yml` (step `Architecture guards (client-only)`)
+- Local owner-gate:
+  - `scripts/pre_build_gate.sh`
+- Debt control:
+  - baseline stored in `scripts/architecture_guard_baseline.json`
+  - policy blocks only **new** violations (no debt growth).
 
 ---
 

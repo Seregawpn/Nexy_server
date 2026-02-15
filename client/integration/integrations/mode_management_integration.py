@@ -215,6 +215,9 @@ class ModeManagementIntegration:
             await self.event_bus.subscribe(
                 "grpc.response.action", self._on_action_intent, EventPriority.MEDIUM
             )
+            await self.event_bus.subscribe(
+                "processing.terminal", self._on_processing_terminal, EventPriority.HIGH
+            )
 
             # УБРАНО: interrupt.request - обрабатывается централизованно в InterruptManagementIntegration
 
@@ -243,8 +246,7 @@ class ModeManagementIntegration:
 
     # ---------------- Event handlers ----------------
     async def _on_mode_request(self, event):
-        # КРИТИЧНО: Все изменения идут через единый источник истины (ApplicationStateManager)
-        # EventBus уже обеспечивает последовательную обработку событий, блокировки не нужны
+        # КРИТИЧНО: Все изменения идут через единый источник истины (ApplicationStateManager).
         try:
             data = (event or {}).get("data", {})
             target = data.get("target")  # может быть AppMode или str
@@ -430,13 +432,16 @@ class ModeManagementIntegration:
 
             # Guard: не уходим в SLEEPING по "штатному завершению", пока у сессии
             # есть активное воспроизведение/браузер/действия.
-            if target == AppMode.SLEEPING and source in {
-                "ProcessingWorkflow.processing_completed",
-                "playback",
-                "playback.finished",
-                "browser.finished",
-                "actions.finished",
-            }:
+            if target == AppMode.SLEEPING and (
+                source.startswith("ProcessingWorkflow.processing_")
+                or source
+                in {
+                    "playback",
+                    "playback.finished",
+                    "browser.finished",
+                    "actions.finished",
+                }
+            ):
                 guard_session_id = (
                     normalized_session_id or self._get_current_processing_session_id()
                 )
@@ -480,6 +485,36 @@ class ModeManagementIntegration:
 
         except Exception as e:
             logger.error(f"Mode request handling error: {e}")
+
+    async def _on_processing_terminal(self, event):
+        """Bridge workflow terminal outcome into centralized mode.request path."""
+        try:
+            data = (event or {}).get("data", {}) or {}
+            session_id = self._normalize_session_id(data.get("session_id"))
+            reason_raw = data.get("reason")
+            reason = str(reason_raw) if reason_raw else "completed"
+
+            # PROCESSING без session_id здесь уже нет owner-контекста для safe finalize.
+            # В этом случае полагаемся на existing playback/browser/actions bridges.
+            if session_id is None:
+                logger.debug(
+                    "MODE_REQUEST skipped (processing.terminal): no session_id, reason=%s",
+                    reason,
+                )
+                return
+
+            await self.event_bus.publish(
+                "mode.request",
+                {
+                    "target": AppMode.SLEEPING,
+                    "source": f"ProcessingWorkflow.processing_{reason}",
+                    "session_id": session_id,
+                    "priority": 90,
+                    "request_id": f"processing_terminal:{session_id}:{reason}",
+                },
+            )
+        except Exception:
+            pass
 
     async def _on_app_mode_changed(self, event):
         try:

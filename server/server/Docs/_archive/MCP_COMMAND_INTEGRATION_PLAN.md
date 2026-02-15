@@ -1,3 +1,10 @@
+> [!WARNING] ARCHIVE NOTICE
+> Этот документ архивный и не является source of truth.
+> Актуальные каноны:
+> - `server/Docs/SERVER_DEPLOYMENT_GUIDE.md` (деплой кода на удаленный сервер)
+> - `server/Docs/RELEASE_AND_UPDATE_GUIDE.md` (публикация DMG/PKG и update-канал)
+> - `server/Docs/DEPLOY_INCIDENT_RUNBOOK.md` (инциденты, зависимости, конфиги, rollback)
+
 # План реализации: совместный текст + MCP-команда от ассистента
 
 > **ВАЖНО**: Этот документ содержит исторический план реализации.  

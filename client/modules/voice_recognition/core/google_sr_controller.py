@@ -61,6 +61,8 @@ class GoogleSRController:
         self._stop = threading.Event()
         self._listening = threading.Event()
         self._thread: threading.Thread | None = None
+        self._pending_recognition_lock = threading.Lock()
+        self._pending_recognitions: int = 0
 
         # Device monitoring
         self._route_monitor = AudioRouteMonitor(on_device_change=self._on_device_change)
@@ -153,9 +155,24 @@ class GoogleSRController:
         """Public read-only state for listening lifecycle."""
         return self._listening.is_set()
 
+    def has_pending_recognition(self) -> bool:
+        """True when at least one recognition chunk is still being processed."""
+        with self._pending_recognition_lock:
+            return self._pending_recognitions > 0
+
     def _on_device_change(self, new_device_name: str) -> None:
         """Callback when audio device changes."""
         logger.info("🎧 Device changed to: %s", new_device_name)
+
+    def _start_recognition_thread(self, audio: Any, *, thread_name: str) -> None:
+        with self._pending_recognition_lock:
+            self._pending_recognitions += 1
+        threading.Thread(
+            target=self._recognize_audio_chunk,
+            args=(audio,),
+            daemon=True,
+            name=thread_name,
+        ).start()
 
     def _capture_and_recognize(self) -> None:
         """
@@ -209,24 +226,16 @@ class GoogleSRController:
                                 "🛑 Stop requested, processing FINAL audio chunk before exit"
                             )
                             if len(audio.frame_data) > 0:
-                                threading.Thread(
-                                    target=self._recognize_audio_chunk,
-                                    args=(audio,),
-                                    daemon=True,
-                                    name="GoogleSR-FinalRecognize",
-                                ).start()
+                                self._start_recognition_thread(
+                                    audio, thread_name="GoogleSR-FinalRecognize"
+                                )
                             break
 
                         logger.info("📊 Audio captured: %d bytes", len(audio.frame_data))
 
                         # КРИТИЧНО: Отправляем на распознавание В ФОНЕ
                         # Это позволяет продолжить слушание без ожидания результата
-                        threading.Thread(
-                            target=self._recognize_audio_chunk,
-                            args=(audio,),
-                            daemon=True,
-                            name="GoogleSR-Recognize",
-                        ).start()
+                        self._start_recognition_thread(audio, thread_name="GoogleSR-Recognize")
 
                     except sr.WaitTimeoutError:
                         if self._stop.is_set():
@@ -307,6 +316,10 @@ class GoogleSRController:
             self.failed += 1
             if self._on_failed:
                 self._on_failed(f"request_error: {e}")
+        finally:
+            with self._pending_recognition_lock:
+                if self._pending_recognitions > 0:
+                    self._pending_recognitions -= 1
 
     def get_current_device(self) -> str | None:
         """Get current input device name."""

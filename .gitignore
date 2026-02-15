@@ -23,3 +23,13 @@ venv/
 
 # OS/editor
 .DS_Store
+
+# Root runtime logs/artifacts
+logs/
+server.log
+wa-logs.txt
+mcp-logs.txt
+
+# Release artifacts (local only)
+server/release_inbox/*.dmg
+server/release_inbox/*.pkg

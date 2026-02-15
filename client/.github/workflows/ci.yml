@@ -22,6 +22,19 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements-dev.txt
+      - name: Architecture guards (client-only)
+        run: |
+          python scripts/verify_architecture_guards.py
+      - name: Docs link gate (root + server)
+        run: |
+          if [ -f "scripts/verify_docs_root_server_links.py" ]; then
+            python scripts/verify_docs_root_server_links.py
+          elif [ -f "../scripts/verify_docs_root_server_links.py" ]; then
+            python ../scripts/verify_docs_root_server_links.py
+          else
+            echo "ERROR: verify_docs_root_server_links.py not found"
+            exit 1
+          fi
       - name: Run pre-build gate
         run: |
           ./scripts/quality_strict.sh --verbose

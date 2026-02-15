@@ -17,8 +17,10 @@ SCHEMA_FILE="$SERVER_DIR/Docs/DATABASE_SCHEMA.sql"
 # Параметры по умолчанию
 DB_NAME="voice_assistant_db"
 DB_USER="nexy_user"
+DB_OWNER="${DB_OWNER:-postgres}"
 DB_HOST="localhost"
 DB_PORT="5432"
+ALLOW_DB_DROP="${ALLOW_DB_DROP:-0}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Настройка PostgreSQL для Nexy Server${NC}"
@@ -93,39 +95,39 @@ if psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -lqt | cut -d \| -f 1 | grep -qw
     read -p "Пересоздать базу данных? (y/n): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if [ "$ALLOW_DB_DROP" != "1" ]; then
+            echo -e "${RED}❌ Операция DROP DATABASE заблокирована политикой защиты данных.${NC}"
+            echo -e "${YELLOW}Для явного разрешения установите ALLOW_DB_DROP=1 и запустите скрипт снова.${NC}"
+            exit 1
+        fi
         psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "DROP DATABASE $DB_NAME;"
-        psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
+        psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "CREATE DATABASE $DB_NAME OWNER $DB_OWNER;"
         echo -e "${GREEN}✅ База данных пересоздана${NC}"
     fi
 else
-    psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
+    psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "CREATE DATABASE $DB_NAME OWNER $DB_OWNER;"
     echo -e "${GREEN}✅ База данных '$DB_NAME' создана${NC}"
 fi
 echo ""
 
 # Предоставление привилегий
-echo -e "${YELLOW}Предоставление привилегий...${NC}"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO $DB_USER;"
+echo -e "${YELLOW}Предоставление привилегий (least-privilege)...${NC}"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "GRANT CONNECT, TEMPORARY ON DATABASE $DB_NAME TO $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "REVOKE CREATE ON SCHEMA public FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT USAGE ON SCHEMA public TO $DB_USER;"
 echo -e "${GREEN}✅ Привилегии предоставлены${NC}"
 echo ""
 
 # Применение схемы
 if [ -f "$SCHEMA_FILE" ]; then
     echo -e "${YELLOW}Применение схемы базы данных...${NC}"
-    # Получаем пароль пользователя для подключения
-    if [ -z "$USER_PASSWORD" ]; then
-        echo -e "${YELLOW}Введите пароль для пользователя '$DB_USER' (для применения схемы):${NC}"
-        read -s USER_PASSWORD
-    fi
-    export PGPASSWORD="$USER_PASSWORD"
-    
-    psql -U "$DB_USER" -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -f "$SCHEMA_FILE"
+    export PGPASSWORD="$POSTGRES_PASSWORD"
+    psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -f "$SCHEMA_FILE"
     echo -e "${GREEN}✅ Схема применена${NC}"
 else
     echo -e "${YELLOW}⚠️  Файл схемы не найден: $SCHEMA_FILE${NC}"
     echo "Схему можно применить вручную:"
-    echo "  psql -U $DB_USER -h $DB_HOST -p $DB_PORT -d $DB_NAME -f $SCHEMA_FILE"
+    echo "  psql -U postgres -h $DB_HOST -p $DB_PORT -d $DB_NAME -f $SCHEMA_FILE"
 fi
 echo ""
 

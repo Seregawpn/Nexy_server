@@ -177,8 +177,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
                 
                 dur_ms = (time.time() - start_time) * 1000
                 log_decision(logger, decision="complete", method=method_name, dur_ms=dur_ms)
-                record_metric(method_name, dur_ms, is_error=False)
                 record_decision_metric(method_name, "complete")
+                record_metric(method_name, dur_ms, is_error=False)
                 
                 return response
             except Exception as e:
@@ -198,8 +198,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
                         "error_type": type(e).__name__
                     }
                 )
-                record_metric(method_name, dur_ms, is_error=True)
                 record_decision_metric(method_name, "error")
+                record_metric(method_name, dur_ms, is_error=True)
                 
                 # Преобразуем в gRPC ошибку
                 context.set_code(error_code)
@@ -220,8 +220,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
                 
                 dur_ms = (time.time() - start_time) * 1000
                 log_decision(logger, decision="complete", method=method_name, dur_ms=dur_ms)
-                record_metric(method_name, dur_ms, is_error=False)
                 record_decision_metric(method_name, "complete")
+                record_metric(method_name, dur_ms, is_error=False)
                 
             except Exception as e:
                 dur_ms = (time.time() - start_time) * 1000
@@ -240,8 +240,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
                         "error_type": type(e).__name__
                     }
                 )
-                record_metric(method_name, dur_ms, is_error=True)
                 record_decision_metric(method_name, "error")
+                record_metric(method_name, dur_ms, is_error=True)
                 
                 # Преобразуем в gRPC ошибку
                 context.set_code(error_code)
@@ -261,8 +261,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
                 
                 dur_ms = (time.time() - start_time) * 1000
                 log_decision(logger, decision="complete", method=method_name, dur_ms=dur_ms)
-                record_metric(method_name, dur_ms, is_error=False)
                 record_decision_metric(method_name, "complete")
+                record_metric(method_name, dur_ms, is_error=False)
                 
                 return response
             except Exception as e:
@@ -281,8 +281,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
                         "error_type": type(e).__name__
                     }
                 )
-                record_metric(method_name, dur_ms, is_error=True)
                 record_decision_metric(method_name, "error")
+                record_metric(method_name, dur_ms, is_error=True)
                 
                 context.set_code(error_code)
                 context.set_details(str(e))
@@ -302,8 +302,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
                 
                 dur_ms = (time.time() - start_time) * 1000
                 log_decision(logger, decision="complete", method=method_name, dur_ms=dur_ms)
-                record_metric(method_name, dur_ms, is_error=False)
                 record_decision_metric(method_name, "complete")
+                record_metric(method_name, dur_ms, is_error=False)
                 
             except Exception as e:
                 dur_ms = (time.time() - start_time) * 1000
@@ -321,8 +321,8 @@ class LoggingInterceptor(aio.ServerInterceptor):
                         "error_type": type(e).__name__
                     }
                 )
-                record_metric(method_name, dur_ms, is_error=True)
                 record_decision_metric(method_name, "error")
+                record_metric(method_name, dur_ms, is_error=True)
                 
                 context.set_code(error_code)
                 context.set_details(str(e))

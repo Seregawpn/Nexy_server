@@ -97,9 +97,10 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "CREATE USER nexy_user WITH PASSWORD '$NEW_USER_PASSWORD';" 2>/dev/null || \
         psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "ALTER USER nexy_user WITH PASSWORD '$NEW_USER_PASSWORD';"
     
-    # Предоставляем права
-    psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO nexy_user;"
-    psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO nexy_user;"
+    # Предоставляем минимально необходимые права
+    psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -c "GRANT CONNECT, TEMPORARY ON DATABASE $DB_NAME TO nexy_user;"
+    psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "REVOKE CREATE ON SCHEMA public FROM nexy_user;"
+    psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT USAGE ON SCHEMA public TO nexy_user;"
     
     # Проверяем подключение
     export PGPASSWORD="$NEW_USER_PASSWORD"

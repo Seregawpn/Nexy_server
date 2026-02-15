@@ -1,6 +1,6 @@
 # PRODUCT_CONCEPT (СЕРВЕР)
 
-Системный обзор (клиент + сервер) — `Docs/SYSTEM_CONCEPT.md`.
+Системный обзор (клиент + сервер) — `../../Docs/SYSTEM_CONCEPT.md`.
 
 ## Роль сервера
 

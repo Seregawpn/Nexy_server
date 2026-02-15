@@ -46,7 +46,7 @@ def get_version_from_file() -> str:
             logger.warning(f"Не удалось прочитать VERSION файл: {e}")
     
     # Fallback: используем переменную окружения или дефолт
-    return os.getenv('SERVER_VERSION', '1.6.1.17')
+    return os.getenv('SERVER_VERSION', '1.6.1.38')
 
 @dataclass
 class DatabaseConfig:
@@ -706,7 +706,10 @@ class UnifiedServerConfig:
         feature_map = {
             'use_module_coordinator': self.features.use_module_coordinator,
             'use_workflow_integrations': self.features.use_workflow_integrations,
-            'use_fallback_manager': self.features.use_fallback_manager
+            'use_fallback_manager': self.features.use_fallback_manager,
+            'forward_assistant_actions': self.features.forward_assistant_actions,
+            'messages_enabled': self.features.messages_enabled,
+            'web_search_enabled': self.features.web_search_enabled,
         }
         
         return feature_map.get(feature_name, False)
@@ -726,7 +729,8 @@ class UnifiedServerConfig:
         
         kill_switch_map = {
             'disable_module_coordinator': self.kill_switches.disable_module_coordinator,
-            'disable_workflow_integrations': self.kill_switches.disable_workflow_integrations
+            'disable_workflow_integrations': self.kill_switches.disable_workflow_integrations,
+            'disable_forward_assistant_actions': self.kill_switches.disable_forward_assistant_actions,
         }
         
         return kill_switch_map.get(kill_switch_name, False)

@@ -9,10 +9,10 @@
 
 ## 2. Скрипты
 
-- Backup: `server/scripts/db_backup.sh`
-- Restore: `server/scripts/db_restore.sh`
-- Restore drill: `server/scripts/db_restore_drill.sh`
-- DB hardening (после restore): `server/scripts/harden_database_protection.sh`
+- Backup: `scripts/db_backup.sh`
+- Restore: `scripts/db_restore.sh`
+- Restore drill: `scripts/db_restore_drill.sh`
+- DB hardening (после restore): `scripts/harden_database_protection.sh`
 
 ## 3. Минимальные переменные (`server/config.env`)
 
@@ -42,34 +42,34 @@ AWS_S3_BACKUP_URI=s3://your-bucket/nexy-postgres
 ## 4. Ручной запуск
 
 ```bash
-./server/scripts/db_backup.sh
+./scripts/db_backup.sh
 ```
 
 ```bash
 # Локальный архив:
-ALLOW_DB_RESTORE_OVERWRITE=1 ./server/scripts/db_restore.sh /var/backups/nexy-postgres/nexy_db_YYYYMMDDTHHMMSSZ.tar.gz
+ALLOW_DB_RESTORE_OVERWRITE=1 ./scripts/db_restore.sh /var/backups/nexy-postgres/nexy_db_YYYYMMDDTHHMMSSZ.tar.gz
 ```
 
 ```bash
 # S3:
-ALLOW_DB_RESTORE_OVERWRITE=1 ./server/scripts/db_restore.sh s3://bucket/path/nexy_db_YYYYMMDDTHHMMSSZ.tar.gz
+ALLOW_DB_RESTORE_OVERWRITE=1 ./scripts/db_restore.sh s3://bucket/path/nexy_db_YYYYMMDDTHHMMSSZ.tar.gz
 ```
 
 ```bash
 # Azure:
-ALLOW_DB_RESTORE_OVERWRITE=1 ./server/scripts/db_restore.sh azure://container/path/nexy_db_YYYYMMDDTHHMMSSZ.tar.gz
+ALLOW_DB_RESTORE_OVERWRITE=1 ./scripts/db_restore.sh azure://container/path/nexy_db_YYYYMMDDTHHMMSSZ.tar.gz
 ```
 
 После restore обязательно:
 
 ```bash
-./server/scripts/harden_database_protection.sh
+./scripts/harden_database_protection.sh
 ```
 
 ## 5. Restore drill (еженедельно)
 
 ```bash
-./server/scripts/db_restore_drill.sh
+./scripts/db_restore_drill.sh
 ```
 
 Скрипт:
@@ -82,10 +82,10 @@ ALLOW_DB_RESTORE_OVERWRITE=1 ./server/scripts/db_restore.sh azure://container/pa
 
 ```cron
 # Ежедневный backup в 02:15
-15 2 * * * cd /home/azureuser/voice-assistant && ./server/scripts/db_backup.sh >> /var/log/nexy-db-backup.log 2>&1
+15 2 * * * cd /home/azureuser/voice-assistant/server/server && ./scripts/db_backup.sh >> /var/log/nexy-db-backup.log 2>&1
 
 # Еженедельный restore drill (воскресенье 03:10)
-10 3 * * 0 cd /home/azureuser/voice-assistant && ./server/scripts/db_restore_drill.sh >> /var/log/nexy-db-restore-drill.log 2>&1
+10 3 * * 0 cd /home/azureuser/voice-assistant/server/server && ./scripts/db_restore_drill.sh >> /var/log/nexy-db-restore-drill.log 2>&1
 ```
 
 ## 7. DoD

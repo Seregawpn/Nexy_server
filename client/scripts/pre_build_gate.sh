@@ -141,6 +141,13 @@ else
     ((FAILED++))
 fi
 
+# 0.3 Архитектурные guard-гейты (client-only, baseline-aware)
+if run_check "Архитектурные guard-гейты" "$PYTHON_BIN" scripts/verify_architecture_guards.py; then
+    ((PASSED++))
+else
+    ((FAILED++))
+fi
+
 echo ""
 
 # ============================================================================

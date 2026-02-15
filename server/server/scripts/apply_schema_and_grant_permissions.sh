@@ -70,34 +70,43 @@ fi
 echo ""
 
 # Выдача прав на схему public
-echo -e "${YELLOW}Выдача прав на схему public...${NC}"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT ALL ON SCHEMA public TO $DB_USER;"
+echo -e "${YELLOW}Выдача прав на схему public (least-privilege)...${NC}"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "REVOKE CREATE ON SCHEMA public FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT USAGE ON SCHEMA public TO $DB_USER;"
 echo -e "${GREEN}✅ Права на схему выданы${NC}"
 echo ""
 
 # Выдача прав на существующие таблицы
-echo -e "${YELLOW}Выдача прав на все таблицы...${NC}"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $DB_USER;"
+echo -e "${YELLOW}Выдача прав на все таблицы (SELECT/INSERT/UPDATE)...${NC}"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM $DB_USER;"
 echo -e "${GREEN}✅ Права на таблицы выданы${NC}"
 echo ""
 
 # Выдача прав на все последовательности
 echo -e "${YELLOW}Выдача прав на все последовательности...${NC}"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;"
 echo -e "${GREEN}✅ Права на последовательности выданы${NC}"
 echo ""
 
 # Выдача прав на все функции
 echo -e "${YELLOW}Выдача прав на все функции...${NC}"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO $DB_USER;"
 echo -e "${GREEN}✅ Права на функции выданы${NC}"
 echo ""
 
 # Установка прав по умолчанию для будущих таблиц
 echo -e "${YELLOW}Установка прав по умолчанию для будущих объектов...${NC}"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;"
-psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLES FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM $DB_USER;"
+psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -d "$DB_NAME" -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO $DB_USER;"
 echo -e "${GREEN}✅ Права по умолчанию установлены${NC}"
 echo ""
 

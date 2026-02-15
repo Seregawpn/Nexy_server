@@ -29,6 +29,8 @@
 ## 1) Release Infrastructure Rules
 
 - `release_inbox` должен существовать в корне репозитория.
+- `release_inbox/.gitkeep` хранится в git и не удаляется.
+- Даже при ручном удалении папка автоматически пересоздаётся в `scripts/publish_assets_and_sync.py`.
 - Каноничный скрипт публикации: `scripts/publish_assets_and_sync.py`.
 - Манифест update-канала: `server/updates/manifests/manifest.json`.
 - Fixed tags в `Nexy_production`:
@@ -73,11 +75,18 @@ Update metadata:
 test -d release_inbox && echo "OK: release_inbox exists" || echo "MISSING: release_inbox"
 ls -la release_inbox
 gh auth status
+az vm run-command invoke \
+  --resource-group NetworkWatcherRG \
+  --name Nexy \
+  --command-id RunShellScript \
+  --scripts "grep -q '^GEMINI_API_KEY=' /home/azureuser/voice-assistant/config.env && echo 'OK: GEMINI_API_KEY present' || (echo 'MISSING: GEMINI_API_KEY' && exit 1)"
 ```
 
 Ожидания:
 - В `release_inbox` есть `Nexy.dmg` и/или `Nexy.pkg`.
 - `gh auth status` успешен.
+- На VM в `/home/azureuser/voice-assistant/config.env` присутствует `GEMINI_API_KEY`.
+- Нет активного конкурирующего `az vm run-command` (исполнять команды последовательно).
 
 ### 3.2 Publish
 

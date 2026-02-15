@@ -45,6 +45,8 @@
 Для истории использовать только `Docs/_archive/` и `_Docs_ARCHIVED/`.
 
 Архивировано в рамках cleanup (2026-02-15):
+- `Docs/_archive/HOTKEY_COMBINATION_REQUIREMENTS.md`
+- `Docs/_archive/HOTKEY_CONFLICT_GUARD_IMPLEMENTATION_PLAN.md`
 - `Docs/_archive/HOTKEY_CONFLICT_GUARD_DETAILED_PLAN.md`
 - `Docs/_archive/HOTKEY_IMPLEMENTATION_PLAN.md`
 - `Docs/_archive/HOTKEY_SHORTCUT_INTERCEPTION_DIAGNOSIS.md`

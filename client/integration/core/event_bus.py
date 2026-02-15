@@ -29,8 +29,10 @@ class EventBus:
         self.max_history = 1000
         self._loop: asyncio.AbstractEventLoop | None = None
         # События, обработка которых должна быть быстрой (не блокирующей):
-        # публикуем обработчики как задачи и не await'им их последовательно
-        self._fast_events = {"app.mode_changed", "app.state_changed"}
+        # публикуем обработчики как задачи и не await'им их последовательно.
+        # ВАЖНО: app.mode_changed не должен быть fast-path, чтобы сохранить
+        # предсказуемый порядок обработки критичных mode-подписчиков.
+        self._fast_events = {"app.state_changed"}
         # Events to exclude from history (high-frequency)
         self._exclude_from_history = {"grpc.response.audio", "grpc.response.text"}
         self._background_tasks = set()  # Set to track fire-and-forget tasks
@@ -38,6 +40,27 @@ class EventBus:
         self._debug_sample_events = {"grpc.response.audio"}
         self._debug_sample_interval_sec = 1.0
         self._debug_sample_state: dict[tuple[str, str], dict[str, float | int]] = {}
+
+    @staticmethod
+    def _callback_key(callback: Callable[..., Any]) -> tuple[Any, ...]:
+        """Stable callback key for dedup/unsubscribe (supports bound methods)."""
+        owner = getattr(callback, "__self__", None)
+        func = getattr(callback, "__func__", None)
+        if owner is not None and func is not None:
+            return ("bound_method", id(owner), func)
+        return ("callable", callback)
+
+    @staticmethod
+    def _callback_name(callback: Callable[..., Any]) -> str:
+        """Human-friendly callback name for diagnostics."""
+        owner = getattr(callback, "__self__", None)
+        func = getattr(callback, "__func__", None)
+        if owner is not None and func is not None:
+            return f"{owner.__class__.__name__}.{func.__name__}"
+        name = getattr(callback, "__name__", None)
+        if name:
+            return str(name)
+        return repr(callback)
 
     def _debug_log_event(self, event_type: str, key: str, message: str):
         """Debug logging with sampling for high-frequency events."""
@@ -95,17 +118,28 @@ class EventBus:
     ):
         """Подписка на событие"""
         try:
+            callback_key = self._callback_key(callback)
             if event_type not in self.subscribers:
                 self.subscribers[event_type] = []
             else:
                 for sub in self.subscribers[event_type]:
-                    if sub.get("callback") is callback:
+                    sub_key = sub.get("callback_key")
+                    if sub_key is None:
+                        sub_key = self._callback_key(sub.get("callback"))
+                    if sub_key == callback_key:
                         logger.warning(
-                            f"⚠️ Duplicate subscription ignored: event_type={event_type}, callback={callback}"
+                            "⚠️ Duplicate subscription ignored: event_type=%s, callback=%s",
+                            event_type,
+                            self._callback_name(callback),
                         )
                         return
 
-            subscriber = {"callback": callback, "priority": priority, "event_type": event_type}
+            subscriber = {
+                "callback": callback,
+                "callback_key": callback_key,
+                "priority": priority,
+                "event_type": event_type,
+            }
 
             self.subscribers[event_type].append(subscriber)
 
@@ -121,8 +155,14 @@ class EventBus:
         """Отписка от события"""
         try:
             if event_type in self.subscribers:
+                callback_key = self._callback_key(callback)
                 self.subscribers[event_type] = [
-                    sub for sub in self.subscribers[event_type] if sub["callback"] != callback
+                    sub
+                    for sub in self.subscribers[event_type]
+                    if (
+                        sub.get("callback_key", self._callback_key(sub.get("callback")))
+                        != callback_key
+                    )
                 ]
 
                 if not self.subscribers[event_type]:

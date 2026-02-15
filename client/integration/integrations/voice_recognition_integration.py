@@ -85,6 +85,8 @@ class VoiceRecognitionIntegration:
         # Fallback задача после recording_stop, если от Google не пришел terminal callback.
         self._pending_stop_terminal_tasks: dict[str, asyncio.Task[Any]] = {}
         self._stop_terminal_fallback_sec: float = 1.2
+        self._stop_terminal_pending_poll_sec: float = 0.15
+        self._stop_terminal_pending_max_extra_sec: float = 1.8
         # Runtime metric: сколько дублей start было отфильтровано guard'ом.
         self._dedup_start_skips: int = 0
 
@@ -852,6 +854,20 @@ class VoiceRecognitionIntegration:
                 # Если сессия уже не активна, ничего не публикуем.
                 if self._get_active_session_id() != session_id:
                     return
+                # Не публикуем terminal no_speech, пока финальный STT-чанк еще в распознавании.
+                # Это предотвращает гонку: fallback failed -> поздний completed.
+                pending_deadline = time.monotonic() + self._stop_terminal_pending_max_extra_sec
+                while self._has_pending_stop_recognition():
+                    if self._get_active_session_id() != session_id:
+                        return
+                    if time.monotonic() >= pending_deadline:
+                        logger.debug(
+                            "VOICE: fallback no_speech proceeds after pending wait timeout "
+                            "(session=%s)",
+                            session_id,
+                        )
+                        break
+                    await asyncio.sleep(self._stop_terminal_pending_poll_sec)
                 if not self._try_mark_terminal_recognition(session_id, "fallback_no_speech"):
                     return
                 logger.info(
@@ -869,6 +885,18 @@ class VoiceRecognitionIntegration:
                 self._pending_stop_terminal_tasks.pop(session_id, None)
 
         self._pending_stop_terminal_tasks[session_id] = asyncio.create_task(_emit_if_missing())
+
+    def _has_pending_stop_recognition(self) -> bool:
+        controller = self._google_sr_controller
+        if controller is None:
+            return False
+        has_pending = getattr(controller, "has_pending_recognition", None)
+        if not callable(has_pending):
+            return False
+        try:
+            return bool(has_pending())
+        except Exception:
+            return False
 
     def _cancel_stop_terminal_fallback(self, session_id: str | None, *, reason: str) -> None:
         if session_id is None:

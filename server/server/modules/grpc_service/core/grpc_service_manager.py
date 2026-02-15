@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import os
 from typing import Dict, Any, Optional, AsyncGenerator
 from datetime import datetime
 
@@ -78,20 +79,26 @@ class GrpcServiceManager(UniversalModuleInterface):
             self._status = ModuleStatus(state=ModuleState.INIT, health="degraded")
             logger.info("Инициализация gRPC Service Manager...")
             
-            # Проверяем фича-флаг и kill-switch
-            use_coordinator = (
-                self.unified_config.is_feature_enabled('use_module_coordinator') and
-                not self.unified_config.is_kill_switch_active('disable_module_coordinator')
-            )
-            
-            self._use_coordinator = use_coordinator
-            
-            if use_coordinator:
-                logger.info("✅ Используется ModuleCoordinator (новый подход)")
-                await self._initialize_with_coordinator()
-            else:
-                logger.warning("⚠️ Используется legacy подход (прямые импорты)")
+            force_legacy_init = os.getenv('NEXY_FORCE_LEGACY_GRPC_INIT', 'false').lower() == 'true'
+            feature_enabled = self.unified_config.is_feature_enabled('use_module_coordinator')
+            kill_switch_active = self.unified_config.is_kill_switch_active('disable_module_coordinator')
+
+            self._use_coordinator = not force_legacy_init
+
+            if force_legacy_init:
+                logger.warning(
+                    "⚠️ Включен аварийный legacy init-path (NEXY_FORCE_LEGACY_GRPC_INIT=true). "
+                    "Это режим экстренного отката."
+                )
                 await self._initialize_legacy()
+            else:
+                if not feature_enabled or kill_switch_active:
+                    logger.warning(
+                        "⚠️ Флаг/kill-switch coordinator отключен, но legacy-path не используется. "
+                        "Для экстренного legacy rollback используйте NEXY_FORCE_LEGACY_GRPC_INIT=true."
+                    )
+                logger.info("✅ Используется ModuleCoordinator (каноничный путь)")
+                await self._initialize_with_coordinator()
             
             self._status = ModuleStatus(state=ModuleState.READY, health="ok")
             logger.info("✅ gRPC Service Manager инициализирован")

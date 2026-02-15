@@ -87,3 +87,46 @@ async def test_mode_request_processing_without_session_id_rejected():
     )
 
     assert integration._apply_mode.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_processing_terminal_bridged_to_mode_request_sleeping():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    state_manager.attach_event_bus(event_bus)
+    integration = ModeManagementIntegration(event_bus, state_manager, ErrorHandler())
+    await integration.initialize()
+
+    state_manager.set_mode(AppMode.PROCESSING, session_id="sid-terminal")
+    integration._apply_mode = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    await integration._on_processing_terminal(
+        {
+            "data": {
+                "session_id": "sid-terminal",
+                "reason": "completed",
+            }
+        }
+    )
+
+    assert integration._apply_mode.await_count == 1
+    args, kwargs = integration._apply_mode.await_args
+    assert args[0] == AppMode.SLEEPING
+    assert kwargs["source"] == "interrupt"
+    assert kwargs["session_id"] == "sid-terminal"
+
+
+@pytest.mark.asyncio
+async def test_processing_terminal_without_session_id_ignored():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    state_manager.attach_event_bus(event_bus)
+    integration = ModeManagementIntegration(event_bus, state_manager, ErrorHandler())
+    await integration.initialize()
+
+    state_manager.set_mode(AppMode.PROCESSING, session_id="sid-terminal")
+    integration._apply_mode = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    await integration._on_processing_terminal({"data": {"reason": "completed"}})
+
+    assert integration._apply_mode.await_count == 0

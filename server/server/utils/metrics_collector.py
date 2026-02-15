@@ -56,6 +56,22 @@ class MetricsCollector:
         
         # Последний снапшот
         self.last_snapshot_time = time.time()
+
+    @staticmethod
+    def _normalize_method_name(method: str) -> str:
+        """
+        Нормализация имени RPC метода до канонического ключа.
+
+        Примеры:
+        - "/streaming.StreamingService/StreamAudio" -> "StreamAudio"
+        - "StreamAudio" -> "StreamAudio"
+        """
+        if not method:
+            return method
+        if "/" in method:
+            tail = method.rsplit("/", 1)[-1]
+            return tail or method
+        return method
     
     def record_request(self, method: str, duration_ms: float, is_error: bool = False) -> None:
         """
@@ -66,6 +82,7 @@ class MetricsCollector:
             duration_ms: Длительность в миллисекундах
             is_error: Является ли запрос ошибкой
         """
+        method = self._normalize_method_name(method)
         with self.lock:
             self.requests[method] += 1
             self.latencies[method].append(duration_ms)
@@ -85,6 +102,7 @@ class MetricsCollector:
             method: Имя метода
             decision: Решение (start, abort, retry, degrade, complete, error)
         """
+        method = self._normalize_method_name(method)
         with self.lock:
             self.decisions[method][decision] += 1
     
@@ -229,4 +247,3 @@ def record_decision_metric(method: str, decision: str) -> None:
     """
     collector = get_metrics_collector()
     collector.record_decision(method, decision)
-

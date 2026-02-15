@@ -1,29 +1,12 @@
-# Production Checklist — Server
+# Production Checklist Server (Root Index)
 
-Минимальный go/no‑go чеклист для прод‑релиза сервера.
+Root-документ является индексом server readiness.
 
-## 1) Tests
-1. `pytest server/tests -q` проходит без ошибок.
+Канонические документы:
+- Pre-production checks: `server/server/Docs/PRE_PRODUCTION_TESTING.md`
+- Deployment flow: `server/server/Docs/SERVER_DEPLOYMENT_GUIDE.md`
+- Incident rollback/runbook: `server/server/Docs/DEPLOY_INCIDENT_RUNBOOK.md`
 
-## 2) gRPC Контракты
-1. StreamAudio: валидные `hardware_id` и `session_id` дают стабильный стрим.
-1. InterruptSession: прерывание активной сессии работает.
-
-## 3) Конфиг и флаги
-1. `server/server/config.env` заполнен (секреты, Stripe, Gemini, Azure).
-1. Feature flags согласованы с клиентом.
-1. `SUBSCRIPTION_ENABLED` и `SUBSCRIPTION_KILL_SWITCH` выставлены осознанно.
-
-## 4) Observability
-1. Логи пишутся в едином формате.
-1. Маскирование секретов включено и проверено.
-1. Метрики не падают и не шумят.
-
-## 5) Payment/Subscription (если включено)
-1. Webhook secrets корректны.
-1. Статусы подписки соответствуют state machine.
-1. Fail‑open поведение подтверждено.
-
-## 6) Rollback
-1. Понятно, как выключить фичи через flags.
-1. Понятно, как быстро отключить подписки через kill‑switch.
+Правило централизации:
+- Go/No-go критерии для сервера поддерживаются только в server канонах.
+- Root не дублирует тестовые шаги и команды деплоя.

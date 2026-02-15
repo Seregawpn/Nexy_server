@@ -259,6 +259,29 @@ python3 scripts/task_aggregator.py
 
 ## 9) Git Routing & Release Boundaries (Mandatory)
 
+## 10) Architecture Governance (обязательно)
+
+Перед завершением любой задачи проверяй 4 гейта:
+
+1. Single Owner Gate
+- у оси один владелец (Source of Truth),
+- второй путь принятия решений не создается.
+
+2. Zero Duplication Gate
+- похожая логика объединяется, а не копируется,
+- в ответе явно указано, что объединено/удалено.
+
+3. Anti-Race Gate
+- shared mutable state защищен (`single-flight`/`lock`/`idempotency`),
+- учтены повторные/out-of-order события.
+
+4. Flag Lifecycle Gate
+- каждый флаг реально влияет на runtime,
+- defaults синхронизированы между code/docs.
+
+Канон правил:
+- `Docs/ARCHITECTURE_GOVERNANCE.md`
+
 - `Seregawpn/Nexy`:
   - Назначение: корневой workspace (общий код и документация).
   - Push: только из `<repo-root>`.

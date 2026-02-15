@@ -367,7 +367,7 @@ protoc --python_out=. streaming.proto
 ## Канонический путь к proto-файлу
 
 ```
-server/server/modules/grpc_service/streaming.proto
+modules/grpc_service/streaming.proto
 ```
 
 Этот файл является источником истины для серверной стороны; любые изменения синхронизируются с клиентом через канон протокола.
@@ -399,7 +399,6 @@ message UsageResponse {
   string message = 2;
 }
 ```
-
 
 
 

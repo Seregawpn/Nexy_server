@@ -532,7 +532,7 @@ class DatabaseManager:
         Универсальное выполнение запроса к базе данных
         
         Args:
-            operation: Тип операции (create, read, update, delete)
+            operation: Тип операции (create, read, update)
             table: Название таблицы
             data: Данные для операции
             filters: Фильтры для операции
