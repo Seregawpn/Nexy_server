@@ -7,15 +7,22 @@
 
 ---
 
-## 0) Two Pipelines (Mandatory)
+## 0) Repo Responsibilities (Mandatory)
 
-1. `Seregawpn/Nexy_server`  
-Назначение: серверный код и deploy pipeline.
+1. `Seregawpn/Nexy`  
+Назначение: корневой workspace (общий код и документация).
 
-2. `Seregawpn/Nexy_production/releases`  
-Назначение: клиентские артефакты (DMG/PKG).
+2. `Seregawpn/Nexy_server`  
+Назначение: единственный source для server deploy на Azure VM.
 
-Для клиентских артефактов использовать: `server/Docs/RELEASE_AND_UPDATE_GUIDE.md`.
+3. `Seregawpn/Nexy_production/releases`  
+Назначение: клиентские артефакты (DMG/PKG) и update download URLs.
+
+Правила:
+- Code deploy на Azure выполняется только из `Nexy_server`.
+- `Nexy_server` обновляется только server-subtree из корневого репозитория:
+  - `git subtree push --prefix=server server_repo <branch>`
+- Для клиентских артефактов использовать: `server/Docs/RELEASE_AND_UPDATE_GUIDE.md`.
 
 ---
 
