@@ -17,7 +17,6 @@
 - `Docs/first_run_flow_spec.md` — first-run / permissions V2
 - `Docs/FEATURE_FLAGS.md` — реестр feature flags и kill-switches
 - `Docs/PRODUCT_CONCEPT.md` — продуктовые сценарии
-- `Docs/INPUT_ARCHITECTURE_V2.md` — input-архитектура
 
 ## 3. Release / Packaging
 
@@ -44,6 +43,14 @@
 
 Исторические и удалённые документы не использовать как источники истины.
 Для истории использовать только `Docs/_archive/` и `_Docs_ARCHIVED/`.
+
+Архивировано в рамках cleanup (2026-02-15):
+- `Docs/_archive/HOTKEY_CONFLICT_GUARD_DETAILED_PLAN.md`
+- `Docs/_archive/HOTKEY_IMPLEMENTATION_PLAN.md`
+- `Docs/_archive/HOTKEY_SHORTCUT_INTERCEPTION_DIAGNOSIS.md`
+- `Docs/_archive/HOTKEY_CONFLICT_GUARD_REQUIREMENTS.md`
+- `Docs/_archive/INPUT_ARCHITECTURE_V2.md`
+- `Docs/_archive/TROUBLESHOOTING.md`
 
 ---
 

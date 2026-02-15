@@ -630,7 +630,7 @@ required:
 ### 4.1 Startup Flow
 
 Coordinator: `SimpleModuleCoordinator`  
-Source of Truth: `SimpleModuleCoordinator.startup_order`  
+Source of Truth: `IntegrationFactory.STARTUP_ORDER` (используется через `IntegrationFactory.get_startup_order(...)`)  
 
 Sequence:
 1. Создать core: EventBus, ApplicationStateManager, ErrorHandler.
@@ -655,13 +655,14 @@ Sequence:
 3. Для каждого permission:
    - инициировать запрос (TCC/system settings) по config order,
    - выдержать grace window,
-   - выполнить single post-trigger probe,
+   - выполнить post-trigger verification (polling для `AUTO_DIALOG`/`OPEN_SETTINGS` шагов),
    - при изменении публиковать `permissions.changed`.
 4. Если требуется restart, V2 owner переводит ledger в restart phase и передает выполнение `PermissionRestartIntegration`.
 5. После restart/post-verify V2 owner публикует `permissions.first_run_completed`.
 
 Requirements:
-- Без pre-check/polling-loop в рамках шага: single post-trigger probe.
+- Без pre-check в рамках шага.
+- Для verification допускается polling по `poll_s` в соответствии с V2 pipeline.
 - Все события содержат `session_id` и `source`.
 
 ### 4.3 Permission Restart Flow
