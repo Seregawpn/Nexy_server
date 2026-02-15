@@ -144,8 +144,8 @@ Fix:
 - `systemctl restart voice-assistant`.
 
 ### 5.4 Wrong runtime version in `/health`
-- Primary source: `server/VERSION` (не `SERVER_VERSION` в env).
-- Синхронизировать `server/VERSION` и `server/updates/manifests/manifest.json`.
+- Primary source: `VERSION` (не `SERVER_VERSION` в env).
+- Синхронизировать `VERSION` и `server/updates/manifests/manifest.json`.
 
 Полный runbook:
 - `server/Docs/DEPLOY_INCIDENT_RUNBOOK.md`

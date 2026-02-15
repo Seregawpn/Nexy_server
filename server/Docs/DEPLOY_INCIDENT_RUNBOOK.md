@@ -98,7 +98,7 @@ az vm run-command invoke \
   --resource-group NetworkWatcherRG \
   --name Nexy \
   --command-id RunShellScript \
-  --scripts "cd /home/azureuser/voice-assistant && cat server/VERSION && cat server/updates/manifests/manifest.json"
+  --scripts "cd /home/azureuser/voice-assistant && cat VERSION && cat server/updates/manifests/manifest.json"
 ```
 
 ### Fix

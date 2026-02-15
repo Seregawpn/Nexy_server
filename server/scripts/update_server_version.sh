@@ -21,6 +21,7 @@ if [ -z "$VERSION_ARG" ]; then
   if [ -f "VERSION" ]; then
     VERSION_ARG="$(tr -d ' \n\r' < VERSION)"
   elif [ -f "server/VERSION" ]; then
+    # Backward compatibility fallback for legacy layouts.
     VERSION_ARG="$(tr -d ' \n\r' < server/VERSION)"
   else
     echo -e "${RED}❌ VERSION argument is required (and no local VERSION file found)${NC}"

@@ -60,7 +60,7 @@ Update metadata:
 1. `server/updates/manifests/manifest.json` (`version`, `build`, `artifact.*`)
 
 Правило:
-- `server/VERSION` и `manifest.json` должны быть синхронизированы при релизе.
+- `VERSION` и `manifest.json` должны быть синхронизированы при релизе.
 - Обновление `manifest.json` выполнять только через owner-скрипты (`publish_assets_and_sync.py` или `update_manifest_remote_locked.sh`), без ручного inline-редактирования.
 
 ---

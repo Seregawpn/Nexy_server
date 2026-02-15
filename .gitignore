@@ -1,0 +1,27 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Virtual envs
+.venv/
+venv/
+
+# Backups / temp
+*.bak
+*.backup
+*.backup.*
+*.old
+*.orig
+*~
+
+# Logs / runtime artifacts
+logs/
+server.log
+wa-logs.txt
+mcp-logs.txt
+
+# OS/editor
+.DS_Store
