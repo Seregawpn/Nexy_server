@@ -541,9 +541,9 @@ echo -e "${GREEN}✅ pb2 файлы актуальны${NC}"
 echo -e "${YELLOW}🔍 Проверяем окружение и универсальные бинарники...${NC}"
 "$BUILD_PYTHON" "$CLIENT_DIR/scripts/check_dependencies.py"
 
-# Обновляем версии в Info.plist модулей
-echo -e "${YELLOW}📝 Обновляем версии в модулях...${NC}"
-"$BUILD_PYTHON" "$CLIENT_DIR/scripts/update_module_versions.py"
+# Синхронизируем производные version-артефакты из unified_config.yaml
+echo -e "${YELLOW}📝 Синхронизируем version-артефакты из unified_config.yaml...${NC}"
+"$BUILD_PYTHON" "$CLIENT_DIR/config/auto_sync.py" --scope version
 
 SIGNING_STAGE="pre" # pre -> signed -> post_staple
 
@@ -899,14 +899,9 @@ fi
 
 # Проверяем сертификаты
 echo -e "${BLUE}🔍 Проверяем сертификаты...${NC}"
-
-# Разблокируем keychain для доступа к сертификатам (если требуется)
-# Пытаемся разблокировать login.keychain (основной keychain пользователя)
-if security show-keychain-info login.keychain >/dev/null 2>&1; then
-    # Пытаемся разблокировать без пароля (если keychain уже разблокирован или настроен на автоматическую разблокировку)
-    security unlock-keychain login.keychain 2>/dev/null || true
-    echo "✓ Keychain проверен/разблокирован"
-fi
+# Не вызываем unlock-keychain: это может открыть интерактивный password prompt
+# и ломает non-interactive packaging flow.
+echo "✓ Проверка keychain выполняется через security find-identity (без unlock-keychain)"
 
 if ! security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
     error "Developer ID Application сертификат не найден. Проверьте: security find-identity -v -p codesigning"

@@ -1,10 +1,12 @@
 # ✅ ФИНАЛЬНЫЙ ЧЕК-ЛИСТ РЕЛИЗА
 
 **Дата проверки:** 2025-11-17  
-**Версия:** 1.6.0.37  
+**Версия:** 1.6.1.38  
 **Артефакты:** Universal 2 (arm64 + x86_64)
 
 > **КРИТИЧНО:** Любые изменения из триггеров (`main.py`, `integration/`, `modules/`, `resources/`, `assets/`, `vendor_binaries/`, `config/`, `packaging/`, `scripts/`, `requirements.txt`, `pyproject.toml`) **ОБЯЗАНЫ** пройти `Docs/PRE_PACKAGING_VERIFICATION.md` и следовать каноническому процессу из `Docs/PACKAGING_FINAL_GUIDE.md` (раздел 0.2). Это **ЕДИНСТВЕННЫЙ** способ упаковки без ручных исключений.
+>
+> **КРИТИЧНО (Version + Upload):** обновление версии и заливка клиента выполняются только по `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`, с push только в `https://github.com/Seregawpn/Nexy_client_test`.
 
 ---
 
@@ -142,4 +144,3 @@ arch -x86_64 open dist/Nexy.app
 
 **Проверено:** 2025-11-17  
 **Проверяющий:** Automated analysis
-

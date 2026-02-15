@@ -1,92 +1,64 @@
 #!/usr/bin/env python3
 """
-Utility to synchronise Nexy application version across packaging assets.
+Set client version in source-of-truth config and sync all derived files.
 
 Usage:
-    python scripts/set_version.py 1.0.1
-
-It updates:
-  * packaging/build_final.sh (VERSION variable)
-  * packaging/distribution.xml (pkg-ref version attribute)
-  * every modules/*/macos/info/Info.plist CFBundleVersion/ShortVersion
+    python scripts/set_version.py 1.6.1.38
 """
 
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-import plistlib
 import re
+import subprocess
 import sys
-from typing import Iterable
-import xml.etree.ElementTree as ET
+from pathlib import Path
+
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
+CONFIG_PATH = ROOT / "config" / "unified_config.yaml"
+VERSION_RE = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}$")
 
 
 def validate_version(value: str) -> str:
-    # Very lightweight validation – ensure format like 1.0.0 etc.
-    if not re.match(r"^[0-9]+(\.[0-9]+){0,3}$", value):
-        raise argparse.ArgumentTypeError("Version must be numeric dots string, e.g. 1.0.0 or 2.1")
+    if not VERSION_RE.match(value):
+        raise argparse.ArgumentTypeError(
+            "Version must be numeric dots string, e.g. 1.6.1.38"
+        )
     return value
 
 
-def update_build_script(version: str) -> None:
-    path = ROOT / "packaging" / "build_final.sh"
-    if not path.exists():
-        print(f"⚠️  {path} not found, skipping version update")
-        return
-    text = path.read_text(encoding="utf-8")
-    updated, count = re.subn(r'VERSION="[^"]+"', f'VERSION="{version}"', text, count=1)
-    if count != 1:
-        print(f"ℹ️  VERSION label not found in {path}, likely dynamic. Skipping.")
-        return
-    path.write_text(updated, encoding="utf-8")
+def write_version_to_config(version: str) -> None:
+    data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    app = data.setdefault("app", {})
+    app["version"] = version
+    CONFIG_PATH.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=False), encoding="utf-8")
 
 
-def update_distribution_xml(version: str) -> None:
-    path = ROOT / "packaging" / "distribution.xml"
-    tree = ET.parse(path)
-    root = tree.getroot()
-    updated = False
-    for pkg_ref in root.findall(".//pkg-ref"):
-        if pkg_ref.attrib.get("id") == "com.nexy.assistant.pkg":
-            pkg_ref.set("version", version)
-            updated = True
-    if not updated:
-        raise RuntimeError("Could not locate pkg-ref with id com.nexy.assistant.pkg")
-    tree.write(path, encoding="utf-8", xml_declaration=True)
+def run_auto_sync() -> None:
+    cmd = [sys.executable, str(ROOT / "config" / "auto_sync.py"), "--scope", "version"]
+    subprocess.run(cmd, check=True)
 
 
-def iter_module_plists() -> Iterable[Path]:
-    modules_dir = ROOT / "modules"
-    for plist in modules_dir.glob("*/macos/info/Info.plist"):
-        yield plist
-
-
-def update_info_plist(plist_path: Path, version: str) -> None:
-    data = plistlib.loads(plist_path.read_bytes())
-    data["CFBundleVersion"] = version
-    data["CFBundleShortVersionString"] = version
-    plist_path.write_bytes(plistlib.dumps(data))
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Set Nexy version across packaging files")
-    parser.add_argument("version", type=validate_version, help="Version string, e.g. 1.0.1")
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Set version in unified_config.yaml and sync derived files"
+    )
+    parser.add_argument("version", type=validate_version, help="Version string, e.g. 1.6.1.38")
     args = parser.parse_args()
 
     try:
-        update_build_script(args.version)
-        update_distribution_xml(args.version)
-        for plist in iter_module_plists():
-            update_info_plist(plist, args.version)
+        write_version_to_config(args.version)
+        run_auto_sync()
     except Exception as exc:  # noqa: BLE001
-        print(f"❌ Failed to update version: {exc}", file=sys.stderr)
-        sys.exit(1)
+        print(f"❌ Failed to set version: {exc}", file=sys.stderr)
+        return 1
 
-    print(f"✅ Updated project version to {args.version}")
+    print(f"✅ Version set and synced: {args.version}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
