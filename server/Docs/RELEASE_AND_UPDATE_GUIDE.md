@@ -7,15 +7,21 @@
 
 ---
 
-## 0) Two Pipelines (Mandatory)
+## 0) Repo Responsibilities (Mandatory)
 
-1. `Seregawpn/Nexy_server`  
-Назначение: серверный код и деплой на Azure VM.
+1. `Seregawpn/Nexy`  
+Назначение: корневой workspace (общий код/документация).
 
-2. `Seregawpn/Nexy_production/releases`  
+2. `Seregawpn/Nexy_server`  
+Назначение: серверный код и deploy pipeline на Azure VM.
+
+3. `Seregawpn/Nexy_production/releases`  
 Назначение: публикация `Nexy.dmg` и `Nexy.pkg` для клиентских обновлений.
 
-Правило: не смешивать пайплайны.
+Правила:
+- Asset pipeline не смешивать с code pipeline.
+- DMG/PKG публиковать только в `Nexy_production`.
+- `Nexy_server` не использовать как хранилище клиентских артефактов.
 
 ---
 
