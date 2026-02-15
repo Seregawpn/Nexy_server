@@ -285,7 +285,7 @@ log_header "ШАГ 8: НАСТРОЙКА NGINX"
 NGINX_CONFIG=$(cat server/nginx/grpc-passthrough.conf)
 
 # Обновление server_name с реальным IP
-NGINX_CONFIG=$(echo "$NGINX_CONFIG" | sed "s/server_name 20.151.51.172;/server_name $PUBLIC_IP;/g")
+NGINX_CONFIG=$(echo "$NGINX_CONFIG" | sed "s/server_name 20.63.24.187;/server_name $PUBLIC_IP;/g")
 
 # Кодирование в base64 для передачи
 NGINX_CONFIG_B64=$(echo "$NGINX_CONFIG" | base64)

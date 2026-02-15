@@ -39,10 +39,10 @@ cd /path/to/nexy/server/scripts
 REPO="Seregawpn/Nexy_production"        # GitHub репозиторий
 RELEASE_TAG="Update"                     # Тег релиза
 FILE_NAME="Nexy.dmg"                    # Имя файла
-MANIFEST_FILE="manifest_1.0.0.json"     # Имя манифеста
-MANIFEST_DIR="/home/azureuser/voice-assistant/updates/manifests"  # Директория манифеста
-AZURE_RESOURCE_GROUP="Nexy"             # Группа ресурсов Azure
-AZURE_VM_NAME="nexy-regular"             # Имя VM
+MANIFEST_FILE="manifest.json"           # Имя манифеста
+MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"  # Директория манифеста
+AZURE_RESOURCE_GROUP="NetworkWatcherRG"             # Группа ресурсов Azure
+AZURE_VM_NAME="Nexy"             # Имя VM
 ```
 
 ### **Изменение конфигурации:**
@@ -142,7 +142,7 @@ az account set --subscription "your-subscription-id"
 
 ### **Резервные копии:**
 - Скрипт автоматически создает резервные копии манифеста
-- Формат имени: `manifest_1.0.0.json.backup.YYYYMMDD_HHMMSS`
+- Формат имени: `manifest.json.backup.YYYYMMDD_HHMMSS`
 
 ### **Валидация:**
 - Проверка доступности GitHub API
@@ -169,10 +169,10 @@ az vm run-command invoke \
   --name "nexy-regular" \
   --command-id RunShellScript \
   --scripts "
-cd /home/azureuser/voice-assistant/updates/manifests
-ls -la manifest_1.0.0.json.backup.*
+cd /home/azureuser/voice-assistant/server/updates/manifests
+ls -la manifest.json.backup.*
 # Выберите нужную копию и восстановите:
-# cp manifest_1.0.0.json.backup.YYYYMMDD_HHMMSS manifest_1.0.0.json
+# cp manifest.json.backup.YYYYMMDD_HHMMSS manifest.json
 "
 ```
 
@@ -207,4 +207,3 @@ ls -la manifest_1.0.0.json.backup.*
 - ✅ **Гибкость** - легко настраивается под разные релизы
 
 **Теперь синхронизация манифеста с GitHub релизом происходит автоматически!** 🚀
-

@@ -27,6 +27,9 @@ fi
 FILE="$1"
 VERSION="Update"
 REPO="Seregawpn/Nexy_production"
+AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NetworkWatcherRG}"
+AZURE_VM_NAME="${AZURE_VM_NAME:-Nexy}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://20.63.24.187}"
 
 echo "🚀 =========================================="
 echo "🚀    ПОЛНОЕ РАЗВЕРТЫВАНИЕ ОБНОВЛЕНИЯ"
@@ -139,42 +142,17 @@ if ! az account show &> /dev/null; then
     exit 1
 fi
 
-# Обновляем манифест
-az vm run-command invoke \
-    --resource-group "Nexy" \
-    --name "nexy-regular" \
-    --command-id RunShellScript \
-    --scripts "
-        cd /home/azureuser/voice-assistant/updates/manifests
-        
-        # Создаем резервную копию
-        cp manifest_1.0.0.json manifest_1.0.0.json.backup
-        
-        # Обновляем манифест
-        cat > manifest_1.0.0.json << 'EOF'
-{
-  \"version\": \"1.0.1\",
-  \"build\": 1001,
-  \"release_date\": \"$(date -u +%Y-%m-%dT%H:%M:%S.%6NZ)\",
-  \"artifact\": {
-    \"type\": \"dmg\",
-    \"url\": \"$DOWNLOAD_URL\",
-    \"size\": $FILE_SIZE,
-    \"sha256\": \"$FILE_SHA256\",
-    \"arch\": \"universal2\",
-    \"min_os\": \"11.0\",
-    \"ed25519\": \"VRccoPWghg4P5GNhLj6t/XyBKvujsxrVwO5ZBMI21naKQfkcf+nsj6u9+rxscooycYYPH87zrnLI+P7petJMAw==\"
-  },
-  \"critical\": false,
-  \"auto_install\": true,
-  \"notes_url\": \"$DOWNLOAD_URL\"
-}
-EOF
-        
-        echo 'Манифест обновлен:'
-        echo \"URL: $DOWNLOAD_URL\"
-        echo \"Размер: $FILE_SIZE байт\"
-    " > /dev/null
+# Обновляем манифест (централизованный owner)
+"$(dirname "$0")/update_manifest_remote_locked.sh" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --vm "$AZURE_VM_NAME" \
+    --remote-base "/home/azureuser/voice-assistant/server" \
+    --url "$DOWNLOAD_URL" \
+    --size "$FILE_SIZE" \
+    --sha256 "$FILE_SHA256" \
+    --version "$VERSION" \
+    --build "$VERSION" \
+    --notes-url "$DOWNLOAD_URL" > /dev/null
 
 if [ $? -eq 0 ]; then
     log_success "Манифест обновлен на сервере"
@@ -210,7 +188,7 @@ fi
 
 log_info "🔍 Проверка AppCast XML..."
 sleep 3  # Ждем обновления AppCast XML
-APPCAST_SIZE=$(curl -s http://20.151.51.172:8081/appcast.xml | grep -o 'length="[^"]*"' | cut -d'"' -f2)
+APPCAST_SIZE=$(curl -sk "$PUBLIC_BASE_URL/updates/appcast.xml" | grep -o 'length="[^"]*"' | cut -d'"' -f2)
 if [ "$APPCAST_SIZE" = "$FILE_SIZE" ]; then
     log_success "✅ AppCast XML содержит правильный размер: $APPCAST_SIZE байт"
 else
@@ -237,12 +215,12 @@ echo "   📁 Файл: $FILE_NAME"
 echo "   📏 Размер: $FILE_SIZE байт (проверен на GitHub)"
 echo "   🔐 SHA256: $FILE_SHA256"
 echo "   🔗 GitHub: $DOWNLOAD_URL"
-echo "   🖥️  Сервер: http://20.151.51.172:8081"
+echo "   🖥️  Сервер: $PUBLIC_BASE_URL"
 echo ""
 log_info "🔗 Ссылки:"
 echo "   📥 Скачать: $DOWNLOAD_URL"
-echo "   📰 AppCast: http://20.151.51.172:8081/appcast.xml"
-echo "   📋 Манифест: http://20.151.51.172:8081/manifests/manifest_1.0.0.json"
+echo "   📰 AppCast: $PUBLIC_BASE_URL/updates/appcast.xml"
+echo "   📋 Манифест API: $PUBLIC_BASE_URL/updates/api/manifests"
 echo "   📁 Релиз: https://github.com/$REPO/releases/tag/$VERSION"
 echo ""
 log_success "✅ Система обновлений готова!"

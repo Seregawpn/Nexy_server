@@ -8,7 +8,7 @@
     
 Примеры:
     # Production сервер
-    python scripts/check_grpc_health.py 20.151.51.172 443
+    python scripts/check_grpc_health.py 20.63.24.187 443
     
     # Локальный сервер
     python scripts/check_grpc_health.py localhost 8080
@@ -142,8 +142,8 @@ def main():
     parser.add_argument(
         "host",
         nargs="?",
-        default="20.151.51.172",
-        help="Хост сервера (по умолчанию: 20.151.51.172)"
+        default="20.63.24.187",
+        help="Хост сервера (по умолчанию: 20.63.24.187)"
     )
     parser.add_argument(
         "port",

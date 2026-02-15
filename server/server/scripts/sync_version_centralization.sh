@@ -11,8 +11,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Параметры Azure
-AZURE_RESOURCE_GROUP="Nexy"
-AZURE_VM_NAME="nexy-regular"
+AZURE_RESOURCE_GROUP="NetworkWatcherRG"
+AZURE_VM_NAME="Nexy"
 SERVER_PATH="/home/azureuser/voice-assistant"
 
 # Локальные файлы для обновления
@@ -245,9 +245,9 @@ echo "Проверка, что все эндпоинты используют в
 echo ""
 
 # Проверяем, что версии совпадают
-HEALTH_RESPONSE=$(curl -sk "https://20.151.51.172/health" 2>/dev/null || echo "")
-UPDATES_HEALTH_RESPONSE=$(curl -sk "https://20.151.51.172/updates/health" 2>/dev/null || echo "")
-APPCAST_VERSION=$(curl -sk "https://20.151.51.172/appcast.xml" 2>/dev/null | grep -o 'sparkle:version="[^"]*"' | head -1 | cut -d'"' -f2 || echo "N/A")
+HEALTH_RESPONSE=$(curl -sk "https://20.63.24.187/health" 2>/dev/null || echo "")
+UPDATES_HEALTH_RESPONSE=$(curl -sk "https://20.63.24.187/updates/health" 2>/dev/null || echo "")
+APPCAST_VERSION=$(curl -sk "https://20.63.24.187/updates/appcast.xml" 2>/dev/null | grep -o 'sparkle:version="[^"]*"' | head -1 | cut -d'"' -f2 || echo "N/A")
 
 if [ -n "$HEALTH_RESPONSE" ] && [ -n "$UPDATES_HEALTH_RESPONSE" ]; then
     HEALTH_VERSION=$(echo "$HEALTH_RESPONSE" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('latest_version', 'N/A'))" 2>/dev/null || echo "N/A")
@@ -258,7 +258,7 @@ if [ -n "$HEALTH_RESPONSE" ] && [ -n "$UPDATES_HEALTH_RESPONSE" ]; then
     echo "Версии из эндпоинтов:"
     echo "  /health:           $HEALTH_VERSION / $HEALTH_BUILD"
     echo "  /updates/health:   $UPDATES_VERSION / $UPDATES_BUILD"
-    echo "  /appcast.xml:      $APPCAST_VERSION"
+    echo "  /updates/appcast.xml: $APPCAST_VERSION"
     echo ""
     
     # Проверяем, что все версии совпадают

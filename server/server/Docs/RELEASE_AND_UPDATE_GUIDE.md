@@ -1,0 +1,134 @@
+# Server Release & Update Guide
+
+**Статус:** Active Rulebook  
+**Обновлено:** 15 February 2026
+
+Канон публикации клиентских артефактов и синхронизации update-канала.
+
+---
+
+## 0) Two Pipelines (Mandatory)
+
+1. `Seregawpn/Nexy_server`  
+Назначение: серверный код и деплой на Azure VM.
+
+2. `Seregawpn/Nexy_production/releases`  
+Назначение: публикация `Nexy.dmg` и `Nexy.pkg` для клиентских обновлений.
+
+Правило: не смешивать пайплайны.
+
+---
+
+## 1) Release Infrastructure Rules
+
+- `release_inbox` должен существовать в корне репозитория.
+- Каноничный скрипт публикации: `server/scripts/publish_assets_and_sync.py`.
+- Манифест update-канала: `server/updates/manifests/manifest.json`.
+- Fixed tags в `Nexy_production`:
+  - `Nexy.dmg` -> `Update`
+  - `Nexy.pkg` -> `App`
+
+---
+
+## 2) Version Source of Truth
+
+Runtime версия сервера (для `/health` и `/status`):
+1. `server/VERSION` (primary source)
+2. `SERVER_VERSION` env fallback (если `VERSION` недоступен)
+
+Update metadata:
+1. `server/updates/manifests/manifest.json` (`version`, `build`, `artifact.*`)
+
+Правило:
+- `server/VERSION` и `manifest.json` должны быть синхронизированы при релизе.
+- Обновление `manifest.json` выполнять только через owner-скрипты (`publish_assets_and_sync.py` или `update_manifest_remote_locked.sh`), без ручного inline-редактирования.
+
+---
+
+## 3) Artifact Publication (Nexy_production)
+
+### 3.1 Pre-check
+
+```bash
+test -d release_inbox && echo "OK: release_inbox exists" || echo "MISSING: release_inbox"
+ls -la release_inbox
+gh auth status
+```
+
+Ожидания:
+- В `release_inbox` есть `Nexy.dmg` и/или `Nexy.pkg`.
+- `gh auth status` успешен.
+
+### 3.2 Publish
+
+```bash
+python3 server/scripts/publish_assets_and_sync.py
+```
+
+Ожидаемые лог-маркеры:
+- `Current Version: ...`
+- `Target Repo: Seregawpn/Nexy_production`
+- `Uploaded. URL: .../releases/download/Update/Nexy.dmg`
+- `RELEASE COMPLETE`
+
+Dry-run:
+```bash
+python3 server/scripts/publish_assets_and_sync.py --dry-run
+```
+
+### 3.3 Verify
+
+- `https://github.com/Seregawpn/Nexy_production/releases/tag/Update`
+- `https://github.com/Seregawpn/Nexy_production/releases/tag/App`
+- `https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg`
+- Проверить `server/updates/manifests/manifest.json`:
+  - `version`, `build`
+  - `artifact.url`, `artifact.size`, `artifact.sha256`
+
+---
+
+## 4) Troubleshooting
+
+### 4.1 Inbox not found
+```bash
+mkdir -p release_inbox
+ls -la release_inbox
+```
+
+### 4.2 Script not found
+Корректно:
+```bash
+python3 server/scripts/publish_assets_and_sync.py
+```
+
+### 4.3 GH CLI auth issues
+```bash
+gh --version
+gh auth status
+gh auth login
+```
+
+### 4.4 Wrong target repo/tags
+Проверить в `server/scripts/publish_assets_and_sync.py`:
+- `TARGET_REPO = "Seregawpn/Nexy_production"`
+- `DMG_TAG = "Update"`
+- `PKG_TAG = "App"`
+
+---
+
+## 5) Search / Logs (Поиск)
+
+- Артефакты: `release_inbox/`
+- Манифест: `server/updates/manifests/manifest.json`
+- Логи публикации: stdout/stderr `python3 server/scripts/publish_assets_and_sync.py`
+- Remote check: release URLs `Update` и `App`
+
+---
+
+## 6) DoD
+
+1. `release_inbox` существует и содержит артефакты.
+2. Публикация завершилась без ошибок.
+3. DMG/PKG доступны в `Nexy_production`.
+4. `manifest.json` обновлён и синхронизирован.
+5. После code deploy `/health` и `/updates/health` показывают нужную версию.

@@ -119,7 +119,7 @@ git push origin 1.6.0.36
 
 ```bash
 # 1. Обновить код
-cd /home/azureuser/voice-assistant/server
+cd /home/azureuser/voice-assistant
 git pull origin main
 
 # 2. Версия автоматически читается из VERSION файла
@@ -163,8 +163,8 @@ cat server/updates/manifests/manifest.json | python3 -m json.tool
 
 ### Как работает чтение версии
 
-1. **Приоритет 1:** Переменная окружения `SERVER_VERSION` (если задана)
-2. **Приоритет 2:** Файл `VERSION` (если существует)
+1. **Приоритет 1:** Файл `VERSION` (если существует и не пустой)
+2. **Приоритет 2:** Переменная окружения `SERVER_VERSION`
 3. **Приоритет 3:** Дефолтное значение в коде
 
 ### Функция `get_version_from_file()`

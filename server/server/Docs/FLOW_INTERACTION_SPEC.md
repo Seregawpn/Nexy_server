@@ -158,7 +158,7 @@ Coordinator: `modules/update`
 Source of Truth: `config/unified_config.yaml`  
 
 Sequence:
-1. Обновления проверяются и устанавливаются согласно `UPDATE_SYSTEM_FIXES.md`.
+1. Обновления проверяются и устанавливаются согласно `server/Docs/RELEASE_AND_UPDATE_GUIDE.md`.
 2. Наблюдаемость: метрики и алерты обязаны отражать состояние обновления.
 
 ## 4) Запреты и совместимость

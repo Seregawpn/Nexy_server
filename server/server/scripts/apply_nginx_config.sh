@@ -32,8 +32,8 @@ log_error() {
 }
 
 # Конфигурация
-AZURE_RESOURCE_GROUP="Nexy"
-AZURE_VM_NAME="nexy-regular"
+AZURE_RESOURCE_GROUP="NetworkWatcherRG"
+AZURE_VM_NAME="Nexy"
 NGINX_CONFIG_PATH="/etc/nginx/sites-available/nexy-grpc"
 NGINX_CONFIG_LOCAL="server/nginx/grpc-passthrough.conf"
 
@@ -98,14 +98,14 @@ log_info "Проверка доступности endpoints..."
 sleep 1
 
 # Проверка appcast
-if curl -sk -o /dev/null -w "%{http_code}" "https://20.151.51.172/updates/appcast.xml" | grep -q "200"; then
+if curl -sk -o /dev/null -w "%{http_code}" "https://20.63.24.187/updates/appcast.xml" | grep -q "200"; then
     log_success "Appcast доступен"
 else
     log_warning "Appcast недоступен"
 fi
 
 # Проверка health
-if curl -sk -o /dev/null -w "%{http_code}" "https://20.151.51.172/updates/health" | grep -q "200"; then
+if curl -sk -o /dev/null -w "%{http_code}" "https://20.63.24.187/updates/health" | grep -q "200"; then
     log_success "Health endpoint доступен"
 else
     log_warning "Health endpoint недоступен"

@@ -22,11 +22,12 @@ log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error() { echo -e "${RED}❌ $1${NC}"; }
 log_header() { echo -e "${PURPLE}🚀 $1${NC}"; }
 
-AZURE_RESOURCE_GROUP="Nexy"
-AZURE_VM_NAME="nexy-regular"
+AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NetworkWatcherRG}"
+AZURE_VM_NAME="${AZURE_VM_NAME:-Nexy}"
 MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"
 DOWNLOADS_DIR="/home/azureuser/voice-assistant/server/updates/downloads"
 MANIFEST_FILE="manifest.json"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://20.63.24.187}"
 
 # Параметры
 DMG_PATH="${1:-}"
@@ -113,7 +114,7 @@ else
             ls -lh \"$DOWNLOADS_DIR/$FILENAME\"
         " > /dev/null
     
-    ARTIFACT_URL="https://20.151.51.172/updates/downloads/$FILENAME"
+    ARTIFACT_URL="$PUBLIC_BASE_URL/updates/downloads/$FILENAME"
     log_success "Файл загружен на сервер"
 fi
 
@@ -127,49 +128,14 @@ log_header "ШАГ 2: Обновление манифеста"
 log_info "URL артефакта: $ARTIFACT_URL"
 log_info "Размер: $FILE_SIZE байт"
 
-az vm run-command invoke \
+"$(dirname "$0")/update_manifest_remote_locked.sh" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$AZURE_VM_NAME" \
-    --command-id RunShellScript \
-    --scripts "
-cd $MANIFEST_DIR
-
-# Резервная копия
-cp $MANIFEST_FILE ${MANIFEST_FILE}.backup.\$(date +%Y%m%d_%H%M%S)
-
-# Обновление манифеста
-python3 << 'PYTHON_EOF'
-import json
-from datetime import datetime
-
-manifest_file = '$MANIFEST_FILE'
-artifact_url = '$ARTIFACT_URL'
-file_size = $FILE_SIZE
-file_sha256 = '$FILE_SHA256'
-
-# Читаем манифест
-with open(manifest_file, 'r') as f:
-    manifest = json.load(f)
-
-# Обновляем
-manifest['artifact']['url'] = artifact_url
-manifest['artifact']['type'] = 'dmg'  # ВАЖНО: меняем с 'txt' на 'dmg'
-manifest['artifact']['size'] = file_size
-if file_sha256:
-    manifest['artifact']['sha256'] = file_sha256
-manifest['notes_url'] = artifact_url
-manifest['release_date'] = datetime.utcnow().isoformat() + 'Z'
-
-# Сохраняем
-with open(manifest_file, 'w') as f:
-    json.dump(manifest, f, indent=2)
-
-print('✅ Манифест обновлен')
-print('URL:', artifact_url)
-print('Тип:', manifest['artifact']['type'])
-print('Размер:', file_size, 'байт')
-PYTHON_EOF
-" > /dev/null
+    --vm "$AZURE_VM_NAME" \
+    --remote-base "/home/azureuser/voice-assistant/server" \
+    --url "$ARTIFACT_URL" \
+    --size "$FILE_SIZE" \
+    --sha256 "$FILE_SHA256" \
+    --notes-url "$ARTIFACT_URL" > /dev/null
 
 log_success "Манифест обновлен"
 echo ""
@@ -211,8 +177,8 @@ sleep 3
 
 # Проверка appcast
 log_info "Проверка appcast..."
-APPCAST_URL=$(curl -sk "https://20.151.51.172/updates/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)
-APPCAST_TYPE=$(curl -sk "https://20.151.51.172/updates/appcast.xml" | grep -o 'type="[^"]*"' | cut -d'"' -f2)
+APPCAST_URL=$(curl -sk "$PUBLIC_BASE_URL/updates/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)
+APPCAST_TYPE=$(curl -sk "$PUBLIC_BASE_URL/updates/appcast.xml" | grep -o 'type="[^"]*"' | cut -d'"' -f2)
 
 log_info "URL в appcast: $APPCAST_URL"
 log_info "Тип в appcast: $APPCAST_TYPE"
@@ -246,6 +212,4 @@ echo "  • Размер: $FILE_SIZE байт"
 echo "  • Сервер: перезапущен"
 echo ""
 log_info "🔍 Проверка:"
-echo "  curl -sk \"https://20.151.51.172/updates/appcast.xml\" | grep url"
-
-
+echo "  curl -sk \"$PUBLIC_BASE_URL/updates/appcast.xml\" | grep url"
