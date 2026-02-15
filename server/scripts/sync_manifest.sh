@@ -44,10 +44,10 @@ log_header() {
 REPO="Seregawpn/Nexy_production"
 RELEASE_TAG="Update"
 FILE_NAME="Nexy.dmg"
-MANIFEST_FILE="manifest_1.0.0.json"
-MANIFEST_DIR="/home/azureuser/voice-assistant/updates/manifests"
-AZURE_RESOURCE_GROUP="Nexy"
-AZURE_VM_NAME="nexy-regular"
+MANIFEST_FILE="manifest.json"
+MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"
+AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NetworkWatcherRG}"
+AZURE_VM_NAME="${AZURE_VM_NAME:-Nexy}"
 
 # URL для проверки
 GITHUB_API_URL="https://api.github.com/repos/$REPO/releases"
@@ -245,29 +245,17 @@ update_manifest() {
 EOF
 )
     
-    # Загружаем обновленный манифест на сервер
-    az vm run-command invoke \
+    # Загружаем обновленный манифест на сервер (централизованный owner)
+    "$(dirname "$0")/update_manifest_remote_locked.sh" \
         --resource-group "$AZURE_RESOURCE_GROUP" \
-        --name "$AZURE_VM_NAME" \
-        --command-id RunShellScript \
-        --scripts "
-cd $MANIFEST_DIR
-
-# Создаем резервную копию
-cp $MANIFEST_FILE $MANIFEST_FILE.backup.\$(date +%Y%m%d_%H%M%S)
-
-# Записываем новый манифест
-cat > $MANIFEST_FILE << 'MANIFEST_EOF'
-$new_manifest
-MANIFEST_EOF
-
-echo '✅ Манифест обновлен:'
-echo '   📦 Версия: $CURRENT_VERSION'
-echo '   🔢 Build: $CURRENT_BUILD'
-echo '   📏 Размер: $GITHUB_FILE_SIZE байт'
-echo '   🔗 URL: $GITHUB_FILE_URL'
-echo '   📊 Изменение: $((GITHUB_FILE_SIZE - CURRENT_SIZE)) байт'
-"
+        --vm "$AZURE_VM_NAME" \
+        --remote-base "/home/azureuser/voice-assistant/server" \
+        --url "$GITHUB_FILE_URL" \
+        --size "$GITHUB_FILE_SIZE" \
+        --sha256 "e62a4571190d94e68a0c95a793729c96610e5c5267945b794f7dfa45bb9cf480" \
+        --version "$CURRENT_VERSION" \
+        --build "$CURRENT_BUILD" \
+        --notes-url "$GITHUB_FILE_URL" > /dev/null
     
     log_success "Манифест успешно обновлен на сервере"
 }
@@ -277,7 +265,7 @@ check_appcast() {
     log_info "Проверка AppCast XML..."
     
     local appcast_data
-    appcast_data=$(curl -s "http://20.151.51.172:8081/appcast.xml")
+    appcast_data=$(curl -sk "https://20.63.24.187/updates/appcast.xml")
     
     if [ -z "$appcast_data" ]; then
         log_error "Не удалось получить AppCast XML"
@@ -305,8 +293,8 @@ final_verification() {
     echo "🧪 ФИНАЛЬНАЯ ПРОВЕРКА:"
     echo "   🔗 GitHub: $GITHUB_FILE_SIZE байт"
     echo "   📄 Манифест: $GITHUB_FILE_SIZE байт"
-    echo "   📋 AppCast: $(curl -s "http://20.151.51.172:8081/appcast.xml" | grep -o 'length="[^"]*"' | cut -d'"' -f2) байт"
-    echo "   🔗 URLs: $(curl -s "http://20.151.51.172:8081/appcast.xml" | grep -o 'url="[^"]*"' | cut -d'"' -f2)"
+    echo "   📋 AppCast: $(curl -sk "https://20.63.24.187/updates/appcast.xml" | grep -o 'length=\"[^\"]*\"' | cut -d'\"' -f2) байт"
+    echo "   🔗 URLs: $(curl -sk "https://20.63.24.187/updates/appcast.xml" | grep -o 'url=\"[^\"]*\"' | cut -d'\"' -f2)"
     
     log_success "Синхронизация завершена успешно!"
 }

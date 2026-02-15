@@ -36,11 +36,11 @@ log_error() {
 }
 
 # Конфигурация
-AZURE_RESOURCE_GROUP="Nexy"
-AZURE_VM_NAME="nexy-regular"
-SERVER_IP="20.151.51.172"
-MANIFEST_DIR="/home/azureuser/voice-assistant/updates/manifests"
-DOWNLOADS_DIR="/home/azureuser/voice-assistant/updates/downloads"
+AZURE_RESOURCE_GROUP="NetworkWatcherRG"
+AZURE_VM_NAME="Nexy"
+SERVER_IP="20.63.24.187"
+MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"
+DOWNLOADS_DIR="/home/azureuser/voice-assistant/server/updates/downloads"
 MANIFEST_FILE="manifest.json"
 TEST_FILE="test-update.txt"
 
@@ -137,59 +137,14 @@ ARTIFACT_URL="https://${SERVER_IP}/updates/downloads/${TEST_FILE}"
 
 log_info "URL артефакта: $ARTIFACT_URL"
 
-az vm run-command invoke \
+"$(dirname "$0")/update_manifest_remote_locked.sh" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
-    --name "$AZURE_VM_NAME" \
-    --command-id RunShellScript \
-    --scripts "
-        cd $MANIFEST_DIR
-        
-        # Создаем резервную копию
-        if [ -f \"$MANIFEST_FILE\" ]; then
-            cp \"$MANIFEST_FILE\" \"${MANIFEST_FILE}.backup.\$(date +%Y%m%d_%H%M%S)\"
-        fi
-        
-        # Обновляем манифест
-        if command -v jq &> /dev/null; then
-            # Используем jq для обновления
-            jq \"
-                .artifact.url = \\\"$ARTIFACT_URL\\\" |
-                .artifact.size = $FILE_SIZE |
-                .artifact.sha256 = \\\"$FILE_SHA256\\\" |
-                .notes_url = \\\"$ARTIFACT_URL\\\"
-            \" \"$MANIFEST_FILE\" > \"${MANIFEST_FILE}.tmp\" && mv \"${MANIFEST_FILE}.tmp\" \"$MANIFEST_FILE\"
-        else
-            # Используем Python как fallback
-            python3 << 'PYTHON_EOF'
-import json
-import sys
-
-manifest_file = \"$MANIFEST_FILE\"
-artifact_url = \"$ARTIFACT_URL\"
-file_size = $FILE_SIZE
-file_sha256 = \"$FILE_SHA256\"
-
-try:
-    with open(manifest_file, 'r') as f:
-        manifest = json.load(f)
-    
-    manifest['artifact']['url'] = artifact_url
-    manifest['artifact']['size'] = file_size
-    manifest['artifact']['sha256'] = file_sha256
-    manifest['notes_url'] = artifact_url
-    
-    with open(manifest_file, 'w') as f:
-        json.dump(manifest, f, indent=2)
-    
-    print('✅ Манифест обновлен')
-    print('📄 Содержимое:')
-    print(json.dumps(manifest, indent=2))
-except Exception as e:
-    print(f'❌ Ошибка: {e}')
-    sys.exit(1)
-PYTHON_EOF
-        fi
-    " > /dev/null
+    --vm "$AZURE_VM_NAME" \
+    --remote-base "/home/azureuser/voice-assistant/server" \
+    --url "$ARTIFACT_URL" \
+    --size "$FILE_SIZE" \
+    --sha256 "$FILE_SHA256" \
+    --notes-url "$ARTIFACT_URL" > /dev/null
 
 log_success "Манифест обновлен"
 
@@ -241,5 +196,3 @@ echo "  curl -sk -I \"$ARTIFACT_URL\""
 echo ""
 log_warning "⚠️  Если appcast все еще содержит localhost, перезапустите сервер обновлений:"
 echo "  sudo systemctl restart nexy-update-server  # или перезапустите весь сервер"
-
-

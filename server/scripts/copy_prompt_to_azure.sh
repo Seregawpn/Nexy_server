@@ -5,7 +5,7 @@
 set -e
 
 RESOURCE_GROUP="Nexy"
-VM_NAME="nexy-regular"
+VM_NAME="Nexy"
 SERVER_PATH="/home/azureuser/voice-assistant"
 CONFIG_FILE="server/config/unified_config.py"
 LOCAL_CONFIG_FILE="server/config/unified_config.py"
@@ -67,7 +67,7 @@ if [ $? -eq 0 ]; then
     echo "🎉 Промт успешно обновлен на Azure сервере!"
     echo ""
     echo "🔗 Проверка:"
-    echo "   curl -sk https://20.151.51.172/health"
+    echo "   curl -sk https://20.63.24.187/health"
 else
     echo "❌ Ошибка копирования файла"
     exit 1

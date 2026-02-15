@@ -22,8 +22,8 @@ log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error() { echo -e "${RED}❌ $1${NC}"; }
 log_header() { echo -e "${PURPLE}🚀 $1${NC}"; }
 
-AZURE_RESOURCE_GROUP="Nexy"
-AZURE_VM_NAME="nexy-regular"
+AZURE_RESOURCE_GROUP="NetworkWatcherRG"
+AZURE_VM_NAME="Nexy"
 MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"
 MANIFEST_FILE="manifest.json"
 
@@ -91,40 +91,12 @@ if [ "$ACTION" = "sync" ]; then
     
     log_info "Обновление манифеста до версии клиента: $CLIENT_VERSION"
     
-    az vm run-command invoke \
+    "$(dirname "$0")/update_manifest_remote_locked.sh" \
         --resource-group "$AZURE_RESOURCE_GROUP" \
-        --name "$AZURE_VM_NAME" \
-        --command-id RunShellScript \
-        --scripts "
-cd $MANIFEST_DIR
-
-# Резервная копия
-cp $MANIFEST_FILE ${MANIFEST_FILE}.backup.\$(date +%Y%m%d_%H%M%S)
-
-# Обновление версии
-python3 << 'PYTHON_EOF'
-import json
-from datetime import datetime
-
-manifest_file = '$MANIFEST_FILE'
-client_version = '$CLIENT_VERSION'
-
-with open(manifest_file, 'r') as f:
-    manifest = json.load(f)
-
-# Обновляем версию
-manifest['version'] = client_version
-manifest['build'] = client_version
-manifest['release_date'] = datetime.utcnow().isoformat() + 'Z'
-
-with open(manifest_file, 'w') as f:
-    json.dump(manifest, f, indent=2)
-
-print('✅ Версия обновлена на', client_version)
-print('Version:', manifest['version'])
-print('Build:', manifest['build'])
-PYTHON_EOF
-" > /dev/null
+        --vm "$AZURE_VM_NAME" \
+        --remote-base "/home/azureuser/voice-assistant/server" \
+        --version "$CLIENT_VERSION" \
+        --build "$CLIENT_VERSION" > /dev/null
     
     log_success "Манифест обновлен"
     
@@ -179,7 +151,7 @@ fi
 log_info "Проверка результата..."
 sleep 3
 
-NEW_APPCAST=$(curl -sk "https://20.151.51.172/updates/appcast.xml" | grep -o 'sparkle:version="[^"]*"' | cut -d'"' -f2)
+NEW_APPCAST=$(curl -sk "https://20.63.24.187/updates/appcast.xml" | grep -o 'sparkle:version="[^"]*"' | cut -d'"' -f2)
 log_info "Версия в appcast: $NEW_APPCAST"
 
 if [ "$NEW_APPCAST" = "$CLIENT_VERSION" ]; then
@@ -201,5 +173,4 @@ else
 fi
 echo ""
 log_info "🔍 Проверка:"
-echo "  curl -sk \"https://20.151.51.172/updates/appcast.xml\" | grep sparkle:version"
-
+echo "  curl -sk \"https://20.63.24.187/updates/appcast.xml\" | grep sparkle:version"

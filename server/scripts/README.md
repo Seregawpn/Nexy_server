@@ -57,7 +57,7 @@ chmod +x deploy.sh
 curl -I https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
 
 # Проверить AppCast XML
-curl -s http://20.151.51.172:8081/appcast.xml | grep -A 5 "enclosure"
+curl -sk https://20.63.24.187/updates/appcast.xml | grep -A 5 "enclosure"
 ```
 
 ---
@@ -166,13 +166,13 @@ gh release delete Update --repo Seregawpn/Nexy_production --yes
 # Обновить манифест с правильным форматом версии
 az vm run-command invoke --resource-group "Nexy" --name "nexy-regular" \
   --command-id RunShellScript --scripts "
-cd /home/azureuser/voice-assistant/updates/manifests
+cd /home/azureuser/voice-assistant/server/updates/manifests
 # Изменить build с числа на строку
-sed -i 's/\"build\": 1001/\"build\": \"1.0.1\"/' manifest_1.0.0.json
+sed -i 's/\"build\": 1001/\"build\": \"1.0.1\"/' manifest.json
 "
 ```
 
-**Проверка:** `curl -s http://20.151.51.172:8081/appcast.xml | grep sparkle:version`
+**Проверка:** `curl -sk https://20.63.24.187/updates/appcast.xml | grep sparkle:version`
 
 ---
 
@@ -206,12 +206,12 @@ echo "Локальный: $LOCAL_SIZE, GitHub: $GITHUB_SIZE"
 #### 3. **Никогда не оставляйте локальные файлы на сервере**
 ```bash
 # После перехода на GitHub CDN:
-rm -f /home/azureuser/voice-assistant/updates/downloads/*.dmg
+rm -f /home/azureuser/voice-assistant/server/updates/downloads/*.dmg
 ```
 
 #### 4. **Всегда проверяйте AppCast XML после деплоя**
 ```bash
-curl -s http://20.151.51.172:8081/appcast.xml | grep -E "(sparkle:version|length)"
+curl -sk https://20.63.24.187/updates/appcast.xml | grep -E "(sparkle:version|length)"
 ```
 
 ### 🧪 Чеклист перед деплоем:
@@ -250,12 +250,12 @@ curl -s http://20.151.51.172:8081/appcast.xml | grep -E "(sparkle:version|length
    📏 Размер: 97368441 байт (проверен на GitHub)
    🔐 SHA256: e62a4571190d94e68a0c95a793729c96610e5c5267945b794f7dfa45bb9cf480
    🔗 GitHub: https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
-   🖥️  Сервер: http://20.151.51.172:8081
+   🖥️  Сервер: https://20.63.24.187
 
 🔗 Ссылки:
    📥 Скачать: https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg
-   📰 AppCast: http://20.151.51.172:8081/appcast.xml
-   📋 Манифест: http://20.151.51.172:8081/manifests/manifest_1.0.0.json
+   📰 AppCast: https://20.63.24.187/updates/appcast.xml
+   📋 Манифест API: https://20.63.24.187/updates/api/manifests
    📁 Релиз: https://github.com/Seregawpn/Nexy_production/releases/tag/Update
 
 ✅ Система обновлений готова!

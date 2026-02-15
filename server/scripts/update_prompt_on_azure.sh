@@ -23,7 +23,7 @@ echo "🚀 =========================================="
 echo ""
 
 RESOURCE_GROUP="Nexy"
-VM_NAME="nexy-regular"
+VM_NAME="Nexy"
 SERVER_PATH="/home/azureuser/voice-assistant"
 CONFIG_FILE="server/config/unified_config.py"
 
@@ -378,7 +378,7 @@ if [ $? -eq 0 ]; then
     log_info "✅ Новый промт активен"
     echo ""
     log_info "🔗 Проверка:"
-    echo "   curl -sk https://20.151.51.172/health"
+    echo "   curl -sk https://20.63.24.187/health"
 else
     log_error "Ошибка замены промта"
     exit 1

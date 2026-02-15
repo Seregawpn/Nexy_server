@@ -224,8 +224,8 @@ async def main():
     parser.add_argument(
         "host",
         nargs="?",
-        default="20.151.51.172",
-        help="Хост сервера (по умолчанию: 20.151.51.172)"
+        default="20.63.24.187",
+        help="Хост сервера (по умолчанию: 20.63.24.187)"
     )
     parser.add_argument(
         "port",
