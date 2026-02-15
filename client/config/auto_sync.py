@@ -9,16 +9,15 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 import json
+from pathlib import Path
 import plistlib
 import re
 import sys
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from typing import Iterable
 
 import yaml
-
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "config" / "unified_config.yaml"
