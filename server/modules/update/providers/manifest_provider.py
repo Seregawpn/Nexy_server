@@ -211,8 +211,26 @@ class ManifestProvider:
         
         # Проверяем номер сборки
         build = manifest.get("build", 0)
-        if not isinstance(build, int) or build <= 0:
+        # Build в проекте хранится как строка версии (например, "1.6.1.35"),
+        # но поддерживаем и int для обратной совместимости.
+        if isinstance(build, int):
+            if build <= 0:
+                logger.error("❌ Неверный номер сборки")
+                return False
+        elif isinstance(build, str):
+            if not build.strip():
+                logger.error("❌ Неверный номер сборки")
+                return False
+        else:
             logger.error("❌ Неверный номер сборки")
+            return False
+
+        artifact_url = str(artifact.get("url", "")).strip()
+        if not artifact_url.startswith("https://"):
+            logger.error("❌ Artifact URL должен использовать HTTPS")
+            return False
+        if artifact_url.endswith("/appcast.xml") or artifact_url.endswith("/appcast-beta.xml") or artifact_url.endswith("/appcast-alpha.xml"):
+            logger.error("❌ Artifact URL не должен указывать на appcast feed")
             return False
         
         logger.info(f"✅ Манифест валиден: {version} (build {build})")
@@ -312,6 +330,5 @@ class ManifestProvider:
                 "provider": "manifest",
                 "error": str(e)
             }
-
 
 

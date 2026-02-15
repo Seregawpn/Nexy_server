@@ -6,6 +6,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Dict, Any, Optional, Union
 from aiohttp import web, web_request, web_response
 
@@ -284,10 +285,27 @@ class UpdateServerProvider:
                 status=500,
                 content_type='text/plain'
             )
+
+    def _validate_artifact_url(self, url: str) -> None:
+        """Fail-closed validation for appcast enclosure URL."""
+        parsed = urlparse(url or "")
+
+        if parsed.scheme != "https":
+            msg = f"Security Violation: Artifact URL is not HTTPS ({url}). Appcast generation aborted."
+            logger.error(f"❌ {msg}")
+            raise ValueError(msg)
+
+        # Prevent publishing feed URL as artifact URL.
+        if parsed.path.endswith("/appcast.xml") or parsed.path.endswith("/appcast-beta.xml") or parsed.path.endswith("/appcast-alpha.xml"):
+            msg = f"Security Violation: Artifact URL points to appcast feed ({url}). Expected package artifact URL."
+            logger.error(f"❌ {msg}")
+            raise ValueError(msg)
     
     def _generate_appcast_xml(self, manifest: Dict[str, Any]) -> str:
         """Генерация AppCast XML для Sparkle"""
         artifact = manifest.get("artifact", {})
+        artifact_url = artifact.get("url", "")
+        self._validate_artifact_url(artifact_url)
         
         appcast_xml = f'''<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -300,7 +318,7 @@ class UpdateServerProvider:
             <description>Update to version {manifest.get("version", "Unknown")}</description>
             <pubDate>{datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
             <enclosure 
-                url="{artifact.get("url", "")}"
+                url="{artifact_url}"
                 sparkle:version="{manifest.get("build", 0)}"
                 sparkle:shortVersionString="{manifest.get("version", "1.0.0")}"
                 length="{artifact.get("size", 0)}"
@@ -458,6 +476,5 @@ class UpdateServerProvider:
                 "api_versions": f"http://{self.config.host}:{self.config.port}/api/versions"
             }
         }
-
 
 

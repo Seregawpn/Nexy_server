@@ -36,5 +36,17 @@ jobs:
           python -m pip install -r server/requirements.txt
           python -m pip install basedpyright
 
+      - name: Docs link gate (root + server)
+        run: python scripts/verify_docs_root_server_links.py
+
+      - name: PR Single Owner Check
+        run: python server/scripts/verify_pr_single_owner_check.py
+
+      - name: Feature flags registry gate
+        run: python server/scripts/verify_feature_flags.py
+
+      - name: Architecture guard rails
+        run: python server/scripts/verify_architecture_guards.py
+
       - name: Run server quality scan
         run: bash server/scripts/full_quality_scan.sh

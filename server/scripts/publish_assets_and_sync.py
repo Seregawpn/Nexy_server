@@ -102,6 +102,14 @@ def _find_artifact(name: str) -> Optional[Path]:
     return candidate if candidate.exists() else None
 
 
+def _ensure_release_inbox() -> None:
+    """Keep release inbox present in every run."""
+    RELEASE_INBOX.mkdir(parents=True, exist_ok=True)
+    keep = RELEASE_INBOX / ".gitkeep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8")
+
+
 def _sync_manifest(version: str, dmg_path: Path, dmg_url: str, dry_run: bool) -> None:
     manifest: dict
     if MANIFEST_FILE.exists():
@@ -153,11 +161,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        _ensure_release_inbox()
         _require_tool("gh")
         _require_gh_auth()
-
-        if not RELEASE_INBOX.exists():
-            raise RuntimeError(f"Inbox directory not found: {RELEASE_INBOX}")
 
         version = _load_version()
         dmg = _find_artifact("Nexy.dmg")

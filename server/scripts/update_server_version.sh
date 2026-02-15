@@ -54,8 +54,31 @@ az vm run-command invoke \
   --name "$AZURE_VM_NAME" \
   --command-id RunShellScript \
   --scripts "
-    set -euo pipefail
+    set -eu
     cd \"$REMOTE_BASE\"
+
+    # Hard preflight gate: runtime config must be valid before restart.
+    if [ ! -f config.env ]; then
+      echo '❌ Missing required config: /home/azureuser/voice-assistant/config.env' >&2
+      exit 1
+    fi
+
+    if ! grep -q '^GEMINI_API_KEY=' config.env; then
+      echo '❌ GEMINI_API_KEY is missing in config.env' >&2
+      exit 1
+    fi
+
+    GEMINI_KEY=\$(grep '^GEMINI_API_KEY=' config.env | tail -n1 | cut -d= -f2- | tr -d '\r')
+    if [ -z \"\$GEMINI_KEY\" ] || [ \"\$GEMINI_KEY\" = 'YOUR_GEMINI_API_KEY_HERE' ]; then
+      echo '❌ GEMINI_API_KEY is empty or placeholder in config.env' >&2
+      exit 1
+    fi
+
+    # Ensure service user can read runtime config.
+    if command -v chown >/dev/null 2>&1 && command -v chmod >/dev/null 2>&1; then
+      chown root:azureuser config.env || true
+      chmod 640 config.env || true
+    fi
 
     mkdir -p server/updates/manifests
     printf '%s\n' \"$VERSION_ARG\" > VERSION

@@ -145,15 +145,15 @@ echo ""
 
 log_header "ПРОВЕРКА 4: CACHE-CONTROL HEADERS"
 
-# Проверка /appcast.xml
-APPCAST_URL="https://$PUBLIC_IP/appcast.xml"
+# Проверка /updates/appcast.xml
+APPCAST_URL="https://$PUBLIC_IP/updates/appcast.xml"
 CACHE_CONTROL=$(curl -skI "$APPCAST_URL" 2>/dev/null | grep -i "cache-control" || echo "")
 
 if echo "$CACHE_CONTROL" | grep -qi "max-age=60"; then
-    log_success "Cache-Control для /appcast.xml правильный (max-age=60)"
+    log_success "Cache-Control для /updates/appcast.xml правильный (max-age=60)"
     ((PASSED++))
 else
-    log_error "Cache-Control для /appcast.xml неверный или отсутствует"
+    log_error "Cache-Control для /updates/appcast.xml неверный или отсутствует"
     echo "  Найден: $CACHE_CONTROL"
     ((FAILED++))
 fi

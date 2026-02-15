@@ -8,14 +8,6 @@ import inspect
 import logging
 from typing import Dict, Any, AsyncGenerator, Optional
 from datetime import datetime
-import sys
-from pathlib import Path
-
-# Добавляем путь к модулям grpc_service
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
-# Ленивый импорт backpressure для избежания циклических зависимостей
-# backpressure импортируется только когда он действительно нужен
 
 logger = logging.getLogger(__name__)
 

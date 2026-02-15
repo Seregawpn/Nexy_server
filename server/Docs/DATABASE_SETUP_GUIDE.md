@@ -67,11 +67,14 @@ psql -U postgres
 -- Создайте пользователя (замените 'your_password' на надежный пароль)
 CREATE USER nexy_user WITH PASSWORD 'your_secure_password_here';
 
--- Создайте базу данных
-CREATE DATABASE voice_assistant_db OWNER nexy_user;
+-- Создайте базу данных (владелец не должен быть app-пользователем)
+CREATE DATABASE voice_assistant_db OWNER postgres;
 
--- Предоставьте все привилегии пользователю
-GRANT ALL PRIVILEGES ON DATABASE voice_assistant_db TO nexy_user;
+-- Предоставьте минимально необходимые права
+GRANT CONNECT, TEMPORARY ON DATABASE voice_assistant_db TO nexy_user;
+\c voice_assistant_db
+REVOKE CREATE ON SCHEMA public FROM nexy_user;
+GRANT USAGE ON SCHEMA public TO nexy_user;
 
 -- Выйдите из psql
 \q
@@ -115,7 +118,7 @@ DB_PASSWORD=your_secure_password_here # Пароль, который вы уст
 ### Вариант 1: Используя psql
 
 ```bash
-psql -U nexy_user -d voice_assistant_db -f Docs/DATABASE_SCHEMA.sql
+psql -U postgres -d voice_assistant_db -f Docs/DATABASE_SCHEMA.sql
 ```
 
 ### Вариант 2: Используя Python скрипт
@@ -183,6 +186,20 @@ cd server
 4. Проверит подключение
 
 **Примечание:** Скрипт запросит пароль для пользователя `postgres` (суперпользователь).
+**Канон операций backup/restore/drill:** `Docs/DB_BACKUP_AND_RESTORE_RUNBOOK.md`
+
+### Hardening для защиты данных (обязательно для production)
+
+После базовой настройки примените:
+
+```bash
+./scripts/harden_database_protection.sh
+```
+
+Скрипт делает:
+1. `REVOKE` опасных прав (`DELETE/TRUNCATE/CREATE`) у `DB_USER`
+2. `GRANT` только `SELECT/INSERT/UPDATE` + нужные права на sequence/function
+3. Ставит trigger-защиту от hard-delete на критичные таблицы
 
 ---
 
@@ -205,7 +222,7 @@ CREATE USER nexy_user WITH PASSWORD 'your_password';
 **Решение:**
 ```bash
 psql -U postgres
-CREATE DATABASE voice_assistant_db OWNER nexy_user;
+CREATE DATABASE voice_assistant_db OWNER postgres;
 ```
 
 ### Ошибка: "password authentication failed"
@@ -237,9 +254,10 @@ sudo systemctl start postgresql
 **Решение:**
 ```bash
 psql -U postgres
-GRANT ALL PRIVILEGES ON DATABASE voice_assistant_db TO nexy_user;
+GRANT CONNECT, TEMPORARY ON DATABASE voice_assistant_db TO nexy_user;
 \c voice_assistant_db
-GRANT ALL ON SCHEMA public TO nexy_user;
+REVOKE CREATE ON SCHEMA public FROM nexy_user;
+GRANT USAGE ON SCHEMA public TO nexy_user;
 ```
 
 ---
@@ -253,6 +271,7 @@ GRANT ALL ON SCHEMA public TO nexy_user;
 3. **Ограничьте доступ** - используйте firewall для ограничения доступа к порту 5432
 4. **Используйте SSL** - настройте SSL соединения для production
 5. **Регулярные бэкапы** - настройте автоматические бэкапы базы данных
+6. **Обязательный restore-drill** - минимум 1 раз в неделю проверяйте восстановление (`./scripts/db_restore_drill.sh`)
 
 ### Пример настройки SSL в config.env:
 

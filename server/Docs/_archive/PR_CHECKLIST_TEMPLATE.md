@@ -1,3 +1,10 @@
+> [!WARNING] ARCHIVE NOTICE
+> Этот документ архивный и не является source of truth.
+> Актуальные каноны:
+> - `server/Docs/SERVER_DEPLOYMENT_GUIDE.md` (деплой кода на удаленный сервер)
+> - `server/Docs/RELEASE_AND_UPDATE_GUIDE.md` (публикация DMG/PKG и update-канал)
+> - `server/Docs/DEPLOY_INCIDENT_RUNBOOK.md` (инциденты, зависимости, конфиги, rollback)
+
 # Шаблон PR-чеклиста для серверной части Nexy
 
 **Назначение:** Единый чеклист для всех PR, затрагивающих серверную часть. Заполняется перед мерджем.

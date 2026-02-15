@@ -40,6 +40,18 @@
 2. **Стабильность**: Сервер должен быть stateless (по возможности) и отказоустойчивым.
 3. **Изоляция**: Модули сервера не должны зависеть от клиента.
 
+## Architecture Gate Policy (обязательно)
+- Любой PR в server обязан проходить `Server Quality Gate` (`.github/workflows/server-quality.yml`).
+- Обязательные проверки в CI:
+  - `python scripts/verify_docs_root_server_links.py`
+  - `python server/scripts/verify_pr_single_owner_check.py`
+  - `python server/scripts/verify_feature_flags.py`
+  - `python server/scripts/verify_architecture_guards.py`
+- PR без блока `Single Owner Check` (owner/duplicate removed/no second path/legacy removal date) невалиден.
+- Запрещено добавлять новый runtime second path (legacy/workaround) без срока удаления `LEGACY_REMOVE_BY: YYYY-MM-DD`.
+- Запрещено добавлять новые runtime ветки с `use_*` / `disable_*` без регистрации в `server/Docs/FEATURE_FLAGS.md`.
+- Правило `one event, one owner` обязательно для критичных intent-событий; owner для `mcp.command_request` — `server/integrations/core/assistant_response_parser.py`.
+
 ## Git Routing Rules (обязательно)
 - `Seregawpn/Nexy` получает push только из корня текущего workspace (`<repo-root>`).
 - `Seregawpn/Nexy_server` получает только `server`-срез из `<repo-root>`.

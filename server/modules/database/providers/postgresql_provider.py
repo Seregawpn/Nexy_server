@@ -227,7 +227,7 @@ class PostgreSQLProvider(UniversalProviderInterface):
         Выполнение операции с базой данных
         
         Args:
-            operation: Тип операции (create, read, update, delete)
+            operation: Тип операции (create, read, update)
             table: Название таблицы
             data: Данные для операции
             filters: Фильтры для операции
@@ -245,7 +245,10 @@ class PostgreSQLProvider(UniversalProviderInterface):
             elif operation == 'update':
                 return await self._update_record(table, data, filters)
             elif operation == 'delete':
-                return await self._delete_record(table, filters)
+                raise Exception(
+                    "Delete operations are disabled by data-protection policy. "
+                    "Use archival/soft-delete workflow owned by database policy."
+                )
             else:
                 raise Exception(f"Unknown operation: {operation}")
                 
@@ -470,73 +473,6 @@ class PostgreSQLProvider(UniversalProviderInterface):
                 'success': False,
                 'error': str(e),
                 'operation': 'update',
-                'table': table
-            }
-    
-    async def _delete_record(self, table: str, filters: Dict[str, Any]) -> Dict[str, Any]:
-        """Удаление записи из таблицы"""
-        try:
-            if self.connection_pool is None:
-                raise Exception("Connection pool is not initialized")
-            
-            # Получаем соединение из пула
-            conn = self.connection_pool.getconn()
-            
-            try:
-                with conn.cursor() as cursor:
-                    # Формируем SQL запрос
-                    where_conditions = []
-                    values = []
-                    
-                    for key, value in filters.items():
-                        where_conditions.append(f"{key} = %s")
-                        values.append(value)
-                    
-                    if not where_conditions:
-                        raise Exception("Delete operation requires filters")
-                    
-                    sql = f"""
-                        DELETE FROM {table}
-                        WHERE {' AND '.join(where_conditions)}
-                        RETURNING *
-                    """
-                    
-                    # Выполняем запрос
-                    cursor.execute(sql, values)
-                    result = cursor.fetchone()
-                    
-                    # Коммитим транзакцию
-                    conn.commit()
-                    
-                    # Преобразуем результат
-                    if result:
-                        column_names = [desc[0] for desc in cursor.description]
-                        result_dict = dict(zip(column_names, result))
-                        return {
-                            'success': True,
-                            'data': result_dict,
-                            'operation': 'delete',
-                            'table': table
-                        }
-                    else:
-                        return {
-                            'success': False,
-                            'error': 'No records deleted',
-                            'operation': 'delete',
-                            'table': table
-                        }
-                        
-            finally:
-                # Возвращаем соединение в пул
-                if self.connection_pool is not None:
-                    self.connection_pool.putconn(conn)
-                
-        except Exception as e:
-            logger.error(f"Error deleting record from {table}: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'operation': 'delete',
                 'table': table
             }
     

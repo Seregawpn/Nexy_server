@@ -5,7 +5,7 @@
 ## Обязательный запуск перед продом
 
 ```bash
-bash server/scripts/prod_ready_check.sh
+bash scripts/prod_ready_check.sh
 ```
 
 Скрипт выполняет:
@@ -16,8 +16,8 @@ bash server/scripts/prod_ready_check.sh
 ## Опциональные smoke-проверки
 
 ```bash
-RUN_GRPC_SMOKE=true GRPC_HOST=127.0.0.1 GRPC_PORT=50051 bash server/scripts/prod_ready_check.sh
-RUN_WEB_SEARCH_SMOKE=true WEB_SEARCH_QUERY="latest news about SpaceX" bash server/scripts/prod_ready_check.sh
+RUN_GRPC_SMOKE=true GRPC_HOST=127.0.0.1 GRPC_PORT=50051 bash scripts/prod_ready_check.sh
+RUN_WEB_SEARCH_SMOKE=true WEB_SEARCH_QUERY="latest news about SpaceX" bash scripts/prod_ready_check.sh
 ```
 
 ## Критерий готовности к деплою

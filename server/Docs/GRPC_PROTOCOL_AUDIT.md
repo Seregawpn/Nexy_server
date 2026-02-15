@@ -221,8 +221,8 @@
 - Все optional поля поддерживают расширяемость
 
 ### Документация миграции
-- См. `Docs/CHANGELOG.md` для деталей breaking changes
-- См. `Docs/assistant_exchange/cursor/2026-01-12__review__server-identifier-contract.md` для анализа и рекомендаций
+- См. `Docs/VERSION_MANAGEMENT.md` для деталей по версионированию и обновлению артефактов
+- Исторические ревью/анализы хранятся в `Docs/_archive/`
 
 ### Рекомендации для будущих изменений
 
@@ -317,8 +317,8 @@
 
 ## Ссылки
 
-- `server/modules/grpc_service/streaming.proto` — исходный протокол
+- `modules/grpc_service/streaming.proto` — исходный протокол
 - `Docs/SERVER_DEVELOPMENT_RULES.md` — правила разработки сервера
 - `Docs/ARCHITECTURE_OVERVIEW.md` — обзор архитектуры
-- `Docs/PR_CHECKLIST_TEMPLATE.md` — чек-лист PR
+- `Docs/_archive/PR_CHECKLIST_TEMPLATE.md` — исторический шаблон чек-листа PR
 - `scripts/grpc_smoke.py` — smoke-тест для проверки контракта
