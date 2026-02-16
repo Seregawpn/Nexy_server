@@ -87,6 +87,11 @@ class InputProcessingIntegration:
         self._secure_input_force_stop_cooldown_sec = 1.5
         self._last_interrupt_event_id: str | None = None
         self._preempt_sent_press_id: str | None = None
+        self._ctrl_n_beep_guard_item = None
+        self._ctrl_n_beep_guard_target = None
+        self._ctrl_n_beep_guard_installed = False
+        self._ctrl_n_beep_guard_desired = False
+        self._ctrl_n_beep_guard_epoch = 0
 
     async def initialize(self) -> bool:
         try:
@@ -213,6 +218,7 @@ class InputProcessingIntegration:
                     logger.error("Keyboard monitor failed to start")
                     return True
 
+            self._install_ctrl_n_beep_guard_if_needed()
             self.is_running = True
             if self.config.enable_keyboard_monitoring:
                 self._health_check_task = asyncio.create_task(self._run_health_check())
@@ -239,6 +245,7 @@ class InputProcessingIntegration:
 
             if self.keyboard_monitor is not None:
                 self.keyboard_monitor.stop_monitoring()
+            self._remove_ctrl_n_beep_guard()
             return True
         except Exception as e:
             await self.error_handler.handle_error(
@@ -275,6 +282,114 @@ class InputProcessingIntegration:
                 self._secure_input_active = False
                 self.ptt_available = True
                 logger.info("SECURE INPUT ended: tap restored")
+
+    def _install_ctrl_n_beep_guard_if_needed(self):
+        self._ctrl_n_beep_guard_desired = True
+        self._ctrl_n_beep_guard_epoch += 1
+        install_epoch = self._ctrl_n_beep_guard_epoch
+        if self._ctrl_n_beep_guard_installed:
+            return
+        if not self.config.enable_keyboard_monitoring:
+            return
+        if getattr(self.config.keyboard, "key_to_monitor", "") != "ctrl_n":
+            return
+
+        try:
+            import platform
+
+            if platform.system() != "Darwin":
+                return
+            import AppKit  # type: ignore
+            import Foundation  # type: ignore
+            import objc  # type: ignore
+        except Exception as e:
+            logger.debug("Ctrl+N beep guard unavailable: %s", e)
+            return
+
+        integration_self = self
+
+        class CtrlNBeepGuardTarget(Foundation.NSObject):  # type: ignore[name-defined]
+            @objc.signature(b"v@:@")
+            def consumeCtrlN_(self, _sender):  # noqa: N802
+                return
+
+        def setup_on_main():
+            try:
+                if (
+                    (not integration_self._ctrl_n_beep_guard_desired)
+                    or install_epoch != integration_self._ctrl_n_beep_guard_epoch
+                ):
+                    return
+                nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
+                if not nsapp:
+                    logger.debug("Ctrl+N beep guard skipped: NSApplication unavailable")
+                    return
+
+                main_menu = nsapp.mainMenu()
+                if not main_menu:
+                    main_menu = AppKit.NSMenu.alloc().init()  # type: ignore[attr-defined]
+                    nsapp.setMainMenu_(main_menu)
+
+                target = CtrlNBeepGuardTarget.alloc().init()
+                item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(  # type: ignore[attr-defined]
+                    "",
+                    "consumeCtrlN:",
+                    "n",
+                )
+                item.setKeyEquivalentModifierMask_(AppKit.NSControlKeyMask)  # type: ignore[attr-defined]
+                item.setHidden_(True)
+                item.setTarget_(target)
+                main_menu.addItem_(item)
+
+                integration_self._ctrl_n_beep_guard_target = target
+                integration_self._ctrl_n_beep_guard_item = item
+                integration_self._ctrl_n_beep_guard_installed = True
+                logger.info("INPUT: Ctrl+N beep guard installed (AppKit menu consume)")
+            except Exception as setup_error:
+                logger.warning("INPUT: failed to install Ctrl+N beep guard: %s", setup_error)
+
+        try:
+            Foundation.NSOperationQueue.mainQueue().addOperationWithBlock_(setup_on_main)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.warning("INPUT: failed to schedule Ctrl+N beep guard install: %s", e)
+
+    def _remove_ctrl_n_beep_guard(self):
+        self._ctrl_n_beep_guard_desired = False
+        self._ctrl_n_beep_guard_epoch += 1
+        if not self._ctrl_n_beep_guard_installed:
+            return
+
+        item_to_remove = self._ctrl_n_beep_guard_item
+        self._ctrl_n_beep_guard_item = None
+        self._ctrl_n_beep_guard_target = None
+        self._ctrl_n_beep_guard_installed = False
+
+        if item_to_remove is None:
+            return
+
+        try:
+            import AppKit  # type: ignore
+            import Foundation  # type: ignore
+        except Exception:
+            return
+
+        def remove_on_main():
+            try:
+                nsapp = AppKit.NSApplication.sharedApplication()  # type: ignore[attr-defined]
+                if not nsapp:
+                    return
+                main_menu = nsapp.mainMenu()
+                if not main_menu:
+                    return
+                main_menu.removeItem_(item_to_remove)
+                logger.info("INPUT: Ctrl+N beep guard removed")
+            except Exception as remove_error:
+                logger.warning("INPUT: failed to remove Ctrl+N beep guard: %s", remove_error)
+
+        try:
+            Foundation.NSOperationQueue.mainQueue().addOperationWithBlock_(remove_on_main)  # type: ignore[attr-defined]
+        except Exception:
+            return
 
     def _set_state(self, new_state: PTTState, reason: str):
         old = self._state
