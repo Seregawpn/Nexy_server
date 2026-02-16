@@ -5,8 +5,8 @@
   "artifact": {
     "type": "dmg",
     "url": "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg",
-    "size": 316428507,
-    "sha256": "fefd9e88c7943029a14258956d5ae5f5ae9a3865d333cda22023a2a0d440b187",
+    "size": 316431423,
+    "sha256": "a384bec11aa4574554f01d62c2a74dc00cafa19ce29fff0d5ffec2311e6f03f0",
     "arch": "universal2",
     "min_os": "11.0",
     "ed25519": "VRccoPWghg4P5GNhLj6t/XyBKvujsxrVwO5ZBMI21naKQfkcf+nsj6u9+rxscooycYYPH87zrnLI+P7petJMAw=="

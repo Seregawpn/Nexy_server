@@ -534,9 +534,11 @@ class SubscriptionConfig:
     quota_daily: int = 5
     quota_weekly: int = 25
     quota_monthly: int = 50
+    grandfathered_enabled: bool = True
     
     # Cache configuration
     cache_ttl_seconds: int = 30
+    pending_ttl_seconds: int = 30
     
     # Scheduler intervals (in hours)
     trial_check_interval_hours: int = 6
@@ -556,7 +558,9 @@ class SubscriptionConfig:
             quota_daily=int(os.getenv('SUBSCRIPTION_QUOTA_DAILY', '5')),
             quota_weekly=int(os.getenv('SUBSCRIPTION_QUOTA_WEEKLY', '25')),
             quota_monthly=int(os.getenv('SUBSCRIPTION_QUOTA_MONTHLY', '50')),
+            grandfathered_enabled=os.getenv('SUBSCRIPTION_GRANDFATHERED_ENABLED', 'true').lower() == 'true',
             cache_ttl_seconds=int(os.getenv('SUBSCRIPTION_CACHE_TTL', '30')),
+            pending_ttl_seconds=int(os.getenv('SUBSCRIPTION_PENDING_TTL', '30')),
             trial_check_interval_hours=int(os.getenv('SUBSCRIPTION_TRIAL_CHECK_HOURS', '6')),
             grace_period_check_interval_hours=int(os.getenv('SUBSCRIPTION_GRACE_CHECK_HOURS', '6'))
         )

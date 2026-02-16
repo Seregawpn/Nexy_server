@@ -25,6 +25,7 @@ TARGET_REPO = "Seregawpn/Nexy_production"
 DMG_TAG = "Update"
 PKG_TAG = "App"
 RELEASE_INBOX = Path("release_inbox")
+LATEST_CHANGES_NAME = "LATEST_CHANGES.md"
 VERSION_FILE = Path("VERSION")
 MANIFEST_FILE = Path("server/updates/manifests/manifest.json")
 
@@ -168,9 +169,14 @@ def main() -> int:
         version = _load_version()
         dmg = _find_artifact("Nexy.dmg")
         pkg = _find_artifact("Nexy.pkg")
+        latest_changes = _find_artifact(LATEST_CHANGES_NAME)
 
         if dmg is None and pkg is None:
             raise RuntimeError("No artifacts found in release_inbox (expected Nexy.dmg and/or Nexy.pkg)")
+        if latest_changes is None:
+            raise RuntimeError(
+                f"Missing {LATEST_CHANGES_NAME} in release_inbox (required release notes snapshot)"
+            )
 
         print(f"Current Version: {version}")
         print(f"Target Repo: {TARGET_REPO}")
@@ -183,6 +189,7 @@ def main() -> int:
             dmg_url = _upload_asset(DMG_TAG, dmg, args.dry_run)
         if pkg is not None:
             _upload_asset(PKG_TAG, pkg, args.dry_run)
+        _upload_asset(DMG_TAG, latest_changes, args.dry_run)
 
         if dmg is not None and dmg_url is not None:
             _sync_manifest(version, dmg, dmg_url, args.dry_run)

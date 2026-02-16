@@ -49,10 +49,12 @@ LIMITED_STATUSES = {
 }
 
 
-def map_status_to_tier(status: Optional[str]) -> AccessTier:
+def map_status_to_tier(status: Optional[str], grandfathered_enabled: bool = True) -> AccessTier:
     if not status:
         return AccessTier.LIMITED
     normalized = status.lower()
+    if normalized == "grandfathered" and not grandfathered_enabled:
+        return AccessTier.LIMITED
     if normalized in UNLIMITED_STATUSES:
         return AccessTier.UNLIMITED
     if normalized in LIMITED_STATUSES:

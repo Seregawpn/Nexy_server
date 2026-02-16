@@ -13,6 +13,7 @@ from config.unified_config import WorkflowConfig, get_config
 from integrations.core.assistant_response_parser import AssistantResponseParser
 from integrations.core.json_stream_extractor import JsonStreamExtractor
 from modules.session_management.core.session_registry import SessionRegistry
+from modules.subscription.core.subscription_types import AccessTier, map_status_to_tier
 from utils.logging_formatter import log_structured
 
 logger = logging.getLogger(__name__)
@@ -1416,7 +1417,12 @@ class StreamingWorkflowIntegration:
             # Инструкции по командам
             # Если платный - manage, иначе - buy
             # CRITICAL: Do not ask questions. Execute immediately.
-            if status in ('paid', 'paid_trial', 'admin_active', 'grandfathered'):
+            subscription_cfg = get_config().subscription
+            tier = map_status_to_tier(
+                status,
+                grandfathered_enabled=subscription_cfg.grandfathered_enabled
+            )
+            if tier == AccessTier.UNLIMITED:
                 instructions = (
                     "URGENT INSTRUCTION: User wants to manage subscription/billing.\n"
                     "YOU MUST EXECUTE COMMAND: {\"command\": \"manage_subscription\", \"args\": {}}\n"
