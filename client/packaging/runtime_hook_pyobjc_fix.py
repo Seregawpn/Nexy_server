@@ -53,13 +53,16 @@ def _apply_fix():
         # Импортируем Foundation
         import Foundation
 
-        # Применяем фикс для всех проблемных символов
+        # Применяем фикс для всех проблемных символов.
+        # ВАЖНО: не используем hasattr(Foundation, symbol), чтобы не триггерить
+        # dlsym lookup noise ("cannot find symbol ... in Foundation").
         symbols_to_fix = ["NSMakeRect", "NSMakePoint", "NSMakeSize", "NSMakeRange"]
         fixed_symbols: list[str] = []
 
         for symbol in symbols_to_fix:
-            if not hasattr(Foundation, symbol) and hasattr(AppKit, symbol):
-                setattr(Foundation, symbol, getattr(AppKit, symbol))
+            appkit_symbol = getattr(AppKit, symbol, None)
+            if appkit_symbol is not None:
+                setattr(Foundation, symbol, appkit_symbol)
                 fixed_symbols.append(symbol)
 
         if fixed_symbols:
@@ -105,9 +108,9 @@ def _activate_nsapplication():
         app = AppKit.NSApplication.sharedApplication()  # type: ignore[reportAttributeAccessIssue]
         # NSApplicationActivationPolicyAccessory (hide from Dock, show in menu bar)
         app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)  # type: ignore[reportAttributeAccessIssue]
-        # ADDITIONALLY: Force activate the app to ensure menu bar items are visible
-        app.activateIgnoringOtherApps_(True)
-        sys.stderr.write("[NEXY_INIT] SUCCESS: NSApplication activated for menu bar app\n")
+        # Не делаем force activate в runtime hook: это вызывает focus stealing.
+        # Управление foreground-фокусом централизовано в main.py через focus policy.
+        sys.stderr.write("[NEXY_INIT] SUCCESS: NSApplication prepared (no force activate)\n")
         sys.stderr.flush()
     except Exception as e:
         sys.stderr.write(f"[NEXY_INIT] ERROR: NSApplication activation failed: {e}\n")

@@ -148,6 +148,13 @@ else
     ((FAILED++))
 fi
 
+# 0.4 Обязательный журнал последних изменений
+if run_check "Проверка обязательного журнала Latest Changes" "$PYTHON_BIN" scripts/verify_latest_changes.py; then
+    ((PASSED++))
+else
+    ((FAILED++))
+fi
+
 echo ""
 
 # ============================================================================

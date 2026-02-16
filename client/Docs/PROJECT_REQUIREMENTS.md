@@ -394,6 +394,16 @@
 - **Implementation**: `main.py`, `integration/core/simple_module_coordinator.py`, `config/unified_config.yaml`, `modules/voiceover_control/`
 - **Verification**: runtime smoke check из `Docs/PACKAGING_READINESS_CHECKLIST.md` (Focus/VoiceOver section), проверка логов на отсутствие startup focus fallback path в обычном режиме
 
+### REQ-034: Latest Changes journal обязателен и lifecycle-controlled
+- **Домен**: Process Governance / Change Tracking
+- **Критичность**: MUST
+- **Описание**: Для любого клиентского изменения обязателен апдейт `Docs/LATEST_CHANGES.md` в том же changeset. После завершения релизного апдейта журнал должен быть очищен до шаблона (`Status: EMPTY`) для нового цикла.
+- **Источник**: `Docs/LATEST_CHANGES.md`, `scripts/verify_latest_changes.py`, `scripts/pre_build_gate.sh`, `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`
+- **Owner**: Tech Lead клиента
+- **Ожидаемый результат**: Изменения без обновления журнала блокируются gate-проверкой; post-release журнал сбрасывается.
+- **Implementation**: `Docs/LATEST_CHANGES.md`, `scripts/verify_latest_changes.py`, `scripts/pre_build_gate.sh`
+- **Verification**: `python3 scripts/verify_latest_changes.py`, `./scripts/pre_build_gate.sh`
+
 ---
 
 ## Implementation Map
@@ -435,6 +445,7 @@
 | REQ-031 | `integration/**`, `scripts/verify_architecture_guards.py` | `scripts/verify_architecture_guards.py` | Tech Lead клиента |
 | REQ-032 | `config/unified_config.yaml`, `config/unified_config_loader.py`, `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py` | `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py` | Tech Lead клиента |
 | REQ-033 | `main.py`, `integration/core/simple_module_coordinator.py`, `config/unified_config.yaml`, `modules/voiceover_control/` | Runtime smoke checklist (`Docs/PACKAGING_READINESS_CHECKLIST.md`) + log review | Tech Lead клиента + Accessibility owner |
+| REQ-034 | `Docs/LATEST_CHANGES.md`, `scripts/verify_latest_changes.py`, `scripts/pre_build_gate.sh` | `python3 scripts/verify_latest_changes.py`, `./scripts/pre_build_gate.sh` | Tech Lead клиента |
 
 ---
 

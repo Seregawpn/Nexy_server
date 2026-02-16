@@ -118,11 +118,41 @@ git push client_test HEAD:refs/heads/<target-branch>
 git ls-remote --heads client_test <target-branch>
 ```
 
+7. После завершения релизного апдейта очистить журнал текущего цикла:
+- Обновить `Docs/LATEST_CHANGES.md` до шаблона нового цикла:
+  - `Статус: EMPTY`
+  - `Изменения текущего цикла: - (пусто)`
+- Это обязательный reset перед следующей серией изменений.
+
 ---
 
-## 7. Definition of Done
+## 7. Обязательная синхронизация release_inbox (DMG/PKG/LATEST_CHANGES)
+
+Перед publish на сервере артефакты и снимок журнала изменений должны быть синхронизированы в:
+
+- `/Users/sergiyzasorin/Fix_new/downloads/Nexy_v1.6.1.27/server/release_inbox`
+
+Единый owner-скрипт на клиенте:
+
+```bash
+./scripts/sync_release_inbox.sh
+```
+
+Скрипт копирует:
+- `dist/Nexy.dmg`
+- `dist/Nexy.pkg`
+- `Docs/LATEST_CHANGES.md` -> `release_inbox/LATEST_CHANGES.md`
+
+Автоматический путь:
+- `./scripts/release_build.sh` после сборки и валидации всегда выполняет `sync_release_inbox.sh`.
+
+---
+
+## 8. Definition of Done
 
 - Версия синхронизирована во всех обязательных местах из раздела 3.
 - Поиск старой версии возвращает 0 совпадений (кроме архивных/исторических записей).
 - Push выполнен только в `Nexy_client_test`.
+- `Nexy.dmg`, `Nexy.pkg`, `LATEST_CHANGES.md` синхронизированы в `server/release_inbox`.
 - Создан отчет в `Docs/assistant_exchange/codex/` с датой и перечнем измененных файлов.
+- `Docs/LATEST_CHANGES.md` обновлялся в changeset и очищен после завершения апдейта.

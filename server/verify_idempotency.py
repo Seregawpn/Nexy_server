@@ -2,6 +2,7 @@
 import sys
 import os
 import time
+import argparse
 from datetime import datetime
 
 # Add server directory to python path
@@ -13,7 +14,32 @@ from server.modules.subscription.repository.subscription_repository import Subsc
 
 HARDWARE_ID = "IDEMPOTENCY_TEST_UUID"
 
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Verify idempotency guards (uses destructive reset for test hardware_id).")
+    parser.add_argument(
+        "--allow-reset",
+        action="store_true",
+        help="Required flag to allow reset (DELETE) of the test subscription row."
+    )
+    return parser.parse_args()
+
+
+def _require_reset_confirmation(args):
+    if not args.allow_reset:
+        raise RuntimeError("Blocked: pass --allow-reset to permit DELETE reset for test row.")
+
+    confirm_token = os.getenv("NEXY_CONFIRM_DESTRUCTIVE", "")
+    if confirm_token != "YES":
+        raise RuntimeError("Blocked: set NEXY_CONFIRM_DESTRUCTIVE=YES.")
+
+    env_name = os.getenv("NEXY_ENV", "").lower()
+    if env_name == "production":
+        raise RuntimeError("Blocked in production environment (NEXY_ENV=production).")
+
 def main():
+    args = _parse_args()
+    _require_reset_confirmation(args)
+
     print(f"🔬 Testing Idempotency Guards for {HARDWARE_ID}...")
     
     repo = SubscriptionRepository()

@@ -54,27 +54,36 @@ echo ""
 # Это гарантирует подпись .so/.dylib файлов без exec-бита
 echo "🔐 Подписываем библиотеки..."
 count=0
-find "$APP_PATH/Contents" -type f 2>/dev/null | grep -v "/Contents/MacOS/$APP_NAME$" | while read -r BIN; do
+failed=0
+failed_list="$(mktemp -t nexy_sign_failures.XXXXXX)"
+
+while read -r BIN; do
     # Проверяем тип файла через file (все Mach-O файлы, включая .so/.dylib)
     if file -b "$BIN" 2>/dev/null | grep -q "Mach-O"; then
-        codesign --force $TIMESTAMP_FLAG --options=runtime \
-            --sign "$IDENTITY" "$BIN" >/dev/null 2>&1 || true
-        count=$((count + 1))
-        if [ $((count % 50)) -eq 0 ]; then
-            echo "  Подписано: $count файлов..."
+        if codesign --force $TIMESTAMP_FLAG --options=runtime \
+            --sign "$IDENTITY" "$BIN" >/dev/null 2>&1; then
+            count=$((count + 1))
+            if [ $((count % 50)) -eq 0 ]; then
+                echo "  Подписано: $count файлов..."
+            fi
+        else
+            failed=$((failed + 1))
+            echo "$BIN" >> "$failed_list"
+            echo "❌ Не удалось подписать: $BIN"
         fi
     fi
-done
+done < <(find "$APP_PATH/Contents" -type f 2>/dev/null | grep -v "/Contents/MacOS/$APP_NAME$")
 
-# Пересчитываем для вывода (проверяем все Mach-O файлы, не только с exec-битом)
-signed_count=$(find "$APP_PATH/Contents" -type f 2>/dev/null | while read -r BIN; do
-    if file -b "$BIN" 2>/dev/null | grep -q "Mach-O"; then
-        if codesign -dv "$BIN" 2>&1 | grep -q "valid on disk"; then
-            echo "$BIN"
-        fi
-    fi
-done | wc -l | tr -d ' ')
-echo "✅ Подписано библиотек: $signed_count"
+if [ "$failed" -gt 0 ]; then
+    echo "❌ Ошибка подписи библиотек: $failed файлов"
+    echo "Первые проблемные файлы:"
+    head -20 "$failed_list"
+    rm -f "$failed_list"
+    exit 1
+fi
+
+rm -f "$failed_list"
+echo "✅ Подписано библиотек: $count"
 
 if [ "$LIBS_ONLY" = false ]; then
     # Подписываем главный executable
@@ -114,4 +123,3 @@ if [ "$LIBS_ONLY" = false ]; then
 else
     echo "✅ Подпись библиотек завершена (--libs-only)"
 fi
-

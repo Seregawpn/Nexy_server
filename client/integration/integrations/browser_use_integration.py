@@ -44,6 +44,24 @@ class BrowserUseIntegration:
             async def on_install_status(event: dict[str, Any]):
                 await self._handle_install_status(event)
 
+            async def on_llm_error(event: dict[str, Any]):
+                reason = str((event or {}).get("reason") or "")
+                if reason != "llm_service_unavailable":
+                    return
+
+                notify_message = (
+                    "Browser AI service is busy right now. Please try again in a few seconds."
+                )
+                await self.event_bus.publish(
+                    "system.notification",
+                    {"title": "Nexy Browser", "message": notify_message},
+                )
+                await self._publish_tts(
+                    "Browser service is busy right now. Please try again.",
+                    session_id="system",
+                    source="browser_llm_unavailable",
+                )
+
             def usage_callback(
                 input_tokens: int, output_tokens: int, session_id: str, model_name: str = "unknown"
             ):
@@ -70,6 +88,7 @@ class BrowserUseIntegration:
                 tts_callback=tts_feedback,
                 install_status_callback=on_install_status,
                 usage_callback=usage_callback,
+                llm_error_callback=on_llm_error,
             )
 
             await self.event_bus.subscribe(

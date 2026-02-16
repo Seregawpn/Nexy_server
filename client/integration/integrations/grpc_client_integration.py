@@ -1262,8 +1262,7 @@ class GrpcClientIntegration:
 
                     # === GRACEFUL LIMIT HANDLING ===
                     # Если ошибка связана с лимитами или подпиской - озвучиваем её
-                    err_lower = err_msg.lower()
-                    if any(x in err_lower for x in ["limit", "quota", "subscribe", "subscription"]):
+                    if self._is_subscription_limit_error(err_msg):
                         logger.warning(
                             f"⚠️ Limit/Subscription error detected for session {session_id} - activating TTS fallback"
                         )
@@ -1344,11 +1343,8 @@ class GrpcClientIntegration:
 
             logger.error(f"❌ gRPC RPC Error: code={code}, details={details}")
 
-            # Check for subscription limits
-            is_limit_error = code == grpc.StatusCode.PERMISSION_DENIED and any(
-                x in details.lower()
-                for x in ["limit", "quota", "subscribe", "subscription", "tomorrow"]
-            )
+            # Check for subscription limits (strict matcher, avoid false positives)
+            is_limit_error = code == grpc.StatusCode.PERMISSION_DENIED and self._is_subscription_limit_error(details)
 
             if is_limit_error:
                 logger.warning(
@@ -1532,6 +1528,24 @@ class GrpcClientIntegration:
 
         except Exception as e:
             logger.error(f"❌ [SERVER_TTS] Failed: {e}")
+
+    def _is_subscription_limit_error(self, err_msg: str) -> bool:
+        """
+        Strict matcher for real quota/subscription limit errors.
+
+        Avoid triggering payment flow on unrelated PERMISSION_DENIED errors that
+        happen to contain generic words like "subscription".
+        """
+        msg = (err_msg or "").lower()
+        limit_markers = (
+            "daily limit exceeded",
+            "weekly limit exceeded",
+            "monthly limit exceeded",
+            "limited free tier",
+            "subscription_gate_denied",
+            "you have reached your daily limit",
+        )
+        return any(marker in msg for marker in limit_markers)
 
     async def _ensure_connected(self) -> bool:
         """Single-flight connection: ensures only one connect attempt runs at a time.

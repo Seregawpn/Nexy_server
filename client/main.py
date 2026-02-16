@@ -36,8 +36,11 @@ def _apply_pyobjc_fix_early():
 
         fixed_symbols = []
         for symbol in ["NSMakeRect", "NSMakePoint", "NSMakeSize", "NSMakeRange"]:
-            if not hasattr(Foundation, symbol) and hasattr(AppKit, symbol):
-                setattr(Foundation, symbol, getattr(AppKit, symbol))
+            # Не вызываем hasattr(Foundation, symbol): это провоцирует dlsym lookup noise
+            # в Foundation при отсутствующих AppKit-символах.
+            appkit_symbol = getattr(AppKit, symbol, None)
+            if appkit_symbol is not None:
+                setattr(Foundation, symbol, appkit_symbol)
                 fixed_symbols.append(symbol)
 
         if fixed_symbols:

@@ -42,29 +42,19 @@ def fix_pyobjc_foundation():
         # Импортируем Foundation
         import Foundation
 
-        # Проверяем, нужен ли фикс
-        if not hasattr(Foundation, "NSMakeRect"):
-            # Копируем NSMakeRect из AppKit в Foundation
-            Foundation.NSMakeRect = getattr(AppKit, "NSMakeRect")  # type: ignore[attr-defined]
-            logger.info("✅ NSMakeRect скопирован из AppKit в Foundation")
-        else:
-            logger.info("✅ NSMakeRect уже доступен в Foundation")
-
-        # Проверяем другие потенциально проблемные символы
-        problematic_symbols = [
-            "NSMakePoint",
-            "NSMakeSize",
-            "NSMakeRange",
-        ]
-
+        # Копируем проблемные символы напрямую из AppKit в Foundation.
+        # Не используем hasattr(Foundation, symbol), чтобы не провоцировать
+        # dlsym lookup noise в системном логе.
+        problematic_symbols = ["NSMakeRect", "NSMakePoint", "NSMakeSize", "NSMakeRange"]
         fixed_symbols = []
         for symbol in problematic_symbols:
-            if not hasattr(Foundation, symbol) and hasattr(AppKit, symbol):
-                setattr(Foundation, symbol, getattr(AppKit, symbol))
+            appkit_symbol = getattr(AppKit, symbol, None)
+            if appkit_symbol is not None:
+                setattr(Foundation, symbol, appkit_symbol)
                 fixed_symbols.append(symbol)
 
         if fixed_symbols:
-            logger.info(f"✅ Дополнительно исправлены символы: {', '.join(fixed_symbols)}")
+            logger.info(f"✅ Исправлены символы: {', '.join(fixed_symbols)}")
 
         logger.info("✅ PyObjC Foundation fix применен успешно")
 

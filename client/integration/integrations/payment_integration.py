@@ -147,7 +147,7 @@ class PaymentIntegration(BaseIntegration):
         # Let's keep self._subscription_status as the raw payload for safety in get_local_status
 
         # Единая точка уведомления об успешной оплате (для всех источников)
-        if status in ["paid", "paid_trial"] and previous_status != status:
+        if status in ["paid", "paid_trial", "grandfathered"] and previous_status != status:
             await self.event_bus.publish(
                 "system.notification",
                 {
@@ -581,7 +581,7 @@ class PaymentIntegration(BaseIntegration):
 
                                 # If status is paid, update UI and stop polling
                                 if (
-                                    status in ["paid", "paid_trial"]
+                                    status in ["paid", "paid_trial", "grandfathered"]
                                     and self._subscription_status.get("status") != status
                                 ):
                                     logger.info(

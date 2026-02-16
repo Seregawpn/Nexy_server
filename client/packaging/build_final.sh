@@ -42,6 +42,7 @@ error() {
 # Пути
 CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$CLIENT_DIR/dist"
+SYNC_SCRIPT="$CLIENT_DIR/scripts/sync_release_inbox.sh"
 
 # ============================================================================
 # ЛОГИРОВАНИЕ ВСЕГО ПРОЦЕССА СБОРКИ
@@ -1671,6 +1672,20 @@ VERIFY_LOG="$DIST_DIR/packaging_verification.log"
     fi
 } | tee "$VERIFY_LOG"
 log "Verification log saved: $VERIFY_LOG"
+
+# Шаг 12: Обязательная синхронизация release_inbox (single owner)
+CURRENT_STEP="Шаг 12: Синхронизация release_inbox"
+log_to_file ">>> ЭТАП: $CURRENT_STEP"
+echo ""
+echo -e "${BLUE}📤 Шаг 12: Синхронизация release_inbox${NC}"
+if [ ! -f "$SYNC_SCRIPT" ]; then
+    error "Скрипт синхронизации не найден: $SYNC_SCRIPT"
+fi
+if bash "$SYNC_SCRIPT"; then
+    log "Синхронизация release_inbox завершена успешно"
+else
+    error "Синхронизация release_inbox провалилась"
+fi
 
 # Проверка runtime hook (если приложение запускалось)
 RUNTIME_LOG="/tmp/nexy_pyobjc_fix.log"

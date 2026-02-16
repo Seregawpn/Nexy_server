@@ -79,6 +79,7 @@ class GeminiLLMAdapter:
         model: str,
         tts_callback: Any | None = None,
         usage_callback: Any | None = None,
+        llm_error_callback: Any | None = None,
     ):
         from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -87,6 +88,19 @@ class GeminiLLMAdapter:
         self._api_key = api_key
         self.tts_callback = tts_callback
         self.usage_callback = usage_callback
+        self.llm_error_callback = llm_error_callback
+        self._service_unavailable_notified = False
+
+    @staticmethod
+    def _is_service_unavailable_error(error_text: str) -> bool:
+        text = (error_text or "").lower()
+        return (
+            "503" in text
+            or "unavailable" in text
+            or "high demand" in text
+            or "try again later" in text
+            or "servererror" in text
+        )
 
     @property
     def provider(self) -> str:
@@ -246,6 +260,24 @@ class GeminiLLMAdapter:
                 stop_reason="end_turn",
             )
         except Exception as e:
+            error_text = str(e)
+            if (
+                self.llm_error_callback
+                and not self._service_unavailable_notified
+                and self._is_service_unavailable_error(error_text)
+            ):
+                self._service_unavailable_notified = True
+                try:
+                    payload = {
+                        "reason": "llm_service_unavailable",
+                        "model": self._model,
+                        "error": error_text,
+                    }
+                    maybe_result = self.llm_error_callback(payload)
+                    if asyncio.iscoroutine(maybe_result):
+                        await maybe_result
+                except Exception as cb_error:
+                    logger.debug(f"[{FEATURE_ID}] LLM error callback failed: {cb_error}")
             logger.error(f"[{FEATURE_ID}] LLM invocation error: {e}")
             raise
 
@@ -278,6 +310,7 @@ class BrowserUseModule:
         tts_callback: Any | None = None,
         install_status_callback: Any | None = None,
         usage_callback: Any | None = None,
+        llm_error_callback: Any | None = None,
     ) -> None:
         """
         Initialize the module.
@@ -288,12 +321,14 @@ class BrowserUseModule:
             tts_callback: Async callback(text: str, session_id: str) for immediate audio feedback
             install_status_callback: Async callback(event: dict[str, Any]) for install lifecycle events
             usage_callback: Callback(input_tokens: int, output_tokens: int) for token usage tracking
+            llm_error_callback: Async callback(event: dict[str, Any]) for user-facing LLM errors
         """
         try:
             self.notification_callback = notification_callback
             self.tts_callback = tts_callback
             self.install_status_callback = install_status_callback
             self.usage_callback = usage_callback
+            self.llm_error_callback = llm_error_callback
 
             # Load config from unified_config just in case
             if config is None:
@@ -379,6 +414,81 @@ class BrowserUseModule:
         except Exception as e:
             logger.debug(f"[{FEATURE_ID}] Local chromium readiness check failed: {e}")
             return False
+
+    def _resolve_frozen_playwright_install_cmd(self) -> list[str] | None:
+        """
+        Resolve Playwright install command in frozen (.app) mode.
+
+        Supports both legacy wrapper-script layout (playwright.sh/cmd)
+        and modern driver layout (node + package/cli.js).
+        """
+        driver_name = "playwright.cmd" if sys.platform == "win32" else "playwright.sh"
+        candidate_driver_dirs: list[str] = []
+
+        # 1) Inside installed playwright package
+        try:
+            import playwright
+
+            pkg_driver_dir = os.path.join(os.path.dirname(playwright.__file__), "driver")
+            candidate_driver_dirs.append(pkg_driver_dir)
+        except Exception as e:
+            logger.debug(f"[{FEATURE_ID}] playwright package path resolve skipped: {e}")
+
+        # 2) PyInstaller onefile extraction dir
+        if hasattr(sys, "_MEIPASS"):
+            candidate_driver_dirs.append(
+                os.path.join(getattr(sys, "_MEIPASS"), "playwright", "driver")
+            )
+
+        # 3) onedir next to executable (Contents/MacOS/playwright/driver)
+        exe_dir = os.path.dirname(sys.executable)
+        candidate_driver_dirs.append(os.path.join(exe_dir, "playwright", "driver"))
+
+        # 4) macOS .app Resources (Contents/Resources/playwright/driver)
+        # sys.executable -> .../Contents/MacOS/Nexy
+        resources_dir = os.path.normpath(os.path.join(exe_dir, "..", "Resources"))
+        candidate_driver_dirs.append(os.path.join(resources_dir, "playwright", "driver"))
+
+        # De-duplicate while preserving order
+        seen: set[str] = set()
+        unique_driver_dirs: list[str] = []
+        for d in candidate_driver_dirs:
+            nd = os.path.normpath(d)
+            if nd in seen:
+                continue
+            seen.add(nd)
+            unique_driver_dirs.append(nd)
+
+        for driver_dir in unique_driver_dirs:
+            script_path = os.path.join(driver_dir, driver_name)
+            if os.path.exists(script_path):
+                logger.info(f"[{FEATURE_ID}] Found playwright wrapper at: {script_path}")
+                try:
+                    os.chmod(script_path, 0o755)
+                except Exception as e:
+                    logger.warning(
+                        f"[{FEATURE_ID}] Failed to chmod wrapper: {script_path} err={e}"
+                    )
+                return [script_path, "install", "chromium"]
+
+            # Newer Playwright layout in wheels/bundles
+            node_path = os.path.join(driver_dir, "node")
+            cli_js_path = os.path.join(driver_dir, "package", "cli.js")
+            if os.path.exists(node_path) and os.path.exists(cli_js_path):
+                logger.info(
+                    f"[{FEATURE_ID}] Found playwright driver layout (node+cli) at: {driver_dir}"
+                )
+                try:
+                    os.chmod(node_path, 0o755)
+                except Exception as e:
+                    logger.warning(
+                        f"[{FEATURE_ID}] Failed to chmod driver node: {node_path} err={e}"
+                    )
+                return [node_path, cli_js_path, "install", "chromium"]
+
+            logger.debug(f"[{FEATURE_ID}] Playwright driver not usable at: {driver_dir}")
+
+        return None
 
     def _mark_install_pending(self) -> None:
         try:
@@ -496,99 +606,16 @@ class BrowserUseModule:
 
                 if is_frozen:
                     logger.info(f"[{FEATURE_ID}] Detected Frozen/PyInstaller environment.")
-                    # Try to locate the driver executable provided by playwright package
-                    # Usually in: playwright/driver/playwright.sh (or .cmd)
                     try:
-                        import playwright
-
-                        package_path = os.path.dirname(playwright.__file__)
-                        driver_name = (
-                            "playwright.cmd" if sys.platform == "win32" else "playwright.sh"
-                        )
-                        driver_path = os.path.join(package_path, "driver", driver_name)
-
-                        if os.path.exists(driver_path):
-                            logger.info(f"[{FEATURE_ID}] Found playwright driver at: {driver_path}")
-                            try:
-                                os.chmod(driver_path, 0o755)
-                            except Exception as e:
-                                logger.warning(
-                                    f"[{FEATURE_ID}] Failed to chmod driver: {driver_path} err={e}"
-                                )
-                            cmd = [driver_path, "install", "chromium"]
-                        else:
-                            # Fallback 1: sys._MEIPASS (onefile)
-                            if hasattr(sys, "_MEIPASS"):
-                                base_path = sys._MEIPASS  # type: ignore[reportAttributeAccessIssue]
-                                driver_path = os.path.join(
-                                    base_path, "playwright", "driver", driver_name
-                                )
-                                if os.path.exists(driver_path):
-                                    logger.info(
-                                        f"[{FEATURE_ID}] Found bundled driver at (onefile): {driver_path}"
-                                    )
-                                    try:
-                                        os.chmod(driver_path, 0o755)
-                                    except Exception as e:
-                                        logger.warning(
-                                            f"[{FEATURE_ID}] Failed to chmod bundled driver: {driver_path} err={e}"
-                                        )
-                                    cmd = [driver_path, "install", "chromium"]
-                                else:
-                                    logger.warning(
-                                        f"[{FEATURE_ID}] Driver NOT found at _MEIPASS path: {driver_path}"
-                                    )
-
-                            # Fallback 2: Relative to executable (onedir / .app)
-                            # In .app, sys.executable is inside Contents/MacOS/
-                            # Resources are usually nearby or in ../Resources
-                            # Based on Nexy.spec, we collect 'playwright/driver' into 'playwright/driver' folder in the bundle root.
-                            # In onedir, bundle root is os.path.dirname(sys.executable).
-                            bundle_root = os.path.dirname(sys.executable)
-                            onedir_driver_path = os.path.join(
-                                bundle_root, "playwright", "driver", driver_name
-                            )
-
-                            if os.path.exists(onedir_driver_path):
-                                logger.info(
-                                    f"[{FEATURE_ID}] Found bundled driver at (onedir): {onedir_driver_path}"
-                                )
-                                try:
-                                    os.chmod(onedir_driver_path, 0o755)
-                                except Exception as e:
-                                    logger.warning(
-                                        f"[{FEATURE_ID}] Failed to chmod onedir driver: {onedir_driver_path} err={e}"
-                                    )
-                                cmd = [onedir_driver_path, "install", "chromium"]
-                                # Fix: Ensure bundled 'node' and other binaries are executable
-                                driver_dir = os.path.dirname(onedir_driver_path)
-                                try:
-                                    for root, dirs, files in os.walk(driver_dir):
-                                        for fname in files:
-                                            fpath = os.path.join(root, fname)
-                                            try:
-                                                os.chmod(fpath, 0o755)
-                                            except Exception:
-                                                pass
-                                    logger.info(
-                                        f"[{FEATURE_ID}] Recursively chmod+x applied to {driver_dir}"
-                                    )
-                                except Exception as e:
-                                    logger.warning(
-                                        f"[{FEATURE_ID}] Failed to recursive chmod driver dir: {e}"
-                                    )
-                            else:
-                                logger.warning(
-                                    f"[{FEATURE_ID}] Driver NOT found at onedir path: {onedir_driver_path}"
-                                )
-
+                        cmd = self._resolve_frozen_playwright_install_cmd()
                     except Exception as e:
                         logger.warning(
-                            f"[{FEATURE_ID}] Failed to resolve driver path in frozen mode: {e}"
+                            f"[{FEATURE_ID}] Failed to resolve frozen playwright driver: {e}"
                         )
-                        # Do not fallback to sys.executable in frozen mode.
-                        # In .app builds sys.executable points to Nexy binary and would
-                        # spawn a duplicate app process (restart/focus loop).
+                        cmd = None
+                    # Do not fallback to sys.executable in frozen mode.
+                    # In .app builds sys.executable points to Nexy binary and would
+                    # spawn a duplicate app process (restart/focus loop).
                 else:
                     cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
 
@@ -893,7 +920,11 @@ class BrowserUseModule:
 
                 usage_cb = _cb
 
-            llm = self._create_llm(self.tts_callback, usage_callback=usage_cb)
+            llm = self._create_llm(
+                self.tts_callback,
+                usage_callback=usage_cb,
+                llm_error_callback=getattr(self, "llm_error_callback", None),
+            )
         except Exception as e:
             yield {
                 "type": "BROWSER_TASK_FAILED",
@@ -1047,7 +1078,7 @@ class BrowserUseModule:
         ]
         return any(signal in message for signal in retry_signals)
 
-    def _create_llm(self, tts_callback=None, usage_callback=None):
+    def _create_llm(self, tts_callback=None, usage_callback=None, llm_error_callback=None):
         """Создание LLM для Agent, совместимого с browser-use Protocol"""
         import os
 
@@ -1079,6 +1110,7 @@ class BrowserUseModule:
             model=model_name,
             tts_callback=tts_callback,
             usage_callback=usage_callback,
+            llm_error_callback=llm_error_callback,
         )
 
     def _get_agent_config(self, config_preset: str) -> dict[str, Any]:

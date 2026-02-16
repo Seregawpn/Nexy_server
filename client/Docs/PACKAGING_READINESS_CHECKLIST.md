@@ -37,6 +37,16 @@
 - [ ] В свежих runtime логах нет loop-pattern (`SAFE_EXIT` cascade, повторные startup/shutdown пачки)
 - [ ] Подтверждено policy значение: `focus.force_activate_on_startup=false`, `focus.allow_tray_startup_fallback=false`
 
+## Change Journal (обязательно)
+
+- [ ] `Docs/LATEST_CHANGES.md` обновлен в текущем changeset
+- [ ] После релизного апдейта `Docs/LATEST_CHANGES.md` очищен до шаблона (`Status: EMPTY`)
+
+## Release Inbox Sync (обязательно)
+
+- [ ] `./scripts/sync_release_inbox.sh` выполнен успешно
+- [ ] В `../server/release_inbox` есть актуальные `Nexy.dmg`, `Nexy.pkg`, `LATEST_CHANGES.md`
+
 ## Итог
 
 - [ ] Ready for release
