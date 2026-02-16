@@ -70,6 +70,9 @@
 | `NEXY_ENV` | config | core | production | both | - | Окружение (production/development) |
 | `NEXY_ENVIRONMENT` | config | core | production | both | - | Окружение (production/development), алиас для `NEXY_ENV` |
 | `NEXY_DIAG` | config | core | false | client | - | Включить расширенную диагностику |
+| `focus.force_activate_on_startup` | config | core | false | client | - | Политика forced foreground activation на startup (production default: false) |
+| `focus.allow_tray_startup_fallback` | config | core | false | client | - | Разрешение one-shot fallback активации фокуса при задержке tray (production default: false) |
+| `focus.tray_fallback_timeout_sec` | config | core | 6.0 | client | - | Таймаут ожидания tray перед fallback-путем; влияет только если fallback явно разрешен |
 | `NEXY_FIRST_RUN_RESTARTED` | state | permissions | false | client | - | Флаг, указывающий что приложение было перезапущено во время first-run |
 | `NEXY_INIT` | config | core | false | client | - | Включить раннюю инициализацию/диагностику старта (bootstrap) |
 ## Использование

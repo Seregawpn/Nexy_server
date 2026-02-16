@@ -23,6 +23,17 @@ Nexy — модульное приложение с событийной шин�
 - **Централизация guard-логики**: ограничения (backpressure/rate limit) живут в одном слое, без дублирования.
 - **Политика ошибок стрима**: ошибка до начала стрима = gRPC статус + error_message, после частичных данных = тихое завершение без смешивания данных и ошибок.
 
+## 1.2 Focus & VoiceOver Safety Policy (обязательно)
+
+- **Primary UX invariant**: Nexy не должен захватывать foreground focus в нормальном runtime-пути startup/restart/update.
+- **Config policy (production default)**:
+  - `focus.force_activate_on_startup: false`
+  - `focus.allow_tray_startup_fallback: false`
+- **Single owner**: решения о focus fallback живут только в startup owner-цепочке (`main.py` + `SimpleModuleCoordinator`), локальные forced-activate обходы в интеграциях/модулях запрещены.
+- **VoiceOver compatibility invariant**: изменения в startup/tray/permission/update flow не должны ломать VoiceOver навигацию и системные команды доступности.
+- **Emergency exception**: временное включение focus fallback допустимо только как контролируемый emergency path с `LEGACY_EXPIRY` и отдельным smoke-подтверждением.
+- **Release verification**: перед упаковкой обязателен runtime smoke из `Docs/PACKAGING_READINESS_CHECKLIST.md` (Spotlight focus stability + VoiceOver enabled scenario).
+
 ```
 client/                         # 🖥️ КЛИЕНТСКАЯ ЧАСТЬ (macOS)
 ├─ main.py                      # 🎯 Точка входа приложения
@@ -244,6 +255,27 @@ await event_bus.publish("app.state_changed", {"old_mode": ..., "new_mode": ...})
 - И другие события
 
 Полные спецификации payload, обязательные/опциональные поля и правила использования описаны в каноническом документе.
+
+### 5.1) Browser Install Lifecycle Contract (owner-path)
+
+- **State owner:** `BrowserUseModule` (факт установки браузера и single-flight guard).
+- **UX/TTS owner:** `BrowserUseIntegration` (все user-facing install сообщения/озвучка).
+- **Welcome lifecycle owner:** `WelcomeMessageIntegration` (`welcome.completed`/`welcome.failed`).
+
+Контракт установки браузера:
+- `BrowserUseModule` публикует lifecycle-статусы через install status callback:
+  - `started`, `downloading`, `completed`, `already_installed`, `failed`, `lock_wait`.
+- `BrowserUseIntegration` централизованно маппит статусы в:
+  - `system.notification`
+  - `grpc.tts_request`
+
+Порядок startup-озвучки:
+- Правило: **welcome first, browser install voice second**.
+- Browser install TTS очередится до `welcome.completed` (или `welcome.failed`), затем flush.
+
+Надежность TTS транспорта:
+- `GrpcClientIntegration._play_server_tts` обязан делать `ensure_connected` перед stream TTS.
+- При неготовом транспорте — один retry перед отказом.
 
 ---
 

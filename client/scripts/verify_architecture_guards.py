@@ -13,15 +13,14 @@ fails only on *new* findings, allowing gradual debt reduction.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import argparse
+from dataclasses import dataclass
 import json
+from pathlib import Path
 import re
 from typing import Iterable
 
 import yaml
-
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_PATH = ROOT / "scripts" / "architecture_guard_baseline.json"

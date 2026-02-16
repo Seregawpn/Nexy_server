@@ -1475,6 +1475,27 @@ class GrpcClientIntegration:
                 logger.error("gRPC client not initialized")
                 return
 
+            # Ensure transport is connected before trying to stream TTS.
+            # Startup install/status TTS may arrive before eager-connect finishes.
+            connected = await self._ensure_connected()
+            if not connected:
+                max_retries = 8
+                retry_delay_sec = 1.0
+                for attempt in range(1, max_retries + 1):
+                    logger.warning(
+                        "❌ [SERVER_TTS] gRPC is not connected (attempt %s/%s), retrying in %.1fs",
+                        attempt,
+                        max_retries,
+                        retry_delay_sec,
+                    )
+                    await asyncio.sleep(retry_delay_sec)
+                    connected = await self._ensure_connected()
+                    if connected:
+                        break
+                if not connected:
+                    logger.error("❌ [SERVER_TTS] TTS skipped: unable to connect to gRPC server")
+                    return
+
             # hwid = await self._await_hardware_id(timeout_ms=1000) # Unused for TTS
 
             chunk_count = 0

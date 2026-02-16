@@ -30,6 +30,13 @@
 - [ ] `dist/packaging_verification.log` без ошибок
 - [ ] build/preflight логи приложены к задаче/PR
 
+## Runtime UX Safety (Focus/VoiceOver)
+
+- [ ] Cold start: Spotlight/системный поиск не теряет фокус при запуске Nexy
+- [ ] VoiceOver (Command+F5): навигация не ломается в startup/hotkey/update сценариях
+- [ ] В свежих runtime логах нет loop-pattern (`SAFE_EXIT` cascade, повторные startup/shutdown пачки)
+- [ ] Подтверждено policy значение: `focus.force_activate_on_startup=false`, `focus.allow_tray_startup_fallback=false`
+
 ## Итог
 
 - [ ] Ready for release

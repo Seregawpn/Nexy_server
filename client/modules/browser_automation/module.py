@@ -9,6 +9,7 @@ from datetime import datetime
 import logging
 import os
 import sys
+import time
 from typing import Any, AsyncIterator
 import uuid
 
@@ -257,6 +258,8 @@ class BrowserUseModule:
 
     _install_lock = asyncio.Lock()
     _browser_installed = False
+    _install_task: asyncio.Task[Any] | None = None
+    _install_task_guard = asyncio.Lock()
 
     def __init__(self):
         """Initialize the module."""
@@ -273,6 +276,7 @@ class BrowserUseModule:
         config: dict[str, Any] | None = None,
         notification_callback: Any | None = None,
         tts_callback: Any | None = None,
+        install_status_callback: Any | None = None,
         usage_callback: Any | None = None,
     ) -> None:
         """
@@ -282,11 +286,13 @@ class BrowserUseModule:
             config: Module configuration (optional)
             notification_callback: Async callback(message: str) for user notifications
             tts_callback: Async callback(text: str, session_id: str) for immediate audio feedback
+            install_status_callback: Async callback(event: dict[str, Any]) for install lifecycle events
             usage_callback: Callback(input_tokens: int, output_tokens: int) for token usage tracking
         """
         try:
             self.notification_callback = notification_callback
             self.tts_callback = tts_callback
+            self.install_status_callback = install_status_callback
             self.usage_callback = usage_callback
 
             # Load config from unified_config just in case
@@ -319,8 +325,12 @@ class BrowserUseModule:
             if not _check_browser_use_available():
                 logger.warning(f"[{FEATURE_ID}] browser-use not available locally")
             else:
-                # Ensure browser is installed eager
-                self._install_task = asyncio.create_task(self._ensure_browser_installed())
+                if self._is_local_chromium_ready():
+                    BrowserUseModule._browser_installed = True
+                    logger.info(f"[{FEATURE_ID}] Chromium already present locally, install task skipped")
+                else:
+                    # Ensure browser is installed eager
+                    await self._get_or_start_install_task(restart_if_failed=False)
 
             self._initialized = True
             logger.info(f"[{FEATURE_ID}] Client BrowserUseModule initialized")
@@ -345,6 +355,63 @@ class BrowserUseModule:
         if self._config.get("suppress_watchdog_warnings", False):
             logging.getLogger("bubus").setLevel(logging.ERROR)
 
+    def _install_pending_flag_path(self) -> str:
+        app_support = get_user_data_dir()
+        return os.path.join(app_support, "browser_install_pending.flag")
+
+    def _resolve_playwright_browsers_path(self) -> str:
+        app_support = get_user_data_dir()
+        return os.path.join(app_support, "ms-playwright")
+
+    def _is_local_chromium_ready(self) -> bool:
+        """Return True only when local Chromium has complete Playwright marker."""
+        try:
+            browsers_path = self._resolve_playwright_browsers_path()
+            if not os.path.isdir(browsers_path):
+                return False
+            for name in os.listdir(browsers_path):
+                if not name.startswith("chromium-"):
+                    continue
+                marker = os.path.join(browsers_path, name, "INSTALLATION_COMPLETE")
+                if os.path.isfile(marker):
+                    return True
+            return False
+        except Exception as e:
+            logger.debug(f"[{FEATURE_ID}] Local chromium readiness check failed: {e}")
+            return False
+
+    def _mark_install_pending(self) -> None:
+        try:
+            flag_path = self._install_pending_flag_path()
+            with open(flag_path, "w", encoding="utf-8") as f:
+                f.write(datetime.now().isoformat())
+        except Exception as e:
+            logger.debug(f"[{FEATURE_ID}] Failed to write install pending flag: {e}")
+
+    def _clear_install_pending(self) -> None:
+        try:
+            flag_path = self._install_pending_flag_path()
+            if os.path.exists(flag_path):
+                os.remove(flag_path)
+        except Exception as e:
+            logger.debug(f"[{FEATURE_ID}] Failed to clear install pending flag: {e}")
+
+    def _is_install_pending(self) -> bool:
+        try:
+            return os.path.exists(self._install_pending_flag_path())
+        except Exception:
+            return False
+
+    async def _emit_install_status(self, status: str, **data: Any) -> None:
+        cb = getattr(self, "install_status_callback", None)
+        if not cb:
+            return
+        event = {"status": status, **data}
+        try:
+            await cb(event)
+        except Exception as e:
+            logger.debug(f"[{FEATURE_ID}] Failed to publish install status '{status}': {e}")
+
     async def _ensure_browser_installed(self):
         """Check and install Chromium if necessary (single-flight)."""
         if not _check_browser_use_available():
@@ -353,8 +420,36 @@ class BrowserUseModule:
         if BrowserUseModule._browser_installed:
             return
 
+        install_lock_timeout_sec = float(self._config.get("install_lock_timeout_sec", 180.0))
+        wait_heartbeat_sec = float(self._config.get("install_wait_heartbeat_sec", 10.0))
+        wait_heartbeat_sec = max(1.0, wait_heartbeat_sec)
+
         logger.debug(f"[{FEATURE_ID}] Waiting for install lock...")
-        async with BrowserUseModule._install_lock:
+        lock_acquired = False
+        wait_started = time.monotonic()
+        try:
+            while not lock_acquired:
+                elapsed = time.monotonic() - wait_started
+                remaining = install_lock_timeout_sec - elapsed
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"Timed out waiting for browser install lock after {install_lock_timeout_sec:.0f}s"
+                    )
+
+                wait_slice = min(wait_heartbeat_sec, remaining)
+                try:
+                    await asyncio.wait_for(BrowserUseModule._install_lock.acquire(), wait_slice)
+                    lock_acquired = True
+                except asyncio.TimeoutError:
+                    elapsed = time.monotonic() - wait_started
+                    logger.info(
+                        f"[{FEATURE_ID}] Still waiting for install lock ({elapsed:.1f}s elapsed)"
+                    )
+                    await self._emit_install_status(
+                        "lock_wait",
+                        elapsed_sec=round(elapsed, 1),
+                    )
+
             logger.debug(f"[{FEATURE_ID}] Acquired install lock")
             # Double-check
             if BrowserUseModule._browser_installed:
@@ -363,38 +458,31 @@ class BrowserUseModule:
             logger.info(f"[{FEATURE_ID}] Checking browser installation (Chromium)...")
 
             # Ensure Playwright browsers path is writable and deterministic in .app
-            def _resolve_playwright_browsers_path() -> str:
-                # Use centralized resource path resolution to match app's user data dir and handle sandbox
-                app_support = get_user_data_dir()
-                browsers_path = os.path.join(app_support, "ms-playwright")
-                try:
-                    os.makedirs(browsers_path, exist_ok=True)
-                except Exception as e:
-                    logger.warning(
-                        f"[{FEATURE_ID}] Failed to ensure browsers path: {browsers_path} err={e}"
-                    )
-                return browsers_path
-
-            browsers_path = _resolve_playwright_browsers_path()
+            browsers_path = self._resolve_playwright_browsers_path()
+            try:
+                os.makedirs(browsers_path, exist_ok=True)
+            except Exception as e:
+                logger.warning(
+                    f"[{FEATURE_ID}] Failed to ensure browsers path: {browsers_path} err={e}"
+                )
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
             logger.info(f"[{FEATURE_ID}] PLAYWRIGHT_BROWSERS_PATH={browsers_path}")
 
             # Optimization: Check if chromium is already installed to avoid redundant 'install' calls
-            # Playwright creates folders like 'chromium-123456' inside browsers_path
-            try:
-                if os.path.exists(browsers_path):
-                    installed_browsers = os.listdir(browsers_path)
-                    has_chromium = any(name.startswith("chromium-") for name in installed_browsers)
-                    if has_chromium:
-                        logger.info(
-                            f"[{FEATURE_ID}] Chromium detected in {browsers_path}, skipping install check"
-                        )
-                        BrowserUseModule._browser_installed = True
-                        return
-            except Exception as e:
-                logger.warning(f"[{FEATURE_ID}] Failed to check existing browsers: {e}")
+            if self._is_local_chromium_ready():
+                logger.info(
+                    f"[{FEATURE_ID}] Chromium detected in {browsers_path}, skipping install check"
+                )
+                BrowserUseModule._browser_installed = True
+                if self._is_install_pending():
+                    await self._emit_install_status("completed")
+                    self._clear_install_pending()
+                else:
+                    await self._emit_install_status("already_installed")
+                return
 
             # Use playwright cli to install
+            install_start_announced = False
             async def run_install():
                 # Detect if frozen (PyInstaller)
                 is_frozen = getattr(sys, "frozen", False)
@@ -404,7 +492,7 @@ class BrowserUseModule:
                 # We need to find the bundled driver or fallback to internal API.
                 # Standard approach: The 'playwright' module path contains the driver.
 
-                cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+                cmd = None
 
                 if is_frozen:
                     logger.info(f"[{FEATURE_ID}] Detected Frozen/PyInstaller environment.")
@@ -498,7 +586,19 @@ class BrowserUseModule:
                         logger.warning(
                             f"[{FEATURE_ID}] Failed to resolve driver path in frozen mode: {e}"
                         )
-                        # Fallback to sys.executable as a hail mary, or maybe just proceed
+                        # Do not fallback to sys.executable in frozen mode.
+                        # In .app builds sys.executable points to Nexy binary and would
+                        # spawn a duplicate app process (restart/focus loop).
+                else:
+                    cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+
+                if not cmd:
+                    err = (
+                        "Playwright driver not found in frozen bundle; "
+                        "blocked fallback to Nexy executable to prevent duplicate-instance loop"
+                    )
+                    logger.error(f"[{FEATURE_ID}] {err}")
+                    return 1, err
 
                 logger.info(f"[{FEATURE_ID}] Executing install command: {cmd}")
 
@@ -515,6 +615,12 @@ class BrowserUseModule:
                 return process.returncode, stderr_text
 
             try:
+                # Announce install start immediately when install command is about to run.
+                # This path is more reliable than waiting for the >2s timeout branch.
+                await self._emit_install_status("started")
+                install_start_announced = True
+                self._mark_install_pending()
+
                 # Start install task
                 install_task = asyncio.create_task(run_install())
 
@@ -526,33 +632,61 @@ class BrowserUseModule:
                 except asyncio.TimeoutError:
                     # Taking longer -> downloading
                     logger.info(f"[{FEATURE_ID}] Installing browser (downloading)...")
-                    if hasattr(self, "notification_callback") and self.notification_callback:
-                        try:
-                            await self.notification_callback(
-                                "Setting up browser: Downloading Chromium..."
-                            )
-                        except Exception:
-                            pass
+                    await self._emit_install_status("downloading")
+                    if not install_start_announced:
+                        await self._emit_install_status("started")
 
                     returncode, err_msg = await install_task
 
                 if returncode != 0:
+                    self._clear_install_pending()
+                    await self._emit_install_status("failed", error=str(err_msg))
                     logger.error(f"[{FEATURE_ID}] Failed to install browser: {err_msg}")
                     raise Exception(f"Failed to install browser: {err_msg}")
                 else:
                     logger.info(f"[{FEATURE_ID}] Browser installation check passed")
                     BrowserUseModule._browser_installed = True
-                    if hasattr(self, "notification_callback") and self.notification_callback:
-                        try:
-                            await self.notification_callback(
-                                "Browser setup complete. Ready to use."
-                            )
-                        except Exception:
-                            pass
+                    await self._emit_install_status("completed")
+                    self._clear_install_pending()
 
             except Exception as e:
                 logger.error(f"[{FEATURE_ID}] Error ensuring browser installation: {e}")
                 raise
+        finally:
+            if lock_acquired:
+                BrowserUseModule._install_lock.release()
+
+    async def _get_or_start_install_task(
+        self, *, restart_if_failed: bool
+    ) -> tuple[asyncio.Task[Any], bool]:
+        """
+        Return current install task or create one atomically.
+
+        Returns:
+            (task, started_new_task)
+        """
+        async with BrowserUseModule._install_task_guard:
+            install_task = BrowserUseModule._install_task
+            if install_task is None:
+                install_task = asyncio.create_task(self._ensure_browser_installed())
+                BrowserUseModule._install_task = install_task
+                return install_task, True
+
+            if install_task.done():
+                install_error = None
+                try:
+                    install_error = install_task.exception()
+                except asyncio.CancelledError:
+                    install_error = RuntimeError("browser install task was cancelled")
+
+                if restart_if_failed and (
+                    install_error is not None or not BrowserUseModule._browser_installed
+                ):
+                    install_task = asyncio.create_task(self._ensure_browser_installed())
+                    BrowserUseModule._install_task = install_task
+                    return install_task, True
+
+            return install_task, False
 
     def _format_action_description(self, agent_output, browser_state) -> str:
         """
@@ -686,19 +820,19 @@ class BrowserUseModule:
             return
 
         try:
-            # Install browser if needed
-            try:
-                await self._ensure_browser_installed()
-            except Exception as e:
-                yield {
-                    "type": "BROWSER_TASK_FAILED",
-                    "task_id": task_id,
-                    "session_id": session_id,
-                    "description": f"Failed to install browser: {e}",
-                    "error": str(e),
-                    "timestamp": datetime.now().isoformat(),
-                }
-                return
+            # Guard against stale "setup in progress" loops: local-ready browser wins.
+            if not BrowserUseModule._browser_installed and self._is_local_chromium_ready():
+                BrowserUseModule._browser_installed = True
+                logger.info(f"[{FEATURE_ID}] Local chromium ready; bypassing setup wait path")
+                async with BrowserUseModule._install_task_guard:
+                    install_task = BrowserUseModule._install_task
+                    if install_task and not install_task.done():
+                        install_task.cancel()
+
+            # Fire-and-forget setup: do not block request flow on install status.
+            # If browser is not ready yet, setup continues in background while task proceeds.
+            if not BrowserUseModule._browser_installed:
+                await self._get_or_start_install_task(restart_if_failed=True)
 
             yield {
                 "type": "BROWSER_TASK_STARTED",

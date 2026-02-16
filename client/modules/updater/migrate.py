@@ -8,7 +8,7 @@ import os
 import shutil
 import subprocess
 
-from modules.instance_manager import InstanceManager, InstanceManagerConfig
+from modules.instance_manager import InstanceManager, make_probe_config
 
 logger = logging.getLogger(__name__)
 
@@ -79,18 +79,7 @@ def migrate_to_user_directory() -> bool:
 
 def _is_other_instance_running() -> bool:
     try:
-        env_lock_file = os.environ.get("NEXY_INSTANCE_LOCK_FILE")
-        lock_file = env_lock_file or "~/Library/Application Support/Nexy/nexy.lock"
-        manager = InstanceManager(
-            InstanceManagerConfig(
-                enabled=True,
-                lock_file=lock_file,
-                timeout_seconds=30,
-                cleanup_on_startup=False,
-                show_duplicate_message=False,
-                pid_check=True,
-            )
-        )
+        manager = InstanceManager(make_probe_config(timeout_seconds=30))
         return manager.is_other_instance_running()
     except Exception as exc:
         logger.warning("Migration: failed to check other instance: %s", exc)

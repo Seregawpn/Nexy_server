@@ -30,10 +30,10 @@ app:
   debug: true
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.1.39
+  version: 1.6.1.40
 focus:
   force_activate_on_startup: false
-  allow_tray_startup_fallback: true
+  allow_tray_startup_fallback: false
   tray_fallback_timeout_sec: 6.0
 default_audio:
   target_sample_rate: 16000

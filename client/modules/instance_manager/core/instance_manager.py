@@ -213,8 +213,8 @@ class InstanceManager:
                     print(f"✅ DEBUG: Lock valid - duplicate instance detected (PID {pid})")
                     return True  # Дублирование обнаружено
 
-                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                    print(f"⚠️ DEBUG: Process {pid} not found or access denied: {e}")
+                except psutil.NoSuchProcess as e:
+                    print(f"⚠️ DEBUG: Process {pid} not found: {e}")
                     # Процесс не существует. Оцениваем stale по времени.
                     try:
                         mod_time = os.path.getmtime(self.lock_file)
@@ -224,6 +224,22 @@ class InstanceManager:
                     except Exception:
                         return False
                     return False
+                except (psutil.AccessDenied, psutil.ZombieProcess) as e:
+                    # Консервативная политика: при ограничениях доступа считаем lock валидным,
+                    # но только в пределах timeout, чтобы lock не залипал навсегда.
+                    try:
+                        mod_time = os.path.getmtime(self.lock_file)
+                        current_time = time.time()
+                        age = current_time - mod_time
+                        if age > self.timeout_seconds:
+                            print(
+                                f"⚠️ DEBUG: Access denied for PID {pid}, but lock stale (age={age:.1f}s)"
+                            )
+                            return False
+                    except Exception:
+                        return True
+                    print(f"⚠️ DEBUG: Access denied for process {pid}, keep lock as valid: {e}")
+                    return True
 
             return True
 
@@ -266,11 +282,6 @@ class InstanceManager:
             tmp_dir = Path(tempfile.gettempdir()) / "nexy"
             tmp_dir.mkdir(parents=True, exist_ok=True)
             fallback_path = tmp_dir / "nexy.lock"
-            if fallback_path.exists():
-                try:
-                    fallback_path.unlink()
-                except Exception:
-                    pass
             print(f"⚠️ Переключаем lock-файл на резервный путь: {fallback_path}")
             self.lock_file = str(fallback_path)
             self.lock_fd = None

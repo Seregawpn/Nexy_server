@@ -19,6 +19,12 @@ class BrowserUseIntegration:
         self.event_bus = event_bus
         self.module = BrowserUseModule()
         self._processing_tasks = set()
+        self._welcome_completed = False
+        self._welcome_completed_event = asyncio.Event()
+        self._pending_browser_tts: list[str] = []
+        self._pending_browser_tts_set: set[str] = set()
+        self._tts_flush_task: asyncio.Task[Any] | None = None
+        self._welcome_wait_timeout_sec = 8.0
 
     async def initialize(self) -> bool:
         try:
@@ -29,12 +35,14 @@ class BrowserUseIntegration:
                 )
 
             async def tts_feedback(text: str, session_id: str):
-                # Text is now context-aware (e.g. "Analyzing google.com...")
-                # We can just use it directly, or add variety if it's generic
-                await self.event_bus.publish(
-                    "grpc.tts_request",
-                    {"text": text, "session_id": session_id, "source": "browser_latency_mask"},
-                )
+                # Enforce startup UX order: welcome first, browser installation messages second.
+                if session_id == "system":
+                    await self._queue_or_publish_startup_tts(text)
+                    return
+                await self._publish_tts(text, session_id=session_id, source="browser_latency_mask")
+
+            async def on_install_status(event: dict[str, Any]):
+                await self._handle_install_status(event)
 
             def usage_callback(
                 input_tokens: int, output_tokens: int, session_id: str, model_name: str = "unknown"
@@ -60,6 +68,7 @@ class BrowserUseIntegration:
             await self.module.initialize(
                 notification_callback=notify_user,
                 tts_callback=tts_feedback,
+                install_status_callback=on_install_status,
                 usage_callback=usage_callback,
             )
 
@@ -78,6 +87,12 @@ class BrowserUseIntegration:
             await self.event_bus.subscribe(
                 "grpc.request_cancel", self._on_cancel_request, EventPriority.CRITICAL
             )
+            await self.event_bus.subscribe(
+                "welcome.completed", self._on_welcome_completed, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "welcome.failed", self._on_welcome_completed, EventPriority.MEDIUM
+            )
 
             logger.info("BrowserUseIntegration initialized")
             return True
@@ -92,7 +107,114 @@ class BrowserUseIntegration:
         await self.module.close_browser()
         for task in list(self._processing_tasks):
             task.cancel()
+        if self._tts_flush_task and not self._tts_flush_task.done():
+            self._tts_flush_task.cancel()
+            try:
+                await self._tts_flush_task
+            except asyncio.CancelledError:
+                pass
         return True
+
+    async def _publish_tts(self, text: str, *, session_id: str, source: str) -> None:
+        # Startup race guard: at app boot grpc.tts_request subscriber may not yet be attached.
+        # Retry a short time to avoid dropping one-shot install UX messages.
+        for _ in range(30):
+            subscribers = getattr(self.event_bus, "subscribers", {})
+            if subscribers.get("grpc.tts_request"):
+                break
+            await asyncio.sleep(0.1)
+
+        await self.event_bus.publish(
+            "grpc.tts_request",
+            {"text": text, "session_id": session_id, "source": source},
+        )
+
+    async def _handle_install_status(self, event: dict[str, Any]) -> None:
+        status = str((event or {}).get("status") or "").lower()
+        if not status:
+            return
+
+        notify_text = None
+        tts_text = None
+        if status == "started":
+            notify_text = (
+                "Browser is installing. It may take a few minutes. "
+                "After that, you can use browser use."
+            )
+            tts_text = (
+                "Browser is installing. It may take a few minutes. "
+                "After that, you can use browser use."
+            )
+        elif status == "downloading":
+            # Keep startup UX concise: avoid repeated install progress notifications.
+            notify_text = None
+        elif status == "completed":
+            # Final install message intentionally disabled by product decision.
+            notify_text = None
+            tts_text = None
+        elif status == "already_installed":
+            # Final install message intentionally disabled by product decision.
+            notify_text = None
+            tts_text = None
+        elif status == "failed":
+            error_text = str((event or {}).get("error") or "unknown")
+            notify_text = f"Browser setup failed: {error_text}"
+
+        if notify_text:
+            await self.event_bus.publish(
+                "system.notification",
+                {"title": "Nexy Browser", "message": notify_text},
+            )
+        if tts_text:
+            await self._queue_or_publish_startup_tts(tts_text)
+
+    async def _on_welcome_completed(self, event: dict[str, Any]) -> None:
+        self._welcome_completed = True
+        self._welcome_completed_event.set()
+        await self._flush_pending_startup_tts()
+
+    async def _queue_or_publish_startup_tts(self, text: str) -> None:
+        normalized = (text or "").strip()
+        if not normalized:
+            return
+
+        if self._welcome_completed:
+            await self._publish_tts(
+                normalized, session_id="system", source="browser_install_startup"
+            )
+            return
+
+        if normalized not in self._pending_browser_tts_set:
+            self._pending_browser_tts_set.add(normalized)
+            self._pending_browser_tts.append(normalized)
+
+        if not self._tts_flush_task or self._tts_flush_task.done():
+            self._tts_flush_task = asyncio.create_task(self._wait_welcome_and_flush_tts())
+
+    async def _wait_welcome_and_flush_tts(self) -> None:
+        try:
+            if not self._welcome_completed:
+                try:
+                    await asyncio.wait_for(
+                        self._welcome_completed_event.wait(), timeout=self._welcome_wait_timeout_sec
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "BrowserUseIntegration: welcome completion timeout reached, flushing browser startup TTS"
+                    )
+            await self._flush_pending_startup_tts()
+        except asyncio.CancelledError:
+            raise
+
+    async def _flush_pending_startup_tts(self) -> None:
+        if not self._pending_browser_tts:
+            return
+
+        queued = list(self._pending_browser_tts)
+        self._pending_browser_tts.clear()
+        self._pending_browser_tts_set.clear()
+        for text in queued:
+            await self._publish_tts(text, session_id="system", source="browser_install_startup")
 
     async def _on_cancel_request(self, event: dict[str, Any]):
         """Handle cancellation requests (voice or manual)."""
@@ -145,12 +267,23 @@ class BrowserUseIntegration:
 
     async def _run_process(self, request):
         try:
+            start_feedback_sent = False
             async for progress_event in self.module.process(request):
                 event_type = progress_event.get("type")
 
                 # 1. Publish to specific topics (Requirement)
                 if event_type == "BROWSER_TASK_STARTED":
                     await self.event_bus.publish("browser.started", progress_event)
+                    if not start_feedback_sent:
+                        start_feedback_sent = True
+                        session_id = progress_event.get("session_id") or request.get(
+                            "session_id", "unknown"
+                        )
+                        await self._publish_tts(
+                            "Browser opened. Starting search now.",
+                            session_id=str(session_id),
+                            source="browser_start",
+                        )
                 elif event_type == "BROWSER_STEP_COMPLETED":
                     await self.event_bus.publish("browser.step", progress_event)
 

@@ -384,6 +384,16 @@
 - **Implementation**: `config/unified_config.yaml`, `config/unified_config_loader.py`, `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py`
 - **Verification**: `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py`
 
+### REQ-033: Focus/VoiceOver runtime safety gate
+- **Домен**: Accessibility / Runtime UX Safety
+- **Критичность**: MUST
+- **Описание**: Любые изменения startup/tray/permissions/restart/update не должны принудительно перехватывать foreground focus и не должны ломать сценарии с VoiceOver. В production по умолчанию запрещен forced-focus путь (`focus.force_activate_on_startup=false`, `focus.allow_tray_startup_fallback=false`), временный fallback допускается только как emergency с expiry-планом.
+- **Источник**: `Docs/ARCHITECTURE_OVERVIEW.md`, `config/unified_config.yaml`, `Docs/PACKAGING_READINESS_CHECKLIST.md`
+- **Owner**: Tech Lead клиента + Accessibility owner
+- **Ожидаемый результат**: Spotlight/системный поиск и VoiceOver navigation не прерываются на startup/restart/update; tray и hotkey работают штатно без focus-steal.
+- **Implementation**: `main.py`, `integration/core/simple_module_coordinator.py`, `config/unified_config.yaml`, `modules/voiceover_control/`
+- **Verification**: runtime smoke check из `Docs/PACKAGING_READINESS_CHECKLIST.md` (Focus/VoiceOver section), проверка логов на отсутствие startup focus fallback path в обычном режиме
+
 ---
 
 ## Implementation Map
@@ -424,6 +434,7 @@
 | REQ-030 | `.github/workflows/ci.yml`, `scripts/pre_build_gate.sh`, `scripts/verify_architecture_guards.py`, `scripts/architecture_guard_baseline.json` | CI logs, локальный запуск `python scripts/verify_architecture_guards.py` | Tech Lead клиента |
 | REQ-031 | `integration/**`, `scripts/verify_architecture_guards.py` | `scripts/verify_architecture_guards.py` | Tech Lead клиента |
 | REQ-032 | `config/unified_config.yaml`, `config/unified_config_loader.py`, `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py` | `scripts/verify_feature_flags.py`, `scripts/verify_architecture_guards.py` | Tech Lead клиента |
+| REQ-033 | `main.py`, `integration/core/simple_module_coordinator.py`, `config/unified_config.yaml`, `modules/voiceover_control/` | Runtime smoke checklist (`Docs/PACKAGING_READINESS_CHECKLIST.md`) + log review | Tech Lead клиента + Accessibility owner |
 
 ---
 

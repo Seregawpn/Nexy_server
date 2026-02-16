@@ -398,8 +398,29 @@ class WelcomeMessageIntegration:
                         "(method=%s) — playback пропущен",
                         result.method,
                     )
+
+                await self.event_bus.publish(
+                    "welcome.completed",
+                    {
+                        "success": True,
+                        "method": result.method,
+                        "duration_sec": result.duration_sec,
+                        "trigger": trigger,
+                        "session_id": welcome_session_id,
+                    },
+                )
             else:
                 logger.warning(f"⚠️ [WELCOME_INTEGRATION] Приветствие не удалось: {result.error}")
+                await self.event_bus.publish(
+                    "welcome.failed",
+                    {
+                        "success": False,
+                        "method": result.method,
+                        "error": result.error,
+                        "trigger": trigger,
+                        "session_id": welcome_session_id,
+                    },
+                )
 
         except BaseException as e:
             # 🆕 ВОЗВРАТ В SLEEPING ПРИ ОШИБКЕ (с задержкой для видимости)

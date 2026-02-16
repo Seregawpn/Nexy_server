@@ -592,7 +592,7 @@ echo "✓ Zero AppleDouble files in staging"
 ```bash
 pkgbuild --root /tmp/nexy_pkg_clean_final \
     --identifier "com.nexy.assistant.pkg" \
-    --version "1.6.1.39" \
+    --version "1.6.1.40" \
     --install-location "/" \
     dist/Nexy-raw.pkg
 ```
