@@ -627,6 +627,18 @@ class BrowserUseModule:
                     logger.error(f"[{FEATURE_ID}] {err}")
                     return 1, err
 
+                # In hardened-runtime macOS app bundles, bundled Node can fail V8 CodeRange
+                # allocation when JIT is enabled. For one-shot browser install, run jitless.
+                if is_frozen and len(cmd) >= 3 and cmd[0].endswith("/playwright/driver/node"):
+                    existing_opts = env.get("NODE_OPTIONS", "").strip()
+                    if "--jitless" not in existing_opts:
+                        env["NODE_OPTIONS"] = (
+                            f"{existing_opts} --jitless".strip() if existing_opts else "--jitless"
+                        )
+                    logger.info(
+                        f"[{FEATURE_ID}] Applying NODE_OPTIONS for frozen playwright install: {env['NODE_OPTIONS']}"
+                    )
+
                 logger.info(f"[{FEATURE_ID}] Executing install command: {cmd}")
 
                 process = await asyncio.create_subprocess_exec(

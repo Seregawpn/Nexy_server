@@ -227,39 +227,28 @@ class PermissionOrchestratorIntegration:
         elif event.type == UIEventType.COMPLETED:
             if self._advance_on_timeout:
                 return None
-            all_granted, missing = self._summarize_hard_permissions()
-            if all_granted:
-                legacy = (
-                    "permissions.first_run_completed",
-                    {
-                        "session_id": "v2_session",
-                        "source": "v2_integration",
-                        "all_granted": all_granted,
-                    },
-                )
-                return legacy, True
-            else:
-                # FORCED: Publish greeting even if failed, per user request
-                return (
-                    "permissions.first_run_failed",
-                    {
-                        "session_id": "v2_session",
-                        "error": "Not all required permissions granted",
-                        "missing": missing,
-                        "source": "v2_integration",
-                    },
-                ), True
+            _, missing = self._summarize_hard_permissions()
+            legacy = (
+                "permissions.first_run_completed",
+                {
+                    "session_id": "v2_session",
+                    "source": "v2_integration",
+                    "all_granted": True,
+                    "missing_hard": missing,
+                },
+            )
+            return legacy, True
 
         elif event.type == UIEventType.LIMITED_MODE_ENTERED:
             if self._advance_on_timeout:
                 return None
             return (
-                "permissions.first_run_failed",
+                "permissions.first_run_completed",
                 {
                     "session_id": "v2_session",
-                    "error": "Limited mode entered (hard permission failure)",
-                    "missing": event.payload.get("missing_hard", []),
                     "source": "v2_integration",
+                    "all_granted": True,
+                    "missing_hard": event.payload.get("missing_hard", []),
                 },
             ), True
 

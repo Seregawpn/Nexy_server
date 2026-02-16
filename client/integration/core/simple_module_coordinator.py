@@ -471,21 +471,8 @@ class SimpleModuleCoordinator:
 
             for name in startup_order:
                 if name in self.integrations:
-                    # GATE: Проверка разрешений для зависимых модулей
-                    # Модули, которые открывают ресурсы (mic, screen, keyboard, audio) должны ждать разрешений
-                    if name in [
-                        "input",
-                        "voice_recognition",
-                        "screenshot_capture",
-                        "voiceover_ducking",
-                    ]:
-                        first_run = self.integrations.get("first_run_permissions")
-                        if first_run and not first_run.are_all_granted:
-                            logger.warning(
-                                f"⛔ [PERMISSIONS] Skipping {name} start because permissions are not granted"
-                            )
-                            print(f"⛔ [PERMISSIONS] Пропуск {name} - нет разрешений")
-                            continue
+                    # Permission gating by "all granted" is disabled by policy:
+                    # modules should start and enforce capability checks in their own owner layers.
 
                     # GATE: Не запускаем зависимые модули во время first-run или pending restart
                     if name in [

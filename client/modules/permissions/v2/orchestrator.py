@@ -244,6 +244,10 @@ class PermissionOrchestrator:
 
         # If ledger is already completed (e.g., after restart completed)
         if self.ledger.phase in (Phase.COMPLETED, Phase.LIMITED_MODE):
+            if self.ledger.phase == Phase.LIMITED_MODE:
+                # Policy: limited_mode is deprecated; normalize persisted state to completed.
+                self.ledger.phase = Phase.COMPLETED
+                self._save()
             logger.info(
                 "[ORCHESTRATOR] Ledger already %s (restart_count=%d) - emitting completion event and exiting",
                 self.ledger.phase.value,
@@ -280,8 +284,7 @@ class PermissionOrchestrator:
 
         if self.ledger.phase != Phase.POST_RESTART_VERIFY:
             # Already completed or not in restart state
-            full_mode = not should_enter_limited_mode(self.ledger, self.hard_permissions)
-            await self._complete(full_mode=full_mode)
+            await self._complete(full_mode=True)
             return
 
         await self._enter_post_restart_verify()
@@ -596,11 +599,6 @@ class PermissionOrchestrator:
             await self._enter_restart_sequence(force_restart=True)
             return
 
-        # Check for hard failures
-        if should_enter_limited_mode(self.ledger, self.hard_permissions):
-            await self._enter_limited_mode()
-            return
-
         # Hard guard: V2 policy allows multiple restarts to break TCC zombie state
         if self.ledger.restart_count >= self._restart_limit:
             logger.info(
@@ -715,16 +713,13 @@ class PermissionOrchestrator:
             )
 
             if hard_needs_restart:
-                # Cannot activate HARD permissions without restart → LIMITED_MODE
                 logger.warning(
-                    "[ORCHESTRATOR] HARD permissions need restart but no handler - entering LIMITED_MODE"
+                    "[ORCHESTRATOR] HARD permissions need restart but no handler - continue in full mode"
                 )
                 self.ledger.restart_unavailable = True
-                await self._enter_limited_mode()
             else:
-                # Only SOFT/FEATURE need restart, can continue without them
                 logger.info("[ORCHESTRATOR] Only soft permissions need restart - completing anyway")
-                await self._complete(full_mode=True)
+            await self._complete(full_mode=True)
 
     async def _enter_post_restart_verify(self) -> None:
         """Verify permissions after restart."""
@@ -753,11 +748,8 @@ class PermissionOrchestrator:
             cfg = self.step_configs[p]
             await self._verify_with_window(p, cfg)
 
-        # Decide outcome
-        if should_enter_limited_mode(self.ledger, self.hard_permissions):
-            await self._enter_limited_mode()
-        else:
-            await self._complete(full_mode=True)
+        # Policy: do not enter limited mode after restart verification.
+        await self._complete(full_mode=True)
 
     async def _verify_with_window(self, perm: PermissionId, cfg: StepConfig) -> None:
         """Verify a permission within a time window after restart."""
@@ -806,28 +798,8 @@ class PermissionOrchestrator:
 
     async def _enter_limited_mode(self) -> None:
         """Enter limited mode due to hard failures."""
-        if not self.ledger:
-            logger.error("[ORCHESTRATOR] Ledger not initialized, cannot enter limited mode")
-            return
-
-        self.ledger.phase = Phase.LIMITED_MODE
-        self._save()
-        self._emit_phase_changed(Phase.LIMITED_MODE)
-        self._running = False
-
-        missing = [
-            p
-            for p in self.hard_permissions
-            if self.ledger.steps.get(p)
-            and self.ledger.steps[p].state in (StepState.FAIL, StepState.FAIL_AFTER_RESTART)
-        ]
-        self.emit(
-            UIEvent(
-                UIEventType.LIMITED_MODE_ENTERED,
-                time.time(),
-                {"missing_hard": [x.value for x in missing]},
-            )
-        )
+        logger.info("[ORCHESTRATOR] limited_mode disabled by policy; normalizing to completed")
+        await self._complete(full_mode=True)
 
     async def _complete(self, *, full_mode: bool) -> None:
         """Complete the wizard."""
@@ -848,8 +820,12 @@ class PermissionOrchestrator:
             logger.error("[ORCHESTRATOR] Ledger not initialized, cannot emit completion")
             return
 
-        is_full_mode = self.ledger.phase == Phase.COMPLETED
-        event_type = UIEventType.COMPLETED if is_full_mode else UIEventType.LIMITED_MODE_ENTERED
+        if self.ledger.phase == Phase.LIMITED_MODE:
+            self.ledger.phase = Phase.COMPLETED
+            self._save()
+
+        is_full_mode = True
+        event_type = UIEventType.COMPLETED
 
         # Build summary
         summary = {}
