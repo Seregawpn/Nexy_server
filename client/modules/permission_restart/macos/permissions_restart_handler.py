@@ -41,6 +41,7 @@ class PermissionsRestartHandler:
     _restart_in_progress = False
     _restart_lock_fd: int | None = None  # file descriptor for restart_in_progress.lock
     _abort_flag_name = "restart_abort.flag"
+    _restart_lock_name = "restart_in_progress.lock"
 
     @classmethod
     def _acquire_restart_guard(cls) -> bool:
@@ -63,9 +64,109 @@ class PermissionsRestartHandler:
 
     @classmethod
     def _restart_control_dir(cls) -> Path:
-        control_dir = get_user_data_dir("Nexy")
+        control_dir = get_user_data_dir()
         control_dir.mkdir(parents=True, exist_ok=True)
         return control_dir
+
+    @staticmethod
+    def _is_pid_alive(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # Another user process exists; treat as alive for safety.
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def cleanup_stale_restart_lock(cls, *, source: str = "unknown") -> bool:
+        """
+        Best-effort cleanup for stale restart lock file.
+
+        Removes only when:
+        - lock file exists
+        - current process does not hold the in-memory lock fd
+        - advisory flock can be acquired now
+        - owner PID in file is missing/dead (or file is malformed)
+        """
+        if cls._restart_lock_fd is not None:
+            logger.debug(
+                "[PERMISSION_RESTART] Skip stale lock cleanup (%s): lock held in current process",
+                source,
+            )
+            return False
+
+        lock_path = cls._restart_control_dir() / cls._restart_lock_name
+        if not lock_path.exists():
+            return False
+
+        fd: int | None = None
+        try:
+            fd = os.open(str(lock_path), os.O_RDWR)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (BlockingIOError, OSError):
+                logger.debug(
+                    "[PERMISSION_RESTART] Skip stale lock cleanup (%s): lock is actively held",
+                    source,
+                )
+                return False
+
+            raw = os.read(fd, 1024).decode(errors="ignore").strip()
+            owner_pid: int | None = None
+            if raw:
+                try:
+                    owner_pid = int(raw.split(":", 1)[0])
+                except (TypeError, ValueError):
+                    owner_pid = None
+
+            if owner_pid is not None and cls._is_pid_alive(owner_pid):
+                logger.debug(
+                    "[PERMISSION_RESTART] Skip stale lock cleanup (%s): owner pid=%s is alive",
+                    source,
+                    owner_pid,
+                )
+                return False
+
+            try:
+                lock_path.unlink(missing_ok=True)
+                logger.info(
+                    "[PERMISSION_RESTART] Removed stale restart lock (%s): %s",
+                    source,
+                    lock_path,
+                )
+                return True
+            except Exception as exc:
+                logger.warning(
+                    "[PERMISSION_RESTART] Failed to remove stale restart lock (%s): %s",
+                    lock_path,
+                    exc,
+                )
+                return False
+        except FileNotFoundError:
+            return False
+        except Exception as exc:
+            logger.debug(
+                "[PERMISSION_RESTART] Stale lock cleanup failed (%s): %s",
+                source,
+                exc,
+            )
+            return False
+        finally:
+            if fd is not None:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except Exception:
+                    pass
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
 
     @classmethod
     def _restart_abort_flag_path(cls) -> Path:
@@ -149,7 +250,7 @@ class PermissionsRestartHandler:
         self._config = config or PermissionRestartConfig()  # Default config if not provided
 
         # Атомарный флаг перезапуска в persistent директории
-        data_dir = get_user_data_dir("Nexy")
+        data_dir = get_user_data_dir()
         flag_path = data_dir / "restart_completed.flag"
         self._restart_flag = AtomicRestartFlag(flag_path)
         logger.info("[PERMISSION_RESTART] restart_completed.flag path: %s", flag_path)
@@ -161,7 +262,7 @@ class PermissionsRestartHandler:
             )
 
         # Inter-process restart lock (prevents multiple concurrent restarts)
-        self._restart_in_progress_lock_path = data_dir / "restart_in_progress.lock"
+        self._restart_in_progress_lock_path = data_dir / self._restart_lock_name
         self._restart_in_progress_lock_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(
             "[PERMISSION_RESTART] restart_in_progress.lock path: %s",

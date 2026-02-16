@@ -18,7 +18,7 @@ import traceback
 # --- Фикс PyObjC для macOS (применяется ВСЕГДА, ДО ВСЕХ ДРУГИХ ИМПОРТОВ) ---
 # КРИТИЧНО: Должен выполняться ДО любых импортов rumps/PyObjC
 # ВАЖНО: Этот фикс применяется ДО любых других импортов, которые могут тянуть AppKit/rumps
-# В .app bundle фикс также применяется в runtime_hook_pyobjc_fix.py, но для dev-режима нужен здесь
+#т В .app bundle фикс также применяется в runtime_hook_pyobjc_fix.py, но для dev-режима нужен здесь
 def _apply_pyobjc_fix_early():
     """
     Применяет PyObjC fix для NSMakeRect и других символов.

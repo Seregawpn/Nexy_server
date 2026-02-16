@@ -156,6 +156,7 @@ class PermissionRestartIntegration(BaseIntegration):
             await self._subscribe("app.shutdown", self._on_app_shutdown_event, EventPriority.HIGH)
             await self._subscribe("tray.quit_clicked", self._on_tray_quit_clicked, EventPriority.HIGH)
             PermissionsRestartHandler.clear_user_quit_abort(source="permission_restart.start")
+            PermissionsRestartHandler.cleanup_stale_restart_lock(source="permission_restart.start")
             logger.info("[PERMISSION_RESTART] Subscribed to integration events")
             if legacy_frozen:
                 logger.info(
@@ -197,6 +198,7 @@ class PermissionRestartIntegration(BaseIntegration):
             await self._unsubscribe_all()
             if self._restart_task and not self._restart_task.done():
                 self._restart_task.cancel()
+            PermissionsRestartHandler.cleanup_stale_restart_lock(source="permission_restart.stop")
             logger.info("[PERMISSION_RESTART] Stopped")
             return True
         except Exception as exc:
@@ -617,10 +619,12 @@ class PermissionRestartIntegration(BaseIntegration):
             logger.info("[PERMISSION_RESTART] Cancelled scheduled restart: app.shutdown")
         if self._is_user_quit_intent():
             PermissionsRestartHandler.mark_user_quit_abort(source="app.shutdown:user_quit")
+        PermissionsRestartHandler.cleanup_stale_restart_lock(source="app.shutdown")
 
     async def _on_tray_quit_clicked(self, event: dict[str, Any]) -> None:
         """Owner-path hook: persist abort marker for detached restart helper."""
         PermissionsRestartHandler.mark_user_quit_abort(source="tray.quit_clicked")
+        PermissionsRestartHandler.cleanup_stale_restart_lock(source="tray.quit_clicked")
 
     async def _on_app_startup_event(self, event: dict[str, Any]) -> None:
         """

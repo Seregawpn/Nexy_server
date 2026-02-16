@@ -97,6 +97,11 @@ class AVFoundationPlayer:
         self._last_quiet_warn_ts = 0.0
         self._silent_warn_suppressed = 0
         self._quiet_warn_suppressed = 0
+        # Route-change recreate guard: prevents recreate storms and overlapping
+        # engine rebuilds when system audio/VoiceOver rapidly toggles routes.
+        self._route_recreate_in_flight = False
+        self._last_route_recreate_ts = 0.0
+        self._route_recreate_min_interval_sec = 1.0
 
     def initialize(self) -> bool:
         """Initialize AVAudioEngine and player node."""
@@ -1113,9 +1118,31 @@ class AVFoundationPlayer:
 
     def _on_route_change(self, notification) -> None:
         """Handle audio route change."""
+        now = time.monotonic()
+        with self._lock:
+            if self._route_recreate_in_flight:
+                logger.debug("🔄 Route change ignored: recreate already in flight")
+                return
+            if (now - self._last_route_recreate_ts) < self._route_recreate_min_interval_sec:
+                logger.debug(
+                    "🔄 Route change ignored: debounce %.3fs",
+                    self._route_recreate_min_interval_sec,
+                )
+                return
+            self._route_recreate_in_flight = True
+            self._last_route_recreate_ts = now
+
         logger.info("🔄 Output route changed, recreating player...")
+
+        def _recreate_with_guard() -> None:
+            try:
+                self.recreate()
+            finally:
+                with self._lock:
+                    self._route_recreate_in_flight = False
+
         # Recreate in background thread to avoid blocking main thread (likely AppKit event loop)
-        thread = threading.Thread(target=self.recreate, daemon=True, name="AVFRecreate")
+        thread = threading.Thread(target=_recreate_with_guard, daemon=True, name="AVFRecreate")
         with self._lock:
             # Clean up finished threads
             self._recreate_threads = [t for t in self._recreate_threads if t.is_alive()]
