@@ -96,7 +96,7 @@ class QuotaChecker:
             # Переходим к логике Limited Free Tier (fallback)
 
         # 2. UNLIMITED ACCESS
-        if map_status_to_tier(status) == AccessTier.UNLIMITED:
+        if map_status_to_tier(status, grandfathered_enabled=self.config.grandfathered_enabled) == AccessTier.UNLIMITED:
             return {
                 'allowed': True,
                 'reason': 'unlimited_access',
@@ -209,7 +209,7 @@ class QuotaChecker:
             if grace_end and isinstance(grace_end, datetime) and grace_end > datetime.now():
                 return {'success': True, 'message': 'Grace period active, no increment needed'}
 
-        if map_status_to_tier(status) == AccessTier.UNLIMITED:
+        if map_status_to_tier(status, grandfathered_enabled=self.config.grandfathered_enabled) == AccessTier.UNLIMITED:
             # Для безлимитных тарифов просто возвращаем успех
             return {'success': True, 'message': 'Unlimited access, no increment needed'}
              

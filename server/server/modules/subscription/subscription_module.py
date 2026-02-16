@@ -259,12 +259,18 @@ class SubscriptionModule:
             sub = self._repository.get_subscription(hardware_id)
             if not sub:
                 return {'status': 'none', 'active': False}
-                
+            status = sub.get('status')
+            tier = map_status_to_tier(
+                status,
+                grandfathered_enabled=self.config.grandfathered_enabled
+            )
+
             return {
-                'status': sub.get('status'),
+                'status': status,
                 'stripe_status': sub.get('stripe_status'),
                 'email': sub.get('email'),
-                'active': sub.get('status') in ['paid', 'paid_trial', 'limited_free_trial'],
+                # active=true means user can use product now (unlimited or limited tier)
+                'active': tier in [AccessTier.UNLIMITED, AccessTier.LIMITED],
                 'current_period_end': sub.get('current_period_end')
             }
             
@@ -457,7 +463,10 @@ class SubscriptionModule:
                     pass
 
             # Build context string (centralized tier mapping)
-            tier = map_status_to_tier(status)
+            tier = map_status_to_tier(
+                status,
+                grandfathered_enabled=self.config.grandfathered_enabled
+            )
 
             if status in PAID_STATUSES or tier == AccessTier.UNLIMITED:
                 return f"[Subscription: Paid (Active){date_str}]"
@@ -512,7 +521,7 @@ class SubscriptionModule:
                 self._run_daily_quota_reset,
                 'cron',
                 hour=0,
-                minute=5,
+                minute=0,
                 id='daily_quota_reset'
             )
             
@@ -522,7 +531,7 @@ class SubscriptionModule:
                 'cron',
                 day_of_week='mon',
                 hour=0,
-                minute=5,
+                minute=0,
                 id='weekly_quota_reset'
             )
             
@@ -532,7 +541,7 @@ class SubscriptionModule:
                 'cron',
                 day=1,
                 hour=0,
-                minute=5,
+                minute=0,
                 id='monthly_quota_reset'
             )
             
