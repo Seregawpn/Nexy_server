@@ -188,8 +188,6 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
         Processing result
     """
     from modules.subscription.repository.subscription_repository import SubscriptionRepository
-    from modules.subscription.providers.stripe_service import StripeService
-    
     event_id = event.get('id')
     event_type = event.get('type')
     event_data = event.get('data', {}).get('object', {})
@@ -202,8 +200,10 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
     
     repo = SubscriptionRepository()
     
-    # Extract hardware_id from metadata
+    # Extract hardware_id from metadata, then fallback to local DB linkage.
     hardware_id = _extract_hardware_id(event_data)
+    if not hardware_id:
+        hardware_id = _resolve_hardware_id_from_repo(event_data, repo)
     
     try:
         # Record event first (for idempotency)
@@ -267,6 +267,42 @@ def _extract_hardware_id(event_data: Dict[str, Any]) -> Optional[str]:
         if 'hardware_id' in customer_metadata:
             return customer_metadata['hardware_id']
     
+    return None
+
+
+def _resolve_hardware_id_from_repo(event_data: Dict[str, Any], repo) -> Optional[str]:
+    """
+    Fallback resolver for events where Stripe object lacks direct hardware_id metadata
+    (e.g., invoice.* events).
+    Resolution order:
+    1) subscriptions.stripe_subscription_id
+    2) subscriptions.stripe_customer_id
+    """
+    # invoice.subscription is usually a string id, but keep dict-safe parsing
+    subscription_ref = event_data.get('subscription')
+    if isinstance(subscription_ref, str) and subscription_ref:
+        sub = repo.get_subscription_by_stripe_subscription_id(subscription_ref)
+        if sub and sub.get('hardware_id'):
+            return sub.get('hardware_id')
+    elif isinstance(subscription_ref, dict):
+        sub_id = subscription_ref.get('id')
+        if sub_id:
+            sub = repo.get_subscription_by_stripe_subscription_id(sub_id)
+            if sub and sub.get('hardware_id'):
+                return sub.get('hardware_id')
+
+    customer_ref = event_data.get('customer')
+    if isinstance(customer_ref, str) and customer_ref:
+        sub = repo.get_subscription_by_stripe_customer_id(customer_ref)
+        if sub and sub.get('hardware_id'):
+            return sub.get('hardware_id')
+    elif isinstance(customer_ref, dict):
+        customer_id = customer_ref.get('id')
+        if customer_id:
+            sub = repo.get_subscription_by_stripe_customer_id(customer_id)
+            if sub and sub.get('hardware_id'):
+                return sub.get('hardware_id')
+
     return None
 
 
