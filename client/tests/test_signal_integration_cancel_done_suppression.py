@@ -98,3 +98,26 @@ async def test_listen_start_still_emitted_on_mode_changed():
 
     patterns = [call.args[0].pattern for call in integration._service.emit.await_args_list]
     assert SignalPattern.LISTEN_START in patterns
+
+
+@pytest.mark.asyncio
+async def test_playback_cancelled_skips_cancel_on_preempt_source():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    state_manager.attach_event_bus(event_bus)
+    integration = SignalIntegration(event_bus, state_manager, ErrorHandler())
+    await integration.initialize()
+
+    integration._service.emit = AsyncMock(return_value=True)
+
+    await integration._on_playback_cancelled(
+        {
+            "data": {
+                "session_id": "sid-preempt",
+                "interrupt_source": "keyboard.press_preempt",
+                "suppress_cancel_cue": True,
+            }
+        }
+    )
+
+    assert integration._service.emit.await_count == 0

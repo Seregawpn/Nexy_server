@@ -710,6 +710,11 @@ class VoiceRecognitionIntegration:
         try:
             session_id = self._resolve_callback_session_id(callback_session_id)
             logger.info(f"⚠️ [AUDIO_V2] Recognition failed: {error}")
+            # Capture hold state at callback time to avoid async race:
+            # unknown_value may happen during hold, but coroutine can run after release.
+            with self._state_lock:
+                ptt_pressed_at_callback = selectors.is_ptt_pressed(self.state_manager)
+                was_listening_at_callback = ptt_pressed_at_callback and self._recording_active
 
             # Publish event via asyncio (we're in a thread)
             import asyncio
@@ -718,13 +723,26 @@ class VoiceRecognitionIntegration:
             loop = getattr(self.event_bus, "_loop", None)
 
             if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(self._publish_v2_failed(session_id, error), loop)
+                asyncio.run_coroutine_threadsafe(
+                    self._publish_v2_failed(
+                        session_id,
+                        error,
+                        was_listening_at_callback=was_listening_at_callback,
+                    ),
+                    loop,
+                )
             else:
                 logger.error("❌ [AUDIO_V2] No running event loop found to publish failure")
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error in failed callback: {e}")
 
-    async def _publish_v2_failed(self, session_id, error: str) -> None:
+    async def _publish_v2_failed(
+        self,
+        session_id,
+        error: str,
+        *,
+        was_listening_at_callback: bool = False,
+    ) -> None:
         """
         Helper to publish v2 failure via EventBus.
 
@@ -739,11 +757,16 @@ class VoiceRecognitionIntegration:
 
             ts_ms = int(time.monotonic() * 1000)
 
-            if is_still_listening:
+            if was_listening_at_callback or is_still_listening:
                 # PTT зажат — не публикуем ошибку, просто логируем
                 # Google не понял кусок аудио — это нормально, продолжаем
                 logger.debug(
-                    f"⏳ Recognition failed ({error}) while listening, continuing... (session={session_id})"
+                    "⏳ Recognition failed (%s) while listening, continuing... "
+                    "(session=%s, callback_listening=%s, now_listening=%s)",
+                    error,
+                    session_id,
+                    was_listening_at_callback,
+                    is_still_listening,
                 )
             else:
                 if not self._try_mark_terminal_recognition(session_id, "failed"):

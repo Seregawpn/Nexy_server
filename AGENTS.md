@@ -203,3 +203,24 @@ Race:
 
 Канон правил:
 - `Docs/ARCHITECTURE_GOVERNANCE.md`
+
+## 10) Release Manual Gate (обязательно)
+
+Для production release использовать только канонический пошаговый мануал:
+- `client/Docs/RELEASE_VERSIONING_AND_PUBLISHING.md` → `9. Пошаговый Production Release (обязательно)`.
+
+Запрещено использовать альтернативные release entrypoints/обходы, если они создают второй owner-path публикации.
+
+## 11) Gatekeeper / Notarization Gate (обязательно)
+
+Для каждого production release запрещено выпускать артефакты, если есть риск macOS “Open Anyway”.
+
+Обязательные проверки перед publish:
+- `codesign --verify --deep --strict dist/Nexy.app`
+- `xcrun stapler validate dist/Nexy.app`
+- `xcrun stapler validate dist/Nexy.dmg`
+
+Запрещено:
+- модифицировать `.app/.dmg` после подписи/нотаризации;
+- вручную перезаписывать release assets под тем же version tag;
+- обходить канонический release manual.

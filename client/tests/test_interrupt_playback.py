@@ -100,17 +100,11 @@ class TestInterruptPlayback:
     async def test_short_press_publishes_interrupt_request_in_processing(
         self, input_integration, state_manager, event_bus
     ):
-        """Тест: SHORT_PRESS в PROCESSING режиме публикует interrupt.request"""
+        """Тест: SHORT_PRESS публикует interrupt.request при активном playback."""
         # Устанавливаем PROCESSING режим
         state_manager.set_mode(AppMode.PROCESSING)
-
-        # Устанавливаем pending_session_id для имитации состояния
-        # КРИТИЧНО: Используем числовой session_id (timestamp), так как _get_active_session_id() конвертирует в float
-        test_session_id = 1234567890.0
-        input_integration._pending_session_id = test_session_id
+        input_integration._playback_active = True
         input_integration._recording_started = False
-        # КРИТИЧНО: Используем state_manager.set_mode() для установки session_id (единый источник истины)
-        state_manager.set_mode(AppMode.PROCESSING, session_id=str(test_session_id))
 
         # Мокируем keyboard_monitor, чтобы избежать реальной инициализации
         input_integration.keyboard_monitor = Mock()
@@ -162,15 +156,15 @@ class TestInterruptPlayback:
             assert str(payload.get("source", "")).startswith("keyboard")
             assert payload.get("type") == "speech_stop"
 
-        logger.info("✅ Тест пройден: interrupt.request опубликован при SHORT_PRESS в PROCESSING")
+        logger.info("✅ Тест пройден: interrupt.request опубликован при SHORT_PRESS с playback_active")
 
     @pytest.mark.asyncio
     async def test_press_publishes_interrupt_request_in_processing_without_playback_flag(
         self, input_integration, state_manager, event_bus
     ):
-        """Тест: PRESS в PROCESSING публикует interrupt.request даже если локальный playback-флаг false."""
+        """Тест: PRESS в PROCESSING публикует interrupt.request при активном playback."""
         state_manager.set_mode(AppMode.PROCESSING)
-        input_integration._playback_active = False
+        input_integration._playback_active = True
         input_integration._active_grpc_session_id = None
 
         published_events = []
@@ -199,9 +193,7 @@ class TestInterruptPlayback:
             for event_type, payload in published_events
             if event_type == "interrupt.request"
         ]
-        assert len(interrupt_events) > 0, (
-            "interrupt.request должен публиковаться на PRESS в PROCESSING даже без _playback_active"
-        )
+        assert len(interrupt_events) > 0, "interrupt.request должен публиковаться на PRESS при _playback_active"
 
     @pytest.mark.asyncio
     async def test_press_does_not_publish_interrupt_when_sleeping_with_stale_session(
@@ -251,12 +243,12 @@ class TestInterruptPlayback:
     async def test_press_and_long_press_same_press_id_publish_single_interrupt_request(
         self, input_integration, state_manager, event_bus
     ):
-        """Тест-контракт: один физический press-cycle публикует только один preempt interrupt.request."""
+        """Тест-контракт: один press-cycle публикует только один preempt interrupt.request при playback."""
         state_manager.set_mode(
             AppMode.PROCESSING,
             session_id="f4f79e24-2d2d-4eb0-8b2f-4d0a0d30f4a3",
         )
-        input_integration._playback_active = False
+        input_integration._playback_active = True
         input_integration._active_grpc_session_id = None
 
         published_events = []

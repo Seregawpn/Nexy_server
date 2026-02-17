@@ -83,8 +83,12 @@ class InputProcessingIntegration:
 
         self._health_check_task: asyncio.Task[Any] | None = None
         self._secure_input_active = False
+        self._tap_disabled_since_ts: float | None = None
         self._last_secure_input_force_stop_ts = 0.0
         self._secure_input_force_stop_cooldown_sec = 1.5
+        self._last_tap_recovery_attempt_ts = 0.0
+        self._tap_recovery_retry_sec = 5.0
+        self._quartz_release_missed_ticks = 0
         self._last_interrupt_event_id: str | None = None
         self._preempt_sent_press_id: str | None = None
         self._ctrl_n_beep_guard_item = None
@@ -262,11 +266,14 @@ class InputProcessingIntegration:
             if not self._using_quartz or self.keyboard_monitor is None:
                 continue
             status = self.keyboard_monitor.get_status()
+            await self._quartz_release_watchdog(status)
             tap_enabled = status.get("tap_enabled", True)
             if not tap_enabled and not self._secure_input_active:
+                now = time.monotonic()
+                if self._tap_disabled_since_ts is None:
+                    self._tap_disabled_since_ts = now
                 self._secure_input_active = True
                 self.ptt_available = False
-                now = time.monotonic()
                 if (
                     now - self._last_secure_input_force_stop_ts
                 ) < self._secure_input_force_stop_cooldown_sec:
@@ -278,10 +285,103 @@ class InputProcessingIntegration:
                     self._last_secure_input_force_stop_ts = now
                     logger.warning("SECURE INPUT: tap disabled -> force stop")
                     await self._force_stop("secure_input_tap_disabled")
+            elif not tap_enabled:
+                now = time.monotonic()
+                if self._tap_disabled_since_ts is None:
+                    self._tap_disabled_since_ts = now
+                disabled_for = now - self._tap_disabled_since_ts
+                if (
+                    disabled_for >= self._tap_recovery_retry_sec
+                    and (now - self._last_tap_recovery_attempt_ts) >= self._tap_recovery_retry_sec
+                ):
+                    self._last_tap_recovery_attempt_ts = now
+                    await self._attempt_quartz_tap_recovery()
             elif tap_enabled and self._secure_input_active:
+                self._tap_disabled_since_ts = None
                 self._secure_input_active = False
                 self.ptt_available = True
                 logger.info("SECURE INPUT ended: tap restored")
+
+    async def _quartz_release_watchdog(self, status: dict[str, Any]) -> None:
+        if self._state != PTTState.RECORDING or not self._recording_started:
+            self._quartz_release_missed_ticks = 0
+            return
+
+        combo_active = bool(status.get("combo_active", True))
+        control_pressed = bool(status.get("control_pressed", True))
+        n_pressed = bool(status.get("n_pressed", True))
+        released_physically = (not combo_active) and (not control_pressed) and (not n_pressed)
+        if not released_physically:
+            self._quartz_release_missed_ticks = 0
+            return
+
+        self._quartz_release_missed_ticks += 1
+        if self._quartz_release_missed_ticks < 2:
+            return
+
+        self._quartz_release_missed_ticks = 0
+        session_id = self._get_active_session_id()
+        logger.warning(
+            "INPUT: quartz release watchdog -> terminal stop (session=%s, press_id=%s)",
+            session_id,
+            self._active_press_id,
+        )
+        stopped = await self._request_terminal_stop(
+            press_id=self._active_press_id,
+            session_id=session_id,
+            source="input_processing.quartz_release_watchdog",
+            timestamp=time.time(),
+            reason="release_missed_watchdog",
+        )
+        if not stopped:
+            return
+
+        await self.event_bus.publish(
+            "mode.request",
+            {
+                "target": AppMode.PROCESSING,
+                "source": "input_processing.quartz_release_watchdog",
+                "session_id": session_id,
+                "reason": "release_missed_watchdog",
+            },
+        )
+        self._active_grpc_session_id = session_id
+        self._session_waiting_grpc = True
+        self._set_state(PTTState.WAITING_GRPC, "watchdog_release_to_processing")
+
+    async def _attempt_quartz_tap_recovery(self) -> None:
+        if self.keyboard_monitor is None:
+            return
+        logger.warning("SECURE INPUT: tap disabled too long -> restart monitor")
+        try:
+            self.keyboard_monitor.stop_monitoring()
+        except Exception as e:
+            logger.debug("SECURE INPUT: stop_monitoring during recovery failed: %s", e)
+
+        restarted = False
+        try:
+            restarted = bool(self.keyboard_monitor.start_monitoring())
+        except Exception as e:
+            logger.warning("SECURE INPUT: start_monitoring recovery failed: %s", e)
+
+        if not restarted:
+            self.ptt_available = False
+            return
+
+        try:
+            status = self.keyboard_monitor.get_status()
+        except Exception as e:
+            logger.debug("SECURE INPUT: get_status after recovery failed: %s", e)
+            status = {}
+
+        if bool(status.get("tap_enabled", False)):
+            self._tap_disabled_since_ts = None
+            self._secure_input_active = False
+            self.ptt_available = True
+            logger.info("SECURE INPUT ended: tap restored via monitor restart")
+            return
+
+        self.ptt_available = False
 
     def _install_ctrl_n_beep_guard_if_needed(self):
         self._ctrl_n_beep_guard_desired = True
@@ -436,6 +536,16 @@ class InputProcessingIntegration:
             return False
         current_press_id = self._active_press_id
         return current_press_id is not None and current_press_id != release_press_id
+
+    def _preempt_decision(self, session_id: str | None) -> tuple[bool, str]:
+        """Decide preempt only from real in-flight work signals."""
+        if self._playback_active:
+            return True, "playback_active"
+        if session_id is not None and self._session_waiting_grpc:
+            return True, "waiting_grpc"
+        if session_id is not None and self._active_grpc_session_id is not None:
+            return True, "active_grpc_session"
+        return False, "none"
 
     async def _publish_interrupt_and_cancel(
         self,
@@ -669,10 +779,7 @@ class InputProcessingIntegration:
         press_id = self._extract_press_id(event) or str(uuid.uuid4())
         preempt_session_id = self._get_active_session_id() or self._active_grpc_session_id
         current_mode = selectors.get_current_mode(self.state_manager)
-        has_pending_grpc = preempt_session_id is not None and self._session_waiting_grpc
-        should_preempt = (
-            self._playback_active or current_mode == AppMode.PROCESSING or has_pending_grpc
-        )
+        should_preempt, preempt_reason = self._preempt_decision(preempt_session_id)
         if not should_preempt and self._state == PTTState.IDLE and preempt_session_id is not None:
             # New press-cycle in idle context must not inherit stale session id from
             # previous completed/failed cycle.
@@ -686,6 +793,7 @@ class InputProcessingIntegration:
             preempt_session_id,
             self._state.value,
         )
+        logger.debug("PRESS_PREEMPT reason=%s", preempt_reason)
         if should_preempt and self._preempt_sent_press_id != press_id:
             # Priority rule: press during assistant speech must interrupt first, then arm mic.
             # session_id can already be None during playback tail; interruption must still happen.
@@ -696,6 +804,15 @@ class InputProcessingIntegration:
                 press_id=press_id,
             )
             self._preempt_sent_press_id = press_id
+            if preempt_reason == "playback_active":
+                # Owner fallback: cancel path is requested synchronously on press.
+                # Clear local playback flag immediately so long_press doesn't wait on
+                # a possibly missed playback terminal event.
+                self._playback_active = False
+                while self._playback_waiters:
+                    fut = self._playback_waiters.pop(0)
+                    if not fut.done():
+                        fut.set_result(True)
         # New press always starts a new input cycle. Previous grpc-wait context becomes stale
         # and must not trigger an extra preempt on subsequent long_press.
         self._session_waiting_grpc = False
@@ -724,19 +841,15 @@ class InputProcessingIntegration:
         if not self.ptt_available:
             return
         press_id = self._extract_press_id(event)
+        effective_press_id = press_id or self._active_press_id
         if self._active_press_id and press_id and press_id != self._active_press_id:
             return
         if self._state not in {PTTState.ARMED, PTTState.IDLE}:
             return
 
         preempt_session_id = self._active_grpc_session_id or self._get_active_session_id()
-        current_mode = selectors.get_current_mode(self.state_manager)
-        has_pending_grpc = preempt_session_id is not None and self._session_waiting_grpc
-        should_preempt = (
-            self._playback_active or current_mode == AppMode.PROCESSING or has_pending_grpc
-        )
+        should_preempt, _preempt_reason = self._preempt_decision(preempt_session_id)
         if should_preempt:
-            effective_press_id = press_id or self._active_press_id
             if effective_press_id and self._preempt_sent_press_id == effective_press_id:
                 logger.debug(
                     "INPUT: skip duplicate preempt on long_press (press_id=%s, session=%s)",
@@ -756,6 +869,24 @@ class InputProcessingIntegration:
                     self._preempt_sent_press_id = effective_press_id
             await self._wait_for_playback_finished()
             await self._wait_for_mic_closed()
+
+        # Guard against stale long_press tail:
+        # if release already moved lifecycle forward, do not start recording again.
+        if self._state != PTTState.ARMED:
+            logger.debug(
+                "INPUT: stale long_press tail skipped (state=%s, press_id=%s, active_press_id=%s)",
+                self._state.value,
+                effective_press_id,
+                self._active_press_id,
+            )
+            return
+        if effective_press_id and self._active_press_id and effective_press_id != self._active_press_id:
+            logger.debug(
+                "INPUT: stale long_press press_id mismatch skipped (press_id=%s, active_press_id=%s)",
+                effective_press_id,
+                self._active_press_id,
+            )
+            return
 
         async with self._lifecycle_lock:
             if (
@@ -829,10 +960,7 @@ class InputProcessingIntegration:
         session_id = self._get_active_session_id() or self._active_grpc_session_id
         press_id = self._extract_press_id(event) or self._active_press_id
         current_mode = selectors.get_current_mode(self.state_manager)
-        has_pending_grpc = session_id is not None and self._session_waiting_grpc
-        should_interrupt = (
-            self._playback_active or current_mode == AppMode.PROCESSING or has_pending_grpc
-        )
+        should_interrupt, interrupt_reason = self._preempt_decision(session_id)
         if should_interrupt and (not press_id or self._preempt_sent_press_id != press_id):
             await self._publish_interrupt_and_cancel(
                 session_id,
@@ -850,6 +978,7 @@ class InputProcessingIntegration:
                 self._playback_active,
                 self._state.value,
             )
+            logger.debug("SHORT_TAP interrupt reason=%s", interrupt_reason)
         await self.event_bus.publish(
             "keyboard.short_press",
             {

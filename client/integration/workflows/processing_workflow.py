@@ -68,6 +68,7 @@ class ProcessingWorkflow(BaseWorkflow):
         self._terminal_outcome_session_id: str | None = None
         self._terminal_outcome_reason: str | None = None
         self._pending_screenshot_by_session: dict[str, dict[str, Any]] = {}
+        self._pending_recognition_failed_by_session: dict[str, dict[str, Any]] = {}
 
         # КРИТИЧНО: Единый источник истины для session_id - ApplicationStateManager.
 
@@ -232,7 +233,6 @@ class ProcessingWorkflow(BaseWorkflow):
 
             # Сброс флагов
             self.completed_stages.clear()
-            self.completed_stages.clear()
             self.screenshot_captured = False
             self.grpc_completed = False
             self.recognition_failed = False
@@ -255,6 +255,26 @@ class ProcessingWorkflow(BaseWorkflow):
                     "⚙️ ProcessingWorkflow: session_id is None, skipping total timeout monitor"
                 )
                 self.total_timeout_task = None
+
+            # Anti-race: recognition_failed may arrive before this workflow becomes ACTIVE.
+            # Apply buffered terminal no-speech result immediately for this session.
+            normalized_session_id = str(session_id) if session_id is not None else None
+            buffered_failed = (
+                self._pending_recognition_failed_by_session.pop(normalized_session_id, None)
+                if normalized_session_id is not None
+                else None
+            )
+            if buffered_failed:
+                buffered_error = buffered_failed.get("error", "unknown")
+                logger.info(
+                    "🎤 ProcessingWorkflow: применяем buffered recognition_failed "
+                    "для session=%s (error=%s) до grpc.request_started",
+                    normalized_session_id,
+                    buffered_error,
+                )
+                self.recognition_failed = True
+                await self._complete_processing_chain()
+                return
 
             # Переходим к этапу захвата
             await self._transition_to_stage(ProcessingStage.CAPTURING)
@@ -363,12 +383,28 @@ class ProcessingWorkflow(BaseWorkflow):
 
     async def _on_recognition_failed(self, event):
         """Ошибка распознавания речи (например, тишина или неясность)"""
+        data = event.get("data", {}) if isinstance(event, dict) else {}
+        event_session = data.get("session_id")
+        event_session_norm = str(event_session) if event_session is not None else None
+        error = data.get("error", "unknown")
+
         if not self._is_relevant_event(event):
+            if event_session_norm is not None:
+                self._pending_recognition_failed_by_session[event_session_norm] = {
+                    "error": error,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                logger.debug(
+                    "🎤 ProcessingWorkflow: buffered recognition_failed for future session=%s "
+                    "(error=%s, active_session=%s, active=%s)",
+                    event_session_norm,
+                    error,
+                    self.current_session_id,
+                    self.is_active(),
+                )
             return
 
         try:
-            data = event.get("data", {})
-            error = data.get("error", "unknown")
             logger.warning(
                 f"🎤 ProcessingWorkflow: распознавание не удалось ({error}) - помечаем как failed"
             )

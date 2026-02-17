@@ -9,6 +9,7 @@
 - Клиентские правила и упаковка: см. `.cursorrules` (раздел 1.0.1).
 - Регламент версии и заливки: `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`.
 - Документация: см. `Docs/README.md` для актуального индекса документов.
+- Обязательный release runbook: раздел `9. Пошаговый Production Release (обязательно)` в `Docs/RELEASE_VERSIONING_AND_PUBLISHING.md`.
 
 ## Отчетность ассистента (обязательно)
 - После каждого выполненного задания создать отчетный документ.
@@ -31,6 +32,7 @@
 ## Политика заливки в GitHub (обязательно)
 - Если запрос касается заливки/публикации/push клиентской части, использовать только репозиторий: `https://github.com/Seregawpn/Nexy_client_test`.
 - Не выполнять push в `Nexy`, `origin` или любые другие remote для клиентской заливки.
+- Для production release assets использовать только `Seregawpn/Nexy_production` через owner-flow из runbook (без альтернативных путей).
 
 ## Architecture Gates (обязательно, client-only)
 - Правило: **One event, one owner** для критичных событий.

@@ -472,7 +472,14 @@ class SpeechPlaybackIntegration:
                 self._current_session_id = sid
 
             if sid is not None:
-                self.state_manager.update_session_id(str(sid))
+                sid_str = str(sid)
+                if selectors.is_valid_session_id(sid_str):
+                    self.state_manager.update_session_id(sid_str)
+                else:
+                    logger.debug(
+                        "SpeechPlayback: skip state_manager session sync for non-uuid sid=%s",
+                        sid_str,
+                    )
                 sid_key = str(sid)
                 if sid_key not in self._grpc_start_confirmed_sessions:
                     task = self._grpc_start_watchdogs.get(sid_key)
@@ -821,10 +828,9 @@ class SpeechPlaybackIntegration:
             self._raw_sessions.add(session_id)
 
             self.state_manager.update_session_id(str(session_id))
-            if raw_session:
-                self._grpc_done_sessions[session_id] = True
-            else:
-                self._grpc_done_sessions.setdefault(session_id, False)
+            # Raw audio payload is a complete clip by contract (welcome/cues/etc),
+            # so finalization must not wait for grpc.request_completed.
+            self._grpc_done_sessions[session_id] = True
             self._finalized_sessions.pop(session_id, None)
             self._cancelled_sessions.discard(session_id)
 
@@ -849,12 +855,11 @@ class SpeechPlaybackIntegration:
                 return
             logger.debug(f"🔍 [AUDIO] Raw audio added to AVFPlayer for session {session_id}")
 
-            if raw_session:
-                if self._silence_task and not self._silence_task.done():
-                    self._silence_task.cancel()
-                self._silence_task = asyncio.create_task(
-                    self._finalize_on_silence(session_id, timeout=1.0)
-                )
+            if self._silence_task and not self._silence_task.done():
+                self._silence_task.cancel()
+            self._silence_task = asyncio.create_task(
+                self._finalize_on_silence(session_id, timeout=1.0)
+            )
 
         except Exception as e:
             await self._handle_error(e, where="speech.on_raw_audio", severity="warning")
@@ -1017,12 +1022,12 @@ class SpeechPlaybackIntegration:
             sid = data.get("session_id")
             now = time.monotonic()
 
-            async with self._playback_op_lock:
-                self._stop_player_locked()
-
             if self._is_cancel_dedup(sid, now):
                 logger.debug("🛑 SpeechPlayback: cancel dedup (sid=%s)", sid)
                 return
+
+            async with self._playback_op_lock:
+                self._stop_player_locked()
 
             self._arm_cancel_guard(sid, now)
             had_audio_before_cleanup = self._apply_cancel_state(sid, source="unified_interrupt")
@@ -1066,11 +1071,10 @@ class SpeechPlaybackIntegration:
             logger.error(f"❌ SpeechPlayback: ошибка остановки плеера: {e}")
 
     def _is_cancel_dedup(self, sid: Any, now: float) -> bool:
-        return (
-            sid is not None
-            and self._last_cancel_sid == sid
-            and (now - self._last_cancel_ts) < self._cancel_guard_window_sec
-        )
+        if (now - self._last_cancel_ts) >= self._cancel_guard_window_sec:
+            return False
+        # Dedup must work both for session-bound and session-less cancel paths.
+        return self._last_cancel_sid == sid
 
     def _arm_cancel_guard(self, sid: Any, now: float) -> None:
         self._cancel_in_flight = True
@@ -1139,6 +1143,8 @@ class SpeechPlaybackIntegration:
                     "session_id": sid,
                     "source": "grpc_cancel",
                     "reason": "server_request",
+                    "interrupt_source": data.get("interrupt_source"),
+                    "suppress_cancel_cue": bool(data.get("suppress_cancel_cue")),
                 },
             )
         except Exception as e:
@@ -1298,6 +1304,12 @@ class SpeechPlaybackIntegration:
                     f"summary={{had_audio={self._had_audio_for_session.get(session_id, False)}, "
                     f"wait_duration_sec={wait_duration:.2f}}}"
                 )
+                # Release audio session to avoid Python vs VoiceOver primary conflict.
+                try:
+                    if self._avf_player:
+                        self._avf_player.stop_playback()
+                except Exception:
+                    pass
                 published = await self._emit_terminal_playback_event(
                     "playback.completed",
                     session_id=session_id,

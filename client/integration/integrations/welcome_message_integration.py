@@ -92,7 +92,6 @@ class WelcomeMessageIntegration:
         self._welcome_lock = asyncio.Lock()
         self._playback_ready = False
         self._playback_ready_event = asyncio.Event()
-        self._welcome_playback_session_id: str | None = None
         # Startup update guard: avoid welcome overlap with update announcements.
         self._startup_update_in_progress = False
         self._startup_update_terminal_ts: float | None = None
@@ -351,18 +350,13 @@ class WelcomeMessageIntegration:
             # Обновляем gRPC клиент непосредственно перед воспроизведением
             self._refresh_grpc_client()
             welcome_session_id = str(uuid.uuid4())
-            self._welcome_playback_session_id = welcome_session_id
 
             # 🆕 ПЕРЕХОД В PROCESSING РЕЖИМ
             logger.info("🔄 [WELCOME_INTEGRATION] Переход в режим PROCESSING для приветствия")
-            await self.event_bus.publish(
-                "mode.request",
-                {
-                    "target": "PROCESSING",
-                    "source": "welcome_message",
-                    "reason": "welcome_playback",
-                    "session_id": welcome_session_id,
-                },
+            await self._request_mode(
+                target="PROCESSING",
+                reason="welcome_playback",
+                session_id=welcome_session_id,
             )
 
             # Воспроизводим через плеер
@@ -409,6 +403,11 @@ class WelcomeMessageIntegration:
                         "session_id": welcome_session_id,
                     },
                 )
+                await self._request_mode(
+                    target="SLEEPING",
+                    reason="welcome_completed",
+                    session_id=welcome_session_id,
+                )
             else:
                 logger.warning(f"⚠️ [WELCOME_INTEGRATION] Приветствие не удалось: {result.error}")
                 await self.event_bus.publish(
@@ -420,6 +419,11 @@ class WelcomeMessageIntegration:
                         "trigger": trigger,
                         "session_id": welcome_session_id,
                     },
+                )
+                await self._request_mode(
+                    target="SLEEPING",
+                    reason="welcome_failed",
+                    session_id=welcome_session_id,
                 )
 
         except BaseException as e:
@@ -433,13 +437,25 @@ class WelcomeMessageIntegration:
 
             logger.error("🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING из-за ошибки")
             await asyncio.sleep(0.5)  # Небольшая задержка для видимости изменения иконки
-            await self.event_bus.publish(
-                "mode.request",
-                {"target": "SLEEPING", "source": "welcome_message", "reason": "welcome_error"},
+            await self._request_mode(
+                target="SLEEPING",
+                reason="welcome_error",
             )
             if isinstance(e, Exception):
                 await self._handle_error(e, where="welcome.play_message", severity="warning")
             raise
+
+    async def _request_mode(
+        self, *, target: str, reason: str, session_id: str | None = None
+    ) -> None:
+        payload: dict[str, Any] = {
+            "target": target,
+            "source": "welcome_message",
+            "reason": reason,
+        }
+        if session_id is not None:
+            payload["session_id"] = session_id
+        await self.event_bus.publish("mode.request", payload)
 
     def _refresh_grpc_client(self) -> None:
         """Отложенная инъекция gRPC клиента для welcome-аудио."""
@@ -530,57 +546,6 @@ class WelcomeMessageIntegration:
         except Exception as e:
             logger.error(f"❌ [WELCOME_INTEGRATION] Ошибка в _wait_for_playback_completion: {e}")
 
-    async def _return_to_sleeping_after_playback(self):
-        """Возвращает приложение в режим SLEEPING после завершения воспроизведения"""
-        try:
-            # Слушаем событие завершения воспроизведения от SpeechPlaybackIntegration
-            logger.info("🔄 [WELCOME_INTEGRATION] Ожидаю завершения воспроизведения...")
-
-            # Создаем Future для ожидания события
-            playback_completed = asyncio.Future()
-
-            async def on_playback_completed(event):
-                # Проверяем session_id вместо pattern, так как SpeechPlaybackIntegration
-                # не публикует pattern в playback.completed
-                session_id = event.get("data", {}).get("session_id", "")
-                if "welcome_message" in session_id:
-                    logger.info(
-                        "🎵 [WELCOME_INTEGRATION] Получено событие завершения воспроизведения"
-                    )
-                    if not playback_completed.done():
-                        playback_completed.set_result(True)
-
-            # Подписываемся на событие завершения воспроизведения
-            await self.event_bus.subscribe("playback.completed", on_playback_completed)
-
-            try:
-                # Ждем завершения воспроизведения с таймаутом
-                await asyncio.wait_for(playback_completed, timeout=10.0)
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "⚠️ [WELCOME_INTEGRATION] Таймаут ожидания завершения воспроизведения"
-                )
-            finally:
-                # Отписываемся от события
-                await self.event_bus.unsubscribe("playback.completed", on_playback_completed)
-
-            logger.info(
-                "🔄 [WELCOME_INTEGRATION] Возврат в режим SLEEPING после завершения воспроизведения"
-            )
-            await self.event_bus.publish(
-                "mode.request",
-                {
-                    "target": "SLEEPING",
-                    "source": "welcome_message",
-                    "reason": "welcome_playback_completed",
-                },
-            )
-
-        except Exception as e:
-            logger.error(
-                f"❌ [WELCOME_INTEGRATION] Ошибка в _return_to_sleeping_after_playback: {e}"
-            )
-
     async def _send_audio_to_playback(
         self, audio_data: np.ndarray, session_id: str | None = None
     ) -> str:
@@ -627,7 +592,6 @@ class WelcomeMessageIntegration:
                 )
 
             welcome_session_id = session_id or str(uuid.uuid4())
-            self._welcome_playback_session_id = welcome_session_id
 
             # ✅ ПРАВИЛЬНО: Передаем numpy массив напрямую в плеер
             # БЕЗ конвертации в bytes - плеер сам разберется с форматом

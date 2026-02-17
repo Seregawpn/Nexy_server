@@ -4,6 +4,7 @@ Browser Use Integration - Client Side
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from integration.core.event_bus import EventBus, EventPriority
@@ -18,13 +19,25 @@ class BrowserUseIntegration:
     def __init__(self, event_bus: EventBus):
         self.event_bus = event_bus
         self.module = BrowserUseModule()
-        self._processing_tasks = set()
+        self._processing_tasks: dict[asyncio.Task[Any], str | None] = {}
+        self._active_browser_sessions: set[str] = set()
         self._welcome_completed = False
         self._welcome_completed_event = asyncio.Event()
         self._pending_browser_tts: list[str] = []
         self._pending_browser_tts_set: set[str] = set()
+        self._pending_runtime_tts: list[tuple[str, str, str]] = []
+        self._pending_runtime_tts_set: set[tuple[str, str]] = set()
         self._tts_flush_task: asyncio.Task[Any] | None = None
+        self._runtime_tts_flush_task: asyncio.Task[Any] | None = None
         self._welcome_wait_timeout_sec = 8.0
+        self._current_mode: str | None = None
+        self._current_mode_session_id: str | None = None
+        self._active_playback_sessions: set[str] = set()
+        self._playback_active: bool = False
+        self._terminal_event_dedup_window_sec = 2.0
+        self._last_terminal_event_ts: dict[tuple[str, str], float] = {}
+        self._terminal_by_session_ts: dict[str, float] = {}
+        self._terminal_by_session_event: dict[str, str] = {}
 
     async def initialize(self) -> bool:
         try:
@@ -46,21 +59,32 @@ class BrowserUseIntegration:
 
             async def on_llm_error(event: dict[str, Any]):
                 reason = str((event or {}).get("reason") or "")
-                if reason != "llm_service_unavailable":
+                if reason == "llm_rate_limited":
+                    notify_message = "Превышен лимит. Попробуйте позже."
+                    await self.event_bus.publish(
+                        "system.notification",
+                        {"title": "Nexy Browser", "message": notify_message},
+                    )
+                    await self._publish_tts(
+                        "Превышен лимит. Попробуйте позже.",
+                        session_id="system",
+                        source="browser_llm_rate_limited",
+                    )
                     return
 
-                notify_message = (
-                    "Browser AI service is busy right now. Please try again in a few seconds."
-                )
-                await self.event_bus.publish(
-                    "system.notification",
-                    {"title": "Nexy Browser", "message": notify_message},
-                )
-                await self._publish_tts(
-                    "Browser service is busy right now. Please try again.",
-                    session_id="system",
-                    source="browser_llm_unavailable",
-                )
+                if reason == "llm_service_unavailable":
+                    notify_message = (
+                        "Browser AI service is busy right now. Please try again in a few seconds."
+                    )
+                    await self.event_bus.publish(
+                        "system.notification",
+                        {"title": "Nexy Browser", "message": notify_message},
+                    )
+                    await self._publish_tts(
+                        "Browser service is busy right now. Please try again.",
+                        session_id="system",
+                        source="browser_llm_unavailable",
+                    )
 
             def usage_callback(
                 input_tokens: int, output_tokens: int, session_id: str, model_name: str = "unknown"
@@ -109,6 +133,21 @@ class BrowserUseIntegration:
             await self.event_bus.subscribe(
                 "welcome.failed", self._on_welcome_completed, EventPriority.MEDIUM
             )
+            await self.event_bus.subscribe(
+                "app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.started", self._on_playback_started, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.completed", self._on_playback_terminal, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.cancelled", self._on_playback_terminal, EventPriority.MEDIUM
+            )
+            await self.event_bus.subscribe(
+                "playback.failed", self._on_playback_terminal, EventPriority.MEDIUM
+            )
 
             logger.info("BrowserUseIntegration initialized")
             return True
@@ -121,12 +160,20 @@ class BrowserUseIntegration:
 
     async def stop(self) -> bool:
         await self.module.close_browser()
-        for task in list(self._processing_tasks):
+        for task in list(self._processing_tasks.keys()):
             task.cancel()
+        self._processing_tasks.clear()
+        self._active_browser_sessions.clear()
         if self._tts_flush_task and not self._tts_flush_task.done():
             self._tts_flush_task.cancel()
             try:
                 await self._tts_flush_task
+            except asyncio.CancelledError:
+                pass
+        if self._runtime_tts_flush_task and not self._runtime_tts_flush_task.done():
+            self._runtime_tts_flush_task.cancel()
+            try:
+                await self._runtime_tts_flush_task
             except asyncio.CancelledError:
                 pass
         return True
@@ -189,6 +236,130 @@ class BrowserUseIntegration:
         self._welcome_completed_event.set()
         await self._flush_pending_startup_tts()
 
+    async def _on_app_mode_changed(self, event: dict[str, Any]) -> None:
+        data = (event or {}).get("data", {}) or {}
+        mode = data.get("mode")
+        self._current_mode = str(getattr(mode, "value", mode)).lower() if mode is not None else None
+        sid = data.get("session_id")
+        self._current_mode_session_id = str(sid) if sid else None
+
+    async def _on_playback_started(self, event: dict[str, Any]) -> None:
+        data = (event or {}).get("data", {}) or {}
+        if data.get("signal"):
+            return
+        sid = str(data.get("session_id") or "").strip()
+        if sid:
+            self._active_playback_sessions.add(sid)
+        self._playback_active = True
+
+    async def _on_playback_terminal(self, event: dict[str, Any]) -> None:
+        data = (event or {}).get("data", {}) or {}
+        sid = str(data.get("session_id") or "").strip()
+        if sid:
+            self._active_playback_sessions.discard(sid)
+        if not self._active_playback_sessions:
+            self._playback_active = False
+            await self._flush_pending_runtime_tts()
+
+    def _should_suppress_browser_runtime_tts(self, session_id: str | None) -> tuple[bool, str]:
+        sid = str(session_id or "").strip()
+        if not sid:
+            # Unknown session cannot be safely attributed/routed.
+            return True, "missing_session_id"
+
+        if self._playback_active:
+            # Allow runtime browser narration to be published while playback is active.
+            # SpeechPlaybackIntegration is single-owner for serialization and will queue safely.
+            if sid in self._active_playback_sessions:
+                return False, "playback_active_same_session_serialized"
+            return False, "playback_active_other_session_serialized"
+        if self._current_mode == "processing":
+            if self._current_mode_session_id and sid == self._current_mode_session_id:
+                return False, "mode_processing_same_session_serialized"
+            return False, "mode_processing_other_session_serialized"
+        return False, "pass_through"
+
+    async def _queue_or_publish_runtime_tts(
+        self, *, text: str, session_id: str | None, source: str
+    ) -> None:
+        normalized_text = str(text or "").strip()
+        sid = str(session_id or "").strip()
+        if not normalized_text:
+            return
+        suppress, reason = self._should_suppress_browser_runtime_tts(sid)
+        if suppress:
+            if reason == "missing_session_id":
+                logger.info(
+                    "BROWSER_TTS dropped: source=%s session_id=%s reason=%s",
+                    source,
+                    sid or "none",
+                    reason,
+                )
+                return
+            dedup_key = (sid, normalized_text)
+            if dedup_key not in self._pending_runtime_tts_set:
+                self._pending_runtime_tts_set.add(dedup_key)
+                self._pending_runtime_tts.append(
+                    (normalized_text, sid or "system", source)
+                )
+            logger.info(
+                "BROWSER_TTS suppressed: source=%s session_id=%s reason=%s queue_len=%s",
+                source,
+                sid or "none",
+                reason,
+                len(self._pending_runtime_tts),
+            )
+            # Single-owner path:
+            # suppress -> deferred queue -> flush when playback gets idle.
+            self._ensure_runtime_flush_task()
+            return
+        await self._publish_tts(
+            normalized_text,
+            session_id=sid or "system",
+            source=source,
+        )
+
+    async def _flush_pending_runtime_tts(self) -> None:
+        if self._playback_active or not self._pending_runtime_tts:
+            return
+        queued = list(self._pending_runtime_tts)
+        self._pending_runtime_tts.clear()
+        self._pending_runtime_tts_set.clear()
+        logger.info("BROWSER_TTS flush: queued_count=%s", len(queued))
+        for text, sid, source in queued:
+            await self._publish_tts(text, session_id=sid, source=source)
+
+    def _ensure_runtime_flush_task(self) -> None:
+        if self._runtime_tts_flush_task and not self._runtime_tts_flush_task.done():
+            return
+        self._runtime_tts_flush_task = asyncio.create_task(self._runtime_flush_watchdog())
+
+    async def _runtime_flush_watchdog(self) -> None:
+        try:
+            # Safety net: if playback terminal is missed, periodically try deferred flush.
+            # This does not bypass single-owner checks because _flush_pending_runtime_tts
+            # still exits while playback is active.
+            max_wait_sec = 15.0
+            elapsed = 0.0
+            step = 0.25
+            while elapsed < max_wait_sec:
+                if not self._pending_runtime_tts:
+                    return
+                if not self._playback_active:
+                    await self._flush_pending_runtime_tts()
+                    if not self._pending_runtime_tts:
+                        return
+                await asyncio.sleep(step)
+                elapsed += step
+            if self._pending_runtime_tts:
+                logger.warning(
+                    "BROWSER_TTS watchdog timeout: queue_len=%s playback_active=%s",
+                    len(self._pending_runtime_tts),
+                    self._playback_active,
+                )
+        except asyncio.CancelledError:
+            raise
+
     async def _queue_or_publish_startup_tts(self, text: str) -> None:
         normalized = (text or "").strip()
         if not normalized:
@@ -237,7 +408,7 @@ class BrowserUseIntegration:
         logger.info("🛑 [BROWSER] Interruption requested, cancelling active tasks...")
 
         # Копируем и очищаем сразу, чтобы новые задачи не добавлялись в старый набор
-        tasks_to_cancel = list(self._processing_tasks)
+        tasks_to_cancel = list(self._processing_tasks.keys())
         self._processing_tasks.clear()
 
         if not tasks_to_cancel:
@@ -258,16 +429,38 @@ class BrowserUseIntegration:
         # Also force stop the browser session
         await self.module.close_browser()
 
-        # Publish cancelled event
-        await self.event_bus.publish(
-            "browser.cancelled", {"reason": "user_interruption", "timestamp": "now"}
-        )
+        data = (event or {}).get("data", event) or {}
+        session_id = str(data.get("session_id") or "").strip()
+        active_sessions = sorted(self._active_browser_sessions)
+        if session_id:
+            cancel_sessions = [session_id]
+        elif len(active_sessions) == 1:
+            cancel_sessions = [active_sessions[0]]
+        else:
+            # Если отмена пришла без session_id и есть несколько активных browser-задач,
+            # публикуем terminal отдельно для каждой сессии.
+            cancel_sessions = active_sessions
+
+        if cancel_sessions:
+            for sid in cancel_sessions:
+                await self._publish_terminal_event_once(
+                    "browser.cancelled",
+                    {
+                        "reason": "user_interruption",
+                        "timestamp": "now",
+                        "session_id": sid,
+                    },
+                )
+        else:
+            logger.debug(
+                "BROWSER_TERMINAL cancel skipped: no active browser session to resolve session_id"
+            )
         await self.event_bus.publish(
             "browser.progress",
             {
                 "type": "BROWSER_TASK_CANCELLED",
                 "task_id": "cancelled",
-                "session_id": "cancelled",
+                "session_id": session_id or None,
                 "step_number": 0,
                 "description": "Task cancelled by user",
                 "error": "User interrupted",
@@ -276,15 +469,26 @@ class BrowserUseIntegration:
 
     async def _on_browser_use_request(self, event: dict[str, Any]):
         data = event.get("data", event)
+        request_session_id = str(data.get("session_id") or "").strip() or None
         loop = asyncio.get_running_loop()
-        task = loop.create_task(self._run_process(data))
-        self._processing_tasks.add(task)
-        task.add_done_callback(self._processing_tasks.discard)
+        task = loop.create_task(self._run_process(data, request_session_id=request_session_id))
+        self._processing_tasks[task] = request_session_id
+        if request_session_id:
+            self._active_browser_sessions.add(request_session_id)
 
-    async def _run_process(self, request):
+        def _cleanup(done_task: asyncio.Task[Any]) -> None:
+            sid = self._processing_tasks.pop(done_task, None)
+            if sid:
+                self._active_browser_sessions.discard(sid)
+
+        task.add_done_callback(_cleanup)
+
+    async def _run_process(self, request, *, request_session_id: str | None = None):
         try:
             start_feedback_sent = False
             async for progress_event in self.module.process(request):
+                if request_session_id and not progress_event.get("session_id"):
+                    progress_event["session_id"] = request_session_id
                 event_type = progress_event.get("type")
 
                 # 1. Publish to specific topics (Requirement)
@@ -295,8 +499,8 @@ class BrowserUseIntegration:
                         session_id = progress_event.get("session_id") or request.get(
                             "session_id", "unknown"
                         )
-                        await self._publish_tts(
-                            "Browser opened. Starting search now.",
+                        await self._queue_or_publish_runtime_tts(
+                            text="Browser opened. Starting search now.",
                             session_id=str(session_id),
                             source="browser_start",
                         )
@@ -308,20 +512,18 @@ class BrowserUseIntegration:
                     if description:
                         # Don't speak "Step completed" if it's the fallback - it's annoying
                         if description != "Step completed":
-                            await self.event_bus.publish(
-                                "grpc.tts_request",
-                                {
-                                    "text": description,
-                                    "session_id": progress_event.get("session_id"),
-                                    "source": "browser_step",
-                                },
+                            session_id = str(progress_event.get("session_id") or "")
+                            await self._queue_or_publish_runtime_tts(
+                                text=description,
+                                session_id=session_id,
+                                source="browser_step",
                             )
                 elif event_type == "BROWSER_TASK_COMPLETED":
-                    await self.event_bus.publish("browser.completed", progress_event)
+                    await self._publish_terminal_event_once("browser.completed", progress_event)
                 elif event_type == "BROWSER_TASK_FAILED":
-                    await self.event_bus.publish("browser.failed", progress_event)
+                    await self._publish_terminal_event_once("browser.failed", progress_event)
                 elif event_type == "BROWSER_TASK_CANCELLED":
-                    await self.event_bus.publish("browser.cancelled", progress_event)
+                    await self._publish_terminal_event_once("browser.cancelled", progress_event)
 
                 # 2. Publish to 'browser.progress' for BrowserProgressIntegration compatibility
                 # It expects a dict that BrowserProgressEvent.from_dict can parse.
@@ -330,10 +532,60 @@ class BrowserUseIntegration:
 
         except Exception as e:
             logger.error(f"Error in browser_use execution: {e}")
-            error_event = {"type": "BROWSER_TASK_FAILED", "error": str(e), "timestamp": "now"}
-            await self.event_bus.publish("browser.failed", error_event)
+            error_event = {
+                "type": "BROWSER_TASK_FAILED",
+                "error": str(e),
+                "timestamp": "now",
+                "session_id": request_session_id,
+            }
+            await self._publish_terminal_event_once("browser.failed", error_event)
             await self.event_bus.publish("browser.progress", error_event)
 
     async def _on_browser_close_request(self, event: dict[str, Any]):
         await self.module.close_browser()
         await self.event_bus.publish("browser.closed", {})
+
+    async def _publish_terminal_event_once(self, event_name: str, payload: dict[str, Any]) -> None:
+        sid = str((payload or {}).get("session_id") or "")
+        key = (event_name, sid)
+        now = time.monotonic()
+
+        # Single-owner guard: для конкретной session_id допускаем ровно один terminal event.
+        # Это убирает late/duplicate terminal от разных веток (completed/failed/cancelled).
+        if sid:
+            last_terminal_ts = self._terminal_by_session_ts.get(sid, 0.0)
+            if (now - last_terminal_ts) < self._terminal_event_dedup_window_sec:
+                existing_event = self._terminal_by_session_event.get(sid, "unknown")
+                logger.debug(
+                    "BROWSER_TERMINAL session dedup: skip=%s keep=%s session_id=%s dt=%.3fs",
+                    event_name,
+                    existing_event,
+                    sid,
+                    now - last_terminal_ts,
+                )
+                return
+
+        last_ts = self._last_terminal_event_ts.get(key, 0.0)
+        if (now - last_ts) < self._terminal_event_dedup_window_sec:
+            logger.debug(
+                "BROWSER_TERMINAL dedup: event=%s session_id=%s dt=%.3fs",
+                event_name,
+                sid or "none",
+                now - last_ts,
+            )
+            return
+
+        cutoff = now - (self._terminal_event_dedup_window_sec * 4.0)
+        stale_keys = [k for k, ts in self._last_terminal_event_ts.items() if ts < cutoff]
+        for k in stale_keys:
+            self._last_terminal_event_ts.pop(k, None)
+        stale_session_keys = [s for s, ts in self._terminal_by_session_ts.items() if ts < cutoff]
+        for s in stale_session_keys:
+            self._terminal_by_session_ts.pop(s, None)
+            self._terminal_by_session_event.pop(s, None)
+
+        self._last_terminal_event_ts[key] = now
+        if sid:
+            self._terminal_by_session_ts[sid] = now
+            self._terminal_by_session_event[sid] = event_name
+        await self.event_bus.publish(event_name, payload)

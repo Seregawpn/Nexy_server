@@ -34,6 +34,7 @@ AVAudioPCMBuffer = getattr(_AVFoundation, "AVAudioPCMBuffer", None)
 AVAudioPlayerNode = getattr(_AVFoundation, "AVAudioPlayerNode", None)
 AVAudioSession = getattr(_AVFoundation, "AVAudioSession", None)
 AVAudioSessionCategoryPlayback = getattr(_AVFoundation, "AVAudioSessionCategoryPlayback", None)
+AVAudioSessionCategoryAmbient = getattr(_AVFoundation, "AVAudioSessionCategoryAmbient", None)
 AVAudioSessionModeDefault = getattr(_AVFoundation, "AVAudioSessionModeDefault", None)
 AVAudioSessionRouteChangeNotification = getattr(
     _AVFoundation, "AVAudioSessionRouteChangeNotification", None
@@ -47,6 +48,9 @@ AVAudioSessionCategoryOptionMixWithOthers = getattr(
 AVAudioSessionCategoryOptionDuckOthers = getattr(
     _AVFoundation, "AVAudioSessionCategoryOptionDuckOthers", 0
 )
+# Preferred non-primary category for VoiceOver coexistence.
+# Ambient sessions are not registered as 'prim' in audiomxd,
+# avoiding "Found 2 different sessions" conflicts.
 AVAudioSessionCategoryPlayAndRecord = getattr(
     _AVFoundation, "AVAudioSessionCategoryPlayAndRecord", None
 )
@@ -109,6 +113,8 @@ class AVFoundationPlayer:
         self._route_recreate_in_flight = False
         self._last_route_recreate_ts = 0.0
         self._route_recreate_min_interval_sec = 1.0
+        # Deferred session deactivation timer (debounce inter-phrase silence).
+        self._deactivate_timer: threading.Timer | None = None
 
     def initialize(self) -> bool:
         """Initialize AVAudioEngine and player node."""
@@ -164,6 +170,7 @@ class AVFoundationPlayer:
 
     def shutdown(self) -> None:
         """Shutdown the player."""
+        self._cancel_deferred_deactivation()
         with self._lock:
             self._playing = False
             try:
@@ -309,6 +316,9 @@ class AVFoundationPlayer:
 
     def start_playback(self, *, reassert_session: bool = False) -> bool:
         """Start playback."""
+        # Cancel any pending deferred deactivation — new audio is coming.
+        self._cancel_deferred_deactivation()
+
         if not self._initialized:
             logger.error("❌ Player not initialized")
             return False
@@ -527,13 +537,16 @@ class AVFoundationPlayer:
 
     def _ensure_playback_audio_session(self, *, reason: str) -> None:
         """Centralized owner for playback audio session profile."""
-        if not AVAudioSession or AVAudioSessionCategoryPlayback is None:
+        # Prefer Ambient (non-primary) to avoid 'prim' session conflicts with VoiceOver.
+        # Fall back to Playback if Ambient is unavailable.
+        chosen_category_const = AVAudioSessionCategoryAmbient or AVAudioSessionCategoryPlayback
+        if not AVAudioSession or chosen_category_const is None:
             if not self._audio_session_unavailable_logged:
                 logger.warning(
-                    "AUDIO_SESSION_PROFILE reason=%s applied=false unavailable=true has_session=%s has_playback_category=%s",
+                    "AUDIO_SESSION_PROFILE reason=%s applied=false unavailable=true has_session=%s has_category=%s",
                     reason,
                     bool(AVAudioSession),
-                    bool(AVAudioSessionCategoryPlayback is not None),
+                    bool(chosen_category_const is not None),
                 )
                 self._audio_session_unavailable_logged = True
             return
@@ -541,16 +554,14 @@ class AVFoundationPlayer:
             session = AVAudioSession.sharedInstance()
             route_sig = self._current_route_signature(session)
 
-            # Playback path must not claim input ownership.
-            # Keep category stable as Playback even on Bluetooth routes.
+            # Ambient avoids registering as 'prim' in audiomxd, preventing
+            # "Found 2 different sessions" conflicts with VoiceOver.
             is_bluetooth = bool(route_sig and "Bluetooth" in route_sig)
-            chosen_category_obj = AVAudioSessionCategoryPlayback
-            target_category = str(AVAudioSessionCategoryPlayback)
+            chosen_category_obj = chosen_category_const
+            target_category = str(chosen_category_const)
             target_options = int(AVAudioSessionCategoryOptionAllowBluetoothA2DP or 0)
             # MixWithOthers: prevent exclusive route claim that conflicts with VoiceOver
             target_options |= int(AVAudioSessionCategoryOptionMixWithOthers or 0)
-            # DuckOthers: lower VoiceOver volume while Nexy speaks instead of fighting
-            target_options |= int(AVAudioSessionCategoryOptionDuckOthers or 0)
 
             target_mode = str(AVAudioSessionModeDefault) if AVAudioSessionModeDefault else None
             target_signature = (target_category, target_mode, target_options, route_sig)
@@ -581,7 +592,7 @@ class AVFoundationPlayer:
 
             if is_bluetooth:
                 logger.info(
-                    "🎧 Bluetooth output detected, keeping Playback category for route=%s",
+                    "🎧 Bluetooth output detected, keeping Ambient category for route=%s",
                     route_sig,
                 )
 
@@ -609,7 +620,14 @@ class AVFoundationPlayer:
                 _max_activate_retries = 3
                 _activated = False
                 for _attempt in range(_max_activate_retries):
-                    _ok, _err = session.setActive_error_(True, None)
+                    _set_active_result = session.setActive_error_(True, None)
+                    if isinstance(_set_active_result, tuple):
+                        _ok = bool(_set_active_result[0]) if len(_set_active_result) > 0 else False
+                        _err = _set_active_result[1] if len(_set_active_result) > 1 else None
+                    else:
+                        # PyObjC compatibility: some builds return a single bool.
+                        _ok = bool(_set_active_result)
+                        _err = None
                     if _ok:
                         _activated = True
                         break
@@ -664,6 +682,39 @@ class AVFoundationPlayer:
             logger.info("AUDIO_SESSION_DEACTIVATE reason=%s", reason)
         except Exception as e:
             logger.debug("AUDIO_SESSION_DEACTIVATE failed reason=%s err=%s", reason, e)
+
+    def _schedule_deferred_deactivation(self, *, reason: str, delay: float = 1.5) -> None:
+        """Schedule session deactivation after a silence window.
+
+        If start_playback() is called before the timer fires, it cancels
+        the timer — avoiding deactivate/activate churn between phrases.
+        """
+        self._cancel_deferred_deactivation()
+
+        def _do_deferred() -> None:
+            # Re-check: if playback restarted while timer was pending, skip.
+            if not self._playing:
+                self._deactivate_audio_session(reason=reason)
+            else:
+                logger.debug(
+                    "AUDIO_SESSION_DEFERRED_SKIP reason=%s playing=True", reason
+                )
+
+        timer = threading.Timer(delay, _do_deferred)
+        timer.daemon = True
+        self._deactivate_timer = timer
+        timer.start()
+        logger.debug(
+            "AUDIO_SESSION_DEFERRED_SCHEDULE reason=%s delay=%.1fs", reason, delay
+        )
+
+    def _cancel_deferred_deactivation(self) -> None:
+        """Cancel pending deferred deactivation (called on new start)."""
+        timer = self._deactivate_timer
+        if timer is not None:
+            timer.cancel()
+            self._deactivate_timer = None
+            logger.debug("AUDIO_SESSION_DEFERRED_CANCEL")
 
     def _ensure_engine_running(self) -> bool:
         """
@@ -798,7 +849,7 @@ class AVFoundationPlayer:
                     logger.debug("⏹️ Playback thread still stopping in background")
         except Exception:
             pass
-        self._deactivate_audio_session(reason="stop_playback")
+        self._schedule_deferred_deactivation(reason="stop_playback")
 
     def is_playing(self) -> bool:
         """Check if currently playing."""
@@ -851,6 +902,7 @@ class AVFoundationPlayer:
         """Background thread for processing audio queue."""
         if AVAudioFormat is None or AVAudioPCMBuffer is None:
             logger.error("❌ AVFoundation buffer/format symbols unavailable")
+            self._schedule_deferred_deactivation(reason="playback_loop_exit")
             return
 
         # Pre-create the format to avoid allocation in the loop if possible
@@ -1077,8 +1129,9 @@ class AVFoundationPlayer:
 
                 logger.error(traceback.format_exc())
 
-        # Выход из цикла
+        # Выход из цикла — отложенная деактивация сессии
         logger.info(f"🛑 _playback_loop exited. _playing={self._playing}")
+        self._schedule_deferred_deactivation(reason="playback_loop_exit")
 
     def _play_diagnostic_tone(self, engine, player_node) -> None:
         """Play a short diagnostic beep through the RUNNING engine to verify output works."""

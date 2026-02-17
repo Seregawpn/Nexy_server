@@ -8,6 +8,7 @@ import asyncio
 from datetime import datetime
 import logging
 import os
+import shutil
 import sys
 import time
 from typing import Any, AsyncIterator
@@ -90,6 +91,7 @@ class GeminiLLMAdapter:
         self.usage_callback = usage_callback
         self.llm_error_callback = llm_error_callback
         self._service_unavailable_notified = False
+        self._rate_limited_notified = False
 
     @staticmethod
     def _is_service_unavailable_error(error_text: str) -> bool:
@@ -100,6 +102,17 @@ class GeminiLLMAdapter:
             or "high demand" in text
             or "try again later" in text
             or "servererror" in text
+        )
+
+    @staticmethod
+    def _is_rate_limited_error(error_text: str) -> bool:
+        text = (error_text or "").lower()
+        return (
+            "429" in text
+            or "resource_exhausted" in text
+            or "quota exceeded" in text
+            or "rate limit" in text
+            or "too many requests" in text
         )
 
     @property
@@ -263,6 +276,23 @@ class GeminiLLMAdapter:
             error_text = str(e)
             if (
                 self.llm_error_callback
+                and not self._rate_limited_notified
+                and self._is_rate_limited_error(error_text)
+            ):
+                self._rate_limited_notified = True
+                try:
+                    payload = {
+                        "reason": "llm_rate_limited",
+                        "model": self._model,
+                        "error": error_text,
+                    }
+                    maybe_result = self.llm_error_callback(payload)
+                    if asyncio.iscoroutine(maybe_result):
+                        await maybe_result
+                except Exception as cb_error:
+                    logger.debug(f"[{FEATURE_ID}] LLM error callback failed: {cb_error}")
+            elif (
+                self.llm_error_callback
                 and not self._service_unavailable_notified
                 and self._is_service_unavailable_error(error_text)
             ):
@@ -364,8 +394,14 @@ class BrowserUseModule:
                     BrowserUseModule._browser_installed = True
                     logger.info(f"[{FEATURE_ID}] Chromium already present locally, install task skipped")
                 else:
-                    # Ensure browser is installed eager
-                    await self._get_or_start_install_task(restart_if_failed=False)
+                    if self._allow_runtime_install():
+                        # Ensure browser is installed eager only when policy allows it.
+                        await self._get_or_start_install_task(restart_if_failed=False)
+                    else:
+                        logger.info(
+                            f"[{FEATURE_ID}] Runtime browser install disabled by policy; "
+                            "expecting pre-bundled Chromium"
+                        )
 
             self._initialized = True
             logger.info(f"[{FEATURE_ID}] Client BrowserUseModule initialized")
@@ -390,6 +426,20 @@ class BrowserUseModule:
         if self._config.get("suppress_watchdog_warnings", False):
             logging.getLogger("bubus").setLevel(logging.ERROR)
 
+    def _is_frozen_runtime(self) -> bool:
+        return bool(getattr(sys, "frozen", False))
+
+    def _allow_runtime_install(self) -> bool:
+        """Policy gate for runtime browser install."""
+        cfg_value = self._config.get("allow_runtime_install")
+        if isinstance(cfg_value, bool):
+            return cfg_value
+        # Default: in packaged app we avoid runtime installers; in dev keep enabled.
+        return not self._is_frozen_runtime()
+
+    def _is_command_available(self, cmd: str) -> bool:
+        return bool(shutil.which(cmd))
+
     def _install_pending_flag_path(self) -> str:
         app_support = get_user_data_dir()
         return os.path.join(app_support, "browser_install_pending.flag")
@@ -398,8 +448,62 @@ class BrowserUseModule:
         app_support = get_user_data_dir()
         return os.path.join(app_support, "ms-playwright")
 
+    def _resolve_local_chromium_executable(self) -> str | None:
+        """Resolve a valid local Chromium executable under PLAYWRIGHT_BROWSERS_PATH."""
+        try:
+            browsers_path = self._resolve_playwright_browsers_path()
+            if not os.path.isdir(browsers_path):
+                return None
+
+            for name in os.listdir(browsers_path):
+                if not name.startswith("chromium-"):
+                    continue
+
+                base_dir = os.path.join(browsers_path, name)
+                candidates = [
+                    # macOS (Playwright Chromium bundle)
+                    os.path.join(base_dir, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"),
+                    os.path.join(
+                        base_dir,
+                        "chrome-mac",
+                        "Google Chrome for Testing.app",
+                        "Contents",
+                        "MacOS",
+                        "Google Chrome for Testing",
+                    ),
+                    os.path.join(
+                        base_dir,
+                        "chrome-mac-arm64",
+                        "Google Chrome for Testing.app",
+                        "Contents",
+                        "MacOS",
+                        "Google Chrome for Testing",
+                    ),
+                    os.path.join(
+                        base_dir,
+                        "chrome-mac-arm64",
+                        "Chromium.app",
+                        "Contents",
+                        "MacOS",
+                        "Chromium",
+                    ),
+                    # Linux
+                    os.path.join(base_dir, "chrome-linux", "chrome"),
+                    os.path.join(base_dir, "chrome-linux64", "chrome"),
+                    # Windows
+                    os.path.join(base_dir, "chrome-win", "chrome.exe"),
+                    os.path.join(base_dir, "chrome-win64", "chrome.exe"),
+                ]
+                for candidate in candidates:
+                    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                        return candidate
+            return None
+        except Exception as e:
+            logger.debug(f"[{FEATURE_ID}] Chromium executable resolve failed: {e}")
+            return None
+
     def _is_local_chromium_ready(self) -> bool:
-        """Return True only when local Chromium has complete Playwright marker."""
+        """Return True only when local Chromium has marker + executable."""
         try:
             browsers_path = self._resolve_playwright_browsers_path()
             if not os.path.isdir(browsers_path):
@@ -408,8 +512,14 @@ class BrowserUseModule:
                 if not name.startswith("chromium-"):
                     continue
                 marker = os.path.join(browsers_path, name, "INSTALLATION_COMPLETE")
-                if os.path.isfile(marker):
+                if not os.path.isfile(marker):
+                    continue
+                executable = self._resolve_local_chromium_executable()
+                if executable:
                     return True
+                logger.warning(
+                    f"[{FEATURE_ID}] Chromium marker exists but executable missing; reinstall required"
+                )
             return False
         except Exception as e:
             logger.debug(f"[{FEATURE_ID}] Local chromium readiness check failed: {e}")
@@ -683,7 +793,21 @@ class BrowserUseModule:
                     logger.error(f"[{FEATURE_ID}] Failed to install browser: {err_msg}")
                     raise Exception(f"Failed to install browser: {err_msg}")
                 else:
-                    logger.info(f"[{FEATURE_ID}] Browser installation check passed")
+                    if not self._is_local_chromium_ready():
+                        self._clear_install_pending()
+                        await self._emit_install_status(
+                            "failed",
+                            error="install_completed_but_chromium_not_ready",
+                        )
+                        logger.error(
+                            f"[{FEATURE_ID}] Install command completed but Chromium executable is not ready"
+                        )
+                        raise Exception("install_completed_but_chromium_not_ready")
+
+                    executable = self._resolve_local_chromium_executable()
+                    logger.info(
+                        f"[{FEATURE_ID}] Browser installation check passed (executable={executable})"
+                    )
                     BrowserUseModule._browser_installed = True
                     await self._emit_install_status("completed")
                     self._clear_install_pending()
@@ -834,13 +958,21 @@ class BrowserUseModule:
             Progress events
         """
         task_id = f"task_{uuid.uuid4().hex[:12]}"
-        task = request.get("args", {}).get("task")
-        if not task:
-            # Fallback: maybe it's in the root
-            task = request.get("task", "Unknown task")
-
+        task = self._resolve_request_task(request)
         session_id = request.get("session_id", "unknown")
-        config_preset = request.get("args", {}).get("config_preset", "fast")
+        args = request.get("args", {}) if isinstance(request.get("args"), dict) else {}
+        config_preset = args.get("config_preset", "fast")
+
+        if not task:
+            yield {
+                "type": "BROWSER_TASK_FAILED",
+                "task_id": task_id,
+                "session_id": session_id,
+                "description": "Task failed: missing browser task or url",
+                "error": "missing_task_or_url",
+                "timestamp": datetime.now().isoformat(),
+            }
+            return
 
         logger.info(f"[{FEATURE_ID}] Process called: task={task[:50]}, session_id={session_id}")
 
@@ -860,6 +992,12 @@ class BrowserUseModule:
 
         try:
             # Guard against stale "setup in progress" loops: local-ready browser wins.
+            if BrowserUseModule._browser_installed and not self._is_local_chromium_ready():
+                BrowserUseModule._browser_installed = False
+                logger.warning(
+                    f"[{FEATURE_ID}] Browser installed cache was stale; forcing reinstall path"
+                )
+
             if not BrowserUseModule._browser_installed and self._is_local_chromium_ready():
                 BrowserUseModule._browser_installed = True
                 logger.info(f"[{FEATURE_ID}] Local chromium ready; bypassing setup wait path")
@@ -868,10 +1006,30 @@ class BrowserUseModule:
                     if install_task and not install_task.done():
                         install_task.cancel()
 
-            # Fire-and-forget setup: do not block request flow on install status.
-            # If browser is not ready yet, setup continues in background while task proceeds.
+            # Setup must complete before agent launch; otherwise browser_use may
+            # fall back to its internal installer path (expects 'uvx' in PATH).
             if not BrowserUseModule._browser_installed:
-                await self._get_or_start_install_task(restart_if_failed=True)
+                if self._allow_runtime_install():
+                    install_task, _ = await self._get_or_start_install_task(restart_if_failed=True)
+                    await install_task
+                else:
+                    yield {
+                        "type": "BROWSER_TASK_FAILED",
+                        "task_id": task_id,
+                        "session_id": session_id,
+                        "description": "Browser runtime is not preinstalled for app mode",
+                        "error": "browser_runtime_missing_preinstalled_chromium_required",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    return
+
+            chromium_executable = self._resolve_local_chromium_executable()
+            if not chromium_executable:
+                if not self._allow_runtime_install() and not self._is_command_available("uvx"):
+                    raise RuntimeError(
+                        "chromium_executable_not_found_and_uvx_unavailable_in_app_mode"
+                    )
+                raise RuntimeError("chromium_executable_not_found_after_setup")
 
             yield {
                 "type": "BROWSER_TASK_STARTED",
@@ -882,7 +1040,13 @@ class BrowserUseModule:
             }
 
             # Run Agent
-            async for progress in self._run_agent(task, task_id, session_id, config_preset):
+            async for progress in self._run_agent(
+                task,
+                task_id,
+                session_id,
+                config_preset,
+                chromium_executable=chromium_executable,
+            ):
                 yield progress
 
         except asyncio.CancelledError:
@@ -908,12 +1072,30 @@ class BrowserUseModule:
             if task_id in self._active_tasks:
                 del self._active_tasks[task_id]
 
+    def _resolve_request_task(self, request: dict[str, Any]) -> str:
+        args = request.get("args", {}) if isinstance(request.get("args"), dict) else {}
+        raw_task = args.get("task")
+        if not isinstance(raw_task, str) or not raw_task.strip():
+            raw_task = request.get("task")
+        task = raw_task.strip() if isinstance(raw_task, str) else ""
+        if task:
+            return task
+
+        raw_url = args.get("url")
+        if not isinstance(raw_url, str) or not raw_url.strip():
+            raw_url = request.get("url")
+        url = raw_url.strip() if isinstance(raw_url, str) else ""
+        if not url:
+            return ""
+        return f"Open this page: {url}"
+
     async def _run_agent(
         self,
         task: str,
         task_id: str,
         session_id: str,
         config_preset: str,
+        chromium_executable: str,
         *,
         retry_count: int = 0,
     ) -> AsyncIterator[dict[str, Any]]:
@@ -963,11 +1145,17 @@ class BrowserUseModule:
                 logger.info(f"[{FEATURE_ID}] Reusing persistent browser session")
 
             browser_profile = None
-            if not browser_session and self._keep_browser_open:
+            if not browser_session:
                 try:
-                    browser_profile = BrowserProfile(keep_alive=True)
+                    browser_profile = BrowserProfile(
+                        keep_alive=bool(self._keep_browser_open),
+                        is_local=True,
+                        executable_path=chromium_executable,
+                    )
                 except Exception as e:
-                    logger.warning(f"[{FEATURE_ID}] Failed to create BrowserProfile: {e}")
+                    # Fail-fast: do not let browser_use fallback to its own
+                    # local browser installer path (can require uvx in dev setups).
+                    raise RuntimeError(f"browser_profile_init_failed:{e}") from e
 
             # Event processing
             event_queue = asyncio.Queue()
@@ -1045,6 +1233,7 @@ class BrowserUseModule:
                                 task_id,
                                 session_id,
                                 config_preset,
+                                chromium_executable=chromium_executable,
                                 retry_count=retry_count + 1,
                             ):
                                 yield progress

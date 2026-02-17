@@ -257,6 +257,18 @@ class SignalIntegration:
             payload = raw_event.get("data")
             if not isinstance(payload, dict):
                 payload = raw_event if isinstance(raw_event, dict) else {}
+            interrupt_source = str(payload.get("interrupt_source") or "")
+            suppress_cancel_cue = bool(payload.get("suppress_cancel_cue"))
+            if suppress_cancel_cue or interrupt_source in {
+                "keyboard.press_preempt",
+                "keyboard.long_press",
+            }:
+                logger.debug(
+                    "Signals: CANCEL skipped (preempt path, source=%s, suppress=%s)",
+                    interrupt_source or "unknown",
+                    suppress_cancel_cue,
+                )
+                return
 
             logger.info("Signals: CANCEL (playback.cancelled)")
             await self._emit_audio_pattern(

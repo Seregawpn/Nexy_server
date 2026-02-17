@@ -392,6 +392,9 @@ class InterruptManagementIntegration:
                             "session_id": session_id,
                             "press_id": press_id,
                             "event_id": event_id,
+                            "interrupt_source": source,
+                            "suppress_cancel_cue": source
+                            in {"keyboard.press_preempt", "keyboard.long_press"},
                         },
                     )
                     logger.info(
@@ -463,12 +466,20 @@ class InterruptManagementIntegration:
                     },
                 )
 
-            # Переводим в режим SLEEPING централизованно
+            # Переводим в режим SLEEPING централизованно.
+            # InterruptManagementIntegration является единым owner-path для interrupt->mode.
             if self.event_bus:
                 try:
+                    source = str(interrupt_event.source or "interrupt_management")
+                    session_id = selectors.get_current_session_id(self.state_manager)
                     await self.event_bus.publish(
                         "mode.request",
-                        {"target": AppMode.SLEEPING, "source": "interrupt_management"},
+                        {
+                            "target": AppMode.SLEEPING,
+                            "source": "interrupt_management",
+                            "session_id": session_id,
+                            "request_id": f"interrupt_speech_stop:{session_id}:{source}",
+                        },
                     )
                 except Exception as e:
                     logger.error(f"Error publishing mode.request SLEEPING: {e}")

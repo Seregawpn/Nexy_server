@@ -24,6 +24,9 @@
 - Любые изменения архитектуры выполняются в профильном каноне (client или server) и затем отражаются ссылкой в root.
 - Для межассистентной передачи используйте `Docs/ASSISTANT_COORDINATION_PROTOCOL.md` и `Docs/assistant_exchange/TEMPLATE.md`.
 - Архитектурные гейты (single-owner/anti-race/flags) фиксируются в `Docs/ARCHITECTURE_GOVERNANCE.md`.
+- Release integrity gate: production release должен исключать риск Gatekeeper “Open Anyway”; проверки подписи/нотаризации и publish-порядок закреплены в:
+  - `client/Docs/RELEASE_VERSIONING_AND_PUBLISHING.md` (раздел `9. Пошаговый Production Release`)
+  - `server/server/Docs/RELEASE_AND_UPDATE_GUIDE.md`
 
 ## Quick integrity checks
 - Пути из требований должны существовать физически.

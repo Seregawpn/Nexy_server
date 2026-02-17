@@ -68,6 +68,8 @@ class GrpcClientIntegration:
         self.requires = set(self.__class__.requires)
         self._audio_diag_verbose: bool = False
         self._audio_diag_log_every: int = 50
+        self._server_tts_int16_silent_peak_threshold: int = 24
+        self._server_tts_float_silent_peak_threshold: float = 7.5e-4
 
         # Конфиг интеграции
         if config is None:
@@ -77,6 +79,12 @@ class GrpcClientIntegration:
                 server_name = str(cfg.get("server", "production"))
                 self._audio_diag_verbose = bool(cfg.get("audio_diag_verbose", False))
                 self._audio_diag_log_every = max(1, int(cfg.get("audio_diag_log_every", 50)))
+                self._server_tts_int16_silent_peak_threshold = max(
+                    0, int(cfg.get("server_tts_int16_silent_peak_threshold", 24))
+                )
+                self._server_tts_float_silent_peak_threshold = max(
+                    0.0, float(cfg.get("server_tts_float_silent_peak_threshold", 7.5e-4))
+                )
 
                 # Переопределение через переменную окружения (для отладки)
                 env_server = os.environ.get("NEXY_GRPC_SERVER")
@@ -151,9 +159,12 @@ class GrpcClientIntegration:
         except Exception:
             logger.info(f"🔌 [CONFIG] Итоговый выбранный сервер для gRPC: '{self.config.server}'")
         logger.info(
-            "🔊 [CONFIG] audio_diag_verbose=%s, audio_diag_log_every=%s",
+            "🔊 [CONFIG] audio_diag_verbose=%s, audio_diag_log_every=%s, "
+            "server_tts_int16_silent_peak_threshold=%s, server_tts_float_silent_peak_threshold=%.6f",
             self._audio_diag_verbose,
             self._audio_diag_log_every,
+            self._server_tts_int16_silent_peak_threshold,
+            self._server_tts_float_silent_peak_threshold,
         )
 
         # gRPC клиент
@@ -1501,6 +1512,8 @@ class GrpcClientIntegration:
             # hwid = await self._await_hardware_id(timeout_ms=1000) # Unused for TTS
 
             chunk_count = 0
+            published_audio_chunk_count = 0
+            silent_audio_chunk_count = 0
             async for resp in self._client.stream_tts_audio(
                 text=text,
                 session_id=str(session_id),
@@ -1512,6 +1525,24 @@ class GrpcClientIntegration:
                     audio_bytes = resp.get("bytes")
                     if audio_bytes:
                         chunk_count += 1
+                        dtype = str(resp.get("dtype", "int16"))
+                        is_silent, peak, rms = self._is_server_tts_chunk_silent(
+                            audio_bytes=audio_bytes, dtype=dtype
+                        )
+                        if is_silent:
+                            silent_audio_chunk_count += 1
+                            if self._audio_diag_verbose:
+                                logger.info(
+                                    "🔇 [SERVER_TTS] Skip silent chunk #%s session=%s bytes=%s peak=%.6f rms=%.6f dtype=%s",
+                                    chunk_count,
+                                    session_id,
+                                    len(audio_bytes),
+                                    peak,
+                                    rms,
+                                    dtype,
+                                )
+                            continue
+                        published_audio_chunk_count += 1
                         # Send audio chunk for playback via grpc.response.audio (same as main stream)
                         await self.event_bus.publish(
                             "grpc.response.audio",
@@ -1520,7 +1551,7 @@ class GrpcClientIntegration:
                                 "bytes": audio_bytes,
                                 "sample_rate": resp.get("sample_rate", 48000),
                                 "channels": resp.get("channels", 1),
-                                "dtype": resp.get("dtype", "int16"),
+                                "dtype": dtype,
                                 "shape": resp.get("shape", []),
                             },
                         )
@@ -1530,10 +1561,64 @@ class GrpcClientIntegration:
                     logger.info(f"✅ [SERVER_TTS] Stream ended: {resp.get('message')}")
                     break
 
-            logger.info(f"✅ [SERVER_TTS] Completed: {chunk_count} chunks")
+            if chunk_count > 0 and published_audio_chunk_count == 0:
+                logger.warning(
+                    "❌ [SERVER_TTS_SILENT_STREAM] session=%s chunks=%s silent_chunks=%s",
+                    session_id,
+                    chunk_count,
+                    silent_audio_chunk_count,
+                )
+                await self.event_bus.publish(
+                    "grpc.tts_failed",
+                    {
+                        "session_id": session_id,
+                        "reason": "silent_stream",
+                        "chunks_total": chunk_count,
+                        "chunks_silent": silent_audio_chunk_count,
+                        "text_preview": text[:120],
+                    },
+                )
+
+            logger.info(
+                "✅ [SERVER_TTS] Completed: chunks_total=%s published_audio_chunks=%s silent_chunks=%s",
+                chunk_count,
+                published_audio_chunk_count,
+                silent_audio_chunk_count,
+            )
 
         except Exception as e:
             logger.error(f"❌ [SERVER_TTS] Failed: {e}")
+
+    def _is_server_tts_chunk_silent(self, *, audio_bytes: bytes, dtype: str) -> tuple[bool, float, float]:
+        """Transport-level quality gate for server TTS chunks."""
+        if not audio_bytes:
+            return True, 0.0, 0.0
+
+        try:
+            dtype_l = (dtype or "int16").strip().lower()
+            if dtype_l == "float32":
+                arr = np.frombuffer(audio_bytes, dtype=np.float32)
+                if arr.size == 0:
+                    return True, 0.0, 0.0
+                peak = float(np.max(np.abs(arr)))
+                rms = float(np.sqrt(np.mean(np.square(arr.astype(np.float32)))))
+                is_silent = bool(
+                    np.all(arr == 0.0) or peak <= self._server_tts_float_silent_peak_threshold
+                )
+                return is_silent, peak, rms
+
+            # Default path: treat payload as int16 PCM.
+            arr_i16 = np.frombuffer(audio_bytes, dtype=np.int16)
+            if arr_i16.size == 0:
+                return True, 0.0, 0.0
+            peak = float(np.max(np.abs(arr_i16)))
+            rms = float(np.sqrt(np.mean(np.square(arr_i16.astype(np.float32)))))
+            is_silent = bool(
+                np.all(arr_i16 == 0) or peak <= float(self._server_tts_int16_silent_peak_threshold)
+            )
+            return is_silent, peak, rms
+        except Exception:
+            return True, 0.0, 0.0
 
     def _is_subscription_limit_error(self, err_msg: str) -> bool:
         """

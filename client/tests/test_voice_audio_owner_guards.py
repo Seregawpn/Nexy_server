@@ -122,3 +122,27 @@ async def test_playback_mic_recovery_skips_during_route_transition():
     )
 
     integration._ensure_player_ready.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_playback_audio_chunk_does_not_write_non_uuid_session_to_state():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    error_handler = ErrorHandler()
+    integration = SpeechPlaybackIntegration(event_bus, state_manager, error_handler)
+    integration._queue_session_audio = AsyncMock(return_value=False)
+
+    await integration._on_audio_chunk(
+        {
+            "data": {
+                "session_id": "system",
+                "bytes": b"\x00\x00",
+                "dtype": "int16",
+                "sample_rate": 48000,
+                "channels": 1,
+                "shape": [1],
+            }
+        }
+    )
+
+    assert state_manager.get_current_session_id() is None

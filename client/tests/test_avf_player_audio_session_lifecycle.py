@@ -2,7 +2,7 @@ from modules.speech_playback.core import avf_player as avf
 
 
 class _FakeSession:
-    def __init__(self, *, category: str = "playback", mode: str = "default"):
+    def __init__(self, *, category: str = "ambient", mode: str = "default"):
         self._category = category
         self._mode = mode
         self.set_active_true_calls = 0
@@ -39,6 +39,7 @@ def _configure_fake_session(monkeypatch):
     _FakeAVAudioSession._session = fake_session
     monkeypatch.setattr(avf, "AVAudioSession", _FakeAVAudioSession)
     monkeypatch.setattr(avf, "AVAudioSessionCategoryPlayback", "playback")
+    monkeypatch.setattr(avf, "AVAudioSessionCategoryAmbient", "ambient")
     monkeypatch.setattr(avf, "AVAudioSessionModeDefault", "default")
     monkeypatch.setattr(avf, "AVAudioSessionCategoryOptionAllowBluetoothA2DP", 1)
     monkeypatch.setattr(avf, "AVAudioSessionCategoryOptionMixWithOthers", 2)
@@ -77,7 +78,7 @@ def test_deactivate_audio_session_resets_state(monkeypatch):
     fake_session = _configure_fake_session(monkeypatch)
     player = avf.AVFoundationPlayer()
     player._session_active = True
-    player._last_audio_session_signature = ("playback", "default", 7, "route-a")
+    player._last_audio_session_signature = ("ambient", "default", 3, "route-a")
 
     player._deactivate_audio_session(reason="unit")
 
@@ -86,7 +87,8 @@ def test_deactivate_audio_session_resets_state(monkeypatch):
     assert player._last_audio_session_signature is None
 
 
-def test_stop_and_shutdown_trigger_deactivate(monkeypatch):
+def test_shutdown_deactivates_immediately(monkeypatch):
+    """shutdown() must deactivate audio session immediately (not deferred)."""
     player = avf.AVFoundationPlayer()
     calls = []
 
@@ -95,8 +97,81 @@ def test_stop_and_shutdown_trigger_deactivate(monkeypatch):
 
     monkeypatch.setattr(player, "_deactivate_audio_session", _fake_deactivate)
 
-    player.stop_playback()
     player.shutdown()
 
-    assert "stop_playback" in calls
     assert "shutdown" in calls
+
+
+def test_stop_playback_schedules_deferred_deactivation(monkeypatch):
+    """stop_playback() schedules deferred deactivation (not immediate)."""
+    player = avf.AVFoundationPlayer()
+    deactivate_calls = []
+    schedule_calls = []
+
+    def _fake_deactivate(*, reason: str):
+        deactivate_calls.append(reason)
+
+    def _fake_schedule(*, reason: str, delay: float = 1.5):
+        schedule_calls.append(reason)
+
+    monkeypatch.setattr(player, "_deactivate_audio_session", _fake_deactivate)
+    monkeypatch.setattr(player, "_schedule_deferred_deactivation", _fake_schedule)
+
+    player.stop_playback()
+
+    # Immediate deactivation must NOT fire
+    assert "stop_playback" not in deactivate_calls
+    # Deferred schedule MUST fire
+    assert "stop_playback" in schedule_calls
+
+
+def test_deferred_deactivation_fires_when_idle(monkeypatch):
+    """Deferred timer fires deactivation if player stays idle."""
+    import time
+
+    fake_session = _configure_fake_session(monkeypatch)
+    player = avf.AVFoundationPlayer()
+    player._session_active = True
+    player._playing = False  # idle
+
+    player._schedule_deferred_deactivation(reason="test_idle", delay=0.1)
+    time.sleep(0.3)  # wait for timer to fire
+
+    assert fake_session.set_active_false_calls >= 1
+    assert player._session_active is False
+
+
+def test_deferred_deactivation_cancelled_by_start(monkeypatch):
+    """start_playback() cancels pending deferred deactivation."""
+    import time
+
+    fake_session = _configure_fake_session(monkeypatch)
+    player = avf.AVFoundationPlayer()
+    player._session_active = True
+    player._playing = False
+
+    player._schedule_deferred_deactivation(reason="test_cancel", delay=0.5)
+    # Simulate new playback starting before timer fires
+    player._cancel_deferred_deactivation()
+    time.sleep(0.7)
+
+    # Deactivation must NOT have fired
+    assert fake_session.set_active_false_calls == 0
+    assert player._session_active is True
+
+
+def test_playback_loop_exit_schedules_deferred(monkeypatch):
+    """When _playback_loop exits, deferred deactivation is scheduled (not immediate)."""
+    player = avf.AVFoundationPlayer()
+    schedule_calls = []
+
+    def _fake_schedule(*, reason: str, delay: float = 1.5):
+        schedule_calls.append(reason)
+
+    monkeypatch.setattr(player, "_schedule_deferred_deactivation", _fake_schedule)
+    monkeypatch.setattr(avf, "AVAudioFormat", None)
+    monkeypatch.setattr(avf, "AVAudioPCMBuffer", None)
+    player._playing = True
+    player._playback_loop()
+
+    assert "playback_loop_exit" in schedule_calls

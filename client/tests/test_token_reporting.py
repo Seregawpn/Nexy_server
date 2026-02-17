@@ -99,3 +99,15 @@ async def test_token_extraction():
 
 if __name__ == "__main__":
     asyncio.run(test_token_extraction())
+
+
+def test_rate_limited_error_detection() -> None:
+    assert GeminiLLMAdapter._is_rate_limited_error("429 RESOURCE_EXHAUSTED quota exceeded")
+    assert GeminiLLMAdapter._is_rate_limited_error("Too many requests, rate limit reached")
+    assert not GeminiLLMAdapter._is_rate_limited_error("503 service unavailable")
+
+
+def test_service_unavailable_error_detection() -> None:
+    assert GeminiLLMAdapter._is_service_unavailable_error("503 service unavailable")
+    assert GeminiLLMAdapter._is_service_unavailable_error("high demand, try again later")
+    assert not GeminiLLMAdapter._is_service_unavailable_error("429 resource_exhausted")

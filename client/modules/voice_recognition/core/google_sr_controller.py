@@ -66,6 +66,9 @@ class GoogleSRController:
         self._thread: threading.Thread | None = None
         self._pending_recognition_lock = threading.Lock()
         self._pending_recognitions: int = 0
+        # Upper bound for one listen() call in continuous mode when phrase_limit is unset.
+        # Keeps stop latency predictable for PTT release.
+        self._continuous_chunk_limit_sec = 1.0
 
         # Device monitoring
         self._route_monitor = AudioRouteMonitor(on_device_change=self._on_device_change)
@@ -217,10 +220,15 @@ class GoogleSRController:
                 # БЕСШОВНЫЙ ЦИКЛ: слушаем пока _listening активен
                 while self._listening.is_set() and not self._stop.is_set():
                     capture_session_id = self._active_listen_session_id
-                    if self._phrase_limit is not None:
-                        logger.info("🎙️ Listening... (phrase_limit=%.1fs)", self._phrase_limit)
+                    current_limit = self._phrase_limit
+                    if current_limit is None:
+                        current_limit = self._continuous_chunk_limit_sec
+                        logger.info(
+                            "🎙️ Listening... (continuous chunk_limit=%.1fs)",
+                            current_limit,
+                        )
                     else:
-                        logger.info("🎙️ Listening... (no phrase limit, will stop on silence)")
+                        logger.info("🎙️ Listening... (phrase_limit=%.1fs)", current_limit)
 
                     try:
                         # Проверяем _stop перед блокирующим вызовом
@@ -230,8 +238,6 @@ class GoogleSRController:
                             # to avoid racing with final chunk recognition completion.
                             logger.info("🛑 Stop flag detected, breaking loop")
                             break
-
-                        current_limit = self._phrase_limit  # None is allowed
 
                         # КРИТИЧНО: Используем ОЧЕНЬ короткий timeout для мгновенного реагирования на _stop
                         # 0.3с — минимум для захвата аудио, но позволяет проверять _stop ~3 раза/сек

@@ -77,8 +77,13 @@ rg -n "NEW_VERSION" \
 
 ## 5. Политика правильной заливки (Client)
 
-Для задач заливки клиента разрешен только один remote:
+Для client **code push** разрешен только один remote:
 - `client_test` -> `https://github.com/Seregawpn/Nexy_client_test`
+
+Для production **release assets** (`Nexy.dmg`, `Nexy.pkg`, `LATEST_CHANGES.md`) owner-канал:
+- `Seregawpn/Nexy_production` (публикация через server publish flow).
+
+Не смешивать code push и artifact publish.
 
 Запрещено для клиентской заливки:
 - `origin` (`Nexy`)
@@ -144,7 +149,7 @@ git ls-remote --heads client_test <target-branch>
 - `Docs/LATEST_CHANGES.md` -> `release_inbox/LATEST_CHANGES.md`
 
 Автоматический путь:
-- `./scripts/release_build.sh` после сборки и валидации всегда выполняет `sync_release_inbox.sh`.
+- `./packaging/build_final.sh` после сборки и валидации всегда выполняет `sync_release_inbox.sh`.
 
 ---
 
@@ -156,3 +161,44 @@ git ls-remote --heads client_test <target-branch>
 - `Nexy.dmg`, `Nexy.pkg`, `LATEST_CHANGES.md` синхронизированы в `server/release_inbox`.
 - Создан отчет в `Docs/assistant_exchange/codex/` с датой и перечнем измененных файлов.
 - `Docs/LATEST_CHANGES.md` обновлялся в changeset и очищен после завершения апдейта.
+
+---
+
+## 9. Пошаговый Production Release (обязательно)
+
+Единый запуск (рекомендуется):
+
+```bash
+cd /Users/sergiyzasorin/Fix_new/downloads/Nexy_v1.6.1.27
+./scripts/release_package_and_publish.sh
+```
+
+Что выполняется по шагам:
+
+1. Packaging owner (`client/packaging/build_final.sh`)
+- Сборка/подпись/нотаризация.
+- Автосинхронизация в `server/release_inbox`:
+  - `Nexy.dmg`
+  - `Nexy.pkg`
+  - `LATEST_CHANGES.md`
+
+2. Publish owner (`server/server/scripts/publish_assets_and_sync.py`)
+- Публикация assets в `Seregawpn/Nexy_production`.
+- Единый release tag: `vX.Y.Z.W`.
+- Повторный запуск для того же tag:
+  - если файлы совпадают -> `already published, skip`;
+  - если отличаются -> publish блокируется (без overwrite).
+
+3. Remote metadata sync (`server/server/scripts/update_manifest_remote_locked.sh`)
+- Обновляет remote `manifest.json` на VM по `url/size/sha256` из релиза.
+- Server code deploy для этого шага не требуется.
+
+4. Обязательная проверка после релиза
+- Проверить release в GitHub: `Seregawpn/Nexy_production`, tag `vX.Y.Z.W`.
+- Проверить update metadata (`manifest`/appcast/health).
+- Проверить установку DMG на чистом Mac.
+
+Запрещено:
+- использовать альтернативные packaging entrypoints;
+- вручную перезаписывать assets под тем же version tag;
+- править `manifest.json` вручную.

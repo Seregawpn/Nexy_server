@@ -117,6 +117,24 @@ def init_ffmpeg_for_pydub():
     return ffmpeg_path
 
 
+def init_ssl_ca_bundle():
+    """Configure Python SSL trust bundle for dev/runtime downloads."""
+    try:
+        # Respect explicit operator override first.
+        if os.getenv("SSL_CERT_FILE"):
+            return os.getenv("SSL_CERT_FILE")
+
+        import certifi
+
+        ca_path = certifi.where()
+        if ca_path and Path(ca_path).exists():
+            os.environ["SSL_CERT_FILE"] = ca_path
+            return ca_path
+    except Exception:
+        return None
+    return None
+
+
 # Список ранних заметок до инициализации логгера
 BOOT_NOTES: list[str] = []
 
@@ -125,6 +143,8 @@ _ffmpeg_path = init_ffmpeg_for_pydub()
 BOOT_NOTES.append(
     f"init_ffmpeg_for_pydub: path={(str(_ffmpeg_path) if _ffmpeg_path else 'not found')}"
 )
+_ssl_ca_path = init_ssl_ca_bundle()
+BOOT_NOTES.append(f"init_ssl_ca_bundle: path={(str(_ssl_ca_path) if _ssl_ca_path else 'not set')}")
 
 # Фикс уже применен выше (в _apply_pyobjc_fix_early)
 # Добавляем результат в BOOT_NOTES для логирования

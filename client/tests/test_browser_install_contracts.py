@@ -174,3 +174,192 @@ async def test_browser_task_started_emits_immediate_start_tts() -> None:
         and evt.get("text") == "Browser opened. Starting search now."
         for evt in tts_events
     )
+
+
+@pytest.mark.asyncio
+async def test_browser_runtime_tts_not_suppressed_when_playback_active_with_valid_session() -> None:
+    bus = EventBus()
+    integration = BrowserUseIntegration(bus)
+    integration._playback_active = True
+    integration._active_playback_sessions.add("s42")
+
+    tts_events: list[dict] = []
+
+    async def on_tts(event):
+        tts_events.append(event.get("data", {}))
+
+    await bus.subscribe("grpc.tts_request", on_tts)
+
+    await integration._queue_or_publish_runtime_tts(
+        text="Step completed", session_id="s42", source="browser_step"
+    )
+    await asyncio.sleep(0)
+
+    assert any(
+        evt.get("source") == "browser_step" and evt.get("session_id") == "s42"
+        for evt in tts_events
+    )
+    assert integration._pending_runtime_tts == []
+
+
+@pytest.mark.asyncio
+async def test_browser_runtime_tts_suppressed_without_session_id() -> None:
+    bus = EventBus()
+    integration = BrowserUseIntegration(bus)
+
+    tts_events: list[dict] = []
+
+    async def on_tts(event):
+        tts_events.append(event.get("data", {}))
+
+    await bus.subscribe("grpc.tts_request", on_tts)
+
+    await integration._queue_or_publish_runtime_tts(
+        text="Step completed", session_id=None, source="browser_step"
+    )
+    await asyncio.sleep(0)
+
+    assert tts_events == []
+    assert len(integration._pending_runtime_tts) == 0
+
+
+@pytest.mark.asyncio
+async def test_browser_llm_rate_limited_callback_emits_notification_and_tts() -> None:
+    bus = EventBus()
+    integration = BrowserUseIntegration(bus)
+
+    notifications: list[dict] = []
+    tts_events: list[dict] = []
+
+    async def on_notification(event):
+        notifications.append(event.get("data", {}))
+
+    async def on_tts(event):
+        tts_events.append(event.get("data", {}))
+
+    await bus.subscribe("system.notification", on_notification)
+    await bus.subscribe("grpc.tts_request", on_tts)
+
+    async def fake_initialize(**kwargs):
+        cb = kwargs.get("llm_error_callback")
+        if cb:
+            result = cb({"reason": "llm_rate_limited", "error": "429 RESOURCE_EXHAUSTED"})
+            if asyncio.iscoroutine(result):
+                await result
+
+    integration.module.initialize = fake_initialize  # type: ignore[method-assign]
+
+    ok = await integration.initialize()
+    await asyncio.sleep(0)
+
+    assert ok is True
+    assert any(
+        n.get("title") == "Nexy Browser"
+        and n.get("message") == "Превышен лимит. Попробуйте позже."
+        for n in notifications
+    )
+    assert any(
+        e.get("source") == "browser_llm_rate_limited"
+        and e.get("text") == "Превышен лимит. Попробуйте позже."
+        for e in tts_events
+    )
+
+
+class _FakeGrpcClientSilentTTS:
+    async def stream_tts_audio(self, text: str, session_id: str):
+        yield {
+            "type": "audio_chunk",
+            "bytes": b"\x00\x00" * 128,
+            "sample_rate": 24000,
+            "channels": 1,
+            "dtype": "int16",
+            "shape": [128],
+        }
+        yield {"type": "end", "message": "ok"}
+
+
+class _FakeGrpcClientMixedTTS:
+    async def stream_tts_audio(self, text: str, session_id: str):
+        yield {
+            "type": "audio_chunk",
+            "bytes": b"\x00\x00" * 64,
+            "sample_rate": 24000,
+            "channels": 1,
+            "dtype": "int16",
+            "shape": [64],
+        }
+        # Non-silent int16 payload.
+        yield {
+            "type": "audio_chunk",
+            "bytes": (b"\x40\x00" + b"\xc0\xff") * 64,
+            "sample_rate": 24000,
+            "channels": 1,
+            "dtype": "int16",
+            "shape": [128],
+        }
+        yield {"type": "end", "message": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_server_tts_marks_silent_stream_as_failed() -> None:
+    bus = EventBus()
+    integration = GrpcClientIntegration(
+        event_bus=bus,
+        state_manager=Mock(),
+        error_handler=Mock(),
+        config=GrpcClientIntegrationConfig(),
+    )
+    integration._client = _FakeGrpcClientSilentTTS()
+    integration._ensure_connected = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    audio_events: list[dict] = []
+    failed_events: list[dict] = []
+
+    async def on_audio(event):
+        audio_events.append(event.get("data", {}))
+
+    async def on_failed(event):
+        failed_events.append(event.get("data", {}))
+
+    await bus.subscribe("grpc.response.audio", on_audio)
+    await bus.subscribe("grpc.tts_failed", on_failed)
+
+    await integration._play_server_tts("silent test", "s-silent")
+    await asyncio.sleep(0)
+
+    assert audio_events == []
+    assert len(failed_events) == 1
+    assert failed_events[0].get("reason") == "silent_stream"
+    assert failed_events[0].get("session_id") == "s-silent"
+
+
+@pytest.mark.asyncio
+async def test_server_tts_keeps_non_silent_chunks_and_no_failure() -> None:
+    bus = EventBus()
+    integration = GrpcClientIntegration(
+        event_bus=bus,
+        state_manager=Mock(),
+        error_handler=Mock(),
+        config=GrpcClientIntegrationConfig(),
+    )
+    integration._client = _FakeGrpcClientMixedTTS()
+    integration._ensure_connected = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    audio_events: list[dict] = []
+    failed_events: list[dict] = []
+
+    async def on_audio(event):
+        audio_events.append(event.get("data", {}))
+
+    async def on_failed(event):
+        failed_events.append(event.get("data", {}))
+
+    await bus.subscribe("grpc.response.audio", on_audio)
+    await bus.subscribe("grpc.tts_failed", on_failed)
+
+    await integration._play_server_tts("mixed test", "s-mixed")
+    await asyncio.sleep(0)
+
+    assert len(audio_events) == 1
+    assert audio_events[0].get("session_id") == "s-mixed"
+    assert failed_events == []

@@ -417,14 +417,37 @@ class QuartzKeyboardMonitor:
                 if event_type == kCGEventKeyDown:
                     # Strict decision: ONLY intercept if it IS the target combo
                     if not is_target:
-                         # Non-target N (e.g. Ctrl+Shift+N, or just N): Pass-through
-                         # Also ensure we don't think we are active
-                         if self._combo_active:
-                             self._deactivate_combo_locked(now, reason="non_target_interruption")
-                         self._log_decision("KeyDown", keycode, flags, "PASS", "non_target_combo")
-                         return event
+                        # Non-target N (e.g. Ctrl+Shift+N, or transient flags glitch): pass-through by default.
+                        # If combo is active, avoid immediate hard release to prevent false drops while key is held.
+                        # Real release is finalized by confirmed control/n-key up via pending-release flow.
+                        if self._combo_active:
+                            self._schedule_pending_release_locked(
+                                now, reason="non_target_keydown_confirmed"
+                            )
+                            self._log_decision(
+                                "KeyDown",
+                                keycode,
+                                flags,
+                                "SUPPRESS",
+                                "non_target_combo_pending_release",
+                            )
+                            return None
+
+                        self._log_decision("KeyDown", keycode, flags, "PASS", "non_target_combo")
+                        return event
 
                     # It IS target combo (Ctrl+N; Cmd/Alt are not allowed)
+
+                    # While combo is already active, any repeated KeyDown from key autorepeat
+                    # must be suppressed without emitting another PRESS lifecycle event.
+                    if self._combo_active:
+                        self._n_pressed = True
+                        self._last_n_keydown_ts = now
+                        self.last_event_time = now
+                        self._log_decision(
+                            "KeyDown", keycode, flags, "SUPPRESS", "combo_active_hold"
+                        )
+                        return None
                     
                     # Anti-repeat / Debounce
                     if self._n_pressed and (now - self.last_event_time) < self.event_cooldown:
