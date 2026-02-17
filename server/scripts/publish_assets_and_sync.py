@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Publish client artifacts to fixed GitHub release tags and sync local manifest.
+Publish client artifacts to a versioned GitHub release tag and sync local manifest.
 
 Canonical usage:
   python3 server/scripts/publish_assets_and_sync.py
@@ -22,8 +22,6 @@ from typing import Optional
 
 
 TARGET_REPO = "Seregawpn/Nexy_production"
-DMG_TAG = "Update"
-PKG_TAG = "App"
 RELEASE_INBOX = Path("release_inbox")
 LATEST_CHANGES_NAME = "LATEST_CHANGES.md"
 VERSION_FILE = Path("VERSION")
@@ -53,12 +51,31 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _ensure_tag_exists(tag: str, title: str, dry_run: bool) -> None:
-    view = _run(["gh", "release", "view", tag, "-R", TARGET_REPO], check=False)
-    if view.returncode == 0:
-        return
+def _release_tag(version: str) -> str:
+    clean = version.strip()
+    return clean if clean.startswith("v") else f"v{clean}"
+
+
+def _release_asset_url(tag: str, filename: str) -> str:
+    return f"https://github.com/{TARGET_REPO}/releases/download/{tag}/{filename}"
+
+
+def _get_release_assets(tag: str) -> Optional[dict[str, dict[str, int]]]:
+    view = _run(["gh", "release", "view", tag, "-R", TARGET_REPO, "--json", "assets"], check=False)
+    if view.returncode != 0:
+        return None
+    payload = json.loads(view.stdout or "{}")
+    assets = payload.get("assets", []) or []
+    return {
+        str(asset.get("name", "")): {"size": int(asset.get("size", 0))}
+        for asset in assets
+        if asset.get("name")
+    }
+
+
+def _ensure_release_exists(tag: str, title: str, dry_run: bool) -> None:
     if dry_run:
-        print(f"[dry-run] would create release tag {tag}")
+        print(f"[dry-run] would ensure release tag exists: {tag}")
         return
     _run(
         [
@@ -76,13 +93,40 @@ def _ensure_tag_exists(tag: str, title: str, dry_run: bool) -> None:
     )
 
 
+def _asset_matches_remote(tag: str, local_path: Path) -> bool:
+    with shutil.TemporaryDirectory(prefix="nexy_release_asset_") as tmpdir:
+        download = _run(
+            [
+                "gh",
+                "release",
+                "download",
+                tag,
+                "-R",
+                TARGET_REPO,
+                "--pattern",
+                local_path.name,
+                "--dir",
+                tmpdir,
+            ],
+            check=False,
+        )
+        if download.returncode != 0:
+            return False
+        remote_path = Path(tmpdir) / local_path.name
+        if not remote_path.exists():
+            return False
+        if remote_path.stat().st_size != local_path.stat().st_size:
+            return False
+        return _sha256(remote_path) == _sha256(local_path)
+
+
 def _upload_asset(tag: str, file_path: Path, dry_run: bool) -> str:
-    url = f"https://github.com/{TARGET_REPO}/releases/download/{tag}/{file_path.name}"
+    url = _release_asset_url(tag, file_path.name)
     if dry_run:
         print(f"[dry-run] would upload {file_path} -> {tag}")
         print(f"Uploaded. URL: {url}")
         return url
-    _run(["gh", "release", "upload", tag, str(file_path), "--clobber", "-R", TARGET_REPO])
+    _run(["gh", "release", "upload", tag, str(file_path), "-R", TARGET_REPO])
     print(f"Uploaded. URL: {url}")
     return url
 
@@ -134,16 +178,32 @@ def _sync_manifest(version: str, dmg_path: Path, dmg_url: str, dry_run: bool) ->
         }
 
     artifact = manifest.setdefault("artifact", {})
+    desired_size = dmg_path.stat().st_size
+    desired_sha = _sha256(dmg_path)
+    desired_notes = dmg_url
+    already_synced = (
+        str(manifest.get("version", "")) == version
+        and str(manifest.get("build", "")) == version
+        and str(artifact.get("type", "")) == "dmg"
+        and str(artifact.get("url", "")) == dmg_url
+        and int(artifact.get("size", 0)) == desired_size
+        and str(artifact.get("sha256", "")) == desired_sha
+        and str(manifest.get("notes_url", "")) == desired_notes
+    )
+    if already_synced:
+        print(f"Manifest already synced, skip: {MANIFEST_FILE}")
+        return
+
     artifact["type"] = "dmg"
     artifact["url"] = dmg_url
-    artifact["size"] = dmg_path.stat().st_size
-    artifact["sha256"] = _sha256(dmg_path)
+    artifact["size"] = desired_size
+    artifact["sha256"] = desired_sha
     artifact.setdefault("arch", "universal2")
     artifact.setdefault("min_os", "11.0")
     artifact.setdefault("ed25519", "")
     manifest["version"] = version
     manifest["build"] = version
-    manifest["notes_url"] = dmg_url
+    manifest["notes_url"] = desired_notes
     manifest["release_date"] = datetime.now(timezone.utc).isoformat()
 
     if dry_run:
@@ -167,6 +227,7 @@ def main() -> int:
         _require_gh_auth()
 
         version = _load_version()
+        release_tag = _release_tag(version)
         dmg = _find_artifact("Nexy.dmg")
         pkg = _find_artifact("Nexy.pkg")
         latest_changes = _find_artifact(LATEST_CHANGES_NAME)
@@ -179,17 +240,44 @@ def main() -> int:
             )
 
         print(f"Current Version: {version}")
+        print(f"Release Tag: {release_tag}")
         print(f"Target Repo: {TARGET_REPO}")
 
-        _ensure_tag_exists(DMG_TAG, "Nexy DMG Update", args.dry_run)
-        _ensure_tag_exists(PKG_TAG, "Nexy PKG App", args.dry_run)
+        assets_for_publish: list[Path] = []
+        if dmg is not None:
+            assets_for_publish.append(dmg)
+        if pkg is not None:
+            assets_for_publish.append(pkg)
+        assets_for_publish.append(latest_changes)
+
+        existing_assets = _get_release_assets(release_tag)
+        release_exists = existing_assets is not None
+        assets_to_upload: list[Path] = []
+
+        if release_exists and existing_assets is not None:
+            for asset in assets_for_publish:
+                if asset.name not in existing_assets:
+                    assets_to_upload.append(asset)
+                    continue
+                if not _asset_matches_remote(release_tag, asset):
+                    raise RuntimeError(
+                        f"Version tag already published with different content: {release_tag}/{asset.name}. "
+                        "Refusing overwrite."
+                    )
+            if not assets_to_upload:
+                print(f"already published, skip (tag={release_tag})")
+        else:
+            assets_to_upload = assets_for_publish
+            _ensure_release_exists(release_tag, f"Nexy {version}", args.dry_run)
 
         dmg_url: Optional[str] = None
         if dmg is not None:
-            dmg_url = _upload_asset(DMG_TAG, dmg, args.dry_run)
-        if pkg is not None:
-            _upload_asset(PKG_TAG, pkg, args.dry_run)
-        _upload_asset(DMG_TAG, latest_changes, args.dry_run)
+            dmg_url = _release_asset_url(release_tag, dmg.name)
+
+        for asset in assets_to_upload:
+            uploaded_url = _upload_asset(release_tag, asset, args.dry_run)
+            if dmg is not None and asset.name == dmg.name:
+                dmg_url = uploaded_url
 
         if dmg is not None and dmg_url is not None:
             _sync_manifest(version, dmg, dmg_url, args.dry_run)

@@ -137,19 +137,10 @@ class UpdateServerProvider:
             if latest_manifest and "artifact" in latest_manifest:
                 expected_size = latest_manifest["artifact"].get("size", 0)
             
-            # Логируем несоответствие размера
+            # Логируем несоответствие размера.
+            # Важно: runtime не должен мутировать manifest (single owner = publish flow).
             if expected_size > 0 and actual_size != expected_size:
                 logger.warning(f"⚠️ Размер файла не совпадает: ожидалось {expected_size}, фактический {actual_size} (разница: {actual_size - expected_size:+d} байт)")
-                
-                # Обновляем манифест с актуальным размером
-                try:
-                    self.manifest_provider.update_manifest(
-                        f"manifest_{latest_manifest['version']}.json",
-                        {"artifact": {"size": actual_size}}
-                    )
-                    logger.info(f"✅ Манифест обновлен с актуальным размером: {actual_size} байт")
-                except Exception as e:
-                    logger.error(f"❌ Ошибка обновления манифеста: {e}")
             
             if self.config.log_downloads:
                 logger.info(f"📥 Загрузка файла: {filename} (размер: {actual_size} байт)")
@@ -476,5 +467,4 @@ class UpdateServerProvider:
                 "api_versions": f"http://{self.config.host}:{self.config.port}/api/versions"
             }
         }
-
 

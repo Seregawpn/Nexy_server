@@ -2,7 +2,7 @@
 
 **Статус:** Active Rulebook  
 **Обновлено:** 15 February 2026
-**Текущий релиз документации:** `v1.6.1.40`
+**Текущий релиз документации:** `v1.6.1.41`
 
 Канон публикации клиентских артефактов и синхронизации update-канала.
 
@@ -33,9 +33,8 @@
 - Даже при ручном удалении папка автоматически пересоздаётся в `scripts/publish_assets_and_sync.py`.
 - Каноничный скрипт публикации: `scripts/publish_assets_and_sync.py`.
 - Манифест update-канала: `server/updates/manifests/manifest.json`.
-- Fixed tags в `Nexy_production`:
-  - `Nexy.dmg` -> `Update`
-  - `Nexy.pkg` -> `App`
+- Единый release-tag в `Nexy_production`: `vX.Y.Z.W` (например `v1.6.1.40`).
+- Все release assets (`Nexy.dmg`, `Nexy.pkg`, `LATEST_CHANGES.md`) публикуются в этот один tag.
 
 ---
 
@@ -96,9 +95,11 @@ python3 scripts/publish_assets_and_sync.py
 
 Ожидаемые лог-маркеры:
 - `Current Version: ...`
+- `Release Tag: v...`
 - `Target Repo: Seregawpn/Nexy_production`
-- `Uploaded. URL: .../releases/download/Update/Nexy.dmg`
+- `Uploaded. URL: .../releases/download/vX.Y.Z.W/Nexy.dmg`
 - `RELEASE COMPLETE`
+- При повторном publish того же tag и тех же файлов: `already published, skip (tag=vX.Y.Z.W)`.
 
 Dry-run:
 ```bash
@@ -107,9 +108,8 @@ python3 scripts/publish_assets_and_sync.py --dry-run
 
 ### 3.3 Verify
 
-- `https://github.com/Seregawpn/Nexy_production/releases/tag/Update`
-- `https://github.com/Seregawpn/Nexy_production/releases/tag/App`
-- `https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg`
+- `https://github.com/Seregawpn/Nexy_production/releases/tag/vX.Y.Z.W`
+- `https://github.com/Seregawpn/Nexy_production/releases/download/vX.Y.Z.W/Nexy.dmg`
 - Проверить `server/updates/manifests/manifest.json`:
   - `version`, `build`
   - `artifact.url`, `artifact.size`, `artifact.sha256`
@@ -137,11 +137,11 @@ gh auth status
 gh auth login
 ```
 
-### 4.4 Wrong target repo/tags
+### 4.4 Wrong target repo/tag
 Проверить в `scripts/publish_assets_and_sync.py`:
 - `TARGET_REPO = "Seregawpn/Nexy_production"`
-- `DMG_TAG = "Update"`
-- `PKG_TAG = "App"`
+- Release tag формируется как `vX.Y.Z.W` из `VERSION`
+- Для уже опубликованного tag перезапись запрещена (идемпотентный skip/блокировка)
 
 ---
 
@@ -150,7 +150,7 @@ gh auth login
 - Артефакты: `release_inbox/`
 - Манифест: `server/updates/manifests/manifest.json`
 - Логи публикации: stdout/stderr `python3 scripts/publish_assets_and_sync.py`
-- Remote check: release URLs `Update` и `App`
+- Remote check: release URL version-tag `vX.Y.Z.W`
 
 ---
 
@@ -158,6 +158,6 @@ gh auth login
 
 1. `release_inbox` существует и содержит артефакты.
 2. Публикация завершилась без ошибок.
-3. DMG/PKG доступны в `Nexy_production`.
+3. DMG/PKG доступны в `Nexy_production` в одном version-tag.
 4. `manifest.json` обновлён и синхронизирован.
 5. После code deploy `/health` и `/updates/health` показывают нужную версию.
