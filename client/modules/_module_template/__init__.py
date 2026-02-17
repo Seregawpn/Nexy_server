@@ -8,5 +8,5 @@ from .core.types import TemplateConfig, TemplateEvent, TemplateState
 
 __all__ = ["TemplateLogic", "TemplateConfig", "TemplateState", "TemplateEvent"]
 
-__version__ = "1.6.1.40"
+__version__ = "1.6.1.41"
 __author__ = "Nexy Team"
