@@ -41,6 +41,12 @@ AVAudioSessionRouteChangeNotification = getattr(
 AVAudioSessionCategoryOptionAllowBluetoothA2DP = getattr(
     _AVFoundation, "AVAudioSessionCategoryOptionAllowBluetoothA2DP", 0
 )
+AVAudioSessionCategoryOptionMixWithOthers = getattr(
+    _AVFoundation, "AVAudioSessionCategoryOptionMixWithOthers", 0
+)
+AVAudioSessionCategoryOptionDuckOthers = getattr(
+    _AVFoundation, "AVAudioSessionCategoryOptionDuckOthers", 0
+)
 AVAudioSessionCategoryPlayAndRecord = getattr(
     _AVFoundation, "AVAudioSessionCategoryPlayAndRecord", None
 )
@@ -89,6 +95,7 @@ class AVFoundationPlayer:
         self._last_audio_session_signature: tuple[str | None, str | None, int, str | None] | None = (
             None
         )
+        self._session_active = False
         self._audio_session_unavailable_logged = False
         self._last_render_heal_ts = 0.0
         self._write_mismatch_streak = 0
@@ -166,6 +173,7 @@ class AVFoundationPlayer:
                     self._engine.stop()
             except Exception as e:
                 logger.warning(f"⚠️ Shutdown engine error: {e}")
+            self._deactivate_audio_session(reason="shutdown")
 
             self._unregister_route_changes()
             self._initialized = False
@@ -299,7 +307,7 @@ class AVFoundationPlayer:
         self._last_quiet_warn_ts = now
         self._quiet_warn_suppressed = 0
 
-    def start_playback(self) -> bool:
+    def start_playback(self, *, reassert_session: bool = False) -> bool:
         """Start playback."""
         if not self._initialized:
             logger.error("❌ Player not initialized")
@@ -313,10 +321,6 @@ class AVFoundationPlayer:
                     logger.error("❌ Player internals unavailable")
                     return False
 
-                # Always re-assert playback audio session profile, even if playback
-                # fast-path returns no-op. Mic/STT path may have changed session state.
-                self._ensure_playback_audio_session(reason="start_playback")
-
                 # Idempotent fast-path: avoid spawning duplicate playback threads.
                 thread_alive = self._playback_thread.is_alive() if self._playback_thread else False
                 if (
@@ -325,6 +329,8 @@ class AVFoundationPlayer:
                     and engine.isRunning()
                     and player_node.isPlaying()
                 ):
+                    if reassert_session:
+                        self._ensure_playback_audio_session(reason="start_playback_reassert")
                     # Keep output chain unmuted even on no-op path.
                     # Route/mic interactions can leave node or mixer volume altered
                     # while playback state still looks healthy.
@@ -345,6 +351,9 @@ class AVFoundationPlayer:
                         pass
                     logger.debug("▶️ Playback already active, start_playback is a no-op")
                     return True
+
+                # For actual playback start we always ensure profile once.
+                self._ensure_playback_audio_session(reason="start_playback")
 
                 # КРИТИЧНО: Устанавливаем volume=1.0 для гарантии слышимого вывода
                 player_node.setVolume_(1.0)
@@ -532,19 +541,16 @@ class AVFoundationPlayer:
             session = AVAudioSession.sharedInstance()
             route_sig = self._current_route_signature(session)
 
-            # Detect Bluetooth output — use PlayAndRecord to avoid A2DP/HFP conflict
-            is_bluetooth = route_sig and "Bluetooth" in route_sig
-            if is_bluetooth and AVAudioSessionCategoryPlayAndRecord is not None:
-                chosen_category_obj = AVAudioSessionCategoryPlayAndRecord
-                target_category = str(AVAudioSessionCategoryPlayAndRecord)
-                target_options = (
-                    int(AVAudioSessionCategoryOptionAllowBluetoothA2DP or 0)
-                    | int(AVAudioSessionCategoryOptionDefaultToSpeaker or 0)
-                )
-            else:
-                chosen_category_obj = AVAudioSessionCategoryPlayback
-                target_category = str(AVAudioSessionCategoryPlayback)
-                target_options = int(AVAudioSessionCategoryOptionAllowBluetoothA2DP or 0)
+            # Playback path must not claim input ownership.
+            # Keep category stable as Playback even on Bluetooth routes.
+            is_bluetooth = bool(route_sig and "Bluetooth" in route_sig)
+            chosen_category_obj = AVAudioSessionCategoryPlayback
+            target_category = str(AVAudioSessionCategoryPlayback)
+            target_options = int(AVAudioSessionCategoryOptionAllowBluetoothA2DP or 0)
+            # MixWithOthers: prevent exclusive route claim that conflicts with VoiceOver
+            target_options |= int(AVAudioSessionCategoryOptionMixWithOthers or 0)
+            # DuckOthers: lower VoiceOver volume while Nexy speaks instead of fighting
+            target_options |= int(AVAudioSessionCategoryOptionDuckOthers or 0)
 
             target_mode = str(AVAudioSessionModeDefault) if AVAudioSessionModeDefault else None
             target_signature = (target_category, target_mode, target_options, route_sig)
@@ -575,7 +581,7 @@ class AVFoundationPlayer:
 
             if is_bluetooth:
                 logger.info(
-                    "🎧 Bluetooth output detected, using PlayAndRecord category for route=%s",
+                    "🎧 Bluetooth output detected, keeping Playback category for route=%s",
                     route_sig,
                 )
 
@@ -595,7 +601,38 @@ class AVFoundationPlayer:
                 )
             else:
                 session.setCategory_error_(chosen_category_obj, None)
-            session.setActive_error_(True, None)
+            if self._session_active and already_on_target:
+                logger.debug("AUDIO_SESSION_ALREADY_ACTIVE reason=%s", reason)
+            else:
+                # Bounded retry for HAL race (_StartIO error 35 contention
+                # with VoiceOver).  Max 300ms total (100ms + 200ms backoff).
+                _max_activate_retries = 3
+                _activated = False
+                for _attempt in range(_max_activate_retries):
+                    _ok, _err = session.setActive_error_(True, None)
+                    if _ok:
+                        _activated = True
+                        break
+                    _err_code = (
+                        int(_err.code()) if _err and hasattr(_err, "code") else -1
+                    )
+                    logger.warning(
+                        "⚠️ setActive attempt %d/%d failed (code=%d, reason=%s): %s",
+                        _attempt + 1,
+                        _max_activate_retries,
+                        _err_code,
+                        reason,
+                        _err,
+                    )
+                    if _attempt < _max_activate_retries - 1:
+                        time.sleep(0.1 * (_attempt + 1))  # 100ms, 200ms
+                if not _activated:
+                    logger.error(
+                        "❌ setActive failed after %d attempts (reason=%s)",
+                        _max_activate_retries,
+                        reason,
+                    )
+                self._session_active = _activated
             self._last_audio_session_signature = target_signature
             after = self._capture_audio_session_runtime(session)
             logger.info(
@@ -614,6 +651,19 @@ class AVFoundationPlayer:
                 reason,
                 e,
             )
+
+    def _deactivate_audio_session(self, *, reason: str) -> None:
+        """Release playback session ownership while player is idle."""
+        if not AVAudioSession:
+            return
+        try:
+            session = AVAudioSession.sharedInstance()
+            session.setActive_error_(False, None)
+            self._session_active = False
+            self._last_audio_session_signature = None
+            logger.info("AUDIO_SESSION_DEACTIVATE reason=%s", reason)
+        except Exception as e:
+            logger.debug("AUDIO_SESSION_DEACTIVATE failed reason=%s err=%s", reason, e)
 
     def _ensure_engine_running(self) -> bool:
         """
@@ -748,6 +798,7 @@ class AVFoundationPlayer:
                     logger.debug("⏹️ Playback thread still stopping in background")
         except Exception:
             pass
+        self._deactivate_audio_session(reason="stop_playback")
 
     def is_playing(self) -> bool:
         """Check if currently playing."""
@@ -1148,3 +1199,11 @@ class AVFoundationPlayer:
             self._recreate_threads = [t for t in self._recreate_threads if t.is_alive()]
             self._recreate_threads.append(thread)
         thread.start()
+
+    def is_route_transition_in_flight(self) -> bool:
+        """True while route recreate is active or debounce window is open."""
+        now = time.monotonic()
+        with self._lock:
+            if self._route_recreate_in_flight:
+                return True
+            return (now - self._last_route_recreate_ts) < self._route_recreate_min_interval_sec

@@ -126,6 +126,13 @@ class SpeechPlaybackIntegration:
         self._grpc_start_watchdog_timeout_sec: float = float(
             self.config.get("grpc_start_watchdog_timeout_sec", 0.25)
         )
+        # Dedup guard for post-mic playback profile recovery.
+        self._last_mic_recovery_sid: str | None = None
+        self._last_mic_recovery_ts: float = 0.0
+        self._mic_recovery_dedup_window_sec: float = 0.75
+        self._mic_recovery_post_stop_cooldown_sec: float = 0.30
+        self._mic_recovery_route_wait_timeout_sec: float = 0.80
+        self._mic_recovery_route_wait_poll_sec: float = 0.05
 
     async def initialize(self) -> bool:
         try:
@@ -230,7 +237,7 @@ class SpeechPlaybackIntegration:
             return False
 
     # -------- Helper Methods --------
-    async def _ensure_player_ready(self) -> bool:
+    async def _ensure_player_ready(self, *, reassert_profile: bool = False) -> bool:
         """
         Ensure player is ready and playing.
         """
@@ -243,11 +250,9 @@ class SpeechPlaybackIntegration:
                     else:
                         logger.error("❌ [AUDIO] AVFoundationPlayer on-demand init failed")
                         return False
-                # IMPORTANT: always call start_playback().
-                # AVFoundationPlayer.start_playback() is idempotent and re-asserts
-                # playback AVAudioSession profile even on no-op path. This restores
-                # output after microphone/input path may have reconfigured session.
-                if not self._avf_player.start_playback():
+                # Keep the fast-path idempotent for regular queueing.
+                # Profile reassert is requested explicitly for mic recovery only.
+                if not self._avf_player.start_playback(reassert_session=reassert_profile):
                     logger.error("❌ [AUDIO] Failed to (re)start AVFoundationPlayer playback")
                     return False
                 return True
@@ -687,8 +692,54 @@ class SpeechPlaybackIntegration:
         try:
             data = (event or {}).get("data", {}) if isinstance(event, dict) else {}
             sid = data.get("session_id")
+            source = str(data.get("source") or "")
         except Exception:
             data = {}
+            source = ""
+        sid_key = str(sid) if sid is not None else None
+
+        # Ignore stale mic_closed from another session to avoid unnecessary
+        # playback profile reassert/reconfigure churn.
+        active_output_sid = self._active_output_session_id
+        if sid_key is not None and active_output_sid is not None and sid_key != active_output_sid:
+            logger.debug(
+                "AUDIO_MIC_RECOVERY skipped: stale mic_closed session=%s active_output=%s",
+                sid_key,
+                active_output_sid,
+            )
+            return
+
+        if sid_key is not None and not is_playing:
+            has_playback_context = bool(self._had_audio_for_session.get(sid)) or (
+                sid_key == self._current_session_id
+            )
+            if not has_playback_context:
+                logger.debug(
+                    "AUDIO_MIC_RECOVERY skipped: no playback context for session=%s",
+                    sid_key,
+                )
+                return
+        if sid_key is None and not is_playing and active_output_sid is None:
+            return
+
+        # Give input-owner path time to release profile before output reassert.
+        if source in {
+            "recording_stop",
+            "v2_completed",
+            "v2_failed",
+            "snapshot_completed",
+            "snapshot_failed",
+        }:
+            await asyncio.sleep(self._mic_recovery_post_stop_cooldown_sec)
+
+        # Avoid reassert while route recreate/debounce is still in-flight.
+        if await self._wait_for_player_route_stable(timeout_sec=self._mic_recovery_route_wait_timeout_sec):
+            logger.debug(
+                "AUDIO_MIC_RECOVERY skipped: route transition active timeout=%.2fs session=%s",
+                self._mic_recovery_route_wait_timeout_sec,
+                sid_key,
+            )
+            return
 
         try:
             status_before = self._avf_player.get_playback_runtime_status()
@@ -697,7 +748,23 @@ class SpeechPlaybackIntegration:
 
         try:
             async with self._playback_op_lock:
-                recovered = await self._ensure_player_ready()
+                # Skip repeated recovery pulses for the same session in a short window.
+                now = time.monotonic()
+                if (
+                    sid_key is not None
+                    and self._last_mic_recovery_sid == sid_key
+                    and (now - self._last_mic_recovery_ts) < self._mic_recovery_dedup_window_sec
+                ):
+                    logger.debug(
+                        "AUDIO_MIC_RECOVERY dedup: session=%s dt=%.3fs",
+                        sid_key,
+                        now - self._last_mic_recovery_ts,
+                    )
+                    return
+                recovered = await self._ensure_player_ready(reassert_profile=True)
+                if sid_key is not None:
+                    self._last_mic_recovery_sid = sid_key
+                    self._last_mic_recovery_ts = now
                 try:
                     status_after = self._avf_player.get_playback_runtime_status()
                 except Exception:
@@ -712,6 +779,27 @@ class SpeechPlaybackIntegration:
             )
         except Exception as e:
             await self._handle_error(e, where="speech.on_voice_mic_closed", severity="warning")
+
+    def _player_route_transition_in_flight(self) -> bool:
+        player = self._avf_player
+        if not player:
+            return False
+        checker = getattr(player, "is_route_transition_in_flight", None)
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except Exception:
+            return False
+
+    async def _wait_for_player_route_stable(self, *, timeout_sec: float) -> bool:
+        """Return True when route transition stayed busy until timeout."""
+        deadline = time.monotonic() + max(0.0, timeout_sec)
+        while self._player_route_transition_in_flight():
+            if time.monotonic() >= deadline:
+                return True
+            await asyncio.sleep(self._mic_recovery_route_wait_poll_sec)
+        return False
 
     async def _on_raw_audio(self, event: dict[str, Any]):
         try:

@@ -26,7 +26,7 @@ class FakeAVFPlayer:
     def is_playing(self) -> bool:
         return self._playing
 
-    def start_playback(self) -> bool:
+    def start_playback(self, *, reassert_session: bool = False) -> bool:
         self._playing = True
         return True
 

@@ -6,7 +6,7 @@ The "first run" experience prepares the Nexy client for normal operation by:
 - enforcing a permission order defined by `integrations.permissions_v2.order` (config-driven);
 - activating each permission with a fixed grace window (`integrations.permissions_v2.steps.*.grace_s`) and post-trigger verification;
 - using dialog-only activators for promptable permissions; Full Disk Access uses Settings-only;
-- persisting flags as a cache (not a hard stop) for completed permission attempts;
+- persisting only V2 ledger + restart signal for deterministic restart lifecycle;
 - restarting the app after newly granted critical permissions so subsystems observe the new state.
 
 The flow is coordinated by `FirstRunPermissionsIntegration` and `PermissionRestartIntegration`, with the `SimpleModuleCoordinator` orchestrating state.
@@ -70,7 +70,7 @@ Notes:
    - `FirstRunPermissionsIntegration.start()` runs early, before voice-recognition/audio chains.
 
 2. **Eligibility Check**  
-   - The "first run" flag is treated as a cache only; the V2 ledger drives whether the flow runs.
+   - V2 ledger is the only source-of-truth for whether the flow runs.
 
 3. **Permission Requests (Order + Dialog-Only)**  
    - Order source: `config/unified_config.yaml` → `integrations.permissions_v2.order`.
@@ -85,7 +85,6 @@ Notes:
 
 4. **Flow Completion**  
    - After all permissions are processed, the integration:
-     - writes `permissions_first_run_completed.flag` after the sequential loop;  
      - sets `permissions_restart_pending` in `ApplicationStateManager`;  
      - for V2 owner path: advances ledger restart phase and delegates restart execution to `PermissionRestartIntegration`;
      - `permissions.first_run_restart_pending` remains legacy compatibility signal.
@@ -95,13 +94,13 @@ Notes:
    - Handler strategy:  
      1. If running from a PyInstaller bundle (`sys.frozen`), call `open -n -a /Applications/Nexy.app`.  
      2. Otherwise run dev fallback (python command).  
-     3. Persist `restart_completed.flag` in the user data directory when the new instance comes up.
+     3. Persist restart signal (`restart_completed.flag`) in the user data directory.
    - Runtime guards:
       - scheduled restart is cancelled on `app.shutdown`;
       - right before `trigger_restart()`, `USER_QUIT_INTENT` is re-checked, and restart is aborted if user quit is active.
 
 6. **Post-Restart Launch**  
-   - On the next start, the integration clears `restart_completed.flag` and emits `permissions.first_run_completed`.
+   - On the next start, V2 owner verifies ledger phase and emits `permissions.first_run_completed`.
 
 ---
 
@@ -120,8 +119,8 @@ Notes:
 
 | Flag / File | Location | When Created | Purpose |
 |-------------|----------|--------------|---------|
-| `permissions_first_run_completed.flag` | `~/Library/Application Support/Nexy/` | After successful permission loop | Marks that first-run permissions were attempted. |
-| `restart_completed.flag` | same directory | When the post-first-run instance starts | Confirms that the restart took place. |
+| `permission_ledger.json` | `~/Library/Application Support/Nexy/` | During V2 flow | Single source-of-truth for first-run/restart phase and step states. |
+| `restart_completed.flag` | same directory | Before relaunch | Restart signal for duplicate-restart suppression and post-restart handshake. |
 
 ---
 
@@ -141,6 +140,6 @@ tccutil reset ListenEvent com.nexy.assistant
 
 - **Permissions requested?** Yes—sequential activation on first-run (no status checks).  
 - **Dialogs only?** Yes—system dialogs for promptable permissions; Full Disk Access uses Settings-only.  
-- **Flags persisted?** Yes—`permissions_first_run_completed.flag` and `restart_completed.flag` (cache only).  
+- **Flags persisted?** Only restart signal (`restart_completed.flag`); first-run decision is ledger-only.  
 - **Restart ensured?** Yes—new PID verification prevents premature exit.  
 - **Architecture preserved?** Yes—integrations communicate via EventBus/state manager without bypassing existing modules.

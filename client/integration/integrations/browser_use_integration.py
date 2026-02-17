@@ -101,9 +101,6 @@ class BrowserUseIntegration:
                 "browser.cancel.request", self._on_cancel_request, EventPriority.CRITICAL
             )
             await self.event_bus.subscribe(
-                "keyboard.short_press", self._on_cancel_request, EventPriority.CRITICAL
-            )
-            await self.event_bus.subscribe(
                 "grpc.request_cancel", self._on_cancel_request, EventPriority.CRITICAL
             )
             await self.event_bus.subscribe(

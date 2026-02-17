@@ -155,6 +155,7 @@ class VoiceRecognitionIntegration:
                     on_started=self._on_sr_v2_started,
                     on_completed=self._on_sr_v2_completed,
                     on_failed=self._on_sr_v2_failed,
+                    session_id_getter=self._get_active_session_id,
                 )
                 if (
                     self._google_sr_controller
@@ -620,8 +621,9 @@ class VoiceRecognitionIntegration:
     def _on_sr_v2_completed(self, result: Any) -> None:  # type: ignore[type-arg]
         """Callback when v2 controller completes recognition."""
         try:
-            # Используем state_manager как единственный источник истины для session_id
-            session_id = self._get_active_session_id()
+            callback_session_id = self._resolve_callback_session_id(
+                getattr(result, "session_id", None)
+            )
             logger.info(
                 f"✅ [AUDIO_V2] Recognition completed: {result.text[:50] if result.text else '(empty)'}..."
             )
@@ -634,7 +636,7 @@ class VoiceRecognitionIntegration:
 
             if loop and loop.is_running():
                 asyncio.run_coroutine_threadsafe(
-                    self._publish_v2_completed(session_id, result), loop
+                    self._publish_v2_completed(callback_session_id, result), loop
                 )
             else:
                 logger.error("❌ [AUDIO_V2] No running event loop found to publish result")
@@ -703,11 +705,10 @@ class VoiceRecognitionIntegration:
         except Exception as e:
             logger.error(f"❌ [AUDIO_V2] Error publishing completed: {e}")
 
-    def _on_sr_v2_failed(self, error: str) -> None:
+    def _on_sr_v2_failed(self, error: str, callback_session_id: str | None = None) -> None:
         """Callback when v2 controller fails."""
         try:
-            # Используем state_manager как единственный источник истины для session_id
-            session_id = self._get_active_session_id()
+            session_id = self._resolve_callback_session_id(callback_session_id)
             logger.info(f"⚠️ [AUDIO_V2] Recognition failed: {error}")
 
             # Publish event via asyncio (we're in a thread)
@@ -796,6 +797,21 @@ class VoiceRecognitionIntegration:
         """Единая idempotent-публикация voice.mic_closed."""
         now = time.monotonic()
         key = (session_id, source)
+        # Session-level dedup: recording_stop уже закрыл микрофон для этой сессии.
+        # Поздние callbacks (v2_completed/v2_failed) не должны повторно триггерить
+        # downstream recovery в playback owner-path.
+        if session_id is not None and self._last_mic_closed_key is not None:
+            prev_session, _prev_source = self._last_mic_closed_key
+            if prev_session == session_id and (
+                now - self._last_mic_closed_ts
+            ) < self._mic_closed_dedup_window_sec:
+                logger.debug(
+                    "VOICE: mic_closed dedup by session (session=%s, source=%s, dt=%.3fs)",
+                    session_id,
+                    source,
+                    now - self._last_mic_closed_ts,
+                )
+                return
         if (
             self._last_mic_closed_key == key
             and (now - self._last_mic_closed_ts) < self._mic_closed_dedup_window_sec
@@ -823,6 +839,7 @@ class VoiceRecognitionIntegration:
         if text:
             if not self._try_mark_terminal_recognition(session_id, "snapshot_completed"):
                 return
+            self._cancel_stop_terminal_fallback(session_id, reason="snapshot_completed")
             await self.event_bus.publish(
                 "voice.recognition_completed",
                 {
@@ -838,6 +855,7 @@ class VoiceRecognitionIntegration:
         if error:
             if not self._try_mark_terminal_recognition(session_id, "snapshot_failed"):
                 return
+            self._cancel_stop_terminal_fallback(session_id, reason="snapshot_failed")
             await self._publish_recognition_failed(
                 session_id,
                 error=error,
@@ -924,6 +942,26 @@ class VoiceRecognitionIntegration:
             return False
         self._terminal_recognition_ts[session_id] = now
         return True
+
+    def _resolve_callback_session_id(self, callback_session_id: object) -> str | None:
+        """
+        Возвращает валидный session_id для callback-path.
+
+        Late/out-of-order callbacks для уже закрытой сессии не должны
+        публиковать события в owner-path новой активной сессии.
+        """
+        sid = str(callback_session_id) if isinstance(callback_session_id, str) else None
+        active_sid = self._get_active_session_id()
+        if sid is None:
+            return active_sid
+        if active_sid is not None and sid != active_sid:
+            logger.info(
+                "VOICE: stale callback ignored (callback_session=%s, active_session=%s)",
+                sid,
+                active_sid,
+            )
+            return None
+        return sid
 
     async def _publish_recognition_failed(
         self,

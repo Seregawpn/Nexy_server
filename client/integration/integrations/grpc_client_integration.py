@@ -1404,7 +1404,13 @@ class GrpcClientIntegration:
 
         # 2. Speak limit message via server TTS
         await asyncio.sleep(1.5)  # Increased delay to prevent audio cutoff during mic switch
-        tts_message = "You have reached your daily limit. I am opening the subscription page where you can start a 14-day free trial for unlimited access. We are grateful for your subscription."
+        err_lower = (err_msg or "").lower()
+        if "weekly limit exceeded" in err_lower:
+            tts_message = "You have reached your weekly limit. I am opening the subscription page to continue with unlimited access."
+        elif "monthly limit exceeded" in err_lower:
+            tts_message = "You have reached your monthly limit. I am opening the subscription page to continue with unlimited access."
+        else:
+            tts_message = "You have reached your daily limit. I am opening the subscription page to continue with unlimited access."
 
         # CRITICAL: Subscribe to playback completion BEFORE starting TTS
         playback_completed = asyncio.Event()

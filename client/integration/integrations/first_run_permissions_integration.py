@@ -19,7 +19,6 @@ from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus
 from integration.core.state_keys import StateKeys
 from integration.core.state_manager import ApplicationStateManager
-from integration.utils.resource_path import get_user_data_dir
 
 # V2 Imports
 if TYPE_CHECKING:
@@ -71,18 +70,6 @@ class FirstRunPermissionsIntegration:
         self._running = False
         self._advance_on_timeout = False
         self._timeout_wait_s: float | None = None
-
-        # Flag file path (cache only, not a decision gate)
-        self._flag_path = get_user_data_dir() / "permissions_first_run_completed.flag"
-
-    def _mark_first_run_completed(self) -> None:
-        """Create flag file to mark first-run as completed."""
-        try:
-            self._flag_path.parent.mkdir(parents=True, exist_ok=True)
-            self._flag_path.write_text("completed")
-            logger.info("✅ [FIRST_RUN_PERMISSIONS] Флаг first-run создан: %s", self._flag_path)
-        except Exception as e:
-            logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Не удалось создать флаг: %s", e)
 
     @property
     def are_all_granted(self) -> bool:
@@ -145,6 +132,8 @@ class FirstRunPermissionsIntegration:
                     return False
 
                 # Создаём V2 интеграцию
+                from integration.utils.resource_path import get_user_data_dir
+
                 ledger_path = str(get_user_data_dir() / "permission_ledger.json")
                 self._v2_integration = PermissionOrchestratorIntegration(
                     event_bus=self.event_bus,
@@ -216,7 +205,6 @@ class FirstRunPermissionsIntegration:
 
                 if self._advance_on_timeout:
                     if all_granted:
-                        self._mark_first_run_completed()
                         await self._publish_timeout_completion_events()
                     else:
                         logger.info(
@@ -229,7 +217,6 @@ class FirstRunPermissionsIntegration:
                     logger.info(
                         "✅ [FIRST_RUN_PERMISSIONS] V2 pipeline завершён, все разрешения получены"
                     )
-                    self._mark_first_run_completed()
                     return True
                 else:
                     logger.warning(
@@ -269,13 +256,30 @@ class FirstRunPermissionsIntegration:
         """Publish completion events for timeout-driven mode after synchronous wait."""
         if not self._v2_integration:
             return
+        final_snapshot: dict[str, Any] = {}
+        missing_hard: list[str] = []
+        all_hard_granted = True
+        try:
+            if hasattr(self._v2_integration, "completion_snapshot"):
+                final_snapshot = self._v2_integration.completion_snapshot()
+            all_hard_granted, missing_hard = self._v2_integration.hard_permissions_summary()
+        except Exception as e:
+            logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Failed to build timeout snapshot: %s", e)
         completion_payload = {
             "session_id": "timeout_mode",
             "source": "permissions_v2_timeout",
             "all_granted": True,
+            "all_hard_granted": all_hard_granted,
+            "missing_hard": missing_hard,
+            "final_snapshot": final_snapshot,
         }
         try:
             await self.event_bus.publish("permissions.first_run_completed", completion_payload)
+            logger.info(
+                "📌 [FIRST_RUN_PERMISSIONS] FINAL_SNAPSHOT timeout_mode all_hard_granted=%s missing_hard=%s",
+                all_hard_granted,
+                missing_hard,
+            )
 
             # CHECK: Was ready_to_greet already published by V2?
             # If yes, keep only legacy completion event.

@@ -319,18 +319,19 @@ class QuartzKeyboardMonitor:
         logger.debug("combo release (%s), duration=%.3f", reason, duration)
         self._trigger_event(KeyEventType.RELEASE, duration, ev)
 
-    # ---------- Internal: strict target predicate ----------
+    # ---------- Internal: target predicate ----------
     def _is_target_combo(self, flags: int, keycode: int | None) -> bool:
         """
-        Strict target predicate:
+        Target predicate for Ctrl+N:
         - Control MUST be pressed.
-        - Command, Option/Alt, Shift MUST NOT be pressed.
+        - Command, Option/Alt, AND Shift MUST NOT be pressed.
+        - We are strict: Ctrl+Shift+N is NOT a target combo here.
         - If keycode is provided, it must be N.
         """
-        # 1. Check strict modifiers
+        # 1. Check required/forbidden modifiers
+        # STRICT: Only Control allowed. Shift, Cmd, Alt forbidden.
         modifiers_ok = (flags & kCGEventFlagMaskControl) and not (
-            flags
-            & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
+            flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
         )
         if not modifiers_ok:
             return False
@@ -376,8 +377,7 @@ class QuartzKeyboardMonitor:
                 # Update local state for debounce/healing
                 self._control_pressed = bool(flags & kCGEventFlagMaskControl)
                 self._combo_blocked_by_modifiers = bool(
-                    flags
-                    & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
+                    flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand)
                 )
 
                 if is_control_change:
@@ -411,7 +411,7 @@ class QuartzKeyboardMonitor:
             
             with self.state_lock:
                 self._combo_blocked_by_modifiers = bool(
-                     flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand | kCGEventFlagMaskShift)
+                    flags & (kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand)
                 )
                 
                 if event_type == kCGEventKeyDown:
@@ -424,7 +424,7 @@ class QuartzKeyboardMonitor:
                          self._log_decision("KeyDown", keycode, flags, "PASS", "non_target_combo")
                          return event
 
-                    # It IS target combo (Ctrl+N with no other mods)
+                    # It IS target combo (Ctrl+N; Cmd/Alt are not allowed)
                     
                     # Anti-repeat / Debounce
                     if self._n_pressed and (now - self.last_event_time) < self.event_cooldown:

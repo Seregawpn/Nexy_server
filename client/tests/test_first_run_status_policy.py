@@ -72,11 +72,9 @@ async def test_timeout_mode_does_not_publish_completion_when_not_terminal() -> N
         start=AsyncMock(),
         wait_for_completion=AsyncMock(return_value=False),
     )
-    integration._mark_first_run_completed = Mock()
     integration._publish_timeout_completion_events = AsyncMock()
 
     success = await integration.start()
 
     assert success is True
-    integration._mark_first_run_completed.assert_not_called()
     integration._publish_timeout_completion_events.assert_not_awaited()

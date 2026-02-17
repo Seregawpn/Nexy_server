@@ -1087,6 +1087,8 @@ class BrowserUseModule:
             "no browser is open",
             "failed to open new tab",
             "target closed",
+            "session with given id not found",
+            "no valid agent focus available",
         ]
         return any(signal in message for signal in retry_signals)
 

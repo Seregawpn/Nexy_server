@@ -28,24 +28,8 @@ def clear_flags():
     # Стандартный путь
     data_dir = get_user_data_dir("Nexy")
 
-    # 1. Очистка permissions_first_run_completed.flag (канонический флаг)
-    print("\n📋 Проверка permissions_first_run_completed.flag:")
-
-    flag_file = data_dir / "permissions_first_run_completed.flag"
-    checked_paths.append(flag_file)
-
-    if flag_file.exists():
-        try:
-            flag_file.unlink()
-            print(f"  ✅ Удалён: {flag_file}")
-            cleared_count += 1
-        except Exception as e:
-            print(f"  ❌ Ошибка удаления {flag_file}: {e}")
-    else:
-        print(f"  ℹ️  Не найден: {flag_file}")
-
-    # 1.1. Очистка permission_ledger.json (V2 Permissions)
-    print("\n📋 Проверка permission_ledger.json (V2 Permissions):")
+    # 1. Очистка permission_ledger.json (V2 Source of Truth)
+    print("\n📋 Проверка permission_ledger.json (V2 Source of Truth):")
 
     ledger_file = data_dir / "permission_ledger.json"
     checked_paths.append(ledger_file)
@@ -60,24 +44,8 @@ def clear_flags():
     else:
         print(f"  ℹ️  Не найден: {ledger_file}")
 
-    # 2. Очистка старого флага (для миграции)
-    print("\n📋 Проверка permissions_granted.flag (legacy, для миграции):")
-
-    old_flag_file = data_dir / "permissions_granted.flag"
-    checked_paths.append(old_flag_file)
-
-    if old_flag_file.exists():
-        try:
-            old_flag_file.unlink()
-            print(f"  ✅ Удалён: {old_flag_file}")
-            cleared_count += 1
-        except Exception as e:
-            print(f"  ❌ Ошибка удаления {old_flag_file}: {e}")
-    else:
-        print(f"  ℹ️  Не найден: {old_flag_file}")
-
-    # 3. Очистка restart_completed.flag (legacy, больше не используется)
-    print("\n📋 Проверка restart_completed.flag (legacy, deprecated):")
+    # 2. Очистка restart_completed.flag (restart signal)
+    print("\n📋 Проверка restart_completed.flag (restart signal):")
 
     restart_flag_file = data_dir / "restart_completed.flag"
     checked_paths.append(restart_flag_file)
@@ -91,6 +59,35 @@ def clear_flags():
             print(f"  ❌ Ошибка удаления {restart_flag_file}: {e}")
     else:
         print(f"  ℹ️  Не найден: {restart_flag_file}")
+
+    # 3. Очистка legacy флагов (больше не используются runtime owner-path)
+    print("\n📋 Проверка legacy flags (cleanup only):")
+
+    flag_file = data_dir / "permissions_first_run_completed.flag"
+    checked_paths.append(flag_file)
+
+    if flag_file.exists():
+        try:
+            flag_file.unlink()
+            print(f"  ✅ Удалён legacy: {flag_file}")
+            cleared_count += 1
+        except Exception as e:
+            print(f"  ❌ Ошибка удаления {flag_file}: {e}")
+    else:
+        print(f"  ℹ️  Legacy не найден: {flag_file}")
+
+    old_flag_file = data_dir / "permissions_granted.flag"
+    checked_paths.append(old_flag_file)
+
+    if old_flag_file.exists():
+        try:
+            old_flag_file.unlink()
+            print(f"  ✅ Удалён: {old_flag_file}")
+            cleared_count += 1
+        except Exception as e:
+            print(f"  ❌ Ошибка удаления {old_flag_file}: {e}")
+    else:
+        print(f"  ℹ️  Не найден: {old_flag_file}")
 
     # 4. Sandbox пути (если отличаются)
     bundle_id = os.environ.get("APP_BUNDLE_ID", "com.nexy.assistant")

@@ -76,6 +76,8 @@ class PermissionOrchestratorIntegration:
 
         # Track if ready_to_greet was already published (prevents duplicates in advance_on_timeout mode)
         self._ready_published = False
+        self._legacy_completion_published = False
+        self._legacy_completion_lock = asyncio.Lock()
 
     async def initialize(self) -> bool:
         """Initialize the V2 integration."""
@@ -159,6 +161,44 @@ class PermissionOrchestratorIntegration:
         missing = self._get_missing_hard_permissions(ledger, self._hard_permissions)
         return (len(missing) == 0), missing
 
+    def completion_snapshot(self) -> dict[str, Any]:
+        """Return current permission snapshot for first-run completion diagnostics."""
+        if self._orchestrator and self._orchestrator.ledger:
+            ledger = self._orchestrator.ledger
+        else:
+            ledger = self._load_ledger()
+        if not ledger:
+            return {
+                "phase": "unknown",
+                "restart_count": None,
+                "hard_permissions": {},
+                "missing_hard": [],
+                "permissions": {},
+            }
+
+        missing_hard = self._get_missing_hard_permissions(ledger, self._hard_permissions)
+        snapshot: dict[str, Any] = {
+            "phase": ledger.phase.value,
+            "restart_count": ledger.restart_count,
+            "hard_permissions": {},
+            "missing_hard": missing_hard,
+            "permissions": {},
+        }
+        for perm in self._hard_permissions:
+            entry = ledger.steps.get(perm)
+            state = entry.state.value if entry else "missing"
+            snapshot["hard_permissions"][perm.value] = {
+                "state": state,
+                "granted": state == StepState.PASS_.value,
+            }
+        for perm_id, entry in ledger.steps.items():
+            snapshot["permissions"][perm_id.value] = {
+                "state": entry.state.value,
+                "mode": entry.mode.value,
+                "needs_restart_marked": bool(entry.needs_restart_marked),
+            }
+        return snapshot
+
     def _create_probers(
         self, step_configs: dict[PermissionId, StepConfig]
     ) -> dict[PermissionId, Any]:
@@ -206,6 +246,23 @@ class PermissionOrchestratorIntegration:
         legacy_result = self._map_to_legacy_event(event)
         if legacy_result:
             (legacy_name, legacy_payload), publish_ready_to_greet = legacy_result
+            if legacy_name == "permissions.first_run_completed":
+                async with self._legacy_completion_lock:
+                    if self._legacy_completion_published:
+                        logger.info(
+                            "[V2_INTEGRATION] Skip duplicate legacy completion publish (already emitted)"
+                        )
+                        return
+                    if publish_ready_to_greet:
+                        await self._publish_ready_to_greet(event)
+                    logger.info("🔄 [V2_INTEGRATION] Mapping to legacy event: %s", legacy_name)
+                    try:
+                        await self.event_bus.publish(legacy_name, legacy_payload)
+                        self._legacy_completion_published = True
+                    except Exception as e:
+                        logger.error("[V2_INTEGRATION] Failed to emit legacy event: %s", e)
+                return
+
             if publish_ready_to_greet:
                 await self._publish_ready_to_greet(event)
             logger.info("🔄 [V2_INTEGRATION] Mapping to legacy event: %s", legacy_name)
@@ -227,7 +284,14 @@ class PermissionOrchestratorIntegration:
         elif event.type == UIEventType.COMPLETED:
             if self._advance_on_timeout:
                 return None
-            _, missing = self._summarize_hard_permissions()
+            all_hard_granted, missing = self._summarize_hard_permissions()
+            final_snapshot = self._build_final_snapshot(event)
+            logger.info(
+                "[V2_INTEGRATION] FINAL_SNAPSHOT phase=%s all_hard_granted=%s missing_hard=%s",
+                final_snapshot.get("phase", "unknown"),
+                all_hard_granted,
+                missing,
+            )
             legacy = (
                 "permissions.first_run_completed",
                 {
@@ -235,6 +299,8 @@ class PermissionOrchestratorIntegration:
                     "source": "v2_integration",
                     "all_granted": True,
                     "missing_hard": missing,
+                    "all_hard_granted": all_hard_granted,
+                    "final_snapshot": final_snapshot,
                 },
             )
             return legacy, True
@@ -242,6 +308,13 @@ class PermissionOrchestratorIntegration:
         elif event.type == UIEventType.LIMITED_MODE_ENTERED:
             if self._advance_on_timeout:
                 return None
+            final_snapshot = self._build_final_snapshot(event)
+            logger.info(
+                "[V2_INTEGRATION] FINAL_SNAPSHOT phase=%s all_hard_granted=%s missing_hard=%s",
+                final_snapshot.get("phase", "unknown"),
+                False,
+                event.payload.get("missing_hard", []),
+            )
             return (
                 "permissions.first_run_completed",
                 {
@@ -249,6 +322,8 @@ class PermissionOrchestratorIntegration:
                     "source": "v2_integration",
                     "all_granted": True,
                     "missing_hard": event.payload.get("missing_hard", []),
+                    "all_hard_granted": False,
+                    "final_snapshot": final_snapshot,
                 },
             ), True
 
@@ -271,6 +346,14 @@ class PermissionOrchestratorIntegration:
         hard_permissions = self._orchestrator.hard_permissions
         missing = self._get_missing_hard_permissions(ledger, hard_permissions)
         return (len(missing) == 0), missing
+
+    def _build_final_snapshot(self, event: UIEvent) -> dict[str, Any]:
+        """Build a normalized final snapshot for first-run completion observability."""
+        snapshot = self.completion_snapshot()
+        if snapshot["phase"] == "unknown":
+            snapshot["phase"] = event.payload.get("phase", "unknown")
+            snapshot["restart_count"] = event.payload.get("restart_count")
+        return snapshot
 
     async def start(self) -> None:
         """Start the permission wizard."""

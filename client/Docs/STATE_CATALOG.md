@@ -67,7 +67,7 @@
 - **пишет**: `permissions` V2 orchestrator (ledger phase)
 - **читает**: все интеграции, влияющие на UX первого запуска (`listening_workflow`, `voice_recognition`)
 - **источник истины**: V2 ledger (`~/Library/Application Support/Nexy/permission_ledger.json`)
-- **кеш**: `permissions_first_run_completed.flag` (не используется для принятия решения о запуске wizard)
+- **кеш**: отсутствует (решение только по V2 ledger)
 - **метрики**: `first_run_completion_time_ms`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `true` → блокирует активацию (abort listening)
 
@@ -84,7 +84,7 @@
 - **пишет**: `permissions` V2 orchestrator (ledger phase)
 - **читает**: `simple_module_coordinator`, `voice_recognition`, `permission_restart`
 - **источник истины**: V2 ledger phase (`RESTART_PENDING`, `POST_RESTART_VERIFY`)
-- **fallback**: `~/Library/Application Support/Nexy/restart_completed.flag` (legacy)
+- **restart signal**: `~/Library/Application Support/Nexy/restart_completed.flag` (signal for duplicate-restart suppression)
 - **derived predicates**: `app.restart_pending`, `app.first_run_restart_pending`
 - **метрики**: `restart_pending_duration_ms`, `restart_completed_flag_orphan_rate`
 - **правила в interaction_matrix.yaml**: `hard_stop` при `true` + `firstRun: true` → блокирует запуск остальных интеграций

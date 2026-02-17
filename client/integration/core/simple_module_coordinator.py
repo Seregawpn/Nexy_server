@@ -578,7 +578,7 @@ class SimpleModuleCoordinator:
                     # КРИТИЧНО: Проверяем результат first_run_permissions
                     # Новая логика: перезапуск происходит автоматически внутри интеграции
                     # Если мы здесь — значит:
-                    # 1. Все разрешения были получены ранее (флаг permissions_granted.flag)
+                    # 1. Все разрешения были получены ранее (по V2 ledger / state owner-path)
                     # 2. Или не все получены, но показан диалог и продолжаем с ограничениями
                     if name == "first_run_permissions" and success:
                         logger.info(

@@ -129,10 +129,10 @@
 ### REQ-010: First-run permissions flow (V2)
 - **Домен**: Permissions/TCC
 - **Критичность**: MUST
-- **Описание**: При первом запуске приложение работает только через V2 pipeline: порядок шагов задаётся `integrations.permissions_v2.order` (fallback‑списка нет), шаги конфигурируются через `integrations.permissions_v2.steps.*` (grace/poll/criticality), source-of-truth по необходимости first-run — `permission_ledger.json`. Full Disk Access — settings-only. Флаг `permissions_first_run_completed.flag` является кешем и не owner-источником решения о запуске wizard.
+- **Описание**: При первом запуске приложение работает только через V2 pipeline: порядок шагов задаётся `integrations.permissions_v2.order` (fallback‑списка нет), шаги конфигурируются через `integrations.permissions_v2.steps.*` (grace/poll/criticality), source-of-truth по необходимости first-run — `permission_ledger.json`. Full Disk Access — settings-only. Локальный `permissions_first_run_completed.flag` не используется runtime owner-path.
 - **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`
 - **Owner**: Permissions SWAT
-- **Ожидаемый результат**: Все разрешения запрашиваются последовательно, флаг `permissions_first_run_completed.flag` создаётся после завершения
+- **Ожидаемый результат**: Все разрешения запрашиваются последовательно, решение о завершении first-run принимается только по `permission_ledger.json`
 - **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `modules/permissions/v2/orchestrator.py`, `modules/permissions/v2/integration.py`
 - **Verification**: `tests/test_first_run_orchestrator_single_restart.py`, `tests/test_permissions_v2_completion_gate.py`, `scripts/clear_first_run_flags.py`
 
@@ -142,7 +142,7 @@
 - **Описание**: После выдачи критических разрешений приложение автоматически перезапускается для применения новых разрешений.
 - **Источник**: `Docs/first_run_flow_spec.md`, `PERMISSIONS_REPORT.md`, `Docs/PACKAGING_FINAL_GUIDE.md`
 - **Owner**: Permissions SWAT
-- **Ожидаемый результат**: Приложение перезапускается после выдачи разрешений, флаг `restart_completed.flag` создаётся в новом процессе
+- **Ожидаемый результат**: Приложение перезапускается после выдачи разрешений, restart signal фиксируется для подавления дубликатных рестартов
 - **Implementation**: `integration/integrations/first_run_permissions_integration.py`, `integration/core/simple_module_coordinator.py`, `integration/integrations/permission_restart_integration.py`, `modules/permission_restart/macos/permissions_restart_handler.py`
 - **Verification**: `tests/test_first_run_orchestrator_single_restart.py`, `tests/test_permission_restart_v2_freeze.py`, runtime-логи TAL (`TAL=hold|refresh|released`)
 

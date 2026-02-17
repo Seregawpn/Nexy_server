@@ -27,6 +27,7 @@ class GoogleSRResult:
     confidence: float
     language: str
     error: str | None = None
+    session_id: str | None = None
 
 
 class GoogleSRController:
@@ -46,7 +47,8 @@ class GoogleSRController:
         device_index: int | None = None,
         on_started: Callable[[], None] | None = None,
         on_completed: Callable[[GoogleSRResult], None] | None = None,
-        on_failed: Callable[[str], None] | None = None,
+        on_failed: Callable[[str, str | None], None] | None = None,
+        session_id_getter: Callable[[], str | None] | None = None,
     ):
         self._lang = language_code
         self._phrase_limit = phrase_time_limit
@@ -56,6 +58,7 @@ class GoogleSRController:
         self._on_started = on_started
         self._on_completed = on_completed
         self._on_failed = on_failed
+        self._session_id_getter = session_id_getter
 
         self._recognizer = sr.Recognizer()
         self._stop = threading.Event()
@@ -75,6 +78,7 @@ class GoogleSRController:
         self.last_error: str | None = None
 
         self._initialized = False
+        self._active_listen_session_id: str | None = None
 
     def initialize(self) -> bool:
         """Initialize the controller."""
@@ -111,6 +115,9 @@ class GoogleSRController:
             return True
 
         self._listening.set()
+        self._active_listen_session_id = (
+            self._session_id_getter() if callable(self._session_id_getter) else None
+        )
         self._thread = threading.Thread(target=self._capture_and_recognize, daemon=True)
         self._thread.start()
 
@@ -137,11 +144,19 @@ class GoogleSRController:
 
         if self.last_text:
             return GoogleSRResult(
-                text=self.last_text, confidence=0.9, language=self._lang, error=None
+                text=self.last_text,
+                confidence=0.9,
+                language=self._lang,
+                error=None,
+                session_id=self._active_listen_session_id,
             )
         elif self.last_error:
             return GoogleSRResult(
-                text="", confidence=0.0, language=self._lang, error=self.last_error
+                text="",
+                confidence=0.0,
+                language=self._lang,
+                error=self.last_error,
+                session_id=self._active_listen_session_id,
             )
         return None
 
@@ -164,12 +179,18 @@ class GoogleSRController:
         """Callback when audio device changes."""
         logger.info("🎧 Device changed to: %s", new_device_name)
 
-    def _start_recognition_thread(self, audio: Any, *, thread_name: str) -> None:
+    def _start_recognition_thread(
+        self,
+        audio: Any,
+        *,
+        thread_name: str,
+        session_id: str | None,
+    ) -> None:
         with self._pending_recognition_lock:
             self._pending_recognitions += 1
         threading.Thread(
             target=self._recognize_audio_chunk,
-            args=(audio,),
+            args=(audio, session_id),
             daemon=True,
             name=thread_name,
         ).start()
@@ -195,6 +216,7 @@ class GoogleSRController:
 
                 # БЕСШОВНЫЙ ЦИКЛ: слушаем пока _listening активен
                 while self._listening.is_set() and not self._stop.is_set():
+                    capture_session_id = self._active_listen_session_id
                     if self._phrase_limit is not None:
                         logger.info("🎙️ Listening... (phrase_limit=%.1fs)", self._phrase_limit)
                     else:
@@ -227,7 +249,9 @@ class GoogleSRController:
                             )
                             if len(audio.frame_data) > 0:
                                 self._start_recognition_thread(
-                                    audio, thread_name="GoogleSR-FinalRecognize"
+                                    audio,
+                                    thread_name="GoogleSR-FinalRecognize",
+                                    session_id=capture_session_id,
                                 )
                             break
 
@@ -235,7 +259,11 @@ class GoogleSRController:
 
                         # КРИТИЧНО: Отправляем на распознавание В ФОНЕ
                         # Это позволяет продолжить слушание без ожидания результата
-                        self._start_recognition_thread(audio, thread_name="GoogleSR-Recognize")
+                        self._start_recognition_thread(
+                            audio,
+                            thread_name="GoogleSR-Recognize",
+                            session_id=capture_session_id,
+                        )
 
                     except sr.WaitTimeoutError:
                         if self._stop.is_set():
@@ -265,19 +293,20 @@ class GoogleSRController:
             self.failed += 1
             if self._on_failed:
                 self._listening.clear()
-                self._on_failed(self.last_error)
+                self._on_failed(self.last_error, self._active_listen_session_id)
         except Exception as e:
             logger.error("❌ Capture error: %s", e)
             self.last_error = f"capture_error: {e}"
             self.failed += 1
             if self._on_failed:
                 self._listening.clear()
-                self._on_failed(self.last_error)
+                self._on_failed(self.last_error, self._active_listen_session_id)
         finally:
             # Разрешаем последующий start_listening после завершения сессии
             self._listening.clear()
+            self._active_listen_session_id = None
 
-    def _recognize_audio_chunk(self, audio) -> None:
+    def _recognize_audio_chunk(self, audio, session_id: str | None) -> None:
         """
         Распознать аудио-чанк в фоновом потоке.
 
@@ -295,6 +324,7 @@ class GoogleSRController:
                 logger.info("✅ STT: %s", text)
 
                 result = GoogleSRResult(text=text, confidence=0.9, language=self._lang)
+                result.session_id = session_id
 
                 if self._on_completed:
                     self._on_completed(result)
@@ -302,20 +332,20 @@ class GoogleSRController:
                 self.last_error = "empty_result"
                 self.failed += 1
                 if self._on_failed:
-                    self._on_failed("empty_result")
+                    self._on_failed("empty_result", session_id)
 
         except sr.UnknownValueError:
             logger.info("⚠️ Google could not understand audio")
             self.last_error = "unknown_value"
             self.failed += 1
             if self._on_failed:
-                self._on_failed("unknown_value")
+                self._on_failed("unknown_value", session_id)
         except sr.RequestError as e:
             logger.error("❌ Google SR request error: %s", e)
             self.last_error = f"request_error: {e}"
             self.failed += 1
             if self._on_failed:
-                self._on_failed(f"request_error: {e}")
+                self._on_failed(f"request_error: {e}", session_id)
         finally:
             with self._pending_recognition_lock:
                 if self._pending_recognitions > 0:
