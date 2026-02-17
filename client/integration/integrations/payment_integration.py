@@ -59,6 +59,16 @@ class PaymentIntegration(BaseIntegration):
         self._last_checkout_session_id: str | None = None
         self._last_checkout_opened_at: float | None = None
         self._checkout_dedup_window_sec: float = 10.0
+        self._manage_known_stripe_statuses = {
+            "active",
+            "trialing",
+            "past_due",
+            "unpaid",
+            "canceled",
+            "incomplete",
+            "incomplete_expired",
+            "paused",
+        }
 
     async def _do_initialize(self) -> bool:
         """Инициализация интеграции"""
@@ -110,7 +120,7 @@ class PaymentIntegration(BaseIntegration):
         logger.info(
             f"[{self.feature_id}] Buy subscription requested via UI (session_id={session_id})"
         )
-        await self.open_buy_subscription(session_id=session_id)
+        await self.open_subscription_entrypoint(session_id=session_id)
 
     async def _on_manage_subscription(self, payload: dict[str, Any]):
         """
@@ -284,6 +294,85 @@ class PaymentIntegration(BaseIntegration):
                 f"[{self.feature_id}] Hardware ID NOT SET - uuid missing. payload keys: {list(payload.keys())}"
             )
 
+    async def _ensure_hardware_id(self) -> bool:
+        """Ensure hardware_id is available before payment calls."""
+        if self._hardware_id:
+            return True
+
+        logger.info(f"[{self.feature_id}] Hardware ID not ready, requesting...")
+        await self.event_bus.publish("hardware.id_request", {"wait_ready": True})
+        for i in range(50):
+            await asyncio.sleep(0.1)
+            if self._hardware_id:
+                logger.info(f"[{self.feature_id}] Hardware ID received after {i * 0.1:.1f}s")
+                return True
+
+        logger.error(f"[{self.feature_id}] Timeout: Hardware ID still not ready after 5s waiting")
+        await self.event_bus.publish("hardware.id_request", {"wait_ready": False})
+        return False
+
+    async def _fetch_subscription_status(self) -> dict[str, Any] | None:
+        """Read current subscription status from server (single source of truth)."""
+        if not await self._ensure_hardware_id():
+            return None
+
+        from config.unified_config_loader import get_grpc_host
+
+        host = get_grpc_host()
+        api_url = f"http://{host}:8080/api/subscription/status"
+        timeout = aiohttp.ClientTimeout(total=10)
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(api_url, params={"hardware_id": self._hardware_id}) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    logger.warning(
+                        f"[{self.feature_id}] Status check failed before billing route: HTTP {resp.status}"
+                    )
+                    return None
+        except Exception as e:
+            logger.warning(f"[{self.feature_id}] Status check failed before billing route: {e}")
+            return None
+
+    def _should_open_manage_portal(self, status_payload: dict[str, Any] | None) -> bool:
+        """
+        Decide billing route:
+        - manage portal for known Stripe-linked users
+        - checkout for new users
+        """
+        if not status_payload:
+            return False
+
+        stripe_status = (status_payload.get("stripe_status") or "").strip().lower()
+        status = (status_payload.get("status") or "").strip().lower()
+
+        if stripe_status in self._manage_known_stripe_statuses:
+            return True
+        if status in {"paid", "paid_trial", "grandfathered"}:
+            return True
+        return False
+
+    async def open_subscription_entrypoint(self, session_id: str | None = None):
+        """
+        Unified billing entrypoint:
+        - existing Stripe user -> Customer Portal
+        - new user -> Checkout
+        """
+        status_payload = await self._fetch_subscription_status()
+        route_manage = self._should_open_manage_portal(status_payload)
+        if route_manage:
+            logger.info(
+                f"[{self.feature_id}] Billing route=manage (status={status_payload.get('status') if status_payload else None}, stripe_status={status_payload.get('stripe_status') if status_payload else None})"
+            )
+            await self.open_manage_subscription()
+            return
+
+        logger.info(
+            f"[{self.feature_id}] Billing route=checkout (status={status_payload.get('status') if status_payload else None}, stripe_status={status_payload.get('stripe_status') if status_payload else None})"
+        )
+        await self.open_buy_subscription(session_id=session_id)
+
     # --- Public API (for other client modules) ---
 
     async def _open_url_safely(self, url: str):
@@ -353,36 +442,16 @@ class PaymentIntegration(BaseIntegration):
                     return
             self._checkout_in_flight = True
 
-            # If hardware ID not ready, request and wait for it
-            if not self._hardware_id:
-                logger.info(f"[{self.feature_id}] Hardware ID not ready, requesting...")
-                await self.event_bus.publish("hardware.id_request", {"wait_ready": True})
-
-                # Wait up to 5 seconds for the ID to arrive (50 * 0.1s)
-                for i in range(50):
-                    await asyncio.sleep(0.1)
-                    if self._hardware_id:
-                        logger.info(
-                            f"[{self.feature_id}] Hardware ID received after {i * 0.1:.1f}s"
-                        )
-                        break
-
-                if not self._hardware_id:
-                    logger.error(
-                        f"[{self.feature_id}] Timeout: Hardware ID still not ready after 5s waiting"
-                    )
-                    # Try one last fetch request before giving up
-                    await self.event_bus.publish("hardware.id_request", {"wait_ready": False})
-
-                    await self.event_bus.publish(
-                        "system.notification",
-                        {
-                            "type": "error",
-                            "title": "Payment Error",
-                            "message": "System not ready (ID missing). Please try again.",
-                        },
-                    )
-                    return
+            if not await self._ensure_hardware_id():
+                await self.event_bus.publish(
+                    "system.notification",
+                    {
+                        "type": "error",
+                        "title": "Payment Error",
+                        "message": "System not ready (ID missing). Please try again.",
+                    },
+                )
+                return
 
             logger.info(f"[{self.feature_id}] Hardware ID ready: {self._hardware_id[:8]}...")
 

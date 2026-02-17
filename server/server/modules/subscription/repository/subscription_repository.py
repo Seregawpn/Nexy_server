@@ -550,7 +550,7 @@ class SubscriptionRepository:
         finally:
             conn.close()
     
-    def increment_usage(self, hardware_id: str, current_date) -> bool:
+    def increment_usage(self, hardware_id: str, current_date, allowed_statuses: Optional[List[str]] = None) -> bool:
         """
         Атомарно инкрементирует счетчики использования для limited_free_trial
         
@@ -560,9 +560,13 @@ class SubscriptionRepository:
             hardware_id: ID устройства
             current_date: Текущая дата (date объект)
         
+            allowed_statuses: Список статусов, для которых разрешен инкремент.
+                По умолчанию: ['limited_free_trial'].
+
         Returns:
             True если успешно, False иначе
         """
+        statuses = allowed_statuses or ['limited_free_trial']
         conn = self._get_connection()
         try:
             with conn.cursor() as cur:
@@ -574,8 +578,8 @@ class SubscriptionRepository:
                            usage_monthly_count = COALESCE(usage_monthly_count, 0) + 1,
                            usage_last_reset_date = %s,
                            updated_at = CURRENT_TIMESTAMP
-                       WHERE hardware_id = %s AND status = 'limited_free_trial'""",
-                    (current_date, hardware_id)
+                       WHERE hardware_id = %s AND status = ANY(%s)""",
+                    (current_date, hardware_id, statuses)
                 )
                 conn.commit()
                 return cur.rowcount > 0
@@ -586,70 +590,82 @@ class SubscriptionRepository:
         finally:
             conn.close()
     
-    def get_subscriptions_for_daily_reset(self, today) -> List[Dict]:
+    def get_subscriptions_for_daily_reset(self, today, limited_statuses: Optional[List[str]] = None) -> List[Dict]:
         """
         Получить подписки для ежедневного сброса квот
         
         Args:
             today: Сегодняшняя дата
         
+            limited_statuses: Статусы, для которых применяются квоты.
+                По умолчанию: ['limited_free_trial'].
+
         Returns:
             Список подписок, у которых usage_last_reset_date < today
         """
+        statuses = limited_statuses or ['limited_free_trial']
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """SELECT hardware_id, usage_last_reset_date FROM subscriptions
-                       WHERE status = 'limited_free_trial'
+                       WHERE status = ANY(%s)
                          AND (usage_last_reset_date IS NULL OR usage_last_reset_date < %s)""",
-                    (today,)
+                    (statuses, today)
                 )
                 return [dict(row) for row in cur.fetchall()]
         finally:
             conn.close()
     
-    def get_subscriptions_for_weekly_reset(self, week_start) -> List[Dict]:
+    def get_subscriptions_for_weekly_reset(self, week_start, limited_statuses: Optional[List[str]] = None) -> List[Dict]:
         """
         Получить подписки для еженедельного сброса квот
         
         Args:
             week_start: Начало недели (понедельник)
         
+            limited_statuses: Статусы, для которых применяются квоты.
+                По умолчанию: ['limited_free_trial'].
+
         Returns:
             Список подписок для сброса
         """
+        statuses = limited_statuses or ['limited_free_trial']
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """SELECT hardware_id, usage_last_reset_date FROM subscriptions
-                       WHERE status = 'limited_free_trial'
+                       WHERE status = ANY(%s)
                          AND (usage_last_reset_date IS NULL OR usage_last_reset_date < %s)""",
-                    (week_start,)
+                    (statuses, week_start)
                 )
                 return [dict(row) for row in cur.fetchall()]
         finally:
             conn.close()
     
-    def get_subscriptions_for_monthly_reset(self, month_start) -> List[Dict]:
+    def get_subscriptions_for_monthly_reset(self, month_start, limited_statuses: Optional[List[str]] = None) -> List[Dict]:
         """
         Получить подписки для ежемесячного сброса квот
         
         Args:
             month_start: Начало месяца
         
+            limited_statuses: Статусы, для которых применяются квоты.
+                По умолчанию: ['limited_free_trial'].
+
         Returns:
             Список подписок для сброса
         """
+        statuses = limited_statuses or ['limited_free_trial']
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """SELECT hardware_id, usage_last_reset_date FROM subscriptions
-                       WHERE status = 'limited_free_trial'
+                       WHERE status = ANY(%s)
                          AND (usage_last_reset_date IS NULL OR usage_last_reset_date < %s)""",
-                    (month_start,)
+                    (statuses, month_start)
                 )
                 return [dict(row) for row in cur.fetchall()]
         finally:

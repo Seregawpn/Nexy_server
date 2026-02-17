@@ -43,6 +43,7 @@ error() {
 CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$CLIENT_DIR/dist"
 SYNC_SCRIPT="$CLIENT_DIR/scripts/sync_release_inbox.sh"
+SERVER_INBOX_DIR="$CLIENT_DIR/../server/release_inbox"
 
 # ============================================================================
 # ЛОГИРОВАНИЕ ВСЕГО ПРОЦЕССА СБОРКИ
@@ -1829,6 +1830,19 @@ PY
         echo -e "${RED}❌ PERMISSIONS SMOKE: /Applications/$APP_NAME.app не найден${NC}"
         exit 1
     fi
+fi
+
+# Финальная очистка локальных финальных артефактов после успешного sync/install.
+# Можно отключить для legacy flow (release_build.sh), установив NEXY_KEEP_LOCAL_DIST_ARTIFACTS=1.
+if [ "${NEXY_KEEP_LOCAL_DIST_ARTIFACTS:-0}" != "1" ]; then
+    echo -e "${BLUE}🧹 Финальная очистка dist (артефакты уже в release_inbox) ...${NC}"
+    rm -f "$DIST_DIR/$APP_NAME.pkg" 2>/dev/null || true
+    rm -f "$DMG_PATH" 2>/dev/null || true
+    rm -f "$VERIFY_LOG" 2>/dev/null || true
+    echo "     ✓ dist/$APP_NAME.pkg удалён"
+    echo "     ✓ dist/$APP_NAME.dmg удалён"
+    echo "     ✓ dist/packaging_verification.log удалён"
+    echo "     ✓ Оставлены только файлы в: $SERVER_INBOX_DIR"
 fi
 
 # Записываем успешное завершение в лог

@@ -65,6 +65,10 @@ elif [[ "$MODE" == "local" ]]; then
     log "NEXY_SKIP_NOTARIZATION=1 (нотаризация отключена)"
 fi
 
+# release_build использует verify_packaging_artifacts.sh после build_final.sh,
+# поэтому сохраняем финальные артефакты в dist для этого legacy flow.
+export NEXY_KEEP_LOCAL_DIST_ARTIFACTS=1
+
 echo ""
 echo -e "${BLUE}📋 ШАГ 1: СБОРКА${NC}"
 echo ""
