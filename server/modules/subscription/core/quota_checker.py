@@ -51,6 +51,15 @@ class QuotaChecker:
         self.DAILY_LIMIT = self.config.quota_daily
         self.WEEKLY_LIMIT = self.config.quota_weekly
         self.MONTHLY_LIMIT = self.config.quota_monthly
+
+    def _limited_statuses_for_usage_tracking(self) -> list[str]:
+        """
+        Возвращает список статусов, которые должны учитывать квоты и usage counters.
+        """
+        statuses = ['limited_free_trial']
+        if not self.config.grandfathered_enabled:
+            statuses.append('grandfathered')
+        return statuses
     
     def check_quota(self, hardware_id: str) -> Dict:
         """
@@ -218,7 +227,11 @@ class QuotaChecker:
         current_date = date.today()
         # [FIX] Используем async/sync правильно. Репозиторий - синхронный (sqlite), но вызывается в thread executor или async wrapper?
         # В данном коде репозиторий синхронный.
-        success = self.repository.increment_usage(hardware_id, current_date)
+        success = self.repository.increment_usage(
+            hardware_id,
+            current_date,
+            allowed_statuses=self._limited_statuses_for_usage_tracking()
+        )
         
         if success:
             logger.debug(f"[QuotaChecker] Incremented usage for {hardware_id[:8]}...")
@@ -233,7 +246,10 @@ class QuotaChecker:
         у которых usage_last_reset_date не равен сегодняшней дате.
         """
         today = date.today()
-        subscriptions_to_reset = self.repository.get_subscriptions_for_daily_reset(today)
+        subscriptions_to_reset = self.repository.get_subscriptions_for_daily_reset(
+            today,
+            limited_statuses=self._limited_statuses_for_usage_tracking()
+        )
         
         reset_count = 0
         for sub in subscriptions_to_reset:
@@ -257,7 +273,10 @@ class QuotaChecker:
         today = date.today()
         week_start = today - timedelta(days=today.weekday()) # Понедельник
         
-        subscriptions_to_reset = self.repository.get_subscriptions_for_weekly_reset(week_start)
+        subscriptions_to_reset = self.repository.get_subscriptions_for_weekly_reset(
+            week_start,
+            limited_statuses=self._limited_statuses_for_usage_tracking()
+        )
         
         reset_count = 0
         for sub in subscriptions_to_reset:
@@ -280,7 +299,10 @@ class QuotaChecker:
         today = date.today()
         month_start = date(today.year, today.month, 1)
         
-        subscriptions_to_reset = self.repository.get_subscriptions_for_monthly_reset(month_start)
+        subscriptions_to_reset = self.repository.get_subscriptions_for_monthly_reset(
+            month_start,
+            limited_statuses=self._limited_statuses_for_usage_tracking()
+        )
         
         reset_count = 0
         for sub in subscriptions_to_reset:
