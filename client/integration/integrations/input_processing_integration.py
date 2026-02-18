@@ -113,9 +113,6 @@ class InputProcessingIntegration:
 
     async def _setup_event_handlers(self):
         await self.event_bus.subscribe(
-            "voice.recognition_completed", self._on_recognition_completed, EventPriority.HIGH
-        )
-        await self.event_bus.subscribe(
             "voice.recognition_failed", self._on_recognition_failed, EventPriority.HIGH
         )
         await self.event_bus.subscribe(
@@ -176,6 +173,19 @@ class InputProcessingIntegration:
             self._using_quartz = False
             self.ptt_available = False
             logger.error("INPUT: quartz backend requested but unavailable; PTT hotkey disabled")
+            return
+
+        if is_macos and not use_quartz and backend == "auto":
+            # Keep a single Accessibility owner-path via permissions pipeline.
+            # Pynput import may trigger AX checks on import and create a second
+            # implicit trigger-path outside the centralized owner.
+            self.keyboard_monitor = None
+            self._using_quartz = False
+            self.ptt_available = False
+            logger.error(
+                "INPUT: quartz unavailable in auto mode; pynput fallback disabled on macOS "
+                "to avoid duplicate Accessibility trigger-paths"
+            )
             return
 
         if not use_quartz:
@@ -1061,9 +1071,6 @@ class InputProcessingIntegration:
         if self._active_press_id == release_press_id:
             self._active_press_id = None
 
-    async def _on_recognition_completed(self, event):
-        return
-
     async def _on_recognition_failed(self, event):
         if self._state in {PTTState.RECORDING, PTTState.STOPPING}:
             return
@@ -1097,6 +1104,21 @@ class InputProcessingIntegration:
     async def _on_grpc_completed(self, event):
         sid = (event or {}).get("data", {}).get("session_id")
         if sid and sid in {self._active_grpc_session_id, self._get_active_session_id()}:
+            input_cycle_active = (
+                self._recording_started
+                or self._mic_active
+                or self._state in {PTTState.ARMED, PTTState.RECORDING, PTTState.STOPPING}
+            )
+            if input_cycle_active:
+                logger.debug(
+                    "INPUT: ignore grpc_completed during active input cycle "
+                    "(sid=%s, state=%s, recording_started=%s, mic_active=%s)",
+                    sid,
+                    self._state.value,
+                    self._recording_started,
+                    self._mic_active,
+                )
+                return
             if self._playback_active:
                 # Keep session context for a short playback tail window.
                 # This allows immediate interrupt/preempt to carry session_id.
@@ -1114,6 +1136,21 @@ class InputProcessingIntegration:
     async def _on_grpc_failed(self, event):
         sid = (event or {}).get("data", {}).get("session_id")
         if sid and sid in {self._active_grpc_session_id, self._get_active_session_id()}:
+            input_cycle_active = (
+                self._recording_started
+                or self._mic_active
+                or self._state in {PTTState.ARMED, PTTState.RECORDING, PTTState.STOPPING}
+            )
+            if input_cycle_active:
+                logger.warning(
+                    "INPUT: ignore grpc_failed during active input cycle "
+                    "(sid=%s, state=%s, recording_started=%s, mic_active=%s)",
+                    sid,
+                    self._state.value,
+                    self._recording_started,
+                    self._mic_active,
+                )
+                return
             await self._finalize_grpc_failed(sid)
 
     async def _on_playback_started(self, event):

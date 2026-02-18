@@ -20,7 +20,10 @@ from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus
 from integration.core.state_keys import StateKeys
 from integration.core.state_manager import ApplicationStateManager, AppMode
-from integration.integrations.input_processing_integration import InputProcessingIntegration
+from integration.integrations.input_processing_integration import (
+    InputProcessingIntegration,
+    PTTState,
+)
 from integration.integrations.speech_playback_integration import SpeechPlaybackIntegration
 from modules.speech_playback.core.state import PlaybackState
 
@@ -327,6 +330,42 @@ class TestInterruptPlayback:
         assert input_integration._playback_active is False
         assert input_integration._active_grpc_session_id is None
         assert state_manager.get_current_session_id() is None
+
+    @pytest.mark.asyncio
+    async def test_grpc_failed_is_ignored_during_active_recording_cycle(
+        self, input_integration, state_manager
+    ):
+        """grpc_failed не должен сбрасывать сессию/состояние пока запись активна."""
+        sid = "9f81f52b-6006-4f36-a8b5-03290e7fd9b2"
+        state_manager.set_mode(AppMode.LISTENING, session_id=sid)
+        input_integration._set_state(PTTState.RECORDING, "test_setup")
+        input_integration._recording_started = True
+        input_integration._mic_active = True
+
+        await input_integration._on_grpc_failed({"data": {"session_id": sid, "error": "empty_terminal"}})
+
+        assert input_integration._state == PTTState.RECORDING
+        assert input_integration._recording_started is True
+        assert input_integration._mic_active is True
+        assert str(state_manager.get_current_session_id()) == sid
+
+    @pytest.mark.asyncio
+    async def test_grpc_completed_is_ignored_during_active_recording_cycle(
+        self, input_integration, state_manager
+    ):
+        """grpc_completed не должен закрывать input-cycle пока запись активна."""
+        sid = "cf5eb7f5-76c0-4188-b55a-f60ddc1f5fac"
+        state_manager.set_mode(AppMode.LISTENING, session_id=sid)
+        input_integration._set_state(PTTState.RECORDING, "test_setup")
+        input_integration._recording_started = True
+        input_integration._mic_active = True
+
+        await input_integration._on_grpc_completed({"data": {"session_id": sid}})
+
+        assert input_integration._state == PTTState.RECORDING
+        assert input_integration._recording_started is True
+        assert input_integration._mic_active is True
+        assert str(state_manager.get_current_session_id()) == sid
 
     @pytest.mark.asyncio
     async def test_speech_playback_handles_interrupt_idempotently(

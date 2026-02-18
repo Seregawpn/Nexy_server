@@ -62,7 +62,12 @@ async def test_token_extraction():
     target_model = "gemini-3-flash-preview"
 
     print(f"Initializing adapter with model: {target_model}")
-    adapter = GeminiLLMAdapter(api_key="fake_key", model=target_model, usage_callback=callback_mock)
+    adapter = GeminiLLMAdapter(
+        api_key="fake_key",
+        fallback_api_key=None,
+        model=target_model,
+        usage_callback=callback_mock,
+    )
 
     # Mock internal _llm.ainvoke to return our fake response
     adapter._llm.ainvoke = AsyncMock(return_value=mock_response)
@@ -111,3 +116,31 @@ def test_service_unavailable_error_detection() -> None:
     assert GeminiLLMAdapter._is_service_unavailable_error("503 service unavailable")
     assert GeminiLLMAdapter._is_service_unavailable_error("high demand, try again later")
     assert not GeminiLLMAdapter._is_service_unavailable_error("429 resource_exhausted")
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_switches_to_fallback_key() -> None:
+    adapter = GeminiLLMAdapter(
+        api_key="primary_key",
+        fallback_api_key="fallback_key",
+        model="gemini-3-flash-preview",
+    )
+
+    primary_response = MagicMock()
+    primary_response.content = "unused"
+    primary_response.usage_metadata = {"input_tokens": 0, "output_tokens": 0}
+
+    fallback_response = MagicMock()
+    fallback_response.content = "ok-from-fallback"
+    fallback_response.usage_metadata = {"input_tokens": 1, "output_tokens": 1}
+
+    adapter._primary_llm = MagicMock()
+    adapter._primary_llm.ainvoke = AsyncMock(side_effect=Exception("429 RESOURCE_EXHAUSTED"))
+    adapter._fallback_llm = MagicMock()
+    adapter._fallback_llm.ainvoke = AsyncMock(return_value=fallback_response)
+
+    result = await adapter.ainvoke([{"role": "user", "content": "Hello"}])
+
+    assert adapter._fallback_active is True
+    assert adapter._fallback_llm.ainvoke.call_count == 1
+    assert getattr(result, "completion", None) == "ok-from-fallback"

@@ -30,6 +30,7 @@ class MessagesProber(BaseProber):
         super().__init__(config)
         self.permission = PermissionId.MESSAGES
         self._last_result: bool | None = None
+        self._trigger_attempted: bool = False
 
     async def trigger(self) -> None:
         """
@@ -38,6 +39,11 @@ class MessagesProber(BaseProber):
         Note: 'get name' doesn't require Automation permission.
         We need to access actual data (chats/services) to trigger TCC prompt.
         """
+        if self._trigger_attempted:
+            logger.debug("[MESSAGES_PROBER] Trigger already attempted, skipping duplicate call")
+            return
+        self._trigger_attempted = True
+
         logger.debug("[MESSAGES_PROBER] Triggering request...")
         try:
             # We run it in background so we don't block

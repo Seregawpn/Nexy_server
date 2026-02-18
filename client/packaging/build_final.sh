@@ -39,6 +39,47 @@ error() {
     exit 1
 }
 
+BUNDLE_ID="com.nexy.assistant"
+
+reset_macos_tcc_permissions() {
+    local bundle_id="${1:-$BUNDLE_ID}"
+    local ok_count=0
+    local total=0
+    local service
+    local -a services=(
+        "All"
+        "Microphone"
+        "Accessibility"
+        "ScreenCapture"
+        "ListenEvent"
+        "AddressBook"
+        "SystemPolicyAllFiles"
+        "SpeechRecognition"
+        "Camera"
+    )
+
+    echo "     • Bundle: $bundle_id"
+
+    for service in "${services[@]}"; do
+        total=$((total + 1))
+        if tccutil reset "$service" "$bundle_id" >/dev/null 2>&1; then
+            ok_count=$((ok_count + 1))
+        else
+            # Some services may be unavailable on specific macOS versions.
+            true
+        fi
+    done
+
+    # Extra pass via sudo to clear stale entries in contexts where elevated reset is needed.
+    if sudo tccutil reset All "$bundle_id" >/dev/null 2>&1; then
+        ok_count=$((ok_count + 1))
+    fi
+    total=$((total + 1))
+
+    killall tccd >/dev/null 2>&1 || true
+    echo "     ✓ TCC reset done: $ok_count/$total"
+}
+
 # Пути
 CLIENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$CLIENT_DIR/dist"
@@ -140,15 +181,7 @@ if [ "$SPEED_CHECK" -eq 0 ]; then
 
     # --- Сброс TCC разрешений (по умолчанию при каждой сборке) ---
     echo -e "${YELLOW}🔐 Сброс TCC разрешений...${NC}"
-    sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
-    # Явный сброс каждого сервиса (reset All иногда пропускает некоторые)
-    tccutil reset Microphone "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset Accessibility "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset ScreenCapture "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset ListenEvent "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset AddressBook "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset SystemPolicyAllFiles "com.nexy.assistant" 2>/dev/null || true
-    killall tccd 2>/dev/null || true
+    reset_macos_tcc_permissions "$BUNDLE_ID"
     echo "     ✓ TCC разрешения сброшены"
 
     # --- Удаление старого приложения (по умолчанию при каждой сборке) ---
@@ -191,14 +224,7 @@ if [ "$CLEAN_INSTALL" -eq 1 ]; then
     
     # 4. Сбрасываем TCC разрешения
     echo "  4. Сбрасываем TCC разрешения..."
-    sudo tccutil reset All "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset Microphone "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset Accessibility "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset ScreenCapture "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset ListenEvent "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset AddressBook "com.nexy.assistant" 2>/dev/null || true
-    tccutil reset SystemPolicyAllFiles "com.nexy.assistant" 2>/dev/null || true
-    killall tccd 2>/dev/null || true
+    reset_macos_tcc_permissions "$BUNDLE_ID"
     echo "     ✓ Разрешения сброшены"
     
     # 5. Удаляем флаги first-run (для чистого тестирования)
@@ -556,6 +582,27 @@ require_pre_sign() {
     fi
 }
 
+assert_dist_app_writable() {
+    local dist_app="$DIST_DIR/$APP_NAME.app"
+    local current_user
+    local owner
+    local group
+
+    mkdir -p "$DIST_DIR"
+
+    if [ ! -d "$dist_app" ]; then
+        return 0
+    fi
+
+    # Early hard-stop for stale root-owned artifacts from previous sudo runs.
+    if [ ! -w "$dist_app" ]; then
+        current_user="$(id -un)"
+        owner="$(stat -f "%Su" "$dist_app" 2>/dev/null || echo unknown)"
+        group="$(stat -f "%Sg" "$dist_app" 2>/dev/null || echo unknown)"
+        error "dist/$APP_NAME.app недоступен для записи (owner=$owner:$group). Выполните: sudo chown -R $current_user:staff \"$dist_app\" ИЛИ sudo rm -rf \"$dist_app\""
+    fi
+}
+
 record_bundle_state() {
     local label="$1"
     local app_path="$2"
@@ -664,8 +711,29 @@ clean_xattrs() {
 # Prevents concurrent submit race when DMG/PKG are notarized in parallel.
 with_notary_lock() {
     local lock_dir="/tmp/nexy_notarytool.lock"
+    local wait_sec=0
+    local max_wait_sec=900
+    local stale_lock_sec=1800
     while ! mkdir "$lock_dir" 2>/dev/null; do
+        local now_epoch
+        local lock_mtime
+        local lock_age
+        now_epoch=$(date +%s)
+        lock_mtime=$(stat -f "%m" "$lock_dir" 2>/dev/null || echo 0)
+        lock_age=$((now_epoch - lock_mtime))
+
+        if [ "$lock_age" -ge "$stale_lock_sec" ]; then
+            warn "notary lock stale (age=${lock_age}s) -> пытаемся удалить $lock_dir"
+            rmdir "$lock_dir" 2>/dev/null || true
+            rm -rf "$lock_dir" 2>/dev/null || true
+            continue
+        fi
+
+        if [ "$wait_sec" -ge "$max_wait_sec" ]; then
+            error "Timeout ожидания notary lock ($wait_sec sec): $lock_dir"
+        fi
         sleep 1
+        wait_sec=$((wait_sec + 1))
     done
     "$@"
     local rc=$?
@@ -917,6 +985,10 @@ if ! security find-identity -v -p basic | grep -q "Developer ID Installer"; then
 else
     INSTALLER_IDENTITY="Developer ID Installer: Sergiy Zasorin (5NKLL2CLB9)"
 fi
+
+# Предварительный guard: если dist/Nexy.app принадлежит root или недоступен,
+# падаем сразу с корректной инструкцией, а не на позднем шаге copy/ditto.
+assert_dist_app_writable
 
 # Шаг 1: Очистка и Universal 2 сборка
 CURRENT_STEP="Шаг 1: Очистка и Universal 2 сборка"
@@ -1356,18 +1428,17 @@ EOF
         "$DIST_DIR/$APP_NAME-distribution.pkg"
 
     log "[PKG] Подписываем PKG правильным сертификатом..."
-    productsign --sign "$INSTALLER_IDENTITY" $TIMESTAMP_FLAG \
-        "$DIST_DIR/$APP_NAME-distribution.pkg" \
-        "$DIST_DIR/$APP_NAME.pkg"
+    if ! productsign --sign "$INSTALLER_IDENTITY" $TIMESTAMP_FLAG "$DIST_DIR/$APP_NAME-distribution.pkg" "$DIST_DIR/$APP_NAME.pkg"; then
+        error "[PKG] productsign завершился ошибкой"
+    fi
 
     log "[PKG] Отправляем PKG на нотаризацию..."
-    with_notary_lock xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" \
-        --keychain-profile "nexy-notary" \
-        --apple-id "seregawpn@gmail.com" \
-        --wait
+    with_notary_lock xcrun notarytool submit "$DIST_DIR/$APP_NAME.pkg" --keychain-profile "nexy-notary" --apple-id "seregawpn@gmail.com" --wait
 
     log "[PKG] Прикрепляем нотаризационную печать к PKG..."
-    xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"
+    if ! xcrun stapler staple "$DIST_DIR/$APP_NAME.pkg"; then
+        error "[PKG] stapler staple завершился ошибкой"
+    fi
 }
 
 CURRENT_STEP="Шаги 6-9: Параллельная упаковка DMG/PKG"

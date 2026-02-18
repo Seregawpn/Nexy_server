@@ -24,13 +24,20 @@ class AccessibilityProber(BaseProber):
         super().__init__(config)
         self.permission = PermissionId.ACCESSIBILITY
         self._last_result: bool | None = None
+        self._trigger_attempted: bool = False
 
     async def trigger(self) -> None:
         """
-        No reliable dialog API for Accessibility.
-        Orchestrator opens Settings via deep-link.
-        We can try CGRequestPostEventAccess() but it's not guaranteed.
+        Best-effort trigger for Accessibility prompt path.
+
+        Keep this path for compatibility with current UX, but run it only once
+        per prober lifecycle to avoid duplicate TCC trigger noise.
         """
+        if self._trigger_attempted:
+            logger.debug("[AX_PROBER] Trigger already attempted, skipping duplicate call")
+            return
+
+        self._trigger_attempted = True
         try:
             from Quartz import CGRequestPostEventAccess  # type: ignore[reportMissingImports]
 

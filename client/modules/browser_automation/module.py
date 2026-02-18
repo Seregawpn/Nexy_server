@@ -19,6 +19,7 @@ from integration.utils.resource_path import get_user_data_dir
 from modules.browser_automation.constants import FEATURE_ID
 
 logger = logging.getLogger(__name__)
+RUNTIME_BROWSER_NAME = "Chrome Nexy"
 
 # Lazy import for browser-use (allows hot-detection without restart)
 _browser_use_module_cache = {}
@@ -77,6 +78,7 @@ class GeminiLLMAdapter:
     def __init__(
         self,
         api_key: str,
+        fallback_api_key: str | None,
         model: str,
         tts_callback: Any | None = None,
         usage_callback: Any | None = None,
@@ -84,9 +86,17 @@ class GeminiLLMAdapter:
     ):
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        self._llm = ChatGoogleGenerativeAI(model=model, api_key=api_key)
+        self._primary_llm = ChatGoogleGenerativeAI(model=model, api_key=api_key)
+        self._fallback_llm = None
+        fallback_key = (fallback_api_key or "").strip()
+        if fallback_key and fallback_key != api_key:
+            self._fallback_llm = ChatGoogleGenerativeAI(model=model, api_key=fallback_key)
+        # Backward-compat alias for tests/diagnostics.
+        self._llm = self._primary_llm
         self._model = model
         self._api_key = api_key
+        self._fallback_api_key = fallback_key
+        self._fallback_active = False
         self.tts_callback = tts_callback
         self.usage_callback = usage_callback
         self.llm_error_callback = llm_error_callback
@@ -188,10 +198,12 @@ class GeminiLLMAdapter:
             completion = None
             usage = None
 
+            llm_client = self._fallback_llm if (self._fallback_active and self._fallback_llm) else self._primary_llm
+
             # Use structured output if format is provided (this is the key fix!)
             if output_format is not None:
                 try:
-                    structured_llm = self._llm.with_structured_output(output_format)
+                    structured_llm = llm_client.with_structured_output(output_format)
                     completion = await structured_llm.ainvoke(lc_messages, **filtered_kwargs)
                     logger.debug(
                         f"[{FEATURE_ID}] Structured output parsed successfully: {type(completion).__name__} -> {completion}"
@@ -201,7 +213,7 @@ class GeminiLLMAdapter:
                         f"[{FEATURE_ID}] Structured output failed: {struct_err}, falling back to JSON parsing"
                     )
                     # Fallback: manual JSON parsing
-                    response = await self._llm.ainvoke(lc_messages, **filtered_kwargs)
+                    response = await llm_client.ainvoke(lc_messages, **filtered_kwargs)
                     content = response.content if hasattr(response, "content") else str(response)
 
                     # Ensure content is string for JSON finding
@@ -247,7 +259,7 @@ class GeminiLLMAdapter:
                             total_tokens=input_tokens + output_tokens,
                         )
             else:
-                response = await self._llm.ainvoke(lc_messages, **filtered_kwargs)
+                response = await llm_client.ainvoke(lc_messages, **filtered_kwargs)
                 completion = response.content if hasattr(response, "content") else str(response)
 
                 # Build usage info from response
@@ -274,6 +286,18 @@ class GeminiLLMAdapter:
             )
         except Exception as e:
             error_text = str(e)
+            if (
+                not self._fallback_active
+                and self._fallback_llm is not None
+                and self._is_rate_limited_error(error_text)
+            ):
+                self._fallback_active = True
+                logger.warning(
+                    f"[{FEATURE_ID}] Browser LLM rate-limited for model={self._model}; "
+                    "switching to fallback API key"
+                )
+                return await self.ainvoke(messages, output_format=output_format, **kwargs)
+
             if (
                 self.llm_error_callback
                 and not self._rate_limited_notified
@@ -446,12 +470,32 @@ class BrowserUseModule:
 
     def _resolve_playwright_browsers_path(self) -> str:
         app_support = get_user_data_dir()
+        return os.path.join(app_support, "chrome-nexy")
+
+    def _legacy_playwright_browsers_path(self) -> str:
+        app_support = get_user_data_dir()
         return os.path.join(app_support, "ms-playwright")
+
+    def _ensure_runtime_browser_path(self) -> str:
+        """Use a single runtime path and migrate legacy ms-playwright if present."""
+        target_path = self._resolve_playwright_browsers_path()
+        legacy_path = self._legacy_playwright_browsers_path()
+        try:
+            if os.path.isdir(legacy_path) and not os.path.exists(target_path):
+                os.rename(legacy_path, target_path)
+                logger.info(
+                    f"[{FEATURE_ID}] Migrated legacy browser runtime path: {legacy_path} -> {target_path}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"[{FEATURE_ID}] Failed to migrate browser runtime path to {RUNTIME_BROWSER_NAME}: {e}"
+            )
+        return target_path
 
     def _resolve_local_chromium_executable(self) -> str | None:
         """Resolve a valid local Chromium executable under PLAYWRIGHT_BROWSERS_PATH."""
         try:
-            browsers_path = self._resolve_playwright_browsers_path()
+            browsers_path = self._ensure_runtime_browser_path()
             if not os.path.isdir(browsers_path):
                 return None
 
@@ -505,7 +549,7 @@ class BrowserUseModule:
     def _is_local_chromium_ready(self) -> bool:
         """Return True only when local Chromium has marker + executable."""
         try:
-            browsers_path = self._resolve_playwright_browsers_path()
+            browsers_path = self._ensure_runtime_browser_path()
             if not os.path.isdir(browsers_path):
                 return False
             for name in os.listdir(browsers_path):
@@ -675,10 +719,10 @@ class BrowserUseModule:
             if BrowserUseModule._browser_installed:
                 return
 
-            logger.info(f"[{FEATURE_ID}] Checking browser installation (Chromium)...")
+            logger.info(f"[{FEATURE_ID}] Checking browser installation ({RUNTIME_BROWSER_NAME})...")
 
             # Ensure Playwright browsers path is writable and deterministic in .app
-            browsers_path = self._resolve_playwright_browsers_path()
+            browsers_path = self._ensure_runtime_browser_path()
             try:
                 os.makedirs(browsers_path, exist_ok=True)
             except Exception as e:
@@ -686,7 +730,7 @@ class BrowserUseModule:
                     f"[{FEATURE_ID}] Failed to ensure browsers path: {browsers_path} err={e}"
                 )
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
-            logger.info(f"[{FEATURE_ID}] PLAYWRIGHT_BROWSERS_PATH={browsers_path}")
+            logger.info(f"[{FEATURE_ID}] {RUNTIME_BROWSER_NAME} runtime path={browsers_path}")
 
             # Optimization: Check if chromium is already installed to avoid redundant 'install' calls
             if self._is_local_chromium_ready():
@@ -1292,6 +1336,7 @@ class BrowserUseModule:
 
         # Use secure API key loader (priority: env var > secure credentials > config fallback)
         api_key = unified_config.get_api_key("gemini_api_key")
+        fallback_api_key = unified_config.get_api_key("gemini_api_key_fallback")
         model_name = (
             os.environ.get("GEMINI_MODEL")
             or os.environ.get("BROWSER_USE_MODEL")
@@ -1310,6 +1355,7 @@ class BrowserUseModule:
         # Use adapter to make ChatGoogleGenerativeAI compatible with browser-use
         return GeminiLLMAdapter(
             api_key=api_key,
+            fallback_api_key=fallback_api_key,
             model=model_name,
             tts_callback=tts_callback,
             usage_callback=usage_callback,

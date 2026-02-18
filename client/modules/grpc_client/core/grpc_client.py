@@ -280,6 +280,9 @@ class GrpcClient:
         hardware_id: str,
         session_id: str,
         *,
+        phase: str | None = None,
+        chunk_seq: int | None = None,
+        chunk_text: str | None = None,
         timeout: float | None = None,
     ) -> AsyncGenerator[Any, None]:
         """Стриминг аудио и текста на сервер
@@ -333,6 +336,13 @@ class GrpcClient:
                 screen_height=screen_height,
                 hardware_id=hardware_id,
                 session_id=session_id,  # КРИТИЧНО: передаем session_id из ApplicationStateManager
+                phase=getattr(
+                    streaming_pb2,
+                    phase or "REQUEST_PHASE_COMMIT",
+                    streaming_pb2.REQUEST_PHASE_COMMIT,
+                ),
+                chunk_seq=int(chunk_seq or 0),
+                chunk_text=(chunk_text or ""),
             )
 
             # Выполняем стриминг

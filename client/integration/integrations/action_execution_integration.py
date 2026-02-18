@@ -18,6 +18,7 @@ from integration.core.base_integration import BaseIntegration
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus, EventPriority
 from integration.core.state_manager import ApplicationStateManager
+from integration.utils.resource_path import get_user_data_dir
 from modules.action_errors.messages import resolver as action_error_resolver
 from modules.mcp_action import McpActionConfig, McpActionExecutor
 
@@ -31,6 +32,8 @@ from modules.messages import (
     resolve_contact,
     send_message_to_contact,
 )
+from modules.permissions.v2.ledger import LedgerStore
+from modules.permissions.v2.types import PermissionId, StepState
 
 FEATURE_ID = "F-2025-016-mcp-app-opening-integration"
 
@@ -1559,6 +1562,17 @@ class ActionExecutionIntegration(BaseIntegration):
         contact_id = args.get("contact")
         limit = int(args.get("limit", 10))
 
+        # Single owner gate: Messages DB access is allowed only after FDA PASS in Permission V2 ledger.
+        # This prevents repeated protected-file probes that produce kernel deny noise.
+        if not self._is_full_disk_access_granted():
+            return {
+                "success": False,
+                "message": (
+                    "Full Disk Access is not granted yet. "
+                    "Please allow Nexy in Privacy & Security > Full Disk Access."
+                ),
+            }
+
         # Подключаемся к БД
         conn = connect_db()
         if not conn:
@@ -1623,6 +1637,21 @@ class ActionExecutionIntegration(BaseIntegration):
             }
         finally:
             conn.close()
+
+    def _is_full_disk_access_granted(self) -> bool:
+        """Check FDA state from Permission V2 ledger (single source of truth)."""
+        try:
+            ledger_path = get_user_data_dir() / "permission_ledger.json"
+            ledger = LedgerStore(str(ledger_path)).load()
+            if not ledger:
+                # Preserve legacy behavior if ledger is unavailable.
+                return True
+            entry = ledger.steps.get(PermissionId.FULL_DISK_ACCESS)
+            return bool(entry and entry.state == StepState.PASS_)
+        except Exception as exc:
+            logger.warning("[MESSAGES] Failed to check FDA ledger state: %s", exc)
+            # Fail-open to avoid blocking due to transient ledger read issues.
+            return True
 
     def _handle_send_message(self, args: dict[str, Any]) -> dict[str, Any]:
         """Обработчик send_message (синхронный)."""

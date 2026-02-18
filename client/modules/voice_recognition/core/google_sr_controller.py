@@ -67,8 +67,11 @@ class GoogleSRController:
         self._pending_recognition_lock = threading.Lock()
         self._pending_recognitions: int = 0
         # Upper bound for one listen() call in continuous mode when phrase_limit is unset.
-        # Keeps stop latency predictable for PTT release.
-        self._continuous_chunk_limit_sec = 1.0
+        # With pause_threshold=0.8s, phrases naturally segment at speech pauses.
+        # 3.0s gives enough room for full sentences while keeping latency low.
+        # Previous 1.0s was too short — pause_threshold never triggered, causing
+        # words to be hard-cut mid-speech and Google failing with "unknown_value".
+        self._continuous_chunk_limit_sec = 3.0
 
         # Device monitoring
         self._route_monitor = AudioRouteMonitor(on_device_change=self._on_device_change)

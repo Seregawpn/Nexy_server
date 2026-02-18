@@ -4,3 +4,4 @@ pytest
 jsonschema
 pyyaml
 basedpyright
+pytest-asyncio

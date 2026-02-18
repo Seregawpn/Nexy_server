@@ -223,7 +223,7 @@ class TrayController:
             if payment_config.get("enabled", True):
                 menu_items.append(
                     TrayMenuItem(
-                        title="Manage Subscription...", action=self._on_manage_subscription_clicked
+                        title="Subscription & Billing...", action=self._on_manage_subscription_clicked
                     )
                 )
 
@@ -253,27 +253,27 @@ class TrayController:
 
     def _on_icon_clicked(self, sender):
         """Обработчик клика по иконке"""
-        asyncio.create_task(self._publish_event("icon_clicked", {}))
+        self._dispatch_event_threadsafe("icon_clicked", {})
 
     def _on_icon_right_clicked(self, sender):
         """Обработчик правого клика по иконке"""
-        asyncio.create_task(self._publish_event("icon_right_clicked", {}))
+        self._dispatch_event_threadsafe("icon_right_clicked", {})
 
     def _on_settings_clicked(self, sender):
         """Обработчик клика по настройкам"""
-        asyncio.create_task(self._publish_event("settings_clicked", {}))
+        self._dispatch_event_threadsafe("settings_clicked", {})
 
     def _on_check_updates_clicked(self, sender):
         """Обработчик клика по проверке обновлений"""
-        asyncio.create_task(self._publish_event("updater.check_manual", {}))
+        self._dispatch_event_threadsafe("updater.check_manual", {})
 
     def _on_manage_subscription_clicked(self, sender):
-        """Обработчик клика по управлению подпиской"""
-        asyncio.create_task(self._publish_event("ui.action.manage_subscription", {}))
+        """Обработчик клика по подписке/биллингу (единый entrypoint)."""
+        self._dispatch_event_threadsafe("ui.action.buy_subscription", {})
 
     def _on_about_clicked(self, sender):
         """Обработчик клика по 'О программе'"""
-        asyncio.create_task(self._publish_event("about_clicked", {}))
+        self._dispatch_event_threadsafe("about_clicked", {})
 
     def _on_quit_clicked(self, sender):
         """Обработчик клика по выходу"""
@@ -322,6 +322,25 @@ class TrayController:
         except RuntimeError as exc:
             logger.warning(
                 "⚠️ quit_clicked event was not dispatched (no running loop): %s",
+                exc,
+            )
+
+    def _dispatch_event_threadsafe(self, event_type: str, data: dict[str, Any]) -> None:
+        """Доставляет событие в owner-loop из UI callback потока."""
+        if self._dispatch_loop and self._dispatch_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self._publish_event(event_type, data),
+                self._dispatch_loop,
+            )
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._publish_event(event_type, data))
+        except RuntimeError as exc:
+            logger.warning(
+                "⚠️ %s event was not dispatched (no running loop): %s",
+                event_type,
                 exc,
             )
 

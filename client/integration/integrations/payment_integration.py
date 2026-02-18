@@ -14,6 +14,7 @@ Feature ID: F-2025-017-stripe-payment
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any
 
@@ -127,8 +128,11 @@ class PaymentIntegration(BaseIntegration):
         Обработка запроса на открытие управления подпиской (из UI/Tray).
         EventBus: ui.action.manage_subscription
         """
-        logger.info(f"[{self.feature_id}] Manage subscription requested via UI")
-        await self.open_manage_subscription()
+        session_id = payload.get("session_id") if payload else None
+        logger.info(
+            f"[{self.feature_id}] Manage subscription requested via UI (session_id={session_id})"
+        )
+        await self.open_subscription_entrypoint(session_id=session_id)
 
     async def _on_status_updated(self, payload: dict[str, Any]):
         """
@@ -316,10 +320,7 @@ class PaymentIntegration(BaseIntegration):
         if not await self._ensure_hardware_id():
             return None
 
-        from config.unified_config_loader import get_grpc_host
-
-        host = get_grpc_host()
-        api_url = f"http://{host}:8080/api/subscription/status"
+        api_url = self._build_billing_api_url("/api/subscription/status")
         timeout = aiohttp.ClientTimeout(total=10)
 
         try:
@@ -335,11 +336,45 @@ class PaymentIntegration(BaseIntegration):
             logger.warning(f"[{self.feature_id}] Status check failed before billing route: {e}")
             return None
 
+    def _resolve_billing_base_url(self) -> str:
+        """
+        Resolve billing HTTP base URL from active gRPC profile.
+        Single source: unified_config (+ env override NEXY_GRPC_SERVER).
+        """
+        from config.unified_config_loader import UnifiedConfigLoader
+
+        loader = UnifiedConfigLoader.get_instance()
+        raw = loader._load_config()
+
+        server_name = (
+            os.environ.get("NEXY_GRPC_SERVER")
+            or (raw.get("integrations", {}).get("grpc_client", {}).get("server"))
+            or "local"
+        )
+        net = loader.get_network_config()
+        srv = net.grpc_servers.get(server_name) or net.grpc_servers.get("local")
+        if not srv:
+            return "http://127.0.0.1:8080"
+
+        # Local dev always uses internal HTTP server.
+        if server_name == "local":
+            return f"http://{srv.host}:8080"
+
+        server_cfg = raw.get("server", {})
+        prod_http_port = int(server_cfg.get("production_http_port", 443))
+        scheme = "https" if srv.ssl else "http"
+        if (scheme == "https" and prod_http_port == 443) or (scheme == "http" and prod_http_port == 80):
+            return f"{scheme}://{srv.host}"
+        return f"{scheme}://{srv.host}:{prod_http_port}"
+
+    def _build_billing_api_url(self, path: str) -> str:
+        base_url = self._resolve_billing_base_url().rstrip("/")
+        normalized_path = path if path.startswith("/") else f"/{path}"
+        return f"{base_url}{normalized_path}"
+
     def _should_open_manage_portal(self, status_payload: dict[str, Any] | None) -> bool:
         """
-        Decide billing route:
-        - manage portal for known Stripe-linked users
-        - checkout for new users
+        Fallback routing for old server versions without recommended_billing_route.
         """
         if not status_payload:
             return False
@@ -356,20 +391,29 @@ class PaymentIntegration(BaseIntegration):
     async def open_subscription_entrypoint(self, session_id: str | None = None):
         """
         Unified billing entrypoint:
-        - existing Stripe user -> Customer Portal
-        - new user -> Checkout
+        - primary: server-owned recommended_billing_route
+        - fallback: local heuristic for backward compatibility
         """
         status_payload = await self._fetch_subscription_status()
-        route_manage = self._should_open_manage_portal(status_payload)
+        recommended_route = (
+            (status_payload or {}).get("recommended_billing_route", "")
+        )
+        recommended_route = str(recommended_route).strip().lower()
+
+        if recommended_route in {"manage", "checkout"}:
+            route_manage = recommended_route == "manage"
+        else:
+            route_manage = self._should_open_manage_portal(status_payload)
+
         if route_manage:
             logger.info(
-                f"[{self.feature_id}] Billing route=manage (status={status_payload.get('status') if status_payload else None}, stripe_status={status_payload.get('stripe_status') if status_payload else None})"
+                f"[{self.feature_id}] Billing route=manage (recommended={recommended_route or 'fallback'}, status={status_payload.get('status') if status_payload else None}, stripe_status={status_payload.get('stripe_status') if status_payload else None})"
             )
             await self.open_manage_subscription()
             return
 
         logger.info(
-            f"[{self.feature_id}] Billing route=checkout (status={status_payload.get('status') if status_payload else None}, stripe_status={status_payload.get('stripe_status') if status_payload else None})"
+            f"[{self.feature_id}] Billing route=checkout (recommended={recommended_route or 'fallback'}, status={status_payload.get('status') if status_payload else None}, stripe_status={status_payload.get('stripe_status') if status_payload else None})"
         )
         await self.open_buy_subscription(session_id=session_id)
 
@@ -455,12 +499,8 @@ class PaymentIntegration(BaseIntegration):
 
             logger.info(f"[{self.feature_id}] Hardware ID ready: {self._hardware_id[:8]}...")
 
-            # Определяем URL API
-            from config.unified_config_loader import get_grpc_host
-
-            host = get_grpc_host()
-            logger.info(f"[{self.feature_id}] Resolved gRPC host: '{host}' (from unified_config)")
-            api_url = f"http://{host}:8080/api/subscription/checkout"
+            # Определяем URL API из активного серверного профиля
+            api_url = self._build_billing_api_url("/api/subscription/checkout")
 
             logger.info(f"[{self.feature_id}] Requesting checkout session from {api_url}")
 
@@ -544,12 +584,8 @@ class PaymentIntegration(BaseIntegration):
                 await self.event_bus.publish("hardware.id_request", {"wait_ready": False})
                 return
 
-            # Определяем URL API
-            from config.unified_config_loader import get_grpc_host
-
-            host = get_grpc_host()
-            # Предполагаем порт 8080 по умолчанию
-            api_url = f"http://{host}:8080/api/subscription/portal"
+            # Определяем URL API из активного серверного профиля
+            api_url = self._build_billing_api_url("/api/subscription/portal")
 
             logger.info(
                 f"[{self.feature_id}] Requesting portal session from {api_url} for {self._hardware_id}"
@@ -627,10 +663,7 @@ class PaymentIntegration(BaseIntegration):
         """
         logger.info(f"[{self.feature_id}] Starting subscription status polling...")
 
-        from config.unified_config_loader import get_grpc_host
-
-        host = get_grpc_host()
-        api_url = f"http://{host}:8080/api/subscription/status"
+        api_url = self._build_billing_api_url("/api/subscription/status")
 
         attempts = 60  # 5 minutes
 

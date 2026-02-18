@@ -11,6 +11,7 @@ import asyncio
 import base64
 import concurrent.futures
 from dataclasses import dataclass
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -177,6 +178,12 @@ class GrpcClientIntegration:
 
         # Агрегатор данных по session_id
         self._sessions: dict[Any, dict[str, Any]] = {}
+        # Collect debounce state per session_id:
+        # {
+        #   sid: {"task": Task|Future|None, "chunk_text": str|None, "chunk_seq": int, "include_screenshot": bool}
+        # }
+        self._collect_pending: dict[Any, dict[str, Any]] = {}
+        self._collect_debounce_sec: float = 0.12
         # Активные отправки: session_id -> asyncio.Task или concurrent.futures.Future (от run_coroutine_threadsafe)
         self._inflight: dict[Any, Union[asyncio.Task[Any], concurrent.futures.Future[Any]]] = {}
         # Отметки о том, что отмена уже уведомлена (чтобы не дублировать события)
@@ -381,6 +388,7 @@ class GrpcClientIntegration:
             for sid, task in list(self._inflight.items()):
                 task.cancel()
             self._inflight.clear()
+            self._cancel_collect_pending_all()
             # Чистим клиент
             if self._client:
                 await self._client.cleanup()
@@ -398,8 +406,31 @@ class GrpcClientIntegration:
             text = data.get("text")
             if not sid or not text:
                 return
+
+            is_interim = bool(data.get("interim", False))
             sess = self._sessions.setdefault(sid, {})
+            # During hold we keep refreshing text buffer, but gRPC send is allowed
+            # only after terminal recognition (interim=False).
+            if is_interim:
+                if sess.get("dispatched"):
+                    logger.debug(
+                        "Skip interim update for already dispatched session=%s", sid
+                    )
+                    return
+                sess["text"] = text
+                sess["ready_to_send"] = False
+                last_collect_text = sess.get("last_collect_text")
+                if text != last_collect_text:
+                    chunk_seq = int(sess.get("collect_seq", 0)) + 1
+                    sess["collect_seq"] = chunk_seq
+                    sess["last_collect_text"] = text
+                    self._schedule_collect_send(sid, chunk_text=text, chunk_seq=chunk_seq)
+                return
+
+            # Terminal recognition for this session.
             sess["text"] = text
+            sess["ready_to_send"] = True
+            self._cancel_collect_pending(sid)
             await self._maybe_send(sid)
         except Exception as e:
             await self._handle_error(e, where="grpc.on_voice_completed", severity="warning")
@@ -422,6 +453,14 @@ class GrpcClientIntegration:
                 logger.debug(
                     f"✅ Screenshot Base64 получен напрямую из события (формат: {data.get('format', 'unknown')})"
                 )
+                screenshot_hash = hashlib.sha1(base64_data.encode("ascii")).hexdigest()
+                if sess.get("collect_screenshot_hash") != screenshot_hash and not sess.get(
+                    "dispatched", False
+                ):
+                    sess["collect_screenshot_hash"] = screenshot_hash
+                    chunk_seq = int(sess.get("collect_seq", 0)) + 1
+                    sess["collect_seq"] = chunk_seq
+                    self._schedule_collect_send(sid, chunk_seq=chunk_seq, include_screenshot=True)
 
             # Fallback: путь к файлу (для обратной совместимости)
             if path:
@@ -503,6 +542,7 @@ class GrpcClientIntegration:
 
             # Очищаем также накопленные сессии, чтобы старые данные не использовались
             old_sessions = list(self._sessions.keys())
+            self._cancel_collect_pending_all()
             self._sessions.clear()
 
             if cancelled_count > 0:
@@ -538,6 +578,7 @@ class GrpcClientIntegration:
             if not target_sid:
                 logger.info("grpc.request_cancel: no inflight request to cancel (noop)")
                 return
+            self._cancel_collect_pending(target_sid)
             task_or_future = self._inflight.pop(target_sid, None)
             # Поддерживаем как Task, так и Future (от run_coroutine_threadsafe)
             if task_or_future and not (hasattr(task_or_future, "done") and task_or_future.done()):
@@ -663,14 +704,189 @@ class GrpcClientIntegration:
                 logger.error(f"Failed to report usage: {e}")
 
     # ---------------- Core logic ----------------
+    def _cancel_collect_pending(self, session_id: str) -> None:
+        pending = self._collect_pending.pop(session_id, None)
+        if not pending:
+            return
+        task = pending.get("task")
+        if task and hasattr(task, "cancel"):
+            task.cancel()
+
+    def _cancel_collect_pending_all(self) -> None:
+        for sid in list(self._collect_pending.keys()):
+            self._cancel_collect_pending(sid)
+
+    def _schedule_collect_send(
+        self,
+        session_id: str,
+        *,
+        chunk_text: str | None = None,
+        chunk_seq: int = 0,
+        include_screenshot: bool = False,
+    ) -> None:
+        entry = self._collect_pending.setdefault(
+            session_id,
+            {"task": None, "chunk_text": None, "chunk_seq": 0, "include_screenshot": False},
+        )
+
+        # Merge payload: keep newest chunk_seq/text and preserve screenshot marker.
+        if chunk_seq >= int(entry.get("chunk_seq", 0)):
+            entry["chunk_seq"] = chunk_seq
+            if chunk_text is not None:
+                entry["chunk_text"] = chunk_text
+        entry["include_screenshot"] = bool(entry.get("include_screenshot")) or include_screenshot
+
+        # Screenshot collect should go immediately; text collect is debounced.
+        delay_sec = 0.0 if include_screenshot else self._collect_debounce_sec
+        task = entry.get("task")
+        if task and not getattr(task, "done", lambda: False)():
+            return
+
+        async def _runner() -> None:
+            try:
+                if delay_sec > 0:
+                    await asyncio.sleep(delay_sec)
+                latest = self._collect_pending.get(session_id) or {}
+                await self._send_collect(
+                    session_id=session_id,
+                    chunk_text=latest.get("chunk_text"),
+                    chunk_seq=int(latest.get("chunk_seq", 0)),
+                    include_screenshot=bool(latest.get("include_screenshot", False)),
+                )
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                await self._handle_error(e, where="grpc.send_collect", severity="warning")
+            finally:
+                latest = self._collect_pending.get(session_id)
+                if latest and latest.get("task") is task_obj:
+                    self._collect_pending.pop(session_id, None)
+
+        task_obj: Any = None
+        try:
+            current_loop = asyncio.get_running_loop()
+            if self._grpc_loop and self._grpc_loop != current_loop:
+                task_obj = asyncio.run_coroutine_threadsafe(_runner(), self._grpc_loop)
+            else:
+                task_obj = asyncio.create_task(_runner())
+        except RuntimeError:
+            if self._grpc_loop:
+                task_obj = asyncio.run_coroutine_threadsafe(_runner(), self._grpc_loop)
+        entry["task"] = task_obj
+
+    async def _send_collect(
+        self,
+        session_id: str,
+        *,
+        chunk_text: str | None = None,
+        chunk_seq: int = 0,
+        include_screenshot: bool = False,
+    ) -> None:
+        if session_id in self._cancel_notified:
+            return
+        sess = self._sessions.get(session_id) or {}
+        if sess.get("dispatched", False):
+            return
+        if not chunk_text and not include_screenshot:
+            return
+
+        # КРИТИЧНО: gRPC операции в _grpc_loop
+        current_loop = asyncio.get_running_loop()
+        if self._grpc_loop and self._grpc_loop != current_loop:
+            await asyncio.wrap_future(
+                asyncio.run_coroutine_threadsafe(
+                    self._send_collect_in_grpc_loop(
+                        session_id=session_id,
+                        chunk_text=chunk_text,
+                        chunk_seq=chunk_seq,
+                        include_screenshot=include_screenshot,
+                    ),
+                    self._grpc_loop,
+                )
+            )
+            return
+
+        await self._send_collect_in_grpc_loop(
+            session_id=session_id,
+            chunk_text=chunk_text,
+            chunk_seq=chunk_seq,
+            include_screenshot=include_screenshot,
+        )
+
+    async def _send_collect_in_grpc_loop(
+        self,
+        *,
+        session_id: str,
+        chunk_text: str | None,
+        chunk_seq: int,
+        include_screenshot: bool,
+    ) -> None:
+        sess = self._sessions.get(session_id) or {}
+        if not sess or sess.get("dispatched", False):
+            return
+
+        hwid = await self._await_hardware_id(timeout_ms=1000)
+        if not hwid:
+            return
+
+        if self._client is None:
+            return
+
+        connected = await self._ensure_connected()
+        if not connected:
+            return
+
+        screenshot_b64 = ""
+        if include_screenshot:
+            screenshot_b64 = sess.get("screenshot_base64") or ""
+
+        logger.debug(
+            "→ StreamAudio collect send: session=%s seq=%s text_len=%s has_screenshot=%s",
+            session_id,
+            chunk_seq,
+            len(chunk_text or ""),
+            bool(screenshot_b64),
+        )
+
+        async for resp in self._client.stream_audio(
+            prompt="",
+            screenshot_base64=screenshot_b64,
+            screen_info={"width": sess.get("width"), "height": sess.get("height")},
+            hardware_id=hwid,
+            session_id=str(session_id),
+            phase="REQUEST_PHASE_COLLECT",
+            chunk_seq=chunk_seq,
+            chunk_text=chunk_text or "",
+            timeout=3.0,
+        ):
+            # COLLECT path ожидает только terminal ack/error; payload игнорируем.
+            which_oneof = resp.WhichOneof("content") if hasattr(resp, "WhichOneof") else None
+            if which_oneof == "error_message":
+                logger.warning(
+                    "Collect rejected by server: session=%s seq=%s error=%s",
+                    session_id,
+                    chunk_seq,
+                    resp.error_message,
+                )
+            if which_oneof in ("end_message", "error_message"):
+                break
+
     async def _maybe_send(self, session_id):
-        """Если есть текст — запускаем отправку; скриншот ждём коротко."""
+        """Запускаем отправку только после terminal STT (ready_to_send=True)."""
         sess = self._sessions.get(session_id) or {}
         if not sess.get("text"):
             return
 
+        # Commit gate: interim STT updates must not trigger request start.
+        if not sess.get("ready_to_send", False):
+            return
+
         # Уже отправляем? — не дублируем
         if session_id in self._inflight:
+            return
+
+        # Exactly one dispatch per session_id.
+        if sess.get("dispatched", False):
             return
 
         # Сеть: если локальный status говорит "offline", пробуем single-flight reconnect,
@@ -726,6 +942,7 @@ class GrpcClientIntegration:
             # Мы уже в правильном loop, создаем обычную Task
             task = asyncio.create_task(_delayed_send())
 
+        sess["dispatched"] = True
         self._cancel_notified.discard(session_id)
         self._inflight[session_id] = task
 
@@ -957,6 +1174,7 @@ class GrpcClientIntegration:
                 screen_info={"width": width, "height": height},
                 hardware_id=hwid,
                 session_id=session_id_str,
+                phase="REQUEST_PHASE_COMMIT",
                 timeout=rpc_timeout,
             ):
                 # Cancel ownership is centralized in this integration.
@@ -1032,6 +1250,8 @@ class GrpcClientIntegration:
                             session_id,
                             legacy_action.get("command", "unknown"),
                         )
+                        # LEGACY_EXPIRY: v1.6.2 (2026-03-31) — remove text_chunk_legacy bridge
+                        # after server ActionMessage rollout is fully enforced.
                         await self.event_bus.publish(
                             "grpc.response.action",
                             {
@@ -1256,11 +1476,37 @@ class GrpcClientIntegration:
 
                 elif which_oneof == "end_message":
                     end_msg = resp.end_message
+                    has_terminal_payload = (
+                        text_chunk_count > 0
+                        or non_silent_audio_chunk_count > 0
+                        or action_chunk_count > 0
+                    )
+                    if not has_terminal_payload:
+                        exit_reason = "empty_terminal"
+                        logger.error(
+                            "❌ [E_EMPTY_TERMINAL] session=%s end_message=%r "
+                            "(text=%s,audio=%s,actions=%s) - treating as failure",
+                            session_id,
+                            end_msg,
+                            text_chunk_count,
+                            non_silent_audio_chunk_count,
+                            action_chunk_count,
+                        )
+                        await self.event_bus.publish(
+                            "grpc.request_failed",
+                            {
+                                "session_id": session_id,
+                                "error": "empty_terminal",
+                                "code": "E_EMPTY_TERMINAL",
+                                "end_message": end_msg,
+                            },
+                        )
+                        got_terminal = True
+                        break
+
                     exit_reason = "end_message"
                     logger.info(f"gRPC received end_message: '{end_msg}' for session {session_id}")
-                    await self.event_bus.publish(
-                        "grpc.request_completed", {"session_id": session_id}
-                    )
+                    await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
                     got_terminal = True
                     break
 
@@ -1312,11 +1558,22 @@ class GrpcClientIntegration:
                 if final_text.strip():
                     await self._play_server_tts(final_text, session_id)
 
-            # Если стрим завершился БЕЗ явного end_message/error — завершаем запрос сами,
-            # чтобы UI не зависал в состоянии PROCESSING.
+            # Если стрим завершился БЕЗ явного end_message/error — считаем это протокольной
+            # ошибкой terminal-события и явно завершаем как failed (без ложного success).
             if not got_terminal:
                 exit_reason = "stream_closed_no_terminal"
-                await self.event_bus.publish("grpc.request_completed", {"session_id": session_id})
+                logger.error(
+                    "❌ [E_STREAM_NO_TERMINAL] session=%s stream closed without terminal message",
+                    session_id,
+                )
+                await self.event_bus.publish(
+                    "grpc.request_failed",
+                    {
+                        "session_id": session_id,
+                        "error": "stream_closed_no_terminal",
+                        "code": "E_STREAM_NO_TERMINAL",
+                    },
+                )
 
             # Логируем exit-reason и summary
             logger.info(

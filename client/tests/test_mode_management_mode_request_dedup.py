@@ -134,3 +134,37 @@ async def test_processing_terminal_without_session_id_ignored():
     await integration._on_processing_terminal({"data": {"reason": "completed"}})
 
     assert integration._apply_mode.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_playback_finished_does_not_finalize_without_deferred_terminal():
+    sid = "55555555-5555-4555-8555-555555555555"
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    state_manager.attach_event_bus(event_bus)
+    integration = ModeManagementIntegration(event_bus, state_manager, ErrorHandler())
+    await integration.initialize()
+
+    integration._try_finalize_sleep = AsyncMock(return_value=False)  # type: ignore[method-assign]
+    integration._deferred_sleep_sessions.clear()
+
+    await integration._on_playback_finished({"data": {"session_id": sid}})
+
+    assert integration._try_finalize_sleep.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_playback_finished_finalizes_when_deferred_terminal_exists():
+    sid = "66666666-6666-4666-8666-666666666666"
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    state_manager.attach_event_bus(event_bus)
+    integration = ModeManagementIntegration(event_bus, state_manager, ErrorHandler())
+    await integration.initialize()
+
+    integration._try_finalize_sleep = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    integration._deferred_sleep_sessions.add(sid)
+
+    await integration._on_playback_finished({"data": {"session_id": sid}})
+
+    integration._try_finalize_sleep.assert_awaited_once_with(sid, source="playback.finished")

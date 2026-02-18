@@ -91,6 +91,9 @@ class TestMicrophoneActivation:
         input_integration._recording_started = False
         input_integration._mic_active = False
         input_integration._current_session_id = None
+        # _handle_long_press now treats non-ARMED as stale tail; emulate real press->long_press lifecycle.
+        input_integration._set_state(PTTState.ARMED, "test_setup")
+        input_integration._active_press_id = "test_press_123"
 
         # Собираем опубликованные события
         published_events = []

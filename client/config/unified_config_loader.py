@@ -591,10 +591,27 @@ class UnifiedConfigLoader:
         return config["stt"]
 
     def get_stt_language(self, default: str = "en-US") -> str:
-        """Получает язык распознавания речи (централизованно)"""
+        """Получает язык распознавания речи (централизованно, single owner: stt.language)."""
         try:
-            stt = self.get_stt_config()
-            return stt.get("language", default) or default
+            config = self._load_config()
+            stt = config.get("stt", {})
+            stt_lang = stt.get("language")
+            if stt_lang:
+                # Legacy compatibility diagnostic: keep one source of truth in stt.language.
+                legacy_voice_lang = (
+                    config.get("voice_recognition", {}).get("language")
+                    if isinstance(config.get("voice_recognition"), dict)
+                    else None
+                )
+                if legacy_voice_lang and legacy_voice_lang != stt_lang:
+                    logger.warning(
+                        "CONFIG_DIAG: language mismatch (stt.language=%s, "
+                        "voice_recognition.language=%s). Using stt.language as source of truth.",
+                        stt_lang,
+                        legacy_voice_lang,
+                    )
+                return stt_lang
+            return default
         except Exception:
             return default
 

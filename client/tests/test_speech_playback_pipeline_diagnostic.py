@@ -151,3 +151,34 @@ async def test_diagnostic_pipeline_grpc_start_complete_cancel_paths(speech, even
     assert cancelled_events[0][1].get("session_id") == sid2
     assert speech._terminal_event_by_session.get(sid2) == "playback.cancelled"
     assert sid2 in speech._finalized_sessions
+
+
+@pytest.mark.asyncio
+async def test_sessionless_cancel_does_not_cancel_foreign_silence_finalize(speech):
+    active_sid = "8f4dd45d-57f6-4cb4-9aca-40f540f9a044"
+    foreign_sid = "f67bc503-9aa0-44be-8aa4-f6f1f82311f9"
+
+    async def sleeper():
+        await asyncio.sleep(30)
+
+    active_task = asyncio.create_task(sleeper())
+    foreign_task = asyncio.create_task(sleeper())
+    speech._silence_tasks[str(active_sid)] = active_task
+    speech._silence_tasks[str(foreign_sid)] = foreign_task
+    speech._current_session_id = active_sid
+    speech._active_output_session_id = active_sid
+    speech._had_audio_for_session[active_sid] = True
+
+    try:
+        had_audio = speech._apply_cancel_state(None, source="unit_test_sessionless_cancel")
+        assert had_audio is True
+        # Active session finalize is cancelled and removed.
+        assert str(active_sid) not in speech._silence_tasks
+        # Foreign pending finalize must stay intact.
+        assert str(foreign_sid) in speech._silence_tasks
+        assert foreign_task.cancelled() is False
+    finally:
+        for task in (active_task, foreign_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(active_task, foreign_task, return_exceptions=True)

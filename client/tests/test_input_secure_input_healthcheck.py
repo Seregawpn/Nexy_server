@@ -6,7 +6,10 @@ from config.unified_config_loader import InputProcessingConfig, KeyboardConfig
 from integration.core.error_handler import ErrorHandler
 from integration.core.event_bus import EventBus
 from integration.core.state_manager import ApplicationStateManager, AppMode
-from integration.integrations.input_processing_integration import InputProcessingIntegration, PTTState
+from integration.integrations.input_processing_integration import (
+    InputProcessingIntegration,
+    PTTState,
+)
 
 
 @pytest.mark.asyncio

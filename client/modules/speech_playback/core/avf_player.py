@@ -70,6 +70,7 @@ class AVFPlayerConfig:
     volume: float = 0.8
     audio_diag_verbose: bool = False
     audio_diag_log_every: int = 50
+    session_deactivation_delay_sec: float = 3.0
 
 
 class AVFoundationPlayer:
@@ -683,12 +684,14 @@ class AVFoundationPlayer:
         except Exception as e:
             logger.debug("AUDIO_SESSION_DEACTIVATE failed reason=%s err=%s", reason, e)
 
-    def _schedule_deferred_deactivation(self, *, reason: str, delay: float = 1.5) -> None:
+    def _schedule_deferred_deactivation(self, *, reason: str, delay: float | None = None) -> None:
         """Schedule session deactivation after a silence window.
 
         If start_playback() is called before the timer fires, it cancels
         the timer — avoiding deactivate/activate churn between phrases.
         """
+        if delay is None:
+            delay = float(getattr(self.config, "session_deactivation_delay_sec", 3.0))
         self._cancel_deferred_deactivation()
 
         def _do_deferred() -> None:

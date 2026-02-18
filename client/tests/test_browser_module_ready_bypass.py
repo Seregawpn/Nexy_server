@@ -15,13 +15,22 @@ async def test_process_bypasses_setup_wait_when_local_chromium_ready(tmp_path, m
     monkeypatch.setattr(browser_module, "_reset_browser_use_cache", lambda: None)
     monkeypatch.setattr(browser_module, "get_user_data_dir", lambda: str(tmp_path))
 
-    chromium_dir = tmp_path / "ms-playwright" / "chromium-1208"
-    chromium_dir.mkdir(parents=True)
-    (chromium_dir / "INSTALLATION_COMPLETE").write_text("ok", encoding="utf-8")
+    # Mock executable resolution to avoid RuntimeError
+    monkeypatch.setattr(
+        browser_module.BrowserUseModule,
+        "_resolve_local_chromium_executable",
+        lambda self: "/tmp/chromium",
+    )
+    # Mock readiness to return True (setup bypass condition)
+    monkeypatch.setattr(
+        browser_module.BrowserUseModule, "_is_local_chromium_ready", lambda self: True
+    )
 
     m = browser_module.BrowserUseModule()
 
-    async def fake_run_agent(task, task_id, session_id, config_preset, *, retry_count=0):
+    async def fake_run_agent(
+        task, task_id, session_id, config_preset, chromium_executable, *, retry_count=0
+    ):
         yield {
             "type": "BROWSER_TASK_COMPLETED",
             "task_id": task_id,
@@ -32,7 +41,10 @@ async def test_process_bypasses_setup_wait_when_local_chromium_ready(tmp_path, m
     monkeypatch.setattr(m, "_run_agent", fake_run_agent)
 
     async def never_finishes():
-        await asyncio.sleep(999)
+        try:
+            await asyncio.sleep(999)
+        except asyncio.CancelledError:
+            pass
 
     stale_install_task = asyncio.create_task(never_finishes())
 
@@ -55,8 +67,10 @@ async def test_process_bypasses_setup_wait_when_local_chromium_ready(tmp_path, m
     finally:
         if not stale_install_task.done():
             stale_install_task.cancel()
-            with pytest.raises(asyncio.CancelledError):
+            try:
                 await stale_install_task
+            except asyncio.CancelledError:
+                pass
         browser_module.BrowserUseModule._install_task = None
         browser_module.BrowserUseModule._browser_installed = False
 
@@ -66,14 +80,26 @@ async def test_process_does_not_emit_setup_in_progress_when_not_ready(monkeypatc
     monkeypatch.setattr(browser_module, "_check_browser_use_available", lambda: True)
     monkeypatch.setattr(browser_module, "_reset_browser_use_cache", lambda: None)
 
+    # Mock executable resolution
+    monkeypatch.setattr(
+        browser_module.BrowserUseModule,
+        "_resolve_local_chromium_executable",
+        lambda self: "/tmp/chromium",
+    )
+
     m = browser_module.BrowserUseModule()
     browser_module.BrowserUseModule._browser_installed = False
     browser_module.BrowserUseModule._install_task = None
 
     async def fake_get_or_start_install_task(*, restart_if_failed):
-        return None, True
+        # Return a done task to simulate immediate install completion/check
+        t = asyncio.create_task(asyncio.sleep(0))
+        await t
+        return t, True
 
-    async def fake_run_agent(task, task_id, session_id, config_preset, *, retry_count=0):
+    async def fake_run_agent(
+        task, task_id, session_id, config_preset, chromium_executable, *, retry_count=0
+    ):
         yield {
             "type": "BROWSER_TASK_COMPLETED",
             "task_id": task_id,
@@ -100,12 +126,20 @@ async def test_process_uses_url_when_task_missing(monkeypatch):
     monkeypatch.setattr(browser_module, "_check_browser_use_available", lambda: True)
     monkeypatch.setattr(browser_module, "_reset_browser_use_cache", lambda: None)
 
+    monkeypatch.setattr(
+        browser_module.BrowserUseModule,
+        "_resolve_local_chromium_executable",
+        lambda self: "/tmp/chromium",
+    )
+
     m = browser_module.BrowserUseModule()
     browser_module.BrowserUseModule._browser_installed = True
 
     captured = {"task": None}
 
-    async def fake_run_agent(task, task_id, session_id, config_preset, *, retry_count=0):
+    async def fake_run_agent(
+        task, task_id, session_id, config_preset, chromium_executable, *, retry_count=0
+    ):
         captured["task"] = task
         yield {
             "type": "BROWSER_TASK_COMPLETED",

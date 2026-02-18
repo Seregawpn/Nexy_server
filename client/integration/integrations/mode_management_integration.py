@@ -618,7 +618,14 @@ class ModeManagementIntegration:
             session_id = self._normalize_session_id(data.get("session_id"))
             if session_id:
                 self._active_playback_sessions.discard(session_id)
-                await self._try_finalize_sleep(session_id, source="playback.finished")
+                if session_id in self._deferred_sleep_sessions:
+                    await self._try_finalize_sleep(session_id, source="playback.finished")
+                else:
+                    logger.debug(
+                        "MODE_REQUEST playback.finished ignored: no deferred terminal "
+                        "(session=%s)",
+                        session_id,
+                    )
             else:
                 await self._try_finalize_deferred_sessions(source="playback.finished_no_session")
         except Exception:
@@ -641,7 +648,14 @@ class ModeManagementIntegration:
                 await self._try_finalize_deferred_sessions(source="browser.finished_no_session")
                 return
             self._active_browser_sessions.discard(session_id)
-            await self._try_finalize_sleep(session_id, source="browser.finished")
+            if session_id in self._deferred_sleep_sessions:
+                await self._try_finalize_sleep(session_id, source="browser.finished")
+            else:
+                logger.debug(
+                    "MODE_REQUEST browser.finished ignored: no deferred terminal "
+                    "(session=%s)",
+                    session_id,
+                )
         except Exception:
             pass
 
@@ -673,7 +687,14 @@ class ModeManagementIntegration:
             else:
                 self._active_action_sessions[session_id] = current - 1
 
-            await self._try_finalize_sleep(session_id, source="actions.finished")
+            if session_id in self._deferred_sleep_sessions:
+                await self._try_finalize_sleep(session_id, source="actions.finished")
+            else:
+                logger.debug(
+                    "MODE_REQUEST actions.finished ignored: no deferred terminal "
+                    "(session=%s)",
+                    session_id,
+                )
         except Exception:
             pass
 

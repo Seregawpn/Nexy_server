@@ -8,4 +8,4 @@ This package provides:
 - Adapters for Google Speech Recognition and AVFoundation playback
 """
 
-__version__ = "1.6.1.41"
+__version__ = "1.6.1.42"

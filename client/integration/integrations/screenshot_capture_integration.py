@@ -361,17 +361,18 @@ class ScreenshotCaptureIntegration:
                 return
 
             sid = self._last_session_id
-            # КРИТИЧНО: Если скриншот уже захвачен (ранний захват), переопубликуем событие
-            # чтобы ProcessingWorkflow (теперь активный) его получил
+            # Ранний захват уже был доставлен в owner-цепочку (GrpcClient/ProcessingWorkflow)
+            # и буферизуется там до входа в PROCESSING. Повторная публикация здесь создает
+            # второй путь terminal-данных и дубли события screenshot.captured.
             if (
                 sid is not None
                 and self._captured_for_session == sid
                 and self._captured_screenshot_data is not None
             ):
                 logger.info(
-                    f"📸 ScreenshotCapture: переопубликуем screenshot.captured для session {sid} (ранний захват)"
+                    f"📸 ScreenshotCapture: ранний скриншот уже captured для session {sid}, "
+                    "повторную публикацию пропускаем"
                 )
-                await self.event_bus.publish("screenshot.captured", self._captured_screenshot_data)
                 return
             logger.info(
                 f"📸 ScreenshotCaptureIntegration: app entered PROCESSING, session_id={sid}"

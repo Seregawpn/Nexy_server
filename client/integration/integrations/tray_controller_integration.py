@@ -104,6 +104,8 @@ class TrayControllerIntegration:
         self._ui_timer: rumps.Timer | None = None
         self._ui_timer_started: bool = False
         self._ui_dirty: bool = False
+        self._ui_apply_pending: bool = False
+        self._ui_last_scheduled_status: TrayStatus | None = None
 
         # Маппинг режимов приложения на статусы трея
         self.mode_to_status = {
@@ -288,6 +290,18 @@ class TrayControllerIntegration:
             try:
                 if self.tray_controller and hasattr(self.tray_controller, "set_event_callback"):
                     self.tray_controller.set_event_callback("quit_clicked", self._on_tray_quit)
+                    # Bridge tray local callbacks into EventBus.
+                    # Without this, menu actions are dropped in TrayController._publish_event.
+                    for evt in (
+                        "ui.action.buy_subscription",
+                        "ui.action.manage_subscription",
+                        "updater.check_manual",
+                        "settings_clicked",
+                        "about_clicked",
+                        "icon_clicked",
+                        "icon_right_clicked",
+                    ):
+                        self.tray_controller.set_event_callback(evt, self._relay_tray_event)
             except Exception:
                 pass
             return True
@@ -402,6 +416,16 @@ class TrayControllerIntegration:
             pass
         # Завершение приложения выполняет модуль TrayController (см. _on_quit_clicked)
 
+    async def _relay_tray_event(self, event_type: str, data: dict[str, Any]):
+        """Relay tray-originated events to EventBus."""
+        try:
+            payload = dict(data or {})
+            payload.setdefault("source", "tray")
+            await self.event_bus.publish(event_type, payload)
+            logger.debug("Tray event relayed: %s payload=%s", event_type, payload)
+        except Exception as e:
+            logger.warning("⚠️ tray event relay failed (%s): %s", event_type, e)
+
     async def _sync_with_app_mode(self):
         """Синхронизация с текущим режимом приложения"""
         try:
@@ -471,11 +495,7 @@ class TrayControllerIntegration:
                     f"🔄 Режим приложения изменен: {new_mode.value if new_mode else None} → {target_status.value if target_status else None}"
                 )
                 # Применяем на главном UI-потоке через AppHelper.callAfter
-                try:
-                    # Прямой вызов _apply_status_ui_sync (убрано двойное планирование)
-                    AppHelper.callAfter(self._apply_status_ui_sync, target_status)
-                except Exception:
-                    pass
+                self._schedule_status_ui_apply(target_status)
 
         except Exception as e:
             logger.error(f"❌ Ошибка обработки смены режима: {e}")
@@ -588,6 +608,7 @@ class TrayControllerIntegration:
             or not self.tray_controller.tray_menu
             or not self.tray_controller.tray_icon
         ):
+            self._ui_apply_pending = False
             return
         try:
             icon_path = self.tray_controller.tray_icon.create_icon_file(status)
@@ -613,6 +634,9 @@ class TrayControllerIntegration:
             logger.info(f"✅ Tray UI applied: {prev_value} -> {status.value}")
         except Exception as e:
             logger.error(f"❌ Ошибка _apply_status_ui_sync: {e}", exc_info=True)
+        finally:
+            self._ui_apply_pending = False
+            self._ui_last_scheduled_status = None
 
     # ---------- UI helper (runs in main rumps thread via Timer) ----------
     def _ui_tick(self, _timer):
@@ -715,8 +739,7 @@ class TrayControllerIntegration:
                 mode = selectors.get_current_mode(self.state_manager)
                 status = self.mode_to_status.get(mode)
                 if status:
-                    # Прямой вызов _apply_status_ui_sync (убрано двойное планирование)
-                    AppHelper.callAfter(self._apply_status_ui_sync, status)
+                    self._schedule_status_ui_apply(status)
             except Exception:
                 pass
 
@@ -779,6 +802,20 @@ class TrayControllerIntegration:
             # Если таймера нет — ничего не делаем (без логирования)
         except Exception as e:
             logger.error(f"❌ Ошибка запуска UI-таймера: {e}")
+
+    def _schedule_status_ui_apply(self, status: TrayStatus) -> None:
+        """Schedule status apply in UI thread with dedup/single-flight guard."""
+        try:
+            current = getattr(self.tray_controller, "current_status", None) if self.tray_controller else None
+            if current == status and not self._ui_dirty:
+                return
+            if self._ui_apply_pending and self._ui_last_scheduled_status == status:
+                return
+            self._ui_apply_pending = True
+            self._ui_last_scheduled_status = status
+            AppHelper.callAfter(self._apply_status_ui_sync, status)
+        except Exception:
+            self._ui_apply_pending = False
 
     def stop_ui_timer(self):
         """Остановить UI-таймер"""

@@ -30,7 +30,7 @@ app:
   debug: true
   name: Nexy
   team_id: 5NKLL2CLB9
-  version: 1.6.1.41
+  version: 1.6.1.42
 focus:
   force_activate_on_startup: false
   allow_tray_startup_fallback: false
@@ -124,9 +124,7 @@ grpc:
       timeout: 30
       retry_attempts: 3
       retry_delay: 1.0
-      description: "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0435\
-        \u0440\u0432\u0435\u0440 \u0434\u043B\u044F \u0440\u0430\u0437\u0440\u0430\
-        \u0431\u043E\u0442\u043A\u0438"
+      description: Локальный сервер для разработки
     production:
       host: nexy-server.canadacentral.cloudapp.azure.com
       port: 443
@@ -137,8 +135,7 @@ grpc:
       retry_attempts: 5
       retry_delay: 2.0
       keepalive: true
-      description: "Production \u0441\u0435\u0440\u0432\u0435\u0440 \u043D\u0430 Azure\
-        \ (HTTPS \u0447\u0435\u0440\u0435\u0437 Nginx, gRPC \u043D\u0430 /)"
+      description: Production сервер на Azure (HTTPS через Nginx, gRPC на /)
     fallback:
       host: 127.0.0.1
       port: 50052
@@ -146,8 +143,7 @@ grpc:
       timeout: 30
       retry_attempts: 3
       retry_delay: 1.0
-      description: "\u0420\u0435\u0437\u0435\u0440\u0432\u043D\u044B\u0439 \u0441\u0435\
-        \u0440\u0432\u0435\u0440"
+      description: Резервный сервер
 integrations:
   autostart_manager:
     enabled: true
@@ -158,7 +154,7 @@ integrations:
   grpc_client:
     enabled: true
     priority: 9
-    server: production
+    server: local
     aggregate_timeout_sec: 1.5
     request_timeout_sec: 0.0
     max_retries: 3
@@ -390,65 +386,36 @@ permissions:
   microphone:
     enabled: true
     required: true
-    description: "Nexy \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\
-      \ \u043C\u0438\u043A\u0440\u043E\u0444\u043E\u043D \u0434\u043B\u044F \u0440\
-      \u0430\u0441\u043F\u043E\u0437\u043D\u0430\u0432\u0430\u043D\u0438\u044F \u0440\
-      \u0435\u0447\u0438 \u0438 \u0433\u043E\u043B\u043E\u0441\u043E\u0432\u043E\u0433\
-      \u043E \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F."
+    description: Nexy использует микрофон для распознавания речи и голосового управления.
   screen_capture:
     enabled: true
     required: true
-    description: "Nexy \u0437\u0430\u0445\u0432\u0430\u0442\u044B\u0432\u0430\u0435\
-      \u0442 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u044D\u043A\
-      \u0440\u0430\u043D\u0430 \u0434\u043B\u044F \u0430\u043D\u0430\u043B\u0438\u0437\
-      \u0430 \u0438 \u043F\u043E\u043C\u043E\u0449\u0438 \u043F\u043E\u043B\u044C\u0437\
-      \u043E\u0432\u0430\u0442\u0435\u043B\u044E."
+    description: Nexy захватывает содержимое экрана для анализа и помощи пользователю.
   camera:
     enabled: false
     required: false
-    description: "Nexy \u043C\u043E\u0436\u0435\u0442 \u0438\u0441\u043F\u043E\u043B\
-      \u044C\u0437\u043E\u0432\u0430\u0442\u044C \u043A\u0430\u043C\u0435\u0440\u0443\
-      \ \u0434\u043B\u044F \u0430\u043D\u0430\u043B\u0438\u0437\u0430 \u043E\u043A\
-      \u0440\u0443\u0436\u0435\u043D\u0438\u044F."
+    description: Nexy может использовать камеру для анализа окружения.
   network:
     enabled: true
     required: true
-    description: "Nexy \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\
-      \ \u0441\u0435\u0442\u044C \u0434\u043B\u044F \u0441\u0432\u044F\u0437\u0438\
-      \ \u0441 \u0441\u0435\u0440\u0432\u0435\u0440\u043E\u043C \u0438 \u043E\u0431\
-      \u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0439."
+    description: Nexy использует сеть для связи с сервером и обновлений.
   notifications:
     enabled: true
     required: true
-    description: "Nexy \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442\
-      \ \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u044F \u043E\
-      \ \u0441\u0442\u0430\u0442\u0443\u0441\u0435 \u0440\u0430\u0431\u043E\u0442\u044B\
-      \ \u0438 \u0432\u0430\u0436\u043D\u044B\u0445 \u0441\u043E\u0431\u044B\u0442\
-      \u0438\u044F\u0445."
+    description: Nexy отправляет уведомления о статусе работы и важных событиях.
   accessibility:
     enabled: true
     required: true
-    description: "Nexy \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\
-      \ Accessibility \u0434\u043B\u044F \u043C\u043E\u043D\u0438\u0442\u043E\u0440\
-      \u0438\u043D\u0433\u0430 \u043A\u043B\u0430\u0432\u0438\u0430\u0442\u0443\u0440\
-      \u044B \u0438 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0437\u0430\u0446\
-      \u0438\u0438."
+    description: Nexy использует Accessibility для мониторинга клавиатуры и автоматизации.
   contacts:
     enabled: true
     required: true
-    description: "Nexy \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\
-      \ \u043A\u043E\u043D\u0442\u0430\u043A\u0442\u044B \u0434\u043B\u044F \u0440\
-      \u0435\u0437\u043E\u043B\u0432\u0438\u043D\u0433\u0430 \u043E\u0442\u043F\u0440\
-      \u0430\u0432\u0438\u0442\u0435\u043B\u0435\u0439 \u0438 \u043F\u043E\u043B\u0443\
-      \u0447\u0430\u0442\u0435\u043B\u0435\u0439 \u0441\u043E\u043E\u0431\u0449\u0435\
-      \u043D\u0438\u0439."
+    description: Nexy использует контакты для резолвинга отправителей и получателей
+      сообщений.
   full_disk_access:
     enabled: true
     required: true
-    description: "Nexy \u0442\u0440\u0435\u0431\u0443\u0435\u0442 Full Disk Access\
-      \ \u0434\u043B\u044F \u0434\u043E\u0441\u0442\u0443\u043F\u0430 \u043A \u043B\
-      \u043E\u043A\u0430\u043B\u044C\u043D\u044B\u043C \u0434\u0430\u043D\u043D\u044B\
-      \u043C \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439."
+    description: Nexy требует Full Disk Access для доступа к локальным данным сообщений.
   settings_required_permissions: null
   system_preferences:
     microphone: x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone
@@ -492,14 +459,14 @@ tray:
   icon_inactive: assets/icons/off.png
   menu_items:
   - action: quit
-    label: "\u0412\u044B\u0445\u043E\u0434"
+    label: Выход
     separator: true
   - action: settings
-    label: "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438"
+    label: Настройки
   - action: about
-    label: "\u041E \u043F\u0440\u043E\u0433\u0440\u0430\u043C\u043C\u0435"
+    label: О программе
   - action: status
-    label: "\u0421\u0442\u0430\u0442\u0443\u0441"
+    label: Статус
   show_notifications: true
   tooltip: Nexy AI Assistant
   status_item:
@@ -542,15 +509,13 @@ updater:
     channels:
       stable:
         url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast.xml
-        description: "\u0421\u0442\u0430\u0431\u0438\u043B\u044C\u043D\u044B\u0435\
-          \ \u0440\u0435\u043B\u0438\u0437\u044B"
+        description: Стабильные релизы
       beta:
         url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast-beta.xml
-        description: "\u0411\u0435\u0442\u0430 \u0432\u0435\u0440\u0441\u0438\u0438"
+        description: Бета версии
       alpha:
         url: https://nexy-server.canadacentral.cloudapp.azure.com/updates/appcast-alpha.xml
-        description: "\u0410\u043B\u044C\u0444\u0430 \u0432\u0435\u0440\u0441\u0438\
-          \u0438"
+        description: Альфа версии
   development:
     enabled: true
     auto_check: true
@@ -654,11 +619,8 @@ browser_use:
   keep_browser_open: true
   allow_runtime_install: true
   gemini_api_key: ''
+  gemini_api_key_fallback: ''
   gemini_model: gemini-3-flash-preview
-payment_use:
-  enabled: true
-  log_steps: true
-  log_transactions: true
 messages:
   enabled: true
   require_full_disk_access: true

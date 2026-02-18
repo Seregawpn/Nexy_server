@@ -64,6 +64,7 @@ class ProcessingWorkflow(BaseWorkflow):
         self.playback_completed = False
         self.interrupted = False
         self.browser_active = False  # Browser automation in progress
+        self.action_dispatched = False  # Browser action dispatched but not yet started
         self.grpc_started = False
         self._terminal_outcome_session_id: str | None = None
         self._terminal_outcome_reason: str | None = None
@@ -126,6 +127,12 @@ class ProcessingWorkflow(BaseWorkflow):
         )
 
         # === ЭТАП 4: BROWSER AUTOMATION ===
+        await self.event_bus.subscribe(
+            "actions.browser_use.started",
+            self._on_browser_action_dispatched,
+            EventPriority.HIGH,
+        )
+
         await self.event_bus.subscribe(
             "browser.started", self._on_browser_started, EventPriority.HIGH
         )
@@ -239,6 +246,7 @@ class ProcessingWorkflow(BaseWorkflow):
             self.playback_completed = False
             self.interrupted = False
             self.browser_active = False
+            self.action_dispatched = False
             self.grpc_started = False
 
             # Запуск общего таймаута
@@ -477,11 +485,17 @@ class ProcessingWorkflow(BaseWorkflow):
         try:
             data = event.get("data", {})
             error = data.get("error", "unknown")
+            error_code = data.get("code")
 
-            logger.error(f"🌐 ProcessingWorkflow: gRPC запрос завершился ошибкой - {error}")
+            logger.error(
+                "🌐 ProcessingWorkflow: gRPC запрос завершился ошибкой - %s (code=%s)",
+                error,
+                error_code,
+            )
 
             self.grpc_completed = False
-            await self._handle_error(f"grpc_error_{error}")
+            normalized_reason = str(error_code or error).strip().replace(" ", "_")
+            await self._handle_error(f"grpc_error_{normalized_reason}")
 
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки grpc.request_failed - {e}")
@@ -560,6 +574,26 @@ class ProcessingWorkflow(BaseWorkflow):
 
     # === ОБРАБОТЧИКИ ЭТАПА 4: BROWSER ===
 
+    async def _on_browser_action_dispatched(self, event):
+        """Browser action dispatched (but Chromium not yet started)"""
+        if not self._is_relevant_event(event):
+            return
+
+        try:
+            data = event.get("data", {})
+            session_id = data.get("session_id")
+
+            logger.info(
+                "🌐 ProcessingWorkflow: browser action DISPATCHED (session=%s), "
+                "blocking premature chain completion",
+                session_id,
+            )
+
+            self.action_dispatched = True
+
+        except Exception as e:
+            logger.error(f"❌ ProcessingWorkflow: ошибка обработки actions.browser_use.started - {e}")
+
     async def _on_browser_started(self, event):
         """Browser task начат"""
         if not self._is_relevant_event(event):
@@ -572,6 +606,7 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.info(f"🌐 ProcessingWorkflow: browser task начат, task_id={task_id}")
 
             self.browser_active = True
+            self.action_dispatched = False  # Browser started, dispatch flag no longer needed
 
             # Переходим к этапу browser automation
             if self.current_stage != ProcessingStage.BROWSER_AUTOMATION:
@@ -592,6 +627,7 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.info(f"🌐 ProcessingWorkflow: browser task завершён, type={event_type}")
 
             self.browser_active = False
+            self.action_dispatched = False  # Reset dispatch flag on completion
 
             # Проверяем, можем ли завершить цепочку
             if self.grpc_completed and self.playback_completed:
@@ -616,6 +652,7 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.error(f"🌐 ProcessingWorkflow: browser task ошибка - {error}")
 
             self.browser_active = False
+            self.action_dispatched = False  # Reset dispatch flag on failure
 
             # Не прерываем всю цепочку при ошибке browser - просто логируем
             # Проверяем, можем ли завершить цепочку
@@ -712,9 +749,24 @@ class ProcessingWorkflow(BaseWorkflow):
     async def _complete_processing_chain(self):
         """Успешное завершение всей цепочки обработки"""
         try:
+            # Reentrancy guard: prevent double-fire from concurrent EventBus callbacks
+            if getattr(self, '_completing', False):
+                logger.debug("⚙️ ProcessingWorkflow: _complete_processing_chain already in progress, skipping")
+                return
+            self._completing = True
+
             # КРИТИЧНО: Не завершаем пока browser активен
             if self.browser_active:
                 logger.info("⏳ ProcessingWorkflow: ждём завершения browser task...")
+                return
+
+            # КРИТИЧНО: Не завершаем если browser action диспатчен, но ещё не стартовал.
+            # Race condition fix: Chromium может стартовать медленнее, чем TTS доиграет.
+            if self.action_dispatched:
+                logger.info(
+                    "⏳ ProcessingWorkflow: browser action dispatched but not yet started, "
+                    "waiting for browser.started..."
+                )
                 return
 
             duration = (
@@ -741,6 +793,8 @@ class ProcessingWorkflow(BaseWorkflow):
 
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка завершения цепочки - {e}")
+        finally:
+            self._completing = False
 
     async def _handle_error(self, error_type: str):
         """Обработка ошибки в цепочке"""
@@ -827,7 +881,9 @@ class ProcessingWorkflow(BaseWorkflow):
             self.playback_completed = False
             self.interrupted = False
             self.browser_active = False
+            self.action_dispatched = False
             self.grpc_started = False
+            self._completing = False
 
             logger.debug("⚙️ ProcessingWorkflow: состояние очищено")
 

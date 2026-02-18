@@ -660,9 +660,12 @@ class VoiceRecognitionIntegration:
             ts_ms = int(time.monotonic() * 1000)
 
             if result.text:
-                if not self._try_mark_terminal_recognition(session_id, "completed"):
-                    return
-                self._cancel_stop_terminal_fallback(session_id, reason="v2_completed")
+                # В бесшовном режиме interim результаты не являются terminal.
+                # Terminal dedup маркируем только когда PTT уже отпущен.
+                if not is_still_listening:
+                    if not self._try_mark_terminal_recognition(session_id, "completed"):
+                        return
+                    self._cancel_stop_terminal_fallback(session_id, reason="v2_completed")
                 # TRACE: распознавание завершено успешно
                 logger.info(
                     f"TRACE phase=stt.done ts={ts_ms} session={session_id} extra={{text_len={len(result.text)}, confidence={result.confidence:.2f}, still_listening={is_still_listening}}}"
@@ -769,6 +772,22 @@ class VoiceRecognitionIntegration:
                     is_still_listening,
                 )
             else:
+                # Anti-race: после recording_stop поздний unknown_value/empty_result
+                # от промежуточного чанка не должен закрывать сессию, если финальный
+                # чанк еще распознается. В этом окне terminal owner — stop fallback.
+                if (
+                    session_id is not None
+                    and error in {"unknown_value", "empty_result"}
+                    and session_id in self._pending_stop_terminal_tasks
+                    and self._has_pending_stop_recognition()
+                ):
+                    logger.debug(
+                        "VOICE: defer terminal fail until pending recognition drained "
+                        "(session=%s, error=%s)",
+                        session_id,
+                        error,
+                    )
+                    return
                 if not self._try_mark_terminal_recognition(session_id, "failed"):
                     return
                 self._cancel_stop_terminal_fallback(session_id, reason="v2_failed")

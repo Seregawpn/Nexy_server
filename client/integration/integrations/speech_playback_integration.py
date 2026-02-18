@@ -91,8 +91,9 @@ class SpeechPlaybackIntegration:
         self._had_audio_for_session: dict[Any, bool] = {}
         self._finalized_sessions: dict[Any, bool] = {}
         self._terminal_event_by_session: dict[str, str] = {}
+        self._no_audio_terminal_sessions: set[str] = set()
         self._last_audio_ts: float = 0.0
-        self._silence_task: asyncio.Task[Any] | None = None
+        self._silence_tasks: dict[str, asyncio.Task[Any]] = {}
         self._grpc_done_sessions: dict[Any, bool] = {}
         self._cancelled_sessions: set[Any] = set()
         self._wav_header_skipped: dict[Any, bool] = {}
@@ -225,6 +226,7 @@ class SpeechPlaybackIntegration:
 
     async def stop(self) -> bool:
         try:
+            self._cancel_silence_finalize()
             if self._avf_player:
                 try:
                     self._avf_player.shutdown()
@@ -328,6 +330,20 @@ class SpeechPlaybackIntegration:
 
             if source == "grpc_audio":
                 self._confirm_grpc_start_locked(session_id)
+                # Race recovery: grpc.request_completed(no_audio) may arrive before first audio chunk.
+                # Re-open terminal state so this real audio session can emit playback.completed later.
+                if (
+                    sid_key is not None
+                    and sid_key in self._no_audio_terminal_sessions
+                    and not self._had_audio_for_session.get(session_id)
+                ):
+                    self._no_audio_terminal_sessions.discard(sid_key)
+                    self._terminal_event_by_session.pop(sid_key, None)
+                    self._finalized_sessions.pop(session_id, None)
+                    logger.warning(
+                        "AUDIO_RACE_RECOVER: reopen no-audio finalized session sid=%s on first audio chunk",
+                        sid_key,
+                    )
 
             if not self._had_audio_for_session.get(session_id):
                 ts_ms = int(time.monotonic() * 1000)
@@ -343,6 +359,14 @@ class SpeechPlaybackIntegration:
             self._had_audio_for_session[session_id] = True
             if sid_key is not None:
                 self._active_output_session_id = sid_key
+            # If gRPC terminal already arrived, schedule finalize after queue drain.
+            if (
+                source == "grpc_audio"
+                and self._grpc_done_sessions.get(session_id)
+                and session_id not in self._cancelled_sessions
+                and session_id not in self._finalized_sessions
+            ):
+                self._schedule_silence_finalize(session_id)
 
             try:
                 self._last_audio_ts = self._loop.time() if self._loop else time.time()
@@ -855,11 +879,7 @@ class SpeechPlaybackIntegration:
                 return
             logger.debug(f"🔍 [AUDIO] Raw audio added to AVFPlayer for session {session_id}")
 
-            if self._silence_task and not self._silence_task.done():
-                self._silence_task.cancel()
-            self._silence_task = asyncio.create_task(
-                self._finalize_on_silence(session_id, timeout=1.0)
-            )
+            self._schedule_silence_finalize(session_id, timeout=1.0)
 
         except Exception as e:
             await self._handle_error(e, where="speech.on_raw_audio", severity="warning")
@@ -1086,36 +1106,45 @@ class SpeechPlaybackIntegration:
         self._cancel_guard_task = asyncio.create_task(self._reset_cancel_guard())
 
     def _apply_cancel_state(self, sid: Any, *, source: str) -> bool:
-        if self._silence_task and not self._silence_task.done():
-            self._silence_task.cancel()
+        # Sessionless cancel events (e.g. signal-only paths) must not drop
+        # silence-finalizers for unrelated active gRPC sessions.
+        resolved_sid = sid
+        if resolved_sid is None:
+            if self._current_session_id is not None:
+                resolved_sid = self._current_session_id
+            elif self._active_output_session_id is not None:
+                resolved_sid = self._active_output_session_id
+
+        self._cancel_silence_finalize(resolved_sid)
 
         had_audio_before_cleanup = False
-        if sid is not None:
-            had_audio_before_cleanup = self._had_audio_for_session.get(sid, False)
+        if resolved_sid is not None:
+            had_audio_before_cleanup = self._had_audio_for_session.get(resolved_sid, False)
 
-        if sid:
+        if resolved_sid:
             if had_audio_before_cleanup:
-                self._cancelled_sessions.add(sid)
+                self._cancelled_sessions.add(resolved_sid)
                 logger.info(
                     "🛑 SpeechPlayback: session %s added to cancelled_sessions (had_audio=True, source=%s)",
-                    sid,
+                    resolved_sid,
                     source,
                 )
             else:
                 logger.info(
                     "🛑 SpeechPlayback: skip cancelled_sessions for %s (no audio yet, source=%s)",
-                    sid,
+                    resolved_sid,
                     source,
                 )
 
-            self._had_audio_for_session.pop(sid, None)
-            self._tts_peak_ema_by_session.pop(str(sid), None)
-            self._clear_grpc_start_tracking(sid)
-            self._finalized_sessions[sid] = True
-            self._raw_sessions.discard(str(sid))
-            if self._current_session_id == sid:
+            self._had_audio_for_session.pop(resolved_sid, None)
+            self._tts_peak_ema_by_session.pop(str(resolved_sid), None)
+            self._clear_grpc_start_tracking(resolved_sid)
+            self._finalized_sessions[resolved_sid] = True
+            self._raw_sessions.discard(str(resolved_sid))
+            self._no_audio_terminal_sessions.discard(str(resolved_sid))
+            if self._current_session_id == resolved_sid:
                 self._current_session_id = None
-            if self._active_output_session_id == str(sid):
+            if self._active_output_session_id == str(resolved_sid):
                 self._active_output_session_id = None
 
         return had_audio_before_cleanup
@@ -1166,9 +1195,7 @@ class SpeechPlaybackIntegration:
                 if self._had_audio_for_session.get(sid):
                     # Only start silence task if not already finalized/cancelled
                     if sid not in self._cancelled_sessions and sid not in self._finalized_sessions:
-                        if self._silence_task and not self._silence_task.done():
-                            self._silence_task.cancel()
-                        self._silence_task = asyncio.create_task(self._finalize_on_silence(sid))
+                        self._schedule_silence_finalize(sid)
                         logger.debug(f"Started finalize_on_silence for gRPC session {sid}")
                 else:
                     # If we haven't received any audio, finalize immediately
@@ -1188,6 +1215,7 @@ class SpeechPlaybackIntegration:
                             payload={"session_id": sid},
                         )
                         if published:
+                            self._no_audio_terminal_sessions.add(str(sid))
                             logger.info(
                                 f"SpeechPlayback: finalized session {sid} (no audio received)"
                             )
@@ -1229,6 +1257,26 @@ class SpeechPlaybackIntegration:
                 self._raw_sessions.discard(str(sid))
         except Exception as e:
             await self._handle_error(e, where="speech.grpc_failed", severity="warning")
+
+    def _cancel_silence_finalize(self, session_id: Any | None = None) -> None:
+        if session_id is None:
+            for sid, task in list(self._silence_tasks.items()):
+                if not task.done():
+                    task.cancel()
+                self._silence_tasks.pop(sid, None)
+            return
+
+        sid = str(session_id)
+        task = self._silence_tasks.pop(sid, None)
+        if task and not task.done():
+            task.cancel()
+
+    def _schedule_silence_finalize(self, session_id: Any, timeout: float = 3.0) -> None:
+        sid = str(session_id) if session_id is not None else ""
+        if not sid:
+            return
+        self._cancel_silence_finalize(sid)
+        self._silence_tasks[sid] = asyncio.create_task(self._finalize_on_silence(sid, timeout=timeout))
 
     # -------- Utils --------
     async def _finalize_on_silence(self, session_id: str, timeout: float = 3.0):
@@ -1325,6 +1373,10 @@ class SpeechPlaybackIntegration:
             return
         except Exception as e:
             await self._handle_error(e, where="speech.finalize_on_silence", severity="warning")
+        finally:
+            current = asyncio.current_task()
+            if self._silence_tasks.get(session_id) is current:
+                self._silence_tasks.pop(session_id, None)
 
     @staticmethod
     def _ensure_raw_session_id(session_id: Any) -> tuple[str, bool]:
