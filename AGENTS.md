@@ -17,6 +17,7 @@
   - `server/Docs/RELEASE_AND_UPDATE_GUIDE.md`
 - **Архитектура**: `server/Docs/ARCHITECTURE_OVERVIEW.md`.
 - **API Контракты**: `server/modules/grpc_service/streaming.proto`.
+- **Локальный inbox инцидентов (оперативный triage)**: `monitor_inbox/` (в корне текущего workspace `server`).
 
 ## Фокус Области (Server Scope)
 - `server/modules`: Основная логика и сервисы.
@@ -39,6 +40,10 @@
 1. **gRPC First**: Любые изменения API должны начинаться с `.proto` файлов и обновления стабов.
 2. **Стабильность**: Сервер должен быть stateless (по возможности) и отказоустойчивым.
 3. **Изоляция**: Модули сервера не должны зависеть от клиента.
+4. **Incident Inbox First (обязательно)**:
+   - Перед диагностикой/фиксом сначала проверять `monitor_inbox/` и последний `*__incident__server-monitor.md`.
+   - Если есть активный инцидент-документ, triage вести по нему как по первичному источнику фактов.
+   - Если `monitor_inbox/` пуст, запускать `server/scripts/publish_server_incident_local.sh` и только затем переходить к ручным проверкам.
 
 ## Architecture Gate Policy (обязательно)
 - Любой PR в server обязан проходить `Server Quality Gate` (`.github/workflows/server-quality.yml`).

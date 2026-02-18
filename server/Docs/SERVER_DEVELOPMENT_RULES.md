@@ -17,10 +17,33 @@
 - `Docs/_archive/RAMP_PLAN.md` — историческая справка по раскатке (не канон)
 - `Docs/SERVER_DEPLOYMENT_GUIDE.md` — процедура отката и kill-switch
 - `Docs/ADR_TEMPLATE.md` — шаблон решений (ADR) с полями для осей/guards
+- `monitor_inbox/` — локальная папка авто-публикации инцидентов (оперативный triage)
 
 ---
 
 ## 0. Архитектурные правила (обязательные)
+
+### 0.1 Incident Inbox First (обязательно)
+
+- Перед любым ручным SSH/Azure-troubleshooting сначала проверять `monitor_inbox/` в текущем workspace.
+- Если есть свежий `*__incident__server-monitor.md`, он считается первичным входом для triage.
+- Если `monitor_inbox/` пуст, запускаем one-shot проверку:
+
+```bash
+server/scripts/publish_server_incident_local.sh
+```
+
+- Для постоянного локального мониторинга использовать watcher:
+
+```bash
+server/scripts/start_local_server_monitor.sh
+```
+
+- Остановка watcher:
+
+```bash
+server/scripts/stop_local_server_monitor.sh
+```
 
 - `server/modules/*` — только бизнес-логика. Оркестрация и сценарии располагаются в `server/integrations/{core,service_integrations,workflow_integrations}`.
 - Прямых импортов между модулями нет; все обращения идут через `ModuleCoordinator` (`server/integrations/service_integrations/module_coordinator.py`).
