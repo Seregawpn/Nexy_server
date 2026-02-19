@@ -205,7 +205,9 @@ class FirstRunPermissionsIntegration:
 
                 if self._advance_on_timeout:
                     if all_granted:
-                        await self._publish_timeout_completion_events()
+                        logger.info(
+                            "✅ [FIRST_RUN_PERMISSIONS] Timeout-mode: terminal completion handled by V2 owner-path"
+                        )
                     else:
                         logger.info(
                             "⏳ [FIRST_RUN_PERMISSIONS] Timeout-mode completion deferred: "
@@ -251,57 +253,3 @@ class FirstRunPermissionsIntegration:
             )
         except Exception:
             return False
-
-    async def _publish_timeout_completion_events(self) -> None:
-        """Publish completion events for timeout-driven mode after synchronous wait."""
-        if not self._v2_integration:
-            return
-        final_snapshot: dict[str, Any] = {}
-        missing_hard: list[str] = []
-        all_hard_granted = True
-        try:
-            if hasattr(self._v2_integration, "completion_snapshot"):
-                final_snapshot = self._v2_integration.completion_snapshot()
-            all_hard_granted, missing_hard = self._v2_integration.hard_permissions_summary()
-        except Exception as e:
-            logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Failed to build timeout snapshot: %s", e)
-        completion_payload = {
-            "session_id": "timeout_mode",
-            "source": "permissions_v2_timeout",
-            "all_granted": True,
-            "all_hard_granted": all_hard_granted,
-            "missing_hard": missing_hard,
-            "final_snapshot": final_snapshot,
-        }
-        try:
-            await self.event_bus.publish("permissions.first_run_completed", completion_payload)
-            logger.info(
-                "📌 [FIRST_RUN_PERMISSIONS] FINAL_SNAPSHOT timeout_mode all_hard_granted=%s missing_hard=%s",
-                all_hard_granted,
-                missing_hard,
-            )
-
-            # CHECK: Was ready_to_greet already published by V2?
-            # If yes, keep only legacy completion event.
-            if (
-                hasattr(self._v2_integration, "_ready_published")
-                and self._v2_integration._ready_published
-            ):
-                logger.info(
-                    "⏭️ [FIRST_RUN_PERMISSIONS] ready_to_greet already published by V2, "
-                    "published only permissions.first_run_completed"
-                )
-                return
-
-            await self.event_bus.publish(
-                "system.ready_to_greet",
-                {
-                    "source": "permissions_v2_timeout",
-                    "phase": "timeout_mode",
-                    "permissions": {},
-                    "v2": True,
-                },
-            )
-            logger.info("✅ [FIRST_RUN_PERMISSIONS] Timeout-mode events published")
-        except Exception as e:
-            logger.warning("⚠️ [FIRST_RUN_PERMISSIONS] Timeout-mode publish failed: %s", e)

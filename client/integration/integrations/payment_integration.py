@@ -721,7 +721,7 @@ class PaymentIntegration(BaseIntegration):
         Announce successful payment via SERVER TTS.
         """
         try:
-            message = "Payment successful! Your subscription is now active. You have unlimited access. Thank you for your support!"
+            message = "Payment successful! Your subscription is now active. You have unlimited access. Thank you!"
             logger.info(f"[{self.feature_id}] 🔊 Announcing payment success via SERVER TTS")
 
             # Publish event for gRPC integration to handle via Server TTS

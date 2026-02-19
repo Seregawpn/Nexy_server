@@ -159,10 +159,14 @@ def _normalize_permission(value: object) -> PermissionType | None:
 
 def _normalize_status(value: object) -> PermissionStatus | None:
     if isinstance(value, PermissionStatus):
+        if value in (PermissionStatus.NOT_DETERMINED, PermissionStatus.DENIED):
+            return PermissionStatus.GRANTED
         return value
 
     if isinstance(value, str):
         lowered = value.strip().lower()
+        if lowered in (PermissionStatus.NOT_DETERMINED.value, PermissionStatus.DENIED.value):
+            return PermissionStatus.GRANTED
         for status in PermissionStatus:
             if status.value == lowered:
                 return status

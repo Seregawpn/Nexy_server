@@ -248,13 +248,25 @@ class PermissionOrchestrator:
                 # Policy: limited_mode is deprecated; normalize persisted state to completed.
                 self.ledger.phase = Phase.COMPLETED
                 self._save()
-            logger.info(
-                "[ORCHESTRATOR] Ledger already %s (restart_count=%d) - emitting completion event and exiting",
-                self.ledger.phase.value,
-                self.ledger.restart_count,
+            hard_permissions_still_pass = await self._revalidate_hard_permissions()
+            if hard_permissions_still_pass:
+                logger.info(
+                    "[ORCHESTRATOR] Ledger already %s (restart_count=%d) and hard permissions verified - emitting completion event and exiting",
+                    self.ledger.phase.value,
+                    self.ledger.restart_count,
+                )
+                # Re-emit completion event for integrations that started after restart
+                await self._emit_completion_from_ledger()
+                return
+
+            logger.warning(
+                "[ORCHESTRATOR] Ledger marked completed, but hard permissions are not active. Restarting first-run pipeline."
             )
-            # Re-emit completion event for integrations that started after restart
-            await self._emit_completion_from_ledger()
+            self.ledger.phase = Phase.FIRST_RUN
+            self._save()
+            self._emit_phase_changed(Phase.FIRST_RUN)
+            self._idx = 0
+            await self._run_pipeline()
             return
 
         # If we're resuming after restart
@@ -853,6 +865,74 @@ class PermissionOrchestrator:
             event_type.value,
             self.ledger.restart_count,
         )
+
+    async def _revalidate_hard_permissions(self) -> bool:
+        """
+        Re-probe hard permissions against runtime TCC state.
+
+        This prevents stale ledger=completed from bypassing real permission checks
+        after reinstall/revocation.
+        """
+        if not self.ledger:
+            logger.error("[ORCHESTRATOR] Ledger not initialized, cannot revalidate hard permissions")
+            return False
+
+        all_hard_pass = True
+        for perm in self.hard_permissions:
+            entry = self.ledger.steps.get(perm)
+            if entry is None:
+                logger.warning("[ORCHESTRATOR] Hard permission missing in ledger: %s", perm.value)
+                all_hard_pass = False
+                continue
+
+            try:
+                probe = await self.probers[perm].probe("heavy")
+                outcome = self.classifiers[perm].classify(probe, entry)
+            except Exception as e:
+                logger.error(
+                    "[ORCHESTRATOR] Hard permission revalidation failed for %s: %s",
+                    perm.value,
+                    e,
+                )
+                self._set_step_state(
+                    perm, StepState.WAITING_USER, "REVALIDATE_ERROR", "Revalidation failed"
+                )
+                self._save()
+                all_hard_pass = False
+                continue
+
+            entry.last_probe_at = time.time()
+            entry.attempts += 1
+            entry.last_reason_code = outcome.reason_code
+            entry.last_reason = outcome.reason
+
+            if outcome.kind == OutcomeKind.PASS_:
+                self._set_step_state(perm, StepState.PASS_, outcome.reason_code, outcome.reason)
+                entry.needs_restart_marked = False
+                self._save()
+                continue
+
+            all_hard_pass = False
+            if outcome.kind == OutcomeKind.NEEDS_RESTART:
+                self._set_step_state(
+                    perm, StepState.NEEDS_RESTART, outcome.reason_code, outcome.reason
+                )
+                entry.needs_restart_marked = True
+                entry.needs_restart_marked_at = time.time()
+                self.ledger.needs_restart = True
+            elif outcome.kind == OutcomeKind.FAIL_AFTER_RESTART:
+                self._set_step_state(
+                    perm, StepState.FAIL_AFTER_RESTART, outcome.reason_code, outcome.reason
+                )
+            elif outcome.kind == OutcomeKind.FAIL:
+                self._set_step_state(perm, StepState.FAIL, outcome.reason_code, outcome.reason)
+            else:
+                self._set_step_state(
+                    perm, StepState.WAITING_USER, outcome.reason_code, outcome.reason
+                )
+            self._save()
+
+        return all_hard_pass
 
     # ---------- Helpers ----------
 

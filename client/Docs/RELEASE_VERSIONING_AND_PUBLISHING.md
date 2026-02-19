@@ -1,7 +1,7 @@
 # Release Versioning & Publishing Guide (Client)
 
 **Статус:** канонический регламент для обновления версии и заливки клиента  
-**Целевая версия сейчас:** `1.6.1.41`  
+**Целевая версия сейчас:** `1.6.1.43`  
 **Целевой GitHub-репозиторий для клиентской заливки:** `https://github.com/Seregawpn/Nexy_client_test`
 
 ---
@@ -175,7 +175,7 @@ cd /Users/sergiyzasorin/Fix_new/downloads/Nexy_v1.6.1.27
 
 Что выполняется по шагам:
 
-1. Packaging owner (`client/packaging/build_final.sh`)
+1. Packaging owner (`packaging/build_final.sh`)
 - Сборка/подпись/нотаризация.
 - Автосинхронизация в `server/release_inbox`:
   - `Nexy.dmg`

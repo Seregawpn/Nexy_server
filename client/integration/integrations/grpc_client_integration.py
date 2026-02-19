@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Union
+import uuid
 
 import grpc
 import numpy as np
@@ -404,7 +405,11 @@ class GrpcClientIntegration:
             data = (event or {}).get("data", {})
             sid = data.get("session_id")
             text = data.get("text")
-            if not sid or not text:
+            if not sid or text is None:
+                return
+            normalized_text = text.strip() if isinstance(text, str) else text
+            if not normalized_text:
+                logger.debug("Skip voice.completed with empty normalized text for session=%s", sid)
                 return
 
             is_interim = bool(data.get("interim", False))
@@ -417,18 +422,20 @@ class GrpcClientIntegration:
                         "Skip interim update for already dispatched session=%s", sid
                     )
                     return
-                sess["text"] = text
+                sess["text"] = normalized_text
                 sess["ready_to_send"] = False
                 last_collect_text = sess.get("last_collect_text")
-                if text != last_collect_text:
+                if normalized_text != last_collect_text:
                     chunk_seq = int(sess.get("collect_seq", 0)) + 1
                     sess["collect_seq"] = chunk_seq
-                    sess["last_collect_text"] = text
-                    self._schedule_collect_send(sid, chunk_text=text, chunk_seq=chunk_seq)
+                    sess["last_collect_text"] = normalized_text
+                    self._schedule_collect_send(
+                        sid, chunk_text=normalized_text, chunk_seq=chunk_seq
+                    )
                 return
 
             # Terminal recognition for this session.
-            sess["text"] = text
+            sess["text"] = normalized_text
             sess["ready_to_send"] = True
             self._cancel_collect_pending(sid)
             await self._maybe_send(sid)
@@ -634,9 +641,20 @@ class GrpcClientIntegration:
         original_session_id = data.get("session_id", "tts")
         source = data.get("source", "unknown")
 
-        # Use the ORIGINAL session_id so that SpeechPlaybackIntegration attributes this audio
-        # to the current active session.
-        tts_session_id = original_session_id
+        # Normalize non-UUID synthetic ids (e.g. "system") to a UUID session.
+        # This keeps session selectors quiet and avoids non-uuid validation flood
+        # while preserving playback pipeline ownership.
+        original_sid_str = str(original_session_id).strip() if original_session_id is not None else ""
+        if selectors.is_valid_session_id(original_sid_str):
+            tts_session_id = original_sid_str
+        else:
+            tts_session_id = str(uuid.uuid4())
+            logger.debug(
+                "[TTS] Non-UUID session normalized: source=%s original=%s normalized=%s",
+                source,
+                original_sid_str or "none",
+                tts_session_id,
+            )
 
         if not text or not text.strip():
             logger.warning(f"[TTS] Empty text received from {source}, ignoring")
@@ -724,6 +742,17 @@ class GrpcClientIntegration:
         chunk_seq: int = 0,
         include_screenshot: bool = False,
     ) -> None:
+        normalized_chunk_text = (
+            chunk_text.strip() if isinstance(chunk_text, str) else chunk_text
+        )
+        if not normalized_chunk_text and not include_screenshot:
+            logger.debug(
+                "Skip collect scheduling: empty normalized chunk (session=%s, seq=%s)",
+                session_id,
+                chunk_seq,
+            )
+            return
+
         entry = self._collect_pending.setdefault(
             session_id,
             {"task": None, "chunk_text": None, "chunk_seq": 0, "include_screenshot": False},
@@ -732,8 +761,8 @@ class GrpcClientIntegration:
         # Merge payload: keep newest chunk_seq/text and preserve screenshot marker.
         if chunk_seq >= int(entry.get("chunk_seq", 0)):
             entry["chunk_seq"] = chunk_seq
-            if chunk_text is not None:
-                entry["chunk_text"] = chunk_text
+            if normalized_chunk_text is not None:
+                entry["chunk_text"] = normalized_chunk_text
         entry["include_screenshot"] = bool(entry.get("include_screenshot")) or include_screenshot
 
         # Screenshot collect should go immediately; text collect is debounced.
@@ -787,7 +816,15 @@ class GrpcClientIntegration:
         sess = self._sessions.get(session_id) or {}
         if sess.get("dispatched", False):
             return
-        if not chunk_text and not include_screenshot:
+        normalized_chunk_text = (
+            chunk_text.strip() if isinstance(chunk_text, str) else chunk_text
+        )
+        if not normalized_chunk_text and not include_screenshot:
+            logger.debug(
+                "Skip collect send: empty chunk_text after normalize (session=%s, seq=%s)",
+                session_id,
+                chunk_seq,
+            )
             return
 
         # КРИТИЧНО: gRPC операции в _grpc_loop
@@ -797,7 +834,7 @@ class GrpcClientIntegration:
                 asyncio.run_coroutine_threadsafe(
                     self._send_collect_in_grpc_loop(
                         session_id=session_id,
-                        chunk_text=chunk_text,
+                        chunk_text=normalized_chunk_text,
                         chunk_seq=chunk_seq,
                         include_screenshot=include_screenshot,
                     ),
@@ -808,7 +845,7 @@ class GrpcClientIntegration:
 
         await self._send_collect_in_grpc_loop(
             session_id=session_id,
-            chunk_text=chunk_text,
+            chunk_text=normalized_chunk_text,
             chunk_seq=chunk_seq,
             include_screenshot=include_screenshot,
         )
@@ -839,12 +876,22 @@ class GrpcClientIntegration:
         screenshot_b64 = ""
         if include_screenshot:
             screenshot_b64 = sess.get("screenshot_base64") or ""
+        normalized_chunk_text = (
+            chunk_text.strip() if isinstance(chunk_text, str) else chunk_text
+        )
+        if not normalized_chunk_text and not screenshot_b64:
+            logger.debug(
+                "Skip collect in grpc loop: empty payload (session=%s, seq=%s)",
+                session_id,
+                chunk_seq,
+            )
+            return
 
         logger.debug(
             "→ StreamAudio collect send: session=%s seq=%s text_len=%s has_screenshot=%s",
             session_id,
             chunk_seq,
-            len(chunk_text or ""),
+            len(normalized_chunk_text or ""),
             bool(screenshot_b64),
         )
 
@@ -856,7 +903,7 @@ class GrpcClientIntegration:
             session_id=str(session_id),
             phase="REQUEST_PHASE_COLLECT",
             chunk_seq=chunk_seq,
-            chunk_text=chunk_text or "",
+            chunk_text=normalized_chunk_text or "",
             timeout=3.0,
         ):
             # COLLECT path ожидает только terminal ack/error; payload игнорируем.
@@ -949,9 +996,20 @@ class GrpcClientIntegration:
     async def _send(self, session_id):
         """Отправка gRPC запроса. КРИТИЧНО: все gRPC операции выполняются в _grpc_loop."""
         sess = self._sessions.get(session_id) or {}
-        text = sess.get("text")
+        raw_text = sess.get("text")
+        text = raw_text.strip() if isinstance(raw_text, str) else raw_text
         if not text:
+            logger.warning(
+                "grpc.send skipped: empty text payload (session_id=%s, raw_type=%s)",
+                session_id,
+                type(raw_text).__name__,
+            )
+            await self.event_bus.publish(
+                "grpc.request_failed",
+                {"session_id": session_id, "error": "empty_prompt"},
+            )
             return
+        sess["text"] = text
 
         # КРИТИЧНО: Проверяем, в каком loop мы находимся
         current_loop = asyncio.get_running_loop()
@@ -969,9 +1027,20 @@ class GrpcClientIntegration:
     async def _send_in_grpc_loop(self, session_id):
         """Внутренний метод отправки, всегда выполняется в _grpc_loop."""
         sess = self._sessions.get(session_id) or {}
-        text = sess.get("text")
+        raw_text = sess.get("text")
+        text = raw_text.strip() if isinstance(raw_text, str) else raw_text
         if not text:
+            logger.warning(
+                "grpc.send_in_loop skipped: empty text payload (session_id=%s, raw_type=%s)",
+                session_id,
+                type(raw_text).__name__,
+            )
+            await self.event_bus.publish(
+                "grpc.request_failed",
+                {"session_id": session_id, "error": "empty_prompt"},
+            )
             return
+        sess["text"] = text
 
         # Получаем hardware_id
         hwid = await self._await_hardware_id(timeout_ms=3000)

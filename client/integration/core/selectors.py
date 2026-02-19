@@ -18,6 +18,8 @@ from integration.utils.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
+_NON_UUID_SENTINEL_IDS = {"", "none", "null", "system", "tts"}
+
 from integration.core.state_keys import StateKeys
 from integration.core.state_manager import ApplicationStateManager
 
@@ -286,13 +288,18 @@ def is_valid_session_id(session_id: object) -> bool:
     """Validate session_id is a uuid4 string."""
     if not isinstance(session_id, str):
         return False
+    normalized = session_id.strip().lower()
+    if normalized in _NON_UUID_SENTINEL_IDS:
+        return False
     try:
         import uuid
 
         parsed = uuid.UUID(session_id, version=4)
         return str(parsed) == session_id
     except Exception as e:
-        logger.debug(f"Session ID validation failed for '{session_id}': {e}")
+        # Keep debug logs for unexpected malformed UUID-like values only.
+        if "-" in session_id:
+            logger.debug(f"Session ID validation failed for '{session_id}': {e}")
         return False
 
 

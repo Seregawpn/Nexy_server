@@ -282,8 +282,6 @@ class PermissionOrchestratorIntegration:
                 return ("permissions.first_run_started", {"session_id": "v2_session"}), False
 
         elif event.type == UIEventType.COMPLETED:
-            if self._advance_on_timeout:
-                return None
             all_hard_granted, missing = self._summarize_hard_permissions()
             final_snapshot = self._build_final_snapshot(event)
             logger.info(
@@ -303,11 +301,14 @@ class PermissionOrchestratorIntegration:
                     "final_snapshot": final_snapshot,
                 },
             )
-            return legacy, True
+            if not all_hard_granted:
+                logger.warning(
+                    "[V2_INTEGRATION] Skip system.ready_to_greet: hard permissions missing=%s",
+                    missing,
+                )
+            return legacy, all_hard_granted
 
         elif event.type == UIEventType.LIMITED_MODE_ENTERED:
-            if self._advance_on_timeout:
-                return None
             final_snapshot = self._build_final_snapshot(event)
             logger.info(
                 "[V2_INTEGRATION] FINAL_SNAPSHOT phase=%s all_hard_granted=%s missing_hard=%s",
@@ -325,7 +326,7 @@ class PermissionOrchestratorIntegration:
                     "all_hard_granted": False,
                     "final_snapshot": final_snapshot,
                 },
-            ), True
+            ), False
 
         elif event.type == UIEventType.RESTART_SCHEDULED:
             # V2 orchestrator is the single owner of restart.

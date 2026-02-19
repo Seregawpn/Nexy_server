@@ -1,7 +1,7 @@
 # ✅ ФИНАЛЬНЫЙ ЧЕК-ЛИСТ РЕЛИЗА
 
 **Дата проверки:** 2025-11-17  
-**Версия:** 1.6.1.41  
+**Версия:** 1.6.1.43  
 **Артефакты:** Universal 2 (arm64 + x86_64)
 
 > **КРИТИЧНО:** Любые изменения из триггеров (`main.py`, `integration/`, `modules/`, `resources/`, `assets/`, `vendor_binaries/`, `config/`, `packaging/`, `scripts/`, `requirements.txt`, `pyproject.toml`) **ОБЯЗАНЫ** пройти `Docs/PRE_PACKAGING_VERIFICATION.md` и следовать каноническому процессу из `Docs/PACKAGING_FINAL_GUIDE.md` (раздел 0.2). Это **ЕДИНСТВЕННЫЙ** способ упаковки без ручных исключений.

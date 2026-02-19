@@ -308,7 +308,7 @@ class PermissionRestartIntegration(BaseIntegration):
 
             payload = {
                 "permission": perm_type.value,
-                "old_status": PermissionStatus.NOT_DETERMINED.value,
+                "old_status": PermissionStatus.GRANTED.value,
                 "new_status": PermissionStatus.GRANTED.value,
                 "session_id": session_id,
                 "source": "permissions.first_run_restart_pending",
@@ -631,10 +631,6 @@ class PermissionRestartIntegration(BaseIntegration):
         Обработчик события app.startup.
         """
         logger.info("[PERMISSION_RESTART] 🚀 app.startup event received, checking permissions...")
-        """
-        Инициализирует детектор текущим состоянием разрешений, чтобы избежать
-        ложных срабатываний на уже выданные разрешения.
-        """
         # КРИТИЧНО: Предотвращаем повторную публикацию system.ready_to_greet
         # если async обработка завершается после первой публикации
         if self._ready_emitted:
@@ -643,50 +639,18 @@ class PermissionRestartIntegration(BaseIntegration):
             )
             return
 
-        # Инициализируем детектор текущим состоянием разрешений
-        try:
+        # Single-owner policy: runtime permission truth belongs to V2 orchestrator.
+        # Legacy startup synthetic snapshots are disabled to avoid second owner-path.
+        if self._legacy_restart_paths_frozen():
             logger.info(
-                "[PERMISSION_RESTART] Init permissions snapshot: assume GRANTED (no checks)"
+                "[PERMISSION_RESTART] Startup snapshot skipped: V2 orchestrator owns permission runtime status"
             )
-            current_permissions = {
-                "microphone": PermissionStatus.GRANTED,
-                "accessibility": PermissionStatus.GRANTED,
-                "input_monitoring": PermissionStatus.GRANTED,
-                "screen_capture": PermissionStatus.GRANTED,
-            }
-
-            for perm_name, status in current_permissions.items():
-                # Преобразуем FirstRunPermissionStatus в PermissionStatus
-                perm_status = PermissionStatus.GRANTED
-
-                # Синтетическое событие для инициализации детектора
-                payload: dict[str, object] = {
-                    "permission": perm_name,
-                    "old_status": PermissionStatus.NOT_DETERMINED.value,
-                    "new_status": perm_status.value,
-                    "session_id": "app_startup_init",
-                    "source": "app_startup_init",
-                }
-                # Обрабатываем без вызова _handle_transition (только инициализация)
-                self._detector.process_event("permissions.init", payload)
-
+        else:
             logger.info(
-                "[PERMISSION_RESTART] Initialized with current permissions: %s",
-                {k: v.value for k, v in current_permissions.items()},
-            )
-        except Exception as exc:
-            logger.warning(
-                "[PERMISSION_RESTART] Failed to initialize with current permissions: %s", exc
+                "[PERMISSION_RESTART] Startup synthetic permission snapshot disabled by owner policy"
             )
 
         await self._publish_ready_if_applicable(source="app_startup")
-
-    def _get_current_permission_statuses(self) -> dict[PermissionType, PermissionStatus]:
-        status_map: dict[PermissionType, PermissionStatus] = {}
-        for permission in self._config.critical_permissions:
-            status = PermissionStatus.GRANTED
-            status_map[permission] = status
-        return status_map
 
     async def _publish_ready_if_applicable(self, *, source: str) -> None:
         if self._ready_emitted:
