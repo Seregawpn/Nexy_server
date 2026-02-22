@@ -325,11 +325,11 @@ class PermissionOrchestrator:
 
             # For FDA, run a pre-probe to force TCC to create an entry
             # so the app appears in the Full Disk Access list.
+            # This must run regardless of advance_on_timeout mode.
             if (
                 perm == PermissionId.FULL_DISK_ACCESS
                 and entry.state not in (StepState.PASS_, StepState.SKIPPED)
                 and entry.last_probe_at is None
-                and not self.advance_on_timeout
             ):
                 try:
                     await self.probers[perm].probe("heavy")

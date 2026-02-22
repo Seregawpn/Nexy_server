@@ -40,6 +40,9 @@ class BrowserUseIntegration:
         self._terminal_by_session_event: dict[str, str] = {}
         self._last_failure_tts_ts_by_session: dict[str, float] = {}
         self._failure_tts_dedup_window_sec = 5.0
+        self._browser_install_started_announced = False
+        self._startup_browser_prepare_task: asyncio.Task[Any] | None = None
+        self._startup_browser_prepare_started = False
 
     async def initialize(self) -> bool:
         try:
@@ -133,9 +136,6 @@ class BrowserUseIntegration:
                 "welcome.completed", self._on_welcome_completed, EventPriority.MEDIUM
             )
             await self.event_bus.subscribe(
-                "welcome.failed", self._on_welcome_completed, EventPriority.MEDIUM
-            )
-            await self.event_bus.subscribe(
                 "app.mode_changed", self._on_app_mode_changed, EventPriority.MEDIUM
             )
             await self.event_bus.subscribe(
@@ -178,6 +178,12 @@ class BrowserUseIntegration:
                 await self._runtime_tts_flush_task
             except asyncio.CancelledError:
                 pass
+        if self._startup_browser_prepare_task and not self._startup_browser_prepare_task.done():
+            self._startup_browser_prepare_task.cancel()
+            try:
+                await self._startup_browser_prepare_task
+            except asyncio.CancelledError:
+                pass
         return True
 
     async def _publish_tts(self, text: str, *, session_id: str, source: str) -> None:
@@ -195,17 +201,47 @@ class BrowserUseIntegration:
         )
 
     async def _handle_install_status(self, event: dict[str, Any]) -> None:
-        # Runtime browser install UX removed by product decision:
-        # packaged app must ship with pre-bundled browser runtime.
         status = str((event or {}).get("status") or "").lower()
         if not status:
             return
 
+        if status == "started":
+            self._browser_install_started_announced = True
+            message = "Browser download started."
+            await self.event_bus.publish(
+                "system.notification",
+                {"title": "Nexy Browser", "message": message},
+            )
+            await self._queue_or_publish_startup_tts(message)
+            return
+
+        if status == "downloading":
+            # Progress heartbeats are intentionally silent:
+            # product UX requires only start + completion notifications.
+            return
+
+        if status == "completed":
+            if not self._browser_install_started_announced:
+                return
+            self._browser_install_started_announced = False
+            message = "Browser download complete. You can use browser now."
+            await self.event_bus.publish(
+                "system.notification",
+                {"title": "Nexy Browser", "message": message},
+            )
+            await self._queue_or_publish_startup_tts(message)
+            return
+
+        if status == "already_installed":
+            self._browser_install_started_announced = False
+            return
+
         if status == "failed":
+            self._browser_install_started_announced = False
             error_text = str((event or {}).get("error") or "unknown")
             await self.event_bus.publish(
                 "system.notification",
-                {"title": "Nexy Browser", "message": f"Browser runtime validation failed: {error_text}"},
+                {"title": "Nexy Browser", "message": f"Failed to install browser: {error_text}"},
             )
 
     def _build_browser_failure_feedback(self, error_text: str) -> str:
@@ -216,6 +252,8 @@ class BrowserUseIntegration:
             return "I can't open the browser because browser automation is not installed."
         if "browser_runtime_missing_preinstalled_chromium_required" in err:
             return "I can't open the browser because browser runtime is not installed."
+        if "browser_runtime_install_disabled" in err:
+            return "I can't open the browser because runtime browser installation is disabled."
         if "chromium_executable_not_found_in_preinstalled_runtime" in err:
             return "I can't open the browser because the browser executable is missing."
         if "runtime_browser_install_disabled_use_prebundled_runtime" in err:
@@ -256,6 +294,32 @@ class BrowserUseIntegration:
         self._welcome_completed = True
         self._welcome_completed_event.set()
         await self._flush_pending_startup_tts()
+        self._ensure_startup_browser_prepare_task()
+
+    def _ensure_startup_browser_prepare_task(self) -> None:
+        if self._startup_browser_prepare_started:
+            return
+        self._startup_browser_prepare_started = True
+        self._startup_browser_prepare_task = asyncio.create_task(
+            self._run_startup_browser_prepare()
+        )
+
+    async def _run_startup_browser_prepare(self) -> None:
+        try:
+            ready = await self.module.ensure_runtime_browser_ready(
+                reason="post_welcome_startup"
+            )
+            logger.info(
+                "BrowserUseIntegration startup browser prepare completed: ready=%s",
+                ready,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(
+                "BrowserUseIntegration startup browser prepare failed: %s",
+                e,
+            )
 
     async def _on_app_mode_changed(self, event: dict[str, Any]) -> None:
         data = (event or {}).get("data", {}) or {}

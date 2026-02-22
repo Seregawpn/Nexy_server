@@ -231,7 +231,7 @@ integrations:
     poll_interval_sec: 3.0
   permissions_v2:
     enabled: true
-    advance_on_timeout: true
+    advance_on_timeout: false
     default_step_timeout_s: 15.0
     batching:
       enabled: false
@@ -243,12 +243,12 @@ integrations:
     order:
     - microphone
     - screen_capture
+    - full_disk_access
     - network
     - contacts
     - messages
     - input_monitoring
     - accessibility
-    - full_disk_access
     inter_step_pause_s: 0.0
     steps:
       microphone:
@@ -652,7 +652,7 @@ browser_use:
   log_steps: true
   log_terminal: true
   keep_browser_open: true
-  allow_runtime_install: false
+  allow_runtime_install: true
   runtime_browser_dir: ''
   playwright_driver_dir: ''
   gemini_api_key: ''

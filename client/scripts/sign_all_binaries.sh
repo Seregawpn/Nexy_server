@@ -67,9 +67,15 @@ while read -r BIN; do
                 echo "  Подписано: $count файлов..."
             fi
         else
-            failed=$((failed + 1))
-            echo "$BIN" >> "$failed_list"
-            echo "❌ Не удалось подписать: $BIN"
+            # Some nested Chrome app entry binaries can fail in this generic pass.
+            # They are handled by a dedicated nested-app signing pass below.
+            if [[ "$BIN" == *"/Google Chrome for Testing.app/"* ]]; then
+                echo "⚠️  Пропускаем в generic-pass (будет подписано в nested-pass): $BIN"
+            else
+                failed=$((failed + 1))
+                echo "$BIN" >> "$failed_list"
+                echo "❌ Не удалось подписать: $BIN"
+            fi
         fi
     fi
 done < <(
@@ -81,6 +87,16 @@ done < <(
 # Re-sign nested app recursively after per-file signing to ensure bundle integrity.
 if [ -d "$APP_PATH/Contents/Resources/playwright-browsers" ]; then
     while IFS= read -r -d '' CHROME_APP; do
+        # Sign nested dylib binaries first to satisfy notarization requirements.
+        while IFS= read -r -d '' CHROME_LIB; do
+            if ! codesign --force $TIMESTAMP_FLAG --options=runtime \
+                --sign "$IDENTITY" "$CHROME_LIB" >/dev/null 2>&1; then
+                failed=$((failed + 1))
+                echo "$CHROME_LIB" >> "$failed_list"
+                echo "❌ Не удалось подписать nested lib: $CHROME_LIB"
+            fi
+        done < <(find "$CHROME_APP/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.so" \) -print0 2>/dev/null)
+
         if ! codesign --force $TIMESTAMP_FLAG --options=runtime --deep \
             --sign "$IDENTITY" "$CHROME_APP" >/dev/null 2>&1; then
             failed=$((failed + 1))

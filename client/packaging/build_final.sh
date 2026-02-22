@@ -307,14 +307,6 @@ if [ "$STRICT_RELEASE_MODE" = "1" ]; then
         echo -e "${RED}❌ Strict mode: NEXY_SKIP_GEMINI_API_LIVE_CHECK=1 запрещен${NC}"
         PREFLIGHT_FAILED=true
     fi
-    if [ "${NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE:-0}" = "1" ]; then
-        echo -e "${RED}❌ Strict mode: NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE=1 запрещен${NC}"
-        PREFLIGHT_FAILED=true
-    fi
-    if [ "${NEXY_REQUIRE_UNIVERSAL_CHROMIUM_RUNTIME:-1}" = "0" ]; then
-        echo -e "${RED}❌ Strict mode: NEXY_REQUIRE_UNIVERSAL_CHROMIUM_RUNTIME=0 запрещен${NC}"
-        PREFLIGHT_FAILED=true
-    fi
 
     if "$BUILD_PYTHON" - <<'PY' >/dev/null 2>&1
 from modules.browser_automation import module as m
@@ -910,55 +902,13 @@ checkpoint() {
     return 0
 }
 
-verify_packaged_browser_runtime() {
+verify_packaged_playwright_driver() {
     local app_path="$1"
-    local runtime_dir="$app_path/Contents/Resources/playwright-browsers"
     local driver_dir="$app_path/Contents/Resources/playwright/driver"
-    local require_universal="${NEXY_REQUIRE_UNIVERSAL_CHROMIUM_RUNTIME:-1}"
 
-    log "Проверяем packaged browser runtime в .app..."
-
-    if [ ! -d "$runtime_dir" ]; then
-        error "Browser runtime directory not found in app: $runtime_dir"
-    fi
+    log "Проверяем packaged Playwright driver в .app..."
     if [ ! -d "$driver_dir" ]; then
         error "Playwright driver directory not found in app: $driver_dir"
-    fi
-
-    local chromium_count
-    chromium_count=$(find "$runtime_dir" -maxdepth 1 -type d -name 'chromium-*' 2>/dev/null | wc -l | tr -d ' ')
-    if [ "${chromium_count:-0}" -lt 1 ]; then
-        error "No chromium-* directories found in packaged runtime: $runtime_dir"
-    fi
-
-    local marker_count
-    marker_count=$(find "$runtime_dir" -type f -name 'INSTALLATION_COMPLETE' 2>/dev/null | wc -l | tr -d ' ')
-    if [ "${marker_count:-0}" -lt 1 ]; then
-        error "No INSTALLATION_COMPLETE markers found in packaged runtime: $runtime_dir"
-    fi
-
-    local exe_count
-    exe_count=$(find "$runtime_dir" -type f \( -name 'Chromium' -o -name 'Google Chrome for Testing' -o -name 'chrome' \) 2>/dev/null | wc -l | tr -d ' ')
-    if [ "${exe_count:-0}" -lt 1 ]; then
-        error "No Chromium executable found in packaged runtime: $runtime_dir"
-    fi
-
-    local has_arm=0
-    local has_x86=0
-    if find "$runtime_dir" -type d -name 'chrome-mac-arm64' 2>/dev/null | grep -q .; then
-        has_arm=1
-    fi
-    if find "$runtime_dir" -type d \( -name 'chrome-mac' -o -name 'chrome-mac-x64' \) 2>/dev/null | grep -q .; then
-        has_x86=1
-    fi
-    if [ "$require_universal" = "1" ]; then
-        if [ "$has_arm" -ne 1 ] || [ "$has_x86" -ne 1 ]; then
-            error "Packaged Chromium runtime is not universal-ready (need x64 + arm64 dirs): $runtime_dir"
-        fi
-    else
-        if [ "$has_arm" -ne 1 ] && [ "$has_x86" -ne 1 ]; then
-            error "Packaged Chromium runtime has no macOS arch directories: $runtime_dir"
-        fi
     fi
 
     local driver_ok=0
@@ -971,7 +921,7 @@ verify_packaged_browser_runtime() {
         error "Playwright driver components missing in app: $driver_dir"
     fi
 
-    log "✅ Packaged browser runtime verified: runtime_dir=$runtime_dir driver_dir=$driver_dir"
+    log "✅ Packaged Playwright driver verified: $driver_dir"
 }
 
 run_optional_post_package_smoke() {
@@ -1182,82 +1132,12 @@ fi
 # падаем сразу с корректной инструкцией, а не на позднем шаге copy/ditto.
 assert_dist_app_writable
 
-# Prepare deterministic Playwright browser runtime bundle for packaged app.
-# Single owner path for packaged browser: Contents/Resources/playwright-browsers.
 prepare_playwright_browser_bundle() {
-    if [ "${NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE:-0}" = "1" ]; then
-        warn "NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE=1 -> пропускаем подготовку bundled Chromium"
-        return 0
-    fi
-
-    # Keep bundle outside build/* to survive step-1 cleanup and support deterministic reuse.
-    local bundle_dir="${NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR:-$CLIENT_DIR/.cache/playwright-browsers-bundle}"
-    bundle_dir="$("$BUILD_PYTHON" - <<PY
-from pathlib import Path
-print(Path("$bundle_dir").expanduser().resolve())
-PY
-)"
-    export NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR="$bundle_dir"
-
-    if "$BUILD_PYTHON" - <<'PY' >/dev/null 2>&1
-import os
-import sys
-from pathlib import Path
-
-bundle = Path(os.environ["NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR"]).resolve()
-if not bundle.is_dir():
-    sys.exit(2)
-
-chromium_dirs = [p for p in bundle.iterdir() if p.is_dir() and p.name.startswith("chromium-")]
-if not chromium_dirs:
-    sys.exit(3)
-
-def has_any_executable(base: Path, arch_dir: str) -> bool:
-    candidates = [
-        base / arch_dir / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
-        base / arch_dir / "Google Chrome for Testing.app" / "Contents" / "MacOS" / "Google Chrome for Testing",
-    ]
-    return any(c.is_file() for c in candidates)
-
-def is_universal_ready(base: Path) -> bool:
-    return (
-        (has_any_executable(base, "chrome-mac") or has_any_executable(base, "chrome-mac-x64"))
-        and has_any_executable(base, "chrome-mac-arm64")
-        and (base / "INSTALLATION_COMPLETE").is_file()
-    )
-
-if not any(is_universal_ready(d) for d in chromium_dirs):
-    sys.exit(4)
-PY
-    then
-        log "Bundled Chromium runtime уже готов, переиспользуем: $bundle_dir"
-        return 0
-    fi
-
-    error "Bundled Chromium runtime отсутствует/неполный: $bundle_dir. Подготовьте его ДО сборки: scripts/prepare_playwright_browser_bundle.sh"
+    log "Bundled Chromium runtime отключен: runtime install выполняется на клиентской машине при первом запуске"
 }
 
 sync_playwright_browser_bundle_into_app() {
-    local app_path="$1"
-    local bundle_dir="${NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR:-}"
-    local app_runtime_dir="$app_path/Contents/Resources/playwright-browsers"
-
-    if [ "${NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE:-0}" = "1" ]; then
-        warn "NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE=1 -> пропускаем синхронизацию bundled Chromium в .app"
-        return 0
-    fi
-
-    if [ -z "$bundle_dir" ] || [ ! -d "$bundle_dir" ]; then
-        error "Bundled Chromium runtime directory не найден для синхронизации: $bundle_dir"
-    fi
-    if [ ! -d "$app_path" ]; then
-        error ".app не найден для синхронизации bundled Chromium: $app_path"
-    fi
-
-    log "Синхронизируем bundled Chromium runtime в .app: $app_runtime_dir"
-    safe_remove "$app_runtime_dir"
-    mkdir -p "$(dirname "$app_runtime_dir")"
-    safe_copy "$bundle_dir" "$app_runtime_dir"
+    log "Синхронизация bundled Chromium в .app отключена"
 }
 
 prepare_playwright_browser_bundle
@@ -1381,7 +1261,7 @@ if [ ! -d "dist/$APP_NAME.app" ]; then
 fi
 
 sync_playwright_browser_bundle_into_app "dist/$APP_NAME.app"
-verify_packaged_browser_runtime "dist/$APP_NAME.app"
+verify_packaged_playwright_driver "dist/$APP_NAME.app"
 run_optional_post_package_smoke
 
 log "Сборка завершена успешно"

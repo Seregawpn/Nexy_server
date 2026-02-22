@@ -18,7 +18,6 @@ REQUIRED_PATHS = [
     ROOT / "packaging" / "Nexy.spec",
     ROOT / "packaging" / "build_final.sh",
     ROOT / "scripts" / "stage_universal_binaries.py",
-    ROOT / "scripts" / "prepare_playwright_browser_bundle.sh",
 ]
 
 # Files/directories that trigger a full packaging cycle.
@@ -78,14 +77,6 @@ def main() -> int:
         print(f"Running: {' '.join(cmd)}")
         if run(cmd) != 0:
             print(f"FAILED: {' '.join(cmd)}")
-            return 1
-
-    bundle_check = ROOT / "scripts" / "prepare_playwright_browser_bundle.sh"
-    if bundle_check.exists():
-        verify_cmd = ["bash", str(bundle_check), "--verify-only"]
-        print(f"Running: {' '.join(verify_cmd)}")
-        if subprocess.run(verify_cmd, cwd=ROOT).returncode != 0:
-            print("FAILED: prebuilt Playwright browser bundle check")
             return 1
 
     print("Packaging readiness OK.")

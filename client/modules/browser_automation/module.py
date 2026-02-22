@@ -423,10 +423,7 @@ class BrowserUseModule:
                     BrowserUseModule._browser_installed = True
                     logger.info(f"[{FEATURE_ID}] Chromium runtime already present locally")
                 else:
-                    logger.warning(
-                        f"[{FEATURE_ID}] Chromium runtime not found; "
-                        "runtime installation path is disabled, expecting pre-bundled Chromium"
-                    )
+                    logger.warning(f"[{FEATURE_ID}] Chromium runtime not found locally yet")
 
             self._initialized = True
             logger.info(f"[{FEATURE_ID}] Client BrowserUseModule initialized")
@@ -473,12 +470,6 @@ class BrowserUseModule:
         env_override = os.environ.get("NEXY_BROWSER_RUNTIME_DIR", "").strip()
         if env_override:
             return os.path.expanduser(env_override)
-        if self._is_frozen_runtime():
-            exe_dir = os.path.dirname(sys.executable)
-            resources_dir = os.path.normpath(os.path.join(exe_dir, "..", "Resources"))
-            bundled = os.path.join(resources_dir, "playwright-browsers")
-            if os.path.isdir(bundled):
-                return bundled
         app_support = get_user_data_dir()
         return os.path.join(app_support, "chrome-nexy")
 
@@ -714,10 +705,6 @@ class BrowserUseModule:
 
     async def _ensure_browser_installed(self):
         """Check and install Chromium if necessary (single-flight)."""
-        raise RuntimeError("runtime_browser_install_disabled_use_prebundled_runtime")
-
-        # Legacy implementation intentionally kept below unreachable for now to avoid
-        # large structural churn during transition to pre-bundled runtime only mode.
         if not _check_browser_use_available():
             return
 
@@ -868,8 +855,20 @@ class BrowserUseModule:
                     await self._emit_install_status("downloading")
                     if not install_start_announced:
                         await self._emit_install_status("started")
-
-                    returncode, err_msg = await install_task
+                    download_started = time.monotonic()
+                    heartbeat_sec = float(self._config.get("install_progress_heartbeat_sec", 60.0))
+                    heartbeat_sec = max(10.0, heartbeat_sec)
+                    while not install_task.done():
+                        try:
+                            returncode, err_msg = await asyncio.wait_for(
+                                asyncio.shield(install_task), timeout=heartbeat_sec
+                            )
+                            break
+                        except asyncio.TimeoutError:
+                            elapsed = int(time.monotonic() - download_started)
+                            await self._emit_install_status("downloading", elapsed_sec=elapsed)
+                    else:
+                        returncode, err_msg = await install_task
 
                 if returncode != 0:
                     self._clear_install_pending()
@@ -912,10 +911,6 @@ class BrowserUseModule:
         Returns:
             (task, started_new_task)
         """
-        raise RuntimeError("runtime_browser_install_disabled_use_prebundled_runtime")
-
-        # Legacy implementation intentionally kept below unreachable for now to avoid
-        # large structural churn during transition to pre-bundled runtime only mode.
         async with BrowserUseModule._install_task_guard:
             install_task = BrowserUseModule._install_task
             if install_task is None:
@@ -938,6 +933,54 @@ class BrowserUseModule:
                     return install_task, True
 
             return install_task, False
+
+    async def ensure_runtime_browser_ready(self, *, reason: str = "startup") -> bool:
+        """
+        Ensure runtime Chromium is installed outside of task-processing flow.
+
+        Returns True when local Chromium runtime is ready after this call.
+        """
+        if not _check_browser_use_available():
+            logger.warning(
+                f"[{FEATURE_ID}] Runtime browser ensure skipped ({reason}): browser-use unavailable"
+            )
+            return False
+
+        if BrowserUseModule._browser_installed and self._is_local_chromium_ready():
+            return True
+
+        if self._is_local_chromium_ready():
+            BrowserUseModule._browser_installed = True
+            return True
+
+        if not self._allow_runtime_install():
+            logger.warning(
+                f"[{FEATURE_ID}] Runtime browser ensure skipped ({reason}): runtime install disabled"
+            )
+            return False
+
+        try:
+            install_task, started_new_install = await self._get_or_start_install_task(
+                restart_if_failed=True
+            )
+            if started_new_install:
+                logger.info(
+                    f"[{FEATURE_ID}] Started runtime Chromium installation task (reason={reason})"
+                )
+            else:
+                logger.info(
+                    f"[{FEATURE_ID}] Waiting for shared runtime Chromium installation task "
+                    f"(reason={reason})"
+                )
+            await install_task
+        except Exception as e:
+            logger.error(f"[{FEATURE_ID}] Runtime browser ensure failed (reason={reason}): {e}")
+            return False
+
+        ready = self._is_local_chromium_ready()
+        if ready:
+            BrowserUseModule._browser_installed = True
+        return ready
 
     def _format_action_description(self, agent_output, browser_state) -> str:
         """
@@ -1099,18 +1142,43 @@ class BrowserUseModule:
                     if install_task and not install_task.done():
                         install_task.cancel()
 
-            # Setup must be pre-bundled before agent launch.
-            # Runtime install path is intentionally disabled to keep packaged behavior deterministic.
             if not BrowserUseModule._browser_installed:
-                yield {
-                    "type": "BROWSER_TASK_FAILED",
-                    "task_id": task_id,
-                    "session_id": session_id,
-                    "description": "Browser runtime is not preinstalled for app mode",
-                    "error": "browser_runtime_missing_preinstalled_chromium_required",
-                    "timestamp": datetime.now().isoformat(),
-                }
-                return
+                if not self._allow_runtime_install():
+                    yield {
+                        "type": "BROWSER_TASK_FAILED",
+                        "task_id": task_id,
+                        "session_id": session_id,
+                        "description": "Browser runtime install is disabled by configuration",
+                        "error": "browser_runtime_install_disabled",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    return
+
+                install_task, started_new_install = await self._get_or_start_install_task(
+                    restart_if_failed=True
+                )
+                if started_new_install:
+                    logger.info(f"[{FEATURE_ID}] Started runtime Chromium installation task")
+                else:
+                    logger.info(f"[{FEATURE_ID}] Waiting for shared runtime Chromium installation task")
+
+                install_wait_timeout_sec = float(self._config.get("install_wait_timeout_sec", 900.0))
+                wait_started = time.monotonic()
+                while True:
+                    elapsed = time.monotonic() - wait_started
+                    remaining = install_wait_timeout_sec - elapsed
+                    if remaining <= 0:
+                        raise TimeoutError(
+                            f"Timed out waiting for runtime Chromium install after {install_wait_timeout_sec:.0f}s"
+                        )
+                    try:
+                        await asyncio.wait_for(asyncio.shield(install_task), timeout=min(5.0, remaining))
+                        break
+                    except asyncio.TimeoutError:
+                        logger.info(
+                            f"[{FEATURE_ID}] Waiting for runtime Chromium install ({elapsed:.1f}s elapsed)"
+                        )
+                        continue
 
             chromium_executable = self._resolve_local_chromium_executable()
             if not chromium_executable:
