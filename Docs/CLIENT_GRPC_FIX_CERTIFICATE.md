@@ -19,7 +19,7 @@
 ### Шаг 1: Скачать сертификат сервера
 
 ```bash
-openssl s_client -connect 20.63.24.187:443 -showcerts </dev/null 2>/dev/null | \
+openssl s_client -connect nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443 -showcerts </dev/null 2>/dev/null | \
   openssl x509 -outform PEM > client/resources/certs/production_server.pem
 ```
 
@@ -30,7 +30,7 @@ openssl s_client -connect 20.63.24.187:443 -showcerts </dev/null 2>/dev/null | \
 grpc:
   servers:
     production:
-      host: 20.63.24.187
+      host: nexy-prod-sergiy.canadacentral.cloudapp.azure.com
       port: 443
       ssl: true
       ssl_verify: false  # ВАЖНО для self-signed

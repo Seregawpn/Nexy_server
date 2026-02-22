@@ -1399,9 +1399,12 @@ class StreamingWorkflowIntegration:
         
         # 1. Memory Context
         if memory_context:
-            memory_info = memory_context.get('recent_context', '')
-            if memory_info:
-                context_parts.append(f"Memory Context: {memory_info}")
+            recent_memory = memory_context.get('recent_context', '')
+            long_term_memory = memory_context.get('long_term_context', '')
+            if recent_memory:
+                context_parts.append(f"Memory Context (recent): {recent_memory}")
+            if long_term_memory:
+                context_parts.append(f"Memory Context (long-term): {long_term_memory}")
                 
             # 2. Subscription Context & Instructions
         if subscription_context:

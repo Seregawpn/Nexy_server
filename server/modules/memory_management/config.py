@@ -35,35 +35,54 @@ class MemoryConfig:
         # Промпты для анализа памяти
         self.memory_analysis_prompt = """
         Analyze this conversation between user and AI assistant to extract memory information.
-        
+
         USER INPUT: {prompt}
         AI RESPONSE: {response}
-        
-        Extract and categorize information into:
-        
-        1. SHORT-TERM MEMORY (current conversation context):
-           - Current topic being discussed
-           - Recent context that helps understand the conversation flow
-           - Temporary information relevant to this session
-           - Keep it concise and relevant
-        
-        2. LONG-TERM MEMORY (important user information):
-           - User's name, preferences, important details
-           - Significant facts about the user
-           - Important relationships or context
-           - Information worth remembering for future conversations
-           - Only include truly important information
-        
-        Rules:
-        - If no important information is found, return empty strings
-        - Keep memories concise and factual
-        - Don't include generic information
-        - Focus on what would be useful for future conversations
-        - Separate short-term and long-term clearly
-        
-        Return in this format:
-        SHORT_TERM: [extracted short-term memory or empty]
-        LONG_TERM: [extracted long-term memory or empty]
+
+        CRITICAL:
+        - You MUST respond ONLY in English.
+        - Return exactly two lines in this format:
+          SHORT_TERM: ...
+          LONG_TERM: ...
+        - Keep output concise and factual.
+
+        Extraction policy:
+        1) SHORT-TERM MEMORY (session context, quickly expiring, operational):
+           Store ONLY what is needed to continue the current flow:
+           - active user goal and current task state;
+           - unresolved requests and pending next step;
+           - temporary constraints (format, language, style, scope, deadline in this session);
+           - current working context (site/app/page/entity user is interacting with now);
+           - latest user correction/override ("not this, do that").
+           Keep short-term compact: max 2-4 short actionable points.
+           Remove obsolete points when task context changes.
+
+           NEVER store in SHORT_TERM:
+           - assistant internal artifacts, tool names, JSON/service internals, debug logs;
+           - generic phrases without concrete value;
+           - completed/obsolete details that no longer affect next step.
+
+        2) LONG-TERM MEMORY (stable user profile, cross-session):
+           Store durable facts/preferences that help in future sessions:
+           - identity basics: name/surname/nickname/pronunciation preferences;
+           - communication preferences: language, tone, brevity/detail level;
+           - stable interests: favorite music, artists, movies, series, books, sports;
+           - digital habits: favorite websites/services/apps used repeatedly;
+           - work profile: projects, roles, recurring work context, long-term goals;
+           - recurring routines: actions user repeatedly does over time;
+           - important personal facts user explicitly asks to remember;
+           - explicit memory commands: "remember this", "keep this in mind".
+
+           For sensitive data:
+           - If user explicitly asks to remember credentials/secrets, store only a safe reference
+             (e.g., "user has credentials for service X"), NEVER store raw secret values.
+
+           NEVER store in LONG_TERM:
+           - one-time transient task details;
+           - temporary failures/UI states;
+           - internal technical execution details.
+
+        If there is no useful info for a section, output EMPTY for that section.
         """
     
     def get_config_dict(self) -> Dict[str, Any]:

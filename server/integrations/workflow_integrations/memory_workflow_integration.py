@@ -29,7 +29,7 @@ class MemoryWorkflowIntegration:
         self._cache_lock = asyncio.Lock()  # Защита кэша
         self.cache_ttl = 600  # 10 минут TTL для кэша (увеличено с 5 минут)
         self.cache_refresh_before_expiry = 30  # Обновлять кэш за 30 сек до истечения
-        self.memory_fetch_timeout = 0.1  # Максимальное время ожидания памяти (уменьшено с 0.3)
+        self.memory_fetch_timeout = 0.35  # Короткий blocking fetch для текущего запроса
         self.memory_update_timeout = 1.0  # Таймаут записи памяти
         self._memory_tasks = {}
         self._tasks_lock = asyncio.Lock()  # Защита задач
@@ -88,13 +88,30 @@ class MemoryWorkflowIntegration:
                 logger.debug("MemoryModule не доступен или не поддерживает process()")
                 return None
 
-            # Если запрос уже выполняется, не создаём новый
+            # Если запрос уже выполняется, ждём его короткое время.
             existing_task = self._memory_tasks.get(hardware_id)
             if existing_task and not existing_task.done():
-                logger.debug("Запрос контекста памяти уже выполняется")
-                return None
+                logger.debug("Запрос контекста памяти уже выполняется, ждём результат")
+                try:
+                    existing_result = await asyncio.wait_for(
+                        asyncio.shield(existing_task),
+                        timeout=self.memory_fetch_timeout,
+                    )
+                    extracted = self._extract_memory_from_response(existing_result)
+                    if extracted:
+                        self._cache_memory(hardware_id, extracted)
+                    return extracted
+                except Exception:
+                    return None
 
-            logger.debug("Запускаем фоновой запрос контекста памяти")
+            # PRIMARY: пытаемся получить память в этом же запросе (без one-request lag)
+            memory_context = await self._fetch_memory_context(hardware_id)
+            if memory_context:
+                self._cache_memory(hardware_id, memory_context)
+                return memory_context
+
+            # FALLBACK: если за timeout не успели, запускаем фоновую подгрузку.
+            logger.debug("Быстрый fetch памяти пуст/timeout, запускаем фоновой запрос")
             task = asyncio.create_task(self._fetch_and_cache_memory(hardware_id))
             self._memory_tasks[hardware_id] = task
             task.add_done_callback(lambda _: self._memory_tasks.pop(hardware_id, None))

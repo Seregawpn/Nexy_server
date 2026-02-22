@@ -16,13 +16,15 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 
 TARGET_REPO = "Seregawpn/Nexy_production"
-RELEASE_INBOX = Path("release_inbox")
+RELEASE_INBOX_PRIMARY = Path("server/release_inbox")
+RELEASE_INBOX_LEGACY = Path("release_inbox")
 LATEST_CHANGES_NAME = "LATEST_CHANGES.md"
 VERSION_FILE = Path("VERSION")
 MANIFEST_FILE = Path("server/updates/manifests/manifest.json")
@@ -94,7 +96,7 @@ def _ensure_release_exists(tag: str, title: str, dry_run: bool) -> None:
 
 
 def _asset_matches_remote(tag: str, local_path: Path) -> bool:
-    with shutil.TemporaryDirectory(prefix="nexy_release_asset_") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="nexy_release_asset_") as tmpdir:
         download = _run(
             [
                 "gh",
@@ -142,15 +144,21 @@ def _load_version() -> str:
     raise RuntimeError("Cannot resolve version: VERSION file is missing/empty and SERVER_VERSION is not set")
 
 
-def _find_artifact(name: str) -> Optional[Path]:
-    candidate = RELEASE_INBOX / name
+def _resolve_release_inbox() -> Path:
+    if RELEASE_INBOX_PRIMARY.exists():
+        return RELEASE_INBOX_PRIMARY
+    return RELEASE_INBOX_LEGACY
+
+
+def _find_artifact(release_inbox: Path, name: str) -> Optional[Path]:
+    candidate = release_inbox / name
     return candidate if candidate.exists() else None
 
 
-def _ensure_release_inbox() -> None:
+def _ensure_release_inbox(release_inbox: Path) -> None:
     """Keep release inbox present in every run."""
-    RELEASE_INBOX.mkdir(parents=True, exist_ok=True)
-    keep = RELEASE_INBOX / ".gitkeep"
+    release_inbox.mkdir(parents=True, exist_ok=True)
+    keep = release_inbox / ".gitkeep"
     if not keep.exists():
         keep.write_text("", encoding="utf-8")
 
@@ -222,21 +230,24 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        _ensure_release_inbox()
+        release_inbox = _resolve_release_inbox()
+        _ensure_release_inbox(release_inbox)
         _require_tool("gh")
         _require_gh_auth()
 
         version = _load_version()
         release_tag = _release_tag(version)
-        dmg = _find_artifact("Nexy.dmg")
-        pkg = _find_artifact("Nexy.pkg")
-        latest_changes = _find_artifact(LATEST_CHANGES_NAME)
+        dmg = _find_artifact(release_inbox, "Nexy.dmg")
+        pkg = _find_artifact(release_inbox, "Nexy.pkg")
+        latest_changes = _find_artifact(release_inbox, LATEST_CHANGES_NAME)
 
         if dmg is None and pkg is None:
-            raise RuntimeError("No artifacts found in release_inbox (expected Nexy.dmg and/or Nexy.pkg)")
+            raise RuntimeError(
+                f"No artifacts found in {release_inbox} (expected Nexy.dmg and/or Nexy.pkg)"
+            )
         if latest_changes is None:
             raise RuntimeError(
-                f"Missing {LATEST_CHANGES_NAME} in release_inbox (required release notes snapshot)"
+                f"Missing {LATEST_CHANGES_NAME} in {release_inbox} (required release notes snapshot)"
             )
 
         print(f"Current Version: {version}")

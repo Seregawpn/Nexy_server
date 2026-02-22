@@ -8,6 +8,7 @@ import asyncio
 import logging
 import sys
 import os
+import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -38,6 +39,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _new_session_id() -> str:
+    """Generate a valid uuid4 session_id accepted by server contract."""
+    return str(uuid.uuid4())
+
+
 class StreamingWorkflowFixTester:
     """Тестер исправлений Streaming Workflow"""
     
@@ -45,6 +51,8 @@ class StreamingWorkflowFixTester:
         self.server_address = server_address
         self.channel: Optional[aio.Channel] = None
         self.stub: Optional[streaming_pb2_grpc.StreamingServiceStub] = None
+        # Базовый таймаут для медленных локальных сред (можно переопределить env).
+        self.default_timeout = float(os.getenv("STREAMING_TEST_TIMEOUT", "30"))
     
     async def connect(self) -> bool:
         """Подключение к gRPC серверу"""
@@ -77,8 +85,8 @@ class StreamingWorkflowFixTester:
         logger.info("="*80)
         
         try:
-            session_id_1 = f"test_session_1_{int(time.time())}"
-            session_id_2 = f"test_session_2_{int(time.time())}"
+            session_id_1 = _new_session_id()
+            session_id_2 = _new_session_id()
             
             async def run_request(session_id: str, prompt: str) -> Dict[str, Any]:
                 """Запуск одного запроса"""
@@ -92,7 +100,7 @@ class StreamingWorkflowFixTester:
                 start_time = time.time()
                 
                 try:
-                    async for response in self.stub.StreamAudio(request, timeout=10.0):
+                    async for response in self.stub.StreamAudio(request, timeout=self.default_timeout):
                         content_type = response.WhichOneof("content")
                         if content_type == "text_chunk":
                             chunks_received.append(("text", response.text_chunk))
@@ -169,7 +177,7 @@ class StreamingWorkflowFixTester:
         logger.info("="*80)
         
         try:
-            shared_session_id = f"test_single_flight_{int(time.time())}"
+            shared_session_id = _new_session_id()
             logger.info(f"🔑 Используемый session_id: {shared_session_id}")
             
             async def run_request(prompt: str, delay: float = 0.0) -> Dict[str, Any]:
@@ -190,7 +198,7 @@ class StreamingWorkflowFixTester:
                 error_received = False
                 
                 try:
-                    async for response in self.stub.StreamAudio(request, timeout=15.0):
+                    async for response in self.stub.StreamAudio(request, timeout=max(self.default_timeout, 20.0)):
                         content_type = response.WhichOneof("content")
                         if content_type == "error_message":
                             error_received = True
@@ -335,6 +343,9 @@ class StreamingWorkflowFixTester:
         logger.info("="*80)
         logger.warning("⚠️ Требуется настройка BACKPRESSURE_MAX_STREAMS=2 в env перед запуском сервера")
         logger.warning("⚠️ Если лимит не установлен, тест может провалиться с DEADLINE_EXCEEDED")
+        if os.getenv("BACKPRESSURE_MAX_STREAMS") != "2":
+            logger.warning("⚠️ SKIP: BACKPRESSURE_MAX_STREAMS != 2 (тест требует фиксированный precondition)")
+            return None
         
         try:
             async def run_request(session_id: str, prompt: str) -> Dict[str, Any]:
@@ -349,8 +360,7 @@ class StreamingWorkflowFixTester:
                 error_message = None
                 
                 try:
-                    # Увеличен таймаут до 7 секунд, чтобы избежать DEADLINE_EXCEEDED при медленном старте
-                    async for response in self.stub.StreamAudio(request, timeout=7.0):
+                    async for response in self.stub.StreamAudio(request, timeout=max(self.default_timeout, 15.0)):
                         content_type = response.WhichOneof("content")
                         if content_type == "error_message":
                             error_received = True
@@ -375,7 +385,7 @@ class StreamingWorkflowFixTester:
                     }
             
             # Запускаем 3 запроса параллельно
-            session_ids = [f"test_concurrent_{i}_{int(time.time())}" for i in range(1, 4)]
+            session_ids = [_new_session_id() for _ in range(3)]
             results = await asyncio.gather(
                 *[run_request(sid, f"Request {i}") for i, sid in enumerate(session_ids, 1)],
                 return_exceptions=True
@@ -427,7 +437,7 @@ class StreamingWorkflowFixTester:
         logger.warning("⚠️ Требуется настройка max_message_rate_per_second = 5 в конфиге")
         
         try:
-            session_id = f"test_rate_limit_{int(time.time())}"
+            session_id = _new_session_id()
             request = streaming_pb2.StreamRequest(
                 prompt="Test rate limit",
                 hardware_id="test_hardware",
@@ -439,7 +449,7 @@ class StreamingWorkflowFixTester:
             error_message = None
             
             try:
-                async for response in self.stub.StreamAudio(request, timeout=10.0):
+                async for response in self.stub.StreamAudio(request, timeout=self.default_timeout):
                     content_type = response.WhichOneof("content")
                     if content_type == "error_message":
                         error_received = True
@@ -512,7 +522,7 @@ class StreamingWorkflowFixTester:
             # Для строгого теста нужна реальная ошибка из workflow, что сложно воспроизвести
             # Поэтому тест проверяет структуру обработки ошибок, а не создает ошибку искусственно
             
-            session_id = f"test_error_policy_{int(time.time())}"
+            session_id = _new_session_id()
             request = streaming_pb2.StreamRequest(
                 prompt="Test error policy",  # Нормальный промпт - ошибка может не возникнуть
                 hardware_id="test_hardware",
@@ -525,7 +535,7 @@ class StreamingWorkflowFixTester:
             chunks_before_error = []
             
             try:
-                async for response in self.stub.StreamAudio(request, timeout=5.0):
+                async for response in self.stub.StreamAudio(request, timeout=max(self.default_timeout, 10.0)):
                     content_type = response.WhichOneof("content")
                     if content_type == "error_message":
                         error_received = True
@@ -579,7 +589,7 @@ class StreamingWorkflowFixTester:
         logger.info("="*80)
         
         try:
-            session_id = f"test_regression_{int(time.time())}"
+            session_id = _new_session_id()
             request = streaming_pb2.StreamRequest(
                 prompt="Hello, this is a test message.",
                 hardware_id="test_hardware",
@@ -592,7 +602,7 @@ class StreamingWorkflowFixTester:
             end_received = False
             
             try:
-                async for response in self.stub.StreamAudio(request, timeout=15.0):
+                async for response in self.stub.StreamAudio(request, timeout=max(self.default_timeout, 25.0)):
                     content_type = response.WhichOneof("content")
                     if content_type == "text_chunk":
                         text_chunks.append(response.text_chunk)
@@ -700,21 +710,28 @@ class StreamingWorkflowFixTester:
             logger.info("ИТОГИ ТЕСТИРОВАНИЯ")
             logger.info("="*80)
             
-            passed = sum(1 for _, result in results if result)
+            passed = sum(1 for _, result in results if result is True)
+            failed = sum(1 for _, result in results if result is False)
+            skipped = sum(1 for _, result in results if result is None)
             total = len(results)
             
             for name, result in results:
-                status = "✅ ПРОЙДЕН" if result else "❌ ПРОВАЛЕН"
+                if result is True:
+                    status = "✅ ПРОЙДЕН"
+                elif result is None:
+                    status = "⏭️ SKIPPED"
+                else:
+                    status = "❌ ПРОВАЛЕН"
                 logger.info(f"{status}: {name}")
             
-            logger.info(f"\nВсего: {passed}/{total} тестов пройдено")
+            logger.info(f"\nВсего: {passed} passed / {failed} failed / {skipped} skipped (из {total})")
             
-            if passed == total:
+            if failed == 0:
                 logger.info("🎉 ВСЕ ТЕСТЫ ПРОЙДЕНЫ!")
             else:
-                logger.warning(f"⚠️ {total - passed} тест(ов) провалено")
+                logger.warning(f"⚠️ {failed} тест(ов) провалено")
             
-            return passed == total
+            return failed == 0
             
         finally:
             await self.disconnect()

@@ -19,12 +19,21 @@ async def test_payment_success_handler():
     
     response = await payment_success_handler(mock_request_with_id)
     html = response.text
-    
-    expected_link = 'nexy://payment/success?session_id=cs_test_123'
-    if expected_link in html:
-        print(f"✅ Case 1 Passed: Found {expected_link}")
+
+    expected_content = [
+        "Payment Successful",
+        "You can close this browser window.",
+        "Close Window",
+    ]
+    unexpected_content = [
+        "Open App",
+        "nexy://payment/success",
+    ]
+
+    if all(token in html for token in expected_content) and all(token not in html for token in unexpected_content):
+        print("✅ Case 1 Passed: success page contains close-window UI without deep-link/open-app")
     else:
-        print(f"❌ Case 1 Failed: {expected_link} not found in HTML")
+        print("❌ Case 1 Failed: expected close-window UI not found or legacy open-app UI still present")
         print(f"HTML Preview: {html[:300]}...")
         return False
 
@@ -34,14 +43,11 @@ async def test_payment_success_handler():
     
     response = await payment_success_handler(mock_request_no_id)
     html = response.text
-    
-    expected_link_base = 'nexy://payment/success'
-    unexpected_param = '?session_id='
-    
-    if expected_link_base in html and unexpected_param not in html:
-        print(f"✅ Case 2 Passed: Found base link without params")
+
+    if all(token in html for token in expected_content) and all(token not in html for token in unexpected_content):
+        print("✅ Case 2 Passed: success page is stable without session_id")
     else:
-        print(f"❌ Case 2 Failed: Unexpected output")
+        print("❌ Case 2 Failed: page content mismatch")
         print(f"HTML Preview: {html[:300]}...")
         return False
         

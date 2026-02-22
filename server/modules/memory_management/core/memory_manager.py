@@ -10,6 +10,7 @@ Memory Manager - координатор всех операций с памят�
 
 import asyncio
 import logging
+import re
 from typing import Any, Dict, Optional, Tuple, Union
 
 from ..config import MemoryConfig
@@ -47,7 +48,10 @@ class MemoryManager:
                 try:
                     self.memory_analyzer = MemoryAnalyzer(
                         self.config.gemini_api_key,
-                        token_tracker=self.token_usage_tracker
+                        token_tracker=self.token_usage_tracker,
+                        model_name=self.config.memory_analysis_model,
+                        temperature=self.config.memory_analysis_temperature,
+                        analysis_prompt_template=self.config.memory_analysis_prompt,
                     )
                     logger.info("✅ MemoryAnalyzer initialized successfully")
                 except Exception as e:
@@ -144,13 +148,100 @@ class MemoryManager:
         Этот метод заменяет вызов memory_analyzer.analyze_conversation()
         """
         if not self.memory_analyzer:
-            logger.debug("🧠 MemoryAnalyzer not available - skipping memory analysis")
-            return "", ""
+            logger.debug("🧠 MemoryAnalyzer not available - using heuristic memory extraction")
+            return self._extract_memory_heuristic(prompt, response)
         
         try:
             return await self.memory_analyzer.analyze_conversation(prompt, response, hardware_id=hardware_id)
         except Exception as e:
             logger.error(f"❌ Error analyzing conversation: {e}")
+            return "", ""
+
+    def _extract_memory_heuristic(self, prompt: str, response: str) -> Tuple[str, str]:
+        """
+        Lightweight fallback extraction when Gemini analyzer is unavailable.
+
+        Keeps one owner-path for memory updates and avoids "no-op memory" in runtime.
+        """
+        try:
+            text = (prompt or "").strip()
+            if not text:
+                return "", ""
+
+            normalized = text.lower()
+
+            # Explicit remember intents (RU/EN)
+            remember_intent = bool(
+                re.search(
+                    r"\b(запомни|запомни это|не забудь|remember this|remember that|keep (this|that) in mind)\b",
+                    normalized,
+                )
+            )
+
+            long_candidates: list[str] = []
+
+            # Preference patterns: "я люблю X", "I like X", "мой любимый X"
+            pref_patterns = [
+                r"\bя люблю\s+([^.!?\n]+)",
+                r"\bi like\s+([^.!?\n]+)",
+                r"\bмой любим(?:ый|ая|ое|ые)\s+([^.!?\n]+)",
+                r"\bmy favorite\s+([^.!?\n]+)",
+            ]
+            for pattern in pref_patterns:
+                match = re.search(pattern, normalized, flags=re.IGNORECASE)
+                if match:
+                    fact = match.group(1).strip(" ,;:.")
+                    if fact:
+                        long_candidates.append(fact)
+
+            # Extract fact after remember command if explicit preference wasn't found.
+            if remember_intent and not long_candidates:
+                remember_payload_patterns = [
+                    r"(?:запомни(?: это)?[:\s-]*)([^.!?\n]+)",
+                    r"(?:remember (?:this|that)[:\s-]*)([^.!?\n]+)",
+                ]
+                for pattern in remember_payload_patterns:
+                    match = re.search(pattern, text, flags=re.IGNORECASE)
+                    if match:
+                        fact = match.group(1).strip(" ,;:.")
+                        if fact:
+                            long_candidates.append(fact)
+                            break
+
+            if not long_candidates:
+                return "", ""
+
+            # Security guard: never store raw secrets as memory values.
+            secret_pattern = re.compile(
+                r"\b(password\w*|парол\w*|token\w*|токен\w*|api[_ -]?key|ключ\w*)\b",
+                flags=re.IGNORECASE,
+            )
+            sanitized_candidates = []
+            for candidate in long_candidates:
+                if secret_pattern.search(candidate):
+                    sanitized_candidates.append("User asked to remember credentials for a service")
+                else:
+                    sanitized_candidates.append(candidate)
+
+            # Deduplicate while preserving order
+            unique: list[str] = []
+            seen: set[str] = set()
+            for item in sanitized_candidates:
+                key = item.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                unique.append(item)
+
+            long_memory = "; ".join(f"User prefers {item}" for item in unique)
+            short_memory = (
+                "User explicitly asked to remember this information"
+                if remember_intent
+                else ""
+            )
+            return short_memory, long_memory
+        except Exception as e:
+            logger.warning(f"⚠️ Heuristic memory extraction failed: {e}")
             return "", ""
     
     async def update_memory_background(self, hardware_id: str, prompt: str, response: str):

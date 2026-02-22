@@ -60,3 +60,22 @@ def map_status_to_tier(status: Optional[str], grandfathered_enabled: bool = True
     if normalized in LIMITED_STATUSES:
         return AccessTier.LIMITED
     return AccessTier.LIMITED
+
+
+def map_stripe_status_to_local_status(
+    stripe_status: Optional[str],
+    fallback_status: Optional[str] = None,
+) -> str:
+    """
+    Single mapping source: Stripe subscription status -> local subscription status.
+    """
+    normalized = (stripe_status or "").strip().lower()
+    if normalized == "active":
+        return "paid"
+    if normalized == "trialing":
+        return "paid_trial"
+    if normalized in {"past_due", "unpaid", "incomplete"}:
+        return "billing_problem"
+    if normalized in {"canceled", "incomplete_expired", "deleted"}:
+        return "limited_free_trial"
+    return fallback_status or "limited_free_trial"

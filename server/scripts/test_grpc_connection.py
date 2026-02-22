@@ -20,7 +20,7 @@ except ImportError as e:
     print("  python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. streaming.proto")
     sys.exit(1)
 
-async def test_grpc_connection(host: str = "nexy-server.canadacentral.cloudapp.azure.com", port: int = 443):
+async def test_grpc_connection(host: str = "nexy-prod-sergiy.canadacentral.cloudapp.azure.com", port: int = 443):
     """Тестирование gRPC подключения"""
     address = f"{host}:{port}"
     print(f"🔍 Тестирование gRPC подключения к {address}...")
@@ -157,7 +157,7 @@ async def test_grpc_connection(host: str = "nexy-server.canadacentral.cloudapp.a
         traceback.print_exc()
 
 if __name__ == "__main__":
-    host = sys.argv[1] if len(sys.argv) > 1 else "nexy-server.canadacentral.cloudapp.azure.com"
+    host = sys.argv[1] if len(sys.argv) > 1 else "nexy-prod-sergiy.canadacentral.cloudapp.azure.com"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 443
     
     print("=" * 70)

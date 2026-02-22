@@ -7,7 +7,7 @@
 ## 🎯 Конкретная проблема
 
 ### Симптомы:
-- Клиент отправляет gRPC запрос на `20.63.24.187:443`
+- Клиент отправляет gRPC запрос на `nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443`
 - Сервер возвращает ошибку **400 Bad Request**
 - В логах Nginx: `"PRI * HTTP/2.0" 400 157`
 - Ошибка клиента: `Trying to connect an http1.x server (HTTP status 400)`
@@ -22,7 +22,7 @@
 
 1. **Клиент использовал `insecure_channel`:**
    ```python
-   channel = aio.insecure_channel("20.63.24.187:443")
+   channel = aio.insecure_channel("nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443")
    ```
    - `insecure_channel` = **БЕЗ TLS** (plaintext соединение)
    - Отправляет HTTP/2 preface: `PRI * HTTP/2.0`
@@ -92,13 +92,13 @@
 
 ```python
 # БЫЛО (неправильно):
-channel = aio.insecure_channel("20.63.24.187:443")  # ❌ Без TLS
+channel = aio.insecure_channel("nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443")  # ❌ Без TLS
 
 # СТАЛО (правильно):
 # Скачиваем сертификат сервера
-cert_pem = download_server_certificate("20.63.24.187", 443)
+cert_pem = download_server_certificate("nexy-prod-sergiy.canadacentral.cloudapp.azure.com", 443)
 credentials = grpc.ssl_channel_credentials(root_certificates=cert_pem)
-channel = aio.secure_channel("20.63.24.187:443", credentials)  # ✅ С TLS
+channel = aio.secure_channel("nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443", credentials)  # ✅ С TLS
 ```
 
 ---

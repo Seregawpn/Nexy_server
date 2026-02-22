@@ -9,8 +9,8 @@
 
 **Несоответствие IP адресов:**
 
-- ✅ **Публичный IP сервера:** `20.63.24.187`
-- ✅ **IP в Nginx server_name:** `20.63.24.187`
+- ✅ **Публичный IP сервера:** `nexy-prod-sergiy.canadacentral.cloudapp.azure.com`
+- ✅ **IP в Nginx server_name:** `nexy-prod-sergiy.canadacentral.cloudapp.azure.com`
 - ❌ **IP в скриптах/документации:** `20.151.51.172` (устаревший)
 
 **Результат:** Подключение к `20.151.51.172` таймаутит, так как это неправильный IP адрес.
@@ -23,8 +23,8 @@
 
 ```bash
 # Правильный IP
-https://20.63.24.187/health
-https://20.63.24.187/status
+https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/health
+https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/status
 
 # Неправильный IP (устаревший)
 https://20.151.51.172/health  # ❌ Таймаут
@@ -36,7 +36,7 @@ https://20.151.51.172/health  # ❌ Таймаут
 
 ### **Health endpoint:**
 ```bash
-curl -sk https://20.63.24.187/health
+curl -sk https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/health
 ```
 
 **Ожидаемый результат:**
@@ -50,7 +50,7 @@ curl -sk https://20.63.24.187/health
 
 ### **Status endpoint:**
 ```bash
-curl -sk https://20.63.24.187/status
+curl -sk https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/status
 ```
 
 ---
@@ -68,7 +68,7 @@ curl -sk https://20.63.24.187/status
 ## 📝 Обновление документации
 
 Нужно обновить все упоминания IP адреса:
-- `20.151.51.172` → `20.63.24.187`
+- `20.151.51.172` → `nexy-prod-sergiy.canadacentral.cloudapp.azure.com`
 
 **Файлы для обновления:**
 - `server/scripts/grpc_smoke.py`
@@ -83,5 +83,5 @@ curl -sk https://20.63.24.187/status
 ## ✅ Итог
 
 **Проблема:** Использовался устаревший IP адрес `20.151.51.172`  
-**Решение:** Использовать правильный IP адрес `20.63.24.187`  
+**Решение:** Использовать правильный IP адрес `nexy-prod-sergiy.canadacentral.cloudapp.azure.com`  
 **Статус:** ✅ Health endpoint работает с правильным IP

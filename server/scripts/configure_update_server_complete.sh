@@ -43,7 +43,7 @@ log_header() {
 # Конфигурация
 AZURE_RESOURCE_GROUP="NetworkWatcherRG"
 AZURE_VM_NAME="Nexy"
-SERVER_IP="20.63.24.187"
+SERVER_IP="nexy-prod-sergiy.canadacentral.cloudapp.azure.com"
 MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"
 DOWNLOADS_DIR="/home/azureuser/voice-assistant/server/updates/downloads"
 MANIFEST_FILE="manifest.json"

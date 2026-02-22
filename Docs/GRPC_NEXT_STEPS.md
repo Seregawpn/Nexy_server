@@ -78,7 +78,7 @@ grpcurl -plaintext 127.0.0.1:50051 list
 ```python
 # В тестовом скрипте
 credentials = grpc.ssl_channel_credentials()
-channel = aio.secure_channel("20.63.24.187:443", credentials)
+channel = aio.secure_channel("nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443", credentials)
 ```
 
 ### Шаг 3: Использовать отдельный путь для gRPC

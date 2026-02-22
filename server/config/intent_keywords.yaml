@@ -36,14 +36,45 @@ browser:
   - reddit
 payment:
   - subscribe
+  - subscribed
   - subscription
+  - unsubscribe
+  - cancel subscription
+  - renew
+  - renewal
+  - auto-renew
+  - trial
+  - free trial
+  - trial expired
   - billing
+  - billing status
+  - billing portal
+  - subscription manager
+  - manage subscription
+  - manage billing
+  - payment settings
+  - payment method
+  - update payment method
   - upgrade
   - premium
+  - plan
+  - pricing
+  - invoice
+  - receipt
+  - checkout
+  - charge
+  - charged
+  - purchase
   - pay
   - payment
-  - manage subscription
-  - billing portal
+  - pay now
+  - open billing
+  - open subscription
+  - open subscription manager
+  - open billing portal
+  - open payment page
+  - buy
+  - buy premium
 web_search:
   - latest
   - news

@@ -10,7 +10,7 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-HOST="${1:-20.63.24.187}"
+HOST="${1:-nexy-prod-sergiy.canadacentral.cloudapp.azure.com}"
 PORT="${2:-443}"
 
 echo "🔍 Preflight Check - PR-7"

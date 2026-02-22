@@ -383,8 +383,8 @@ async def main():
     parser.add_argument(
         "host",
         nargs="?",
-        default="20.63.24.187",
-        help="Хост сервера (по умолчанию: 20.63.24.187)"
+        default="nexy-prod-sergiy.canadacentral.cloudapp.azure.com",
+        help="Хост сервера (по умолчанию: nexy-prod-sergiy.canadacentral.cloudapp.azure.com)"
     )
     parser.add_argument(
         "port",

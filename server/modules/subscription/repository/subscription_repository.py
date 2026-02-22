@@ -408,7 +408,6 @@ class SubscriptionRepository:
                 'payment_method_id', 'current_period_end', 'cancel_at_period_end',
                 'grace_period_end_at', 'paid_trial_end_at', 'last_stripe_event_id', 'last_stripe_event_at',
                 'last_checkout_created_at', 'last_checkout_session_id',  # MVP 8: Anti-spam и cooldown
-                'last_checkout_created_at', 'last_checkout_session_id',  # MVP 8: Anti-spam и cooldown
                 'usage_daily_count', 'usage_weekly_count', 'usage_monthly_count', 'usage_last_reset_date',  # Quota Checker
                 'email'  # New email field
             }
