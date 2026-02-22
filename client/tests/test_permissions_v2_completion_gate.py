@@ -151,3 +151,35 @@ async def test_concurrent_completed_events_publish_legacy_once() -> None:
         if call.args and call.args[0] == "permissions.first_run_completed"
     ]
     assert len(completion_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_reemit_completion_from_completed_ledger_publishes_legacy_completion() -> None:
+    event_bus = Mock()
+    event_bus.publish = AsyncMock()
+    integration = PermissionOrchestratorIntegration(
+        event_bus=event_bus,
+        config={},
+        ledger_path="/tmp/test-ledger.json",
+    )
+    step_entry = SimpleNamespace(
+        state=StepState.PASS_,
+        mode=StepMode.AUTO_DIALOG,
+        needs_restart_marked=False,
+    )
+    integration._hard_permissions = [PermissionId.MICROPHONE]
+    integration._load_ledger = lambda: SimpleNamespace(  # type: ignore[method-assign]
+        phase=Phase.COMPLETED,
+        restart_count=1,
+        steps={PermissionId.MICROPHONE: step_entry},
+    )
+
+    reemitted = await integration.reemit_completion_from_ledger()
+
+    assert reemitted is True
+    completion_calls = [
+        call
+        for call in event_bus.publish.call_args_list
+        if call.args and call.args[0] == "permissions.first_run_completed"
+    ]
+    assert len(completion_calls) == 1

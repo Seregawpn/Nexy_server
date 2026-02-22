@@ -56,17 +56,17 @@ jobs:
       
       - name: gRPC Smoke Test
         run: |
-          python scripts/grpc_smoke.py 20.63.24.187 443 || echo "⚠️ Smoke test skipped (server may be down)"
+          python scripts/grpc_smoke.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443 || echo "⚠️ Smoke test skipped (server may be down)"
         continue-on-error: true
       
       - name: Health/Status Check
         run: |
-          python scripts/check_grpc_health.py 20.63.24.187 443 || echo "⚠️ Health check skipped (server may be down)"
+          python scripts/check_grpc_health.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443 || echo "⚠️ Health check skipped (server may be down)"
         continue-on-error: true
       
       - name: Port Check
         run: |
-          nc -zv 20.63.24.187 50051 || echo "⚠️ Port check skipped (Nginx reverse proxy)"
+          nc -zv nexy-prod-sergiy.canadacentral.cloudapp.azure.com 50051 || echo "⚠️ Port check skipped (Nginx reverse proxy)"
         continue-on-error: true
       
       - name: Verify no breaking changes
@@ -89,7 +89,7 @@ jobs:
 ```yaml
 - name: gRPC Smoke Test
   run: |
-    python scripts/grpc_smoke.py 20.63.24.187 443
+    python scripts/grpc_smoke.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443
   env:
     GRPC_TIMEOUT: 10
 ```
@@ -99,7 +99,7 @@ jobs:
 ```yaml
 - name: Health Check
   run: |
-    python scripts/check_grpc_health.py 20.63.24.187 443
+    python scripts/check_grpc_health.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443
 ```
 
 ### 3. Port Check
@@ -107,7 +107,7 @@ jobs:
 ```yaml
 - name: Port Check
   run: |
-    nc -zv 20.63.24.187 50051 || echo "Port check skipped"
+    nc -zv nexy-prod-sergiy.canadacentral.cloudapp.azure.com 50051 || echo "Port check skipped"
 ```
 
 ### 4. Version Consistency
@@ -116,8 +116,8 @@ jobs:
       - name: Version Consistency Check
         run: |
           # Проверка версий в health и appcast
-          HEALTH_VERSION=$(curl -s https://20.63.24.187/health | jq -r '.latest_version')
-          APPCAST_VERSION=$(curl -s https://20.63.24.187/updates/appcast.xml | grep -o 'sparkle:version="[^"]*"' | cut -d'"' -f2)
+          HEALTH_VERSION=$(curl -s https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/health | jq -r '.latest_version')
+          APPCAST_VERSION=$(curl -s https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/updates/appcast.xml | grep -o 'sparkle:version="[^"]*"' | cut -d'"' -f2)
           
           if [ "$HEALTH_VERSION" != "$APPCAST_VERSION" ]; then
             echo "❌ Versions don't match: health=$HEALTH_VERSION, appcast=$APPCAST_VERSION"
@@ -132,7 +132,7 @@ jobs:
           echo "📦 Validating release size consistency..."
           
           # Получаем размер из appcast
-          APPCAST_XML=$(curl -s -k https://20.63.24.187/updates/appcast.xml || echo "")
+          APPCAST_XML=$(curl -s -k https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/updates/appcast.xml || echo "")
           
           if [ -n "$APPCAST_XML" ]; then
             APPCAST_SIZE=$(echo "$APPCAST_XML" | grep -oP 'length="\K[^"]+' | head -1)
@@ -217,11 +217,11 @@ cd ../..
 
 # 2. Smoke test (если сервер доступен)
 echo "2. Running smoke test..."
-python scripts/grpc_smoke.py 20.63.24.187 443 || echo "⚠️ Smoke test skipped"
+python scripts/grpc_smoke.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443 || echo "⚠️ Smoke test skipped"
 
 # 3. Health check
 echo "3. Running health check..."
-python scripts/check_grpc_health.py 20.63.24.187 443 || echo "⚠️ Health check skipped"
+python scripts/check_grpc_health.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443 || echo "⚠️ Health check skipped"
 
 # 4. Unit tests
 echo "4. Running unit tests..."
@@ -241,8 +241,8 @@ echo "✅ All pre-push checks passed!"
 - name: gRPC Compatibility Checks
   if: contains(github.event.head_commit.message, 'proto') || contains(github.event.head_commit.message, 'grpc')
   run: |
-    python scripts/grpc_smoke.py 20.63.24.187 443 || true
-    python scripts/check_grpc_health.py 20.63.24.187 443 || true
+    python scripts/grpc_smoke.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443 || true
+    python scripts/check_grpc_health.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443 || true
 ```
 
 ---
@@ -259,18 +259,18 @@ echo "✅ All pre-push checks passed!"
 
 2. **Smoke test пройден:**
    ```bash
-   python scripts/grpc_smoke.py 20.63.24.187 443
+   python scripts/grpc_smoke.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443
    ```
 
 3. **Health check пройден:**
    ```bash
-   python scripts/check_grpc_health.py 20.63.24.187 443
+   python scripts/check_grpc_health.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443
    ```
 
 4. **Версии согласованы:**
    ```bash
-   curl -s https://20.63.24.187/health | jq '.latest_version, .latest_build'
-   curl -s https://20.63.24.187/updates/appcast.xml | grep sparkle:version
+   curl -s https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/health | jq '.latest_version, .latest_build'
+   curl -s https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/updates/appcast.xml | grep sparkle:version
    ```
 
 5. **Нет breaking changes:**

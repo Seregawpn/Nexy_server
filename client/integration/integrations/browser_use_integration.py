@@ -38,6 +38,8 @@ class BrowserUseIntegration:
         self._last_terminal_event_ts: dict[tuple[str, str], float] = {}
         self._terminal_by_session_ts: dict[str, float] = {}
         self._terminal_by_session_event: dict[str, str] = {}
+        self._last_failure_tts_ts_by_session: dict[str, float] = {}
+        self._failure_tts_dedup_window_sec = 5.0
 
     async def initialize(self) -> bool:
         try:
@@ -193,43 +195,62 @@ class BrowserUseIntegration:
         )
 
     async def _handle_install_status(self, event: dict[str, Any]) -> None:
+        # Runtime browser install UX removed by product decision:
+        # packaged app must ship with pre-bundled browser runtime.
         status = str((event or {}).get("status") or "").lower()
         if not status:
             return
 
-        notify_text = None
-        tts_text = None
-        if status == "started":
-            notify_text = (
-                "Browser is installing. It may take a few minutes. "
-                "After that, you can use browser use."
-            )
-            tts_text = (
-                "Browser is installing. It may take a few minutes. "
-                "After that, you can use browser use."
-            )
-        elif status == "downloading":
-            # Keep startup UX concise: avoid repeated install progress notifications.
-            notify_text = None
-        elif status == "completed":
-            # Final install message intentionally disabled by product decision.
-            notify_text = None
-            tts_text = None
-        elif status == "already_installed":
-            # Final install message intentionally disabled by product decision.
-            notify_text = None
-            tts_text = None
-        elif status == "failed":
+        if status == "failed":
             error_text = str((event or {}).get("error") or "unknown")
-            notify_text = f"Browser setup failed: {error_text}"
-
-        if notify_text:
             await self.event_bus.publish(
                 "system.notification",
-                {"title": "Nexy Browser", "message": notify_text},
+                {"title": "Nexy Browser", "message": f"Browser runtime validation failed: {error_text}"},
             )
-        if tts_text:
-            await self._queue_or_publish_startup_tts(tts_text)
+
+    def _build_browser_failure_feedback(self, error_text: str) -> str:
+        err = str(error_text or "").lower()
+        if "gemini_api_key not configured" in err or "missing_api_key" in err:
+            return "I can't open the browser because the API key is missing."
+        if "browser-use not installed" in err:
+            return "I can't open the browser because browser automation is not installed."
+        if "browser_runtime_missing_preinstalled_chromium_required" in err:
+            return "I can't open the browser because browser runtime is not installed."
+        if "chromium_executable_not_found_in_preinstalled_runtime" in err:
+            return "I can't open the browser because the browser executable is missing."
+        if "runtime_browser_install_disabled_use_prebundled_runtime" in err:
+            return "I can't open the browser because bundled browser runtime is not configured."
+        if "playwright driver not found" in err:
+            return "I can't open the browser because Playwright driver is missing."
+        if "browser_profile_init_failed" in err:
+            return "I can't open the browser because browser profile failed to initialize."
+        if "llm_rate_limited" in err or "429" in err or "resource_exhausted" in err:
+            return "I can't open the browser right now because the AI rate limit was reached."
+        if "llm_service_unavailable" in err or "503" in err or "unavailable" in err:
+            return "I can't open the browser right now because the AI service is unavailable."
+        if "timeout" in err:
+            return "I can't open the browser because the request timed out."
+        if "network" in err or "ssl" in err or "tls" in err or "connection" in err:
+            return "I can't open the browser because of a network connection issue."
+        return "I can't open the browser due to an internal error."
+
+    async def _announce_browser_failure(
+        self, *, session_id: str | None, error_text: str | None, source: str
+    ) -> None:
+        sid = str(session_id or "").strip() or "system"
+        now = time.monotonic()
+        if sid != "system":
+            last = self._last_failure_tts_ts_by_session.get(sid, 0.0)
+            if (now - last) < self._failure_tts_dedup_window_sec:
+                return
+            self._last_failure_tts_ts_by_session[sid] = now
+
+        msg = self._build_browser_failure_feedback(error_text or "")
+        await self.event_bus.publish(
+            "system.notification",
+            {"title": "Nexy Browser", "message": msg},
+        )
+        await self._queue_or_publish_runtime_tts(text=msg, session_id=sid, source=source)
 
     async def _on_welcome_completed(self, event: dict[str, Any]) -> None:
         self._welcome_completed = True
@@ -431,6 +452,8 @@ class BrowserUseIntegration:
 
         data = (event or {}).get("data", event) or {}
         session_id = str(data.get("session_id") or "").strip()
+        cancel_reason = str(data.get("reason") or "user_interruption")
+        cancel_source = str(data.get("source") or "interrupt")
         active_sessions = sorted(self._active_browser_sessions)
         if session_id:
             cancel_sessions = [session_id]
@@ -446,7 +469,10 @@ class BrowserUseIntegration:
                 await self._publish_terminal_event_once(
                     "browser.cancelled",
                     {
-                        "reason": "user_interruption",
+                        "type": "BROWSER_TASK_CANCELLED",
+                        "reason": cancel_reason,
+                        "cancel_reason": cancel_reason,
+                        "cancel_source": cancel_source,
                         "timestamp": "now",
                         "session_id": sid,
                     },
@@ -522,6 +548,11 @@ class BrowserUseIntegration:
                     await self._publish_terminal_event_once("browser.completed", progress_event)
                 elif event_type == "BROWSER_TASK_FAILED":
                     await self._publish_terminal_event_once("browser.failed", progress_event)
+                    await self._announce_browser_failure(
+                        session_id=str(progress_event.get("session_id") or request_session_id or ""),
+                        error_text=str(progress_event.get("error") or progress_event.get("description") or ""),
+                        source="browser_failed",
+                    )
                 elif event_type == "BROWSER_TASK_CANCELLED":
                     await self._publish_terminal_event_once("browser.cancelled", progress_event)
 
@@ -540,12 +571,21 @@ class BrowserUseIntegration:
             }
             await self._publish_terminal_event_once("browser.failed", error_event)
             await self.event_bus.publish("browser.progress", error_event)
+            await self._announce_browser_failure(
+                session_id=str(request_session_id or ""),
+                error_text=str(e),
+                source="browser_failed_exception",
+            )
 
     async def _on_browser_close_request(self, event: dict[str, Any]):
         await self.module.close_browser()
         await self.event_bus.publish("browser.closed", {})
 
     async def _publish_terminal_event_once(self, event_name: str, payload: dict[str, Any]) -> None:
+        if event_name == "browser.cancelled" and not payload.get("type"):
+            payload = dict(payload)
+            payload["type"] = "BROWSER_TASK_CANCELLED"
+
         sid = str((payload or {}).get("session_id") or "")
         key = (event_name, sid)
         now = time.monotonic()

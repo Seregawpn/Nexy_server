@@ -147,7 +147,7 @@ class ProcessingWorkflow(BaseWorkflow):
 
         await self.event_bus.subscribe(
             "browser.cancelled",
-            self._on_browser_completed,  # Treat cancelled as completed
+            self._on_browser_cancelled,
             EventPriority.HIGH,
         )
 
@@ -616,7 +616,7 @@ class ProcessingWorkflow(BaseWorkflow):
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки browser.started - {e}")
 
     async def _on_browser_completed(self, event):
-        """Browser task завершён (включая cancelled)"""
+        """Browser task завершён успешно."""
         if not self._is_relevant_event(event):
             return
 
@@ -639,6 +639,37 @@ class ProcessingWorkflow(BaseWorkflow):
 
         except Exception as e:
             logger.error(f"❌ ProcessingWorkflow: ошибка обработки browser.completed - {e}")
+
+    async def _on_browser_cancelled(self, event):
+        """Browser task отменён (отдельно от success/failure)."""
+        if not self._is_relevant_event(event):
+            return
+
+        try:
+            data = event.get("data", {})
+            cancel_reason = data.get("cancel_reason") or data.get("reason") or "unknown"
+
+            logger.info(
+                "🌐 ProcessingWorkflow: browser task cancelled, reason=%s",
+                cancel_reason,
+            )
+
+            self.browser_active = False
+            self.action_dispatched = False  # Reset dispatch flag on cancellation
+
+            # В текущей архитектуре cancelled терминально закрывает browser-ветку
+            # так же, как completed, но с отдельным семантическим логом.
+            if self.grpc_completed and self.playback_completed:
+                await self._complete_processing_chain()
+            else:
+                logger.info(
+                    "🌐 ProcessingWorkflow: browser cancelled, ждём gRPC=%s, playback=%s",
+                    self.grpc_completed,
+                    self.playback_completed,
+                )
+
+        except Exception as e:
+            logger.error(f"❌ ProcessingWorkflow: ошибка обработки browser.cancelled - {e}")
 
     async def _on_browser_failed(self, event):
         """Browser task завершился ошибкой"""

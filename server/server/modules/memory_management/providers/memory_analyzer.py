@@ -10,6 +10,7 @@ Memory Analyzer - анализ диалогов для извлечения па
 
 import asyncio
 import logging
+import os
 import re
 from typing import Tuple, Optional, Any
 
@@ -30,7 +31,15 @@ class MemoryAnalyzer:
     для краткосрочной и долгосрочной памяти.
     """
     
-    def __init__(self, gemini_api_key: str, token_tracker: Optional[Any] = None, hardware_id: Optional[str] = None):
+    def __init__(
+        self,
+        gemini_api_key: str,
+        token_tracker: Optional[Any] = None,
+        hardware_id: Optional[str] = None,
+        model_name: str = "",
+        temperature: float = 0.3,
+        analysis_prompt_template: str = "",
+    ):
         """
         Инициализация MemoryAnalyzer.
         
@@ -49,46 +58,13 @@ class MemoryAnalyzer:
         genai.configure(api_key=gemini_api_key)  # type: ignore
         
         # Настройки модели
-        self.model_name = "gemini-2.5-flash-lite"
-        self.temperature = 0.3
+        self.model_name = model_name or os.getenv("GEMINI_PRIMARY_MODEL", "gemini-flash-lite-latest")
+        self.temperature = temperature
         
-        # Промпт для анализа памяти
-        self.analysis_prompt_template = """
-        Analyze this conversation between user and AI assistant to extract memory information.
-        
-        USER INPUT: {prompt}
-        AI RESPONSE: {response}
-        
-        CRITICAL: You MUST respond ONLY in English. Never use any other language.
-        If the conversation is in another language, understand it but respond in English.
-        
-        Extract and categorize information into:
-        
-        1. SHORT-TERM MEMORY (current conversation context):
-           - Current topic being discussed
-           - Recent context that helps understand the conversation flow
-           - Temporary information relevant to this session
-           - Keep it concise and relevant
-        
-        2. LONG-TERM MEMORY (important user information):
-           - User's name, preferences, important details
-           - Significant facts about the user
-           - Important relationships or context
-           - Information worth remembering for future conversations
-           - Only include truly important information
-        
-        Rules:
-        - If no important information is found, return empty strings
-        - Keep memories concise and factual
-        - Don't include generic information
-        - Focus on what would be useful for future conversations
-        - Separate short-term and long-term clearly
-        - ALWAYS write memory in English, regardless of the original language
-        
-        Return in this format:
-        SHORT_TERM: [extracted short-term memory or empty]
-        LONG_TERM: [extracted long-term memory or empty]
-        """
+        # Каноничный промпт приходит только из MemoryConfig (single source of truth).
+        if not analysis_prompt_template.strip():
+            raise ValueError("analysis_prompt_template is required and must come from MemoryConfig")
+        self.analysis_prompt_template = analysis_prompt_template
         
         logger.info("✅ MemoryAnalyzer initialized with Gemini API")
     
@@ -144,7 +120,7 @@ class MemoryAnalyzer:
                     input_tokens = response_obj.usage_metadata.prompt_token_count
                     output_tokens = response_obj.usage_metadata.candidates_token_count
                     
-                    await self.token_tracker.record_usage(
+                    self.token_tracker.record_usage(
                         hardware_id=target_hardware_id,
                         source='memory_analyzer',
                         input_tokens=input_tokens,

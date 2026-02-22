@@ -8,7 +8,7 @@ gRPC Smoke Test - PR-3
     
 Примеры:
     # Production сервер
-    python scripts/grpc_smoke.py 20.63.24.187 443
+    python scripts/grpc_smoke.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443
     
     # Локальный сервер
     python scripts/grpc_smoke.py localhost 50051
@@ -357,8 +357,8 @@ async def main():
     parser.add_argument(
         "host",
         nargs="?",
-        default="20.63.24.187",
-        help="Хост сервера (по умолчанию: 20.63.24.187)"
+        default="nexy-prod-sergiy.canadacentral.cloudapp.azure.com",
+        help="Хост сервера (по умолчанию: nexy-prod-sergiy.canadacentral.cloudapp.azure.com)"
     )
     parser.add_argument(
         "port",

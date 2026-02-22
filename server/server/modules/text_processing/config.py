@@ -27,7 +27,7 @@ class TextProcessingConfig:
         # Note: System prompt is now built dynamically via build_system_prompt() in get_provider_config()
         
         # LangChain настройки
-        self.langchain_model = self.config.get('langchain_model', getattr(unified_config.text_processing, 'langchain_model', 'gemini-3-flash-preview'))
+        self.langchain_model = self.config.get('langchain_model', unified_config.text_processing.langchain_model)
         # Общие настройки для temperature, max_tokens, tools
         self.temperature = self.config.get('temperature', getattr(unified_config.text_processing, 'temperature', 0.7))
         self.max_tokens = self.config.get('max_tokens', getattr(unified_config.text_processing, 'max_tokens', 2048))

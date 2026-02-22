@@ -39,6 +39,30 @@ async def test_voice_completed_interim_updates_buffer_without_send():
     )
 
     assert integration._sessions[sid]["text"] == "final text"
+    assert integration._sessions[sid]["ready_to_send"] is False
+    integration._maybe_send.assert_not_called()
+
+    await integration._on_recording_stop({"data": {"session_id": sid}})
+    assert integration._sessions[sid]["ready_to_send"] is True
+    integration._maybe_send.assert_called_once_with(sid)
+
+
+@pytest.mark.asyncio
+async def test_terminal_before_release_does_not_send_until_recording_stop():
+    integration = _make_integration()
+    integration._maybe_send = AsyncMock()
+
+    sid = "1f4dd920-57fd-49f4-80ba-e901b85aa1ca"
+    await integration._on_voice_completed(
+        {"data": {"session_id": sid, "text": "final while holding", "interim": False}}
+    )
+
+    assert integration._sessions[sid]["terminal_recognition_received"] is True
+    assert integration._sessions[sid]["ready_to_send"] is False
+    assert integration.get_status()["terminal_before_release_deferred"] == 1
+    integration._maybe_send.assert_not_called()
+
+    await integration._on_recording_stop({"data": {"session_id": sid}})
     assert integration._sessions[sid]["ready_to_send"] is True
     integration._maybe_send.assert_called_once_with(sid)
 

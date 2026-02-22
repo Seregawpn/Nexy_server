@@ -47,7 +47,7 @@ def create_grpc_channel(host: str, port: int):
         return aio.insecure_channel(address)
 
 # Использование
-channel = create_grpc_channel("20.63.24.187", 443)
+channel = create_grpc_channel("nexy-prod-sergiy.canadacentral.cloudapp.azure.com", 443)
 stub = streaming_pb2_grpc.StreamingServiceStub(channel)
 ```
 

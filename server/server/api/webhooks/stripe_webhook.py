@@ -12,6 +12,7 @@ Feature ID: F-2025-017-stripe-payment
 import logging
 import json
 from typing import Dict, Any, Optional
+from datetime import datetime, timezone
 from aiohttp import web
 
 try:
@@ -20,6 +21,8 @@ except ImportError:  # pragma: no cover - optional dependency
     stripe_lib = None
 
 logger = logging.getLogger(__name__)
+
+from modules.subscription.core.subscription_types import map_stripe_status_to_local_status
 
 
 async def stripe_webhook_handler(request: web.Request) -> web.Response:
@@ -192,6 +195,7 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
     event_type = event.get('type')
     event_data = event.get('data', {}).get('object', {})
     stripe_created = event.get('created')
+    stripe_event_at = datetime.fromtimestamp(stripe_created, tz=timezone.utc) if stripe_created else datetime.now(timezone.utc)
 
     if not isinstance(event_id, str) or not event_id:
         return {'status': 'error', 'message': 'missing_event_id'}
@@ -227,7 +231,7 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
             hardware_id, 
             repo,
             event_id,
-            stripe_created
+            stripe_event_at
         )
         
         # Mark as processed
@@ -312,7 +316,7 @@ async def _handle_event_type(
     hardware_id: Optional[str],
     repo,
     event_id: str,
-    stripe_created: Optional[int]
+    stripe_created: Optional[datetime]
 ) -> Dict[str, Any]:
     """
     Handle specific event types.
@@ -343,56 +347,47 @@ async def _handle_event_type(
     email = None
     
     if event_type == 'checkout.session.completed':
-        # New subscription created
-        # ⭐ КРИТИЧНО: Извлекаем stripe_customer_id и stripe_subscription_id для Portal
+        # Centralized fallback sync in SubscriptionModule (single owner mapping path)
+        try:
+            from modules.subscription import get_subscription_module
+            subscription_module = get_subscription_module()
+            if subscription_module:
+                session_id = event_data.get('id')
+                if session_id:
+                    result = await subscription_module.reconcile_checkout_success(session_id)
+                    if result.get("ok"):
+                        return {'status': 'subscription_synced', 'result': result}
+        except Exception as e:
+            logger.warning(f"[F-2025-017] checkout.session.completed reconcile fallback failed: {e}")
+
+        # Minimal fallback if module is unavailable
         stripe_customer_id = event_data.get('customer')
         stripe_subscription_id = event_data.get('subscription')
-        
-        # Try to get email from customer_details
-        email = event_data.get('customer_details', {}).get('email')
-        # Fallback to customer_email
-        if not email:
-            email = event_data.get('customer_email')
-        
-        # Используем create_or_update_subscription чтобы сохранить stripe_customer_id
         repo.create_or_update_subscription(
             hardware_id=hardware_id,
-            status='paid_trial',
+            status='paid',
             stripe_customer_id=stripe_customer_id,
             stripe_subscription_id=stripe_subscription_id
         )
-        
-        # Обновляем email отдельно (если есть)
-        if email:
-            repo.update_subscription(hardware_id, email=email)
-        
-        return {'status': 'subscription_created', 'customer_id': stripe_customer_id}
+        return {'status': 'subscription_created_fallback', 'customer_id': stripe_customer_id}
 
     
     elif event_type == 'invoice.payment_succeeded':
-        new_status = 'paid'
         stripe_status = 'active'
+        new_status = map_stripe_status_to_local_status(stripe_status, current_status)
         
     elif event_type == 'invoice.payment_failed':
-        new_status = 'billing_problem'
         stripe_status = 'past_due'
+        new_status = map_stripe_status_to_local_status(stripe_status, current_status)
         
     elif event_type == 'customer.subscription.updated':
         stripe_status = event_data.get('status', 'active')
         cancel_at_period_end = event_data.get('cancel_at_period_end', False)
-        
-        if stripe_status == 'active':
-            new_status = 'paid'
-        elif stripe_status in ['past_due', 'unpaid']:
-            new_status = 'billing_problem'
-        elif stripe_status in ['canceled', 'incomplete_expired']:
-            new_status = 'limited_free_trial'
-        else:
-            new_status = current_status or 'paid'
+        new_status = map_stripe_status_to_local_status(stripe_status, current_status)
             
     elif event_type == 'customer.subscription.deleted':
-        new_status = 'limited_free_trial'
         stripe_status = 'deleted'
+        new_status = map_stripe_status_to_local_status(stripe_status, current_status)
         
     else:
         # Unhandled event types (payment_intent.*, charge.*, etc.)

@@ -35,7 +35,7 @@ def get_server_certificate(host: str, port: int) -> bytes:
         print(f"⚠️  Ошибка получения сертификата: {e}")
     return None
 
-async def test_full_request(host: str = "nexy-server.canadacentral.cloudapp.azure.com", port: int = 443):
+async def test_full_request(host: str = "nexy-prod-sergiy.canadacentral.cloudapp.azure.com", port: int = 443):
     """Полный тест gRPC запроса"""
     address = f"{host}:{port}"
     print("=" * 70)
@@ -153,7 +153,7 @@ async def test_full_request(host: str = "nexy-server.canadacentral.cloudapp.azur
         return False
 
 if __name__ == "__main__":
-    host = sys.argv[1] if len(sys.argv) > 1 else "nexy-server.canadacentral.cloudapp.azure.com"
+    host = sys.argv[1] if len(sys.argv) > 1 else "nexy-prod-sergiy.canadacentral.cloudapp.azure.com"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 443
     
     success = asyncio.run(test_full_request(host, port))

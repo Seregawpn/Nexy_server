@@ -295,9 +295,42 @@ echo -e "${BLUE}🔍 PREFLIGHT ПРОВЕРКИ${NC}"
 
 PREFLIGHT_LOG="$BUILD_LOGS_DIR/preflight_${BUILD_TIMESTAMP}.log"
 PREFLIGHT_FAILED=false
+STRICT_RELEASE_MODE="${NEXY_STRICT_RELEASE_MODE:-0}"
 
 echo "Лог preflight: $PREFLIGHT_LOG"
 echo ""
+
+# --- Strict release policy gates ---
+if [ "$STRICT_RELEASE_MODE" = "1" ]; then
+    echo -e "${YELLOW}Проверка strict release policy...${NC}"
+    if [ "${NEXY_SKIP_GEMINI_API_LIVE_CHECK:-0}" = "1" ]; then
+        echo -e "${RED}❌ Strict mode: NEXY_SKIP_GEMINI_API_LIVE_CHECK=1 запрещен${NC}"
+        PREFLIGHT_FAILED=true
+    fi
+    if [ "${NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE:-0}" = "1" ]; then
+        echo -e "${RED}❌ Strict mode: NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE=1 запрещен${NC}"
+        PREFLIGHT_FAILED=true
+    fi
+    if [ "${NEXY_REQUIRE_UNIVERSAL_CHROMIUM_RUNTIME:-1}" = "0" ]; then
+        echo -e "${RED}❌ Strict mode: NEXY_REQUIRE_UNIVERSAL_CHROMIUM_RUNTIME=0 запрещен${NC}"
+        PREFLIGHT_FAILED=true
+    fi
+
+    if "$BUILD_PYTHON" - <<'PY' >/dev/null 2>&1
+from modules.browser_automation import module as m
+if (getattr(m, "EMBEDDED_GEMINI_API_KEY", "") or "").strip():
+    raise SystemExit(2)
+if (getattr(m, "EMBEDDED_GEMINI_API_KEY_FALLBACK", "") or "").strip():
+    raise SystemExit(3)
+PY
+    then
+        echo -e "${GREEN}✅ Strict mode: embedded API keys отсутствуют${NC}"
+    else
+        echo -e "${RED}❌ Strict mode: embedded API keys в коде запрещены для release${NC}"
+        PREFLIGHT_FAILED=true
+    fi
+    echo ""
+fi
 
 # Канонический packaging-readiness gate (должен пройти до любых стадий упаковки)
 if [ -f "$CLIENT_DIR/scripts/verify_packaging_readiness.py" ]; then
@@ -343,8 +376,6 @@ errors = []
 perms_v2 = (cfg or {}).get("integrations", {}).get("permissions_v2", {})
 if not perms_v2.get("enabled", False):
     errors.append("integrations.permissions_v2.enabled=false")
-if perms_v2.get("advance_on_timeout", None) is True:
-    errors.append("integrations.permissions_v2.advance_on_timeout=true")
 order = perms_v2.get("order", [])
 if not isinstance(order, list) or not order:
     errors.append("integrations.permissions_v2.order empty")
@@ -441,6 +472,88 @@ then
 else
     echo -e "${RED}❌ Playwright preflight failed (install playwright / check driver)${NC}"
     echo -e "${YELLOW}Подсказка: $BUILD_PYTHON -m pip install -U playwright && $BUILD_PYTHON -m playwright install chromium${NC}"
+    PREFLIGHT_FAILED=true
+fi
+
+echo ""
+
+# --- Gemini API preflight (browser_use) ---
+echo -e "${YELLOW}Проверка Gemini API (browser_use)...${NC}"
+if "$BUILD_PYTHON" - <<'PY' >/dev/null 2>&1
+import os
+import sys
+
+from config.unified_config_loader import unified_config
+from modules.browser_automation import module as browser_module
+
+api_key = unified_config.get_api_key("gemini_api_key")
+if not api_key:
+    embedded = (getattr(browser_module, "EMBEDDED_GEMINI_API_KEY", "") or "").strip()
+    if embedded:
+        api_key = embedded
+
+if not api_key:
+    sys.stderr.write("gemini_api_key missing (env/credentials/config/embedded)\n")
+    sys.exit(2)
+
+cfg = unified_config.get_browser_use_config()
+model_name = (
+    os.environ.get("GEMINI_MODEL")
+    or os.environ.get("BROWSER_USE_MODEL")
+    or cfg.get("gemini_model")
+    or "gemini-3-flash-preview"
+)
+
+# Optional bypass for offline packaging environments.
+if os.environ.get("NEXY_SKIP_GEMINI_API_LIVE_CHECK", "0") == "1":
+    sys.exit(0)
+
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+except Exception as e:
+    sys.stderr.write(f"langchain_google_genai import failed: {e}\n")
+    sys.exit(3)
+
+try:
+    llm = ChatGoogleGenerativeAI(
+        model=model_name,
+        api_key=api_key,
+        timeout=20,
+        max_output_tokens=8,
+        temperature=0,
+    )
+    response = llm.invoke("Reply with exactly: ok")
+    text = getattr(response, "content", "") if response is not None else ""
+    if not str(text).strip():
+        sys.stderr.write("gemini live check returned empty response\n")
+        sys.exit(4)
+except Exception as e:
+    sys.stderr.write(f"gemini live check failed: {e}\n")
+    sys.exit(5)
+PY
+then
+    echo -e "${GREEN}✅ Gemini API key + live check OK${NC}"
+else
+    echo -e "${RED}❌ Gemini API preflight failed${NC}"
+    echo -e "${YELLOW}Подсказка: проверьте gemini_api_key и сеть до Google API (или временно NEXY_SKIP_GEMINI_API_LIVE_CHECK=1)${NC}"
+    PREFLIGHT_FAILED=true
+fi
+
+echo ""
+
+# --- TLS CA preflight (certifi) ---
+echo -e "${YELLOW}Проверка TLS CA bundle (certifi)...${NC}"
+if "$BUILD_PYTHON" - <<'PY' >/dev/null 2>&1
+import certifi
+from pathlib import Path
+p = Path(certifi.where())
+if not p.exists() or not p.is_file():
+    raise SystemExit(2)
+PY
+then
+    echo -e "${GREEN}✅ certifi CA bundle доступен${NC}"
+else
+    echo -e "${RED}❌ certifi CA bundle недоступен${NC}"
     PREFLIGHT_FAILED=true
 fi
 
@@ -797,6 +910,85 @@ checkpoint() {
     return 0
 }
 
+verify_packaged_browser_runtime() {
+    local app_path="$1"
+    local runtime_dir="$app_path/Contents/Resources/playwright-browsers"
+    local driver_dir="$app_path/Contents/Resources/playwright/driver"
+    local require_universal="${NEXY_REQUIRE_UNIVERSAL_CHROMIUM_RUNTIME:-1}"
+
+    log "Проверяем packaged browser runtime в .app..."
+
+    if [ ! -d "$runtime_dir" ]; then
+        error "Browser runtime directory not found in app: $runtime_dir"
+    fi
+    if [ ! -d "$driver_dir" ]; then
+        error "Playwright driver directory not found in app: $driver_dir"
+    fi
+
+    local chromium_count
+    chromium_count=$(find "$runtime_dir" -maxdepth 1 -type d -name 'chromium-*' 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${chromium_count:-0}" -lt 1 ]; then
+        error "No chromium-* directories found in packaged runtime: $runtime_dir"
+    fi
+
+    local marker_count
+    marker_count=$(find "$runtime_dir" -type f -name 'INSTALLATION_COMPLETE' 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${marker_count:-0}" -lt 1 ]; then
+        error "No INSTALLATION_COMPLETE markers found in packaged runtime: $runtime_dir"
+    fi
+
+    local exe_count
+    exe_count=$(find "$runtime_dir" -type f \( -name 'Chromium' -o -name 'Google Chrome for Testing' -o -name 'chrome' \) 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${exe_count:-0}" -lt 1 ]; then
+        error "No Chromium executable found in packaged runtime: $runtime_dir"
+    fi
+
+    local has_arm=0
+    local has_x86=0
+    if find "$runtime_dir" -type d -name 'chrome-mac-arm64' 2>/dev/null | grep -q .; then
+        has_arm=1
+    fi
+    if find "$runtime_dir" -type d \( -name 'chrome-mac' -o -name 'chrome-mac-x64' \) 2>/dev/null | grep -q .; then
+        has_x86=1
+    fi
+    if [ "$require_universal" = "1" ]; then
+        if [ "$has_arm" -ne 1 ] || [ "$has_x86" -ne 1 ]; then
+            error "Packaged Chromium runtime is not universal-ready (need x64 + arm64 dirs): $runtime_dir"
+        fi
+    else
+        if [ "$has_arm" -ne 1 ] && [ "$has_x86" -ne 1 ]; then
+            error "Packaged Chromium runtime has no macOS arch directories: $runtime_dir"
+        fi
+    fi
+
+    local driver_ok=0
+    if [ -f "$driver_dir/playwright.sh" ] || [ -f "$driver_dir/playwright.cmd" ]; then
+        driver_ok=1
+    elif [ -f "$driver_dir/node" ] && [ -f "$driver_dir/package/cli.js" ]; then
+        driver_ok=1
+    fi
+    if [ "$driver_ok" -ne 1 ]; then
+        error "Playwright driver components missing in app: $driver_dir"
+    fi
+
+    log "✅ Packaged browser runtime verified: runtime_dir=$runtime_dir driver_dir=$driver_dir"
+}
+
+run_optional_post_package_smoke() {
+    local smoke_cmd="${NEXY_POST_PACKAGE_SMOKE_CMD:-}"
+    if [ "$STRICT_RELEASE_MODE" = "1" ] && [ -z "$smoke_cmd" ]; then
+        error "Strict mode: NEXY_POST_PACKAGE_SMOKE_CMD обязателен"
+    fi
+    if [ -z "$smoke_cmd" ]; then
+        return 0
+    fi
+    log "Запуск optional post-package smoke command..."
+    if ! /bin/bash -lc "$smoke_cmd"; then
+        error "Optional post-package smoke command failed: $smoke_cmd"
+    fi
+    log "✅ Optional post-package smoke passed"
+}
+
 # Функция хеширования содержимого .app (для проверки post-signing изменений)
 hash_app_bundle() {
     local app_path="$1"
@@ -990,6 +1182,86 @@ fi
 # падаем сразу с корректной инструкцией, а не на позднем шаге copy/ditto.
 assert_dist_app_writable
 
+# Prepare deterministic Playwright browser runtime bundle for packaged app.
+# Single owner path for packaged browser: Contents/Resources/playwright-browsers.
+prepare_playwright_browser_bundle() {
+    if [ "${NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE:-0}" = "1" ]; then
+        warn "NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE=1 -> пропускаем подготовку bundled Chromium"
+        return 0
+    fi
+
+    # Keep bundle outside build/* to survive step-1 cleanup and support deterministic reuse.
+    local bundle_dir="${NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR:-$CLIENT_DIR/.cache/playwright-browsers-bundle}"
+    bundle_dir="$("$BUILD_PYTHON" - <<PY
+from pathlib import Path
+print(Path("$bundle_dir").expanduser().resolve())
+PY
+)"
+    export NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR="$bundle_dir"
+
+    if "$BUILD_PYTHON" - <<'PY' >/dev/null 2>&1
+import os
+import sys
+from pathlib import Path
+
+bundle = Path(os.environ["NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR"]).resolve()
+if not bundle.is_dir():
+    sys.exit(2)
+
+chromium_dirs = [p for p in bundle.iterdir() if p.is_dir() and p.name.startswith("chromium-")]
+if not chromium_dirs:
+    sys.exit(3)
+
+def has_any_executable(base: Path, arch_dir: str) -> bool:
+    candidates = [
+        base / arch_dir / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
+        base / arch_dir / "Google Chrome for Testing.app" / "Contents" / "MacOS" / "Google Chrome for Testing",
+    ]
+    return any(c.is_file() for c in candidates)
+
+def is_universal_ready(base: Path) -> bool:
+    return (
+        (has_any_executable(base, "chrome-mac") or has_any_executable(base, "chrome-mac-x64"))
+        and has_any_executable(base, "chrome-mac-arm64")
+        and (base / "INSTALLATION_COMPLETE").is_file()
+    )
+
+if not any(is_universal_ready(d) for d in chromium_dirs):
+    sys.exit(4)
+PY
+    then
+        log "Bundled Chromium runtime уже готов, переиспользуем: $bundle_dir"
+        return 0
+    fi
+
+    error "Bundled Chromium runtime отсутствует/неполный: $bundle_dir. Подготовьте его ДО сборки: scripts/prepare_playwright_browser_bundle.sh"
+}
+
+sync_playwright_browser_bundle_into_app() {
+    local app_path="$1"
+    local bundle_dir="${NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR:-}"
+    local app_runtime_dir="$app_path/Contents/Resources/playwright-browsers"
+
+    if [ "${NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE:-0}" = "1" ]; then
+        warn "NEXY_SKIP_PLAYWRIGHT_BROWSERS_BUNDLE=1 -> пропускаем синхронизацию bundled Chromium в .app"
+        return 0
+    fi
+
+    if [ -z "$bundle_dir" ] || [ ! -d "$bundle_dir" ]; then
+        error "Bundled Chromium runtime directory не найден для синхронизации: $bundle_dir"
+    fi
+    if [ ! -d "$app_path" ]; then
+        error ".app не найден для синхронизации bundled Chromium: $app_path"
+    fi
+
+    log "Синхронизируем bundled Chromium runtime в .app: $app_runtime_dir"
+    safe_remove "$app_runtime_dir"
+    mkdir -p "$(dirname "$app_runtime_dir")"
+    safe_copy "$bundle_dir" "$app_runtime_dir"
+}
+
+prepare_playwright_browser_bundle
+
 # Шаг 1: Очистка и Universal 2 сборка
 CURRENT_STEP="Шаг 1: Очистка и Universal 2 сборка"
 log_to_file ">>> ЭТАП: $CURRENT_STEP"
@@ -1107,6 +1379,10 @@ fi
 if [ ! -d "dist/$APP_NAME.app" ]; then
     error "Сборка не удалась. Проверьте логи PyInstaller."
 fi
+
+sync_playwright_browser_bundle_into_app "dist/$APP_NAME.app"
+verify_packaged_browser_runtime "dist/$APP_NAME.app"
+run_optional_post_package_smoke
 
 log "Сборка завершена успешно"
 

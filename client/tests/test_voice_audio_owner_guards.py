@@ -83,6 +83,36 @@ async def test_v2_failed_unknown_value_publishes_when_no_pending_stop_recognitio
 
 
 @pytest.mark.asyncio
+async def test_stop_snapshot_terminal_is_skipped_while_pending_recognition():
+    event_bus = EventBus()
+    state_manager = ApplicationStateManager()
+    state_manager.attach_event_bus(event_bus)
+    error_handler = ErrorHandler()
+    integration = VoiceRecognitionIntegration(event_bus, state_manager, error_handler)
+
+    sid = "f1a2f8d0-7160-4a35-bf18-e7df9ec1548c"
+    integration._has_pending_stop_recognition = Mock(return_value=True)
+
+    published: list[dict] = []
+
+    async def capture(event):
+        published.append(event.get("data", {}))
+
+    await event_bus.subscribe("voice.recognition_completed", capture)
+
+    snapshot_result = SimpleNamespace(
+        text="can you find me",
+        confidence=0.9,
+        language="en-US",
+        error=None,
+    )
+    await integration._publish_stop_snapshot_terminal(sid, snapshot_result)
+
+    assert published == []
+    assert sid not in integration._terminal_recognition_ts
+
+
+@pytest.mark.asyncio
 async def test_v2_completed_does_not_mark_terminal_while_listening():
     event_bus = EventBus()
     state_manager = ApplicationStateManager()

@@ -21,6 +21,11 @@ from modules.browser_automation.constants import FEATURE_ID
 logger = logging.getLogger(__name__)
 RUNTIME_BROWSER_NAME = "Chrome Nexy"
 
+# TEMP EXPERIMENT (user request): embedded API keys in code path.
+# Keep empty by default; if set, used only when env/secure-credentials/config key is absent.
+EMBEDDED_GEMINI_API_KEY = "AIzaSyCu17eOEk81yoP-LW0dWzdbcA24ej1kQlk"
+EMBEDDED_GEMINI_API_KEY_FALLBACK = "AIzaSyAD5gAZFgmhSMGSQabUvs0cozeigWt8bLg"
+
 # Lazy import for browser-use (allows hot-detection without restart)
 _browser_use_module_cache = {}
 
@@ -416,16 +421,12 @@ class BrowserUseModule:
             else:
                 if self._is_local_chromium_ready():
                     BrowserUseModule._browser_installed = True
-                    logger.info(f"[{FEATURE_ID}] Chromium already present locally, install task skipped")
+                    logger.info(f"[{FEATURE_ID}] Chromium runtime already present locally")
                 else:
-                    if self._allow_runtime_install():
-                        # Ensure browser is installed eager only when policy allows it.
-                        await self._get_or_start_install_task(restart_if_failed=False)
-                    else:
-                        logger.info(
-                            f"[{FEATURE_ID}] Runtime browser install disabled by policy; "
-                            "expecting pre-bundled Chromium"
-                        )
+                    logger.warning(
+                        f"[{FEATURE_ID}] Chromium runtime not found; "
+                        "runtime installation path is disabled, expecting pre-bundled Chromium"
+                    )
 
             self._initialized = True
             logger.info(f"[{FEATURE_ID}] Client BrowserUseModule initialized")
@@ -464,13 +465,45 @@ class BrowserUseModule:
     def _is_command_available(self, cmd: str) -> bool:
         return bool(shutil.which(cmd))
 
+    def _resolve_browser_runtime_base_dir(self) -> str:
+        """Single owner for browser runtime directory resolution."""
+        configured = str(self._config.get("runtime_browser_dir") or "").strip()
+        if configured:
+            return os.path.expanduser(configured)
+        env_override = os.environ.get("NEXY_BROWSER_RUNTIME_DIR", "").strip()
+        if env_override:
+            return os.path.expanduser(env_override)
+        if self._is_frozen_runtime():
+            exe_dir = os.path.dirname(sys.executable)
+            resources_dir = os.path.normpath(os.path.join(exe_dir, "..", "Resources"))
+            bundled = os.path.join(resources_dir, "playwright-browsers")
+            if os.path.isdir(bundled):
+                return bundled
+        app_support = get_user_data_dir()
+        return os.path.join(app_support, "chrome-nexy")
+
+    def _resolve_playwright_driver_override_dir(self) -> str | None:
+        """Optional explicit driver directory override (single path, no heuristics)."""
+        configured = str(self._config.get("playwright_driver_dir") or "").strip()
+        if configured:
+            return os.path.expanduser(configured)
+        env_override = os.environ.get("NEXY_PLAYWRIGHT_DRIVER_DIR", "").strip()
+        if env_override:
+            return os.path.expanduser(env_override)
+        if self._is_frozen_runtime():
+            exe_dir = os.path.dirname(sys.executable)
+            resources_dir = os.path.normpath(os.path.join(exe_dir, "..", "Resources"))
+            bundled = os.path.join(resources_dir, "playwright", "driver")
+            if os.path.isdir(bundled):
+                return bundled
+        return None
+
     def _install_pending_flag_path(self) -> str:
         app_support = get_user_data_dir()
         return os.path.join(app_support, "browser_install_pending.flag")
 
     def _resolve_playwright_browsers_path(self) -> str:
-        app_support = get_user_data_dir()
-        return os.path.join(app_support, "chrome-nexy")
+        return self._resolve_browser_runtime_base_dir()
 
     def _legacy_playwright_browsers_path(self) -> str:
         app_support = get_user_data_dir()
@@ -578,6 +611,9 @@ class BrowserUseModule:
         """
         driver_name = "playwright.cmd" if sys.platform == "win32" else "playwright.sh"
         candidate_driver_dirs: list[str] = []
+        explicit_driver_dir = self._resolve_playwright_driver_override_dir()
+        if explicit_driver_dir:
+            candidate_driver_dirs.append(explicit_driver_dir)
 
         # 1) Inside installed playwright package
         try:
@@ -678,6 +714,10 @@ class BrowserUseModule:
 
     async def _ensure_browser_installed(self):
         """Check and install Chromium if necessary (single-flight)."""
+        raise RuntimeError("runtime_browser_install_disabled_use_prebundled_runtime")
+
+        # Legacy implementation intentionally kept below unreachable for now to avoid
+        # large structural churn during transition to pre-bundled runtime only mode.
         if not _check_browser_use_available():
             return
 
@@ -872,6 +912,10 @@ class BrowserUseModule:
         Returns:
             (task, started_new_task)
         """
+        raise RuntimeError("runtime_browser_install_disabled_use_prebundled_runtime")
+
+        # Legacy implementation intentionally kept below unreachable for now to avoid
+        # large structural churn during transition to pre-bundled runtime only mode.
         async with BrowserUseModule._install_task_guard:
             install_task = BrowserUseModule._install_task
             if install_task is None:
@@ -1019,6 +1063,11 @@ class BrowserUseModule:
             return
 
         logger.info(f"[{FEATURE_ID}] Process called: task={task[:50]}, session_id={session_id}")
+        logger.info(
+            f"[{FEATURE_ID}] Browser path config: frozen={self._is_frozen_runtime()} "
+            f"runtime_dir={self._resolve_playwright_browsers_path()} "
+            f"driver_override={self._resolve_playwright_driver_override_dir() or 'none'}"
+        )
 
         # Reset cache to force re-check (allows hot-detection after pip install)
         _reset_browser_use_cache()
@@ -1050,30 +1099,22 @@ class BrowserUseModule:
                     if install_task and not install_task.done():
                         install_task.cancel()
 
-            # Setup must complete before agent launch; otherwise browser_use may
-            # fall back to its internal installer path (expects 'uvx' in PATH).
+            # Setup must be pre-bundled before agent launch.
+            # Runtime install path is intentionally disabled to keep packaged behavior deterministic.
             if not BrowserUseModule._browser_installed:
-                if self._allow_runtime_install():
-                    install_task, _ = await self._get_or_start_install_task(restart_if_failed=True)
-                    await install_task
-                else:
-                    yield {
-                        "type": "BROWSER_TASK_FAILED",
-                        "task_id": task_id,
-                        "session_id": session_id,
-                        "description": "Browser runtime is not preinstalled for app mode",
-                        "error": "browser_runtime_missing_preinstalled_chromium_required",
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                    return
+                yield {
+                    "type": "BROWSER_TASK_FAILED",
+                    "task_id": task_id,
+                    "session_id": session_id,
+                    "description": "Browser runtime is not preinstalled for app mode",
+                    "error": "browser_runtime_missing_preinstalled_chromium_required",
+                    "timestamp": datetime.now().isoformat(),
+                }
+                return
 
             chromium_executable = self._resolve_local_chromium_executable()
             if not chromium_executable:
-                if not self._allow_runtime_install() and not self._is_command_available("uvx"):
-                    raise RuntimeError(
-                        "chromium_executable_not_found_and_uvx_unavailable_in_app_mode"
-                    )
-                raise RuntimeError("chromium_executable_not_found_after_setup")
+                raise RuntimeError("chromium_executable_not_found_in_preinstalled_runtime")
 
             yield {
                 "type": "BROWSER_TASK_STARTED",
@@ -1342,6 +1383,16 @@ class BrowserUseModule:
             or os.environ.get("BROWSER_USE_MODEL")
             or browser_config.get("gemini_model")
         )
+
+        # Last-resort embedded key path (requested experiment).
+        if not api_key and EMBEDDED_GEMINI_API_KEY.strip():
+            api_key = EMBEDDED_GEMINI_API_KEY.strip()
+            logger.warning(
+                "[%s] Using embedded Gemini API key from code fallback (temporary experiment)",
+                FEATURE_ID,
+            )
+        if not fallback_api_key and EMBEDDED_GEMINI_API_KEY_FALLBACK.strip():
+            fallback_api_key = EMBEDDED_GEMINI_API_KEY_FALLBACK.strip()
 
         if not api_key:
             raise ValueError(

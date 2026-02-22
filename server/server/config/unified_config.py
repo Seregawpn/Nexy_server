@@ -26,6 +26,8 @@ if config_path.exists():
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_GEMINI_PRIMARY_MODEL = "gemini-flash-lite-latest"
+
 
 def get_version_from_file() -> str:
     """
@@ -156,7 +158,7 @@ class TextProcessingConfig:
     gemini_api_key: str = ""
     
     # LangChain настройки
-    langchain_model: str = "gemini-3-flash-preview"
+    langchain_model: str = DEFAULT_GEMINI_PRIMARY_MODEL
     # Общие настройки для text processing
     temperature: float = 0.4
     max_tokens: int = 2048
@@ -181,9 +183,10 @@ class TextProcessingConfig:
     
     @classmethod
     def from_env(cls) -> 'TextProcessingConfig':
+        primary_model = os.getenv('GEMINI_PRIMARY_MODEL', DEFAULT_GEMINI_PRIMARY_MODEL)
         return cls(
             gemini_api_key=os.getenv('GEMINI_API_KEY', ''),
-            langchain_model=os.getenv('LANGCHAIN_MODEL', 'gemini-3-flash-preview'),
+            langchain_model=primary_model,
             temperature=float(os.getenv('TEXT_PROCESSING_TEMPERATURE', os.getenv('GEMINI_LIVE_TEMPERATURE', '0.4'))),
             max_tokens=int(os.getenv('TEXT_PROCESSING_MAX_TOKENS', os.getenv('GEMINI_LIVE_MAX_TOKENS', '2048'))),
             tools=os.getenv('TEXT_PROCESSING_TOOLS', os.getenv('GEMINI_LIVE_TOOLS', 'google_search')).split(',') if os.getenv('TEXT_PROCESSING_TOOLS') or os.getenv('GEMINI_LIVE_TOOLS') else ['google_search'],
@@ -206,19 +209,26 @@ class MemoryConfig:
     max_long_term_memory_size: int = 10240   # 10KB
     memory_timeout: float = 2.0
     analysis_timeout: float = 5.0
-    memory_analysis_model: str = "gemini-2.5-flash-lite"
+    memory_analysis_model: str = DEFAULT_GEMINI_PRIMARY_MODEL
     memory_analysis_temperature: float = 0.3
+    short_term_cleanup_enabled: bool = True
+    short_term_cleanup_interval_seconds: int = 7200
+    short_term_cleanup_idle_hours: int = 2
     
     @classmethod
     def from_env(cls) -> 'MemoryConfig':
+        primary_model = os.getenv('GEMINI_PRIMARY_MODEL', DEFAULT_GEMINI_PRIMARY_MODEL)
         return cls(
             gemini_api_key=os.getenv('GEMINI_API_KEY', ''),
             max_short_term_memory_size=int(os.getenv('MAX_SHORT_TERM_MEMORY_SIZE', '10240')),
             max_long_term_memory_size=int(os.getenv('MAX_LONG_TERM_MEMORY_SIZE', '10240')),
             memory_timeout=float(os.getenv('MEMORY_TIMEOUT', '2.0')),
             analysis_timeout=float(os.getenv('ANALYSIS_TIMEOUT', '5.0')),
-            memory_analysis_model=os.getenv('MEMORY_ANALYSIS_MODEL', 'gemini-2.5-flash-lite'),
-            memory_analysis_temperature=float(os.getenv('MEMORY_ANALYSIS_TEMPERATURE', '0.3'))
+            memory_analysis_model=primary_model,
+            memory_analysis_temperature=float(os.getenv('MEMORY_ANALYSIS_TEMPERATURE', '0.3')),
+            short_term_cleanup_enabled=os.getenv('MEMORY_SHORT_TERM_CLEANUP_ENABLED', 'true').lower() == 'true',
+            short_term_cleanup_interval_seconds=int(os.getenv('MEMORY_SHORT_TERM_CLEANUP_INTERVAL_SECONDS', '7200')),
+            short_term_cleanup_idle_hours=int(os.getenv('MEMORY_SHORT_TERM_CLEANUP_IDLE_HOURS', '2'))
         )
 
 @dataclass

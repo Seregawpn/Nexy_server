@@ -35,7 +35,7 @@
 **Проверка:**
 - Проверить `config/unified_config.yaml` - правильно ли настроен production сервер
 - Проверить, что `use_ssl=True` и `ssl_verify=False` для self-signed сертификата
-- Проверить, что адрес сервера: `20.63.24.187:443`
+- Проверить, что адрес сервера: `nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443`
 
 ### 3. Проблема с hardware_id
 
@@ -81,7 +81,7 @@
 network:
   grpc_servers:
     production:
-      host: "20.63.24.187"
+      host: "nexy-prod-sergiy.canadacentral.cloudapp.azure.com"
       port: 443
       ssl: true
       ssl_verify: false  # ВАЖНО для self-signed
@@ -113,7 +113,7 @@ sudo journalctl -u voice-assistant.service --since '10 minutes ago' | grep -i "s
    - Проверить, что `use_ssl=True` в конфигурации
 
 2. **Убедиться, что сертификат загружен:**
-   - Скачать сертификат сервера: `openssl s_client -connect 20.63.24.187:443 -showcerts`
+   - Скачать сертификат сервера: `openssl s_client -connect nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443 -showcerts`
    - Сохранить в `client/resources/certs/production_server.pem`
    - Убедиться, что `ssl_verify=False` в конфигурации
 
@@ -128,7 +128,7 @@ sudo journalctl -u voice-assistant.service --since '10 minutes ago' | grep -i "s
    network:
      grpc_servers:
        production:
-         host: "20.63.24.187"
+         host: "nexy-prod-sergiy.canadacentral.cloudapp.azure.com"
          port: 443
          ssl: true
          ssl_verify: false

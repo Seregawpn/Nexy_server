@@ -16,7 +16,7 @@ from integration.integrations.grpc_client_integration import (
 
 
 @pytest.mark.asyncio
-async def test_browser_install_started_tts_waits_for_welcome_completion() -> None:
+async def test_browser_install_started_is_silent_for_prebundled_runtime_contract() -> None:
     bus = EventBus()
     integration = BrowserUseIntegration(bus)
 
@@ -35,19 +35,9 @@ async def test_browser_install_started_tts_waits_for_welcome_completion() -> Non
     await integration._handle_install_status({"status": "started"})
     await asyncio.sleep(0)
 
-    assert len(notifications) == 1
-    assert notifications[0].get("message") == (
-        "Browser is installing. It may take a few minutes. After that, you can use browser use."
-    )
+    # Contract: runtime install UX is disabled; app ships with pre-bundled browser.
+    assert notifications == []
     assert tts_events == []
-
-    await integration._on_welcome_completed({"data": {"success": True}})
-    await asyncio.sleep(0)
-
-    assert len(tts_events) == 1
-    assert tts_events[0].get("text") == (
-        "Browser is installing. It may take a few minutes. After that, you can use browser use."
-    )
 
 
 @pytest.mark.asyncio

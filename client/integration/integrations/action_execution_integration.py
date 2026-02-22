@@ -1051,10 +1051,12 @@ class ActionExecutionIntegration(BaseIntegration):
             if not session_id:
                 return
 
-            event_type = data.get("type", "")
-            if "FAILED" in str(event_type):
+            raw_event_type = str(event.get("type", "")) if isinstance(event, dict) else ""
+            payload_event_type = str(data.get("type", ""))
+            event_type = f"{raw_event_type} {payload_event_type}".lower()
+            if "failed" in event_type:
                 status = "failed"
-            elif "CANCELLED" in str(event_type):
+            elif "cancelled" in event_type:
                 status = "cancelled"
             else:
                 status = "success"

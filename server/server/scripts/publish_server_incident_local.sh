@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NETWORKWATCHERRG}"
-VM_NAME="${AZURE_VM_NAME:-Nexy}"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/monitor_inbox}"
 STATE_DIR="$OUT_DIR/.state"
@@ -59,7 +59,7 @@ else
   health_ok=no
 fi
 
-errors=$(journalctl -u voice-assistant --since "70 minutes ago" --no-pager 2>/dev/null | grep -E 'API_KEY_INVALID|API key expired|Traceback|CRITICAL|Exception|Text streaming error|LangChain with image processing error|Failed|ERROR' | tail -n 20 || true)
+errors=$(journalctl -u voice-assistant --since "70 minutes ago" --no-pager 2>/dev/null | grep -E 'API_KEY_INVALID|API key expired|CRITICAL|PermissionError|gRPC server initialization failed|Failed to locate executable|can.t open file|Connection refused|Traceback' | tail -n 20 || true)
 if [ -n "$errors" ]; then
   err_count=$(printf '%s\n' "$errors" | wc -l | tr -d ' ')
 else

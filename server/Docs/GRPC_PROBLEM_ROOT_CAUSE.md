@@ -150,7 +150,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 
 # 4. Протестировать
-python3 scripts/test_grpc_connection.py 20.63.24.187 443
+python3 scripts/test_grpc_connection.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443
 ```
 
 ---

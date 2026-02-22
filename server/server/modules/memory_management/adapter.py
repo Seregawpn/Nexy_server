@@ -2,6 +2,7 @@
 Адаптер для MemoryManager - временный адаптер для использования через ModuleCoordinator
 """
 
+import asyncio
 import logging
 from typing import Dict, Any, AsyncIterator, Union, Optional
 
@@ -28,6 +29,10 @@ class MemoryManagementAdapter(UniversalModuleInterface):
         self._config: Dict[str, Any] = {}
         self._status = ModuleStatus(ModuleState.INIT)
         self._db_manager = None  # Для установки после инициализации database
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._short_term_cleanup_enabled: bool = True
+        self._short_term_cleanup_interval_seconds: int = 7200
+        self._short_term_cleanup_idle_hours: int = 2
     
     async def initialize(self, config: dict) -> None:
         """
@@ -45,6 +50,15 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             logger.info(f"Инициализация адаптера {self.name}...")
             
             self._config = config
+            self._short_term_cleanup_enabled = bool(config.get('short_term_cleanup_enabled', True))
+            self._short_term_cleanup_interval_seconds = max(
+                int(config.get('short_term_cleanup_interval_seconds', 7200)),
+                60
+            )
+            self._short_term_cleanup_idle_hours = max(
+                int(config.get('short_term_cleanup_idle_hours', 2)),
+                1
+            )
             
             # Инициализируем TokenUsageTracker
             token_tracker = None
@@ -62,6 +76,7 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             if await self._manager.initialize():
                 self._status = ModuleStatus(ModuleState.READY)
                 self._status.health = "ok"
+                await self._start_background_tasks()
                 logger.info(f"✅ Адаптер {self.name} инициализирован")
             else:
                 raise Exception("Не удалось инициализировать MemoryManager")
@@ -175,6 +190,7 @@ class MemoryManagementAdapter(UniversalModuleInterface):
         """
         try:
             logger.info(f"Очистка адаптера {self.name}...")
+            await self._stop_background_tasks()
             
             # MemoryManager не имеет метода cleanup, просто очищаем ссылку
             self._manager = None
@@ -207,3 +223,52 @@ class MemoryManagementAdapter(UniversalModuleInterface):
             Экземпляр MemoryManager или None
         """
         return self._manager
+
+    async def _start_background_tasks(self) -> None:
+        """Запуск фоновых задач адаптера."""
+        if not self._short_term_cleanup_enabled:
+            logger.info("Short-term memory periodic cleanup disabled")
+            return
+        if self._cleanup_task and not self._cleanup_task.done():
+            return
+        self._cleanup_task = asyncio.create_task(self._short_term_cleanup_loop())
+        logger.info(
+            "Short-term memory cleanup loop started "
+            f"(interval={self._short_term_cleanup_interval_seconds}s, idle_hours={self._short_term_cleanup_idle_hours})"
+        )
+
+    async def _stop_background_tasks(self) -> None:
+        """Остановка фоновых задач адаптера."""
+        if not self._cleanup_task:
+            return
+        self._cleanup_task.cancel()
+        try:
+            await self._cleanup_task
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._cleanup_task = None
+        logger.info("Short-term memory cleanup loop stopped")
+
+    async def _short_term_cleanup_loop(self) -> None:
+        """Периодическая очистка краткосрочной памяти при неактивности."""
+        while True:
+            try:
+                await asyncio.sleep(self._short_term_cleanup_interval_seconds)
+                await self._run_short_term_cleanup_once()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in short-term memory cleanup loop: {e}")
+
+    async def _run_short_term_cleanup_once(self) -> None:
+        """Один проход очистки краткосрочной памяти."""
+        if not self._manager:
+            return
+        cleaned_rows = await self._manager.cleanup_expired_memory(
+            hours=self._short_term_cleanup_idle_hours
+        )
+        logger.info(
+            "Short-term memory cleanup executed "
+            f"(idle_hours={self._short_term_cleanup_idle_hours}, cleaned_rows={cleaned_rows})"
+        )

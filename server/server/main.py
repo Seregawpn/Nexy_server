@@ -245,12 +245,23 @@ async def subscription_status_handler(request):
 
 async def payment_success_handler(request):
     """Страница успешной оплаты (redirect target для Stripe Checkout)."""
-    deep_link_base = os.getenv("DEEP_LINK_BASE_URL", "nexy://payment/")
     session_id = request.query.get("session_id")
     if session_id:
-        deep_link = f"{deep_link_base}success?session_id={quote(session_id)}"
-    else:
-        deep_link = f"{deep_link_base}success"
+        try:
+            from modules.subscription import get_subscription_module
+            subscription_module = get_subscription_module()
+            if subscription_module:
+                result = await subscription_module.reconcile_checkout_success(session_id)
+                logger.info(
+                    "[F-2025-017] payment_success reconcile result",
+                    extra={
+                        "scope": "subscription",
+                        "decision": "reconcile_success_redirect",
+                        "ctx": {"session_id": session_id, "result": result},
+                    },
+                )
+        except Exception as e:
+            logger.warning(f"[F-2025-017] payment_success reconcile failed: {e}")
     html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -258,8 +269,18 @@ async def payment_success_handler(request):
   <title>Payment Successful</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; }}
-    .card {{ max-width: 540px; padding: 24px; border: 1px solid #e5e5e5; border-radius: 12px; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      text-align: center;
+    }}
+    .card {{ max-width: 540px; width: 100%; padding: 24px; border: 1px solid #e5e5e5; border-radius: 12px; }}
     .btn {{ display: inline-block; padding: 10px 16px; background: #111; color: #fff; border-radius: 8px; text-decoration: none; }}
   </style>
   <script>
@@ -271,8 +292,9 @@ async def payment_success_handler(request):
 <body>
   <div class="card">
     <h2>Payment Successful ✅</h2>
-    <p>You can close this page. Your subscription is now active.</p>
-    <a class="btn" href="{deep_link}">Open App</a>
+    <p>Your subscription is now active.</p>
+    <p>You can close this browser window.</p>
+    <button class="btn" onclick="try {{ window.close(); }} catch (e) {{}}">Close Window</button>
   </div>
 </body>
 </html>"""

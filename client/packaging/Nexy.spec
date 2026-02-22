@@ -62,6 +62,18 @@ if playwright_driver_path and playwright_driver_path.exists():
 else:
     print("⚠️ Playwright driver not found; skipping bundle")
 
+# Packaged Playwright browsers runtime (preferred deterministic path for packaged app)
+playwright_browsers_bundle_path = os.environ.get("NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR", "").strip()
+if playwright_browsers_bundle_path:
+    p = Path(playwright_browsers_bundle_path).expanduser().resolve()
+    if p.exists() and p.is_dir():
+        extra_datas.append((str(p), "playwright-browsers"))
+        print(f"✅ Playwright browsers bundled from: {p}")
+    else:
+        print(f"⚠️ NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR not found: {p} (skipping)")
+else:
+    print("⚠️ NEXY_PLAYWRIGHT_BROWSERS_BUNDLE_DIR is not set; packaged browser runtime may be missing")
+
 # browser_use package with system prompt templates (.md files)
 browser_use_path = None
 try:

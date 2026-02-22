@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Callable, cast
 
 from integration.core.event_bus import EventBus
@@ -271,6 +272,38 @@ class PermissionOrchestratorIntegration:
             except Exception as e:
                 logger.error("[V2_INTEGRATION] Failed to emit legacy event: %s", e)
 
+    async def reemit_completion_from_ledger(self) -> bool:
+        """
+        Re-emit completed event contract from persisted completed ledger without starting pipeline.
+
+        Returns:
+            True if completion was re-emitted, False if ledger is not in completed state.
+        """
+        ledger = self._load_ledger()
+        if not ledger:
+            return False
+        if ledger.phase not in (Phase.COMPLETED, Phase.LIMITED_MODE):
+            return False
+
+        summary: dict[str, dict[str, str]] = {}
+        for perm_id, entry in ledger.steps.items():
+            summary[perm_id.value] = {"state": entry.state.value, "mode": entry.mode.value}
+
+        await self._emit_event(
+            UIEvent(
+                type=UIEventType.COMPLETED,
+                timestamp=time.time(),
+                payload={
+                    "phase": Phase.COMPLETED.value,
+                    "summary": summary,
+                    "restart_count": ledger.restart_count,
+                    "full_mode": True,
+                    "source": "ledger_reemit",
+                },
+            )
+        )
+        return True
+
     def _map_to_legacy_event(
         self, event: UIEvent
     ) -> tuple[tuple[str, dict[str, Any]], bool] | None:
@@ -341,10 +374,16 @@ class PermissionOrchestratorIntegration:
 
     def _summarize_hard_permissions(self) -> tuple[bool, list[str]]:
         """Build summary for legacy events."""
-        if not self._orchestrator or not self._orchestrator.ledger:
+        ledger = None
+        hard_permissions: list[PermissionId] = []
+        if self._orchestrator and self._orchestrator.ledger:
+            ledger = self._orchestrator.ledger
+            hard_permissions = self._orchestrator.hard_permissions
+        else:
+            ledger = self._load_ledger()
+            hard_permissions = self._hard_permissions
+        if not ledger:
             return False, []
-        ledger = self._orchestrator.ledger
-        hard_permissions = self._orchestrator.hard_permissions
         missing = self._get_missing_hard_permissions(ledger, hard_permissions)
         return (len(missing) == 0), missing
 

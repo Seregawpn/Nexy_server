@@ -32,7 +32,7 @@ def test_hard_permissions_summary_requires_pass_only() -> None:
 
 
 @pytest.mark.asyncio
-async def test_timeout_completion_publishes_all_granted_true() -> None:
+async def test_timeout_mode_terminal_completion_uses_v2_owner_path() -> None:
     event_bus = Mock()
     event_bus.publish = AsyncMock()
     state_manager = Mock()
@@ -43,19 +43,19 @@ async def test_timeout_completion_publishes_all_granted_true() -> None:
         state_manager=state_manager,
         error_handler=Mock(),
     )
+    integration._v2_enabled = True
+    integration._advance_on_timeout = True
     integration._v2_integration = SimpleNamespace(
+        is_first_run_complete=lambda: False,
+        start=AsyncMock(),
         wait_for_completion=AsyncMock(return_value=True),
-        _ready_published=True,
     )
-    await integration._publish_timeout_completion_events()
+    success = await integration.start()
 
-    event_bus.publish.assert_awaited_once()
-    published_event_name = event_bus.publish.await_args.args[0]
-    payload = event_bus.publish.await_args.args[1]
-
-    assert published_event_name == "permissions.first_run_completed"
-    assert payload["all_granted"] is True
-    assert "missing" not in payload
+    assert success is True
+    integration._v2_integration.start.assert_awaited_once()
+    integration._v2_integration.wait_for_completion.assert_awaited_once()
+    event_bus.publish.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -72,9 +72,53 @@ async def test_timeout_mode_does_not_publish_completion_when_not_terminal() -> N
         start=AsyncMock(),
         wait_for_completion=AsyncMock(return_value=False),
     )
-    integration._publish_timeout_completion_events = AsyncMock()
 
     success = await integration.start()
 
     assert success is True
-    integration._publish_timeout_completion_events.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_completed_ledger_uses_reemit_without_pipeline_start() -> None:
+    integration = FirstRunPermissionsIntegration(
+        event_bus=Mock(),
+        state_manager=Mock(),
+        error_handler=Mock(),
+    )
+    integration._v2_enabled = True
+    integration._v2_integration = SimpleNamespace(
+        is_first_run_complete=lambda: True,
+        reemit_completion_from_ledger=AsyncMock(return_value=True),
+        start=AsyncMock(),
+        wait_for_completion=AsyncMock(return_value=True),
+    )
+
+    success = await integration.start()
+
+    assert success is True
+    integration._v2_integration.reemit_completion_from_ledger.assert_awaited_once()
+    integration._v2_integration.start.assert_not_awaited()
+    integration._v2_integration.wait_for_completion.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_completed_ledger_reemit_fallback_starts_pipeline() -> None:
+    integration = FirstRunPermissionsIntegration(
+        event_bus=Mock(),
+        state_manager=Mock(),
+        error_handler=Mock(),
+    )
+    integration._v2_enabled = True
+    integration._v2_integration = SimpleNamespace(
+        is_first_run_complete=lambda: True,
+        reemit_completion_from_ledger=AsyncMock(return_value=False),
+        start=AsyncMock(),
+        wait_for_completion=AsyncMock(return_value=True),
+    )
+
+    success = await integration.start()
+
+    assert success is True
+    integration._v2_integration.reemit_completion_from_ledger.assert_awaited_once()
+    integration._v2_integration.start.assert_awaited_once()
+    integration._v2_integration.wait_for_completion.assert_awaited_once()

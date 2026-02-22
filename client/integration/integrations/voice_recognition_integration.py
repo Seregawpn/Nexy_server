@@ -879,6 +879,16 @@ class VoiceRecognitionIntegration:
             return
         text = str(getattr(result, "text", "") or "").strip()
         if text:
+            # Anti-race: если движок все еще финализирует распознавание после stop,
+            # snapshot не должен "забивать" terminal и блокировать поздний completed.
+            if self._has_pending_stop_recognition():
+                logger.debug(
+                    "VOICE: skip stop snapshot terminal while pending recognition "
+                    "(session=%s, text_len=%s)",
+                    session_id,
+                    len(text),
+                )
+                return
             if not self._try_mark_terminal_recognition(session_id, "snapshot_completed"):
                 return
             self._cancel_stop_terminal_fallback(session_id, reason="snapshot_completed")
@@ -895,6 +905,14 @@ class VoiceRecognitionIntegration:
             return
         error = str(getattr(result, "error", "") or "").strip()
         if error:
+            if self._has_pending_stop_recognition():
+                logger.debug(
+                    "VOICE: skip stop snapshot failed while pending recognition "
+                    "(session=%s, error=%s)",
+                    session_id,
+                    error,
+                )
+                return
             if not self._try_mark_terminal_recognition(session_id, "snapshot_failed"):
                 return
             self._cancel_stop_terminal_fallback(session_id, reason="snapshot_failed")

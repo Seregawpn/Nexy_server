@@ -167,8 +167,8 @@ python scripts/verify_feature_flags.py --module <path>
 # Используйте готовый скрипт
 bash scripts/validate_updates.sh [HOST] [PORT]
 
-# Или вручную (актуальный IP: 20.63.24.187)
-APPCAST_SIZE=$(curl -s https://20.63.24.187/updates/appcast.xml | grep -o 'length="[^"]*"' | cut -d'"' -f2)
+# Или вручную (актуальный IP: nexy-prod-sergiy.canadacentral.cloudapp.azure.com)
+APPCAST_SIZE=$(curl -s https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/updates/appcast.xml | grep -o 'length="[^"]*"' | cut -d'"' -f2)
 GITHUB_SIZE=$(curl -s -L -I https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg | grep -i "content-length:" | tail -1 | awk '{print $2}' | tr -d '\r\n')
 echo "AppCast: $APPCAST_SIZE байт"
 echo "GitHub:  $GITHUB_SIZE байт"
@@ -368,19 +368,19 @@ UPDATE_PORT=8081
 2. **Verify /health и /status**
    ```bash
    # Проверка health endpoint
-   curl https://20.63.24.187/health
+   curl https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/health
    
    # Проверка status endpoint
-   curl https://20.63.24.187/status | jq
+   curl https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/status | jq
    ```
 
 3. **Re-run smoke tests**
    ```bash
    # Проверка базовой функциональности
-   python scripts/grpc_smoke.py 20.63.24.187 443
+   python scripts/grpc_smoke.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443
    
    # Проверка health/status
-   python scripts/check_grpc_health.py 20.63.24.187 443
+   python scripts/check_grpc_health.py nexy-prod-sergiy.canadacentral.cloudapp.azure.com 443
    
    # Проверка гвардрайлов
    ./scripts/check_ramp_guardrails.sh server.log 100

@@ -175,6 +175,18 @@ cd /Users/sergiyzasorin/Fix_new/downloads/Nexy_v1.6.1.27
 
 Что выполняется по шагам:
 
+0. Browser runtime pre-step (обязательно до packaging)
+- Подготовить заранее bundled Chromium runtime:
+```bash
+cd /Users/sergiyzasorin/Fix_new/downloads/Nexy_v1.6.1.27/client
+./scripts/prepare_playwright_browser_bundle.sh
+```
+- Проверка без скачивания (для CI/preflight):
+```bash
+./scripts/prepare_playwright_browser_bundle.sh --verify-only
+```
+- Требование: `build_final.sh` использует только prebuilt bundle и не скачивает браузер в процессе упаковки.
+
 1. Packaging owner (`packaging/build_final.sh`)
 - Сборка/подпись/нотаризация.
 - Автосинхронизация в `server/release_inbox`:

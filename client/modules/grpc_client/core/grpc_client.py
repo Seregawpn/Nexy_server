@@ -5,6 +5,7 @@
 import asyncio
 from datetime import datetime
 import importlib
+import importlib.util
 import logging
 from pathlib import Path
 import sys
@@ -32,6 +33,7 @@ class GrpcClient:
 
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or self._create_default_config()
+        self._proto_modules: tuple[Any, Any] | None = None
 
         # Модульные компоненты
         self.connection_manager = ConnectionManager()
@@ -695,37 +697,71 @@ class GrpcClient:
 
     def _import_proto_modules(self) -> tuple[Any, Any]:
         """Гибкий импорт streaming_pb2 и streaming_pb2_grpc.
-        Сначала пробуем из proto директории модуля, затем fallback в server/.
+        Сначала пробуем package import, затем file-based import из proto директорий.
         """
-        # 1) Пытаемся импортировать из proto директории модуля
+        if self._proto_modules is not None:
+            return self._proto_modules
+
+        # 1) Package import (без модификации sys.path)
         try:
-            # Путь: client/modules/grpc_client/proto/
-            proto_dir = Path(__file__).resolve().parent.parent / "proto"
+            pb2 = importlib.import_module("modules.grpc_client.proto.streaming_pb2")
+            pb2_grpc = importlib.import_module("modules.grpc_client.proto.streaming_pb2_grpc")
+            self._proto_modules = (pb2, pb2_grpc)
+            logger.info("✅ Protobuf модули успешно импортированы из modules.grpc_client.proto")
+            return self._proto_modules
+        except Exception as pkg_err:
+            logger.warning(f"⚠️ Package import protobuf не удался: {pkg_err}")
 
-            if proto_dir.exists() and str(proto_dir) not in sys.path:
-                sys.path.insert(0, str(proto_dir))
-                logger.info(f"✅ Добавлен путь к proto модулям: {proto_dir}")
+        def _load_pair_from_dir(proto_dir: Path, label: str) -> tuple[Any, Any]:
+            pb2_path = proto_dir / "streaming_pb2.py"
+            pb2_grpc_path = proto_dir / "streaming_pb2_grpc.py"
+            if not (pb2_path.exists() and pb2_grpc_path.exists()):
+                raise FileNotFoundError(f"protobuf files missing in {proto_dir}")
 
-            pb2 = importlib.import_module("streaming_pb2")
-            pb2_grpc = importlib.import_module("streaming_pb2_grpc")
-            logger.info("✅ Protobuf модули успешно импортированы из proto/")
+            pb2_mod_name = "nexy_client_streaming_pb2"
+            pb2_grpc_mod_name = "nexy_client_streaming_pb2_grpc"
+
+            pb2_spec = importlib.util.spec_from_file_location(pb2_mod_name, pb2_path)
+            if pb2_spec is None or pb2_spec.loader is None:
+                raise ImportError(f"Unable to create spec for {pb2_path}")
+            pb2 = importlib.util.module_from_spec(pb2_spec)
+            sys.modules[pb2_mod_name] = pb2
+            # grpcio-tools output expects absolute `import streaming_pb2`.
+            sys.modules["streaming_pb2"] = pb2
+            pb2_spec.loader.exec_module(pb2)
+
+            pb2_grpc_spec = importlib.util.spec_from_file_location(pb2_grpc_mod_name, pb2_grpc_path)
+            if pb2_grpc_spec is None or pb2_grpc_spec.loader is None:
+                raise ImportError(f"Unable to create spec for {pb2_grpc_path}")
+            pb2_grpc = importlib.util.module_from_spec(pb2_grpc_spec)
+            sys.modules[pb2_grpc_mod_name] = pb2_grpc
+            pb2_grpc_spec.loader.exec_module(pb2_grpc)
+            logger.info("✅ Protobuf модули успешно импортированы из %s", label)
             return pb2, pb2_grpc
+
+        # 2) Локальная proto директория клиента
+        try:
+            local_proto_dir = Path(__file__).resolve().parent.parent / "proto"
+            self._proto_modules = _load_pair_from_dir(local_proto_dir, "client proto/")
+            return self._proto_modules
         except Exception as local_err:
-            logger.warning(f"⚠️ Не удалось импортировать из proto/: {local_err}")
+            logger.warning(f"⚠️ Не удалось импортировать protobuf из client proto/: {local_err}")
 
-        # 2) Пытаемся взять из server/ (репозиторий корень/ server)
-        try:
-            repo_root = Path(__file__).resolve().parents[4]
-            server_dir = repo_root / "server"
+        # 3) Fallback на server proto директорию (repo layouts)
+        repo_root = Path(__file__).resolve().parents[4]
+        fallback_dirs = [
+            repo_root / "server" / "server" / "modules" / "grpc_service",
+            repo_root / "server" / "modules" / "grpc_service",
+        ]
+        errors: list[str] = []
+        for fallback_dir in fallback_dirs:
+            try:
+                self._proto_modules = _load_pair_from_dir(fallback_dir, str(fallback_dir))
+                return self._proto_modules
+            except Exception as fallback_err:
+                errors.append(f"{fallback_dir}: {fallback_err}")
 
-            # Проверяем существование и добавляем только если нужно
-            if server_dir.exists() and str(server_dir) not in sys.path:
-                sys.path.append(str(server_dir))
-                logger.info(f"✅ Добавлен путь к server модулям: {server_dir}")
-
-            pb2 = importlib.import_module("streaming_pb2")
-            pb2_grpc = importlib.import_module("streaming_pb2_grpc")
-            logger.info("✅ Protobuf модули успешно импортированы из server/")
-            return pb2, pb2_grpc
-        except Exception as e:
-            raise ImportError(f"Unable to import protobuf modules (streaming_pb2*). Error: {e}")
+        raise ImportError(
+            "Unable to import protobuf modules (streaming_pb2*). Tried package + file-based fallbacks: "
+            + "; ".join(errors)
+        )

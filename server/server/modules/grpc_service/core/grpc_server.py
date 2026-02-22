@@ -77,8 +77,173 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
 
         # Флаг инициализации
         self.is_initialized = False
+        # Collect buffer: единый owner-path для phase=COLLECT.
+        # Key: (hardware_id, session_id)
+        self._collect_buffer: dict[tuple[str, str], dict[str, Any]] = {}
+        self._collect_lock = asyncio.Lock()
 
         logger.info("✅ Новый gRPC сервер создан")
+
+    @staticmethod
+    def _phase_name(phase_value: int) -> str:
+        if phase_value == streaming_pb2.REQUEST_PHASE_COLLECT:
+            return "REQUEST_PHASE_COLLECT"
+        if phase_value == streaming_pb2.REQUEST_PHASE_COMMIT:
+            return "REQUEST_PHASE_COMMIT"
+        return "REQUEST_PHASE_UNSPECIFIED"
+
+    @staticmethod
+    def _merge_chunk_text(existing: str, incoming: str) -> str:
+        """Merge collect chunks into one canonical prompt.
+
+        Supports both chunk semantics:
+        - full snapshot chunks (incoming startswith existing);
+        - delta chunks (append with suffix/prefix overlap dedup).
+        """
+        existing = existing or ""
+        incoming = incoming or ""
+
+        if incoming == "":
+            return existing
+        if existing == "":
+            return incoming
+        if incoming == existing:
+            return existing
+
+        # Snapshot growth path: new chunk already contains full previous text.
+        if incoming.startswith(existing):
+            return incoming
+        if existing.startswith(incoming):
+            return existing
+        if incoming in existing:
+            return existing
+        if existing in incoming:
+            return incoming
+
+        # Delta path: append only non-overlapping tail.
+        max_overlap = min(len(existing), len(incoming))
+        overlap = 0
+        for i in range(max_overlap, 0, -1):
+            if existing.endswith(incoming[:i]):
+                overlap = i
+                break
+        return existing + incoming[overlap:]
+
+    async def _handle_collect_phase(
+        self,
+        request: streaming_pb2.StreamRequest,
+        *,
+        hardware_id: str,
+        session_id: str,
+    ) -> streaming_pb2.StreamResponse:
+        """COLLECT owner-path: сохраняем буфер и НЕ запускаем workflow."""
+        key = (hardware_id, session_id)
+        now = time.time()
+        has_chunk_text = bool(request.HasField("chunk_text"))
+        incoming_chunk_text = request.chunk_text if has_chunk_text else None
+        incoming_chunk_seq = int(request.chunk_seq or 0)
+        incoming_screenshot = request.screenshot if request.HasField("screenshot") else None
+        incoming_width = request.screen_width if request.HasField("screen_width") else None
+        incoming_height = request.screen_height if request.HasField("screen_height") else None
+
+        async with self._collect_lock:
+            entry = self._collect_buffer.setdefault(
+                key,
+                {
+                    "chunk_seq": -1,
+                    "chunk_text": "",
+                    "chunk_count": 0,
+                    "screenshot": None,
+                    "screen_width": None,
+                    "screen_height": None,
+                    "updated_at": now,
+                },
+            )
+
+            last_seq = int(entry.get("chunk_seq", -1))
+            if incoming_chunk_seq <= last_seq:
+                logger.debug(
+                    "COLLECT drop out-of-order/duplicate: session=%s hardware=%s chunk_seq=%s last_seq=%s",
+                    session_id,
+                    hardware_id,
+                    incoming_chunk_seq,
+                    last_seq,
+                )
+            else:
+                entry["chunk_seq"] = incoming_chunk_seq
+                if incoming_chunk_text is not None:
+                    entry["chunk_text"] = self._merge_chunk_text(
+                        str(entry.get("chunk_text") or ""),
+                        incoming_chunk_text,
+                    )
+                    entry["chunk_count"] = int(entry.get("chunk_count", 0)) + 1
+                if incoming_screenshot:
+                    entry["screenshot"] = incoming_screenshot
+                if incoming_width is not None:
+                    entry["screen_width"] = incoming_width
+                if incoming_height is not None:
+                    entry["screen_height"] = incoming_height
+                entry["updated_at"] = now
+
+        log_decision(
+            logger,
+            decision="collect_ack",
+            method="StreamAudio",
+            ctx={
+                "session_id": session_id,
+                "hardware_id": hardware_id,
+                "chunk_seq": incoming_chunk_seq,
+                "has_chunk_text": bool(incoming_chunk_text),
+                "has_screenshot": bool(incoming_screenshot),
+            },
+        )
+        return streaming_pb2.StreamResponse(end_message="COLLECT_ACCEPTED")  # type: ignore
+
+    async def _consume_collect_for_commit(
+        self,
+        request: streaming_pb2.StreamRequest,
+        *,
+        hardware_id: str,
+        session_id: str,
+    ) -> tuple[str, str, Optional[int], Optional[int]]:
+        """COMMIT owner-path: atomically consume collect buffer and merge payload."""
+        key = (hardware_id, session_id)
+        async with self._collect_lock:
+            collect_entry = self._collect_buffer.pop(key, None)
+
+        prompt = request.prompt or ""
+        screenshot = request.screenshot if request.HasField("screenshot") else ""
+        screen_width: Optional[int] = request.screen_width if request.HasField("screen_width") else None
+        screen_height: Optional[int] = request.screen_height if request.HasField("screen_height") else None
+        commit_prompt_len = len(prompt)
+        collect_text_len = 0
+        collect_chunk_count = 0
+
+        if collect_entry:
+            buffered_chunk_text = str(collect_entry.get("chunk_text") or "")
+            collect_text_len = len(buffered_chunk_text)
+            collect_chunk_count = int(collect_entry.get("chunk_count", 0))
+            # Always merge COMMIT prompt with buffered COLLECT text into one canonical prompt.
+            # This guarantees full-request handoff to LLM regardless of chunk format.
+            prompt = self._merge_chunk_text(buffered_chunk_text, prompt)
+            if not screenshot:
+                screenshot = str(collect_entry.get("screenshot") or "")
+            if screen_width is None:
+                screen_width = collect_entry.get("screen_width")
+            if screen_height is None:
+                screen_height = collect_entry.get("screen_height")
+
+        logger.info(
+            "COMMIT merge: session=%s hardware=%s collect_chunks=%s collect_text_len=%s commit_prompt_len=%s final_prompt_len=%s",
+            session_id,
+            hardware_id,
+            collect_chunk_count,
+            collect_text_len,
+            commit_prompt_len,
+            len(prompt),
+        )
+
+        return prompt, screenshot, screen_width, screen_height
     
     async def initialize(self):
         """Инициализация всех модулей"""
@@ -111,6 +276,8 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
                 # Очищаем gRPC Service Manager
                 await self.grpc_service_manager.cleanup()
                 logger.info("✅ gRPC Service Manager очищен")
+            async with self._collect_lock:
+                self._collect_buffer.clear()
             
             self.is_initialized = False
             logger.info("✅ Новый сервер полностью очищен")
@@ -153,6 +320,45 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             yield streaming_pb2.StreamResponse(error_message=error_msg)  # type: ignore
             return
         
+        phase = int(getattr(request, "phase", streaming_pb2.REQUEST_PHASE_UNSPECIFIED))
+        phase_name = self._phase_name(phase)
+
+        # COLLECT-phase: принимаем буфер и выходим без запуска workflow.
+        if phase == streaming_pb2.REQUEST_PHASE_COLLECT:
+            collect_ack = await self._handle_collect_phase(
+                request,
+                hardware_id=hardware_id,
+                session_id=session_id,
+            )
+            yield collect_ack
+            record_request(time.time() - start_time, is_error=False)
+            return
+
+        # Backward compatibility: UNSPECIFIED трактуем как COMMIT.
+        if phase not in (
+            streaming_pb2.REQUEST_PHASE_UNSPECIFIED,
+            streaming_pb2.REQUEST_PHASE_COMMIT,
+        ):
+            error_msg = f"unsupported request phase: {phase_name}"
+            log_rpc_error(
+                logger,
+                method="StreamAudio",
+                error_code="INVALID_ARGUMENT",
+                error_message=error_msg,
+                ctx={"reason": "invalid_phase", "phase": phase_name, "session_id": session_id},
+            )
+            yield streaming_pb2.StreamResponse(error_message=error_msg)  # type: ignore
+            record_request(time.time() - start_time, is_error=True)
+            return
+
+        commit_prompt, commit_screenshot, commit_screen_width, commit_screen_height = (
+            await self._consume_collect_for_commit(
+                request,
+                hardware_id=hardware_id,
+                session_id=session_id,
+            )
+        )
+
         # Получаем конфигурацию аудио для заполнения sample_rate, channels и dtype
         unified_config = get_config()
         audio_config = unified_config.audio if hasattr(unified_config, 'audio') else None
@@ -160,8 +366,17 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
         channels = audio_config.channels if audio_config else 1
         dtype = audio_config.format if audio_config else 'int16'  # Используем dtype из конфига
         
-        logger.info(f"📨 Получен StreamRequest: session={session_id}, hardware_id={hardware_id}")
-        logger.info(f"📨 StreamRequest данные: prompt_len={len(request.prompt)}, screenshot_len={len(request.screenshot) if request.screenshot else 0}")
+        logger.info(
+            "📨 Получен StreamRequest: session=%s, hardware_id=%s, phase=%s",
+            session_id,
+            hardware_id,
+            phase_name,
+        )
+        logger.info(
+            "📨 StreamRequest данные: prompt_len=%s, screenshot_len=%s",
+            len(commit_prompt),
+            len(commit_screenshot) if commit_screenshot else 0,
+        )
         
         # КРИТИЧНО: Backpressure guard теперь централизован в GrpcServiceIntegration
         # Удалены дублирующие проверки acquire_stream/check_message_rate/release_stream
@@ -209,12 +424,19 @@ class NewStreamingServicer(streaming_pb2_grpc.StreamingServiceServicer):
             # Подготавливаем данные для обработки
             request_data = {
                 'hardware_id': hardware_id,
-                'text': request.prompt,
-                'screenshot': request.screenshot,
+                'text': commit_prompt,
+                'screenshot': commit_screenshot,
+                'screen_width': commit_screen_width,
+                'screen_height': commit_screen_height,
                 'session_id': session_id,
                 'interrupt_flag': False  # В новом protobuf нет interrupt_flag в StreamRequest
             }
-            logger.info(f"🔄 Request data подготовлен: text='{request.prompt[:50]}...', screenshot_exists={bool(request.screenshot)}")
+            logger.info(
+                "🔄 Request data подготовлен: phase=%s text='%s...', screenshot_exists=%s",
+                phase_name,
+                commit_prompt[:50],
+                bool(commit_screenshot),
+            )
             
             # Потоковая обработка: передаём результаты по мере готовности
             sent_any = False

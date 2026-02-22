@@ -107,7 +107,7 @@ else:
 1. **Использовать secure_channel для порта 443:**
    ```python
    credentials = grpc.ssl_channel_credentials(root_certificates=cert_pem)
-   channel = aio.secure_channel("20.63.24.187:443", credentials)
+   channel = aio.secure_channel("nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443", credentials)
    ```
 
 2. **Для production с валидным сертификатом:**

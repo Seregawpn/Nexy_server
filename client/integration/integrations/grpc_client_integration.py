@@ -185,6 +185,8 @@ class GrpcClientIntegration:
         # }
         self._collect_pending: dict[Any, dict[str, Any]] = {}
         self._collect_debounce_sec: float = 0.12
+        # Diagnostic counter: terminal STT arrived before release, commit deferred by gate.
+        self._terminal_before_release_deferred: int = 0
         # Активные отправки: session_id -> asyncio.Task или concurrent.futures.Future (от run_coroutine_threadsafe)
         self._inflight: dict[Any, Union[asyncio.Task[Any], concurrent.futures.Future[Any]]] = {}
         # Отметки о том, что отмена уже уведомлена (чтобы не дублировать события)
@@ -436,6 +438,27 @@ class GrpcClientIntegration:
 
             # Terminal recognition for this session.
             sess["text"] = normalized_text
+            sess["terminal_recognition_received"] = True
+
+            # Keep latest terminal text in COLLECT buffer while user still holds the combo.
+            # COMMIT dispatch is gated by recording_stop to prevent early LLM activation.
+            last_collect_text = sess.get("last_collect_text")
+            if normalized_text != last_collect_text:
+                chunk_seq = int(sess.get("collect_seq", 0)) + 1
+                sess["collect_seq"] = chunk_seq
+                sess["last_collect_text"] = normalized_text
+                self._schedule_collect_send(sid, chunk_text=normalized_text, chunk_seq=chunk_seq)
+
+            if not bool(sess.get("recording_stopped", False)):
+                sess["ready_to_send"] = False
+                self._terminal_before_release_deferred += 1
+                logger.debug(
+                    "Defer commit send until release/recording_stop (session=%s, defer_count=%s)",
+                    sid,
+                    self._terminal_before_release_deferred,
+                )
+                return
+
             sess["ready_to_send"] = True
             self._cancel_collect_pending(sid)
             await self._maybe_send(sid)
@@ -487,6 +510,18 @@ class GrpcClientIntegration:
                 return
             sess = self._sessions.setdefault(sid, {})
             sess["recording_stop_ts_ms"] = int(time.monotonic() * 1000)
+            sess["recording_stopped"] = True
+
+            # If terminal STT already arrived earlier, release now opens commit gate.
+            if (
+                bool(sess.get("terminal_recognition_received", False))
+                and bool(sess.get("text"))
+                and not bool(sess.get("ready_to_send", False))
+                and not bool(sess.get("dispatched", False))
+            ):
+                sess["ready_to_send"] = True
+                self._cancel_collect_pending(sid)
+                await self._maybe_send(sid)
         except Exception as e:
             await self._handle_error(e, where="grpc.on_recording_stop", severity="warning")
 
@@ -2101,4 +2136,5 @@ class GrpcClientIntegration:
             "running": self._running,
             "hardware_id_cached": bool(self._hardware_id),
             "inflight": list(self._inflight.keys()),
+            "terminal_before_release_deferred": self._terminal_before_release_deferred,
         }

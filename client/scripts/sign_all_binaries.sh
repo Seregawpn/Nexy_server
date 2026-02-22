@@ -72,7 +72,23 @@ while read -r BIN; do
             echo "❌ Не удалось подписать: $BIN"
         fi
     fi
-done < <(find "$APP_PATH/Contents" -type f 2>/dev/null | grep -v "/Contents/MacOS/$APP_NAME$")
+done < <(
+    find "$APP_PATH/Contents" -type f 2>/dev/null \
+    | grep -v "/Contents/MacOS/$APP_NAME$"
+)
+
+# Playwright Chromium ships as nested .app with framework hierarchy.
+# Re-sign nested app recursively after per-file signing to ensure bundle integrity.
+if [ -d "$APP_PATH/Contents/Resources/playwright-browsers" ]; then
+    while IFS= read -r -d '' CHROME_APP; do
+        if ! codesign --force $TIMESTAMP_FLAG --options=runtime --deep \
+            --sign "$IDENTITY" "$CHROME_APP" >/dev/null 2>&1; then
+            failed=$((failed + 1))
+            echo "$CHROME_APP" >> "$failed_list"
+            echo "❌ Не удалось подписать nested app: $CHROME_APP"
+        fi
+    done < <(find "$APP_PATH/Contents/Resources/playwright-browsers" -type d -name "Google Chrome for Testing.app" -print0 2>/dev/null)
+fi
 
 if [ "$failed" -gt 0 ]; then
     echo "❌ Ошибка подписи библиотек: $failed файлов"

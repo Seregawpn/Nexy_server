@@ -10,12 +10,18 @@ Feature ID: F-2025-017-stripe-payment
 import logging
 import os
 import threading
+import asyncio
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from config.unified_config import get_config
-from .core.subscription_types import AccessTier, PAID_STATUSES, map_status_to_tier
+from .core.subscription_types import (
+    AccessTier,
+    PAID_STATUSES,
+    map_status_to_tier,
+    map_stripe_status_to_local_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +65,8 @@ class SubscriptionModule:
         self._pending_usage: Dict[str, list[float]] = {}
         self._pending_lock = threading.Lock()
         self._pending_ttl_seconds = self.config.pending_ttl_seconds
+        self._reconcile_locks: Dict[str, asyncio.Lock] = {}
+        self._reconcile_locks_guard = threading.Lock()
 
     def _prune_pending(self, hardware_id: str, now_ts: float) -> int:
         """Prune expired pending entries and return current pending count."""
@@ -239,6 +247,101 @@ class SubscriptionModule:
         except Exception as e:
             logger.error(f"[F-2025-017] Error creating checkout session: {e}")
             return None
+
+    @staticmethod
+    def _recommended_billing_route(sub: Dict[str, Any]) -> str:
+        customer_id = (sub.get("stripe_customer_id") or "").strip()
+        return "manage" if customer_id else "checkout"
+
+    def _get_reconcile_lock(self, session_id: str) -> asyncio.Lock:
+        """Get/create per-session async lock for checkout reconciliation."""
+        with self._reconcile_locks_guard:
+            lock = self._reconcile_locks.get(session_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._reconcile_locks[session_id] = lock
+            return lock
+
+    def _cleanup_reconcile_lock(self, session_id: str, lock: asyncio.Lock) -> None:
+        """Remove lock if it is no longer in use."""
+        with self._reconcile_locks_guard:
+            current = self._reconcile_locks.get(session_id)
+            if current is lock and not lock.locked():
+                self._reconcile_locks.pop(session_id, None)
+
+    async def reconcile_checkout_success(self, session_id: str) -> Dict[str, Any]:
+        """
+        Fallback synchronization path for successful checkout redirect.
+        Source of truth remains Stripe checkout/subscription objects.
+        """
+        if not self._initialized or not self.config.is_active():
+            return {"ok": False, "reason": "subscription_disabled"}
+        if self._repository is None or self._stripe_service is None:
+            return {"ok": False, "reason": "not_initialized"}
+
+        lock = self._get_reconcile_lock(session_id)
+        try:
+            async with lock:
+                session = self._stripe_service.get_checkout_session(session_id)
+                if not session:
+                    return {"ok": False, "reason": "session_not_found"}
+
+                if session.get("status") != "complete" or session.get("payment_status") != "paid":
+                    return {
+                        "ok": False,
+                        "reason": "session_not_paid",
+                        "status": session.get("status"),
+                        "payment_status": session.get("payment_status"),
+                    }
+
+                metadata = session.get("metadata") or {}
+                hardware_id = metadata.get("hardware_id")
+                subscription_id = session.get("subscription_id")
+                customer_id = session.get("customer_id")
+
+                if not hardware_id and subscription_id:
+                    sub_row = self._repository.get_subscription_by_stripe_subscription_id(subscription_id)
+                    hardware_id = sub_row.get("hardware_id") if sub_row else None
+                if not hardware_id and customer_id:
+                    sub_row = self._repository.get_subscription_by_stripe_customer_id(customer_id)
+                    hardware_id = sub_row.get("hardware_id") if sub_row else None
+                if not hardware_id:
+                    return {"ok": False, "reason": "hardware_id_not_resolved"}
+
+                stripe_status = "active"
+                current_period_end = None
+                cancel_at_period_end = False
+                if subscription_id:
+                    stripe_sub = self._stripe_service.get_subscription(subscription_id)
+                    stripe_status = stripe_sub.get("status") or "active"
+                    current_period_end = stripe_sub.get("current_period_end")
+                    cancel_at_period_end = bool(stripe_sub.get("cancel_at_period_end", False))
+
+                local_status = map_stripe_status_to_local_status(stripe_status, "paid")
+                self._repository.update_subscription(
+                    hardware_id=hardware_id,
+                    status=local_status,
+                    stripe_status=stripe_status,
+                    stripe_customer_id=customer_id,
+                    stripe_subscription_id=subscription_id,
+                    current_period_end=current_period_end,
+                    cancel_at_period_end=cancel_at_period_end,
+                    last_stripe_event_id=f"checkout_session:{session_id}",
+                    last_stripe_event_at=datetime.now(timezone.utc),
+                )
+                self.invalidate_all_cache()
+                return {
+                    "ok": True,
+                    "hardware_id": hardware_id,
+                    "status": local_status,
+                    "stripe_status": stripe_status,
+                    "subscription_id": subscription_id,
+                }
+        except Exception as e:
+            logger.error(f"[F-2025-017] reconcile_checkout_success failed: {e}")
+            return {"ok": False, "reason": "exception", "error": str(e)}
+        finally:
+            self._cleanup_reconcile_lock(session_id, lock)
     
     async def get_subscription_status(self, hardware_id: str) -> Dict[str, Any]:
         """
@@ -271,6 +374,8 @@ class SubscriptionModule:
                 'email': sub.get('email'),
                 # active=true means user can use product now (unlimited or limited tier)
                 'active': tier in [AccessTier.UNLIMITED, AccessTier.LIMITED],
+                'billing_active': tier == AccessTier.UNLIMITED,
+                'recommended_billing_route': self._recommended_billing_route(sub),
                 'current_period_end': sub.get('current_period_end')
             }
             

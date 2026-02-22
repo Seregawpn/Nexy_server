@@ -38,6 +38,7 @@ LEGACY_EXPIRY_TOKEN = "LEGACY_EXPIRY:"
 
 SYS_PATH_INSERT_RE = re.compile(r"\bsys\.path\.insert\s*\(")
 PUBLISH_RE_TMPL = r"\bpublish\s*\(\s*[\"\']{event}[\"\']"
+LEGACY_FIRST_RUN_FLAG_RE = re.compile(r"permissions_first_run_completed\.flag")
 IS_FEATURE_ENABLED_RE = re.compile(r"\bis_feature_enabled\(\s*[\"\']([a-zA-Z0-9_]+)[\"\']")
 GET_FEATURE_CONFIG_RE = re.compile(r"\bget_feature_config\(\s*[\"\']([a-zA-Z0-9_]+)[\"\']")
 FEATURES_GET_RE = re.compile(
@@ -137,6 +138,21 @@ def check_dead_flags() -> list[Finding]:
     return [Finding("dead_feature_flag", name) for name in unused]
 
 
+def check_legacy_first_run_flag_runtime_usage() -> list[Finding]:
+    """
+    Runtime owner-path must not depend on legacy first-run cache flag.
+    Allowed in scripts/docs only (cleanup/manual tooling), disallowed in runtime code.
+    """
+    findings: list[Finding] = []
+    runtime_roots = [ROOT / "integration", ROOT / "modules", ROOT / "config", ROOT / "main.py"]
+    for f in iter_py_files(runtime_roots):
+        rf = rel(f)
+        for idx, line in enumerate(load_text(f).splitlines(), start=1):
+            if LEGACY_FIRST_RUN_FLAG_RE.search(line):
+                findings.append(Finding("legacy_first_run_flag_runtime_usage", f"{rf}:{idx}"))
+    return findings
+
+
 def build_findings() -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     all_findings: list[Finding] = []
@@ -144,6 +160,7 @@ def build_findings() -> dict[str, list[str]]:
     all_findings.extend(check_event_owner())
     all_findings.extend(check_legacy_expiry())
     all_findings.extend(check_dead_flags())
+    all_findings.extend(check_legacy_first_run_flag_runtime_usage())
 
     for f in all_findings:
         out.setdefault(f.category, []).append(f.key)

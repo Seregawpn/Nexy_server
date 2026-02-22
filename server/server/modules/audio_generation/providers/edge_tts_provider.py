@@ -333,25 +333,30 @@ class EdgeTTSProvider(UniversalProviderInterface):
                             or prebuffer_bytes >= max_silent_bytes
                             or elapsed >= max_silent_seconds
                         ):
+                            # Do not fail fast on initial silence: some valid streams start quiet.
+                            # Release prebuffer and continue streaming; downstream playback can handle low amplitude.
                             logger.warning(
-                                "EdgeTTS → silent PCM detected in initial window "
-                                "(chunks=%s, bytes=%s, elapsed=%.3fs); retrying generation",
+                                "EdgeTTS → initial PCM window is silent "
+                                "(chunks=%s, bytes=%s, elapsed=%.3fs); continuing stream",
                                 len(prebuffer_peaks),
                                 prebuffer_bytes,
                                 elapsed,
                             )
-                            raise Exception("Silent PCM detected in initial window")
+                            for buffered in prebuffer_chunks:
+                                yield buffered
+                            prebuffer_chunks.clear()
+                            prebuffer_peaks.clear()
+                            prebuffer_done = True
                 else:
                     yield pcm_chunk
 
-            # If stream ended before prebuffer_target, decide based on what we saw
+            # If stream ended before prebuffer window opened, release what we got.
             if not prebuffer_done and prebuffer_peaks:
                 if all(p == 0 for p in prebuffer_peaks):
                     logger.warning(
-                        "EdgeTTS → silent PCM detected in %s prebuffered chunks; retrying generation",
+                        "EdgeTTS → prebuffered PCM chunks are silent (%s chunks); continuing stream",
                         len(prebuffer_peaks),
                     )
-                    raise Exception("Silent PCM detected in prebuffered chunks")
                 for buffered in prebuffer_chunks:
                     yield buffered
                 prebuffer_chunks.clear()

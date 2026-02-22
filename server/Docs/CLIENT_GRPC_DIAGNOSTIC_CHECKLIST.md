@@ -116,7 +116,7 @@ Starting gRPC stream for session ... with prompt: '...'
 **Решение:**
 - Проверить сертификат: `ls -la client/resources/certs/production_server.pem`
 - Проверить конфигурацию: `ssl: true`, `ssl_verify: false`
-- Проверить доступность сервера: `ping 20.63.24.187`
+- Проверить доступность сервера: `ping nexy-prod-sergiy.canadacentral.cloudapp.azure.com`
 
 ### Проблема 3: "No Hardware ID"
 

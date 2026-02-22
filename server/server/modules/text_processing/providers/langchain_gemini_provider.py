@@ -10,6 +10,7 @@ LangChain Gemini Provider для обработки текста с поддер
 
 import logging
 import base64
+import os
 from typing import AsyncGenerator, Dict, Any, Optional, Union, TYPE_CHECKING
 from integrations.core.universal_provider_interface import UniversalProviderInterface
 
@@ -163,7 +164,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
         )
         self.token_usage_tracker = token_usage_tracker
         
-        self.model_name = config.get('model', 'gemini-3-flash-preview')
+        self.model_name = config.get('model', os.getenv('GEMINI_PRIMARY_MODEL', 'gemini-flash-lite-latest'))
         self.temperature = config.get('temperature', 0.7)
         self.max_tokens = config.get('max_tokens', 2048)
         self.tools = config.get('tools', [])

@@ -188,8 +188,20 @@ class FirstRunPermissionsIntegration:
             completed = self._v2_integration.is_first_run_complete()
             if completed is True:
                 logger.info(
-                    "ℹ️ [FIRST_RUN_PERMISSIONS] Ledger shows completed - starting orchestrator to re-emit events"
+                    "ℹ️ [FIRST_RUN_PERMISSIONS] Ledger shows completed - re-emitting completion without pipeline start"
                 )
+                try:
+                    reemitted = await self._v2_integration.reemit_completion_from_ledger()
+                    if reemitted:
+                        return True
+                    logger.warning(
+                        "⚠️ [FIRST_RUN_PERMISSIONS] Completed ledger re-emit unavailable, falling back to orchestrator start"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "⚠️ [FIRST_RUN_PERMISSIONS] Failed completed ledger re-emit, fallback to orchestrator start: %s",
+                        e,
+                    )
             else:
                 logger.info("🆕 [FIRST_RUN_PERMISSIONS] Запускаем V2 систему разрешений")
 
