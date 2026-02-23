@@ -1,10 +1,10 @@
 {
-  "version": "2.0.0.4",
-  "build": "2.0.0.4",
-  "release_date": "2026-02-23T00:57:05.945684+00:00",
+  "version": "2.0.0.6",
+  "build": "2.0.0.6",
+  "release_date": "2026-02-23T19:23:12.853418+00:00",
   "artifact": {
     "type": "dmg",
-    "url": "https://github.com/Seregawpn/Nexy_production/releases/download/v1.6.1.42/Nexy.dmg",
+    "url": "https://github.com/Seregawpn/Nexy_production/releases/download/v2.0.0.6/Nexy.dmg",
     "size": 316539785,
     "sha256": "7a86e64706c1eed15a3c15de667306f6742afc6a6541f3bb16ef4ef47bbfac98",
     "arch": "universal2",
@@ -13,5 +13,5 @@
   },
   "critical": false,
   "auto_install": true,
-  "notes_url": "https://github.com/Seregawpn/Nexy_production/releases/download/v1.6.1.42/Nexy.dmg"
+  "notes_url": "https://github.com/Seregawpn/Nexy_production/releases/download/v2.0.0.6/Nexy.dmg"
 }
