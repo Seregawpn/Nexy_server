@@ -6,7 +6,7 @@ MVP 2: База данных
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 from typing import Optional, Dict, List, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 
@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 class SubscriptionRepository:
     """Repository для работы с подписками"""
+    GRANDFATHER_BOOTSTRAP_EVENT_ID = "system.grandfather_bootstrap.v1"
     
     def __init__(self, db_url: Optional[str] = None):
-        self.db_url = db_url or os.getenv('DATABASE_URL')
         self.db_url = db_url or os.getenv('DATABASE_URL')
         if not self.db_url:
             # Fallback: construct from components
@@ -75,22 +75,6 @@ class SubscriptionRepository:
                     return dict(row)
                 # Если конфликт, получаем существующую запись
                 return self.get_subscription(hardware_id)
-        finally:
-            conn.close()
-    
-    def update_status(self, hardware_id: str, status: str) -> bool:
-        """Обновить статус подписки"""
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """UPDATE subscriptions 
-                       SET status = %s, updated_at = CURRENT_TIMESTAMP 
-                       WHERE hardware_id = %s""",
-                    (status, hardware_id)
-                )
-                conn.commit()
-                return cur.rowcount > 0
         finally:
             conn.close()
     
@@ -182,6 +166,80 @@ class SubscriptionRepository:
             logger.error(f"Error in create_or_update_subscription: {e}")
             return False
             
+        finally:
+            conn.close()
+
+    def mark_grandfathered_before_date(self, cutoff_date: str) -> int:
+        """
+        Массово помечает существующих пользователей как grandfathered строго до cutoff-даты.
+        Пример: cutoff_date=2026-02-23 -> попадут только created_at < 2026-02-23 00:00:00.
+        Идемпотентно: уже grandfathered/admin_active записи не затрагиваются.
+        """
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE subscriptions
+                    SET status = 'grandfathered',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE created_at < %s::date
+                      AND status NOT IN ('grandfathered', 'admin_active')
+                    """,
+                    (cutoff_date,),
+                )
+                updated = cur.rowcount
+            conn.commit()
+            return int(updated)
+        finally:
+            conn.close()
+
+    def apply_grandfather_bootstrap_once(self, cutoff_date: str) -> Dict[str, Any]:
+        """
+        Выполнить авто-grandfather ровно один раз за lifecycle системы.
+        Координация через subscription_events (уникальный stripe_event_id).
+        """
+        event_id = self.GRANDFATHER_BOOTSTRAP_EVENT_ID
+        event_payload = {
+            "cutoff_date": cutoff_date,
+            "rule": "created_at < cutoff_date",
+        }
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    WITH bootstrap AS (
+                        INSERT INTO subscription_events
+                            (stripe_event_id, event_type, hardware_id, event_data, stripe_created_at, processed, processed_at)
+                        VALUES
+                            (%s, 'system.grandfather_bootstrap', NULL, %s::jsonb,
+                             EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT, TRUE, CURRENT_TIMESTAMP)
+                        ON CONFLICT (stripe_event_id) DO NOTHING
+                        RETURNING 1
+                    ),
+                    updated AS (
+                        UPDATE subscriptions
+                        SET status = 'grandfathered',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE created_at < %s::date
+                          AND status NOT IN ('grandfathered', 'admin_active')
+                          AND EXISTS (SELECT 1 FROM bootstrap)
+                        RETURNING 1
+                    )
+                    SELECT
+                        EXISTS (SELECT 1 FROM bootstrap) AS applied,
+                        (SELECT COUNT(*) FROM updated) AS updated_count
+                    """,
+                    (event_id, Json(event_payload), cutoff_date),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return {
+                "applied": bool(row[0]) if row else False,
+                "updated_count": int(row[1] or 0) if row else 0,
+                "event_id": event_id,
+            }
         finally:
             conn.close()
 
@@ -426,16 +484,24 @@ class SubscriptionRepository:
                 guard_params.append(incoming_event_id)
             
             if incoming_event_at:
-                # Prevent processing older events (out-of-order)
-                # Allow strictly newer or same timestamp (de-dupe handles same ID)
-                guards.append("(last_stripe_event_at IS NULL OR last_stripe_event_at <= %s)")
-                guard_params.append(incoming_event_at)
+                # Prevent processing older or same-timestamp-different-id events (out-of-order).
+                # Same timestamp is accepted only for the same event_id (idempotent replay).
+                guards.append(
+                    "("
+                    "last_stripe_event_at IS NULL "
+                    "OR last_stripe_event_at < %s "
+                    "OR (last_stripe_event_at = %s AND (last_stripe_event_id IS NULL OR last_stripe_event_id = %s))"
+                    ")"
+                )
+                guard_params.extend([incoming_event_at, incoming_event_at, incoming_event_id])
 
             for key, value in kwargs.items():
                 if key in allowed_fields:
                     # SAFETY: Don't overwrite existing email with None
                     if key == 'email' and value is None:
                         continue
+                    if key in {"current_period_end", "grace_period_end_at", "paid_trial_end_at", "last_stripe_event_at"}:
+                        value = self._normalize_datetime(value)
                     
                     updates.append(f"{key} = %s")
                     params.append(value)
@@ -481,6 +547,28 @@ class SubscriptionRepository:
                 
         finally:
             conn.close()
+
+    @staticmethod
+    def _normalize_datetime(value: Any) -> Any:
+        """Normalize common Stripe datetime encodings to DB-friendly datetime."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            if raw.isdigit():
+                return datetime.fromtimestamp(int(raw), tz=timezone.utc)
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return value
+        return value
     
     def payment_exists(self, stripe_invoice_id: str) -> bool:
         """Проверить, существует ли платеж с данным stripe_invoice_id"""

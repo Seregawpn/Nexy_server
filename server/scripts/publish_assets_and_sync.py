@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Publish client artifacts to a versioned GitHub release tag and sync local manifest.
+Publish client artifacts to fixed GitHub release channels and sync local manifest.
 
 Canonical usage:
   python3 server/scripts/publish_assets_and_sync.py
@@ -16,13 +16,14 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 
 TARGET_REPO = "Seregawpn/Nexy_production"
+UPDATE_CHANNEL_TAG = "Update"
+APP_CHANNEL_TAG = "App"
 RELEASE_INBOX_PRIMARY = Path("server/release_inbox")
 RELEASE_INBOX_LEGACY = Path("release_inbox")
 LATEST_CHANGES_NAME = "LATEST_CHANGES.md"
@@ -53,11 +54,6 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _release_tag(version: str) -> str:
-    clean = version.strip()
-    return clean if clean.startswith("v") else f"v{clean}"
-
-
 def _release_asset_url(tag: str, filename: str) -> str:
     return f"https://github.com/{TARGET_REPO}/releases/download/{tag}/{filename}"
 
@@ -75,61 +71,35 @@ def _get_release_assets(tag: str) -> Optional[dict[str, dict[str, int]]]:
     }
 
 
-def _ensure_release_exists(tag: str, title: str, dry_run: bool) -> None:
-    if dry_run:
-        print(f"[dry-run] would ensure release tag exists: {tag}")
-        return
-    _run(
-        [
-            "gh",
-            "release",
-            "create",
-            tag,
-            "-R",
-            TARGET_REPO,
-            "--title",
-            title,
-            "--notes",
-            f"Managed by publish_assets_and_sync.py ({tag})",
-        ]
-    )
-
-
-def _asset_matches_remote(tag: str, local_path: Path) -> bool:
-    with tempfile.TemporaryDirectory(prefix="nexy_release_asset_") as tmpdir:
-        download = _run(
-            [
-                "gh",
-                "release",
-                "download",
-                tag,
-                "-R",
-                TARGET_REPO,
-                "--pattern",
-                local_path.name,
-                "--dir",
-                tmpdir,
-            ],
-            check=False,
+def _require_release_exists(tag: str) -> None:
+    view = _run(["gh", "release", "view", tag, "-R", TARGET_REPO], check=False)
+    if view.returncode != 0:
+        raise RuntimeError(
+            f"Required fixed channel is missing: {TARGET_REPO} tag={tag}. "
+            "Tag auto-creation is disabled by policy."
         )
-        if download.returncode != 0:
-            return False
-        remote_path = Path(tmpdir) / local_path.name
-        if not remote_path.exists():
-            return False
-        if remote_path.stat().st_size != local_path.stat().st_size:
-            return False
-        return _sha256(remote_path) == _sha256(local_path)
 
 
-def _upload_asset(tag: str, file_path: Path, dry_run: bool) -> str:
-    url = _release_asset_url(tag, file_path.name)
+def _delete_asset_if_exists(tag: str, asset_name: str, dry_run: bool) -> None:
+    assets = _get_release_assets(tag)
+    if assets is None or asset_name not in assets:
+        return
     if dry_run:
-        print(f"[dry-run] would upload {file_path} -> {tag}")
-        print(f"Uploaded. URL: {url}")
+        print(f"[dry-run] would delete old asset: {tag}/{asset_name}")
+        return
+    _run(["gh", "release", "delete-asset", tag, asset_name, "-R", TARGET_REPO, "--yes"])
+    print(f"Deleted old asset: {tag}/{asset_name}")
+
+
+def _upload_asset_replace(tag: str, file_path: Path, dry_run: bool) -> str:
+    url = _release_asset_url(tag, file_path.name)
+    _delete_asset_if_exists(tag, file_path.name, dry_run)
+    if dry_run:
+        print(f"[dry-run] would upload new asset: {file_path} -> {tag}")
+        print(f"Stable URL: {url}")
         return url
     _run(["gh", "release", "upload", tag, str(file_path), "-R", TARGET_REPO])
-    print(f"Uploaded. URL: {url}")
+    print(f"Uploaded new asset. URL: {url}")
     return url
 
 
@@ -236,7 +206,6 @@ def main() -> int:
         _require_gh_auth()
 
         version = _load_version()
-        release_tag = _release_tag(version)
         dmg = _find_artifact(release_inbox, "Nexy.dmg")
         pkg = _find_artifact(release_inbox, "Nexy.pkg")
         latest_changes = _find_artifact(release_inbox, LATEST_CHANGES_NAME)
@@ -251,44 +220,18 @@ def main() -> int:
             )
 
         print(f"Current Version: {version}")
-        print(f"Release Tag: {release_tag}")
         print(f"Target Repo: {TARGET_REPO}")
+        print(f"Fixed channels: dmg->{UPDATE_CHANNEL_TAG}, pkg->{APP_CHANNEL_TAG}")
 
-        assets_for_publish: list[Path] = []
-        if dmg is not None:
-            assets_for_publish.append(dmg)
-        if pkg is not None:
-            assets_for_publish.append(pkg)
-        assets_for_publish.append(latest_changes)
-
-        existing_assets = _get_release_assets(release_tag)
-        release_exists = existing_assets is not None
-        assets_to_upload: list[Path] = []
-
-        if release_exists and existing_assets is not None:
-            for asset in assets_for_publish:
-                if asset.name not in existing_assets:
-                    assets_to_upload.append(asset)
-                    continue
-                if not _asset_matches_remote(release_tag, asset):
-                    raise RuntimeError(
-                        f"Version tag already published with different content: {release_tag}/{asset.name}. "
-                        "Refusing overwrite."
-                    )
-            if not assets_to_upload:
-                print(f"already published, skip (tag={release_tag})")
-        else:
-            assets_to_upload = assets_for_publish
-            _ensure_release_exists(release_tag, f"Nexy {version}", args.dry_run)
+        _require_release_exists(UPDATE_CHANNEL_TAG)
+        _require_release_exists(APP_CHANNEL_TAG)
 
         dmg_url: Optional[str] = None
         if dmg is not None:
-            dmg_url = _release_asset_url(release_tag, dmg.name)
-
-        for asset in assets_to_upload:
-            uploaded_url = _upload_asset(release_tag, asset, args.dry_run)
-            if dmg is not None and asset.name == dmg.name:
-                dmg_url = uploaded_url
+            dmg_url = _upload_asset_replace(UPDATE_CHANNEL_TAG, dmg, args.dry_run)
+        if pkg is not None:
+            _upload_asset_replace(APP_CHANNEL_TAG, pkg, args.dry_run)
+        _upload_asset_replace(UPDATE_CHANNEL_TAG, latest_changes, args.dry_run)
 
         if dmg is not None and dmg_url is not None:
             _sync_manifest(version, dmg, dmg_url, args.dry_run)

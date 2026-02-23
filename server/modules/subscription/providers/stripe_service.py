@@ -10,19 +10,17 @@ import time
 import hashlib
 import json
 from typing import Any, Dict, Optional
+from datetime import datetime, timezone
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class StripeService:
     """Service для работы с Stripe API"""
     
     def __init__(self, api_key: Optional[str] = None):
         """Инициализация Stripe Service"""
-        self.api_key = api_key or os.getenv('STRIPE_SECRET_KEY')
+        self.api_key = api_key
         if not self.api_key:
-            raise ValueError("STRIPE_SECRET_KEY not found")
+            raise ValueError("Stripe API key not provided")
         stripe.api_key = self.api_key
     
     async def create_checkout_session(
@@ -205,6 +203,91 @@ class StripeService:
         except stripe.error.StripeError as e:
             print(f"[STRIPE] ❌ Error retrieving session: {e}")
             raise
+
+    def get_subscription(self, subscription_id: str) -> Dict:
+        """Получить информацию о Stripe Subscription."""
+        try:
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            current_period_end_raw = self._safe_get(subscription, "current_period_end")
+            if current_period_end_raw is None:
+                current_period_end_raw = self._resolve_current_period_end_fallback(subscription)
+            current_period_end = self._to_utc_datetime(current_period_end_raw)
+            cancel_at_period_end = bool(self._safe_get(subscription, "cancel_at_period_end", False))
+            cancel_at = self._safe_get(subscription, "cancel_at")
+            cancel_scheduled = cancel_at_period_end or bool(cancel_at)
+            return {
+                'id': self._safe_get(subscription, "id"),
+                'status': self._safe_get(subscription, "status"),
+                'customer_id': self._safe_get(subscription, "customer"),
+                'current_period_end': current_period_end,
+                'cancel_at_period_end': cancel_scheduled,
+            }
+        except stripe.error.StripeError as e:
+            print(f"[STRIPE] ❌ Error retrieving subscription: {e}")
+            raise
+
+    def _resolve_current_period_end_fallback(self, subscription: Any) -> Any:
+        """
+        Stripe API versions may omit `current_period_end` on Subscription object.
+        Fallback: resolve period end from latest invoice line period.
+        """
+        latest_invoice_id = self._safe_get(subscription, "latest_invoice")
+        if not latest_invoice_id:
+            return None
+        try:
+            invoice = stripe.Invoice.retrieve(latest_invoice_id, expand=["lines.data"])
+            lines = self._safe_get(invoice, "lines")
+            line_items = self._safe_get(lines, "data", []) if lines else []
+            if not line_items:
+                return None
+            first_line = line_items[0]
+            period = self._safe_get(first_line, "period", {})
+            return self._safe_get(period, "end")
+        except Exception as e:
+            print(f"[STRIPE] ⚠️ Could not resolve current_period_end from invoice: {e}")
+            return None
+
+    @staticmethod
+    def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
+        """Safely read keys from StripeObject/dict without raising on missing fields."""
+        if obj is None:
+            return default
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        getter = getattr(obj, "get", None)
+        if callable(getter):
+            try:
+                value = getter(key)
+                return default if value is None else value
+            except Exception:
+                pass
+        try:
+            value = getattr(obj, key)
+            return default if value is None else value
+        except Exception:
+            return default
+
+    @staticmethod
+    def _to_utc_datetime(value: Any) -> Optional[datetime]:
+        """Normalize Stripe epoch timestamps to timezone-aware UTC datetime."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            if raw.isdigit():
+                return datetime.fromtimestamp(int(raw), tz=timezone.utc)
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+        return None
     
     def create_customer(
         self,

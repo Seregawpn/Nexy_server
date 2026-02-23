@@ -47,9 +47,9 @@ log_header() {
 # =============================================================================
 
 # Azure параметры
-RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-Nexy}"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
 LOCATION="${AZURE_LOCATION:-eastus}"
-VM_NAME="${AZURE_VM_NAME:-nexy-regular}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 VM_SIZE="${AZURE_VM_SIZE:-Standard_B2s}"  # 2 vCPU, 4 GB RAM
 DISK_SIZE="${AZURE_DISK_SIZE:-64}"  # GB
 

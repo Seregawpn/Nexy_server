@@ -11,8 +11,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Параметры
-RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NetworkWatcherRG}"
-VM_NAME="${AZURE_VM_NAME:-Nexy}"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 SERVER_IP="${SERVER_IP:-nexy-prod-sergiy.canadacentral.cloudapp.azure.com}"
 
 # Путь к VERSION файлу
@@ -25,6 +25,11 @@ fi
 
 VERSION=$(cat "$VERSION_FILE" | tr -d '\n\r ')
 BUILD="$VERSION"
+
+if [ "$RESOURCE_GROUP" = "NetworkWatcherRG" ] || [ "$VM_NAME" = "Nexy" ] || [ "$VM_NAME" = "nexy-regular" ]; then
+    echo -e "${RED}❌ Legacy target is blocked. Use NexyNewRG/NexyNew.${NC}"
+    exit 1
+fi
 
 echo -e "${YELLOW}🔄 Синхронизация версии $VERSION на сервер...${NC}"
 echo ""

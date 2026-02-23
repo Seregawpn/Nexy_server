@@ -11,6 +11,7 @@ LangChain Gemini Provider для обработки текста с поддер
 import logging
 import base64
 import os
+import asyncio
 from typing import AsyncGenerator, Dict, Any, Optional, Union, TYPE_CHECKING
 from integrations.core.universal_provider_interface import UniversalProviderInterface
 
@@ -170,6 +171,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
         self.tools = config.get('tools', [])
         self.system_prompt = config.get('system_prompt', '')
         self.api_key = config.get('api_key', '')
+        self.fallback_api_key = config.get('fallback_api_key', '')
         
         # Настройки изображений (по умолчанию WebP, поддерживается также JPEG)
         self.image_mime_type = config.get('image_mime_type', 'image/webp')
@@ -179,7 +181,10 @@ class LangChainGeminiProvider(UniversalProviderInterface):
         self.llm = None
         self.llm_with_tools = None
         self.llm_no_tools = None
-        self.is_available = LANGCHAIN_AVAILABLE and bool(self.api_key)
+        self._api_keys = [key for key in [self.api_key, self.fallback_api_key] if key]
+        self._active_key_index = 0
+        self._key_switch_lock = asyncio.Lock()
+        self.is_available = LANGCHAIN_AVAILABLE and bool(self._api_keys)
         self.is_initialized = False
         
         logger.info(f"LangChainGeminiProvider initialized: available={self.is_available}")
@@ -194,7 +199,7 @@ class LangChainGeminiProvider(UniversalProviderInterface):
         try:
             logger.info(f"🔍 ДИАГНОСТИКА LangChainGeminiProvider.initialize():")
             logger.info(f"   → is_available: {self.is_available}")
-            logger.info(f"   → api_key present: {bool(self.api_key)}")
+            logger.info(f"   → api_key present: {bool(self._api_keys)}")
             logger.info(f"   → model_name: {self.model_name}")
             
             if not self.is_available:
@@ -213,71 +218,87 @@ class LangChainGeminiProvider(UniversalProviderInterface):
                 logger.info("ℹ️  Google Search выключен (работает без поиска)")
 
             # Создаем LLM без tools (default)
-            llm_params = {
-                "model": self.model_name,
-                "google_api_key": self.api_key,
-                "temperature": self.temperature,
-                "streaming": True,
-            }
-
             if not ChatGoogleGenerativeAI:
                 logger.error("ChatGoogleGenerativeAI не доступен (LangChain не установлен)")
                 return False
 
-            self.llm_no_tools = ChatGoogleGenerativeAI(**llm_params)
-
-            if model_kwargs:
-                llm_with_tools_params = dict(llm_params)
-                llm_with_tools_params["model_kwargs"] = model_kwargs
-                self.llm_with_tools = ChatGoogleGenerativeAI(**llm_with_tools_params)
-            else:
-                self.llm_with_tools = None
-
-            # Backward-compatible default
-            self.llm = self.llm_with_tools or self.llm_no_tools
+            self._build_clients(model_kwargs=model_kwargs)
 
             logger.info("✅ LangChain клиент создан")
-            
-            # Тестируем подключение
-            logger.info(f"🔍 Тестируем подключение к LangChain...")
-            test_query = "Hello"
-            test_response = ""
-            
-            # Формируем сообщения согласно требованиям: SystemMessage + HumanMessage
-            messages = []
-            if self.system_prompt and SystemMessage:
-                messages.append(SystemMessage(content=self.system_prompt))
-            if HumanMessage:
-                messages.append(HumanMessage(content=test_query))
-            
-            async for chunk in self.llm.astream(messages):
-                text = extract_text_from_chunk(chunk)
-                if text:
-                    # Убеждаемся, что text - это строка
-                    text_str = str(text) if not isinstance(text, str) else text
-                    test_response += text_str
-                    break  # Достаточно одного chunk для проверки
-            
-            if test_response:
-                self.is_initialized = True
-                logger.info(f"✅ LangChain initialized: {self.model_name}")
-                return True
-            else:
-                logger.error("❌ Тестовое подключение не получило ответ")
-                return False
+
+            # Startup выполняет только локальную инициализацию клиента.
+            # Внешняя проверка API переносится на первый реальный запрос,
+            # чтобы не валить весь gRPC bootstrap из-за временной/внешней ошибки LLM.
+            self.is_initialized = True
+            logger.info(f"✅ LangChain initialized (startup probe skipped): {self.model_name}")
+            return True
                 
         except Exception as e:
             logger.error(f"LangChain initialization failed: {e}")
             import traceback
             traceback.print_exc()
             return False
+
+    def _build_clients(self, model_kwargs: Optional[Dict[str, Any]] = None) -> None:
+        if not ChatGoogleGenerativeAI:
+            raise RuntimeError("ChatGoogleGenerativeAI is unavailable")
+        if not self._api_keys:
+            raise RuntimeError("No Gemini API keys configured")
+
+        llm_params = {
+            "model": self.model_name,
+            "google_api_key": self._api_keys[self._active_key_index],
+            "temperature": self.temperature,
+            "streaming": True,
+        }
+
+        self.llm_no_tools = ChatGoogleGenerativeAI(**llm_params)
+        if model_kwargs:
+            llm_with_tools_params = dict(llm_params)
+            llm_with_tools_params["model_kwargs"] = model_kwargs
+            self.llm_with_tools = ChatGoogleGenerativeAI(**llm_with_tools_params)
+        else:
+            self.llm_with_tools = None
+        self.llm = self.llm_with_tools or self.llm_no_tools
+
+    @staticmethod
+    def _is_key_error(exc: Exception) -> bool:
+        error_text = str(exc).upper()
+        return (
+            "API_KEY_INVALID" in error_text
+            or "API KEY EXPIRED" in error_text
+            or "INVALID API KEY" in error_text
+            or "PERMISSION_DENIED" in error_text
+        )
+
+    async def _switch_to_fallback_key_if_needed(self, exc: Exception) -> bool:
+        if not self._is_key_error(exc):
+            return False
+
+        async with self._key_switch_lock:
+            if self._active_key_index >= len(self._api_keys) - 1:
+                return False
+
+            self._active_key_index += 1
+            model_kwargs = {"tools": [{"google_search": {}}]} if self.tools and "google_search" in self.tools else None
+            self._build_clients(model_kwargs=model_kwargs)
+            logger.warning(
+                "LangChain provider switched to fallback API key",
+                extra={
+                    'scope': 'module',
+                    'decision': 'fallback_key_switch',
+                    'ctx': {'active_key_index': self._active_key_index}
+                }
+            )
+            return True
     
     async def process(
         self,
         input_data: str,
         session_id: Optional[str] = None,
         use_search: Optional[bool] = None,
-        system_prompt_override: Optional[str] = None
+        system_prompt_override: Optional[str] = None,
+        _retry_with_fallback_key: bool = True
     ) -> AsyncGenerator[str, None]:
         """
         ЭТАП 1: Обработка текста через LangChain
@@ -369,6 +390,16 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             logger.debug("LangChain text processing completed")
                 
         except Exception as e:
+            if _retry_with_fallback_key and await self._switch_to_fallback_key_if_needed(e):
+                async for chunk in self.process(
+                    input_data=input_data,
+                    session_id=session_id,
+                    use_search=use_search,
+                    system_prompt_override=system_prompt_override,
+                    _retry_with_fallback_key=False,
+                ):
+                    yield chunk
+                return
             logger.error(f"LangChain text processing error: {e}")
             raise e
     
@@ -378,7 +409,8 @@ class LangChainGeminiProvider(UniversalProviderInterface):
         image_data: Union[str, bytes],
         session_id: Optional[str] = None,
         use_search: Optional[bool] = None,
-        system_prompt_override: Optional[str] = None
+        system_prompt_override: Optional[str] = None,
+        _retry_with_fallback_key: bool = True
     ) -> AsyncGenerator[str, None]:
         """
         ЭТАП 2: Обработка текста с WebP изображением
@@ -487,6 +519,17 @@ class LangChainGeminiProvider(UniversalProviderInterface):
             logger.debug("LangChain with image processing completed")
                 
         except Exception as e:
+            if _retry_with_fallback_key and await self._switch_to_fallback_key_if_needed(e):
+                async for chunk in self.process_with_image(
+                    input_data=input_data,
+                    image_data=image_data,
+                    session_id=session_id,
+                    use_search=use_search,
+                    system_prompt_override=system_prompt_override,
+                    _retry_with_fallback_key=False,
+                ):
+                    yield chunk
+                return
             logger.error(f"LangChain with image processing error: {e}")
             raise e
     
@@ -523,6 +566,8 @@ class LangChainGeminiProvider(UniversalProviderInterface):
         base_status.update({
             "model_name": self.model_name,
             "is_available": self.is_available,
+            "configured_api_keys": len(self._api_keys),
+            "active_api_key_index": self._active_key_index,
             "has_google_search": "google_search" in self.tools if self.tools else False,
             "has_system_prompt": bool(self.system_prompt)
         })

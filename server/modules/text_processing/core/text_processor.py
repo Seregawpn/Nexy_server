@@ -47,9 +47,30 @@ class TextProcessor:
         logger.info("TextProcessor initialized with LangChain provider")
 
     @staticmethod
+    def _extract_intent_text(text: str) -> str:
+        """
+        Extract user-intent portion from enriched workflow prompt.
+
+        Workflow may pass:
+          SYSTEM_CONTEXT: ...
+          USER_INPUT:
+          <actual user text>
+        Intent routing must rely on USER_INPUT only to avoid false-positive sections.
+        """
+        if not isinstance(text, str):
+            return ""
+        marker = "USER_INPUT:"
+        if marker not in text:
+            return text
+        _, _, tail = text.partition(marker)
+        extracted = tail.strip()
+        return extracted or text
+
+    @staticmethod
     def _build_prompt_for_text(text: str) -> tuple[str, Dict[str, bool]]:
         config = get_config()
-        sections = resolve_prompt_sections(text)
+        intent_text = TextProcessor._extract_intent_text(text)
+        sections = resolve_prompt_sections(intent_text)
 
         prompt = build_system_prompt(
             system_control_enabled=sections["system_control"],

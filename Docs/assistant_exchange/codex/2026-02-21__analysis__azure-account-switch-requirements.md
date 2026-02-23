@@ -12,7 +12,7 @@
 - monitor_inbox/2026-02-19__05-49-43__incident__server-monitor.remote.md
 
 ## Key Constraints
-- Code deploy source of truth: `Seregawpn/Nexy_server`.
+- Code deploy source of truth: `Seregawpn/Nexy`.
 - Runtime config source of truth on VM: `/home/azureuser/voice-assistant/config.env`.
 - No parallel `az vm run-command invoke` during deploy.
 - Internal ports remain localhost-only; external access only through nginx 443.

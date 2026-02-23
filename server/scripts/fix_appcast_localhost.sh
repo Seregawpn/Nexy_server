@@ -19,10 +19,15 @@ log_success() { echo -e "${GREEN}✅ $1${NC}"; }
 log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error() { echo -e "${RED}❌ $1${NC}"; }
 
-AZURE_RESOURCE_GROUP="NetworkWatcherRG"
-AZURE_VM_NAME="Nexy"
+AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+AZURE_VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"
 MANIFEST_FILE="manifest.json"
+
+if [ "$AZURE_RESOURCE_GROUP" = "NetworkWatcherRG" ] || [ "$AZURE_VM_NAME" = "Nexy" ] || [ "$AZURE_VM_NAME" = "nexy-regular" ]; then
+    log_error "Legacy target is blocked. Use NexyNewRG/NexyNew."
+    exit 1
+fi
 
 log_info "🔍 Полная проверка и исправление appcast..."
 
@@ -124,4 +129,3 @@ echo "  • Сервер: перезапущен"
 echo ""
 log_info "🔍 Проверка:"
 echo "  curl -sk \"https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/updates/appcast.xml\" | grep url"
-

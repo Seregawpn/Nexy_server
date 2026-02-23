@@ -60,4 +60,10 @@ if dtype in ("pcm", "mp3"):
 print("AUDIO_DTYPE:", dtype, "AUDIO_CODEC:", codec)
 PY
 
+REPO_ROOT="$(cd "$ROOT_DIR/../.." && pwd)"
+if [[ -f "$REPO_ROOT/scripts/verify_runtime_flag_alignment.py" ]]; then
+  echo "[quick_check] Cross-layer config sanity: runtime alignment"
+  python3 "$REPO_ROOT/scripts/verify_runtime_flag_alignment.py"
+fi
+
 echo "[quick_check] Done."

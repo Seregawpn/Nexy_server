@@ -17,7 +17,7 @@
 
 ## Актуальные каноны
 
-- `server/Docs/SERVER_DEPLOYMENT_GUIDE.md` — деплой серверного кода (`Nexy_server`)
+- `server/Docs/SERVER_DEPLOYMENT_GUIDE.md` — деплой серверного кода (`Nexy`)
 - `server/Docs/RELEASE_AND_UPDATE_GUIDE.md` — публикация клиентских артефактов (`Nexy_production/releases`)
 - `server/Docs/DEPLOY_INCIDENT_RUNBOOK.md` — инциденты, зависимости, конфиги, rollback
 - `server/Docs/ARCHITECTURE_OVERVIEW.md` — архитектурные границы и source of truth

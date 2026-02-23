@@ -64,3 +64,17 @@ def test_resolve_prompt_sections(monkeypatch, tmp_path):
     assert result["browser"] is False
     assert result["payment"] is False
     assert result["describe"] is False
+
+
+def test_resolve_prompt_sections_weather_english(monkeypatch):
+    monkeypatch.setenv("PROMPT_KEYWORDS_PATH", "/tmp/does_not_exist.yaml")
+    _reset_keyword_cache()
+
+    for text in [
+        "What is the weather in Montreal today?",
+        "Will it rain in Montreal now?",
+        "What's the temperature outside in Montreal?",
+        "Current humidity and wind in Montreal",
+    ]:
+        result = prompts.resolve_prompt_sections(text)
+        assert result["web_search"] is True, text

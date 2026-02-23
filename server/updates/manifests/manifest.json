@@ -1,7 +1,7 @@
 {
-  "version": "1.6.1.42",
-  "build": "1.6.1.42",
-  "release_date": "2026-02-18T23:26:11.180365+00:00",
+  "version": "2.0.0.4",
+  "build": "2.0.0.4",
+  "release_date": "2026-02-23T00:57:05.945684+00:00",
   "artifact": {
     "type": "dmg",
     "url": "https://github.com/Seregawpn/Nexy_production/releases/download/v1.6.1.42/Nexy.dmg",

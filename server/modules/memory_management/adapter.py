@@ -150,8 +150,17 @@ class MemoryManagementAdapter(UniversalModuleInterface):
                 response = request.get("response", "") or request.get("processed_text", "")
                 if not hardware_id:
                     raise ValueError("hardware_id обязателен для update_background")
-                await self._manager.update_memory_background(hardware_id, prompt, response)
-                result = {"success": True}
+                updated = await self._manager.update_memory_background(hardware_id, prompt, response)
+                if updated:
+                    result = {
+                        "success": True,
+                        "memory": {
+                            "recent_context": updated.get("short", ""),
+                            "long_term_context": updated.get("long", ""),
+                        },
+                    }
+                else:
+                    result = {"success": False}
             elif action == "update_memory":
                 # Обновляем память через update_memory_background
                 if not session_id:

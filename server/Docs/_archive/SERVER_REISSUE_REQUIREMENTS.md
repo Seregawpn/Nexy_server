@@ -23,7 +23,7 @@ Scope:
 ---
 
 ## 1) Account & CI Requirements (Mandatory)
-- GitHub Actions secret: `AZURE_CREDENTIALS` in `Seregawpn/Nexy_server` with correct subscription/tenant/client.
+- GitHub Actions secret: `AZURE_CREDENTIALS` in `Seregawpn/Nexy` with correct subscription/tenant/client.
 - Azure subscription has permission to create: Resource Group, VNet/Subnet, Public IP (Static), NSG, VM, NIC.
 - If IP/domain changes: update references in health checks and client config.
 

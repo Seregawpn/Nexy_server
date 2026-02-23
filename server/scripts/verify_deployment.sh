@@ -44,8 +44,13 @@ log_header() {
 # КОНФИГУРАЦИЯ
 # =============================================================================
 
-RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-Nexy}"
-VM_NAME="${AZURE_VM_NAME:-nexy-regular}"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
+
+if [ "$RESOURCE_GROUP" = "NetworkWatcherRG" ] || [ "$RESOURCE_GROUP" = "Nexy" ] || [ "$VM_NAME" = "Nexy" ] || [ "$VM_NAME" = "nexy-regular" ]; then
+    log_error "Legacy target is blocked. Use NexyNewRG/NexyNew."
+    exit 1
+fi
 
 # Получение Public IP
 PUBLIC_IP=$(az vm show \

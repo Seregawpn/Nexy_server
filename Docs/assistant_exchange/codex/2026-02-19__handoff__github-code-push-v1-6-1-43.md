@@ -23,7 +23,7 @@ Type: handoff
 1. `Seregawpn/Nexy`:
    - branch pushed: `codex/v1.6.1.43-code-only`
    - tag pushed: `v1.6.1.43`
-2. `Seregawpn/Nexy_server` (subtree from `server`):
+2. `Seregawpn/Nexy` (subtree from `server`):
    - branch pushed: `codex/v1.6.1.43-code-only`
 
 ## Notes

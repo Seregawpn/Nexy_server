@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import logging
@@ -7,8 +8,15 @@ import logging
 async def main():
     print("# 📊 User Data Audit\n")
     
-    # Load Config (manual)
-    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server", "config.env")
+    # Load centralized config owner (server/server/config/unified_config.py -> server/config.env)
+    project_server_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(project_server_root, "server"))
+    from config.unified_config import get_config  # pylint: disable=import-outside-toplevel
+
+    subscription_cfg = get_config().subscription
+
+    # Load DB env values from single config file
+    config_path = os.path.join(project_server_root, "config.env")
     env_vars = {}
     if os.path.exists(config_path):
         with open(config_path, 'r') as f:
@@ -64,24 +72,23 @@ async def main():
                     status = sub.get('status')
                     print(f"- ℹ️  **DB Status**: {status}")
                     
-                    # Check connection to current Payment System (Test Mode check)
-                    is_live_id = cust_id and not cust_id.startswith('cus_test') # Heuristic
-                    current_mode = "TEST" if os.getenv('STRIPE_SECRET_KEY','').startswith('sk_test') else "LIVE"
+                    # Check connection to current Payment System from centralized mode.
+                    current_mode = subscription_cfg.stripe_mode.upper()
                     
                     print(f"- ℹ️  **Payment System Mode**: {current_mode}")
                     
-                    if current_mode == "TEST" and cust_id:
+                    if cust_id:
                         # Try to query if it's a test ID
                         try:
                             import stripe
-                            stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+                            stripe.api_key = subscription_cfg.stripe_secret_key
                             c = stripe.Customer.retrieve(cust_id)
                             has_subs = c.subscriptions.total_count > 0 if c.subscriptions else False
                             print(f"- ✅ **Payment Verified (Stripe)**: {'YES' if has_subs else 'NO (No Active Subs)'}")
                         except Exception as e:
                              print(f"- ⚠️  **Payment Verification Failed**: {str(e).splitlines()[0]}")
                              if "No such customer" in str(e):
-                                 print("  -> Likely mismatched modes (Live ID vs Test Key)")
+                                 print("  -> Possible mode mismatch or stale Stripe IDs")
 
                 print("")
                 

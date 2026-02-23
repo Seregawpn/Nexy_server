@@ -43,6 +43,9 @@
 | `MESSAGES_ENABLED` | env_config | messages | true | server | - | Включить интеграцию iMessage (read_messages, send_message, find_contact) |
 | `BROWSER_ENABLED` | env_config | browser | true | server | - | Включить browser automation (альтернатива BROWSER_USE_ENABLED) |
 | `SUBSCRIPTION_ENABLED` | env_config | payment | true | server | - | Включить систему подписок и проверку квот |
+| `SUBSCRIPTION_GRANDFATHERED_ENABLED` | env_config | payment | true | server | - | Разрешить unlimited-доступ для статуса `grandfathered` |
+| `SUBSCRIPTION_GRANDFATHER_AUTO_ASSIGN_EXISTING` | env_config | payment | false | server | - | One-shot авто-bootstrap grandfathered на старте сервера |
+| `SUBSCRIPTION_GRANDFATHER_CUTOFF_DATE` | env_config | payment | - | server | - | Граница one-shot bootstrap (`YYYY-MM-DD`, правило: `created_at < cutoff_date`) |
 
 ## Правила добавления
 

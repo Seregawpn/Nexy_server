@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-One-time admin script: mark existing users as grandfathered (free unlimited).
+Admin script: mark existing users as grandfathered (free unlimited).
 
 Default mode is dry-run. Use --apply to execute updates.
+Rule is centralized and matches server runtime bootstrap: created_at < cutoff_date.
 """
 
 import argparse
@@ -50,15 +51,15 @@ def _parse_cutoff(cutoff_date: str) -> datetime:
     except ValueError as exc:
         raise ValueError("Invalid --cutoff-date. Use YYYY-MM-DD.") from exc
 
-    # Inclusive end-of-day cutoff
-    return day.replace(hour=23, minute=59, second=59, microsecond=999999)
+    # Centralized rule: created_at < cutoff_date (00:00:00)
+    return day
 
 
 def _fetch_candidates(conn, cutoff_dt: datetime, preview_limit: int) -> List[Dict]:
     query = """
         SELECT hardware_id, status, created_at
         FROM subscriptions
-        WHERE created_at <= %s
+        WHERE created_at < %s
           AND status NOT IN ('grandfathered', 'admin_active')
         ORDER BY created_at ASC
         LIMIT %s
@@ -73,28 +74,13 @@ def _count_candidates(conn, cutoff_dt: datetime) -> int:
     query = """
         SELECT COUNT(*) AS cnt
         FROM subscriptions
-        WHERE created_at <= %s
+        WHERE created_at < %s
           AND status NOT IN ('grandfathered', 'admin_active')
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(query, (cutoff_dt,))
         row = cur.fetchone() or {"cnt": 0}
     return int(row["cnt"])
-
-
-def _apply_updates(conn, cutoff_dt: datetime) -> int:
-    query = """
-        UPDATE subscriptions
-        SET status = 'grandfathered',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE created_at <= %s
-          AND status NOT IN ('grandfathered', 'admin_active')
-    """
-    with conn.cursor() as cur:
-        cur.execute(query, (cutoff_dt,))
-        updated = cur.rowcount
-    conn.commit()
-    return int(updated)
 
 
 def main() -> int:
@@ -110,7 +96,7 @@ def main() -> int:
         total = _count_candidates(conn, cutoff_dt)
         preview = _fetch_candidates(conn, cutoff_dt, args.limit_preview)
 
-        print(f"Cutoff (inclusive): {cutoff_dt.isoformat()}")
+        print(f"Cutoff (exclusive): {cutoff_dt.isoformat()} (rule: created_at < cutoff_date)")
         print(f"Candidates to grandfather: {total}")
         print("Preview:")
         for row in preview:
@@ -124,7 +110,7 @@ def main() -> int:
             print("Run with --apply to execute.")
             return 0
 
-        updated = _apply_updates(conn, cutoff_dt)
+        updated = repo.mark_grandfathered_before_date(args.cutoff_date)
         print(f"\nApplied: updated {updated} subscription(s) to status='grandfathered'.")
         return 0
     finally:

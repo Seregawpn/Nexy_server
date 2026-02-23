@@ -25,7 +25,7 @@ echo ""
 # Определяем текущую директорию проекта
 CURRENT_DIR="/Users/sergiyzasorin/Development/Nexy/server"
 TEMP_DIR="/tmp/nexy_server_temp"
-REPO_URL="https://github.com/Seregawpn/Nexy_server.git"
+REPO_URL="https://github.com/Seregawpn/Nexy.git"
 
 # ШАГ 1: ПОДГОТОВКА
 log_step "ШАГ 1: Подготовка..."
@@ -45,7 +45,7 @@ if [ -d "$TEMP_DIR" ]; then
 fi
 
 # ШАГ 2: КЛОНИРОВАНИЕ РЕПОЗИТОРИЯ
-log_step "ШАГ 2: Клонирование репозитория Nexy_server..."
+log_step "ШАГ 2: Клонирование репозитория Nexy..."
 
 cd /tmp
 git clone "$REPO_URL" nexy_server_temp
@@ -150,7 +150,7 @@ echo "   ✅ GitHub Actions автоматически задеплоит на A
 echo "   ⏱️  Время деплоя: 2-3 минуты"
 echo ""
 log_info "🔗 Ссылки для мониторинга:"
-echo "   📊 GitHub Actions: https://github.com/Seregawpn/Nexy_server/actions"
+echo "   📊 GitHub Actions: https://github.com/Seregawpn/Nexy/actions"
 echo "   🏥 Health Check: https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/health"
 echo "   📋 Status API: https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/status"
 echo ""

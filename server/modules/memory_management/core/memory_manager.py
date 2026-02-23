@@ -244,7 +244,7 @@ class MemoryManager:
             logger.warning(f"⚠️ Heuristic memory extraction failed: {e}")
             return "", ""
     
-    async def update_memory_background(self, hardware_id: str, prompt: str, response: str):
+    async def update_memory_background(self, hardware_id: str, prompt: str, response: str) -> Optional[Dict[str, str]]:
         """
         Фоновое обновление памяти пользователя.
         
@@ -266,7 +266,7 @@ class MemoryManager:
                 # Проверяем наличие менеджера базы данных
                 if not self.db_manager:
                     logger.warning("⚠️ DatabaseManager is not set in MemoryManager; skipping memory update")
-                    return
+                    return None
                 # Обновляем память в базе данных
                 success = await self.db_manager.update_user_memory(
                     hardware_id,
@@ -276,14 +276,18 @@ class MemoryManager:
                 
                 if success:
                     logger.info(f"✅ Memory for {hardware_id} updated: short-term ({len(short_memory)} chars), long-term ({len(long_memory)} chars)")
+                    return {"short": short_memory, "long": long_memory}
                 else:
                     logger.warning(f"⚠️ Could not update memory for {hardware_id}")
+                    return None
             else:
                 logger.debug(f"🧠 No information found for {hardware_id} to remember")
+                return None
                 
         except Exception as e:
             logger.error(f"❌ Error in background memory update for {hardware_id}: {e}")
             # НЕ поднимаем исключение - это фоновая задача
+            return None
     
     def is_available(self) -> bool:
         """

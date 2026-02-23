@@ -13,7 +13,6 @@ from config.unified_config import WorkflowConfig, get_config
 from integrations.core.assistant_response_parser import AssistantResponseParser
 from integrations.core.json_stream_extractor import JsonStreamExtractor
 from modules.session_management.core.session_registry import SessionRegistry
-from modules.subscription.core.subscription_types import AccessTier, map_status_to_tier
 from utils.logging_formatter import log_structured
 
 logger = logging.getLogger(__name__)
@@ -537,7 +536,7 @@ class StreamingWorkflowIntegration:
                 sentence = processed_sentence
                 if not llm_iteration_started:
                     llm_iteration_started = True
-                    logger.info(f"✅ Итерация LLM началась: получено первое предложение")
+                    logger.info("✅ Поток обработки начался: получен первый текстовый сегмент")
                 llm_chunks_received += 1
                 if first_text_time is None:
                     first_text_time = (time.time() - llm_start_time) * 1000
@@ -966,6 +965,7 @@ class StreamingWorkflowIntegration:
             logger.info(f"📸 Скриншот получен (WebP base64): ~{estimated_size} bytes (base64 длина: {len(screenshot)})")
 
         yielded_any = False
+        llm_runtime_error: Optional[str] = None
         if self.text_module and hasattr(self.text_module, 'process'):
             llm_start = time.time()
             logger.info(f"⏱️  Начало LLM обработки через Text Module: '{enriched_text[:80]}...'")
@@ -1004,7 +1004,8 @@ class StreamingWorkflowIntegration:
                         }
                     )
             except Exception as processing_error:
-                logger.error(f"⚠️ Ошибка Text Module: {processing_error}. Используем fallback")
+                llm_runtime_error = str(processing_error)
+                logger.error(f"⚠️ Ошибка Text Module: {processing_error}. Используем fail-open ответ")
                 import traceback
                 traceback.print_exc()
         elif self.text_module and hasattr(self.text_module, 'process_text_streaming'):
@@ -1085,6 +1086,21 @@ class StreamingWorkflowIntegration:
                 traceback.print_exc()
 
         if not yielded_any:
+            # Единый fail-open для runtime-ошибок LLM:
+            # не возвращаем enriched prompt обратно пользователю.
+            if llm_runtime_error:
+                logger.warning(
+                    "⚠️ LLM runtime error detected, emitting degraded response instead of prompt echo",
+                    extra={
+                        'scope': 'workflow',
+                        'method': '_iter_processed_sentences',
+                        'decision': 'degrade',
+                        'ctx': {'error': llm_runtime_error[:300]}
+                    }
+                )
+                yield "I can’t process this request right now because the AI provider is unavailable. Please try again in a minute."
+                return
+
             logger.debug("⚠️ TextProcessor не вернул предложений, используем fallback разбивку")
             for fallback_sentence in self._split_into_sentences(enriched_text):
                 if fallback_sentence:
@@ -1186,7 +1202,7 @@ class StreamingWorkflowIntegration:
             payload["session_id"] = session_id
 
         chunk_count = 0
-        async for chunk in self._stream_module_results(self.text_module, payload):
+        async for chunk in self._stream_module_results(self.text_module, payload, raise_errors=True):
             chunk_count += 1
             logger.debug(f"📦 _stream_text_module: получен chunk #{chunk_count}")
             yield chunk
@@ -1257,7 +1273,7 @@ class StreamingWorkflowIntegration:
                 }
             )
 
-    async def _stream_module_results(self, module, payload: Dict[str, Any]):
+    async def _stream_module_results(self, module, payload: Dict[str, Any], raise_errors: bool = False):
         """Унифицированный вызов module.process с поддержкой async generator."""
         if not module or not hasattr(module, 'process'):
             return
@@ -1272,6 +1288,8 @@ class StreamingWorkflowIntegration:
                 yield result
         except Exception as err:
             logger.warning("⚠️ Ошибка при вызове модуля %s: %s", getattr(module, 'name', 'unknown'), err)
+            if raise_errors:
+                raise
 
     def _extract_text_chunk(self, chunk: Any) -> str:
         """
@@ -1416,30 +1434,6 @@ class StreamingWorkflowIntegration:
                  sub_info += f"\nLimits: {limits}"
                  
             context_parts.append(sub_info)
-            
-            # Инструкции по командам
-            # Если платный - manage, иначе - buy
-            # CRITICAL: Do not ask questions. Execute immediately.
-            subscription_cfg = get_config().subscription
-            tier = map_status_to_tier(
-                status,
-                grandfathered_enabled=subscription_cfg.grandfathered_enabled
-            )
-            if tier == AccessTier.UNLIMITED:
-                instructions = (
-                    "URGENT INSTRUCTION: User wants to manage subscription/billing.\n"
-                    "YOU MUST EXECUTE COMMAND: {\"command\": \"manage_subscription\", \"args\": {}}\n"
-                    "ACT IMMEDIATELY. DO NOT ASK 'Do you want to open...'. JUSE DO IT.\n"
-                    "Output ONLY the JSON command. DO NOT write any text introduction."
-                )
-            else:
-                 instructions = (
-                    "URGENT INSTRUCTION: User wants to subscribe/upgrade.\n"
-                    "YOU MUST EXECUTE COMMAND: {\"command\": \"buy_subscription\", \"args\": {}}\n"
-                    "ACT IMMEDIATELY. DO NOT ASK 'Do you want to subscribe...'. JUST DO IT.\n"
-                    "Output ONLY the JSON command. DO NOT write any text introduction."
-                )
-            context_parts.append(instructions)
             
         if not context_parts:
             return text

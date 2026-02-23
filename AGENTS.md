@@ -59,12 +59,12 @@
 
 ## Git Routing Rules (обязательно)
 - `Seregawpn/Nexy` получает push только из корня текущего workspace (`<repo-root>`).
-- `Seregawpn/Nexy_server` получает только `server`-срез из `<repo-root>`.
+- `Seregawpn/Nexy` получает только `server`-срез из `<repo-root>`.
 - `Seregawpn/Nexy_production` используется только для release assets (`Nexy.dmg`, `Nexy.pkg`) и update manifest.
-- Запрещено пушить root-историю напрямую в `Nexy_server`.
+- Запрещено пушить root-историю напрямую в `Nexy`.
 - Запрещено смешивать code-pipeline и asset-pipeline.
-- Каноничная команда для `Nexy_server`:
-  - `git subtree push --prefix=server server_repo <branch>`
-- Для уже существующей ветки в `Nexy_server` допускается выравнивание:
+- Каноничная команда для `Nexy`:
+  - `git subtree push --prefix=server origin <branch>`
+- Для уже существующей ветки в `Nexy` допускается выравнивание:
   - `git subtree split --prefix=server -b <tmp-branch>`
-  - `git push --force server_repo <tmp-branch>:<branch>`
+  - `git push --force origin <tmp-branch>:<branch>`

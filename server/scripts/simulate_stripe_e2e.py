@@ -31,7 +31,8 @@ def run_simulation():
         env["HTTP_PORT"] = str(HTTP_PORT)
         env["GRPC_PORT"] = GRPC_PORT
         env["SUBSCRIPTION_ENABLED"] = "true"
-        env["STRIPE_WEBHOOK_SECRET"] = WEBHOOK_SECRET
+        env["STRIPE_MODE"] = "test"
+        env["STRIPE_TEST_WEBHOOK_SECRET"] = WEBHOOK_SECRET
         
         # Use current python interpreter (system python)
         venv_python = sys.executable

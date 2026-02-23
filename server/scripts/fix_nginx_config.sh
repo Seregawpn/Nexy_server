@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-RESOURCE_GROUP="NetworkWatcherRG"
-VM_NAME="Nexy"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 CONFIG_FILE="/etc/nginx/sites-enabled/nexy"
 BACKUP_FILE="/etc/nginx/sites-enabled/nexy.backup.$(date +%Y%m%d_%H%M%S)"
 

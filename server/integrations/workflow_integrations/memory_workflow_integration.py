@@ -215,7 +215,7 @@ class MemoryWorkflowIntegration:
             assert prompt is not None, "prompt should not be None after all() check"
             assert response is not None, "response should not be None after all() check"
 
-            await asyncio.wait_for(
+            update_response = await asyncio.wait_for(
                 self._call_memory_module({
                     "action": "update_background",
                     "hardware_id": hardware_id,
@@ -224,10 +224,17 @@ class MemoryWorkflowIntegration:
                 }),
                 timeout=self.memory_update_timeout
             )
-            
-            # После сохранения обновляем кэш памяти
-            logger.debug("Обновление кэша памяти после сохранения")
-            await self._fetch_and_cache_memory(hardware_id)
+
+            updated_memory = self._extract_memory_from_response(update_response)
+            if updated_memory:
+                # Fast-path: кэшируем свежую память сразу из ответа update,
+                # без дополнительного roundtrip get_context в БД.
+                self._cache_memory(hardware_id, updated_memory)
+                logger.debug("✅ Кэш памяти обновлен через fast-path из update_background")
+            else:
+                # Fallback: если update не вернул память, пробуем старый путь через fetch.
+                logger.debug("Memory update не вернул контекст, используем fallback fetch")
+                await self._fetch_and_cache_memory(hardware_id)
             
             logger.debug("✅ Фоновое сохранение в память завершено")
             

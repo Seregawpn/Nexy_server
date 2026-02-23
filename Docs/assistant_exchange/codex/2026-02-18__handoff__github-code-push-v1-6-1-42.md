@@ -17,8 +17,8 @@ Type: handoff
 1. Root code repo (`origin`):
    - `https://github.com/Seregawpn/Nexy.git`
    - branch pushed: `codex/v1.6.1.42-code-only`
-2. Server slice repo (`server_repo`, subtree push):
-   - `https://github.com/Seregawpn/Nexy_server.git`
+2. Server slice repo (`origin`, subtree push):
+   - `https://github.com/Seregawpn/Nexy.git`
    - branch pushed: `codex/v1.6.1.42-code-only`
 
 ## Tag note

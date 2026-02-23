@@ -2,7 +2,7 @@
 
 **Статус:** Active Rulebook  
 **Обновлено:** 21 February 2026  
-**Текущий релиз документации:** `v1.6.1.43`
+**Текущий релиз документации:** `v2.0.0.4`
 
 Канонический деплой серверной части в Azure.
 
@@ -19,10 +19,36 @@
 Запрет:
 - Не использовать старые цели `NetworkWatcherRG/Nexy` для production deploy.
 
+### Canonical Target Block (обязательно использовать в таком формате)
+
+```yaml
+release_target:
+  version: "2.0.0.4"
+  azure:
+    resource_group: "NexyNewRG"
+    vm_name: "NexyNew"
+  server:
+    host: "nexy-prod-sergiy.canadacentral.cloudapp.azure.com"
+  grpc:
+    endpoint: "nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443"
+    tls: true
+  update:
+    dmg_url: "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg"
+    pkg_url: "https://github.com/Seregawpn/Nexy_production/releases/download/App/Nexy.pkg"
+```
+
+### Preflight (перед любыми настройками/деплоем)
+
+```bash
+dig +short nexy-prod-sergiy.canadacentral.cloudapp.azure.com
+az vm show --resource-group NexyNewRG --name NexyNew -o table
+curl -fsS https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/health >/dev/null
+```
+
 ## 1) Repo Responsibilities
 
 1. `Seregawpn/Nexy` — root workspace, документация, общий код.
-2. `Seregawpn/Nexy_server` — единственный source code path для server deploy.
+2. `Seregawpn/Nexy` — единственный source code path для server deploy.
 3. `Seregawpn/Nexy_production` — только клиентские release assets.
 
 ## 2) Mandatory Preconditions

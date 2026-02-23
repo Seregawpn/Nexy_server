@@ -10,8 +10,8 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NetworkWatcherRG}"
-AZURE_VM_NAME="${AZURE_VM_NAME:-Nexy}"
+AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+AZURE_VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 REMOTE_BASE="${REMOTE_BASE:-/home/azureuser/voice-assistant}"
 
 VERSION_ARG="${1:-}"
@@ -31,6 +31,11 @@ fi
 
 if [ -z "$BUILD_ARG" ]; then
   BUILD_ARG="$VERSION_ARG"
+fi
+
+if [ "$AZURE_RESOURCE_GROUP" = "NetworkWatcherRG" ] || [ "$AZURE_VM_NAME" = "Nexy" ] || [ "$AZURE_VM_NAME" = "nexy-regular" ]; then
+  echo -e "${RED}❌ Legacy target is blocked. Use NexyNewRG/NexyNew.${NC}"
+  exit 1
 fi
 
 echo -e "${YELLOW}🚀 Update server version on Azure${NC}"

@@ -45,22 +45,34 @@ class MemoryConfig:
           SHORT_TERM: ...
           LONG_TERM: ...
         - Keep output concise and factual.
+        - Use semicolon-separated atomic facts inside each line.
+        - No markdown, no bullets, no extra lines.
 
         Extraction policy:
-        1) SHORT-TERM MEMORY (session context, quickly expiring, operational):
-           Store ONLY what is needed to continue the current flow:
+        1) SHORT-TERM MEMORY (dialogue timeline, operational):
+           Store key dialogue steps needed to continue the conversation.
+           Keep a very short timeline of the last 3-5 relevant user asks in order.
+           Each fact should be a coarse summary in one short sentence, for example:
+           - "User asked for weather in Montreal"
+           - "User then asked to compare tomorrow and today"
+           - "User asked to remember the main points"
+           Keep each fact as short as possible (minimal words).
+           Keep focus on:
            - active user goal and current task state;
            - unresolved requests and pending next step;
-           - temporary constraints (format, language, style, scope, deadline in this session);
-           - current working context (site/app/page/entity user is interacting with now);
+           - temporary constraints for this session (format, language, style, scope, deadline);
+           - current working context (site/app/page/entity currently discussed);
            - latest user correction/override ("not this, do that").
-           Keep short-term compact: max 2-4 short actionable points.
-           Remove obsolete points when task context changes.
+           Keep details coarse, not verbose. Keep only what helps continuity.
+           If information is repeated, merge it into one compact fact instead of adding a new line,
+           for example: "User repeatedly asks about Montreal weather".
+           Remove obsolete facts only if clearly superseded by newer facts.
 
            NEVER store in SHORT_TERM:
            - assistant internal artifacts, tool names, JSON/service internals, debug logs;
            - generic phrases without concrete value;
-           - completed/obsolete details that no longer affect next step.
+           - completed/obsolete details that no longer affect next step;
+           - low-value wording details that do not change user intent.
 
         2) LONG-TERM MEMORY (stable user profile, cross-session):
            Store durable facts/preferences that help in future sessions:

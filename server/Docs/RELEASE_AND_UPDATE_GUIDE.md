@@ -2,13 +2,33 @@
 
 **Статус:** Active Rulebook  
 **Обновлено:** 21 February 2026  
-**Текущий релиз документации:** `v1.6.1.43`
+**Текущий релиз документации:** `v2.0.0.4`
 
 Канон публикации клиентских артефактов и синхронизации update-канала.
 
+## Canonical Release Target (обязательно)
+
+```yaml
+release_target:
+  version: "2.0.0.4"
+  azure:
+    resource_group: "NexyNewRG"
+    vm_name: "NexyNew"
+  server:
+    host: "nexy-prod-sergiy.canadacentral.cloudapp.azure.com"
+  grpc:
+    endpoint: "nexy-prod-sergiy.canadacentral.cloudapp.azure.com:443"
+    tls: true
+  update:
+    dmg_url: "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg"
+    pkg_url: "https://github.com/Seregawpn/Nexy_production/releases/download/App/Nexy.pkg"
+```
+
+Перед release всегда сверять именно этот блок (без legacy host/RG/VM).
+
 ## 0) Separation Rules
 
-- Code deploy path: `Seregawpn/Nexy_server`.
+- Code deploy path: `Seregawpn/Nexy`.
 - Assets path (`Nexy.dmg`, `Nexy.pkg`): `Seregawpn/Nexy_production`.
 - Запрещено смешивать code-pipeline и asset-pipeline.
 
@@ -47,7 +67,9 @@ python3 scripts/publish_assets_and_sync.py
 ```
 
 Ожидание:
-- релиз в `Seregawpn/Nexy_production/releases/tag/vX.Y.Z.W`
+- обновлены fixed-каналы:
+  - `https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg`
+  - `https://github.com/Seregawpn/Nexy_production/releases/download/App/Nexy.pkg`
 - `manifest.json` обновлён и синхронизирован
 
 Dry-run:
@@ -68,11 +90,11 @@ curl -fsS https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/updates/heal
 
 ## 5) Rollback
 
-- Не перезаписывать assets в уже существующем tag.
-- Делать новый tag `vX.Y.Z.W+1` и повторный publish.
+- Новые теги создавать запрещено.
+- Повторный publish выполняется в те же fixed-каналы (`Update`/`App`) с заменой assets.
 
 ## 6) DoD
 
 1. Release assets опубликованы в `Nexy_production`.
-2. Manifest указывает на новый tag и валидные checksum/size.
+2. Manifest указывает на fixed URL `.../download/Update/Nexy.dmg` и валидные checksum/size.
 3. `/updates/health` и `/health` согласованы по версии.

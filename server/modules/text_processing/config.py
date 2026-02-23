@@ -24,6 +24,10 @@ class TextProcessingConfig:
         
         # Используем централизованные настройки с возможностью переопределения
         self.gemini_api_key = self.config.get('gemini_api_key', unified_config.text_processing.gemini_api_key)
+        self.gemini_fallback_api_key = self.config.get(
+            'gemini_fallback_api_key',
+            getattr(unified_config.text_processing, 'gemini_fallback_api_key', '')
+        )
         # Note: System prompt is now built dynamically via build_system_prompt() in get_provider_config()
         
         # LangChain настройки
@@ -83,6 +87,7 @@ class TextProcessingConfig:
             
             return {
                 'api_key': self.gemini_api_key,
+                'fallback_api_key': self.gemini_fallback_api_key,
                 'model': self.langchain_model,
                 'temperature': self.temperature,
                 'max_tokens': self.max_tokens,
@@ -144,6 +149,7 @@ class TextProcessingConfig:
         """
         return {
             'gemini_api_key_set': bool(self.gemini_api_key),
+            'gemini_fallback_api_key_set': bool(self.gemini_fallback_api_key),
             'langchain_model': self.langchain_model,
             'temperature': self.temperature,
             'max_tokens': self.max_tokens,

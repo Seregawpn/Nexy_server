@@ -10,19 +10,19 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass, field
 import logging
+from dotenv import load_dotenv
 
 from .prompts import build_system_prompt
 
-# Загружаем переменные окружения из config.env
-config_path = Path(__file__).parent.parent / "config.env"
-if config_path.exists():
-    with open(config_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                # Используем rsplit для правильного разбора строк с = в значениях
-                key, value = line.rsplit('=', 1)
-                os.environ[key.strip()] = value.strip()
+# Единый owner-path конфигурации: server/config.env
+_CONFIG_DIR = Path(__file__).resolve().parent          # .../server/server/config
+_SERVER_DIR = _CONFIG_DIR.parent                       # .../server/server
+_PROJECT_SERVER_DIR = _SERVER_DIR.parent               # .../server
+_CONFIG_ENV_PATH = _PROJECT_SERVER_DIR / "config.env"
+
+# Не перетираем уже выставленные переменные окружения.
+if _CONFIG_ENV_PATH.exists():
+    load_dotenv(_CONFIG_ENV_PATH, override=False)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def get_version_from_file() -> str:
             logger.warning(f"Не удалось прочитать VERSION файл: {e}")
     
     # Fallback: используем переменную окружения или дефолт
-    return os.getenv('SERVER_VERSION', '1.6.1.41')
+    return os.getenv('SERVER_VERSION', '2.0.0.4')
 
 @dataclass
 class DatabaseConfig:
@@ -156,6 +156,7 @@ class AudioConfig:
 class TextProcessingConfig:
     """Конфигурация обработки текста"""
     gemini_api_key: str = ""
+    gemini_fallback_api_key: str = ""
     
     # LangChain настройки
     langchain_model: str = DEFAULT_GEMINI_PRIMARY_MODEL
@@ -186,6 +187,7 @@ class TextProcessingConfig:
         primary_model = os.getenv('GEMINI_PRIMARY_MODEL', DEFAULT_GEMINI_PRIMARY_MODEL)
         return cls(
             gemini_api_key=os.getenv('GEMINI_API_KEY', ''),
+            gemini_fallback_api_key=os.getenv('GEMINI_FALLBACK_API_KEY', ''),
             langchain_model=primary_model,
             temperature=float(os.getenv('TEXT_PROCESSING_TEMPERATURE', os.getenv('GEMINI_LIVE_TEMPERATURE', '0.4'))),
             max_tokens=int(os.getenv('TEXT_PROCESSING_MAX_TOKENS', os.getenv('GEMINI_LIVE_MAX_TOKENS', '2048'))),
@@ -531,6 +533,7 @@ class SubscriptionConfig:
     kill_switch: bool = False  # Аварийное отключение
     
     # Stripe API keys
+    stripe_mode: str = "test"  # test | live
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_publishable_key: str = ""
@@ -545,6 +548,8 @@ class SubscriptionConfig:
     quota_weekly: int = 25
     quota_monthly: int = 50
     grandfathered_enabled: bool = True
+    grandfather_auto_assign_existing: bool = False
+    grandfather_cutoff_date: str = ""
     
     # Cache configuration
     cache_ttl_seconds: int = 30
@@ -556,19 +561,30 @@ class SubscriptionConfig:
     
     @classmethod
     def from_env(cls) -> 'SubscriptionConfig':
+        mode_raw = os.getenv('STRIPE_MODE', 'test').strip().lower()
+        stripe_mode = mode_raw if mode_raw in {'test', 'live'} else 'test'
+
+        def _pick(test_key: str, live_key: str) -> str:
+            if stripe_mode == 'live':
+                return os.getenv(live_key, '')
+            return os.getenv(test_key, '')
+
         return cls(
             enabled=os.getenv('SUBSCRIPTION_ENABLED', 'false').lower() == 'true',
             kill_switch=os.getenv('SUBSCRIPTION_KILL_SWITCH', 'false').lower() == 'true',
-            stripe_secret_key=os.getenv('STRIPE_SECRET_KEY', ''),
-            stripe_webhook_secret=os.getenv('STRIPE_WEBHOOK_SECRET', ''),
-            stripe_publishable_key=os.getenv('STRIPE_PUBLISHABLE_KEY', ''),
-            stripe_price_id=os.getenv('STRIPE_PRICE_ID', ''),
+            stripe_mode=stripe_mode,
+            stripe_secret_key=_pick('STRIPE_TEST_SECRET_KEY', 'STRIPE_LIVE_SECRET_KEY'),
+            stripe_webhook_secret=_pick('STRIPE_TEST_WEBHOOK_SECRET', 'STRIPE_LIVE_WEBHOOK_SECRET'),
+            stripe_publishable_key=_pick('STRIPE_TEST_PUBLISHABLE_KEY', 'STRIPE_LIVE_PUBLISHABLE_KEY'),
+            stripe_price_id=_pick('STRIPE_TEST_PRICE_ID', 'STRIPE_LIVE_PRICE_ID'),
             trial_days=int(os.getenv('SUBSCRIPTION_TRIAL_DAYS', '14')),
             grace_period_hours=int(os.getenv('SUBSCRIPTION_GRACE_PERIOD_HOURS', '24')),
             quota_daily=int(os.getenv('SUBSCRIPTION_QUOTA_DAILY', '5')),
             quota_weekly=int(os.getenv('SUBSCRIPTION_QUOTA_WEEKLY', '25')),
             quota_monthly=int(os.getenv('SUBSCRIPTION_QUOTA_MONTHLY', '50')),
             grandfathered_enabled=os.getenv('SUBSCRIPTION_GRANDFATHERED_ENABLED', 'true').lower() == 'true',
+            grandfather_auto_assign_existing=os.getenv('SUBSCRIPTION_GRANDFATHER_AUTO_ASSIGN_EXISTING', 'false').lower() == 'true',
+            grandfather_cutoff_date=os.getenv('SUBSCRIPTION_GRANDFATHER_CUTOFF_DATE', '').strip(),
             cache_ttl_seconds=int(os.getenv('SUBSCRIPTION_CACHE_TTL', '30')),
             pending_ttl_seconds=int(os.getenv('SUBSCRIPTION_PENDING_TTL', '30')),
             trial_check_interval_hours=int(os.getenv('SUBSCRIPTION_TRIAL_CHECK_HOURS', '6')),
@@ -960,6 +976,7 @@ class UnifiedServerConfig:
             },
             'text_processing': {
                 'gemini_api_key_set': bool(self.text_processing.gemini_api_key),
+                'gemini_fallback_api_key_set': bool(self.text_processing.gemini_fallback_api_key),
                 'langchain_model': self.text_processing.langchain_model,
                 'temperature': self.text_processing.temperature,
                 'max_tokens': self.text_processing.max_tokens,

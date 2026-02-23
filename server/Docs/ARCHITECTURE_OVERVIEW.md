@@ -10,7 +10,7 @@
 
 ## 0. Release/Deploy Boundaries
 
-- `Seregawpn/Nexy_server` — source code и deploy pipeline.
+- `Seregawpn/Nexy` — source code и deploy pipeline.
 - `Seregawpn/Nexy_production/releases` — клиентские артефакты (`Nexy.dmg`, `Nexy.pkg`) и update-канал.
 
 Каноны:

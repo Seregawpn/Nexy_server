@@ -36,13 +36,18 @@ log_error() {
 }
 
 # Конфигурация
-AZURE_RESOURCE_GROUP="NetworkWatcherRG"
-AZURE_VM_NAME="Nexy"
+AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+AZURE_VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 SERVER_IP="nexy-prod-sergiy.canadacentral.cloudapp.azure.com"
 MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"
 DOWNLOADS_DIR="/home/azureuser/voice-assistant/server/updates/downloads"
 MANIFEST_FILE="manifest.json"
 TEST_FILE="test-update.txt"
+
+if [ "$AZURE_RESOURCE_GROUP" = "NetworkWatcherRG" ] || [ "$AZURE_VM_NAME" = "Nexy" ] || [ "$AZURE_VM_NAME" = "nexy-regular" ]; then
+    log_error "Legacy target is blocked. Use NexyNewRG/NexyNew."
+    exit 1
+fi
 
 log_info "🚀 Настройка сервера обновлений..."
 

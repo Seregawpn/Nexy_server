@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import signal
 import sys
 from urllib.parse import quote
@@ -25,9 +26,7 @@ from modules.grpc_service.core.backpressure import get_backpressure_manager
 from pathlib import Path
 MAIN_DIR = Path(__file__).parent
 SERVER_ROOT = MAIN_DIR.parent
-PRIMARY_CONFIG_ENV = SERVER_ROOT / "config.env"
-FALLBACK_CONFIG_ENV = MAIN_DIR / "config.env"
-CONFIG_ENV_PATH = PRIMARY_CONFIG_ENV if PRIMARY_CONFIG_ENV.exists() else FALLBACK_CONFIG_ENV
+CONFIG_ENV_PATH = SERVER_ROOT / "config.env"
 load_dotenv(CONFIG_ENV_PATH)
 
 # Загружаем конфигурацию
@@ -40,11 +39,10 @@ http_config = unified_config.http
 log_level = unified_config.logging.level if hasattr(unified_config, 'logging') else 'INFO'
 setup_structured_logging(level=log_level)
 logger = logging.getLogger(__name__)
-if CONFIG_ENV_PATH == FALLBACK_CONFIG_ENV:
+if not CONFIG_ENV_PATH.exists():
     logger.warning(
-        "⚠️ Using fallback config.env at %s (primary missing at %s)",
-        FALLBACK_CONFIG_ENV,
-        PRIMARY_CONFIG_ENV,
+        "⚠️ config.env not found at %s",
+        CONFIG_ENV_PATH,
     )
 
 # Валидация конфигурации БД перед запуском
@@ -124,7 +122,8 @@ async def health_handler(request):
         return web.json_response({
             "status": "OK",
             "latest_version": SERVER_VERSION,
-            "latest_build": SERVER_BUILD
+            "latest_build": SERVER_BUILD,
+            "ffmpeg_available": bool(shutil.which("ffmpeg"))
         }, headers={
             'Cache-Control': 'public, max-age=30',  # 30 секунд для health (PR-7)
             'Pragma': 'no-cache',
@@ -147,6 +146,23 @@ async def root_handler(request):
     """Корневой endpoint"""
     return web.Response(text="Voice Assistant Server is running!", status=200)
 
+
+def _with_stripe_mode(payload: dict, subscription_module=None) -> dict:
+    """
+    Attach server-owned stripe_mode to API payload for client-side consistency.
+    """
+    mode = None
+    try:
+        cfg = getattr(subscription_module, "config", None) if subscription_module else None
+        mode = getattr(cfg, "stripe_mode", None)
+    except Exception:
+        mode = None
+    if not mode:
+        mode = getattr(unified_config.subscription, "stripe_mode", "test")
+    out = dict(payload)
+    out["stripe_mode"] = str(mode).strip().lower() or "test"
+    return out
+
 async def portal_handler(request):
     """
     Создание сессии Customer Portal
@@ -158,25 +174,25 @@ async def portal_handler(request):
         hardware_id = data.get('hardware_id')
         
         if not hardware_id:
-            return web.json_response({'error': 'hardware_id required'}, status=400)
+            return web.json_response(_with_stripe_mode({'error': 'hardware_id required'}), status=400)
         
         # Lazy import to get singleton
         from modules.subscription import get_subscription_module
         subscription_module = get_subscription_module()
         
         if not subscription_module:
-             return web.json_response({'error': 'Subscription module disabled'}, status=503)
+             return web.json_response(_with_stripe_mode({'error': 'Subscription module disabled'}), status=503)
              
         result = await subscription_module.create_portal_session(hardware_id)
         
         if not result:
-             return web.json_response({'error': 'Could not create portal session (no subscription?)'}, status=404)
+             return web.json_response(_with_stripe_mode({'error': 'Could not create portal session (no subscription?)'}, subscription_module), status=404)
              
-        return web.json_response(result)
+        return web.json_response(_with_stripe_mode(result, subscription_module))
         
     except Exception as e:
         logger.error(f"[F-2025-017] Portal creation error: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        return web.json_response(_with_stripe_mode({'error': str(e)}), status=500)
 
 async def checkout_handler(request):
     """
@@ -189,13 +205,13 @@ async def checkout_handler(request):
         hardware_id = data.get('hardware_id')
         
         if not hardware_id:
-            return web.json_response({'error': 'hardware_id required'}, status=400)
+            return web.json_response(_with_stripe_mode({'error': 'hardware_id required'}), status=400)
         
         from modules.subscription import get_subscription_module
         subscription_module = get_subscription_module()
         
         if not subscription_module:
-             return web.json_response({'error': 'Subscription module disabled'}, status=503)
+             return web.json_response(_with_stripe_mode({'error': 'Subscription module disabled'}), status=503)
              
         # Определяем base_url для корректного success/cancel редиректа
         forwarded_host = request.headers.get("X-Forwarded-Host")
@@ -211,13 +227,13 @@ async def checkout_handler(request):
         )
         
         if not result:
-             return web.json_response({'error': 'Could not create checkout session'}, status=500)
+             return web.json_response(_with_stripe_mode({'error': 'Could not create checkout session'}, subscription_module), status=500)
              
-        return web.json_response(result)
+        return web.json_response(_with_stripe_mode(result, subscription_module))
         
     except Exception as e:
         logger.error(f"[F-2025-017] Checkout creation error: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        return web.json_response(_with_stripe_mode({'error': str(e)}), status=500)
 
 async def subscription_status_handler(request):
     """
@@ -228,24 +244,27 @@ async def subscription_status_handler(request):
         hardware_id = request.query.get('hardware_id')
         
         if not hardware_id:
-            return web.json_response({'error': 'hardware_id required'}, status=400)
+            return web.json_response(_with_stripe_mode({'error': 'hardware_id required'}), status=400)
         
         from modules.subscription import get_subscription_module
         subscription_module = get_subscription_module()
         
         if not subscription_module:
-            return web.json_response({'error': 'Subscription module disabled'}, status=503)
+            return web.json_response(_with_stripe_mode({'error': 'Subscription module disabled'}), status=503)
             
         result = await subscription_module.get_subscription_status(hardware_id)
-        return web.json_response(result)
+        return web.json_response(_with_stripe_mode(result, subscription_module))
         
     except Exception as e:
         logger.error(f"[F-2025-017] Subscription status error: {e}")
-        return web.json_response({'error': str(e)}, status=500)
+        return web.json_response(_with_stripe_mode({'error': str(e)}), status=500)
 
 async def payment_success_handler(request):
     """Страница успешной оплаты (redirect target для Stripe Checkout)."""
     session_id = request.query.get("session_id")
+    deep_link = os.getenv("DEEP_LINK_BASE_URL", "nexy://payment/") + "success"
+    if session_id:
+        deep_link = f"{deep_link}?session_id={quote(session_id)}"
     if session_id:
         try:
             from modules.subscription import get_subscription_module
@@ -281,20 +300,38 @@ async def payment_success_handler(request):
       text-align: center;
     }}
     .card {{ max-width: 540px; width: 100%; padding: 24px; border: 1px solid #e5e5e5; border-radius: 12px; }}
-    .btn {{ display: inline-block; padding: 10px 16px; background: #111; color: #fff; border-radius: 8px; text-decoration: none; }}
+    .btn {{ display: inline-block; padding: 10px 16px; background: #111; color: #fff; border-radius: 8px; text-decoration: none; border: none; cursor: pointer; }}
+    .actions {{ display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }}
   </style>
   <script>
-    setTimeout(function() {{
+    const returnUrl = "{deep_link}";
+
+    function _tryCloseWindow() {{
+      try {{ window.open('', '_self'); }} catch (e) {{}}
       try {{ window.close(); }} catch (e) {{}}
-    }}, 1200);
+    }}
+
+    function returnToAppAndClose() {{
+      try {{
+        window.location.href = returnUrl;
+      }} catch (e) {{}}
+
+      setTimeout(_tryCloseWindow, 150);
+      setTimeout(_tryCloseWindow, 600);
+    }}
+
+    setTimeout(returnToAppAndClose, 900);
   </script>
 </head>
 <body>
   <div class="card">
     <h2>Payment Successful ✅</h2>
     <p>Your subscription is now active.</p>
-    <p>You can close this browser window.</p>
-    <button class="btn" onclick="try {{ window.close(); }} catch (e) {{}}">Close Window</button>
+    <p>Returning to app. If this tab does not close automatically, click below.</p>
+    <div class="actions">
+      <a class="btn" href="{deep_link}" onclick="setTimeout(_tryCloseWindow, 200); setTimeout(_tryCloseWindow, 700);">Open App</a>
+      <button class="btn" onclick="returnToAppAndClose()">Close Window</button>
+    </div>
   </div>
 </body>
 </html>"""
@@ -641,7 +678,25 @@ async def main():
         servers_cleanup.append(lambda: cancel_task(serve_task))
 
         # Ждем сигнала завершения или ошибки
-        await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
+
+        # Если gRPC задача завершилась раньше сигнала shutdown, обязательно
+        # читаем её результат, чтобы не терять исключение (no "Task exception was never retrieved").
+        if serve_task in done:
+            await serve_task
+            if shutdown_wait_task is not None and shutdown_wait_task in pending:
+                shutdown_wait_task.cancel()
+                try:
+                    await shutdown_wait_task
+                except asyncio.CancelledError:
+                    pass
+        elif shutdown_wait_task is not None and shutdown_wait_task in done:
+            if not serve_task.done():
+                serve_task.cancel()
+                try:
+                    await serve_task
+                except asyncio.CancelledError:
+                    pass
         
     finally:
         # Graceful shutdown

@@ -9,8 +9,8 @@ Usage:
   update_manifest_remote_locked.sh [options]
 
 Options:
-  --resource-group NAME   Azure resource group (default: NetworkWatcherRG)
-  --vm NAME               Azure VM name (default: Nexy)
+  --resource-group NAME   Azure resource group (default: NexyNewRG)
+  --vm NAME               Azure VM name (default: NexyNew)
   --remote-base PATH      Remote project base (default: /home/azureuser/voice-assistant/server)
   --url URL               Artifact URL (optional)
   --size BYTES            Artifact size (optional)
@@ -21,8 +21,8 @@ Options:
 EOF
 }
 
-RESOURCE_GROUP="NetworkWatcherRG"
-VM_NAME="Nexy"
+RESOURCE_GROUP="NexyNewRG"
+VM_NAME="NexyNew"
 REMOTE_BASE="/home/azureuser/voice-assistant/server"
 ARTIFACT_URL=""
 ARTIFACT_SIZE=""
@@ -59,6 +59,11 @@ fi
 
 if [ -z "$NOTES_URL" ] && [ -n "$ARTIFACT_URL" ]; then
   NOTES_URL="$ARTIFACT_URL"
+fi
+
+if [ "$RESOURCE_GROUP" = "NetworkWatcherRG" ] || [ "$VM_NAME" = "Nexy" ] || [ "$VM_NAME" = "nexy-regular" ]; then
+  echo "❌ Legacy target is blocked. Use NexyNewRG/NexyNew."
+  exit 1
 fi
 
 MANIFEST_DIR="$REMOTE_BASE/updates/manifests"

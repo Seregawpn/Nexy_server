@@ -85,14 +85,14 @@ log_success "Все предварительные требования выпо
 log_header "КОНФИГУРАЦИЯ"
 
 # Запрос параметров у пользователя
-read -p "Resource Group name [Nexy]: " RESOURCE_GROUP
-RESOURCE_GROUP="${RESOURCE_GROUP:-Nexy}"
+read -p "Resource Group name [NexyNewRG]: " RESOURCE_GROUP
+RESOURCE_GROUP="${RESOURCE_GROUP:-NexyNewRG}"
 
 read -p "Azure Location [eastus]: " LOCATION
 LOCATION="${LOCATION:-eastus}"
 
-read -p "VM Name [nexy-regular]: " VM_NAME
-VM_NAME="${VM_NAME:-nexy-regular}"
+read -p "VM Name [NexyNew]: " VM_NAME
+VM_NAME="${VM_NAME:-NexyNew}"
 
 read -p "VM Size [Standard_B2s]: " VM_SIZE
 VM_SIZE="${VM_SIZE:-Standard_B2s}"

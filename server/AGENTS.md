@@ -38,12 +38,12 @@
 - `Seregawpn/Nexy`:
   - Назначение: корневой workspace (общий код/документация).
   - Push: из `<repo-root>`.
-- `Seregawpn/Nexy_server`:
+- `Seregawpn/Nexy`:
   - Назначение: только серверный код для Azure deploy.
   - Push: только через subtree из `<repo-root>`.
-  - Канонично: `git subtree push --prefix=server server_repo <branch>`.
+  - Канонично: `git subtree push --prefix=server origin <branch>`.
 - `Seregawpn/Nexy_production`:
   - Назначение: только клиентские release assets и update manifest.
 - Запрещено:
-  - Пушить root-историю напрямую в `Nexy_server`.
-  - Публиковать DMG/PKG в `Nexy` или `Nexy_server`.
+  - Пушить root-историю напрямую в `Nexy`.
+  - Публиковать DMG/PKG в `Nexy` или `Nexy`.

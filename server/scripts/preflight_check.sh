@@ -23,6 +23,16 @@ echo ""
 errors=0
 warnings=0
 
+# 0. Runtime dependency: ffmpeg (required for MP3 -> PCM conversion in welcome/audio path)
+echo "0. Проверка runtime-зависимости ffmpeg..."
+if command -v ffmpeg >/dev/null 2>&1; then
+    FFMPEG_VER=$(ffmpeg -version 2>/dev/null | head -n 1 || true)
+    echo -e "   ${GREEN}✓${NC} ffmpeg найден: ${FFMPEG_VER:-unknown version}"
+else
+    echo -e "   ${RED}✗${NC} ffmpeg не найден (GenerateWelcomeAudio/EdgeTTS MP3→PCM будет падать)"
+    errors=$((errors + 1))
+fi
+
 # 1. gRPC-интерсепторы
 echo "1. Проверка gRPC интерсепторов..."
 echo "   (Создайте тестовый скрипт для проверки timeout/unavailable/cancelled)"
@@ -145,4 +155,3 @@ else
     fi
     exit 1
 fi
-

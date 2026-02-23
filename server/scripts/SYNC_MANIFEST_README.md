@@ -41,8 +41,8 @@ RELEASE_TAG="Update"                     # Тег релиза
 FILE_NAME="Nexy.dmg"                    # Имя файла
 MANIFEST_FILE="manifest.json"           # Имя манифеста
 MANIFEST_DIR="/home/azureuser/voice-assistant/server/updates/manifests"  # Директория манифеста
-AZURE_RESOURCE_GROUP="NetworkWatcherRG"             # Группа ресурсов Azure
-AZURE_VM_NAME="Nexy"             # Имя VM
+AZURE_RESOURCE_GROUP="NexyNewRG"             # Группа ресурсов Azure
+AZURE_VM_NAME="NexyNew"             # Имя VM
 ```
 
 ### **Изменение конфигурации:**
@@ -165,8 +165,8 @@ az account set --subscription "your-subscription-id"
 ```bash
 # Восстановление из резервной копии
 az vm run-command invoke \
-  --resource-group "Nexy" \
-  --name "nexy-regular" \
+  --resource-group "NexyNewRG" \
+  --name "NexyNew" \
   --command-id RunShellScript \
   --scripts "
 cd /home/azureuser/voice-assistant/server/updates/manifests

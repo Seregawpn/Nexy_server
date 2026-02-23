@@ -79,7 +79,7 @@ export AZURE_SSH_KEY_PATH="~/.ssh/azure_nexy_key"  # опционально
 ```bash
 export AZURE_RESOURCE_GROUP="Nexy"
 export AZURE_VM_NAME="nexy-regular"
-export GITHUB_REPO="https://github.com/Seregawpn/Nexy_server.git"
+export GITHUB_REPO="https://github.com/Seregawpn/Nexy.git"
 
 ./setup_server.sh
 ```
@@ -151,7 +151,7 @@ export AZURE_ADMIN_IP="1.2.3.4"  # Ваш IP адрес
 - `AZURE_RESOURCE_GROUP` - имя Resource Group (по умолчанию: `Nexy`)
 - `AZURE_VM_NAME` - имя VM (по умолчанию: `nexy-regular`)
 - `AZURE_ADMIN_USERNAME` - имя пользователя (по умолчанию: `azureuser`)
-- `GITHUB_REPO` - URL репозитория (по умолчанию: `https://github.com/Seregawpn/Nexy_server.git`)
+- `GITHUB_REPO` - URL репозитория (по умолчанию: `https://github.com/Seregawpn/Nexy.git`)
 
 **Пример использования:**
 

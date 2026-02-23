@@ -35,11 +35,12 @@ def migrate_stripe_customer_ids():
     """
     import stripe
     from modules.subscription.repository.subscription_repository import SubscriptionRepository
+    from config.unified_config import get_config
     
     # Initialize Stripe
-    stripe_key = os.getenv('STRIPE_SECRET_KEY')
+    stripe_key = get_config().subscription.stripe_secret_key
     if not stripe_key:
-        logger.error("STRIPE_SECRET_KEY not found in environment")
+        logger.error("Stripe API key not configured for active mode")
         return
     
     stripe.api_key = stripe_key

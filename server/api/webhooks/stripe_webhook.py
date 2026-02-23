@@ -4,9 +4,9 @@ Stripe Webhook Handler - единая точка входа для всех Stri
 
 Feature ID: F-2025-017-stripe-payment
 
-⚠️ КРИТИЧНО: 
+⚠️ КРИТИЧНО:
 - Idempotency через UNIQUE(stripe_event_id)
-- Atomic transactions
+- Event-идемпотентность + out-of-order guard на уровне repository
 - Cache invalidation после обработки
 """
 import logging
@@ -24,6 +24,18 @@ logger = logging.getLogger(__name__)
 
 from modules.subscription.core.subscription_types import map_stripe_status_to_local_status
 
+TERMINAL_SUCCESS_STATUSES = {
+    "processed",
+    "subscription_synced",
+    "ignored",
+    "duplicate",
+}
+
+RETRYABLE_STATUSES = {
+    "error",
+    "skipped",
+}
+
 
 async def stripe_webhook_handler(request: web.Request) -> web.Response:
     """
@@ -33,9 +45,9 @@ async def stripe_webhook_handler(request: web.Request) -> web.Response:
     
     ⚠️ КРИТИЧНО:
     1. Verify signature
-    2. Check idempotency (stripe_event_id)
-    3. Process event in transaction
-    4. Invalidate cache
+    2. Process event with idempotency in repository
+    3. Invalidate cache after terminal handling
+    4. Return 5xx for retryable failures
     """
     from config.unified_config import get_config
     from modules.subscription import get_subscription_module
@@ -70,22 +82,14 @@ async def stripe_webhook_handler(request: web.Request) -> web.Response:
         
         logger.info(f"[F-2025-017] Webhook received: type={event_type} id={event_id}")
         
-        # Check idempotency
-        try:
-            is_duplicate = await _check_idempotency(event_id)
-            if is_duplicate:
-                logger.info(f"[F-2025-017] Duplicate event ignored: {event_id}")
-                return web.json_response({
-                    'status': 'duplicate',
-                    'message': 'Event already processed'
-                }, status=200)
-        except Exception as e:
-            logger.warning(f"[F-2025-017] Idempotency check failed, continuing: {e}")
-            # Continue processing even if idempotency check fails
-        
         # Process event
         try:
             result = await _process_event(event)
+            result_status = str(result.get("status", "")).strip().lower()
+            if result_status in RETRYABLE_STATUSES:
+                raise RuntimeError(f"retryable_result:{result_status}:{result.get('reason', 'unknown')}")
+            if result_status not in TERMINAL_SUCCESS_STATUSES:
+                raise RuntimeError(f"unknown_result_status:{result_status or 'empty'}")
             
             # Invalidate cache
             try:
@@ -97,7 +101,14 @@ async def stripe_webhook_handler(request: web.Request) -> web.Response:
             
             logger.info(f"[F-2025-017] Webhook processed: type={event_type} id={event_id} result={result}")
             
-            # Return 200 OK even for ignored events (payment_intent.*, charge.*)
+            if result_status == "duplicate":
+                return web.json_response({
+                    'status': 'duplicate',
+                    'event_id': event_id,
+                    'result': result,
+                }, status=200)
+
+            # Return 200 OK for terminal-success events (including ignored)
             return web.json_response({
                 'status': 'processed',
                 'event_id': event_id,
@@ -107,13 +118,12 @@ async def stripe_webhook_handler(request: web.Request) -> web.Response:
             import traceback
             logger.error(f"[F-2025-017] Event processing exception: {e}")
             logger.error(f"[F-2025-017] Traceback: {traceback.format_exc()}")
-            # Return 200 OK to prevent Stripe from retrying
-            # Log the error but don't fail the webhook
+            # Return 5xx to allow Stripe retry on transient/internal processing errors.
             return web.json_response({
                 'status': 'error',
                 'event_id': event_id,
                 'message': str(e)
-            }, status=200)
+            }, status=500)
         
     except json.JSONDecodeError:
         logger.error("[F-2025-017] Invalid JSON in webhook payload")
@@ -165,12 +175,8 @@ async def _verify_and_construct_event(
 
 async def _check_idempotency(event_id: str) -> bool:
     """
-    Check if event was already processed.
-    
-    ⚠️ КРИТИЧНО: Использует UNIQUE constraint на stripe_event_id
-    
-    Returns:
-        True if duplicate, False if new
+    Legacy compatibility wrapper.
+    Idempotency owner path is record_event() in _process_event.
     """
     try:
         from modules.subscription.repository.subscription_repository import SubscriptionRepository
@@ -178,14 +184,14 @@ async def _check_idempotency(event_id: str) -> bool:
         return repo.event_exists(event_id, processed_only=True)
     except Exception as e:
         logger.error(f"[F-2025-017] Idempotency check failed: {e}")
-        return False  # Allow processing on error
+        return False
 
 
 async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Process Stripe event.
     
-    ⚠️ КРИТИЧНО: Atomic transaction с record_event для идемпотентности
+    ⚠️ КРИТИЧНО: Идемпотентность через record_event + guards в repository
     
     Returns:
         Processing result
@@ -221,7 +227,7 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
         )
         
         if not recorded:
-            return {'status': 'skipped', 'reason': 'already_recorded'}
+            return {'status': 'duplicate', 'reason': 'already_recorded'}
         
         # Process based on event type
         # Pass event_id AND stripe_created for idempotency/ordering guards
@@ -233,24 +239,26 @@ async def _process_event(event: Dict[str, Any]) -> Dict[str, Any]:
             event_id,
             stripe_event_at
         )
-        
-        # Mark as processed
-        repo.record_event(
-            stripe_event_id=event_id,
-            event_type=event_type,
-            hardware_id=hardware_id,
-            event_data=event_data,
-            stripe_created_at=stripe_created,
-            processed=True
-        )
-        
+
+        result_status = str(result.get("status", "")).strip().lower()
+        if result_status in TERMINAL_SUCCESS_STATUSES:
+            # Mark as processed only for terminal outcomes.
+            repo.record_event(
+                stripe_event_id=event_id,
+                event_type=event_type,
+                hardware_id=hardware_id,
+                event_data=event_data,
+                stripe_created_at=stripe_created,
+                processed=True
+            )
+
         return result
         
     except Exception as e:
         import traceback
         logger.error(f"[F-2025-017] Event processing failed: {e}")
         logger.error(f"[F-2025-017] Traceback: {traceback.format_exc()}")
-        return {'status': 'error', 'message': str(e)}
+        return {'status': 'error', 'reason': 'processing_exception', 'message': str(e)}
 
 
 def _extract_hardware_id(event_data: Dict[str, Any]) -> Optional[str]:
@@ -342,10 +350,6 @@ async def _handle_event_type(
     new_status = None
     stripe_status = None
     
-    # Extract extra data for state machine
-    current_period_end = None
-    email = None
-    
     if event_type == 'checkout.session.completed':
         # Centralized fallback sync in SubscriptionModule (single owner mapping path)
         try:
@@ -356,20 +360,16 @@ async def _handle_event_type(
                 if session_id:
                     result = await subscription_module.reconcile_checkout_success(session_id)
                     if result.get("ok"):
-                        return {'status': 'subscription_synced', 'result': result}
+                        return {'status': 'subscription_synced', 'success': True, 'result': result}
+                    return {
+                        'status': 'skipped',
+                        'success': False,
+                        'reason': 'reconcile_not_ok',
+                        'result': result,
+                    }
         except Exception as e:
             logger.warning(f"[F-2025-017] checkout.session.completed reconcile fallback failed: {e}")
-
-        # Minimal fallback if module is unavailable
-        stripe_customer_id = event_data.get('customer')
-        stripe_subscription_id = event_data.get('subscription')
-        repo.create_or_update_subscription(
-            hardware_id=hardware_id,
-            status='paid',
-            stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=stripe_subscription_id
-        )
-        return {'status': 'subscription_created_fallback', 'customer_id': stripe_customer_id}
+        return {'status': 'skipped', 'success': False, 'reason': 'reconcile_unavailable'}
 
     
     elif event_type == 'invoice.payment_succeeded':
@@ -382,7 +382,9 @@ async def _handle_event_type(
         
     elif event_type == 'customer.subscription.updated':
         stripe_status = event_data.get('status', 'active')
-        cancel_at_period_end = event_data.get('cancel_at_period_end', False)
+        cancel_at_period_end = bool(event_data.get('cancel_at_period_end', False))
+        cancel_at = event_data.get('cancel_at')
+        cancel_scheduled = cancel_at_period_end or bool(cancel_at)
         new_status = map_stripe_status_to_local_status(stripe_status, current_status)
             
     elif event_type == 'customer.subscription.deleted':
@@ -409,10 +411,23 @@ async def _handle_event_type(
         stripe_status=stripe_status,
         stripe_event_id=event_id,          # CORRECT: event_id (evt_...) not object id
         stripe_event_at=stripe_created,    # CORRECT: timestamp from event
-        current_period_end=event_data.get('current_period_end')
+        current_period_end=event_data.get('current_period_end'),
+        cancel_at_period_end=cancel_scheduled if event_type == 'customer.subscription.updated' else None,
     )
     
-    return result
+    if result.get("success"):
+        return {
+            "status": "processed",
+            "success": True,
+            "reason": "state_transition_applied",
+            "result": result,
+        }
+    return {
+        "status": "error",
+        "success": False,
+        "reason": "state_transition_failed",
+        "result": result,
+    }
 
 
 # Factory function for route registration

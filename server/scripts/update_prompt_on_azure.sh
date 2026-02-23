@@ -22,8 +22,8 @@ echo "🚀    ЗАМЕНА ПРОМТА НА AZURE СЕРВЕРЕ"
 echo "🚀 =========================================="
 echo ""
 
-RESOURCE_GROUP="Nexy"
-VM_NAME="Nexy"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 SERVER_PATH="/home/azureuser/voice-assistant"
 CONFIG_FILE="server/config/unified_config.py"
 
@@ -383,4 +383,3 @@ else
     log_error "Ошибка замены промта"
     exit 1
 fi
-

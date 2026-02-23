@@ -11,7 +11,11 @@ from modules.memory_management.config import MemoryConfig
 def test_memory_prompt_contains_expanded_short_and_long_term_policy():
     prompt = MemoryConfig().memory_analysis_prompt
 
-    assert "SHORT-TERM MEMORY (session context, quickly expiring, operational)" in prompt
+    assert "SHORT-TERM MEMORY (dialogue timeline, operational)" in prompt
+    assert "last 3-5 relevant user asks in order" in prompt
+    assert "minimal words" in prompt
+    assert "If information is repeated, merge it into one compact fact" in prompt
+    assert "User asked for weather in Montreal" in prompt
     assert "LONG-TERM MEMORY (stable user profile, cross-session)" in prompt
     assert "favorite music, artists, movies, series, books, sports" in prompt
     assert "favorite websites/services/apps used repeatedly" in prompt

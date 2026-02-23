@@ -2,8 +2,8 @@
 # Скрипт для проверки логов сервера через Azure CLI
 # Использование: ./check_server_via_az.sh
 
-RESOURCE_GROUP="NetworkWatcherRG"
-VM_NAME="Nexy"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 
 echo "=================================================================================="
 echo "📋 ПРОВЕРКА ЛОГОВ СЕРВЕРА ЧЕРЕЗ AZURE CLI"

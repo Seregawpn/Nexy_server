@@ -58,4 +58,4 @@
 - Желательно синхронизировать `/home/azureuser/voice-assistant/config.env` с systemd env, чтобы убрать drift `DB_USER` (`nexy_user` vs `voice_assistant_user`).
 
 ## Следующие шаги
-- Деплойнуть коммит с кодовым фиксом в `Nexy_server`, чтобы правка на VM не была только hotfix.
+- Деплойнуть коммит с кодовым фиксом в `Nexy`, чтобы правка на VM не была только hotfix.

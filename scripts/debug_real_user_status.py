@@ -12,18 +12,11 @@ logger = logging.getLogger(__name__)
 
 async def main():
     print("🚀 Debugging Real User Status (Direct Mode)...")
-    
-    # Path to server/server/config.env
-    # Current script is in server/scripts/debug_real_user_status.py
-    # we need server/server/config.env
-    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server", "config.env")
-    print(f"Loading config from: {config_path}")
-    if os.path.exists(config_path):
-        with open(config_path, 'r') as f:
-            for line in f:
-                if '=' in line and not line.startswith('#'):
-                    k, v = line.strip().split('=', 1)
-                    os.environ[k] = v
+    project_server_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(project_server_root, "server"))
+    from config.unified_config import get_config  # pylint: disable=import-outside-toplevel
+    subscription_cfg = get_config().subscription
+    print(f"Using centralized config mode: {subscription_cfg.stripe_mode}")
     
     # DB Connection
     db_url = os.getenv('DATABASE_URL')
@@ -68,9 +61,9 @@ async def main():
         print(f"\n🌍 Querying Stripe for Customer: {cid}...")
         try:
             import stripe
-            stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+            stripe.api_key = subscription_cfg.stripe_secret_key
             if not stripe.api_key:
-                print("❌ STRIPE_SECRET_KEY not found in env")
+                print("❌ Stripe API key not configured for current mode")
                 return
             
             print(f"🔑 Using API Key: {stripe.api_key[:7]}...") # Show prefix to confirm Live/Test

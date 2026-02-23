@@ -32,10 +32,15 @@ log_error() {
 }
 
 # Конфигурация
-AZURE_RESOURCE_GROUP="NetworkWatcherRG"
-AZURE_VM_NAME="Nexy"
+AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+AZURE_VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 NGINX_CONFIG_PATH="/etc/nginx/sites-available/nexy-grpc"
 NGINX_CONFIG_LOCAL="server/nginx/grpc-passthrough.conf"
+
+if [ "$AZURE_RESOURCE_GROUP" = "NetworkWatcherRG" ] || [ "$AZURE_VM_NAME" = "Nexy" ] || [ "$AZURE_VM_NAME" = "nexy-regular" ]; then
+    log_error "Legacy target is blocked. Use NexyNewRG/NexyNew."
+    exit 1
+fi
 
 log_info "🚀 Применение конфигурации nginx..."
 
@@ -112,5 +117,4 @@ else
 fi
 
 log_success "Готово!"
-
 

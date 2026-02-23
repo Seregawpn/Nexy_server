@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import stripe
@@ -8,23 +9,24 @@ import logging
 async def main():
     target_email = "Seregawpn@gmail.com"
     print(f"# 🔍 Searching for `{target_email}`\n")
-    
-    # 1. Parse config.env to get KEYS (both Live and Test)
-    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server", "config.env")
+
+    # Load centralized config owner (server/server/config/unified_config.py -> server/config.env)
+    project_server_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(project_server_root, "server"))
+    from config.unified_config import get_config  # pylint: disable=import-outside-toplevel
+
+    subscription_cfg = get_config().subscription
+    active_mode = subscription_cfg.stripe_mode
+
+    # Parse config.env only for DB params and optional secondary Stripe checks.
+    config_path = os.path.join(project_server_root, "config.env")
     env_vars = {}
     if os.path.exists(config_path):
         with open(config_path, 'r') as f:
             for line in f:
                 line = line.strip()
                 if line.lstrip().startswith('#'):
-                     # Try to extract hidden keys
-                     clean = line.lstrip().lstrip('#').strip()
-                     if '=' in clean:
-                         k, v = clean.split('=', 1)
-                         if k.strip() in ['STRIPE_SECRET_KEY']:
-                              env_vars[f"HIDDEN_{k.strip()}"] = v.strip()
-                     continue
-                
+                    continue
                 if '=' in line:
                     k, v = line.split('=', 1)
                     env_vars[k] = v
@@ -79,27 +81,14 @@ async def main():
         except Exception as e:
             print(f"- ⚠️ Stripe Error: {e}")
 
-    # Check TEST (Active)
-    check_stripe(env_vars.get('STRIPE_SECRET_KEY'), "Active Config / TEST")
-    
-    # Check LIVE (Hidden/Commented) we need to find the sk_live key
-    # It might be in env_vars under 'STRIPE_SECRET_KEY' if live is active, 
-    # OR under 'HIDDEN_STRIPE_SECRET_KEY' if we parsed it from comments.
-    
-    live_key = None
-    if env_vars.get('STRIPE_SECRET_KEY', '').startswith('sk_live'):
-        live_key = env_vars.get('STRIPE_SECRET_KEY')
-    elif env_vars.get('HIDDEN_STRIPE_SECRET_KEY', '').startswith('sk_live'):
-        live_key = env_vars.get('HIDDEN_STRIPE_SECRET_KEY')
-    
-    # Try to find hardcoded fallback if parsing failed? 
-    # No, assuming parsing worked.
-    
-    if live_key:
-         check_stripe(live_key, "LIVE MODE")
+    # Active mode from centralized config
+    check_stripe(subscription_cfg.stripe_secret_key, f"Active Config / {active_mode.upper()}")
+
+    # Optional secondary mode check from mode-specific keys
+    if active_mode == "test":
+        check_stripe(env_vars.get("STRIPE_LIVE_SECRET_KEY"), "LIVE MODE")
     else:
-         print("\n## 2b. Stripe (LIVE)")
-         print("- ⚠️ Could not locate LIVE key to check.")
+        check_stripe(env_vars.get("STRIPE_TEST_SECRET_KEY"), "TEST MODE")
 
 if __name__ == "__main__":
     asyncio.run(main())

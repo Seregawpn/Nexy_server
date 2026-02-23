@@ -67,6 +67,106 @@ class SubscriptionModule:
         self._pending_ttl_seconds = self.config.pending_ttl_seconds
         self._reconcile_locks: Dict[str, asyncio.Lock] = {}
         self._reconcile_locks_guard = threading.Lock()
+        self._checkout_reuse_window_sec = 15 * 60
+        # Lazy sync guard for status reads when webhooks are delayed/missed.
+        self._status_sync_last_run: Dict[str, float] = {}
+        self._status_sync_lock = threading.Lock()
+        self._status_sync_min_interval_sec = 10.0
+
+    def _current_stripe_mode(self) -> str:
+        mode = str(getattr(self.config, "stripe_mode", "test")).strip().lower()
+        return mode if mode in {"test", "live"} else "test"
+
+    def _try_auto_assign_grandfathered(self) -> None:
+        """
+        Optional one-time-at-startup auto-backfill for existing users.
+        Source of Truth remains subscriptions.status.
+        """
+        if self._repository is None:
+            return
+        if not self.config.grandfathered_enabled:
+            return
+        if not getattr(self.config, "grandfather_auto_assign_existing", False):
+            return
+
+        cutoff_date = (getattr(self.config, "grandfather_cutoff_date", "") or "").strip()
+
+        if not cutoff_date:
+            logger.warning(
+                "[F-2025-017] Auto-grandfather enabled but SUBSCRIPTION_GRANDFATHER_CUTOFF_DATE is empty; skipping"
+            )
+            return
+
+        try:
+            datetime.strptime(cutoff_date, "%Y-%m-%d")
+            result = self._repository.apply_grandfather_bootstrap_once(cutoff_date)
+            if result.get("applied"):
+                logger.info(
+                    "[F-2025-017] Auto-grandfather bootstrap applied once: updated=%s cutoff_date=%s event_id=%s",
+                    result.get("updated_count", 0),
+                    cutoff_date,
+                    result.get("event_id"),
+                )
+            else:
+                logger.info(
+                    "[F-2025-017] Auto-grandfather bootstrap skipped: already_applied cutoff_date=%s event_id=%s",
+                    cutoff_date,
+                    result.get("event_id"),
+                )
+        except ValueError:
+            logger.error(
+                "[F-2025-017] Invalid SUBSCRIPTION_GRANDFATHER_CUTOFF_DATE=%s (expected YYYY-MM-DD)",
+                cutoff_date,
+            )
+        except Exception as e:
+            logger.error(f"[F-2025-017] Auto-grandfather failed: {e}")
+
+    def _validate_active_mode_config(self) -> bool:
+        """
+        Validate Stripe config for active mode to prevent hidden test/live drift.
+        """
+        mode = self._current_stripe_mode()
+        secret = str(getattr(self.config, "stripe_secret_key", "") or "").strip()
+        publishable = str(getattr(self.config, "stripe_publishable_key", "") or "").strip()
+        webhook = str(getattr(self.config, "stripe_webhook_secret", "") or "").strip()
+        price_id = str(getattr(self.config, "stripe_price_id", "") or "").strip()
+
+        expected_secret_prefixes = ("sk_live_", "rk_live_") if mode == "live" else ("sk_test_", "rk_test_")
+        expected_publishable_prefix = "pk_live_" if mode == "live" else "pk_test_"
+
+        errors: list[str] = []
+        if not secret:
+            errors.append("stripe_secret_key is empty")
+        elif not secret.startswith(expected_secret_prefixes):
+            errors.append(
+                f"stripe_secret_key must start with {expected_secret_prefixes} for mode={mode}"
+            )
+
+        if not publishable:
+            errors.append("stripe_publishable_key is empty")
+        elif not publishable.startswith(expected_publishable_prefix):
+            errors.append(
+                f"stripe_publishable_key must start with {expected_publishable_prefix} for mode={mode}"
+            )
+
+        if not webhook:
+            errors.append("stripe_webhook_secret is empty")
+        elif not webhook.startswith("whsec_"):
+            errors.append("stripe_webhook_secret must start with whsec_")
+
+        if not price_id:
+            errors.append("stripe_price_id is empty")
+        elif not price_id.startswith("price_"):
+            errors.append("stripe_price_id must start with price_")
+
+        if errors:
+            logger.error(
+                "[F-2025-017] Stripe config validation failed for mode=%s: %s",
+                mode,
+                "; ".join(errors),
+            )
+            return False
+        return True
 
     def _prune_pending(self, hardware_id: str, now_ts: float) -> int:
         """Prune expired pending entries and return current pending count."""
@@ -139,10 +239,9 @@ class SubscriptionModule:
             self._repository = SubscriptionRepository(db_url=db_url)
             self._quota_checker = QuotaChecker(repository=self._repository)
             self._state_machine = SubscriptionStateMachine
+            self._try_auto_assign_grandfathered()
             
-            # Use key from config
-            if not self.config.stripe_secret_key:
-                logger.error("[F-2025-017] STRIPE_SECRET_KEY not set in config!")
+            if not self._validate_active_mode_config():
                 return False
                 
             self._stripe_service = StripeService(api_key=self.config.stripe_secret_key)
@@ -189,11 +288,37 @@ class SubscriptionModule:
                 customer_id=customer_id,
                 email=email
             )
+            result["stripe_mode"] = self._current_stripe_mode()
             return result
             
         except Exception as e:
+            if self._looks_like_missing_customer_error(e):
+                logger.warning(
+                    f"[F-2025-017] Portal customer invalid for {hardware_id}; clearing stripe_customer_id to recover checkout path"
+                )
+                try:
+                    self._repository.update_subscription(hardware_id, stripe_customer_id=None)
+                    self.invalidate_all_cache()
+                except Exception as recover_err:
+                    logger.error(
+                        f"[F-2025-017] Failed to clear stale stripe_customer_id for {hardware_id}: {recover_err}"
+                    )
             logger.error(f"[F-2025-017] Error creating portal session: {e}")
             return None
+
+    @staticmethod
+    def _looks_like_missing_customer_error(error: Exception) -> bool:
+        """Detect stale/invalid Stripe customer errors for safe local recovery."""
+        text = str(error).strip().lower()
+        if not text:
+            return False
+        if "no such customer" in text:
+            return True
+        if "customer" in text and "does not exist" in text:
+            return True
+        if "resource_missing" in text and "customer" in text:
+            return True
+        return False
 
     async def create_checkout_session(
         self,
@@ -218,6 +343,45 @@ class SubscriptionModule:
             # 1. Проверяем, есть ли уже customer_id
             sub = self._repository.get_subscription(hardware_id)
             customer_id = sub.get('stripe_customer_id') if sub else None
+            now_utc = datetime.now(timezone.utc)
+
+            # 1.1 Server-side anti-spam/reuse guard: re-use recent open checkout session.
+            if sub:
+                last_session_id = sub.get("last_checkout_session_id")
+                last_created_at = self._coerce_utc_datetime(sub.get("last_checkout_created_at"))
+                age_sec = (now_utc - last_created_at).total_seconds() if last_created_at else None
+                if (
+                    last_session_id
+                    and age_sec is not None
+                    and age_sec <= self._checkout_reuse_window_sec
+                ):
+                    try:
+                        existing = self._stripe_service.get_checkout_session(last_session_id)
+                        if existing and existing.get("status") == "open":
+                            logger.info(
+                                "[F-2025-017] Reusing recent open checkout session",
+                                extra={
+                                    "scope": "subscription",
+                                    "decision": "checkout_reuse",
+                                    "ctx": {
+                                        "hardware_id": hardware_id,
+                                        "session_id": last_session_id,
+                                        "age_sec": round(age_sec, 1),
+                                    },
+                                },
+                            )
+                            return {
+                                "checkout_url": existing.get("url"),
+                                "session_id": existing.get("id"),
+                                "customer_id": existing.get("customer_id"),
+                                "subscription_id": existing.get("subscription_id"),
+                                "reused": True,
+                                "stripe_mode": self._current_stripe_mode(),
+                            }
+                    except Exception as reuse_error:
+                        logger.warning(
+                            f"[F-2025-017] Checkout reuse probe failed, creating new session: {reuse_error}"
+                        )
 
             # 2. Формируем success/cancel URLs
             # По умолчанию используем локальные страницы успешной оплаты.
@@ -242,6 +406,16 @@ class SubscriptionModule:
                 cancel_url=cancel_url,
                 trial_days=self.config.trial_days
             )
+            # Persist linkage + checkout dedup metadata immediately.
+            self._repository.update_subscription(
+                hardware_id=hardware_id,
+                stripe_customer_id=result.get("customer_id"),
+                stripe_subscription_id=result.get("subscription_id"),
+                last_checkout_session_id=result.get("session_id"),
+                last_checkout_created_at=now_utc,
+            )
+            self.invalidate_all_cache()
+            result["stripe_mode"] = self._current_stripe_mode()
             return result
             
         except Exception as e:
@@ -249,9 +423,63 @@ class SubscriptionModule:
             return None
 
     @staticmethod
+    def _coerce_utc_datetime(value: Any) -> Optional[datetime]:
+        """Normalize DB datetime values (aware/naive/epoch/iso) for checkout reuse guard."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return None
+            if raw.isdigit():
+                return datetime.fromtimestamp(int(raw), tz=timezone.utc)
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _serialize_current_period_end(value: Any) -> Any:
+        """Return JSON-safe current_period_end while keeping existing numeric/string contract."""
+        if isinstance(value, datetime):
+            normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            return normalized.isoformat()
+        return value
+
+    @staticmethod
     def _recommended_billing_route(sub: Dict[str, Any]) -> str:
+        status = str(sub.get("status") or "").strip().lower()
+        # For unpaid/free-limited users always start with checkout,
+        # even if stale customer linkage exists.
+        if status in {"none", "limited_free_trial"}:
+            return "checkout"
         customer_id = (sub.get("stripe_customer_id") or "").strip()
         return "manage" if customer_id else "checkout"
+
+    @staticmethod
+    def _billing_action_for_status(
+        *,
+        active: bool,
+        billing_active: bool,
+        recommended_route: str,
+    ) -> str:
+        """
+        Centralized owner decision for billing UI entrypoint.
+        - none: user already has active billing access
+        - manage: user should manage/resubscribe using existing customer
+        - checkout: user should start new checkout flow
+        """
+        if active and billing_active:
+            return "none"
+        if recommended_route == "manage":
+            return "manage"
+        return "checkout"
 
     def _get_reconcile_lock(self, session_id: str) -> asyncio.Lock:
         """Get/create per-session async lock for checkout reconciliation."""
@@ -318,7 +546,7 @@ class SubscriptionModule:
                     cancel_at_period_end = bool(stripe_sub.get("cancel_at_period_end", False))
 
                 local_status = map_stripe_status_to_local_status(stripe_status, "paid")
-                self._repository.update_subscription(
+                updated = self._repository.update_subscription(
                     hardware_id=hardware_id,
                     status=local_status,
                     stripe_status=stripe_status,
@@ -329,6 +557,25 @@ class SubscriptionModule:
                     last_stripe_event_id=f"checkout_session:{session_id}",
                     last_stripe_event_at=datetime.now(timezone.utc),
                 )
+                # If test reset removed the row, create it and retry update.
+                if not updated:
+                    self._repository.create_subscription(
+                        hardware_id=hardware_id,
+                        status=local_status,
+                    )
+                    updated = self._repository.update_subscription(
+                        hardware_id=hardware_id,
+                        status=local_status,
+                        stripe_status=stripe_status,
+                        stripe_customer_id=customer_id,
+                        stripe_subscription_id=subscription_id,
+                        current_period_end=current_period_end,
+                        cancel_at_period_end=cancel_at_period_end,
+                        last_stripe_event_id=f"checkout_session:{session_id}",
+                        last_stripe_event_at=datetime.now(timezone.utc),
+                    )
+                if not updated:
+                    return {"ok": False, "reason": "subscription_update_failed"}
                 self.invalidate_all_cache()
                 return {
                     "ok": True,
@@ -354,34 +601,136 @@ class SubscriptionModule:
             Dict со статусом и метаданными
         """
         if not self._initialized or not self.config.is_active():
-            return {'status': 'unknown', 'active': False}
+            return {'status': 'unknown', 'active': False, 'stripe_mode': self._current_stripe_mode()}
         if self._repository is None:
-            return {'status': 'unknown', 'active': False}
+            return {'status': 'unknown', 'active': False, 'stripe_mode': self._current_stripe_mode()}
             
         try:
             sub = self._repository.get_subscription(hardware_id)
             if not sub:
-                return {'status': 'none', 'active': False}
+                return {
+                    'status': 'none',
+                    'active': False,
+                    'billing_active': False,
+                    'recommended_billing_route': 'checkout',
+                    'billing_action': 'checkout',
+                    'stripe_mode': self._current_stripe_mode(),
+                }
+            sub = self._lazy_sync_subscription_status(hardware_id, sub)
             status = sub.get('status')
             tier = map_status_to_tier(
                 status,
                 grandfathered_enabled=self.config.grandfathered_enabled
             )
+            active = tier in [AccessTier.UNLIMITED, AccessTier.LIMITED]
+            billing_active = tier == AccessTier.UNLIMITED
+            recommended_billing_route = self._recommended_billing_route(sub)
 
             return {
                 'status': status,
                 'stripe_status': sub.get('stripe_status'),
                 'email': sub.get('email'),
                 # active=true means user can use product now (unlimited or limited tier)
-                'active': tier in [AccessTier.UNLIMITED, AccessTier.LIMITED],
-                'billing_active': tier == AccessTier.UNLIMITED,
-                'recommended_billing_route': self._recommended_billing_route(sub),
-                'current_period_end': sub.get('current_period_end')
+                'active': active,
+                'billing_active': billing_active,
+                'cancel_at_period_end': bool(sub.get('cancel_at_period_end', False)),
+                'recommended_billing_route': recommended_billing_route,
+                'billing_action': self._billing_action_for_status(
+                    active=active,
+                    billing_active=billing_active,
+                    recommended_route=recommended_billing_route,
+                ),
+                'current_period_end': self._serialize_current_period_end(sub.get('current_period_end')),
+                'stripe_mode': self._current_stripe_mode(),
             }
             
         except Exception as e:
             logger.error(f"[F-2025-017] Error getting subscription status: {e}")
-            return {'status': 'error', 'message': str(e)}
+            return {'status': 'error', 'message': str(e), 'stripe_mode': self._current_stripe_mode()}
+
+    def _try_acquire_status_sync_slot(self, hardware_id: str) -> bool:
+        """
+        Rate-limit Stripe reads per hardware_id to avoid noisy polling bursts.
+        """
+        now_ts = datetime.now().timestamp()
+        with self._status_sync_lock:
+            last_ts = self._status_sync_last_run.get(hardware_id)
+            if last_ts is not None and (now_ts - last_ts) < self._status_sync_min_interval_sec:
+                return False
+            self._status_sync_last_run[hardware_id] = now_ts
+            return True
+
+    def _lazy_sync_subscription_status(
+        self, hardware_id: str, sub: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Best-effort status sync from Stripe to reduce dependency on webhook delivery.
+        Source of Truth remains SubscriptionModule + repository row.
+        """
+        if self._repository is None or self._stripe_service is None:
+            return sub
+
+        subscription_id = (sub.get("stripe_subscription_id") or "").strip()
+        if not subscription_id:
+            return sub
+
+        if not self._try_acquire_status_sync_slot(hardware_id):
+            return sub
+
+        try:
+            stripe_sub = self._stripe_service.get_subscription(subscription_id)
+        except Exception as e:
+            logger.debug(
+                f"[F-2025-017] Lazy Stripe sync skipped (read failed) for {hardware_id[:8]}...: {e}"
+            )
+            return sub
+
+        stripe_status = stripe_sub.get("status")
+        local_status = map_stripe_status_to_local_status(stripe_status, sub.get("status"))
+        updates: Dict[str, Any] = {}
+
+        if local_status and local_status != sub.get("status"):
+            updates["status"] = local_status
+        if stripe_status and stripe_status != sub.get("stripe_status"):
+            updates["stripe_status"] = stripe_status
+
+        current_period_end = stripe_sub.get("current_period_end")
+        if current_period_end != sub.get("current_period_end"):
+            updates["current_period_end"] = current_period_end
+
+        cancel_at_period_end = bool(stripe_sub.get("cancel_at_period_end", False))
+        if cancel_at_period_end != bool(sub.get("cancel_at_period_end", False)):
+            updates["cancel_at_period_end"] = cancel_at_period_end
+
+        if not updates:
+            return sub
+
+        try:
+            updated = self._repository.update_subscription(hardware_id, **updates)
+            if not updated:
+                return sub
+            merged = dict(sub)
+            merged.update(updates)
+            self._invalidate_cache(hardware_id)
+            logger.info(
+                "[F-2025-017] Lazy Stripe sync applied",
+                extra={
+                    "scope": "subscription",
+                    "decision": "lazy_sync_applied",
+                    "ctx": {
+                        "hardware_id": hardware_id,
+                        "status": merged.get("status"),
+                        "stripe_status": merged.get("stripe_status"),
+                        "cancel_at_period_end": merged.get("cancel_at_period_end"),
+                    },
+                },
+            )
+            return merged
+        except Exception as e:
+            logger.debug(
+                f"[F-2025-017] Lazy Stripe sync update failed for {hardware_id[:8]}...: {e}"
+            )
+            return sub
 
     async def can_process(self, hardware_id: str) -> CanProcessResult:
         """
@@ -552,6 +901,7 @@ class SubscriptionModule:
             sub_details = await self.get_subscription_status(hardware_id)
             status = sub_details.get('status', 'unknown')
             active = sub_details.get('active', False)
+            cancel_at_period_end = bool(sub_details.get('cancel_at_period_end', False))
             date = sub_details.get('current_period_end')
             
             # Format date if present
@@ -574,6 +924,8 @@ class SubscriptionModule:
             )
 
             if status in PAID_STATUSES or tier == AccessTier.UNLIMITED:
+                if cancel_at_period_end:
+                    return f"[Subscription: Paid (Cancelled, Active until period end){date_str}]"
                 return f"[Subscription: Paid (Active){date_str}]"
             if status == 'billing_problem':
                 return "[Subscription: Billing Problem - Payment Failed]"
@@ -706,6 +1058,8 @@ class SubscriptionModule:
         """Инвалидировать весь кэш (после webhook)"""
         with self._cache_lock:
             self._cache.clear()
+        with self._status_sync_lock:
+            self._status_sync_last_run.clear()
         logger.debug("[F-2025-017] Cache invalidated")
     
     async def _run_trial_check(self) -> None:

@@ -73,7 +73,14 @@ for key in required:
 
 # Stripe keys are required only if subscriptions are enabled
 if subscription_enabled:
-    for key in ["STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_PRICE_ID"]:
+    stripe_mode = get_val("STRIPE_MODE").lower() or "test"
+    if stripe_mode not in {"test", "live"}:
+        missing.append("STRIPE_MODE(valid: test|live)")
+        stripe_mode = "test"
+
+    mode_prefix = "STRIPE_TEST" if stripe_mode == "test" else "STRIPE_LIVE"
+    for suffix in ["SECRET_KEY", "PUBLISHABLE_KEY", "PRICE_ID", "WEBHOOK_SECRET"]:
+        key = f"{mode_prefix}_{suffix}"
         val = get_val(key)
         if is_placeholder(val):
             missing.append(key)

@@ -220,6 +220,10 @@ PROMPT_WEB_SEARCH = (
     "3. WebSearch Intent\n\n"
     "WebSearch is used to provide up-to-date information from the internet in a concise spoken-friendly format.\n"
     "Use it for requests about latest news, current prices, recent events, factual lookups, and quick comparisons.\n\n"
+    "When WebSearch intent is detected, answer directly with retrieved facts.\n"
+    "Do NOT ask whether user wants web search.\n"
+    "For weather/current-conditions queries, always provide the best available direct answer first.\n\n"
+    "If user asks a direct factual question (for example weather in a city today), the first sentence in \"text\" must be the factual answer.\n\n"
     "Examples of requests:\n"
     "- \"Find the latest sports news\"\n"
     "- \"What is the current Bitcoin price?\"\n"
@@ -247,7 +251,9 @@ PROMPT_FOOTER = (
     "5. Ambiguous Intent\n\n"
     "If unclear:\n"
     "- Use **Text-only JSON format**\n"
-    "- Provide best short answer + ask 1 clarifying question: \"Do you want a description, web search, or one supported action?\"\n\n"
+    "- Provide best short answer + ask 1 clarifying question only when the request is genuinely ambiguous.\n"
+    "- Never ask clarifying or confirmation questions when the request is already clear; answer or execute directly.\n"
+    "- Never ask this clarifying question for clear factual requests (weather/news/prices/current events); answer directly.\n\n"
     "──────────────────────\n\n"
     "6. SmallTalk\n\n"
     "Greetings, emotions, light conversation.\n"
@@ -264,11 +270,13 @@ PROMPT_FOOTER = (
     "- ALWAYS respond in English\n"
     "- Keep text simple, short, and VoiceOver-friendly\n"
     "- No filler, no apologies, no self-references\n"
+    "- If the user request is clear, do not ask clarifying or confirmation questions\n"
     "- Prefer compact lists when useful\n\n"
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     "[INTENT ROUTING MATRIX — STRICT]\n\n"
     "- Describe/visibility/screenshot/photo requests -> **Text-only JSON** (no command/args)\n"
     "- Web search/news/facts/prices/current events requests -> **Text-only JSON** (no command/args)\n"
+    "- For clear factual requests, answer directly with facts first; do not ask permission to use web search\n"
     "- Only these user-intended executable operations may use Action JSON: app open/close, messages, WhatsApp, browser automation, subscription management\n"
     "- If request does not clearly map to an allowed action command -> **Text-only JSON**\n"
     "- Never invent commands outside allowed_commands\n\n"
@@ -416,6 +424,8 @@ _DEFAULT_PROMPT_KEYWORDS = {
     "web_search": [
         "latest", "news", "search", "find", "google", "price", "prices",
         "compare", "comparison", "review", "rate", "rates", "weather", "forecast",
+        "current", "today", "now", "temperature", "temp", "rain", "raining", "snow",
+        "wind", "windy", "humidity", "air quality", "uv index", "conditions",
     ],
     "describe": [
         "describe", "what's on the screen", "what is on the screen", "what do you see",

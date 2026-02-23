@@ -45,11 +45,11 @@ log_header() {
 # КОНФИГУРАЦИЯ
 # =============================================================================
 
-RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-Nexy}"
-VM_NAME="${AZURE_VM_NAME:-nexy-regular}"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 SERVER_USER="${AZURE_ADMIN_USERNAME:-azureuser}"
 SERVER_PATH="/home/$SERVER_USER/voice-assistant"
-GITHUB_REPO="${GITHUB_REPO:-https://github.com/Seregawpn/Nexy_server.git}"
+GITHUB_REPO="${GITHUB_REPO:-https://github.com/Seregawpn/Nexy.git}"
 
 # =============================================================================
 # ПРОВЕРКА ПРЕДВАРИТЕЛЬНЫХ ТРЕБОВАНИЙ

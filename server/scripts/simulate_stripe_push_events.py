@@ -3,11 +3,15 @@ import time
 import json
 import hmac
 import hashlib
+import os
 
 # Config
 URL_BASE = "http://localhost:8080"
-import os
-WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_4930ebc7d487722e8f36a42192f7375a3592047035372a52d6cf3bd0974a665d")
+_mode = os.getenv("STRIPE_MODE", "test").strip().lower()
+if _mode == "live":
+    WEBHOOK_SECRET = os.getenv("STRIPE_LIVE_WEBHOOK_SECRET", "")
+else:
+    WEBHOOK_SECRET = os.getenv("STRIPE_TEST_WEBHOOK_SECRET", "")
 
 def send_event(event_type, description, status="active"):
     unique_id = int(time.time() * 1000)

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Применение исправленной конфигурации Nginx на удалённом сервере
 
-RESOURCE_GROUP="NetworkWatcherRG"
-VM_NAME="Nexy"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-NexyNewRG}"
+VM_NAME="${AZURE_VM_NAME:-NexyNew}"
 
 # Создаём исправленную конфигурацию
 FIXED_CONFIG=$(cat << 'EOF'
