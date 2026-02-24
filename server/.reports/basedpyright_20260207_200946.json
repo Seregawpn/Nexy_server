@@ -1,0 +1,78 @@
+
+{
+    "version": "1.37.4",
+    "time": "1770512992739",
+    "generalDiagnostics": [
+        {
+            "file": "/Users/sergiyzasorin/Fix_new/server/server/modules/grpc_service/core/grpc_server.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 829,
+                    "character": 18
+                },
+                "end": {
+                    "line": 836,
+                    "character": 13
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/Users/sergiyzasorin/Fix_new/server/server/modules/memory_management/core/memory_manager.py",
+            "severity": "error",
+            "message": "Expression of type \"None\" cannot be assigned to parameter of type \"str\"\n  \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 131,
+                    "character": 88
+                },
+                "end": {
+                    "line": 131,
+                    "character": 92
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/Users/sergiyzasorin/Fix_new/server/server/modules/text_processing/providers/langchain_gemini_provider.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 356,
+                    "character": 26
+                },
+                "end": {
+                    "line": 363,
+                    "character": 21
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/Users/sergiyzasorin/Fix_new/server/server/modules/text_processing/providers/langchain_gemini_provider.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 474,
+                    "character": 26
+                },
+                "end": {
+                    "line": 481,
+                    "character": 21
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        }
+    ],
+    "summary": {
+        "filesAnalyzed": 138,
+        "errorCount": 4,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 5.616
+    }
+}

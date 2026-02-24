@@ -1,0 +1,170 @@
+# =====================================================
+# ВАЖНО: Это ПРИМЕР конфигурации
+# =====================================================
+# Этот файл НЕ является источником истины для production.
+# Реальная конфигурация загружается из:
+# 1. unified_config.py (значения по умолчанию)
+# 2. config.env (переменные окружения, переопределяют defaults)
+# 3. Этот YAML файл используется только как справочный пример
+#
+# Для синхронизации с unified_config.py используйте:
+# - Audio: sample_rate=48000 (единый источник истины для сервера и клиента)
+# - Image: image_format=webp (не jpeg)
+# - Features: forward_assistant_actions=true для close_app/open_app
+# =====================================================
+
+database:
+  host: localhost
+  port: 5432
+  name: voice_assistant_db
+  user: postgres
+  password: ''
+
+grpc:
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
+  port: 50051
+  max_workers: 10
+
+http:
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
+  port: 8080
+
+audio:
+  # Синхронизировано с unified_config.py: 48000 (48kHz) по умолчанию - единый источник истины
+  sample_rate: 48000
+  chunk_size: 1024
+  format: int16
+  channels: 1
+  bits_per_sample: 16
+  azure_speech_key: ''
+  azure_speech_region: ''
+  azure_voice_name: en-US-AriaNeural
+  azure_voice_style: friendly
+  azure_speech_rate: 1.0
+  azure_speech_pitch: 1.0
+  azure_speech_volume: 1.0
+  azure_audio_format: riff-48khz-16bit-mono-pcm
+  streaming_chunk_size: 4096
+  streaming_enabled: true
+
+text_processing:
+  gemini_api_key: ''
+  langchain_model: gemini-flash-lite-latest
+  temperature: 0.7
+  max_tokens: 2048
+  tools:
+    - google_search
+  # gemini_system_prompt: определен в unified_config.py (единый источник истины)
+  # Не дублируем здесь, чтобы избежать рассинхронизации
+  # Синхронизировано с unified_config.py: webp по умолчанию
+  image_format: webp
+  image_mime_type: image/webp
+  image_max_size: 10485760
+  streaming_chunk_size: 8192
+  fallback_timeout: 30
+  circuit_breaker_threshold: 3
+  circuit_breaker_timeout: 300
+  max_concurrent_requests: 10
+  # request_timeout: см. единый источник истины в unified_config.py
+
+memory:
+  gemini_api_key: ''
+  max_short_term_memory_size: 10240
+  max_long_term_memory_size: 10240
+  memory_timeout: 2.0
+  analysis_timeout: 5.0
+  memory_analysis_model: gemini-flash-lite-latest
+  memory_analysis_temperature: 0.3
+
+session:
+  max_sessions: 100
+  session_timeout: 3600
+  hardware_id_length: 32
+
+interrupt:
+  global_interrupt_timeout: 300
+  session_interrupt_timeout: 60
+  max_active_sessions: 50
+
+workflow:
+  stream_min_chars: 15
+  stream_min_words: 3
+  stream_first_sentence_min_words: 2
+  stream_punct_flush_strict: true
+  force_flush_max_chars: 0
+  # Guard по hardware_id: если true, блокирует параллельные сессии одного устройства
+  # Если false (по умолчанию), допускаются параллельные сессии одного hardware_id
+  # Управляется через env: PREVENT_CONCURRENT_HARDWARE_ID_SESSIONS=true
+  prevent_concurrent_hardware_id_sessions: false
+
+update:
+  enabled: true
+  host: 0.0.0.0  # override при необходимости; по умолчанию зависит от NEXY_ENV
+  port: 8081
+  cors_enabled: true
+  cache_control: no-cache, no-store, must-revalidate
+  require_https: false
+  verify_signatures: true
+  log_requests: true
+  log_downloads: true
+  updates_dir: server/updates
+  downloads_dir: server/updates/downloads
+  keys_dir: server/updates/keys
+  manifests_dir: server/updates/manifests
+  default_version: 2.0.0.8  # Единый источник истины: SERVER_VERSION из config.env
+  default_build: 2.0.0.8  # Единый источник истины: SERVER_BUILD из config.env
+  default_arch: universal2
+  default_min_os: 11.0
+
+server:
+  version: 2.0.0.8  # Единый источник истины: SERVER_VERSION из config.env
+  build: 2.0.0.8  # Единый источник истины: SERVER_BUILD из config.env
+  channel: stable
+
+logging:
+  level: INFO
+  log_requests: true
+  log_responses: false
+  log_file: server.log
+  max_file_size: 10485760
+  backup_count: 5
+
+features:
+  use_module_coordinator: true
+  use_workflow_integrations: true
+  use_fallback_manager: true
+  # CRITICAL: Must be true for close_app/open_app to work
+  # Set via env: FORWARD_ASSISTANT_ACTIONS=true
+  forward_assistant_actions: true  # Enabled: true (MCP command forwarding enabled)
+
+kill_switches:
+  disable_module_coordinator: false
+  disable_workflow_integrations: false
+  # CRITICAL: Must be false for close_app/open_app to work
+  # Set via env: NEXY_KS_DISABLE_FORWARD_ASSISTANT_ACTIONS=false
+  disable_forward_assistant_actions: false  # Default: false (set to true to disable actions)
+
+backpressure: {}
+# backpressure: см. единый источник истины в unified_config.py
+
+# Browser Automation (F-2025-015)
+# AI-управляемая автоматизация браузера через browser-use Agent
+# Автоматически устанавливает Chromium при первом запуске
+# Голосовое уведомление при скачивании (macOS)
+browser_use:
+  enabled: true                    # Включить модуль browser automation
+  keep_browser_open: true          # Сохранять браузер между задачами (персистентные сессии)
+  default_preset: ultra_fast       # Пресет: ultra_fast, fast, standard
+  timeout_sec: 120                 # Таймаут выполнения задачи (сек)
+  max_steps: 50                    # Максимум шагов AI-агента на задачу
+  gemini_model: gemini-2.5-flash   # LLM модель для browser-агента
+
+# Payment Automation (F-2025-018)
+# AI-управляемая автоматизация платежей через payment-use Agent
+payment_use:
+  enabled: true                    # Включить модуль payment automation
+  timeout_sec: 120                 # Таймаут выполнения задачи (сек)
+  max_steps: 50                    # Максимум шагов AI-агента на задачу
+  gemini_model: gemini-2.5-flash   # LLM модель для payment-агента
+  log_steps: true                  # Логировать шаги выполнения
+  log_transactions: true           # Логировать транзакции

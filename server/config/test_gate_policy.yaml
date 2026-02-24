@@ -1,0 +1,26 @@
+critical_test_map:
+  "server/integrations/workflow_integrations/streaming_workflow_integration.py":
+    - "test_streaming_workflow_mcp.py"
+    - "test_grpc_mcp_integration.py"
+  "server/integrations/core/assistant_response_parser.py":
+    - "test_assistant_response_parser.py"
+    - "test_streaming_workflow_mcp.py"
+  "server/integrations/core/json_stream_extractor.py":
+    - "test_streaming_workflow_mcp.py"
+  "server/integrations/service_integrations/grpc_service_integration.py":
+    - "test_grpc_mcp_integration.py"
+    - "test_grpc_identifier_validation.py"
+  "server/modules/grpc_service/":
+    - "test_grpc_mcp_integration.py"
+    - "test_grpc_identifier_validation.py"
+  "server/config/prompts.py":
+    - "test_prompt_keywords.py"
+    - "test_config_validation.py"
+  "server/config/unified_config.py":
+    - "test_config_validation.py"
+    - "test_config_drift.py"
+
+critical_full_suite_patterns:
+  - "server/modules/subscription/"
+  - "server/api/webhooks/stripe_webhook.py"
+  - "server/main.py"
