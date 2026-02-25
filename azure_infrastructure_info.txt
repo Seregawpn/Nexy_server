@@ -1,0 +1,15 @@
+# Azure Infrastructure Information
+# Generated: Fri Feb 20 19:45:26 EST 2026
+
+RESOURCE_GROUP=NexyNewRG
+LOCATION=canadacentral
+VM_NAME=NexyNew
+PUBLIC_IP=nexy-prod-sergiy.canadacentral.cloudapp.azure.com
+ADMIN_USERNAME=azureuser
+SUBSCRIPTION_ID=56a06a09-c7fd-4511-b0fe-88d876343d60
+
+# SSH Connection
+ssh azureuser@nexy-prod-sergiy.canadacentral.cloudapp.azure.com
+
+# Health Check (после настройки)
+curl -sk https://nexy-prod-sergiy.canadacentral.cloudapp.azure.com/health

@@ -1,0 +1,30 @@
+
+{
+    "version": "1.37.4",
+    "time": "1770513564479",
+    "generalDiagnostics": [
+        {
+            "file": "/Users/sergiyzasorin/Fix_new/server/server/modules/text_processing/providers/langchain_gemini_provider.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 474,
+                    "character": 26
+                },
+                "end": {
+                    "line": 481,
+                    "character": 21
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        }
+    ],
+    "summary": {
+        "filesAnalyzed": 138,
+        "errorCount": 1,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 4.682
+    }
+}
