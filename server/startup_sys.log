@@ -1,0 +1,305 @@
+ts=2026-01-18T01:47:09.799556 level=INFO scope=update decision=init msg=Update Server module found
+ts=2026-01-18T01:47:09.800958 level=INFO scope=grpc msg=Backpressure idle-cleanup started (timeout: 900s)
+ts=2026-01-18T01:47:09.801022 level=INFO scope=server decision=start ctx={"port": 8080, "version": "1.6.0.47"} msg=Server started
+ts=2026-01-18T01:47:09.804726 level=INFO scope=module msg=[F-2025-017] Subscription module initialized
+ts=2026-01-18T01:47:09.817806 level=INFO scope=subscription decision=init ctx={"routes": ["/webhook/stripe"]} msg=[F-2025-017] Subscription module initialized, webhook routes added
+ts=2026-01-18T01:47:09.818102 level=WARNING scope=module msg=[F-2025-017] APScheduler not installed - periodic tasks disabled
+ts=2026-01-18T01:47:09.818688 level=INFO scope=server decision=start ctx={"host": "127.0.0.1", "port": 8080, "endpoints": ["/health", "/status"]} msg=HTTP server started
+ts=2026-01-18T01:47:09.818763 level=INFO scope=update decision=start msg=Starting update server
+ts=2026-01-18T01:47:09.818929 level=INFO scope=module msg=Module update created
+ts=2026-01-18T01:47:09.818977 level=INFO scope=update msg=🔧 Инициализация UpdateManager...
+ts=2026-01-18T01:47:09.819194 level=INFO scope=update msg=🔧 Инициализация VersionProvider...
+ts=2026-01-18T01:47:09.819238 level=INFO scope=update msg=🔧 Инициализация ManifestProvider...
+ts=2026-01-18T01:47:09.819291 level=INFO scope=update msg=🔧 Инициализация ArtifactProvider...
+ts=2026-01-18T01:47:09.819339 level=INFO scope=update msg=🔧 Инициализация UpdateServerProvider...
+ts=2026-01-18T01:47:09.819609 level=INFO scope=update msg=✅ Все провайдеры инициализированы
+ts=2026-01-18T01:47:09.819651 level=INFO scope=update msg=✅ UpdateManager инициализирован
+ts=2026-01-18T01:47:09.819683 level=INFO scope=update msg=🚀 Запуск UpdateManager...
+ts=2026-01-18T01:47:09.820092 level=INFO scope=update msg=============================================================
+ts=2026-01-18T01:47:09.820129 level=INFO scope=update msg=🔄 СЕРВЕР ОБНОВЛЕНИЙ ЗАПУЩЕН
+ts=2026-01-18T01:47:09.820159 level=INFO scope=update msg=============================================================
+ts=2026-01-18T01:47:09.820190 level=INFO scope=update msg=🌐 URL: http://127.0.0.1:8081
+ts=2026-01-18T01:47:09.820218 level=INFO scope=update msg=📡 AppCast: http://127.0.0.1:8081/appcast.xml
+ts=2026-01-18T01:47:09.820249 level=INFO scope=update msg=📁 Downloads: http://127.0.0.1:8081/downloads/
+ts=2026-01-18T01:47:09.820278 level=INFO scope=update msg=💚 Health: http://127.0.0.1:8081/health
+ts=2026-01-18T01:47:09.820307 level=INFO scope=update msg=============================================================
+ts=2026-01-18T01:47:09.820336 level=INFO scope=update msg=🎯 Готов для обслуживания обновлений!
+ts=2026-01-18T01:47:09.820365 level=INFO scope=update msg=============================================================
+ts=2026-01-18T01:47:09.820400 level=INFO scope=update msg=✅ UpdateManager запущен
+ts=2026-01-18T01:47:09.820434 level=INFO scope=update decision=start ctx={"host": "127.0.0.1", "port": 8081} msg=Update server started
+ts=2026-01-18T01:47:09.820482 level=INFO scope=grpc decision=start ctx={"host": "127.0.0.1", "port": 50051} msg=Starting gRPC server
+ts=2026-01-18T01:47:09.959210 level=INFO scope=grpc msg=🚀 Запуск оптимизированного gRPC сервера на 127.0.0.1:50051 с 100 воркерами
+ts=2026-01-18T01:47:09.962395 level=INFO scope=grpc msg=🚀 Инициализация нового gRPC сервера с модулями...
+ts=2026-01-18T01:47:09.962480 level=INFO scope=module msg=Module grpc_service created
+ts=2026-01-18T01:47:09.962556 level=INFO scope=grpc msg=gRPC Service Manager created
+ts=2026-01-18T01:47:09.962592 level=INFO scope=grpc msg=✅ Новый gRPC сервер создан
+ts=2026-01-18T01:47:09.962630 level=INFO scope=grpc msg=🔧 Инициализация модулей...
+ts=2026-01-18T01:47:09.962683 level=INFO scope=grpc msg=Инициализация gRPC Service Manager...
+ts=2026-01-18T01:47:09.962722 level=INFO scope=grpc msg=✅ Используется ModuleCoordinator (новый подход)
+ts=2026-01-18T01:47:09.962754 level=INFO scope=grpc msg=Инициализация с ModuleCoordinator...
+ts=2026-01-18T01:47:09.962791 level=INFO scope=module msg=ModuleCoordinator создан
+ts=2026-01-18T01:47:09.962822 level=INFO scope=grpc msg=Регистрация модулей через ModuleFactory...
+ts=2026-01-18T01:47:10.648930 level=INFO scope=module msg=Module text_processing created
+ts=2026-01-18T01:47:10.649013 level=INFO scope=module msg=✅ Модуль 'text_processing' создан через фабрику: TextProcessingModule
+ts=2026-01-18T01:47:10.649065 level=INFO scope=module msg=Регистрация модуля 'text_processing' с capability 'text_processing' (optional=False)
+ts=2026-01-18T01:47:10.649111 level=INFO scope=module msg=Инициализация модуля text_processing...
+ts=2026-01-18T01:47:10.649166 level=INFO scope=module msg=TextProcessor: Using LangChain provider
+ts=2026-01-18T01:47:10.649209 level=INFO scope=server msg=Provider langchain_gemini created with priority 1
+ts=2026-01-18T01:47:10.649246 level=INFO scope=module msg=LangChainGeminiProvider initialized: available=True
+ts=2026-01-18T01:47:10.649277 level=INFO scope=module msg=TextProcessor initialized with LangChain provider
+ts=2026-01-18T01:47:10.649305 level=INFO scope=module msg=Initializing TextProcessor with LangChain provider...
+ts=2026-01-18T01:47:10.649335 level=INFO scope=module msg=🔍 ДИАГНОСТИКА LangChainGeminiProvider.initialize():
+ts=2026-01-18T01:47:10.649369 level=INFO scope=module msg=   → is_available: True
+ts=2026-01-18T01:47:10.649397 level=INFO scope=module msg=   → api_key present: True
+ts=2026-01-18T01:47:10.649425 level=INFO scope=module msg=   → model_name: gemini-3-flash-preview
+ts=2026-01-18T01:47:10.649455 level=INFO scope=module msg=🔍 Создаем LangChain клиент...
+ts=2026-01-18T01:47:10.649483 level=INFO scope=module msg=✅ Google Search включен
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1768700830.678532 1335514 alts_credentials.cc:93] ALTS creds ignored. Not running on GCP and untrusted ALTS is not enabled.
+ts=2026-01-18T01:47:10.680598 level=INFO scope=module msg=✅ LangChain клиент создан
+ts=2026-01-18T01:47:10.680705 level=INFO scope=module msg=🔍 Тестируем подключение к LangChain...
+ts=2026-01-18T01:47:12.614830 level=INFO scope=module msg=✅ LangChain initialized: gemini-3-flash-preview
+ts=2026-01-18T01:47:12.614969 level=INFO scope=module msg=TextProcessor initialized with LangChain provider
+ts=2026-01-18T01:47:12.615137 level=INFO scope=module msg=✅ Модуль text_processing инициализирован
+ts=2026-01-18T01:47:12.615182 level=INFO scope=module msg=✅ Модуль 'text_processing' зарегистрирован с capability 'text_processing'
+ts=2026-01-18T01:47:12.615227 level=INFO scope=grpc msg=✅ Модуль 'text_processing' создан и зарегистрирован
+ts=2026-01-18T01:47:12.637419 level=INFO scope=module msg=Module audio_generation created
+ts=2026-01-18T01:47:12.637488 level=INFO scope=module msg=✅ Модуль 'audio_generation' создан через фабрику: AudioGenerationAdapter
+ts=2026-01-18T01:47:12.637538 level=INFO scope=module msg=Регистрация модуля 'audio_generation' с capability 'audio_generation' (optional=True)
+ts=2026-01-18T01:47:12.637585 level=INFO scope=module msg=Инициализация адаптера audio_generation...
+ts=2026-01-18T01:47:12.637636 level=INFO scope=module msg=AudioProcessor initialized
+ts=2026-01-18T01:47:12.637665 level=INFO scope=module msg=Initializing AudioProcessor...
+ts=2026-01-18T01:47:12.637707 level=INFO scope=server msg=Provider edge_tts created with priority 1
+ts=2026-01-18T01:47:12.637762 level=INFO scope=module msg=Edge TTS Provider initialized: available=True, voice=en-US-AriaNeural
+ts=2026-01-18T01:47:12.637803 level=INFO scope=module msg=Created Edge TTS provider
+ts=2026-01-18T01:47:15.652131 level=INFO scope=module msg=Edge TTS Provider initialized successfully with voice: en-US-AriaNeural
+ts=2026-01-18T01:47:15.652239 level=INFO scope=module msg=AudioProcessor initialized successfully
+ts=2026-01-18T01:47:15.652295 level=INFO scope=module msg=✅ Адаптер audio_generation инициализирован
+ts=2026-01-18T01:47:15.652345 level=INFO scope=module msg=✅ Модуль 'audio_generation' зарегистрирован с capability 'audio_generation'
+ts=2026-01-18T01:47:15.652393 level=INFO scope=grpc msg=✅ Модуль 'audio_generation' создан и зарегистрирован
+ts=2026-01-18T01:47:15.655329 level=INFO scope=module msg=Module memory_management created
+ts=2026-01-18T01:47:15.655385 level=INFO scope=module msg=✅ Модуль 'memory_management' создан через фабрику: MemoryManagementAdapter
+ts=2026-01-18T01:47:15.655432 level=INFO scope=module msg=Регистрация модуля 'memory_management' с capability 'memory_management' (optional=False)
+ts=2026-01-18T01:47:15.655481 level=INFO scope=module msg=Инициализация адаптера memory_management...
+ts=2026-01-18T01:47:15.655597 level=INFO scope=module msg=✅ MemoryAnalyzer initialized with Gemini API
+ts=2026-01-18T01:47:15.655635 level=INFO scope=module msg=✅ MemoryAnalyzer initialized successfully
+ts=2026-01-18T01:47:15.655669 level=INFO scope=module msg=✅ MemoryManager initialized successfully
+ts=2026-01-18T01:47:15.655705 level=INFO scope=module msg=✅ Адаптер memory_management инициализирован
+ts=2026-01-18T01:47:15.655802 level=INFO scope=module msg=✅ Модуль 'memory_management' зарегистрирован с capability 'memory_management'
+ts=2026-01-18T01:47:15.655876 level=INFO scope=grpc msg=✅ Модуль 'memory_management' создан и зарегистрирован
+ts=2026-01-18T01:47:15.656433 level=INFO scope=module msg=Module database created
+ts=2026-01-18T01:47:15.656493 level=INFO scope=module msg=✅ Модуль 'database' создан через фабрику: DatabaseAdapter
+ts=2026-01-18T01:47:15.656538 level=INFO scope=module msg=Регистрация модуля 'database' с capability 'database' (optional=True)
+ts=2026-01-18T01:47:15.656583 level=INFO scope=module msg=Инициализация адаптера database...
+ts=2026-01-18T01:47:15.656643 level=INFO scope=module msg=DatabaseManager initialized
+ts=2026-01-18T01:47:15.656674 level=INFO scope=module msg=Initializing DatabaseManager...
+ts=2026-01-18T01:47:15.656733 level=INFO scope=server msg=Provider postgresql created with priority 1
+ts=2026-01-18T01:47:15.656774 level=INFO scope=module msg=PostgreSQL Provider initialized with host: localhost:5432
+ts=2026-01-18T01:47:15.656804 level=INFO scope=module msg=Created database provider
+ts=2026-01-18T01:47:15.656830 level=INFO scope=module msg=Initializing PostgreSQL Provider...
+ts=2026-01-18T01:47:15.710782 level=INFO scope=module msg=Connection pool created: 1-10 connections
+ts=2026-01-18T01:47:15.719802 level=INFO scope=module msg=Database connection test successful
+ts=2026-01-18T01:47:15.720154 level=INFO scope=module msg=PostgreSQL Provider initialized successfully
+ts=2026-01-18T01:47:15.720191 level=INFO scope=module msg=PostgreSQL Provider initialized successfully
+ts=2026-01-18T01:47:15.720222 level=INFO scope=module msg=DatabaseManager initialized successfully
+ts=2026-01-18T01:47:15.720268 level=INFO scope=module msg=✅ Адаптер database инициализирован
+ts=2026-01-18T01:47:15.720305 level=INFO scope=module msg=✅ Модуль 'database' зарегистрирован с capability 'database'
+ts=2026-01-18T01:47:15.720341 level=INFO scope=grpc msg=✅ Модуль 'database' создан и зарегистрирован
+ts=2026-01-18T01:47:15.725108 level=INFO scope=module msg=Module session_management created
+ts=2026-01-18T01:47:15.725169 level=INFO scope=module msg=✅ Модуль 'session_management' создан через фабрику: SessionManagementAdapter
+ts=2026-01-18T01:47:15.725217 level=INFO scope=module msg=Регистрация модуля 'session_management' с capability 'session_management' (optional=False)
+ts=2026-01-18T01:47:15.725266 level=INFO scope=module msg=Инициализация адаптера session_management...
+ts=2026-01-18T01:47:15.725310 level=INFO scope=module msg=SessionManager initialized
+ts=2026-01-18T01:47:15.725343 level=INFO scope=module msg=Initializing SessionManager...
+ts=2026-01-18T01:47:15.725381 level=INFO scope=server msg=Provider hardware_id created with priority 1
+ts=2026-01-18T01:47:15.725413 level=INFO scope=module msg=HardwareID Provider initialized for client ID processing
+ts=2026-01-18T01:47:15.725449 level=INFO scope=server msg=Provider session_tracker created with priority 1
+ts=2026-01-18T01:47:15.725487 level=INFO scope=module msg=Session Tracker initialized with max_sessions: 100
+ts=2026-01-18T01:47:15.725516 level=INFO scope=module msg=Created session management providers
+ts=2026-01-18T01:47:15.725544 level=INFO scope=module msg=Initializing HardwareID Provider...
+ts=2026-01-18T01:47:15.725571 level=INFO scope=module msg=HardwareID Provider initialized successfully - ready to receive client IDs
+ts=2026-01-18T01:47:15.725601 level=INFO scope=module msg=Hardware ID Provider initialized successfully
+ts=2026-01-18T01:47:15.725629 level=INFO scope=module msg=Initializing Session Tracker...
+ts=2026-01-18T01:47:15.725675 level=INFO scope=module msg=Background tasks started
+ts=2026-01-18T01:47:15.725703 level=INFO scope=module msg=Session Tracker initialized successfully
+ts=2026-01-18T01:47:15.725730 level=INFO scope=module msg=Session Tracker initialized successfully
+ts=2026-01-18T01:47:15.725757 level=INFO scope=module msg=Initialized 2/2 providers
+ts=2026-01-18T01:47:15.725782 level=INFO scope=module msg=SessionManager initialized successfully
+ts=2026-01-18T01:47:15.725812 level=INFO scope=module msg=✅ Адаптер session_management инициализирован
+ts=2026-01-18T01:47:15.725843 level=INFO scope=module msg=✅ Модуль 'session_management' зарегистрирован с capability 'session_management'
+ts=2026-01-18T01:47:15.725878 level=INFO scope=grpc msg=✅ Модуль 'session_management' создан и зарегистрирован
+ts=2026-01-18T01:47:15.727793 level=INFO scope=module msg=Module interrupt_handling created
+ts=2026-01-18T01:47:15.727841 level=INFO scope=module msg=✅ Модуль 'interrupt_handling' создан через фабрику: InterruptHandlingAdapter
+ts=2026-01-18T01:47:15.727883 level=INFO scope=module msg=Регистрация модуля 'interrupt_handling' с capability 'interrupt_handling' (optional=True)
+ts=2026-01-18T01:47:15.727924 level=INFO scope=module msg=Инициализация адаптера interrupt_handling...
+ts=2026-01-18T01:47:15.727981 level=INFO scope=module msg=Module interrupt_handling created
+ts=2026-01-18T01:47:15.728013 level=INFO scope=module msg=Interrupt Manager created
+ts=2026-01-18T01:47:15.728042 level=INFO scope=module msg=Initializing Interrupt Manager...
+ts=2026-01-18T01:47:15.729267 level=INFO scope=server msg=Provider global_flag_provider created with priority 1
+ts=2026-01-18T01:47:15.729310 level=INFO scope=module msg=Global Flag Provider created
+ts=2026-01-18T01:47:15.729342 level=INFO scope=server msg=Provider session_tracker_provider created with priority 1
+ts=2026-01-18T01:47:15.729377 level=INFO scope=module msg=Session Tracker Provider created
+ts=2026-01-18T01:47:15.729404 level=INFO scope=module msg=Initializing Global Flag Provider...
+ts=2026-01-18T01:47:15.729433 level=INFO scope=module msg=Global Flag Provider initialized successfully
+ts=2026-01-18T01:47:15.729461 level=INFO scope=module msg=Initializing Session Tracker Provider...
+ts=2026-01-18T01:47:15.729488 level=INFO scope=module msg=Session Tracker Provider initialized successfully
+ts=2026-01-18T01:47:15.729527 level=INFO scope=module msg=Interrupt providers initialized
+ts=2026-01-18T01:47:15.729557 level=INFO scope=module msg=Interrupt Manager initialized successfully
+ts=2026-01-18T01:47:15.729587 level=INFO scope=module msg=✅ Адаптер interrupt_handling инициализирован
+ts=2026-01-18T01:47:15.729618 level=INFO scope=module msg=✅ Модуль 'interrupt_handling' зарегистрирован с capability 'interrupt_handling'
+ts=2026-01-18T01:47:15.729652 level=INFO scope=grpc msg=✅ Модуль 'interrupt_handling' создан и зарегистрирован
+ts=2026-01-18T01:47:15.731103 level=INFO scope=module msg=Module text_filtering created
+ts=2026-01-18T01:47:15.731141 level=INFO scope=module msg=✅ Модуль 'text_filtering' создан через фабрику: TextFilteringAdapter
+ts=2026-01-18T01:47:15.731177 level=INFO scope=module msg=Регистрация модуля 'text_filtering' с capability 'text_filtering' (optional=True)
+ts=2026-01-18T01:47:15.731217 level=INFO scope=module msg=Инициализация адаптера text_filtering...
+ts=2026-01-18T01:47:15.731283 level=INFO scope=module msg=Module text_filtering created
+ts=2026-01-18T01:47:15.731317 level=INFO scope=module msg=Text Filter Manager created
+ts=2026-01-18T01:47:15.731344 level=INFO scope=module msg=Initializing Text Filter Manager...
+ts=2026-01-18T01:47:15.732510 level=INFO scope=server msg=Provider text_cleaning_provider created with priority 1
+ts=2026-01-18T01:47:15.732549 level=INFO scope=module msg=Text Cleaning Provider created
+ts=2026-01-18T01:47:15.732581 level=INFO scope=server msg=Provider content_filtering_provider created with priority 1
+ts=2026-01-18T01:47:15.732614 level=INFO scope=module msg=Content Filtering Provider created
+ts=2026-01-18T01:47:15.732644 level=INFO scope=server msg=Provider sentence_processing_provider created with priority 1
+ts=2026-01-18T01:47:15.732676 level=INFO scope=module msg=Sentence Processing Provider created
+ts=2026-01-18T01:47:15.732704 level=INFO scope=module msg=Initializing Text Cleaning Provider...
+ts=2026-01-18T01:47:15.732734 level=INFO scope=module msg=Text Cleaning Provider initialized successfully
+ts=2026-01-18T01:47:15.732762 level=INFO scope=module msg=Initializing Content Filtering Provider...
+ts=2026-01-18T01:47:15.732790 level=INFO scope=module msg=Content Filtering Provider initialized successfully
+ts=2026-01-18T01:47:15.732817 level=INFO scope=module msg=Initializing Sentence Processing Provider...
+ts=2026-01-18T01:47:15.732845 level=INFO scope=module msg=Sentence Processing Provider initialized successfully
+ts=2026-01-18T01:47:15.732873 level=INFO scope=module msg=Text filter providers initialized
+ts=2026-01-18T01:47:15.732901 level=INFO scope=module msg=Text Filter Manager initialized successfully
+ts=2026-01-18T01:47:15.732931 level=INFO scope=module msg=✅ Адаптер text_filtering инициализирован
+ts=2026-01-18T01:47:15.732961 level=INFO scope=module msg=✅ Модуль 'text_filtering' зарегистрирован с capability 'text_filtering'
+ts=2026-01-18T01:47:15.732994 level=INFO scope=grpc msg=✅ Модуль 'text_filtering' создан и зарегистрирован
+ts=2026-01-18T01:47:15.734810 level=WARNING scope=module msg=[F-2025-015-browser-use] browser-use not installed, using stub mode
+ts=2026-01-18T01:47:15.734927 level=INFO scope=module msg=Module browser_use created
+ts=2026-01-18T01:47:15.734968 level=INFO scope=module msg=✅ Модуль 'browser_use' создан через фабрику: BrowserUseModuleAdapter
+ts=2026-01-18T01:47:15.735009 level=INFO scope=module msg=Регистрация модуля 'browser_use' с capability 'browser_use' (optional=False)
+ts=2026-01-18T01:47:15.735051 level=INFO scope=module msg=[F-2025-015-browser-use] keep_browser_open=True
+ts=2026-01-18T01:47:15.735082 level=WARNING scope=module msg=[F-2025-015-browser-use] browser-use not available, module will use stub mode
+ts=2026-01-18T01:47:15.735120 level=INFO scope=module msg=[F-2025-015-browser-use] BrowserUseModule initialized
+ts=2026-01-18T01:47:15.735154 level=INFO scope=module msg=[F-2025-015-browser-use] BrowserUseModuleAdapter initialized
+ts=2026-01-18T01:47:15.735184 level=INFO scope=module msg=✅ Модуль 'browser_use' зарегистрирован с capability 'browser_use'
+ts=2026-01-18T01:47:15.735217 level=INFO scope=grpc msg=✅ Модуль 'browser_use' создан и зарегистрирован
+ts=2026-01-18T01:47:15.735251 level=INFO scope=module msg=Инициализация всех модулей...
+ts=2026-01-18T01:47:15.735297 level=WARNING scope=module msg=Модуль 'browser_use' не готов: ready
+ts=2026-01-18T01:47:15.735328 level=INFO scope=module msg=✅ Координатор инициализирован: 8 модулей
+ts=2026-01-18T01:47:15.735358 level=INFO scope=grpc msg=Создание workflow интеграций...
+ts=2026-01-18T01:47:15.735430 level=INFO scope=workflow method=__init__ msg=🔧 StreamingWorkflowIntegration создан: instance_id=4510061568, inflight_set_id=4509903872
+ts=2026-01-18T01:47:15.735480 level=INFO scope=server msg=MemoryWorkflowIntegration создан
+ts=2026-01-18T01:47:15.735513 level=INFO scope=server msg=InterruptWorkflowIntegration создан
+ts=2026-01-18T01:47:15.735543 level=INFO scope=grpc msg=✅ Workflow интеграции созданы
+ts=2026-01-18T01:47:15.735570 level=INFO scope=grpc msg=Создание service интеграций...
+ts=2026-01-18T01:47:15.735602 level=INFO scope=grpc msg=GrpcServiceIntegration создан
+ts=2026-01-18T01:47:15.735630 level=INFO scope=grpc msg=✅ Service интеграции созданы
+ts=2026-01-18T01:47:15.735656 level=INFO scope=grpc msg=Инициализация интеграций...
+ts=2026-01-18T01:47:15.735682 level=INFO scope=server msg=Инициализация StreamingWorkflowIntegration...
+ts=2026-01-18T01:47:15.735712 level=INFO scope=server msg=✅ StreamingWorkflowIntegration инициализирован успешно
+ts=2026-01-18T01:47:15.735743 level=INFO scope=grpc msg=✅ StreamingWorkflowIntegration инициализирован
+ts=2026-01-18T01:47:15.735773 level=INFO scope=server msg=Инициализация MemoryWorkflowIntegration...
+ts=2026-01-18T01:47:15.735840 level=INFO scope=server msg=✅ MemoryWorkflowIntegration инициализирован успешно
+ts=2026-01-18T01:47:15.735871 level=INFO scope=grpc msg=✅ MemoryWorkflowIntegration инициализирован
+ts=2026-01-18T01:47:15.735900 level=INFO scope=server msg=Инициализация InterruptWorkflowIntegration...
+ts=2026-01-18T01:47:15.735929 level=INFO scope=server msg=✅ InterruptWorkflowIntegration инициализирован успешно
+ts=2026-01-18T01:47:15.735958 level=INFO scope=grpc msg=✅ InterruptWorkflowIntegration инициализирован
+ts=2026-01-18T01:47:15.735997 level=INFO scope=grpc msg=Инициализация GrpcServiceIntegration...
+ts=2026-01-18T01:47:15.736028 level=INFO scope=grpc msg=✅ GrpcServiceIntegration инициализирован успешно
+ts=2026-01-18T01:47:15.736057 level=INFO scope=grpc msg=✅ GrpcServiceIntegration инициализирован
+ts=2026-01-18T01:47:15.736090 level=INFO scope=grpc msg=✅ gRPC Service Manager инициализирован
+ts=2026-01-18T01:47:15.736120 level=INFO scope=grpc msg=✅ gRPC Service Manager инициализирован
+ts=2026-01-18T01:47:15.736155 level=INFO scope=grpc msg=🎉 Новый gRPC сервер полностью инициализирован
+ts=2026-01-18T01:47:15.736746 level=INFO scope=grpc msg=✅ Оптимизированный сервер настроен на 127.0.0.1:50051
+ts=2026-01-18T01:47:15.736781 level=INFO scope=grpc msg=📊 Настройки производительности:
+ts=2026-01-18T01:47:15.736811 level=INFO scope=grpc msg=   - Воркеры: 100
+ts=2026-01-18T01:47:15.736837 level=INFO scope=grpc msg=   - Keep-alive: 30s
+ts=2026-01-18T01:47:15.736867 level=INFO scope=grpc msg=   - Буферы: 4MB
+ts=2026-01-18T01:47:15.736892 level=INFO scope=grpc msg=   - Таймаут клиента: 5 минут
+ts=2026-01-18T01:47:15.738002 level=INFO scope=grpc msg=🎉 Оптимизированный gRPC сервер запущен на 127.0.0.1:50051
+ts=2026-01-18T01:47:33.784265 level=INFO scope=server decision=shutdown ctx={"signal": 2} msg=Received signal 2, initiating graceful shutdown...
+ts=2026-01-18T01:47:39.819368 level=INFO scope=server decision=shutdown msg=Starting graceful shutdown...
+ts=2026-01-18T01:47:39.819737 level=INFO scope=metrics decision=snapshot ctx={"p95_latency": {}, "error_rate": {}, "decision_rate": {}, "total_requests": {}, "total_errors": {}, "timestamp": "2026-01-18T01:47:39.819683"} msg=Metrics snapshot
+ts=2026-01-18T01:47:39.820060 level=INFO scope=update msg=🛑 Остановка UpdateManager...
+ts=2026-01-18T01:47:39.820196 level=INFO scope=update msg=✅ Сервер обновлений остановлен
+ts=2026-01-18T01:47:39.820246 level=INFO scope=update msg=🛑 Остановка VersionProvider...
+ts=2026-01-18T01:47:39.820283 level=INFO scope=update msg=🛑 Остановка ManifestProvider...
+ts=2026-01-18T01:47:39.820319 level=INFO scope=update msg=🛑 Остановка ArtifactProvider...
+ts=2026-01-18T01:47:39.820353 level=INFO scope=update msg=🛑 Остановка UpdateServerProvider...
+ts=2026-01-18T01:47:39.820392 level=INFO scope=update msg=ℹ️ Сервер уже остановлен
+ts=2026-01-18T01:47:39.820444 level=INFO scope=update msg=✅ UpdateManager остановлен
+ts=2026-01-18T01:47:39.820608 level=INFO scope=grpc msg=🧹 Остановка сервера...
+ts=2026-01-18T01:47:39.820644 level=INFO scope=grpc msg=🧹 Очистка ресурсов нового сервера...
+ts=2026-01-18T01:47:39.820677 level=INFO scope=grpc msg=Очистка gRPC Service Manager...
+ts=2026-01-18T01:47:39.820715 level=INFO scope=grpc msg=Очистка GrpcServiceIntegration...
+ts=2026-01-18T01:47:39.820751 level=INFO scope=server msg=Очистка StreamingWorkflowIntegration...
+ts=2026-01-18T01:47:39.820782 level=INFO scope=server msg=✅ StreamingWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.820816 level=INFO scope=server msg=Очистка MemoryWorkflowIntegration...
+ts=2026-01-18T01:47:39.820845 level=INFO scope=server msg=✅ MemoryWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.820877 level=INFO scope=server msg=Очистка InterruptWorkflowIntegration...
+ts=2026-01-18T01:47:39.820909 level=INFO scope=server msg=✅ InterruptWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.820939 level=INFO scope=grpc msg=✅ GrpcServiceIntegration очищен
+ts=2026-01-18T01:47:39.820966 level=INFO scope=grpc msg=✅ GrpcServiceIntegration очищен
+ts=2026-01-18T01:47:39.820996 level=INFO scope=server msg=Очистка StreamingWorkflowIntegration...
+ts=2026-01-18T01:47:39.821025 level=INFO scope=server msg=✅ StreamingWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.821054 level=INFO scope=grpc msg=✅ StreamingWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.821082 level=INFO scope=server msg=Очистка MemoryWorkflowIntegration...
+ts=2026-01-18T01:47:39.821110 level=INFO scope=server msg=✅ MemoryWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.821138 level=INFO scope=grpc msg=✅ MemoryWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.821166 level=INFO scope=server msg=Очистка InterruptWorkflowIntegration...
+ts=2026-01-18T01:47:39.821196 level=INFO scope=server msg=✅ InterruptWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.821226 level=INFO scope=grpc msg=✅ InterruptWorkflowIntegration очищен
+ts=2026-01-18T01:47:39.821258 level=INFO scope=module msg=Очистка всех модулей...
+ts=2026-01-18T01:47:39.821292 level=INFO scope=module msg=Очистка модуля text_processing...
+ts=2026-01-18T01:47:39.821324 level=INFO scope=module msg=Cleaning up TextProcessor...
+ts=2026-01-18T01:47:39.821370 level=INFO scope=module msg=Cleaning up LangChainGeminiProvider...
+ts=2026-01-18T01:47:39.822474 level=INFO scope=module msg=LangChainGeminiProvider cleaned up successfully
+ts=2026-01-18T01:47:39.822538 level=INFO scope=module msg=TextProcessor cleaned up successfully
+ts=2026-01-18T01:47:39.822587 level=INFO scope=module msg=✅ Модуль text_processing очищен
+ts=2026-01-18T01:47:39.822642 level=INFO scope=module msg=Очистка адаптера audio_generation...
+ts=2026-01-18T01:47:39.822679 level=INFO scope=module msg=Cleaning up AudioProcessor...
+ts=2026-01-18T01:47:39.822715 level=INFO scope=module msg=Edge TTS Provider cleaned up
+ts=2026-01-18T01:47:39.822747 level=INFO scope=module msg=AudioProcessor cleaned up successfully
+ts=2026-01-18T01:47:39.822791 level=INFO scope=module msg=✅ Адаптер audio_generation очищен
+ts=2026-01-18T01:47:39.822832 level=INFO scope=module msg=Очистка адаптера memory_management...
+ts=2026-01-18T01:47:39.822867 level=INFO scope=module msg=✅ Адаптер memory_management очищен
+ts=2026-01-18T01:47:39.822899 level=INFO scope=module msg=Очистка адаптера database...
+ts=2026-01-18T01:47:39.822931 level=INFO scope=module msg=Cleaning up DatabaseManager...
+ts=2026-01-18T01:47:39.822962 level=INFO scope=module msg=Cleaning up PostgreSQL Provider...
+ts=2026-01-18T01:47:39.823117 level=INFO scope=module msg=PostgreSQL Provider cleaned up successfully
+ts=2026-01-18T01:47:39.823150 level=INFO scope=module msg=DatabaseManager cleaned up successfully
+ts=2026-01-18T01:47:39.823185 level=INFO scope=module msg=✅ Адаптер database очищен
+ts=2026-01-18T01:47:39.823253 level=INFO scope=module msg=Очистка адаптера session_management...
+ts=2026-01-18T01:47:39.823290 level=INFO scope=module msg=Cleaning up SessionManager...
+ts=2026-01-18T01:47:39.823318 level=INFO scope=module msg=Cleaning up Session Tracker...
+ts=2026-01-18T01:47:39.823460 level=INFO scope=module msg=Background tasks stopped
+ts=2026-01-18T01:47:39.823492 level=INFO scope=module msg=Session Tracker cleaned up successfully
+ts=2026-01-18T01:47:39.823522 level=INFO scope=module msg=HardwareID Provider cleaned up
+ts=2026-01-18T01:47:39.823548 level=INFO scope=module msg=SessionManager cleaned up successfully
+ts=2026-01-18T01:47:39.823586 level=INFO scope=module msg=✅ Адаптер session_management очищен
+ts=2026-01-18T01:47:39.823626 level=INFO scope=module msg=Очистка адаптера interrupt_handling...
+ts=2026-01-18T01:47:39.823657 level=INFO scope=module msg=Cleaning up Interrupt Manager...
+ts=2026-01-18T01:47:39.823685 level=INFO scope=module msg=Global interrupt flags reset
+ts=2026-01-18T01:47:39.823718 level=INFO scope=module msg=Cleaning up Global Flag Provider...
+ts=2026-01-18T01:47:39.823748 level=INFO scope=module msg=Global Flag Provider cleaned up successfully
+ts=2026-01-18T01:47:39.823785 level=INFO scope=module msg=Cleaning up Session Tracker Provider...
+ts=2026-01-18T01:47:39.823813 level=INFO scope=module msg=Session Tracker Provider cleaned up successfully
+ts=2026-01-18T01:47:39.823844 level=INFO scope=module msg=Interrupt Manager cleaned up successfully
+ts=2026-01-18T01:47:39.823876 level=INFO scope=module msg=✅ Адаптер interrupt_handling очищен
+ts=2026-01-18T01:47:39.823906 level=INFO scope=module msg=Очистка адаптера text_filtering...
+ts=2026-01-18T01:47:39.823934 level=INFO scope=module msg=Cleaning up Text Filter Manager...
+ts=2026-01-18T01:47:39.823961 level=INFO scope=module msg=Cleaning up Text Cleaning Provider...
+ts=2026-01-18T01:47:39.823988 level=INFO scope=module msg=Text Cleaning Provider cleaned up successfully
+ts=2026-01-18T01:47:39.824020 level=INFO scope=module msg=Cleaning up Content Filtering Provider...
+ts=2026-01-18T01:47:39.824048 level=INFO scope=module msg=Content Filtering Provider cleaned up successfully
+ts=2026-01-18T01:47:39.824081 level=INFO scope=module msg=Cleaning up Sentence Processing Provider...
+ts=2026-01-18T01:47:39.824118 level=INFO scope=module msg=Sentence Processing Provider cleaned up successfully
+ts=2026-01-18T01:47:39.824150 level=INFO scope=module msg=Text Filter Manager cleaned up successfully
+ts=2026-01-18T01:47:39.824188 level=INFO scope=module msg=✅ Адаптер text_filtering очищен
+ts=2026-01-18T01:47:39.824221 level=INFO scope=module msg=[F-2025-015-browser-use] Starting cleanup for BrowserUseModule
+ts=2026-01-18T01:47:39.824252 level=INFO scope=module msg=[F-2025-015-browser-use] Cleanup completed
+ts=2026-01-18T01:47:39.824284 level=INFO scope=module msg=✅ Все модули очищены
+ts=2026-01-18T01:47:39.824312 level=INFO scope=grpc msg=✅ ModuleCoordinator очищен
+ts=2026-01-18T01:47:39.824341 level=INFO scope=grpc msg=✅ gRPC Service Manager очищен
+ts=2026-01-18T01:47:39.824368 level=INFO scope=grpc msg=✅ gRPC Service Manager очищен
+ts=2026-01-18T01:47:39.824395 level=INFO scope=grpc msg=✅ Новый сервер полностью очищен
+ts=2026-01-18T01:47:39.824647 level=INFO scope=server decision=stop ctx={"reason": "graceful_shutdown"} msg=Server stopped: graceful_shutdown
