@@ -143,7 +143,10 @@ class MemoryManagementAdapter(UniversalModuleInterface):
                 # Новый унифицированный action для получения памяти
                 if subject_id is None:
                     raise ValueError("hardware_id или session_id должны быть указаны")
-                memory = await self._manager.get_memory_context(subject_id)
+                memory = await self._manager.get_memory_context(
+                    subject_id,
+                    user_input=request.get("user_input"),
+                )
                 result = {"memory": memory}
             elif action == "update_background":
                 prompt = request.get("prompt", "") or request.get("text", "")
@@ -155,8 +158,8 @@ class MemoryManagementAdapter(UniversalModuleInterface):
                     result = {
                         "success": True,
                         "memory": {
-                            "recent_context": updated.get("short", ""),
-                            "long_term_context": updated.get("long", ""),
+                            "recent_context": updated.get("medium", updated.get("short", "")),
+                            "long_term_context": updated.get("factual_long", updated.get("long", "")),
                         },
                     }
                 else:
@@ -174,8 +177,17 @@ class MemoryManagementAdapter(UniversalModuleInterface):
                 # Анализируем память
                 prompt = request.get("prompt", "")
                 response = request.get("response", "")
-                short_memory, long_memory = await self._manager.analyze_conversation(prompt, response)
-                result = {"analysis": {"short_memory": short_memory, "long_memory": long_memory}}
+                short_memory, medium_memory, long_memory = await self._manager.analyze_conversation(
+                    prompt,
+                    response,
+                )
+                result = {
+                    "analysis": {
+                        "short_memory": short_memory,
+                        "medium_memory": medium_memory,
+                        "long_memory": long_memory,
+                    }
+                }
             else:
                 raise ValueError(f"Неизвестное действие: {action}")
             
