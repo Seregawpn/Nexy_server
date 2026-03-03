@@ -1,0 +1,52 @@
+name: Server Quality Gate
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "server/**"
+      - ".github/workflows/server-quality.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "server/**"
+      - ".github/workflows/server-quality.yml"
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: |
+            server/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r server/requirements.txt
+          python -m pip install basedpyright
+
+      - name: Docs link gate (root + server)
+        run: python scripts/verify_docs_root_server_links.py
+
+      - name: PR Single Owner Check
+        run: python server/scripts/verify_pr_single_owner_check.py
+
+      - name: Feature flags registry gate
+        run: python server/scripts/verify_feature_flags.py
+
+      - name: Architecture guard rails
+        run: python server/scripts/verify_architecture_guards.py
+
+      - name: Run server quality scan
+        run: bash server/scripts/full_quality_scan.sh
