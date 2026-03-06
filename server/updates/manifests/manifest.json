@@ -1,6 +1,6 @@
 {
-  "version": "2.0.0.19",
-  "build": "2.0.0.19",
+  "version": "2.0.0.32",
+  "build": "2.0.0.32",
   "artifact": {
     "type": "dmg",
     "url": "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg",
@@ -13,5 +13,5 @@
   "critical": false,
   "auto_install": true,
   "notes_url": "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg",
-  "release_date": "2026-02-26T19:57:35.968960+00:00"
+  "release_date": "2026-03-06T02:58:57.245806+00:00"
 }
