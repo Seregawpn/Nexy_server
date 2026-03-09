@@ -1,0 +1,28 @@
+# Server-Side Development Rules
+
+## 1. Контекст Ассистентов
+В этой директории (`server/`) действуют следующие правила для ИИ-ассистентов:
+
+- **Antigravity**: См. `Docs/Antigravity/PROMPT.md`
+- **Codex**: См. `Docs/Codex/PROMPT.md`
+- **Координация**: Строго соблюдай `Docs/ASSISTANT_COORDINATION_PROTOCOL.md`
+
+## 2. Среда Разработки
+- **Python**: Используй виртуальное окружение, совместимое с серверными зависимостями (`requirements.txt` в корне или `server/requirements.txt`).
+- **Тесты**: Запуск тестов через `pytest` из корня проекта.
+- **Линтинг**: Соблюдай правила, описанные в корневом `pyproject.toml`.
+
+## 3. Ключевые Файлы
+- `AGENTS.md`: Локальные правила для `server/` (см. файл рядом).
+- `.crm/TASKS.json`: Задачи сервера (`SRV-XXX`).
+
+## 4. CRM Task Management (Server)
+
+**Единый алгоритм**: `Docs/CRM_ASSISTANT_INSTRUCTIONS.md`.
+
+**Где создавать задачи**:
+- Server: `server/.crm/TASKS.json` (SRV-XXX)
+
+**Синхронизация**:
+- После изменений: `python3 scripts/task_aggregator.py`
+- Прогресс по чек-листам: `python3 scripts/kanban_progress_collector.py`

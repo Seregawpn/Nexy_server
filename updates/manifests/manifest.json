@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0.40",
+  "build": "2.0.0.40",
+  "artifact": {
+    "type": "dmg",
+    "url": "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg",
+    "size": 276019331,
+    "sha256": "8324c4f9699e34f3ce20f0b3c29bad742c757b7526cbc97e7e93ad6bf937fd96",
+    "arch": "universal2",
+    "min_os": "11.0",
+    "ed25519": ""
+  },
+  "critical": false,
+  "auto_install": true,
+  "notes_url": "https://github.com/Seregawpn/Nexy_production/releases/download/Update/Nexy.dmg",
+  "release_date": "2026-03-09T00:30:26.561075+00:00"
+}
