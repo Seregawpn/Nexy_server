@@ -114,6 +114,7 @@ else
 fi
 MANIFEST_FILE=\"\$MANIFEST_DIR/$MANIFEST_NAME\"
 mkdir -p \"\$MANIFEST_DIR\"
+export MANIFEST_FILE
 
 LOCK_FILE=/tmp/nexy_manifest.lock
 if command -v flock >/dev/null 2>&1; then
@@ -127,10 +128,11 @@ fi
 
 python3 << 'PYEOF'
 import json
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 
-manifest_file = Path(\"$MANIFEST_FILE\")
+manifest_file = Path(os.environ["MANIFEST_FILE"])
 artifact_url = \"$ARTIFACT_URL\"
 artifact_size = \"$ARTIFACT_SIZE\"
 artifact_sha256 = \"$ARTIFACT_SHA256\"
