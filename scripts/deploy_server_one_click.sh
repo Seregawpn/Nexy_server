@@ -130,17 +130,20 @@ test -f $REMOTE_BASE/config.env
 grep -q '^GEMINI_API_KEY=' $REMOTE_BASE/config.env
 sudo chown root:azureuser $REMOTE_BASE/config.env
 sudo chmod 640 $REMOTE_BASE/config.env
+export ENTRYPOINT
 
 python3 - <<'PYEOF'
+import os
 from pathlib import Path
 
 service_file = Path('/etc/systemd/system/$SERVICE_NAME.service')
+entrypoint = os.environ['ENTRYPOINT']
 if service_file.exists():
     text = service_file.read_text()
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if line.startswith('ExecStart='):
-            lines[i] = 'ExecStart=$REMOTE_BASE/venv/bin/python3 $ENTRYPOINT'
+            lines[i] = f'ExecStart=$REMOTE_BASE/venv/bin/python3 {entrypoint}'
             break
     service_file.write_text('\n'.join(lines) + '\n')
 PYEOF

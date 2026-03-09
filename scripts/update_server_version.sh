@@ -162,14 +162,16 @@ az vm run-command invoke \
 
     mkdir -p \"\$MANIFEST_DIR\"
     printf '%s\n' \"$VERSION_ARG\" > VERSION
+    export MANIFEST_DIR ENTRYPOINT
 
     python3 - <<'PYEOF'
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 path = Path('$MANIFEST_NAME')
-manifest_dir = Path('$MANIFEST_DIR')
+manifest_dir = Path(os.environ['MANIFEST_DIR'])
 path = manifest_dir / path
 version = '$VERSION_ARG'
 build = '$BUILD_ARG'
@@ -202,16 +204,18 @@ print('manifest version/build:', data.get('version'), data.get('build'))
 PYEOF
 
     python3 - <<'PYEOF'
+import os
 from pathlib import Path
 
 service_file = Path('/etc/systemd/system/$SERVICE_NAME.service')
+entrypoint = os.environ['ENTRYPOINT']
 if service_file.exists():
     text = service_file.read_text()
     lines = text.splitlines()
     replaced = False
     for i, line in enumerate(lines):
         if line.startswith('ExecStart='):
-            lines[i] = 'ExecStart=$REMOTE_BASE/venv/bin/python3 $ENTRYPOINT'
+            lines[i] = f'ExecStart=$REMOTE_BASE/venv/bin/python3 {entrypoint}'
             replaced = True
             break
     if replaced:
