@@ -12,7 +12,7 @@ Options:
   --resource-group NAME   Azure resource group (default: NexyNewRG)
   --vm NAME               Azure VM name (default: NexyNew)
   --runtime-target NAME   Runtime target: prod|staging (derives remote base)
-  --remote-base PATH      Remote project base (default: /home/azureuser/voice-assistant/server)
+  --remote-base PATH      Remote project base (default: /home/azureuser/voice-assistant)
   --channel NAME          Update channel: stable|beta (default: stable)
   --url URL               Artifact URL (optional)
   --size BYTES            Artifact size (optional)
@@ -25,7 +25,7 @@ EOF
 
 RESOURCE_GROUP="NexyNewRG"
 VM_NAME="NexyNew"
-REMOTE_BASE="/home/azureuser/voice-assistant/server"
+REMOTE_BASE="/home/azureuser/voice-assistant"
 RUNTIME_TARGET="prod"
 ARTIFACT_URL=""
 ARTIFACT_SIZE=""
@@ -55,13 +55,13 @@ done
 
 case "$RUNTIME_TARGET" in
   prod)
-    if [ "$REMOTE_BASE" = "/home/azureuser/voice-assistant/server" ]; then
-      REMOTE_BASE="/home/azureuser/voice-assistant/server"
+    if [ "$REMOTE_BASE" = "/home/azureuser/voice-assistant" ]; then
+      REMOTE_BASE="/home/azureuser/voice-assistant"
     fi
     ;;
   staging)
-    if [ "$REMOTE_BASE" = "/home/azureuser/voice-assistant/server" ]; then
-      REMOTE_BASE="/home/azureuser/voice-assistant-staging/server"
+    if [ "$REMOTE_BASE" = "/home/azureuser/voice-assistant" ]; then
+      REMOTE_BASE="/home/azureuser/voice-assistant-staging"
     fi
     ;;
   *)
