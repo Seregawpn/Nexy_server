@@ -115,6 +115,12 @@ fi
 MANIFEST_FILE=\"\$MANIFEST_DIR/$MANIFEST_NAME\"
 mkdir -p \"\$MANIFEST_DIR\"
 export MANIFEST_FILE
+export ARTIFACT_URL_ENV=\"$ARTIFACT_URL\"
+export ARTIFACT_SIZE_ENV=\"$ARTIFACT_SIZE\"
+export ARTIFACT_SHA256_ENV=\"$ARTIFACT_SHA256\"
+export VERSION_ENV=\"$VERSION\"
+export BUILD_ENV=\"$BUILD\"
+export NOTES_URL_ENV=\"$NOTES_URL\"
 
 LOCK_FILE=/tmp/nexy_manifest.lock
 if command -v flock >/dev/null 2>&1; then
@@ -133,12 +139,12 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 manifest_file = Path(os.environ['MANIFEST_FILE'])
-artifact_url = \"$ARTIFACT_URL\"
-artifact_size = \"$ARTIFACT_SIZE\"
-artifact_sha256 = \"$ARTIFACT_SHA256\"
-version = \"$VERSION\"
-build = \"$BUILD\"
-notes_url = \"$NOTES_URL\"
+artifact_url = os.environ['ARTIFACT_URL_ENV']
+artifact_size = os.environ['ARTIFACT_SIZE_ENV']
+artifact_sha256 = os.environ['ARTIFACT_SHA256_ENV']
+version = os.environ['VERSION_ENV']
+build = os.environ['BUILD_ENV']
+notes_url = os.environ['NOTES_URL_ENV']
 
 if manifest_file.exists():
     data = json.loads(manifest_file.read_text(encoding=\"utf-8\"))
