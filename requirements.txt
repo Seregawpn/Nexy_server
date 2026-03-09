@@ -1,0 +1,57 @@
+# =====================================================
+# ЗАВИСИМОСТИ ДЛЯ СЕРВЕРА - ВСЕ ПОСЛЕДНИЕ ВЕРСИИ БЕЗ ОГРАНИЧЕНИЙ
+# Обновлено: 25 января 2026 - все зависимости до последних версий
+# =====================================================
+
+# 🌐 HTTP сервер для health checks
+aiohttp
+
+# 🚀 Google Gemini API (основной LLM)
+google-genai
+google-generativeai
+
+# 🔄 LangChain интеграция
+langchain
+langchain-google-genai
+langchain-google-vertexai
+langchain-core
+
+# 🔧 Утилиты
+python-dotenv
+
+# gRPC и Protocol Buffers
+grpcio
+grpcio-tools
+grpcio-status
+protobuf
+
+# Edge TTS
+edge-tts
+
+# Azure Speech Services
+azure-cognitiveservices-speech
+
+# База данных
+psycopg2-binary
+
+# Аудио обработка
+numpy
+pydub
+
+# Мониторинг системы
+psutil
+
+# Валидация данных
+pydantic
+
+# Криптография
+PyNaCl
+
+# Планировщик задач
+apscheduler
+
+# Платежи
+stripe
+
+# Тестирование
+pytest-asyncio
