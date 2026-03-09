@@ -132,7 +132,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone
 
-manifest_file = Path(os.environ["MANIFEST_FILE"])
+manifest_file = Path(os.environ['MANIFEST_FILE'])
 artifact_url = \"$ARTIFACT_URL\"
 artifact_size = \"$ARTIFACT_SIZE\"
 artifact_sha256 = \"$ARTIFACT_SHA256\"
